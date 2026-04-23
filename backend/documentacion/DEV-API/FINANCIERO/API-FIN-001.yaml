@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: API-FIN-001
+  version: 0.1.0
+  description: >
+    Contrato base para operaciones del dominio financiero.
+servers:
+  - url: /api
+paths:
+  /financiero/relaciones-generadoras:
+    get:
+      summary: Consulta base de relaciones generadoras
+      tags:
+        - Financiero
+      responses:
+        '200':
+          description: Respuesta exitosa
+components: {}

@@ -1,0 +1,256 @@
+# RN-FIN — Reglas del dominio Financiero
+
+## Objetivo
+Definir reglas del dominio financiero.
+
+## Alcance
+Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
+
+---
+
+## A. Reglas de relaciones generadoras
+
+### RN-FIN-001 — Relación generadora como origen financiero
+- descripcion: Una relación generadora constituye el origen formal de obligaciones financieras dentro del sistema.
+- aplica_a: relacion_generadora
+- origen_principal: DEV-SRV
+
+### RN-FIN-002 — Estados válidos de relación generadora
+- descripcion: Una relación generadora puede encontrarse en estado borrador, activa, cancelada o finalizada según su ciclo de vida.
+- aplica_a: relacion_generadora
+- origen_principal: DEV-SRV
+
+### RN-FIN-003 — Generación desde relación activa
+- descripcion: Solo una relación generadora activa puede generar nuevas obligaciones financieras.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-004 — Relación cancelada sin nuevas obligaciones
+- descripcion: Una relación generadora cancelada no debe generar nuevas obligaciones.
+- aplica_a: relacion_generadora
+- origen_principal: DEV-SRV
+
+### RN-FIN-005 — Finalización sin deuda pendiente
+- descripcion: Una relación generadora finalizada no debe mantener deuda pendiente ni obligaciones abiertas incompatibles con su cierre.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-006 — Relación generadora sin deuda propia
+- descripcion: La relación generadora no almacena deuda como valor primario; la deuda se expresa en las obligaciones que genera.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: DEV-SRV
+
+## B. Reglas de obligaciones
+
+### RN-FIN-007 — Obligación como deuda exigible
+- descripcion: Una obligación financiera representa una deuda exigible dentro del dominio.
+- aplica_a: obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-008 — Asociación obligatoria con relación generadora
+- descripcion: Toda obligación debe estar asociada a una relación generadora válida dentro del sistema.
+- aplica_a: obligacion_financiera, relacion_generadora
+- origen_principal: DER
+
+### RN-FIN-009 — Componentes básicos de obligación
+- descripcion: Una obligación debe contar con monto, fecha de vencimiento y estado financiero definidos.
+- aplica_a: obligacion_financiera
+- origen_principal: DER
+
+### RN-FIN-010 — Estados operativos de obligación
+- descripcion: Una obligación puede encontrarse pendiente, cancelada o vencida según su evolución financiera.
+- aplica_a: obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-011 — No modificación destructiva de obligación
+- descripcion: Una obligación no debe modificarse directamente de forma destructiva una vez generada; los cambios deben canalizarse por ajustes o mecanismos equivalentes.
+- aplica_a: obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-012 — Reducción de saldo por imputación
+- descripcion: El saldo de una obligación se reduce por imputaciones financieras válidas aplicadas sobre ella.
+- aplica_a: obligacion_financiera, aplicacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-013 — Multiplicidad de imputaciones
+- descripcion: Una obligación puede recibir múltiples imputaciones a lo largo de su ciclo de vida.
+- aplica_a: obligacion_financiera, aplicacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-014 — Obligación ajustable
+- descripcion: Una obligación puede ser ajustada conforme a las reglas del dominio financiero.
+- aplica_a: obligacion_financiera, ajuste_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-015 — Prohibición de saldo negativo
+- descripcion: Una obligación no debe quedar con saldo negativo como resultado de imputaciones o ajustes.
+- aplica_a: obligacion_financiera
+- origen_principal: DEV-SRV
+
+## C. Reglas de imputaciones financieras
+
+### RN-FIN-016 — Imputación como aplicación de pago o crédito
+- descripcion: Una imputación financiera aplica un pago o crédito a una obligación determinada.
+- aplica_a: aplicacion_financiera, movimiento_financiero, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-017 — Reducción operativa del saldo
+- descripcion: La imputación reduce el saldo operativo de la obligación sobre la cual se aplica.
+- aplica_a: aplicacion_financiera, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-018 — Imputación parcial o total
+- descripcion: Una imputación puede cubrir total o parcialmente una obligación, según el monto aplicado.
+- aplica_a: aplicacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-019 — Límite por saldo disponible
+- descripcion: Una imputación no debe exceder el saldo vigente de la obligación al momento de aplicarse.
+- aplica_a: aplicacion_financiera, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-020 — Imputación distribuida
+- descripcion: Un mismo pago o crédito puede imputarse a múltiples obligaciones cuando la operatoria lo permita.
+- aplica_a: aplicacion_financiera, movimiento_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-021 — Trazabilidad de imputación
+- descripcion: Toda imputación debe ser trazable respecto de pago, obligación, fecha y contexto de aplicación.
+- aplica_a: aplicacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-022 — Reversibilidad controlada
+- descripcion: Una imputación puede revertirse si el flujo financiero y el estado de las entidades lo permiten.
+- aplica_a: aplicacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-023 — Restauración de saldo por reversión
+- descripcion: La reversión de una imputación debe restaurar el saldo operativo original afectado por dicha aplicación.
+- aplica_a: aplicacion_financiera, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-024 — Obligación sin alteración estructural por imputación
+- descripcion: La imputación no modifica la definición estructural de la obligación, sino solo su saldo operativo.
+- aplica_a: aplicacion_financiera, obligacion_financiera
+- origen_principal: DEV-SRV
+
+## D. Reglas de ajustes financieros
+
+### RN-FIN-025 — Ajuste como modificación de valor financiero
+- descripcion: Un ajuste financiero modifica el valor económico visible de una obligación o componente asociado.
+- aplica_a: ajuste_financiero, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-026 — Tipos funcionales de ajuste
+- descripcion: Un ajuste puede representar interés, recargo, bonificación u otra variación financiera admitida por el dominio.
+- aplica_a: ajuste_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-027 — No modificación destructiva de base
+- descripcion: Un ajuste no debe modificar destructivamente la obligación base sobre la que actúa.
+- aplica_a: ajuste_financiero, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-028 — Dependencia de reglas externas
+- descripcion: Un ajuste puede depender de reglas externas como índices, fechas o condiciones predefinidas.
+- aplica_a: ajuste_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-029 — Trazabilidad de ajuste
+- descripcion: Todo ajuste debe ser trazable respecto de causa, fecha, obligación y criterio aplicado.
+- aplica_a: ajuste_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-030 — Aplicación automática o manual
+- descripcion: Un ajuste puede aplicarse en forma automática o manual según la política financiera correspondiente.
+- aplica_a: ajuste_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-031 — Ajuste sin imputación implícita
+- descripcion: Un ajuste no genera por sí mismo una imputación financiera.
+- aplica_a: ajuste_financiero, aplicacion_financiera
+- origen_principal: DEV-SRV
+
+## E. Reglas de consultas financieras
+
+### RN-FIN-032 — Consultas sin efectos persistentes
+- descripcion: Las consultas financieras no deben generar efectos persistentes ni mutaciones de estado.
+- aplica_a: consultas_financieras
+- origen_principal: DEV-SRV
+
+### RN-FIN-033 — Cálculo de deuda a fecha
+- descripcion: Las consultas financieras pueden calcular deuda al corte de una fecha determinada.
+- aplica_a: consultas_financieras, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-034 — Inclusión de ajustes e intereses en consulta
+- descripcion: El cálculo financiero a fecha puede incluir ajustes, intereses u otros componentes visibles según las reglas del dominio.
+- aplica_a: consultas_financieras, ajuste_financiero, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-035 — Consolidación de múltiples obligaciones
+- descripcion: Las consultas financieras pueden consolidar múltiples obligaciones dentro de una misma vista de lectura.
+- aplica_a: consultas_financieras, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-036 — Consulta sin modificación de datos
+- descripcion: Ninguna consulta financiera debe modificar obligaciones, imputaciones, ajustes o relaciones generadoras.
+- aplica_a: consultas_financieras
+- origen_principal: DEV-SRV
+
+## F. Reglas transversales financieras
+
+### RN-FIN-037 — Exclusividad del cálculo de deuda
+- descripcion: El dominio financiero es el único responsable del cálculo de deuda del sistema.
+- aplica_a: dominio_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-038 — Prohibición de recálculo externo
+- descripcion: Otros dominios no deben recalcular deuda como fuente primaria de verdad.
+- aplica_a: dominio_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-039 — Sin gestión de objetos inmobiliarios
+- descripcion: El dominio financiero no gestiona objetos inmobiliarios ni su disponibilidad estructural.
+- aplica_a: dominio_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-040 — Sin gestión de contratos locativos
+- descripcion: El dominio financiero no gestiona contratos locativos ni define su lógica operativa.
+- aplica_a: dominio_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-041 — Sin gestión de operaciones comerciales
+- descripcion: El dominio financiero no gestiona operaciones comerciales ni su flujo de negocio.
+- aplica_a: dominio_financiero
+- origen_principal: DEV-SRV
+
+### RN-FIN-042 — Requisitos transversales de write sincronizable
+- descripcion: Toda operación write del dominio debe respetar versionado, op_id y outbox cuando resulte sincronizable.
+- aplica_a: operaciones_write_financieras
+- origen_principal: DEV-SRV
+- observaciones: Regla aplicada en alineación con la infraestructura transversal del sistema.
+
+### RN-FIN-043 — Separación entre estados financieros y estados externos
+- descripcion: Los estados financieros no deben confundirse con estados comerciales, locativos o documentales.
+- aplica_a: relacion_generadora, obligacion_financiera, aplicacion_financiera, ajuste_financiero
+- origen_principal: DEV-SRV
+
+---
+
+## Reglas de normalización
+
+1. No duplicar reglas.
+2. Consolidar variantes similares.
+3. Separar claramente cálculo financiero de otros dominios.
+4. No incluir reglas técnicas profundas.
+5. Mantener numeración RN-FIN-XXX.
+
+---
+
+## Notas
+
+- Este catálogo deriva del DEV-SRV del dominio financiero.
+- Es uno de los dominios centrales del sistema.
+- Define la lógica económica del sistema.
+- Debe mantenerse alineado con CU-FIN.
