@@ -165,7 +165,7 @@ class CreateContratoAlquilerService:
                 ContratoAlquilerParticipacionCreatePayload(
                     id_persona=participacion.id_persona,
                     id_rol_participacion=participacion.id_rol_participacion,
-                    tipo_relacion="CONTRATO_ALQUILER",
+                    tipo_relacion="contrato_alquiler",
                     id_relacion=0,
                     fecha_desde=participacion.fecha_desde or command.fecha_inicio,
                     fecha_hasta=participacion.fecha_hasta,
