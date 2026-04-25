@@ -2,4 +2,4 @@ __pycache__/
 *.pyc
 .env
 .vscode/
-codex_tmp_pypdf/
+.codex_tmp_pypdf/
