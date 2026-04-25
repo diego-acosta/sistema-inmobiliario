@@ -93,6 +93,13 @@ class CreateContratoAlquilerService:
     def execute(
         self, command: CreateContratoAlquilerCommand
     ) -> AppResult[dict[str, Any]]:
+        if not command.objetos:
+            return AppResult.fail("OBJETOS_REQUIRED")
+        if not command.participaciones:
+            return AppResult.fail("PARTICIPACIONES_REQUIRED")
+        if command.fecha_fin is not None and command.fecha_fin < command.fecha_inicio:
+            return AppResult.fail("INVALID_DATE_RANGE")
+
         for objeto in command.objetos:
             if (objeto.id_inmueble is None) == (objeto.id_unidad_funcional is None):
                 return AppResult.fail("EXACTLY_ONE_OBJECT_PARENT_REQUIRED")
