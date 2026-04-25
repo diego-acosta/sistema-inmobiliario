@@ -1,4 +1,5 @@
 from dataclasses import asdict, is_dataclass
+from datetime import date
 from typing import Any
 
 from sqlalchemy import text
@@ -378,6 +379,83 @@ class LocativoRepository:
                 }
                 for row in participaciones_rows
             ],
+        }
+
+    def list_contratos_alquiler(
+        self,
+        *,
+        codigo_contrato: str | None,
+        estado_contrato: str | None,
+        fecha_desde: date | None,
+        fecha_hasta: date | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        filters = ["deleted_at IS NULL"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if codigo_contrato is not None:
+            filters.append("codigo_contrato = :codigo_contrato")
+            params["codigo_contrato"] = codigo_contrato
+
+        if estado_contrato is not None:
+            filters.append("LOWER(estado_contrato) = :estado_contrato")
+            params["estado_contrato"] = estado_contrato.strip().lower()
+
+        if fecha_desde is not None:
+            filters.append("fecha_inicio >= :fecha_desde")
+            params["fecha_desde"] = fecha_desde
+
+        if fecha_hasta is not None:
+            filters.append("fecha_inicio <= :fecha_hasta")
+            params["fecha_hasta"] = fecha_hasta
+
+        where_clause = " AND ".join(filters)
+
+        list_statement = text(
+            f"""
+            SELECT
+                id_contrato_alquiler,
+                uid_global,
+                version_registro,
+                codigo_contrato,
+                fecha_inicio,
+                fecha_fin,
+                estado_contrato,
+                observaciones
+            FROM contrato_alquiler
+            WHERE {where_clause}
+            ORDER BY fecha_inicio DESC, id_contrato_alquiler DESC
+            LIMIT :limit
+            OFFSET :offset
+            """
+        )
+        total_statement = text(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM contrato_alquiler
+            WHERE {where_clause}
+            """
+        )
+
+        rows = self.db.execute(list_statement, params).mappings().all()
+        total = self.db.execute(total_statement, params).scalar_one()
+
+        return {
+            "items": [
+                {
+                    "id_contrato_alquiler": row["id_contrato_alquiler"],
+                    "uid_global": str(row["uid_global"]),
+                    "version_registro": row["version_registro"],
+                    "codigo_contrato": row["codigo_contrato"],
+                    "fecha_inicio": row["fecha_inicio"],
+                    "fecha_fin": row["fecha_fin"],
+                    "estado_contrato": row["estado_contrato"],
+                    "observaciones": row["observaciones"],
+                }
+                for row in rows
+            ],
+            "total": total,
         }
 
     def _values(self, payload: Any) -> dict[str, Any]:

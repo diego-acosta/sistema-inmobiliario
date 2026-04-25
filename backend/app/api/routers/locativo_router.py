@@ -1,7 +1,8 @@
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,9 @@ from app.api.schemas.locativo import (
     ContratoAlquilerCreateResponse,
     ContratoAlquilerGetData,
     ContratoAlquilerGetResponse,
+    ContratoAlquilerListData,
+    ContratoAlquilerListItemData,
+    ContratoAlquilerListResponse,
     ErrorResponse,
 )
 from app.application.common.commands import CommandContext
@@ -25,6 +29,9 @@ from app.application.locativo.services.create_contrato_alquiler_service import (
 )
 from app.application.locativo.services.get_contrato_alquiler_service import (
     GetContratoAlquilerService,
+)
+from app.application.locativo.services.list_contratos_alquiler_service import (
+    ListContratosAlquilerService,
 )
 from app.infrastructure.persistence.repositories.locativo_repository import (
     LocativoRepository,
@@ -182,3 +189,55 @@ def get_contrato_alquiler(
         return JSONResponse(status_code=404, content=error.model_dump())
 
     return ContratoAlquilerGetResponse(data=ContratoAlquilerGetData(**result.data))
+
+
+@router.get(
+    "/api/v1/contratos-alquiler",
+    response_model=ContratoAlquilerListResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_contratos_alquiler(
+    codigo_contrato: str | None = Query(default=None),
+    estado_contrato: str | None = Query(default=None),
+    fecha_desde: date | None = Query(default=None),
+    fecha_hasta: date | None = Query(default=None),
+    limit: int = Query(default=50, ge=0, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> ContratoAlquilerListResponse | JSONResponse:
+    repository = LocativoRepository(db)
+    service = ListContratosAlquilerService(repository=repository)
+
+    try:
+        result = service.execute(
+            codigo_contrato=codigo_contrato,
+            estado_contrato=estado_contrato,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudieron obtener los contratos de alquiler.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ContratoAlquilerListResponse(
+        data=ContratoAlquilerListData(
+            items=[ContratoAlquilerListItemData(**item) for item in result.data["items"]],
+            total=result.data["total"],
+        )
+    )

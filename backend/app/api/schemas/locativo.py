@@ -92,6 +92,26 @@ class ContratoAlquilerGetResponse(BaseModel):
     data: ContratoAlquilerGetData
 
 
+class ContratoAlquilerListItemData(BaseModel):
+    id_contrato_alquiler: int
+    uid_global: str
+    version_registro: int
+    codigo_contrato: str
+    fecha_inicio: date
+    fecha_fin: date | None
+    estado_contrato: str
+    observaciones: str | None
+
+
+class ContratoAlquilerListData(BaseModel):
+    items: list[ContratoAlquilerListItemData]
+    total: int
+
+
+class ContratoAlquilerListResponse(BaseModel):
+    data: ContratoAlquilerListData
+
+
 class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
