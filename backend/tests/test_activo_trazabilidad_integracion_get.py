@@ -162,7 +162,7 @@ def test_get_inmueble_trazabilidad_integracion_devuelve_published_cuando_el_cons
     response = client.post(
         f"/api/v1/ventas/{venta['id_venta']}/escrituraciones",
         headers=HEADERS,
-        json=_payload_escrituracion(fecha_escrituracion="2026-04-24T11:00:00"),
+        json=_payload_escrituracion(),
     )
     assert response.status_code == 201
 

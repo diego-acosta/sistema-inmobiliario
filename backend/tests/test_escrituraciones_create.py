@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import text
 
 from tests.sql_failpoints import install_statement_failpoint_once
@@ -14,9 +16,13 @@ from tests.test_ventas_definir_condiciones_comerciales import (
 
 def _payload_escrituracion(
     *,
-    fecha_escrituracion: str = "2026-04-24T11:00:00",
+    fecha_escrituracion: str | None = None,
     numero_escritura: str | None = "ESC-2026-001",
 ) -> dict[str, object]:
+    if fecha_escrituracion is None:
+        fecha_escrituracion = (
+            datetime.now(UTC) + timedelta(minutes=1)
+        ).replace(tzinfo=None).isoformat()
     return {
         "fecha_escrituracion": fecha_escrituracion,
         "numero_escritura": numero_escritura,

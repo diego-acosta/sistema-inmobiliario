@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import text
 
 from app.application.inmuebles.services.consume_escrituracion_registrada_service import (
@@ -87,9 +89,10 @@ def test_consume_escrituracion_registrada_reemplaza_reservada_y_no_crea_ocupacio
     client, db_session
 ) -> None:
     venta = _confirmar_venta_publica(client, db_session)
+    escrituracion_payload = _payload_escrituracion()
     response = client.post(
         f"/api/v1/ventas/{venta['id_venta']}/escrituraciones",
-        json=_payload_escrituracion(),
+        json=escrituracion_payload,
         headers={
             "X-Instalacion-Id": "1",
             "X-Op-Id": "00000000-0000-0000-0000-000000000102",
@@ -162,10 +165,11 @@ def test_consume_escrituracion_registrada_reemplaza_reservada_y_no_crea_ocupacio
     assert len(disponibilidades) == 3
     assert disponibilidades[0]["estado_disponibilidad"] == "DISPONIBLE"
     assert disponibilidades[0]["fecha_hasta"] is not None
+    fecha_esperada = datetime.fromisoformat(escrituracion_payload["fecha_escrituracion"])
     assert disponibilidades[1]["estado_disponibilidad"] == "RESERVADA"
-    assert disponibilidades[1]["fecha_hasta"].isoformat() == "2026-04-24T11:00:00"
+    assert disponibilidades[1]["fecha_hasta"] == fecha_esperada
     assert disponibilidades[2]["estado_disponibilidad"] == "NO_DISPONIBLE"
-    assert disponibilidades[2]["fecha_desde"].isoformat() == "2026-04-24T11:00:00"
+    assert disponibilidades[2]["fecha_desde"] == fecha_esperada
     assert disponibilidades[2]["fecha_hasta"] is None
 
     ocupaciones = db_session.execute(
