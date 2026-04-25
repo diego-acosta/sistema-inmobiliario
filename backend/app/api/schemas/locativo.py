@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -120,6 +120,22 @@ class ContratoAlquilerFinalizeData(BaseModel):
 
 class ContratoAlquilerFinalizeResponse(BaseModel):
     data: ContratoAlquilerFinalizeData
+
+
+class ContratoAlquilerBajaData(BaseModel):
+    id_contrato_alquiler: int
+    uid_global: str
+    version_registro: int
+    codigo_contrato: str
+    fecha_inicio: date
+    fecha_fin: date | None
+    estado_contrato: str
+    observaciones: str | None
+    deleted_at: datetime
+
+
+class ContratoAlquilerBajaResponse(BaseModel):
+    data: ContratoAlquilerBajaData
 
 
 class ContratoAlquilerListItemData(BaseModel):

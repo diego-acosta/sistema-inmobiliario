@@ -10,6 +10,8 @@ from app.api.dependencies import get_db
 from app.api.schemas.locativo import (
     ContratoAlquilerActivateData,
     ContratoAlquilerActivateResponse,
+    ContratoAlquilerBajaData,
+    ContratoAlquilerBajaResponse,
     ContratoAlquilerCreateData,
     ContratoAlquilerCreateRequest,
     ContratoAlquilerCreateResponse,
@@ -48,6 +50,12 @@ from app.application.locativo.commands.finalize_contrato_alquiler import (
 )
 from app.application.locativo.services.finalize_contrato_alquiler_service import (
     FinalizeContratoAlquilerService,
+)
+from app.application.locativo.commands.delete_contrato_alquiler import (
+    DeleteContratoAlquilerCommand,
+)
+from app.application.locativo.services.delete_contrato_alquiler_service import (
+    DeleteContratoAlquilerService,
 )
 from app.infrastructure.persistence.repositories.locativo_repository import (
     LocativoRepository,
@@ -484,4 +492,118 @@ def finalize_contrato_alquiler(
 
     return ContratoAlquilerFinalizeResponse(
         data=ContratoAlquilerFinalizeData(**result.data)
+    )
+
+
+@router.patch(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}/baja",
+    response_model=ContratoAlquilerBajaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def delete_contrato_alquiler(
+    id_contrato_alquiler: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ContratoAlquilerBajaResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+    parsed_if_match_version: int | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    if if_match_version is not None:
+        try:
+            parsed_if_match_version = int(if_match_version)
+        except ValueError:
+            parsed_if_match_version = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = LocativoCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
+
+    command = DeleteContratoAlquilerCommand(
+        context=context,
+        id_contrato_alquiler=id_contrato_alquiler,
+        if_match_version=parsed_if_match_version,
+    )
+
+    repository = LocativoRepository(db)
+    service = DeleteContratoAlquilerService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONTRATO_ALQUILER" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="El contrato de alquiler indicado no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        if "CONCURRENCY_ERROR" in result.errors:
+            error = ErrorResponse(
+                error_code="CONCURRENCY_ERROR",
+                error_message="If-Match-Version es requerido y debe coincidir con version_registro.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+
+        if "INVALID_CONTRATO_STATE" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Solo un contrato en estado borrador puede darse de baja.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo dar de baja el contrato de alquiler.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ContratoAlquilerBajaResponse(
+        data=ContratoAlquilerBajaData(**result.data)
     )
