@@ -10,6 +10,8 @@ from app.api.schemas.locativo import (
     ContratoAlquilerCreateData,
     ContratoAlquilerCreateRequest,
     ContratoAlquilerCreateResponse,
+    ContratoAlquilerGetData,
+    ContratoAlquilerGetResponse,
     ErrorResponse,
 )
 from app.application.common.commands import CommandContext
@@ -20,6 +22,9 @@ from app.application.locativo.commands.create_contrato_alquiler import (
 )
 from app.application.locativo.services.create_contrato_alquiler_service import (
     CreateContratoAlquilerService,
+)
+from app.application.locativo.services.get_contrato_alquiler_service import (
+    GetContratoAlquilerService,
 )
 from app.infrastructure.persistence.repositories.locativo_repository import (
     LocativoRepository,
@@ -152,3 +157,28 @@ def create_contrato_alquiler(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return ContratoAlquilerCreateResponse(data=ContratoAlquilerCreateData(**result.data))
+
+
+@router.get(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}",
+    response_model=ContratoAlquilerGetResponse,
+    responses={
+        404: {"model": ErrorResponse},
+    },
+)
+def get_contrato_alquiler(
+    id_contrato_alquiler: int,
+    db: Session = Depends(get_db),
+) -> ContratoAlquilerGetResponse | JSONResponse:
+    repository = LocativoRepository(db)
+    service = GetContratoAlquilerService(repository=repository)
+    result = service.execute(id_contrato_alquiler)
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="El contrato de alquiler indicado no existe.",
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return ContratoAlquilerGetResponse(data=ContratoAlquilerGetData(**result.data))

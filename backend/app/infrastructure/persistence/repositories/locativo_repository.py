@@ -282,6 +282,104 @@ class LocativoRepository:
             self.db.rollback()
             raise
 
+    def get_contrato_alquiler(self, id_contrato_alquiler: int) -> dict[str, Any] | None:
+        contrato_statement = text(
+            """
+            SELECT
+                id_contrato_alquiler,
+                uid_global,
+                version_registro,
+                codigo_contrato,
+                fecha_inicio,
+                fecha_fin,
+                estado_contrato,
+                observaciones,
+                deleted_at
+            FROM contrato_alquiler
+            WHERE id_contrato_alquiler = :id
+            """
+        )
+        objeto_statement = text(
+            """
+            SELECT
+                id_contrato_objeto,
+                id_inmueble,
+                id_unidad_funcional,
+                observaciones
+            FROM contrato_objeto_locativo
+            WHERE id_contrato_alquiler = :id
+              AND deleted_at IS NULL
+            ORDER BY id_contrato_objeto
+            """
+        )
+        participacion_statement = text(
+            """
+            SELECT
+                id_relacion_persona_rol,
+                id_persona,
+                id_rol_participacion,
+                fecha_desde,
+                fecha_hasta,
+                observaciones
+            FROM relacion_persona_rol
+            WHERE tipo_relacion = 'contrato_alquiler'
+              AND id_relacion = :id
+              AND deleted_at IS NULL
+            ORDER BY id_relacion_persona_rol
+            """
+        )
+
+        contrato_row = (
+            self.db.execute(contrato_statement, {"id": id_contrato_alquiler})
+            .mappings()
+            .one_or_none()
+        )
+        if contrato_row is None:
+            return None
+
+        objetos_rows = (
+            self.db.execute(objeto_statement, {"id": id_contrato_alquiler})
+            .mappings()
+            .all()
+        )
+        participaciones_rows = (
+            self.db.execute(participacion_statement, {"id": id_contrato_alquiler})
+            .mappings()
+            .all()
+        )
+
+        return {
+            "id_contrato_alquiler": contrato_row["id_contrato_alquiler"],
+            "uid_global": str(contrato_row["uid_global"]),
+            "version_registro": contrato_row["version_registro"],
+            "codigo_contrato": contrato_row["codigo_contrato"],
+            "fecha_inicio": contrato_row["fecha_inicio"],
+            "fecha_fin": contrato_row["fecha_fin"],
+            "estado_contrato": contrato_row["estado_contrato"],
+            "observaciones": contrato_row["observaciones"],
+            "deleted_at": contrato_row["deleted_at"],
+            "objetos": [
+                {
+                    "id_contrato_objeto": row["id_contrato_objeto"],
+                    "id_inmueble": row["id_inmueble"],
+                    "id_unidad_funcional": row["id_unidad_funcional"],
+                    "observaciones": row["observaciones"],
+                }
+                for row in objetos_rows
+            ],
+            "participaciones": [
+                {
+                    "id_relacion_persona_rol": row["id_relacion_persona_rol"],
+                    "id_persona": row["id_persona"],
+                    "id_rol_participacion": row["id_rol_participacion"],
+                    "fecha_desde": row["fecha_desde"],
+                    "fecha_hasta": row["fecha_hasta"],
+                    "observaciones": row["observaciones"],
+                }
+                for row in participaciones_rows
+            ],
+        }
+
     def _values(self, payload: Any) -> dict[str, Any]:
         if isinstance(payload, dict):
             return payload

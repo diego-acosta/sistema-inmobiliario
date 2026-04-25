@@ -66,6 +66,32 @@ class ContratoAlquilerCreateResponse(BaseModel):
     data: ContratoAlquilerCreateData
 
 
+class ContratoAlquilerParticipacionData(BaseModel):
+    id_relacion_persona_rol: int
+    id_persona: int
+    id_rol_participacion: int
+    fecha_desde: date
+    fecha_hasta: date | None
+    observaciones: str | None
+
+
+class ContratoAlquilerGetData(BaseModel):
+    id_contrato_alquiler: int
+    uid_global: str
+    version_registro: int
+    codigo_contrato: str
+    fecha_inicio: date
+    fecha_fin: date | None
+    estado_contrato: str
+    observaciones: str | None
+    objetos: list[ContratoAlquilerObjetoData]
+    participaciones: list[ContratoAlquilerParticipacionData]
+
+
+class ContratoAlquilerGetResponse(BaseModel):
+    data: ContratoAlquilerGetData
+
+
 class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
