@@ -381,6 +381,74 @@ class LocativoRepository:
             ],
         }
 
+    def finalize_contrato_alquiler(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+
+        statement = text(
+            """
+            UPDATE contrato_alquiler
+            SET
+                estado_contrato = :estado_contrato,
+                version_registro = :version_registro_nueva,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_contrato_alquiler = :id_contrato_alquiler
+              AND version_registro = :version_registro_actual
+              AND deleted_at IS NULL
+            RETURNING
+                id_contrato_alquiler,
+                uid_global,
+                version_registro,
+                codigo_contrato,
+                fecha_inicio,
+                fecha_fin,
+                estado_contrato,
+                observaciones
+            """
+        )
+
+        try:
+            updated = (
+                self.db.execute(
+                    statement,
+                    {
+                        "id_contrato_alquiler": values["id_contrato_alquiler"],
+                        "estado_contrato": values["estado_contrato"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if updated is None:
+                self.db.rollback()
+                return {"status": "CONCURRENCY_ERROR"}
+
+            self.db.commit()
+            return {
+                "status": "OK",
+                "data": {
+                    "id_contrato_alquiler": updated["id_contrato_alquiler"],
+                    "uid_global": str(updated["uid_global"]),
+                    "version_registro": updated["version_registro"],
+                    "codigo_contrato": updated["codigo_contrato"],
+                    "fecha_inicio": updated["fecha_inicio"],
+                    "fecha_fin": updated["fecha_fin"],
+                    "estado_contrato": updated["estado_contrato"],
+                    "observaciones": updated["observaciones"],
+                },
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
     def activate_contrato_alquiler(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
 

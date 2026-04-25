@@ -107,6 +107,21 @@ class ContratoAlquilerActivateResponse(BaseModel):
     data: ContratoAlquilerActivateData
 
 
+class ContratoAlquilerFinalizeData(BaseModel):
+    id_contrato_alquiler: int
+    uid_global: str
+    version_registro: int
+    codigo_contrato: str
+    fecha_inicio: date
+    fecha_fin: date | None
+    estado_contrato: str
+    observaciones: str | None
+
+
+class ContratoAlquilerFinalizeResponse(BaseModel):
+    data: ContratoAlquilerFinalizeData
+
+
 class ContratoAlquilerListItemData(BaseModel):
     id_contrato_alquiler: int
     uid_global: str
