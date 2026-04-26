@@ -239,6 +239,49 @@ class LocativoRepository:
             self.db.rollback()
             raise
 
+    def _get_condiciones_for_contrato(self, id_contrato_alquiler: int) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT
+                id_condicion_economica,
+                uid_global,
+                version_registro,
+                id_contrato_alquiler,
+                monto_base,
+                periodicidad,
+                moneda,
+                fecha_desde,
+                fecha_hasta,
+                observaciones,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM condicion_economica_alquiler
+            WHERE id_contrato_alquiler = :id
+              AND deleted_at IS NULL
+            ORDER BY fecha_desde ASC, id_condicion_economica ASC
+            """
+        )
+        rows = self.db.execute(statement, {"id": id_contrato_alquiler}).mappings().all()
+        return [self._condicion_row_to_dict(row) for row in rows]
+
+    def _condicion_row_to_dict(self, row: Any) -> dict[str, Any]:
+        return {
+            "id_condicion_economica": row["id_condicion_economica"],
+            "uid_global": str(row["uid_global"]),
+            "version_registro": row["version_registro"],
+            "id_contrato_alquiler": row["id_contrato_alquiler"],
+            "monto_base": row["monto_base"],
+            "periodicidad": row["periodicidad"],
+            "moneda": row["moneda"],
+            "fecha_desde": row["fecha_desde"],
+            "fecha_hasta": row["fecha_hasta"],
+            "observaciones": row["observaciones"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "deleted_at": row["deleted_at"],
+        }
+
     def get_contrato_alquiler(self, id_contrato_alquiler: int) -> dict[str, Any] | None:
         contrato_statement = text(
             """
@@ -266,6 +309,7 @@ class LocativoRepository:
             return None
 
         objetos = self._get_objetos_for_contrato(id_contrato_alquiler)
+        condiciones = self._get_condiciones_for_contrato(id_contrato_alquiler)
 
         return {
             "id_contrato_alquiler": contrato_row["id_contrato_alquiler"],
@@ -278,6 +322,7 @@ class LocativoRepository:
             "observaciones": contrato_row["observaciones"],
             "deleted_at": contrato_row["deleted_at"],
             "objetos": objetos,
+            "condiciones_economicas_alquiler": condiciones,
         }
 
     def delete_contrato_alquiler(self, payload: Any) -> dict[str, Any]:
@@ -598,6 +643,308 @@ class LocativoRepository:
             ],
             "total": total,
         }
+
+    def has_vigencia_overlap_condicion(
+        self,
+        id_contrato_alquiler: int,
+        moneda: str | None,
+        fecha_desde: date,
+        fecha_hasta: date | None,
+        exclude_id: int | None = None,
+    ) -> bool:
+        params: dict[str, Any] = {
+            "id_contrato_alquiler": id_contrato_alquiler,
+            "moneda_norm": moneda or "",
+            "fecha_desde": fecha_desde,
+        }
+        if fecha_hasta is not None:
+            left_clause = "fecha_desde <= :fecha_hasta"
+            params["fecha_hasta"] = fecha_hasta
+        else:
+            left_clause = "1=1"
+
+        exclude_clause = ""
+        if exclude_id is not None:
+            exclude_clause = "AND id_condicion_economica <> :exclude_id"
+            params["exclude_id"] = exclude_id
+
+        statement = text(
+            f"""
+            SELECT 1
+            FROM condicion_economica_alquiler
+            WHERE id_contrato_alquiler = :id_contrato_alquiler
+              AND deleted_at IS NULL
+              AND COALESCE(moneda, '') = :moneda_norm
+              AND {left_clause}
+              AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha_desde)
+              {exclude_clause}
+            LIMIT 1
+            """
+        )
+        return self.db.execute(statement, params).scalar_one_or_none() is not None
+
+    def create_condicion_economica_alquiler(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+
+        statement = text(
+            """
+            INSERT INTO condicion_economica_alquiler (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_contrato_alquiler,
+                monto_base,
+                periodicidad,
+                moneda,
+                fecha_desde,
+                fecha_hasta,
+                observaciones
+            )
+            VALUES (
+                :uid_global,
+                :version_registro,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_contrato_alquiler,
+                :monto_base,
+                :periodicidad,
+                :moneda,
+                :fecha_desde,
+                :fecha_hasta,
+                :observaciones
+            )
+            RETURNING
+                id_condicion_economica,
+                uid_global,
+                version_registro,
+                id_contrato_alquiler,
+                monto_base,
+                periodicidad,
+                moneda,
+                fecha_desde,
+                fecha_hasta,
+                observaciones,
+                created_at,
+                updated_at,
+                deleted_at
+            """
+        )
+
+        try:
+            row = self.db.execute(
+                statement,
+                {
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_contrato_alquiler": values["id_contrato_alquiler"],
+                    "monto_base": values["monto_base"],
+                    "periodicidad": values["periodicidad"],
+                    "moneda": values["moneda"],
+                    "fecha_desde": values["fecha_desde"],
+                    "fecha_hasta": values["fecha_hasta"],
+                    "observaciones": values["observaciones"],
+                },
+            ).mappings().one()
+            self.db.commit()
+            return self._condicion_row_to_dict(row)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def get_condicion_economica_alquiler(
+        self, id_condicion_economica: int, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None:
+        statement = text(
+            """
+            SELECT
+                id_condicion_economica,
+                uid_global,
+                version_registro,
+                id_contrato_alquiler,
+                monto_base,
+                periodicidad,
+                moneda,
+                fecha_desde,
+                fecha_hasta,
+                observaciones,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM condicion_economica_alquiler
+            WHERE id_condicion_economica = :id_condicion_economica
+              AND id_contrato_alquiler = :id_contrato_alquiler
+            """
+        )
+        row = (
+            self.db.execute(
+                statement,
+                {
+                    "id_condicion_economica": id_condicion_economica,
+                    "id_contrato_alquiler": id_contrato_alquiler,
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if row is None:
+            return None
+        return self._condicion_row_to_dict(row)
+
+    def list_condiciones_economicas_alquiler(
+        self,
+        *,
+        id_contrato_alquiler: int,
+        vigente: bool | None,
+        fecha_desde: date | None,
+        fecha_hasta: date | None,
+        moneda: str | None,
+        periodicidad: str | None,
+    ) -> dict[str, Any]:
+        filters = [
+            "id_contrato_alquiler = :id_contrato_alquiler",
+            "deleted_at IS NULL",
+        ]
+        params: dict[str, Any] = {"id_contrato_alquiler": id_contrato_alquiler}
+
+        if vigente is True:
+            filters.append(
+                "(fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)"
+            )
+        elif vigente is False:
+            filters.append("fecha_hasta < CURRENT_DATE")
+
+        if fecha_desde is not None:
+            filters.append("fecha_desde >= :fecha_desde")
+            params["fecha_desde"] = fecha_desde
+
+        if fecha_hasta is not None:
+            filters.append(
+                "(fecha_hasta IS NULL OR fecha_hasta <= :fecha_hasta)"
+            )
+            params["fecha_hasta"] = fecha_hasta
+
+        if moneda is not None:
+            filters.append("LOWER(COALESCE(moneda, '')) = :moneda")
+            params["moneda"] = moneda.strip().lower()
+
+        if periodicidad is not None:
+            filters.append("LOWER(COALESCE(periodicidad, '')) = :periodicidad")
+            params["periodicidad"] = periodicidad.strip().lower()
+
+        where_clause = " AND ".join(filters)
+
+        list_statement = text(
+            f"""
+            SELECT
+                id_condicion_economica,
+                uid_global,
+                version_registro,
+                id_contrato_alquiler,
+                monto_base,
+                periodicidad,
+                moneda,
+                fecha_desde,
+                fecha_hasta,
+                observaciones,
+                created_at,
+                updated_at,
+                deleted_at
+            FROM condicion_economica_alquiler
+            WHERE {where_clause}
+            ORDER BY fecha_desde ASC, id_condicion_economica ASC
+            """
+        )
+        total_statement = text(
+            f"SELECT COUNT(*) FROM condicion_economica_alquiler WHERE {where_clause}"
+        )
+
+        rows = self.db.execute(list_statement, params).mappings().all()
+        total = self.db.execute(total_statement, params).scalar_one()
+
+        return {
+            "items": [self._condicion_row_to_dict(row) for row in rows],
+            "total": total,
+        }
+
+    def cerrar_vigencia_condicion_economica_alquiler(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+
+        statement = text(
+            """
+            UPDATE condicion_economica_alquiler
+            SET
+                fecha_hasta = :fecha_hasta,
+                version_registro = :version_registro_nueva,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_condicion_economica = :id_condicion_economica
+              AND id_contrato_alquiler = :id_contrato_alquiler
+              AND version_registro = :version_registro_actual
+              AND deleted_at IS NULL
+            RETURNING
+                id_condicion_economica,
+                uid_global,
+                version_registro,
+                id_contrato_alquiler,
+                monto_base,
+                periodicidad,
+                moneda,
+                fecha_desde,
+                fecha_hasta,
+                observaciones,
+                created_at,
+                updated_at,
+                deleted_at
+            """
+        )
+
+        try:
+            updated = (
+                self.db.execute(
+                    statement,
+                    {
+                        "id_condicion_economica": values["id_condicion_economica"],
+                        "id_contrato_alquiler": values["id_contrato_alquiler"],
+                        "fecha_hasta": values["fecha_hasta"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if updated is None:
+                self.db.rollback()
+                return {"status": "CONCURRENCY_ERROR"}
+
+            self.db.commit()
+            return {"status": "OK", "data": self._condicion_row_to_dict(updated)}
+        except Exception:
+            self.db.rollback()
+            raise
 
     def cancel_contrato_alquiler(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)

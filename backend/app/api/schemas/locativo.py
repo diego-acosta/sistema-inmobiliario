@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, model_validator
@@ -53,6 +54,50 @@ class ContratoAlquilerCreateResponse(BaseModel):
     data: ContratoAlquilerCreateData
 
 
+class CondicionEconomicaAlquilerCreateRequest(BaseModel):
+    monto_base: Decimal
+    periodicidad: str | None = None
+    moneda: str | None = None
+    fecha_desde: date
+    fecha_hasta: date | None = None
+    observaciones: str | None = None
+
+
+class CondicionEconomicaAlquilerCerrarVigenciaRequest(BaseModel):
+    fecha_hasta: date
+
+
+class CondicionEconomicaAlquilerData(BaseModel):
+    id_condicion_economica: int
+    uid_global: str
+    version_registro: int
+    id_contrato_alquiler: int
+    monto_base: Decimal
+    periodicidad: str | None
+    moneda: str | None
+    fecha_desde: date
+    fecha_hasta: date | None
+    observaciones: str | None
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+
+
+class CondicionEconomicaAlquilerCreateResponse(BaseModel):
+    ok: bool = True
+    data: CondicionEconomicaAlquilerData
+
+
+class CondicionEconomicaAlquilerListData(BaseModel):
+    items: list[CondicionEconomicaAlquilerData]
+    total: int
+
+
+class CondicionEconomicaAlquilerListResponse(BaseModel):
+    ok: bool = True
+    data: CondicionEconomicaAlquilerListData
+
+
 class ContratoAlquilerGetData(BaseModel):
     id_contrato_alquiler: int
     uid_global: str
@@ -63,7 +108,7 @@ class ContratoAlquilerGetData(BaseModel):
     estado_contrato: str
     observaciones: str | None
     objetos: list[ContratoAlquilerObjetoData]
-    condiciones_economicas_alquiler: list[Any] = []
+    condiciones_economicas_alquiler: list[CondicionEconomicaAlquilerData] = []
     deleted_at: datetime | None
 
 

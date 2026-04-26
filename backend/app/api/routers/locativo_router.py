@@ -24,6 +24,12 @@ from app.api.schemas.locativo import (
     ContratoAlquilerListData,
     ContratoAlquilerListItemData,
     ContratoAlquilerListResponse,
+    CondicionEconomicaAlquilerCreateRequest,
+    CondicionEconomicaAlquilerCerrarVigenciaRequest,
+    CondicionEconomicaAlquilerData,
+    CondicionEconomicaAlquilerCreateResponse,
+    CondicionEconomicaAlquilerListData,
+    CondicionEconomicaAlquilerListResponse,
     ErrorResponse,
 )
 from app.application.common.commands import CommandContext
@@ -52,6 +58,21 @@ from app.application.locativo.commands.activate_contrato_alquiler import (
 )
 from app.application.locativo.services.list_contratos_alquiler_service import (
     ListContratosAlquilerService,
+)
+from app.application.locativo.commands.create_condicion_economica_alquiler import (
+    CreateCondicionEconomicaAlquilerCommand,
+)
+from app.application.locativo.services.create_condicion_economica_alquiler_service import (
+    CreateCondicionEconomicaAlquilerService,
+)
+from app.application.locativo.services.list_condiciones_economicas_alquiler_service import (
+    ListCondicionesEconomicasAlquilerService,
+)
+from app.application.locativo.commands.cerrar_vigencia_condicion_economica_alquiler import (
+    CerrarVigenciaCondicionEconomicaAlquilerCommand,
+)
+from app.application.locativo.services.cerrar_vigencia_condicion_economica_alquiler_service import (
+    CerrarVigenciaCondicionEconomicaAlquilerService,
 )
 from app.application.locativo.commands.cancel_contrato_alquiler import (
     CancelContratoAlquilerCommand,
@@ -403,6 +424,267 @@ def list_contratos_alquiler(
             items=[ContratoAlquilerListItemData(**item) for item in result.data["items"]],
             total=result.data["total"],
         )
+    )
+
+
+@router.post(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}/condiciones-economicas-alquiler",
+    status_code=201,
+    response_model=CondicionEconomicaAlquilerCreateResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_condicion_economica_alquiler(
+    id_contrato_alquiler: int,
+    request: CondicionEconomicaAlquilerCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> CondicionEconomicaAlquilerCreateResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = LocativoCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
+
+    command = CreateCondicionEconomicaAlquilerCommand(
+        context=context,
+        id_contrato_alquiler=id_contrato_alquiler,
+        monto_base=request.monto_base,
+        periodicidad=request.periodicidad,
+        moneda=request.moneda,
+        fecha_desde=request.fecha_desde,
+        fecha_hasta=request.fecha_hasta,
+        observaciones=request.observaciones,
+    )
+
+    repository = LocativoRepository(db)
+    service = CreateCondicionEconomicaAlquilerService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONTRATO_ALQUILER" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="El contrato de alquiler indicado no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo crear la condicion economica.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return CondicionEconomicaAlquilerCreateResponse(
+        data=CondicionEconomicaAlquilerData(**result.data)
+    )
+
+
+@router.get(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}/condiciones-economicas-alquiler",
+    response_model=CondicionEconomicaAlquilerListResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_condiciones_economicas_alquiler(
+    id_contrato_alquiler: int,
+    vigente: bool | None = Query(default=None),
+    fecha_desde: date | None = Query(default=None),
+    fecha_hasta: date | None = Query(default=None),
+    moneda: str | None = Query(default=None),
+    periodicidad: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> CondicionEconomicaAlquilerListResponse | JSONResponse:
+    repository = LocativoRepository(db)
+    service = ListCondicionesEconomicasAlquilerService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_contrato_alquiler=id_contrato_alquiler,
+            vigente=vigente,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            moneda=moneda,
+            periodicidad=periodicidad,
+        )
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONTRATO_ALQUILER" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="El contrato de alquiler indicado no existe.",
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudieron obtener las condiciones economicas.",
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    return CondicionEconomicaAlquilerListResponse(
+        data=CondicionEconomicaAlquilerListData(
+            items=[CondicionEconomicaAlquilerData(**item) for item in result.data["items"]],
+            total=result.data["total"],
+        )
+    )
+
+
+@router.patch(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}/condiciones-economicas-alquiler/{id_condicion_economica}/cerrar-vigencia",
+    response_model=CondicionEconomicaAlquilerCreateResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def cerrar_vigencia_condicion_economica_alquiler(
+    id_contrato_alquiler: int,
+    id_condicion_economica: int,
+    request: CondicionEconomicaAlquilerCerrarVigenciaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> CondicionEconomicaAlquilerCreateResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+    parsed_if_match_version: int | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    if if_match_version is not None:
+        try:
+            parsed_if_match_version = int(if_match_version)
+        except ValueError:
+            parsed_if_match_version = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = LocativoCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
+
+    command = CerrarVigenciaCondicionEconomicaAlquilerCommand(
+        context=context,
+        id_contrato_alquiler=id_contrato_alquiler,
+        id_condicion_economica=id_condicion_economica,
+        if_match_version=parsed_if_match_version,
+        fecha_hasta=request.fecha_hasta,
+    )
+
+    repository = LocativoRepository(db)
+    service = CerrarVigenciaCondicionEconomicaAlquilerService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONTRATO_ALQUILER" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="El contrato de alquiler indicado no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        if "NOT_FOUND_CONDICION_ECONOMICA" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La condicion economica indicada no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        if "CONCURRENCY_ERROR" in result.errors:
+            error = ErrorResponse(
+                error_code="CONCURRENCY_ERROR",
+                error_message="If-Match-Version es requerido y debe coincidir con version_registro.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo cerrar la vigencia de la condicion economica.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return CondicionEconomicaAlquilerCreateResponse(
+        data=CondicionEconomicaAlquilerData(**result.data)
     )
 
 
