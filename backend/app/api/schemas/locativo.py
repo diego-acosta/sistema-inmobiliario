@@ -108,6 +108,24 @@ class ContratoAlquilerFinalizeResponse(BaseModel):
     data: ContratoAlquilerFinalizeData
 
 
+class ContratoAlquilerCancelData(BaseModel):
+    id_contrato_alquiler: int
+    uid_global: str
+    version_registro: int
+    codigo_contrato: str
+    fecha_inicio: date
+    fecha_fin: date | None
+    estado_contrato: str
+    observaciones: str | None
+    objetos: list[ContratoAlquilerObjetoData]
+    condiciones_economicas_alquiler: list[Any] = []
+
+
+class ContratoAlquilerCancelResponse(BaseModel):
+    ok: bool = True
+    data: ContratoAlquilerCancelData
+
+
 class ContratoAlquilerBajaData(BaseModel):
     id_contrato_alquiler: int
     uid_global: str
