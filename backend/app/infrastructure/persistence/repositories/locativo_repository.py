@@ -71,11 +71,31 @@ class LocativoRepository:
             is not None
         )
 
+    def _get_objetos_for_contrato(self, id_contrato_alquiler: int) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT id_contrato_objeto, id_inmueble, id_unidad_funcional, observaciones
+            FROM contrato_objeto_locativo
+            WHERE id_contrato_alquiler = :id
+              AND deleted_at IS NULL
+            ORDER BY id_contrato_objeto
+            """
+        )
+        rows = self.db.execute(statement, {"id": id_contrato_alquiler}).mappings().all()
+        return [
+            {
+                "id_contrato_objeto": row["id_contrato_objeto"],
+                "id_inmueble": row["id_inmueble"],
+                "id_unidad_funcional": row["id_unidad_funcional"],
+                "observaciones": row["observaciones"],
+            }
+            for row in rows
+        ]
+
     def create_contrato_alquiler(
         self,
         payload: Any,
         objetos: list[Any],
-        participaciones: list[Any],
     ) -> dict[str, Any]:
         contrato_values = self._values(payload)
         db_values = {
@@ -175,45 +195,6 @@ class LocativoRepository:
             """
         )
 
-        participacion_statement = text(
-            """
-            INSERT INTO relacion_persona_rol (
-                uid_global,
-                version_registro,
-                created_at,
-                updated_at,
-                id_instalacion_origen,
-                id_instalacion_ultima_modificacion,
-                op_id_alta,
-                op_id_ultima_modificacion,
-                id_persona,
-                id_rol_participacion,
-                tipo_relacion,
-                id_relacion,
-                fecha_desde,
-                fecha_hasta,
-                observaciones
-            )
-            VALUES (
-                :uid_global,
-                :version_registro,
-                :created_at,
-                :updated_at,
-                :id_instalacion_origen,
-                :id_instalacion_ultima_modificacion,
-                :op_id_alta,
-                :op_id_ultima_modificacion,
-                :id_persona,
-                :id_rol_participacion,
-                :tipo_relacion,
-                :id_relacion,
-                :fecha_desde,
-                :fecha_hasta,
-                :observaciones
-            )
-            """
-        )
-
         try:
             contrato_row = self.db.execute(contrato_statement, db_values).mappings().one()
             id_contrato_alquiler = contrato_row["id_contrato_alquiler"]
@@ -249,31 +230,6 @@ class LocativoRepository:
                     }
                 )
 
-            for participacion in participaciones:
-                values = self._values(participacion)
-                self.db.execute(
-                    participacion_statement,
-                    {
-                        "uid_global": values["uid_global"],
-                        "version_registro": values["version_registro"],
-                        "created_at": values["created_at"],
-                        "updated_at": values["updated_at"],
-                        "id_instalacion_origen": values["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_alta": values["op_id_alta"],
-                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                        "id_persona": values["id_persona"],
-                        "id_rol_participacion": values["id_rol_participacion"],
-                        "tipo_relacion": values.get("tipo_relacion", "CONTRATO_ALQUILER"),
-                        "id_relacion": id_contrato_alquiler,
-                        "fecha_desde": values["fecha_desde"],
-                        "fecha_hasta": values["fecha_hasta"],
-                        "observaciones": values["observaciones"],
-                    },
-                )
-
             self.db.commit()
             return {
                 "id_contrato_alquiler": id_contrato_alquiler,
@@ -300,35 +256,6 @@ class LocativoRepository:
             WHERE id_contrato_alquiler = :id
             """
         )
-        objeto_statement = text(
-            """
-            SELECT
-                id_contrato_objeto,
-                id_inmueble,
-                id_unidad_funcional,
-                observaciones
-            FROM contrato_objeto_locativo
-            WHERE id_contrato_alquiler = :id
-              AND deleted_at IS NULL
-            ORDER BY id_contrato_objeto
-            """
-        )
-        participacion_statement = text(
-            """
-            SELECT
-                id_relacion_persona_rol,
-                id_persona,
-                id_rol_participacion,
-                fecha_desde,
-                fecha_hasta,
-                observaciones
-            FROM relacion_persona_rol
-            WHERE tipo_relacion = 'contrato_alquiler'
-              AND id_relacion = :id
-              AND deleted_at IS NULL
-            ORDER BY id_relacion_persona_rol
-            """
-        )
 
         contrato_row = (
             self.db.execute(contrato_statement, {"id": id_contrato_alquiler})
@@ -338,16 +265,7 @@ class LocativoRepository:
         if contrato_row is None:
             return None
 
-        objetos_rows = (
-            self.db.execute(objeto_statement, {"id": id_contrato_alquiler})
-            .mappings()
-            .all()
-        )
-        participaciones_rows = (
-            self.db.execute(participacion_statement, {"id": id_contrato_alquiler})
-            .mappings()
-            .all()
-        )
+        objetos = self._get_objetos_for_contrato(id_contrato_alquiler)
 
         return {
             "id_contrato_alquiler": contrato_row["id_contrato_alquiler"],
@@ -359,26 +277,7 @@ class LocativoRepository:
             "estado_contrato": contrato_row["estado_contrato"],
             "observaciones": contrato_row["observaciones"],
             "deleted_at": contrato_row["deleted_at"],
-            "objetos": [
-                {
-                    "id_contrato_objeto": row["id_contrato_objeto"],
-                    "id_inmueble": row["id_inmueble"],
-                    "id_unidad_funcional": row["id_unidad_funcional"],
-                    "observaciones": row["observaciones"],
-                }
-                for row in objetos_rows
-            ],
-            "participaciones": [
-                {
-                    "id_relacion_persona_rol": row["id_relacion_persona_rol"],
-                    "id_persona": row["id_persona"],
-                    "id_rol_participacion": row["id_rol_participacion"],
-                    "fecha_desde": row["fecha_desde"],
-                    "fecha_hasta": row["fecha_hasta"],
-                    "observaciones": row["observaciones"],
-                }
-                for row in participaciones_rows
-            ],
+            "objetos": objetos,
         }
 
     def delete_contrato_alquiler(self, payload: Any) -> dict[str, Any]:
@@ -432,11 +331,13 @@ class LocativoRepository:
                 self.db.rollback()
                 return {"status": "CONCURRENCY_ERROR"}
 
+            id_contrato = updated["id_contrato_alquiler"]
+            objetos = self._get_objetos_for_contrato(id_contrato)
             self.db.commit()
             return {
                 "status": "OK",
                 "data": {
-                    "id_contrato_alquiler": updated["id_contrato_alquiler"],
+                    "id_contrato_alquiler": id_contrato,
                     "uid_global": str(updated["uid_global"]),
                     "version_registro": updated["version_registro"],
                     "codigo_contrato": updated["codigo_contrato"],
@@ -444,6 +345,8 @@ class LocativoRepository:
                     "fecha_fin": updated["fecha_fin"],
                     "estado_contrato": updated["estado_contrato"],
                     "observaciones": updated["observaciones"],
+                    "objetos": objetos,
+                    "condiciones_economicas_alquiler": [],
                     "deleted_at": updated["deleted_at"],
                 },
             }
@@ -501,11 +404,13 @@ class LocativoRepository:
                 self.db.rollback()
                 return {"status": "CONCURRENCY_ERROR"}
 
+            id_contrato = updated["id_contrato_alquiler"]
+            objetos = self._get_objetos_for_contrato(id_contrato)
             self.db.commit()
             return {
                 "status": "OK",
                 "data": {
-                    "id_contrato_alquiler": updated["id_contrato_alquiler"],
+                    "id_contrato_alquiler": id_contrato,
                     "uid_global": str(updated["uid_global"]),
                     "version_registro": updated["version_registro"],
                     "codigo_contrato": updated["codigo_contrato"],
@@ -513,6 +418,8 @@ class LocativoRepository:
                     "fecha_fin": updated["fecha_fin"],
                     "estado_contrato": updated["estado_contrato"],
                     "observaciones": updated["observaciones"],
+                    "objetos": objetos,
+                    "condiciones_economicas_alquiler": [],
                 },
             }
         except Exception:
@@ -569,11 +476,13 @@ class LocativoRepository:
                 self.db.rollback()
                 return {"status": "CONCURRENCY_ERROR"}
 
+            id_contrato = updated["id_contrato_alquiler"]
+            objetos = self._get_objetos_for_contrato(id_contrato)
             self.db.commit()
             return {
                 "status": "OK",
                 "data": {
-                    "id_contrato_alquiler": updated["id_contrato_alquiler"],
+                    "id_contrato_alquiler": id_contrato,
                     "uid_global": str(updated["uid_global"]),
                     "version_registro": updated["version_registro"],
                     "codigo_contrato": updated["codigo_contrato"],
@@ -581,6 +490,8 @@ class LocativoRepository:
                     "fecha_fin": updated["fecha_fin"],
                     "estado_contrato": updated["estado_contrato"],
                     "observaciones": updated["observaciones"],
+                    "objetos": objetos,
+                    "condiciones_economicas_alquiler": [],
                 },
             }
         except Exception:
@@ -592,6 +503,8 @@ class LocativoRepository:
         *,
         codigo_contrato: str | None,
         estado_contrato: str | None,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
         fecha_desde: date | None,
         fecha_hasta: date | None,
         limit: int,
@@ -615,6 +528,28 @@ class LocativoRepository:
         if fecha_hasta is not None:
             filters.append("fecha_inicio <= :fecha_hasta")
             params["fecha_hasta"] = fecha_hasta
+
+        if id_inmueble is not None:
+            filters.append(
+                "EXISTS ("
+                "SELECT 1 FROM contrato_objeto_locativo col"
+                " WHERE col.id_contrato_alquiler = contrato_alquiler.id_contrato_alquiler"
+                "   AND col.deleted_at IS NULL"
+                "   AND col.id_inmueble = :id_inmueble"
+                ")"
+            )
+            params["id_inmueble"] = id_inmueble
+
+        if id_unidad_funcional is not None:
+            filters.append(
+                "EXISTS ("
+                "SELECT 1 FROM contrato_objeto_locativo col"
+                " WHERE col.id_contrato_alquiler = contrato_alquiler.id_contrato_alquiler"
+                "   AND col.deleted_at IS NULL"
+                "   AND col.id_unidad_funcional = :id_unidad_funcional"
+                ")"
+            )
+            params["id_unidad_funcional"] = id_unidad_funcional
 
         where_clause = " AND ".join(filters)
 
@@ -663,6 +598,171 @@ class LocativoRepository:
             ],
             "total": total,
         }
+
+    def update_contrato_alquiler(
+        self,
+        payload: Any,
+        objetos: list[Any],
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+
+        update_statement = text(
+            """
+            UPDATE contrato_alquiler
+            SET
+                codigo_contrato = :codigo_contrato,
+                fecha_inicio = :fecha_inicio,
+                fecha_fin = :fecha_fin,
+                observaciones = :observaciones,
+                version_registro = :version_registro_nueva,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_contrato_alquiler = :id_contrato_alquiler
+              AND version_registro = :version_registro_actual
+              AND deleted_at IS NULL
+            RETURNING
+                id_contrato_alquiler,
+                uid_global,
+                version_registro,
+                codigo_contrato,
+                fecha_inicio,
+                fecha_fin,
+                estado_contrato,
+                observaciones
+            """
+        )
+
+        delete_objetos_statement = text(
+            """
+            UPDATE contrato_objeto_locativo
+            SET deleted_at = :deleted_at, updated_at = :updated_at
+            WHERE id_contrato_alquiler = :id_contrato_alquiler
+              AND deleted_at IS NULL
+            """
+        )
+
+        insert_objeto_statement = text(
+            """
+            INSERT INTO contrato_objeto_locativo (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_contrato_alquiler,
+                id_inmueble,
+                id_unidad_funcional,
+                observaciones
+            )
+            VALUES (
+                :uid_global,
+                :version_registro,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_contrato_alquiler,
+                :id_inmueble,
+                :id_unidad_funcional,
+                :observaciones
+            )
+            RETURNING id_contrato_objeto
+            """
+        )
+
+        try:
+            updated = (
+                self.db.execute(
+                    update_statement,
+                    {
+                        "id_contrato_alquiler": values["id_contrato_alquiler"],
+                        "codigo_contrato": values["codigo_contrato"],
+                        "fecha_inicio": values["fecha_inicio"],
+                        "fecha_fin": values["fecha_fin"],
+                        "observaciones": values["observaciones"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if updated is None:
+                self.db.rollback()
+                return {"status": "CONCURRENCY_ERROR"}
+
+            id_contrato = updated["id_contrato_alquiler"]
+
+            self.db.execute(
+                delete_objetos_statement,
+                {
+                    "deleted_at": values["updated_at"],
+                    "updated_at": values["updated_at"],
+                    "id_contrato_alquiler": id_contrato,
+                },
+            )
+
+            new_objetos: list[dict[str, Any]] = []
+            for objeto in objetos:
+                obj_values = self._values(objeto)
+                obj_row = self.db.execute(
+                    insert_objeto_statement,
+                    {
+                        "uid_global": obj_values["uid_global"],
+                        "version_registro": obj_values["version_registro"],
+                        "created_at": obj_values["created_at"],
+                        "updated_at": obj_values["updated_at"],
+                        "id_instalacion_origen": obj_values["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": obj_values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_alta": obj_values["op_id_alta"],
+                        "op_id_ultima_modificacion": obj_values["op_id_ultima_modificacion"],
+                        "id_contrato_alquiler": id_contrato,
+                        "id_inmueble": obj_values["id_inmueble"],
+                        "id_unidad_funcional": obj_values["id_unidad_funcional"],
+                        "observaciones": obj_values["observaciones"],
+                    },
+                ).mappings().one()
+                new_objetos.append(
+                    {
+                        "id_contrato_objeto": obj_row["id_contrato_objeto"],
+                        "id_inmueble": obj_values["id_inmueble"],
+                        "id_unidad_funcional": obj_values["id_unidad_funcional"],
+                        "observaciones": obj_values["observaciones"],
+                    }
+                )
+
+            self.db.commit()
+            return {
+                "status": "OK",
+                "data": {
+                    "id_contrato_alquiler": id_contrato,
+                    "uid_global": str(updated["uid_global"]),
+                    "version_registro": updated["version_registro"],
+                    "codigo_contrato": updated["codigo_contrato"],
+                    "fecha_inicio": updated["fecha_inicio"],
+                    "fecha_fin": updated["fecha_fin"],
+                    "estado_contrato": updated["estado_contrato"],
+                    "observaciones": updated["observaciones"],
+                    "objetos": new_objetos,
+                    "condiciones_economicas_alquiler": [],
+                },
+            }
+        except Exception:
+            self.db.rollback()
+            raise
 
     def _values(self, payload: Any) -> dict[str, Any]:
         if isinstance(payload, dict):

@@ -284,6 +284,7 @@ Validaciones:
 Reglas de negocio:
 
 - la modificacion de `v1` no expone cambio parcial de objetos; reemplaza el conjunto completo embebido
+- el reemplazo de objetos se materializa por baja logica (`deleted_at`) de los anteriores e insercion de los nuevos; la historia queda preservada en `contrato_objeto_locativo`
 - la modificacion no cambia `estado_contrato`
 - la modificacion no administra condiciones economicas
 - la modificacion no genera efectos financieros

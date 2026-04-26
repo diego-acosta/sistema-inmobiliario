@@ -27,6 +27,7 @@ class GetContratoAlquilerService:
                 "estado_contrato": contrato["estado_contrato"],
                 "observaciones": contrato["observaciones"],
                 "objetos": contrato["objetos"],
-                "participaciones": contrato["participaciones"],
+                "condiciones_economicas_alquiler": [],
+                "deleted_at": contrato["deleted_at"],
             }
         )

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, model_validator
@@ -21,24 +20,12 @@ class ContratoAlquilerObjetoRequest(BaseModel):
         return self
 
 
-class ContratoAlquilerParticipacionRequest(BaseModel):
-    id_persona: int
-    id_rol_participacion: int
-    fecha_desde: date | None = None
-    fecha_hasta: date | None = None
-    observaciones: str | None = None
-
-
 class ContratoAlquilerCreateRequest(BaseModel):
     codigo_contrato: str
-    fecha_contrato: date | None = None
     fecha_inicio: date
     fecha_fin: date | None = None
-    canon_inicial: Decimal | None = None
-    moneda: str | None = None
     observaciones: str | None = None
     objetos: list[ContratoAlquilerObjetoRequest]
-    participaciones: list[ContratoAlquilerParticipacionRequest]
 
 
 class ContratoAlquilerObjetoData(BaseModel):
@@ -56,23 +43,14 @@ class ContratoAlquilerCreateData(BaseModel):
     fecha_inicio: date
     fecha_fin: date | None
     estado_contrato: str
-    canon_inicial: Decimal | None
-    moneda: str | None
     observaciones: str | None
     objetos: list[ContratoAlquilerObjetoData]
+    condiciones_economicas_alquiler: list[Any] = []
 
 
 class ContratoAlquilerCreateResponse(BaseModel):
+    ok: bool = True
     data: ContratoAlquilerCreateData
-
-
-class ContratoAlquilerParticipacionData(BaseModel):
-    id_relacion_persona_rol: int
-    id_persona: int
-    id_rol_participacion: int
-    fecha_desde: date
-    fecha_hasta: date | None
-    observaciones: str | None
 
 
 class ContratoAlquilerGetData(BaseModel):
@@ -85,10 +63,12 @@ class ContratoAlquilerGetData(BaseModel):
     estado_contrato: str
     observaciones: str | None
     objetos: list[ContratoAlquilerObjetoData]
-    participaciones: list[ContratoAlquilerParticipacionData]
+    condiciones_economicas_alquiler: list[Any] = []
+    deleted_at: datetime | None
 
 
 class ContratoAlquilerGetResponse(BaseModel):
+    ok: bool = True
     data: ContratoAlquilerGetData
 
 
@@ -101,9 +81,12 @@ class ContratoAlquilerActivateData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    objetos: list[ContratoAlquilerObjetoData]
+    condiciones_economicas_alquiler: list[Any] = []
 
 
 class ContratoAlquilerActivateResponse(BaseModel):
+    ok: bool = True
     data: ContratoAlquilerActivateData
 
 
@@ -116,9 +99,12 @@ class ContratoAlquilerFinalizeData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    objetos: list[ContratoAlquilerObjetoData]
+    condiciones_economicas_alquiler: list[Any] = []
 
 
 class ContratoAlquilerFinalizeResponse(BaseModel):
+    ok: bool = True
     data: ContratoAlquilerFinalizeData
 
 
@@ -131,10 +117,13 @@ class ContratoAlquilerBajaData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    objetos: list[ContratoAlquilerObjetoData]
+    condiciones_economicas_alquiler: list[Any] = []
     deleted_at: datetime
 
 
 class ContratoAlquilerBajaResponse(BaseModel):
+    ok: bool = True
     data: ContratoAlquilerBajaData
 
 
@@ -155,10 +144,12 @@ class ContratoAlquilerListData(BaseModel):
 
 
 class ContratoAlquilerListResponse(BaseModel):
+    ok: bool = True
     data: ContratoAlquilerListData
 
 
 class ErrorResponse(BaseModel):
+    ok: bool = False
     error_code: str
     error_message: str
     details: dict[str, Any] | None = None

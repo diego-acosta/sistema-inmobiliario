@@ -2,17 +2,11 @@ from sqlalchemy import text
 
 from tests.test_contratos_alquiler_create import _payload_base
 from tests.test_disponibilidades_create import HEADERS
-from tests.test_reservas_venta_create import (
-    _crear_inmueble,
-    _crear_persona,
-    _crear_rol_participacion_activo,
-)
+from tests.test_reservas_venta_create import _crear_inmueble
 
 
-def _crear_contrato_activo(client, db_session, *, codigo: str, id_rol: int) -> dict:
-    id_persona = _crear_persona(client, nombre="Emmy", apellido="Noether")
+def _crear_contrato_activo(client, *, codigo: str) -> dict:
     id_inmueble = _crear_inmueble(client, codigo=f"INM-{codigo}")
-    _crear_rol_participacion_activo(db_session, id_rol_participacion=id_rol)
 
     create_response = client.post(
         "/api/v1/contratos-alquiler",
@@ -20,8 +14,6 @@ def _crear_contrato_activo(client, db_session, *, codigo: str, id_rol: int) -> d
         json=_payload_base(
             codigo_contrato=codigo,
             objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}],
-            id_persona=id_persona,
-            id_rol=id_rol,
         ),
     )
     assert create_response.status_code == 201
@@ -36,7 +28,7 @@ def _crear_contrato_activo(client, db_session, *, codigo: str, id_rol: int) -> d
 
 
 def test_finalize_contrato_alquiler_pasa_de_activo_a_finalizado(client, db_session) -> None:
-    contrato = _crear_contrato_activo(client, db_session, codigo="CA-FIN-001", id_rol=9701)
+    contrato = _crear_contrato_activo(client, codigo="CA-FIN-001")
     assert contrato["estado_contrato"] == "activo"
     assert contrato["version_registro"] == 2
 
@@ -47,10 +39,13 @@ def test_finalize_contrato_alquiler_pasa_de_activo_a_finalizado(client, db_sessi
 
     assert response.status_code == 200
     body = response.json()
+    assert body["ok"] is True
     assert body["data"]["id_contrato_alquiler"] == contrato["id_contrato_alquiler"]
     assert body["data"]["estado_contrato"] == "finalizado"
     assert body["data"]["version_registro"] == 3
     assert body["data"]["codigo_contrato"] == "CA-FIN-001"
+    assert len(body["data"]["objetos"]) == 1
+    assert body["data"]["condiciones_economicas_alquiler"] == []
 
     row = db_session.execute(
         text(
@@ -78,11 +73,9 @@ def test_finalize_contrato_alquiler_devuelve_404_si_no_existe(client) -> None:
 
 
 def test_finalize_contrato_alquiler_devuelve_400_si_estado_no_es_activo(
-    client, db_session
+    client,
 ) -> None:
-    id_persona = _crear_persona(client, nombre="Lise", apellido="Meitner")
     id_inmueble = _crear_inmueble(client, codigo="INM-CA-FIN-002")
-    _crear_rol_participacion_activo(db_session, id_rol_participacion=9702)
 
     create_response = client.post(
         "/api/v1/contratos-alquiler",
@@ -90,8 +83,6 @@ def test_finalize_contrato_alquiler_devuelve_400_si_estado_no_es_activo(
         json=_payload_base(
             codigo_contrato="CA-FIN-002",
             objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}],
-            id_persona=id_persona,
-            id_rol=9702,
         ),
     )
     assert create_response.status_code == 201
@@ -109,9 +100,9 @@ def test_finalize_contrato_alquiler_devuelve_400_si_estado_no_es_activo(
 
 
 def test_finalize_contrato_alquiler_devuelve_409_si_version_no_coincide(
-    client, db_session
+    client,
 ) -> None:
-    contrato = _crear_contrato_activo(client, db_session, codigo="CA-FIN-003", id_rol=9703)
+    contrato = _crear_contrato_activo(client, codigo="CA-FIN-003")
 
     response = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/finalizar",

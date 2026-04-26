@@ -2,17 +2,11 @@ from sqlalchemy import text
 
 from tests.test_contratos_alquiler_create import _payload_base
 from tests.test_disponibilidades_create import HEADERS
-from tests.test_reservas_venta_create import (
-    _crear_inmueble,
-    _crear_persona,
-    _crear_rol_participacion_activo,
-)
+from tests.test_reservas_venta_create import _crear_inmueble
 
 
-def _crear_contrato_borrador(client, db_session, *, codigo: str, id_rol: int) -> dict:
-    id_persona = _crear_persona(client, nombre="Cecilia", apellido="Payne")
+def _crear_contrato_borrador(client, *, codigo: str) -> dict:
     id_inmueble = _crear_inmueble(client, codigo=f"INM-{codigo}")
-    _crear_rol_participacion_activo(db_session, id_rol_participacion=id_rol)
 
     response = client.post(
         "/api/v1/contratos-alquiler",
@@ -20,8 +14,6 @@ def _crear_contrato_borrador(client, db_session, *, codigo: str, id_rol: int) ->
         json=_payload_base(
             codigo_contrato=codigo,
             objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}],
-            id_persona=id_persona,
-            id_rol=id_rol,
         ),
     )
     assert response.status_code == 201
@@ -29,7 +21,7 @@ def _crear_contrato_borrador(client, db_session, *, codigo: str, id_rol: int) ->
 
 
 def test_baja_contrato_alquiler_exitosa_desde_borrador(client, db_session) -> None:
-    contrato = _crear_contrato_borrador(client, db_session, codigo="CA-BAJA-001", id_rol=9801)
+    contrato = _crear_contrato_borrador(client, codigo="CA-BAJA-001")
     assert contrato["estado_contrato"] == "borrador"
     assert contrato["version_registro"] == 1
 
@@ -40,10 +32,13 @@ def test_baja_contrato_alquiler_exitosa_desde_borrador(client, db_session) -> No
 
     assert response.status_code == 200
     body = response.json()
+    assert body["ok"] is True
     assert body["data"]["id_contrato_alquiler"] == contrato["id_contrato_alquiler"]
     assert body["data"]["estado_contrato"] == "borrador"
     assert body["data"]["version_registro"] == 2
     assert body["data"]["deleted_at"] is not None
+    assert len(body["data"]["objetos"]) == 1
+    assert body["data"]["condiciones_economicas_alquiler"] == []
 
     row = db_session.execute(
         text(
@@ -84,11 +79,9 @@ def test_baja_contrato_alquiler_devuelve_404_si_no_existe(client) -> None:
 
 
 def test_baja_contrato_alquiler_devuelve_400_si_estado_no_es_borrador(
-    client, db_session
+    client,
 ) -> None:
-    id_persona = _crear_persona(client, nombre="Vera", apellido="Rubin")
     id_inmueble = _crear_inmueble(client, codigo="INM-CA-BAJA-002")
-    _crear_rol_participacion_activo(db_session, id_rol_participacion=9802)
 
     create_response = client.post(
         "/api/v1/contratos-alquiler",
@@ -96,8 +89,6 @@ def test_baja_contrato_alquiler_devuelve_400_si_estado_no_es_borrador(
         json=_payload_base(
             codigo_contrato="CA-BAJA-002",
             objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}],
-            id_persona=id_persona,
-            id_rol=9802,
         ),
     )
     assert create_response.status_code == 201
@@ -122,9 +113,9 @@ def test_baja_contrato_alquiler_devuelve_400_si_estado_no_es_borrador(
 
 
 def test_baja_contrato_alquiler_devuelve_409_si_version_no_coincide(
-    client, db_session
+    client,
 ) -> None:
-    contrato = _crear_contrato_borrador(client, db_session, codigo="CA-BAJA-003", id_rol=9803)
+    contrato = _crear_contrato_borrador(client, codigo="CA-BAJA-003")
 
     response = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/baja",
