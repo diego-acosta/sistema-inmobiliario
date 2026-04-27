@@ -1611,6 +1611,121 @@ class LocativoRepository:
             self.db.rollback()
             raise
 
+    # ── solicitud_alquiler ────────────────────────────────────────────────────
+
+    def _solicitud_row_to_dict(self, row: Any) -> dict[str, Any]:
+        return {
+            "id_solicitud_alquiler": row["id_solicitud_alquiler"],
+            "uid_global": str(row["uid_global"]),
+            "version_registro": row["version_registro"],
+            "codigo_solicitud": row["codigo_solicitud"],
+            "fecha_solicitud": row["fecha_solicitud"],
+            "estado_solicitud": row["estado_solicitud"],
+            "observaciones": row["observaciones"],
+            "deleted_at": row["deleted_at"],
+        }
+
+    def create_solicitud_alquiler(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO solicitud_alquiler (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                codigo_solicitud, fecha_solicitud, estado_solicitud, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :codigo_solicitud, :fecha_solicitud, :estado_solicitud, :observaciones
+            )
+            RETURNING
+                id_solicitud_alquiler, uid_global, version_registro,
+                codigo_solicitud, fecha_solicitud, estado_solicitud, observaciones, deleted_at
+            """
+        )
+        try:
+            row = self.db.execute(
+                stmt,
+                {
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "codigo_solicitud": values["codigo_solicitud"],
+                    "fecha_solicitud": values["fecha_solicitud"],
+                    "estado_solicitud": values["estado_solicitud"],
+                    "observaciones": values["observaciones"],
+                },
+            ).mappings().one()
+            self.db.commit()
+            return self._solicitud_row_to_dict(row)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def get_solicitud_alquiler(self, id_solicitud_alquiler: int) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_solicitud_alquiler, uid_global, version_registro,
+                codigo_solicitud, fecha_solicitud, estado_solicitud, observaciones, deleted_at
+            FROM solicitud_alquiler
+            WHERE id_solicitud_alquiler = :id
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_solicitud_alquiler}).mappings().one_or_none()
+        if row is None:
+            return None
+        return self._solicitud_row_to_dict(row)
+
+    def transicionar_solicitud_alquiler(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            UPDATE solicitud_alquiler
+            SET
+                estado_solicitud = :estado_solicitud,
+                version_registro = :version_registro_nueva,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_solicitud_alquiler = :id_solicitud_alquiler
+              AND version_registro = :version_registro_actual
+              AND deleted_at IS NULL
+            RETURNING
+                id_solicitud_alquiler, uid_global, version_registro,
+                codigo_solicitud, fecha_solicitud, estado_solicitud, observaciones, deleted_at
+            """
+        )
+        try:
+            updated = self.db.execute(
+                stmt,
+                {
+                    "id_solicitud_alquiler": values["id_solicitud_alquiler"],
+                    "estado_solicitud": values["estado_solicitud"],
+                    "version_registro_actual": values["version_registro_actual"],
+                    "version_registro_nueva": values["version_registro_nueva"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                },
+            ).mappings().one_or_none()
+            if updated is None:
+                self.db.rollback()
+                return {"status": "CONCURRENCY_ERROR"}
+            self.db.commit()
+            return {"status": "OK", "data": self._solicitud_row_to_dict(updated)}
+        except Exception:
+            self.db.rollback()
+            raise
+
     def _values(self, payload: Any) -> dict[str, Any]:
         if isinstance(payload, dict):
             return payload

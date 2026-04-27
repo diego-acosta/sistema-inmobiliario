@@ -211,6 +211,28 @@ class ContratoAlquilerListResponse(BaseModel):
     data: ContratoAlquilerListData
 
 
+class SolicitudAlquilerCreateRequest(BaseModel):
+    codigo_solicitud: str
+    fecha_solicitud: datetime
+    observaciones: str | None = None
+
+
+class SolicitudAlquilerData(BaseModel):
+    id_solicitud_alquiler: int
+    uid_global: str
+    version_registro: int
+    codigo_solicitud: str
+    fecha_solicitud: datetime
+    estado_solicitud: str
+    observaciones: str | None
+    deleted_at: datetime | None = None
+
+
+class SolicitudAlquilerResponse(BaseModel):
+    ok: bool = True
+    data: SolicitudAlquilerData
+
+
 class ReservaLocativaObjetoRequest(BaseModel):
     id_inmueble: int | None = None
     id_unidad_funcional: int | None = None

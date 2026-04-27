@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.schemas.locativo import (
+    SolicitudAlquilerCreateRequest,
+    SolicitudAlquilerData,
+    SolicitudAlquilerResponse,
     ReservaLocativaCreateRequest,
     ReservaLocativaData,
     ReservaLocativaResponse,
@@ -61,6 +64,33 @@ from app.application.locativo.commands.activate_contrato_alquiler import (
 )
 from app.application.locativo.services.list_contratos_alquiler_service import (
     ListContratosAlquilerService,
+)
+from app.application.locativo.commands.create_solicitud_alquiler import (
+    CreateSolicitudAlquilerCommand,
+)
+from app.application.locativo.services.create_solicitud_alquiler_service import (
+    CreateSolicitudAlquilerService,
+)
+from app.application.locativo.services.get_solicitud_alquiler_service import (
+    GetSolicitudAlquilerService,
+)
+from app.application.locativo.commands.aprobar_solicitud_alquiler import (
+    AprobarSolicitudAlquilerCommand,
+)
+from app.application.locativo.services.aprobar_solicitud_alquiler_service import (
+    AprobarSolicitudAlquilerService,
+)
+from app.application.locativo.commands.rechazar_solicitud_alquiler import (
+    RechazarSolicitudAlquilerCommand,
+)
+from app.application.locativo.services.rechazar_solicitud_alquiler_service import (
+    RechazarSolicitudAlquilerService,
+)
+from app.application.locativo.commands.cancelar_solicitud_alquiler import (
+    CancelarSolicitudAlquilerCommand,
+)
+from app.application.locativo.services.cancelar_solicitud_alquiler_service import (
+    CancelarSolicitudAlquilerService,
 )
 from app.application.locativo.commands.create_reserva_locativa import (
     CreateReservaLocativaCommand,
@@ -1435,4 +1465,268 @@ def cancel_reserva_locativa(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return ReservaLocativaResponse(data=ReservaLocativaData(**result.data))
+
+
+# ── solicitudes_alquiler ──────────────────────────────────────────────────────
+
+def _transition_error(
+    result: Any,
+    entity_not_found_msg: str,
+    invalid_state_msg: str,
+) -> JSONResponse:
+    if "NOT_FOUND_SOLICITUD_ALQUILER" in result.errors:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message=entity_not_found_msg,
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+    if "CONCURRENCY_ERROR" in result.errors:
+        return JSONResponse(
+            status_code=409,
+            content=ErrorResponse(
+                error_code="CONCURRENCY_ERROR",
+                error_message="If-Match-Version es requerido y debe coincidir con version_registro.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+    if "INVALID_SOLICITUD_STATE" in result.errors:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message=invalid_state_msg,
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+    return JSONResponse(
+        status_code=400,
+        content=ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo procesar la solicitud de alquiler.",
+            details={"errors": result.errors},
+        ).model_dump(),
+    )
+
+
+@router.post(
+    "/api/v1/solicitudes-alquiler",
+    status_code=201,
+    response_model=SolicitudAlquilerResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_solicitud_alquiler(
+    request: SolicitudAlquilerCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> SolicitudAlquilerResponse | JSONResponse:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    command = CreateSolicitudAlquilerCommand(
+        context=context,
+        codigo_solicitud=request.codigo_solicitud,
+        fecha_solicitud=request.fecha_solicitud,
+        observaciones=request.observaciones,
+    )
+    repository = LocativoRepository(db)
+    service = CreateSolicitudAlquilerService(repository=repository)
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo crear la solicitud de alquiler.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+    return SolicitudAlquilerResponse(data=SolicitudAlquilerData(**result.data))
+
+
+@router.get(
+    "/api/v1/solicitudes-alquiler/{id_solicitud_alquiler}",
+    response_model=SolicitudAlquilerResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+def get_solicitud_alquiler(
+    id_solicitud_alquiler: int,
+    db: Session = Depends(get_db),
+) -> SolicitudAlquilerResponse | JSONResponse:
+    repository = LocativoRepository(db)
+    service = GetSolicitudAlquilerService(repository=repository)
+    result = service.execute(id_solicitud_alquiler)
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La solicitud de alquiler indicada no existe.",
+            ).model_dump(),
+        )
+    return SolicitudAlquilerResponse(data=SolicitudAlquilerData(**result.data))
+
+
+def _patch_solicitud_headers(
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None,
+) -> tuple[Any, int | None]:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    parsed: int | None = None
+    if if_match_version is not None:
+        try:
+            parsed = int(if_match_version)
+        except ValueError:
+            pass
+    return context, parsed
+
+
+@router.patch(
+    "/api/v1/solicitudes-alquiler/{id_solicitud_alquiler}/aprobar",
+    response_model=SolicitudAlquilerResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def aprobar_solicitud_alquiler(
+    id_solicitud_alquiler: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> SolicitudAlquilerResponse | JSONResponse:
+    context, parsed = _patch_solicitud_headers(
+        x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id, if_match_version
+    )
+    command = AprobarSolicitudAlquilerCommand(
+        context=context,
+        id_solicitud_alquiler=id_solicitud_alquiler,
+        if_match_version=parsed,
+    )
+    repository = LocativoRepository(db)
+    service = AprobarSolicitudAlquilerService(repository=repository)
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+    if not result.success or result.data is None:
+        return _transition_error(
+            result,
+            entity_not_found_msg="La solicitud de alquiler indicada no existe.",
+            invalid_state_msg="Solo una solicitud en estado pendiente puede aprobarse.",
+        )
+    return SolicitudAlquilerResponse(data=SolicitudAlquilerData(**result.data))
+
+
+@router.patch(
+    "/api/v1/solicitudes-alquiler/{id_solicitud_alquiler}/rechazar",
+    response_model=SolicitudAlquilerResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def rechazar_solicitud_alquiler(
+    id_solicitud_alquiler: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> SolicitudAlquilerResponse | JSONResponse:
+    context, parsed = _patch_solicitud_headers(
+        x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id, if_match_version
+    )
+    command = RechazarSolicitudAlquilerCommand(
+        context=context,
+        id_solicitud_alquiler=id_solicitud_alquiler,
+        if_match_version=parsed,
+    )
+    repository = LocativoRepository(db)
+    service = RechazarSolicitudAlquilerService(repository=repository)
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+    if not result.success or result.data is None:
+        return _transition_error(
+            result,
+            entity_not_found_msg="La solicitud de alquiler indicada no existe.",
+            invalid_state_msg="Solo una solicitud en estado pendiente puede rechazarse.",
+        )
+    return SolicitudAlquilerResponse(data=SolicitudAlquilerData(**result.data))
+
+
+@router.patch(
+    "/api/v1/solicitudes-alquiler/{id_solicitud_alquiler}/cancelar",
+    response_model=SolicitudAlquilerResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def cancelar_solicitud_alquiler(
+    id_solicitud_alquiler: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> SolicitudAlquilerResponse | JSONResponse:
+    context, parsed = _patch_solicitud_headers(
+        x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id, if_match_version
+    )
+    command = CancelarSolicitudAlquilerCommand(
+        context=context,
+        id_solicitud_alquiler=id_solicitud_alquiler,
+        if_match_version=parsed,
+    )
+    repository = LocativoRepository(db)
+    service = CancelarSolicitudAlquilerService(repository=repository)
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+    if not result.success or result.data is None:
+        return _transition_error(
+            result,
+            entity_not_found_msg="La solicitud de alquiler indicada no existe.",
+            invalid_state_msg="Solo una solicitud en estado pendiente o aprobada puede cancelarse.",
+        )
+    return SolicitudAlquilerResponse(data=SolicitudAlquilerData(**result.data))
 
