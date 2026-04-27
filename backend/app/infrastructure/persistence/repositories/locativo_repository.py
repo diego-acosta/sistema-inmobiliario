@@ -1337,7 +1337,7 @@ class LocativoRepository:
         rows = self.db.execute(stmt, {"id": id_reserva_locativa}).mappings().all()
         return self._reserva_locativa_obj_rows_to_list(rows)
 
-    def create_reserva_locativa(
+    def create_reserva_locativa_sin_commit(
         self, payload: Any, objetos: list[Any]
     ) -> dict[str, Any]:
         values = self._values(payload)
@@ -1380,69 +1380,75 @@ class LocativoRepository:
             """
         )
 
-        try:
-            row = self.db.execute(
-                insert_reserva,
-                {
-                    "uid_global": values["uid_global"],
-                    "version_registro": values["version_registro"],
-                    "created_at": values["created_at"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_origen": values["id_instalacion_origen"],
-                    "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
-                    "op_id_alta": values["op_id_alta"],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                    "codigo_reserva": values["codigo_reserva"],
-                    "fecha_reserva": values["fecha_reserva"],
-                    "estado_reserva": values["estado_reserva"],
-                    "fecha_vencimiento": values["fecha_vencimiento"],
-                    "observaciones": values["observaciones"],
-                },
-            ).mappings().one()
-            id_reserva_locativa = row["id_reserva_locativa"]
-
-            created_objetos: list[dict[str, Any]] = []
-            for objeto in objetos:
-                obj_values = self._values(objeto)
-                obj_row = self.db.execute(
-                    insert_objeto,
-                    {
-                        "uid_global": obj_values["uid_global"],
-                        "version_registro": obj_values["version_registro"],
-                        "created_at": obj_values["created_at"],
-                        "updated_at": obj_values["updated_at"],
-                        "id_instalacion_origen": obj_values["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": obj_values["id_instalacion_ultima_modificacion"],
-                        "op_id_alta": obj_values["op_id_alta"],
-                        "op_id_ultima_modificacion": obj_values["op_id_ultima_modificacion"],
-                        "id_reserva_locativa": id_reserva_locativa,
-                        "id_inmueble": obj_values["id_inmueble"],
-                        "id_unidad_funcional": obj_values["id_unidad_funcional"],
-                        "observaciones": obj_values["observaciones"],
-                    },
-                ).mappings().one()
-                created_objetos.append(
-                    {
-                        "id_reserva_locativa_objeto": obj_row["id_reserva_locativa_objeto"],
-                        "id_inmueble": obj_values["id_inmueble"],
-                        "id_unidad_funcional": obj_values["id_unidad_funcional"],
-                        "observaciones": obj_values["observaciones"],
-                    }
-                )
-
-            self.db.commit()
-            return {
-                "id_reserva_locativa": id_reserva_locativa,
+        row = self.db.execute(
+            insert_reserva,
+            {
                 "uid_global": values["uid_global"],
                 "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
                 "codigo_reserva": values["codigo_reserva"],
                 "fecha_reserva": values["fecha_reserva"],
                 "estado_reserva": values["estado_reserva"],
                 "fecha_vencimiento": values["fecha_vencimiento"],
                 "observaciones": values["observaciones"],
-                "objetos": created_objetos,
-                "deleted_at": None,
-            }
+            },
+        ).mappings().one()
+        id_reserva_locativa = row["id_reserva_locativa"]
+
+        created_objetos: list[dict[str, Any]] = []
+        for objeto in objetos:
+            obj_values = self._values(objeto)
+            obj_row = self.db.execute(
+                insert_objeto,
+                {
+                    "uid_global": obj_values["uid_global"],
+                    "version_registro": obj_values["version_registro"],
+                    "created_at": obj_values["created_at"],
+                    "updated_at": obj_values["updated_at"],
+                    "id_instalacion_origen": obj_values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": obj_values["id_instalacion_ultima_modificacion"],
+                    "op_id_alta": obj_values["op_id_alta"],
+                    "op_id_ultima_modificacion": obj_values["op_id_ultima_modificacion"],
+                    "id_reserva_locativa": id_reserva_locativa,
+                    "id_inmueble": obj_values["id_inmueble"],
+                    "id_unidad_funcional": obj_values["id_unidad_funcional"],
+                    "observaciones": obj_values["observaciones"],
+                },
+            ).mappings().one()
+            created_objetos.append(
+                {
+                    "id_reserva_locativa_objeto": obj_row["id_reserva_locativa_objeto"],
+                    "id_inmueble": obj_values["id_inmueble"],
+                    "id_unidad_funcional": obj_values["id_unidad_funcional"],
+                    "observaciones": obj_values["observaciones"],
+                }
+            )
+
+        return {
+            "id_reserva_locativa": id_reserva_locativa,
+            "uid_global": values["uid_global"],
+            "version_registro": values["version_registro"],
+            "codigo_reserva": values["codigo_reserva"],
+            "fecha_reserva": values["fecha_reserva"],
+            "estado_reserva": values["estado_reserva"],
+            "fecha_vencimiento": values["fecha_vencimiento"],
+            "observaciones": values["observaciones"],
+            "objetos": created_objetos,
+            "deleted_at": None,
+        }
+
+    def create_reserva_locativa(
+        self, payload: Any, objetos: list[Any]
+    ) -> dict[str, Any]:
+        try:
+            result = self.create_reserva_locativa_sin_commit(payload, objetos)
+            self.db.commit()
+            return result
         except Exception:
             self.db.rollback()
             raise
@@ -1475,7 +1481,7 @@ class LocativoRepository:
             "objetos": objetos,
         }
 
-    def confirmar_reserva_locativa(
+    def confirmar_reserva_locativa_sin_commit(
         self, payload: Any, outbox_event: OutboxEventPayload
     ) -> dict[str, Any]:
         values = self._values(payload)
@@ -1500,52 +1506,60 @@ class LocativoRepository:
             """
         )
 
+        updated = self.db.execute(
+            stmt,
+            {
+                "id_reserva_locativa": values["id_reserva_locativa"],
+                "estado_reserva": values["estado_reserva"],
+                "version_registro_actual": values["version_registro_actual"],
+                "version_registro_nueva": values["version_registro_nueva"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+            },
+        ).mappings().one_or_none()
+        if updated is None:
+            return {"status": "CONCURRENCY_ERROR"}
+
+        id_reserva = updated["id_reserva_locativa"]
+        objetos = self._get_objetos_for_reserva_locativa(id_reserva)
+
+        outbox_values = self._values(outbox_event)
+        outbox_repo.add_event(
+            event_type=outbox_values["event_type"],
+            aggregate_type=outbox_values["aggregate_type"],
+            aggregate_id=outbox_values["aggregate_id"],
+            payload=outbox_values["payload"],
+            occurred_at=outbox_values["occurred_at"],
+            status=outbox_values.get("status", "PENDING"),
+        )
+
+        return {
+            "status": "OK",
+            "data": {
+                "id_reserva_locativa": id_reserva,
+                "uid_global": str(updated["uid_global"]),
+                "version_registro": updated["version_registro"],
+                "codigo_reserva": updated["codigo_reserva"],
+                "fecha_reserva": updated["fecha_reserva"],
+                "estado_reserva": updated["estado_reserva"],
+                "fecha_vencimiento": updated["fecha_vencimiento"],
+                "observaciones": updated["observaciones"],
+                "objetos": objetos,
+                "deleted_at": None,
+            },
+        }
+
+    def confirmar_reserva_locativa(
+        self, payload: Any, outbox_event: OutboxEventPayload
+    ) -> dict[str, Any]:
         try:
-            updated = self.db.execute(
-                stmt,
-                {
-                    "id_reserva_locativa": values["id_reserva_locativa"],
-                    "estado_reserva": values["estado_reserva"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
-            if updated is None:
+            result = self.confirmar_reserva_locativa_sin_commit(payload, outbox_event)
+            if result.get("status") == "CONCURRENCY_ERROR":
                 self.db.rollback()
-                return {"status": "CONCURRENCY_ERROR"}
-
-            id_reserva = updated["id_reserva_locativa"]
-            objetos = self._get_objetos_for_reserva_locativa(id_reserva)
-
-            outbox_values = self._values(outbox_event)
-            outbox_repo.add_event(
-                event_type=outbox_values["event_type"],
-                aggregate_type=outbox_values["aggregate_type"],
-                aggregate_id=outbox_values["aggregate_id"],
-                payload=outbox_values["payload"],
-                occurred_at=outbox_values["occurred_at"],
-                status=outbox_values.get("status", "PENDING"),
-            )
-
+                return result
             self.db.commit()
-            return {
-                "status": "OK",
-                "data": {
-                    "id_reserva_locativa": id_reserva,
-                    "uid_global": str(updated["uid_global"]),
-                    "version_registro": updated["version_registro"],
-                    "codigo_reserva": updated["codigo_reserva"],
-                    "fecha_reserva": updated["fecha_reserva"],
-                    "estado_reserva": updated["estado_reserva"],
-                    "fecha_vencimiento": updated["fecha_vencimiento"],
-                    "observaciones": updated["observaciones"],
-                    "objetos": objetos,
-                    "deleted_at": None,
-                },
-            }
+            return result
         except Exception:
             self.db.rollback()
             raise
@@ -1634,18 +1648,19 @@ class LocativoRepository:
             WHERE id_reserva_locativa = :id_reserva_locativa
             """
         )
-        try:
-            self.db.execute(
-                stmt,
-                {
-                    "id_reserva_locativa": id_reserva_locativa,
-                    "id_solicitud_alquiler": id_solicitud_alquiler,
-                },
-            )
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
+        self.db.execute(
+            stmt,
+            {
+                "id_reserva_locativa": id_reserva_locativa,
+                "id_solicitud_alquiler": id_solicitud_alquiler,
+            },
+        )
+
+    def commit(self) -> None:
+        self.db.commit()
+
+    def rollback(self) -> None:
+        self.db.rollback()
 
     # ── solicitud_alquiler ────────────────────────────────────────────────────
 
