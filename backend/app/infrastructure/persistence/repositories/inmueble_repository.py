@@ -2758,3 +2758,89 @@ class InmuebleRepository(BaseRepository[Any]):
             },
         ).mappings().one()
         return {"id_ocupacion": row["id_ocupacion"]}
+
+    def get_open_ocupacion_alquiler_sin_commit(
+        self,
+        *,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+    ) -> dict[str, Any]:
+        if id_inmueble is not None:
+            filter_clause = "id_inmueble = :id_inmueble AND id_unidad_funcional IS NULL"
+            params: dict[str, Any] = {"id_inmueble": id_inmueble}
+        else:
+            filter_clause = "id_unidad_funcional = :id_unidad_funcional AND id_inmueble IS NULL"
+            params = {"id_unidad_funcional": id_unidad_funcional}
+
+        stmt = text(
+            f"""
+            SELECT
+                id_ocupacion, id_inmueble, id_unidad_funcional,
+                tipo_ocupacion, fecha_desde, fecha_hasta, version_registro
+            FROM ocupacion
+            WHERE {filter_clause}
+              AND UPPER(tipo_ocupacion) = 'ALQUILER'
+              AND fecha_hasta IS NULL
+              AND deleted_at IS NULL
+            ORDER BY id_ocupacion
+            FOR UPDATE
+            """
+        )
+        rows = self.db.execute(stmt, params).mappings().all()
+        if len(rows) == 0:
+            return {"status": "NO_OPEN_OCUPACION_ALQUILER"}
+        if len(rows) > 1:
+            return {"status": "MULTIPLE_OPEN_OCUPACION_ALQUILER"}
+        row = rows[0]
+        return {
+            "status": "OK",
+            "data": {
+                "id_ocupacion": row["id_ocupacion"],
+                "id_inmueble": row["id_inmueble"],
+                "id_unidad_funcional": row["id_unidad_funcional"],
+                "tipo_ocupacion": row["tipo_ocupacion"],
+                "fecha_desde": row["fecha_desde"],
+                "fecha_hasta": row["fecha_hasta"],
+                "version_registro": row["version_registro"],
+            },
+        }
+
+    def close_ocupacion_sin_commit(self, payload: Any) -> dict[str, Any]:
+        from dataclasses import asdict, is_dataclass
+        if isinstance(payload, dict):
+            values = payload
+        elif is_dataclass(payload):
+            values = asdict(payload)
+        else:
+            values = vars(payload)
+
+        stmt = text(
+            """
+            UPDATE ocupacion
+            SET
+                fecha_hasta = :fecha_hasta,
+                version_registro = :version_registro_nueva,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_ocupacion = :id_ocupacion
+              AND version_registro = :version_registro_actual
+              AND deleted_at IS NULL
+            RETURNING id_ocupacion, version_registro, fecha_hasta
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "id_ocupacion": values["id_ocupacion"],
+                "fecha_hasta": values["fecha_hasta"],
+                "version_registro_actual": values["version_registro_actual"],
+                "version_registro_nueva": values["version_registro_nueva"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+            },
+        ).mappings().one_or_none()
+        if row is None:
+            return {"status": "CONCURRENCY_ERROR"}
+        return {"status": "OK", "id_ocupacion": row["id_ocupacion"]}
