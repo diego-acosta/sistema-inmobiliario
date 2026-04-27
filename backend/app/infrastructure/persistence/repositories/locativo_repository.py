@@ -1,9 +1,12 @@
 from dataclasses import asdict, is_dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app.application.common.outbox import OutboxEventPayload
+from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
 
 
 class LocativoRepository:
@@ -1177,6 +1180,431 @@ class LocativoRepository:
                     "observaciones": updated["observaciones"],
                     "objetos": new_objetos,
                     "condiciones_economicas_alquiler": [],
+                },
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
+    # ── disponibilidad helpers ────────────────────────────────────────────────
+
+    def _disp_object_filter(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> str:
+        if id_inmueble is not None:
+            return "id_inmueble = :id_inmueble AND id_unidad_funcional IS NULL"
+        return "id_unidad_funcional = :id_unidad_funcional AND id_inmueble IS NULL"
+
+    def _disp_object_params(
+        self,
+        *,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        at_datetime: datetime,
+    ) -> dict[str, Any]:
+        return {
+            "id_inmueble": id_inmueble,
+            "id_unidad_funcional": id_unidad_funcional,
+            "at_datetime": at_datetime,
+        }
+
+    def has_current_disponibilidad_disponible(
+        self,
+        *,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        at_datetime: datetime,
+    ) -> bool:
+        filters = self._disp_object_filter(
+            id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional
+        )
+        stmt = text(
+            f"""
+            SELECT 1
+            FROM disponibilidad
+            WHERE deleted_at IS NULL
+              AND {filters}
+              AND fecha_desde <= :at_datetime
+              AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
+              AND UPPER(estado_disponibilidad) = 'DISPONIBLE'
+            """
+        )
+        return (
+            self.db.execute(
+                stmt,
+                self._disp_object_params(
+                    id_inmueble=id_inmueble,
+                    id_unidad_funcional=id_unidad_funcional,
+                    at_datetime=at_datetime,
+                ),
+            ).scalar_one_or_none()
+            is not None
+        )
+
+    def has_current_disponibilidad_no_disponible(
+        self,
+        *,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        at_datetime: datetime,
+    ) -> bool:
+        filters = self._disp_object_filter(
+            id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional
+        )
+        stmt = text(
+            f"""
+            SELECT 1
+            FROM disponibilidad
+            WHERE deleted_at IS NULL
+              AND {filters}
+              AND fecha_desde <= :at_datetime
+              AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
+              AND UPPER(estado_disponibilidad) <> 'DISPONIBLE'
+            """
+        )
+        return (
+            self.db.execute(
+                stmt,
+                self._disp_object_params(
+                    id_inmueble=id_inmueble,
+                    id_unidad_funcional=id_unidad_funcional,
+                    at_datetime=at_datetime,
+                ),
+            ).scalar_one_or_none()
+            is not None
+        )
+
+    def has_conflicting_active_reserva_locativa(
+        self,
+        *,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        conflict_states: set[str],
+        exclude_id_reserva_locativa: int | None = None,
+    ) -> bool:
+        state_list = ", ".join(f"'{s}'" for s in sorted(conflict_states))
+        if id_inmueble is not None:
+            object_filter = "rlo.id_inmueble = :id_inmueble"
+            params: dict[str, Any] = {"id_inmueble": id_inmueble}
+        else:
+            object_filter = "rlo.id_unidad_funcional = :id_unidad_funcional"
+            params = {"id_unidad_funcional": id_unidad_funcional}
+
+        exclude_clause = ""
+        if exclude_id_reserva_locativa is not None:
+            exclude_clause = "AND rl.id_reserva_locativa <> :exclude_id"
+            params["exclude_id"] = exclude_id_reserva_locativa
+
+        stmt = text(
+            f"""
+            SELECT 1
+            FROM reserva_locativa_objeto rlo
+            JOIN reserva_locativa rl ON rl.id_reserva_locativa = rlo.id_reserva_locativa
+            WHERE rlo.deleted_at IS NULL
+              AND rl.deleted_at IS NULL
+              AND {object_filter}
+              AND LOWER(rl.estado_reserva) IN ({state_list})
+              {exclude_clause}
+            LIMIT 1
+            """
+        )
+        return self.db.execute(stmt, params).scalar_one_or_none() is not None
+
+    # ── reserva_locativa CRUD ─────────────────────────────────────────────────
+
+    def _reserva_locativa_obj_rows_to_list(self, rows: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "id_reserva_locativa_objeto": row["id_reserva_locativa_objeto"],
+                "id_inmueble": row["id_inmueble"],
+                "id_unidad_funcional": row["id_unidad_funcional"],
+                "observaciones": row["observaciones"],
+            }
+            for row in rows
+        ]
+
+    def _get_objetos_for_reserva_locativa(
+        self, id_reserva_locativa: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT id_reserva_locativa_objeto, id_inmueble, id_unidad_funcional, observaciones
+            FROM reserva_locativa_objeto
+            WHERE id_reserva_locativa = :id AND deleted_at IS NULL
+            ORDER BY id_reserva_locativa_objeto
+            """
+        )
+        rows = self.db.execute(stmt, {"id": id_reserva_locativa}).mappings().all()
+        return self._reserva_locativa_obj_rows_to_list(rows)
+
+    def create_reserva_locativa(
+        self, payload: Any, objetos: list[Any]
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+
+        insert_reserva = text(
+            """
+            INSERT INTO reserva_locativa (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                codigo_reserva, fecha_reserva, estado_reserva,
+                fecha_vencimiento, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :codigo_reserva, :fecha_reserva, :estado_reserva,
+                :fecha_vencimiento, :observaciones
+            )
+            RETURNING id_reserva_locativa
+            """
+        )
+
+        insert_objeto = text(
+            """
+            INSERT INTO reserva_locativa_objeto (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_reserva_locativa, id_inmueble, id_unidad_funcional, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_reserva_locativa, :id_inmueble, :id_unidad_funcional, :observaciones
+            )
+            RETURNING id_reserva_locativa_objeto
+            """
+        )
+
+        try:
+            row = self.db.execute(
+                insert_reserva,
+                {
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "codigo_reserva": values["codigo_reserva"],
+                    "fecha_reserva": values["fecha_reserva"],
+                    "estado_reserva": values["estado_reserva"],
+                    "fecha_vencimiento": values["fecha_vencimiento"],
+                    "observaciones": values["observaciones"],
+                },
+            ).mappings().one()
+            id_reserva_locativa = row["id_reserva_locativa"]
+
+            created_objetos: list[dict[str, Any]] = []
+            for objeto in objetos:
+                obj_values = self._values(objeto)
+                obj_row = self.db.execute(
+                    insert_objeto,
+                    {
+                        "uid_global": obj_values["uid_global"],
+                        "version_registro": obj_values["version_registro"],
+                        "created_at": obj_values["created_at"],
+                        "updated_at": obj_values["updated_at"],
+                        "id_instalacion_origen": obj_values["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": obj_values["id_instalacion_ultima_modificacion"],
+                        "op_id_alta": obj_values["op_id_alta"],
+                        "op_id_ultima_modificacion": obj_values["op_id_ultima_modificacion"],
+                        "id_reserva_locativa": id_reserva_locativa,
+                        "id_inmueble": obj_values["id_inmueble"],
+                        "id_unidad_funcional": obj_values["id_unidad_funcional"],
+                        "observaciones": obj_values["observaciones"],
+                    },
+                ).mappings().one()
+                created_objetos.append(
+                    {
+                        "id_reserva_locativa_objeto": obj_row["id_reserva_locativa_objeto"],
+                        "id_inmueble": obj_values["id_inmueble"],
+                        "id_unidad_funcional": obj_values["id_unidad_funcional"],
+                        "observaciones": obj_values["observaciones"],
+                    }
+                )
+
+            self.db.commit()
+            return {
+                "id_reserva_locativa": id_reserva_locativa,
+                "uid_global": values["uid_global"],
+                "version_registro": values["version_registro"],
+                "codigo_reserva": values["codigo_reserva"],
+                "fecha_reserva": values["fecha_reserva"],
+                "estado_reserva": values["estado_reserva"],
+                "fecha_vencimiento": values["fecha_vencimiento"],
+                "observaciones": values["observaciones"],
+                "objetos": created_objetos,
+                "deleted_at": None,
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def get_reserva_locativa(self, id_reserva_locativa: int) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_reserva_locativa, uid_global, version_registro,
+                codigo_reserva, fecha_reserva, estado_reserva,
+                fecha_vencimiento, observaciones, deleted_at
+            FROM reserva_locativa
+            WHERE id_reserva_locativa = :id
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_reserva_locativa}).mappings().one_or_none()
+        if row is None:
+            return None
+        objetos = self._get_objetos_for_reserva_locativa(id_reserva_locativa)
+        return {
+            "id_reserva_locativa": row["id_reserva_locativa"],
+            "uid_global": str(row["uid_global"]),
+            "version_registro": row["version_registro"],
+            "codigo_reserva": row["codigo_reserva"],
+            "fecha_reserva": row["fecha_reserva"],
+            "estado_reserva": row["estado_reserva"],
+            "fecha_vencimiento": row["fecha_vencimiento"],
+            "observaciones": row["observaciones"],
+            "deleted_at": row["deleted_at"],
+            "objetos": objetos,
+        }
+
+    def confirmar_reserva_locativa(
+        self, payload: Any, outbox_event: OutboxEventPayload
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+        outbox_repo = OutboxRepository(self.db)
+
+        stmt = text(
+            """
+            UPDATE reserva_locativa
+            SET
+                estado_reserva = :estado_reserva,
+                version_registro = :version_registro_nueva,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_reserva_locativa = :id_reserva_locativa
+              AND version_registro = :version_registro_actual
+              AND deleted_at IS NULL
+            RETURNING
+                id_reserva_locativa, uid_global, version_registro,
+                codigo_reserva, fecha_reserva, estado_reserva,
+                fecha_vencimiento, observaciones
+            """
+        )
+
+        try:
+            updated = self.db.execute(
+                stmt,
+                {
+                    "id_reserva_locativa": values["id_reserva_locativa"],
+                    "estado_reserva": values["estado_reserva"],
+                    "version_registro_actual": values["version_registro_actual"],
+                    "version_registro_nueva": values["version_registro_nueva"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                },
+            ).mappings().one_or_none()
+            if updated is None:
+                self.db.rollback()
+                return {"status": "CONCURRENCY_ERROR"}
+
+            id_reserva = updated["id_reserva_locativa"]
+            objetos = self._get_objetos_for_reserva_locativa(id_reserva)
+
+            outbox_values = self._values(outbox_event)
+            outbox_repo.add_event(
+                event_type=outbox_values["event_type"],
+                aggregate_type=outbox_values["aggregate_type"],
+                aggregate_id=outbox_values["aggregate_id"],
+                payload=outbox_values["payload"],
+                occurred_at=outbox_values["occurred_at"],
+                status=outbox_values.get("status", "PENDING"),
+            )
+
+            self.db.commit()
+            return {
+                "status": "OK",
+                "data": {
+                    "id_reserva_locativa": id_reserva,
+                    "uid_global": str(updated["uid_global"]),
+                    "version_registro": updated["version_registro"],
+                    "codigo_reserva": updated["codigo_reserva"],
+                    "fecha_reserva": updated["fecha_reserva"],
+                    "estado_reserva": updated["estado_reserva"],
+                    "fecha_vencimiento": updated["fecha_vencimiento"],
+                    "observaciones": updated["observaciones"],
+                    "objetos": objetos,
+                    "deleted_at": None,
+                },
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def cancel_reserva_locativa(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+
+        stmt = text(
+            """
+            UPDATE reserva_locativa
+            SET
+                estado_reserva = :estado_reserva,
+                version_registro = :version_registro_nueva,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_reserva_locativa = :id_reserva_locativa
+              AND version_registro = :version_registro_actual
+              AND deleted_at IS NULL
+            RETURNING
+                id_reserva_locativa, uid_global, version_registro,
+                codigo_reserva, fecha_reserva, estado_reserva,
+                fecha_vencimiento, observaciones
+            """
+        )
+
+        try:
+            updated = self.db.execute(
+                stmt,
+                {
+                    "id_reserva_locativa": values["id_reserva_locativa"],
+                    "estado_reserva": values["estado_reserva"],
+                    "version_registro_actual": values["version_registro_actual"],
+                    "version_registro_nueva": values["version_registro_nueva"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                },
+            ).mappings().one_or_none()
+            if updated is None:
+                self.db.rollback()
+                return {"status": "CONCURRENCY_ERROR"}
+
+            id_reserva = updated["id_reserva_locativa"]
+            objetos = self._get_objetos_for_reserva_locativa(id_reserva)
+            self.db.commit()
+            return {
+                "status": "OK",
+                "data": {
+                    "id_reserva_locativa": id_reserva,
+                    "uid_global": str(updated["uid_global"]),
+                    "version_registro": updated["version_registro"],
+                    "codigo_reserva": updated["codigo_reserva"],
+                    "fecha_reserva": updated["fecha_reserva"],
+                    "estado_reserva": updated["estado_reserva"],
+                    "fecha_vencimiento": updated["fecha_vencimiento"],
+                    "observaciones": updated["observaciones"],
+                    "objetos": objetos,
+                    "deleted_at": None,
                 },
             }
         except Exception:

@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.schemas.locativo import (
+    ReservaLocativaCreateRequest,
+    ReservaLocativaData,
+    ReservaLocativaResponse,
     ContratoAlquilerActivateData,
     ContratoAlquilerActivateResponse,
     ContratoAlquilerBajaData,
@@ -58,6 +61,28 @@ from app.application.locativo.commands.activate_contrato_alquiler import (
 )
 from app.application.locativo.services.list_contratos_alquiler_service import (
     ListContratosAlquilerService,
+)
+from app.application.locativo.commands.create_reserva_locativa import (
+    CreateReservaLocativaCommand,
+    CreateReservaLocativaObjetoCommand,
+)
+from app.application.locativo.services.create_reserva_locativa_service import (
+    CreateReservaLocativaService,
+)
+from app.application.locativo.services.get_reserva_locativa_service import (
+    GetReservaLocativaService,
+)
+from app.application.locativo.commands.confirmar_reserva_locativa import (
+    ConfirmarReservaLocativaCommand,
+)
+from app.application.locativo.services.confirmar_reserva_locativa_service import (
+    ConfirmarReservaLocativaService,
+)
+from app.application.locativo.commands.cancel_reserva_locativa import (
+    CancelReservaLocativaCommand,
+)
+from app.application.locativo.services.cancel_reserva_locativa_service import (
+    CancelReservaLocativaService,
 )
 from app.application.locativo.commands.create_condicion_economica_alquiler import (
     CreateCondicionEconomicaAlquilerCommand,
@@ -1142,3 +1167,272 @@ def delete_contrato_alquiler(
     return ContratoAlquilerBajaResponse(
         data=ContratoAlquilerBajaData(**result.data)
     )
+
+
+# ── reservas_locativas ────────────────────────────────────────────────────────
+
+def _build_context(
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+) -> tuple[LocativoCommandContext, UUID | None, int | None]:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            pass
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            pass
+    context_kwargs: dict = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+    ctx = LocativoCommandContext(id_instalacion=id_instalacion, op_id=op_id, **context_kwargs)
+    return ctx, op_id, id_instalacion
+
+
+@router.post(
+    "/api/v1/reservas-locativas",
+    status_code=201,
+    response_model=ReservaLocativaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_reserva_locativa(
+    request: ReservaLocativaCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ReservaLocativaResponse | JSONResponse:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+
+    command = CreateReservaLocativaCommand(
+        context=context,
+        codigo_reserva=request.codigo_reserva,
+        fecha_reserva=request.fecha_reserva,
+        fecha_vencimiento=request.fecha_vencimiento,
+        observaciones=request.observaciones,
+        objetos=[
+            CreateReservaLocativaObjetoCommand(
+                id_inmueble=o.id_inmueble,
+                id_unidad_funcional=o.id_unidad_funcional,
+                observaciones=o.observaciones,
+            )
+            for o in request.objetos
+        ],
+    )
+
+    repository = LocativoRepository(db)
+    service = CreateReservaLocativaService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if any(e in result.errors for e in ("NOT_FOUND_INMUEBLE", "NOT_FOUND_UNIDAD_FUNCIONAL")):
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="El objeto inmobiliario indicado no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo crear la reserva locativa.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ReservaLocativaResponse(data=ReservaLocativaData(**result.data))
+
+
+@router.get(
+    "/api/v1/reservas-locativas/{id_reserva_locativa}",
+    response_model=ReservaLocativaResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+def get_reserva_locativa(
+    id_reserva_locativa: int,
+    db: Session = Depends(get_db),
+) -> ReservaLocativaResponse | JSONResponse:
+    repository = LocativoRepository(db)
+    service = GetReservaLocativaService(repository=repository)
+    result = service.execute(id_reserva_locativa)
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="La reserva locativa indicada no existe.",
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return ReservaLocativaResponse(data=ReservaLocativaData(**result.data))
+
+
+@router.patch(
+    "/api/v1/reservas-locativas/{id_reserva_locativa}/confirmar",
+    response_model=ReservaLocativaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def confirmar_reserva_locativa(
+    id_reserva_locativa: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ReservaLocativaResponse | JSONResponse:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    parsed_version: int | None = None
+    if if_match_version is not None:
+        try:
+            parsed_version = int(if_match_version)
+        except ValueError:
+            pass
+
+    command = ConfirmarReservaLocativaCommand(
+        context=context,
+        id_reserva_locativa=id_reserva_locativa,
+        if_match_version=parsed_version,
+    )
+
+    repository = LocativoRepository(db)
+    service = ConfirmarReservaLocativaService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_RESERVA_LOCATIVA" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La reserva locativa indicada no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+        if "CONCURRENCY_ERROR" in result.errors:
+            error = ErrorResponse(
+                error_code="CONCURRENCY_ERROR",
+                error_message="If-Match-Version es requerido y debe coincidir con version_registro.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+        if "INVALID_RESERVA_STATE" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Solo una reserva en estado pendiente puede confirmarse.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo confirmar la reserva locativa.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ReservaLocativaResponse(data=ReservaLocativaData(**result.data))
+
+
+@router.patch(
+    "/api/v1/reservas-locativas/{id_reserva_locativa}/cancelar",
+    response_model=ReservaLocativaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def cancel_reserva_locativa(
+    id_reserva_locativa: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ReservaLocativaResponse | JSONResponse:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    parsed_version: int | None = None
+    if if_match_version is not None:
+        try:
+            parsed_version = int(if_match_version)
+        except ValueError:
+            pass
+
+    command = CancelReservaLocativaCommand(
+        context=context,
+        id_reserva_locativa=id_reserva_locativa,
+        if_match_version=parsed_version,
+    )
+
+    repository = LocativoRepository(db)
+    service = CancelReservaLocativaService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_RESERVA_LOCATIVA" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La reserva locativa indicada no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+        if "CONCURRENCY_ERROR" in result.errors:
+            error = ErrorResponse(
+                error_code="CONCURRENCY_ERROR",
+                error_message="If-Match-Version es requerido y debe coincidir con version_registro.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+        if "INVALID_RESERVA_STATE" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Solo una reserva en estado activo puede cancelarse.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo cancelar la reserva locativa.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ReservaLocativaResponse(data=ReservaLocativaData(**result.data))
+

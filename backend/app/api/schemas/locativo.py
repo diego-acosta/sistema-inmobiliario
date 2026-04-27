@@ -211,6 +211,53 @@ class ContratoAlquilerListResponse(BaseModel):
     data: ContratoAlquilerListData
 
 
+class ReservaLocativaObjetoRequest(BaseModel):
+    id_inmueble: int | None = None
+    id_unidad_funcional: int | None = None
+    observaciones: str | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_parent(self) -> ReservaLocativaObjetoRequest:
+        if (self.id_inmueble is None) == (self.id_unidad_funcional is None):
+            raise ValueError(
+                "Debe indicarse exactamente uno entre id_inmueble e id_unidad_funcional."
+            )
+        return self
+
+
+class ReservaLocativaCreateRequest(BaseModel):
+    codigo_reserva: str
+    fecha_reserva: datetime
+    fecha_vencimiento: datetime | None = None
+    observaciones: str | None = None
+    objetos: list[ReservaLocativaObjetoRequest]
+
+
+class ReservaLocativaObjetoData(BaseModel):
+    id_reserva_locativa_objeto: int
+    id_inmueble: int | None
+    id_unidad_funcional: int | None
+    observaciones: str | None
+
+
+class ReservaLocativaData(BaseModel):
+    id_reserva_locativa: int
+    uid_global: str
+    version_registro: int
+    codigo_reserva: str
+    fecha_reserva: datetime
+    estado_reserva: str
+    fecha_vencimiento: datetime | None
+    observaciones: str | None
+    objetos: list[ReservaLocativaObjetoData]
+    deleted_at: datetime | None = None
+
+
+class ReservaLocativaResponse(BaseModel):
+    ok: bool = True
+    data: ReservaLocativaData
+
+
 class ErrorResponse(BaseModel):
     ok: bool = False
     error_code: str
