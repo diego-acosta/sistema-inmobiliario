@@ -1625,6 +1625,79 @@ class LocativoRepository:
             self.db.rollback()
             raise
 
+    def has_entrega_for_contrato(self, id_contrato_alquiler: int) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM entrega_locativa
+            WHERE id_contrato_alquiler = :id AND deleted_at IS NULL
+            """
+        )
+        return (
+            self.db.execute(stmt, {"id": id_contrato_alquiler}).scalar_one_or_none()
+            is not None
+        )
+
+    def create_entrega_locativa_sin_commit(
+        self, payload: Any, outbox_event: Any
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO entrega_locativa (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_contrato_alquiler, fecha_entrega, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_contrato_alquiler, :fecha_entrega, :observaciones
+            )
+            RETURNING
+                id_entrega_locativa, uid_global, version_registro,
+                id_contrato_alquiler, fecha_entrega, observaciones, deleted_at
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "uid_global": values["uid_global"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_contrato_alquiler": values["id_contrato_alquiler"],
+                "fecha_entrega": values["fecha_entrega"],
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+
+        outbox_values = self._values(outbox_event)
+        OutboxRepository(self.db).add_event(
+            event_type=outbox_values["event_type"],
+            aggregate_type=outbox_values["aggregate_type"],
+            aggregate_id=outbox_values["aggregate_id"],
+            payload=outbox_values["payload"],
+            occurred_at=outbox_values["occurred_at"],
+            status=outbox_values.get("status", "PENDING"),
+        )
+
+        return {
+            "id_entrega_locativa": row["id_entrega_locativa"],
+            "uid_global": str(row["uid_global"]),
+            "version_registro": row["version_registro"],
+            "id_contrato_alquiler": row["id_contrato_alquiler"],
+            "fecha_entrega": row["fecha_entrega"],
+            "observaciones": row["observaciones"],
+            "deleted_at": None,
+        }
+
     def has_contrato_for_reserva_locativa(self, id_reserva_locativa: int) -> bool:
         stmt = text(
             """

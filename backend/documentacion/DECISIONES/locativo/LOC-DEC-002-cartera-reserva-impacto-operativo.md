@@ -213,10 +213,52 @@ El evento se emite una sola vez por transición de la reserva. El dominio inmobi
 
 ### 4.3 Evento: entrega_locativa_registrada
 
-#### Efecto:
+#### Origen
+
+`entrega_locativa` es una entidad del dominio locativo. Representa el inicio operativo del contrato de alquiler: el momento en que el locador entrega físicamente el inmueble al locatario. Su registro en el dominio locativo genera el evento de dominio `entrega_locativa_registrada`.
+
+`entrega_locativa` no modifica directamente la disponibilidad ni el estado físico del inmueble. No es responsabilidad del dominio locativo persistir ocupación ni cambiar el estado operativo del activo. Esa responsabilidad pertenece al dominio inmobiliario.
+
+**Propiedad del dato:** el dominio locativo no persiste estado físico del inmueble. El dominio inmobiliario es la única fuente de verdad sobre ocupación y disponibilidad. Cualquier consulta sobre el estado físico de un activo debe dirigirse al dominio inmobiliario, no al dominio locativo.
+
+#### Generado por:
+- dominio locativo, al registrar `entrega_locativa` sobre un `contrato_alquiler` en estado `activo`
+
+#### Consumido por:
+- dominio inmobiliario
+
+#### Payload:
+- `id_contrato_alquiler`
+- `fecha_entrega`
+- lista de objetos: uno o más pares `(id_inmueble | id_unidad_funcional)` tomados de los objetos del contrato
+
+#### Efecto por objeto (aplicado por inmobiliario):
 
 - crear ocupación
 - disponibilidad → NO_DISPONIBLE
+
+#### Relación entre entrega_locativa y entrega_restitucion_inmueble
+
+`entrega_locativa` (dominio locativo) y `entrega_restitucion_inmueble` (dominio inmobiliario) **no son duplicaciones**. Son representaciones del mismo hecho físico en dominios distintos, con responsabilidades distintas:
+
+| Entidad | Dominio | Rol |
+|---|---|---|
+| `entrega_locativa` | locativo | evento de negocio; registra la entrega desde la perspectiva del contrato |
+| `entrega_restitucion_inmueble` | inmobiliario | estado físico persistido; materializa el impacto operativo sobre el activo |
+
+El dominio locativo emite el evento. El dominio inmobiliario lo consume y materializa el estado físico mediante `entrega_restitucion_inmueble`, actualizando ocupación y disponibilidad. Ninguno de los dos puede sustituir al otro.
+
+**El evento `entrega_locativa_registrada` actúa como contrato de integración entre dominios.** No es un evento informativo: es un disparador de comportamiento en el dominio inmobiliario. Su recepción obliga al dominio inmobiliario a ejecutar las consecuencias operativas correspondientes (crear `entrega_restitucion_inmueble`, marcar ocupación, actualizar disponibilidad). El dominio locativo no tiene visibilidad ni responsabilidad sobre esa ejecución.
+
+#### Flujo
+
+```
+entrega_locativa (locativo)
+→ evento entrega_locativa_registrada
+→ dominio inmobiliario
+→ entrega_restitucion_inmueble
+→ ocupación + no disponible
+```
 
 ---
 

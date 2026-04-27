@@ -280,6 +280,26 @@ class ReservaLocativaResponse(BaseModel):
     data: ReservaLocativaData
 
 
+class EntregaLocativaRequest(BaseModel):
+    fecha_entrega: date
+    observaciones: str | None = None
+
+
+class EntregaLocativaData(BaseModel):
+    id_entrega_locativa: int
+    uid_global: str
+    version_registro: int
+    id_contrato_alquiler: int
+    fecha_entrega: date
+    observaciones: str | None
+    deleted_at: datetime | None = None
+
+
+class EntregaLocativaResponse(BaseModel):
+    ok: bool = True
+    data: EntregaLocativaData
+
+
 class GenerarContratoDesdeReservaRequest(BaseModel):
     codigo_contrato: str
     fecha_inicio: date

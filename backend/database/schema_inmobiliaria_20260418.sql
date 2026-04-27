@@ -2225,6 +2225,42 @@ ALTER SEQUENCE public.entrega_restitucion_inmueble_id_entrega_restitucion_seq OW
 
 
 --
+-- Name: entrega_locativa_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.entrega_locativa_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: entrega_locativa; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.entrega_locativa (
+    id_entrega_locativa bigint NOT NULL DEFAULT nextval('public.entrega_locativa_id_seq'::regclass),
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
+    id_contrato_alquiler bigint NOT NULL,
+    fecha_entrega date NOT NULL,
+    observaciones text,
+    CONSTRAINT entrega_locativa_pkey PRIMARY KEY (id_entrega_locativa)
+);
+
+ALTER SEQUENCE public.entrega_locativa_id_seq OWNED BY public.entrega_locativa.id_entrega_locativa;
+
+
+--
 -- Name: escrituracion; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7544,6 +7580,15 @@ CREATE INDEX idx_en_serie ON public.emision_numeracion USING btree (id_numerador
 --
 
 CREATE INDEX idx_entrega_restitucion_inmueble_uid_global ON public.entrega_restitucion_inmueble USING btree (uid_global);
+
+
+--
+-- Name: uq_entrega_locativa_contrato; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_entrega_locativa_contrato
+    ON public.entrega_locativa (id_contrato_alquiler)
+    WHERE deleted_at IS NULL;
 
 
 --

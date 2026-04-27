@@ -12,6 +12,9 @@ from app.api.schemas.locativo import (
     SolicitudAlquilerData,
     SolicitudAlquilerResponse,
     ConvertirSolicitudAlquilerRequest,
+    EntregaLocativaRequest,
+    EntregaLocativaData,
+    EntregaLocativaResponse,
     GenerarContratoDesdeReservaRequest,
     ReservaLocativaCreateRequest,
     ReservaLocativaData,
@@ -105,6 +108,12 @@ from app.application.locativo.commands.generar_contrato_desde_reserva_locativa i
 )
 from app.application.locativo.services.generar_contrato_desde_reserva_locativa_service import (
     GenerarContratoDesdeReservaLocativaService,
+)
+from app.application.locativo.commands.registrar_entrega_locativa import (
+    RegistrarEntregaLocativaCommand,
+)
+from app.application.locativo.services.registrar_entrega_locativa_service import (
+    RegistrarEntregaLocativaService,
 )
 from app.application.locativo.commands.create_reserva_locativa import (
     CreateReservaLocativaCommand,
@@ -869,6 +878,111 @@ def activate_contrato_alquiler(
     return ContratoAlquilerActivateResponse(
         data=ContratoAlquilerActivateData(**result.data)
     )
+
+
+@router.post(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}/entregar",
+    status_code=201,
+    response_model=EntregaLocativaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def entregar_contrato_alquiler(
+    id_contrato_alquiler: int,
+    request: EntregaLocativaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> EntregaLocativaResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    context_kwargs: dict = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = LocativoCommandContext(id_instalacion=id_instalacion, op_id=op_id, **context_kwargs)
+
+    command = RegistrarEntregaLocativaCommand(
+        context=context,
+        id_contrato_alquiler=id_contrato_alquiler,
+        fecha_entrega=request.fecha_entrega,
+        observaciones=request.observaciones,
+    )
+
+    repository = LocativoRepository(db)
+    service = RegistrarEntregaLocativaService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONTRATO_ALQUILER" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="El contrato de alquiler indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "CONTRATO_NOT_ACTIVO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="Solo un contrato en estado activo puede registrar una entrega.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "CONTRATO_YA_TIENE_ENTREGA" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="El contrato ya tiene una entrega registrada.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo registrar la entrega locativa.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return EntregaLocativaResponse(data=EntregaLocativaData(**result.data))
 
 
 @router.patch(
