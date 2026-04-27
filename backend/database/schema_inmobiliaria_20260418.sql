@@ -2271,13 +2271,17 @@ ALTER SEQUENCE public.escrituracion_id_escrituracion_seq OWNED BY public.escritu
 
 CREATE TABLE public.outbox_event (
     id bigint NOT NULL,
+    event_id uuid DEFAULT gen_random_uuid() NOT NULL,
     event_type character varying(100) NOT NULL,
     aggregate_type character varying(100) NOT NULL,
     aggregate_id bigint NOT NULL,
     payload jsonb NOT NULL,
     occurred_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     published_at timestamp without time zone,
+    processed_at timestamp without time zone,
     status character varying(20) DEFAULT 'PENDING'::character varying NOT NULL,
+    retry_count integer DEFAULT 0 NOT NULL,
+    last_error text,
     processing_reason jsonb,
     processing_metadata jsonb
 );
@@ -2300,6 +2304,42 @@ CREATE SEQUENCE public.outbox_event_id_seq
 --
 
 ALTER SEQUENCE public.outbox_event_id_seq OWNED BY public.outbox_event.id;
+
+
+--
+-- Name: inbox_event_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.inbox_event_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: inbox_event; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inbox_event (
+    id bigint NOT NULL DEFAULT nextval('public.inbox_event_id_seq'::regclass),
+    event_id uuid NOT NULL,
+    event_type character varying(100) NOT NULL,
+    aggregate_type character varying(100) NOT NULL,
+    aggregate_id bigint NOT NULL,
+    consumer character varying(100) NOT NULL,
+    status character varying(20) DEFAULT 'PROCESSING'::character varying NOT NULL,
+    processed_at timestamp without time zone,
+    error_detail text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT inbox_event_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_inbox_event_consumer UNIQUE (event_id, consumer)
+);
+
+ALTER SEQUENCE public.inbox_event_id_seq OWNED BY public.inbox_event.id;
+
+CREATE INDEX idx_inbox_event_lookup ON public.inbox_event USING btree (consumer, status, created_at);
 
 
 --
@@ -7525,6 +7565,8 @@ CREATE INDEX idx_escrituracion_uid_global ON public.escrituracion USING btree (u
 --
 
 CREATE INDEX idx_outbox_event_status_pending ON public.outbox_event USING btree (status, published_at, occurred_at);
+
+CREATE UNIQUE INDEX uq_outbox_event_id ON public.outbox_event (event_id);
 
 
 --

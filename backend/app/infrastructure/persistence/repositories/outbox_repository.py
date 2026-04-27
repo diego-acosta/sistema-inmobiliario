@@ -24,16 +24,26 @@ class OutboxRepository:
     def _map_row(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "id": row["id"],
+            "event_id": str(row["event_id"]),
             "event_type": row["event_type"],
             "aggregate_type": row["aggregate_type"],
             "aggregate_id": row["aggregate_id"],
             "payload": row["payload"],
             "occurred_at": row["occurred_at"],
             "published_at": row["published_at"],
+            "processed_at": row["processed_at"],
             "status": row["status"],
+            "retry_count": row["retry_count"],
+            "last_error": row["last_error"],
             "processing_reason": row["processing_reason"],
             "processing_metadata": row["processing_metadata"],
         }
+
+    _RETURNING = """
+        id, event_id, event_type, aggregate_type, aggregate_id, payload,
+        occurred_at, published_at, processed_at, status, retry_count,
+        last_error, processing_reason, processing_metadata
+    """
 
     def add_event(
         self,
@@ -49,40 +59,18 @@ class OutboxRepository:
         processing_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         statement = text(
-            """
+            f"""
             INSERT INTO outbox_event (
-                event_type,
-                aggregate_type,
-                aggregate_id,
-                payload,
-                occurred_at,
-                published_at,
-                status,
-                processing_reason,
-                processing_metadata
+                event_type, aggregate_type, aggregate_id, payload,
+                occurred_at, published_at, status,
+                processing_reason, processing_metadata
             )
             VALUES (
-                :event_type,
-                :aggregate_type,
-                :aggregate_id,
-                CAST(:payload AS jsonb),
-                :occurred_at,
-                :published_at,
-                :status,
-                CAST(:processing_reason AS jsonb),
-                CAST(:processing_metadata AS jsonb)
+                :event_type, :aggregate_type, :aggregate_id, CAST(:payload AS jsonb),
+                :occurred_at, :published_at, :status,
+                CAST(:processing_reason AS jsonb), CAST(:processing_metadata AS jsonb)
             )
-            RETURNING
-                id,
-                event_type,
-                aggregate_type,
-                aggregate_id,
-                payload,
-                occurred_at,
-                published_at,
-                status,
-                processing_reason,
-                processing_metadata
+            RETURNING {self._RETURNING}
             """
         )
         row = self.db.execute(
@@ -103,18 +91,8 @@ class OutboxRepository:
 
     def get_pending_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
         statement = text(
-            """
-            SELECT
-                id,
-                event_type,
-                aggregate_type,
-                aggregate_id,
-                payload,
-                occurred_at,
-                published_at,
-                status,
-                processing_reason,
-                processing_metadata
+            f"""
+            SELECT {self._RETURNING}
             FROM outbox_event
             WHERE status = 'PENDING'
               AND published_at IS NULL
@@ -135,26 +113,17 @@ class OutboxRepository:
     ) -> dict[str, Any] | None:
         timestamp = published_at or datetime.now(UTC)
         statement = text(
-            """
+            f"""
             UPDATE outbox_event
             SET
                 published_at = :published_at,
+                processed_at = :published_at,
                 status = 'PUBLISHED',
                 processing_reason = CAST(:processing_reason AS jsonb),
                 processing_metadata = CAST(:processing_metadata AS jsonb)
             WHERE id = :id
               AND status = 'PENDING'
-            RETURNING
-                id,
-                event_type,
-                aggregate_type,
-                aggregate_id,
-                payload,
-                occurred_at,
-                published_at,
-                status,
-                processing_reason,
-                processing_metadata
+            RETURNING {self._RETURNING}
             """
         )
         row = self.db.execute(
@@ -170,6 +139,33 @@ class OutboxRepository:
             return None
         return self._map_row(row)
 
+    def mark_as_failed(
+        self,
+        event_id: int,
+        *,
+        error: str,
+    ) -> dict[str, Any] | None:
+        """Registra un intento fallido: incrementa retry_count, guarda last_error.
+        El status permanece PENDING para habilitar reintentos."""
+        statement = text(
+            f"""
+            UPDATE outbox_event
+            SET
+                retry_count = retry_count + 1,
+                last_error  = :error
+            WHERE id = :id
+              AND status = 'PENDING'
+            RETURNING {self._RETURNING}
+            """
+        )
+        row = self.db.execute(
+            statement,
+            {"id": event_id, "error": error},
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+        return self._map_row(row)
+
     def mark_as_terminal(
         self,
         event_id: int,
@@ -178,27 +174,19 @@ class OutboxRepository:
         processing_reason: dict[str, Any] | None = None,
         processing_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
+        now = datetime.now(UTC)
         statement = text(
-            """
+            f"""
             UPDATE outbox_event
             SET
                 status = :terminal_status,
+                processed_at = :processed_at,
                 processing_reason = CAST(:processing_reason AS jsonb),
                 processing_metadata = CAST(:processing_metadata AS jsonb)
             WHERE id = :id
               AND status = 'PENDING'
               AND published_at IS NULL
-            RETURNING
-                id,
-                event_type,
-                aggregate_type,
-                aggregate_id,
-                payload,
-                occurred_at,
-                published_at,
-                status,
-                processing_reason,
-                processing_metadata
+            RETURNING {self._RETURNING}
             """
         )
         row = self.db.execute(
@@ -206,6 +194,7 @@ class OutboxRepository:
             {
                 "id": event_id,
                 "terminal_status": terminal_status,
+                "processed_at": now,
                 "processing_reason": self._json_dumps(processing_reason),
                 "processing_metadata": self._json_dumps(processing_metadata),
             },
