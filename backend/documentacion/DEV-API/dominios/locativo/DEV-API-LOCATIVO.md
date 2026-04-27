@@ -32,8 +32,8 @@ Quedan explicitamente fuera de `v1`:
 - `modificacion_locativa`
 - `rescision_finalizacion_alquiler`
 - `entrega_restitucion_inmueble`
-- `solicitud_alquiler`
-- `reserva_locativa`
+- gestión ampliada de `solicitud_alquiler` (flujos adicionales no documentados)
+- gestión ampliada de `reserva_locativa` salvo los endpoints explícitamente documentados en este documento
 - write local de intervinientes contractuales por `relacion_persona_rol`
 - renovaciones por `id_contrato_anterior`
 - exposicion de `cartera_locativa` como parte del contrato publico minimo
@@ -490,6 +490,51 @@ Reglas de negocio:
 - el cambio de canon o periodicidad se expresa cerrando una vigencia y creando una nueva condicion
 - el cierre de vigencia debe preservarse historicamente
 
+### 6.3 `reserva_locativa`
+
+#### `POST /api/v1/reservas-locativas/{id_reserva_locativa}/generar-contrato`
+
+Objetivo:
+
+- generar un contrato de alquiler en estado `borrador` tomando como origen una reserva confirmada
+- un contrato puede originarse desde una reserva locativa a traves de este endpoint; en ese caso `id_reserva_locativa` queda seteado automaticamente en `contrato_alquiler`
+
+Request:
+
+```json
+{
+  "codigo_contrato": "CA-0001",
+  "fecha_inicio": "2026-07-01",
+  "fecha_fin": "2027-06-30",
+  "observaciones": "Contrato generado desde reserva"
+}
+```
+
+No se declaran `objetos` en el body; se copian automaticamente desde los `reserva_locativa_objeto` de la reserva.
+
+Response:
+
+- mismo shape que `POST /api/v1/contratos-alquiler`
+
+Validaciones:
+
+- la reserva debe existir y no estar dada de baja
+- la reserva debe estar en estado `confirmada`; cualquier otro estado devuelve `APPLICATION_ERROR` con `RESERVA_NOT_CONFIRMADA`
+- no debe existir un `contrato_alquiler` activo asociado a la reserva; si existe, devuelve `APPLICATION_ERROR` con `RESERVA_YA_TIENE_CONTRATO`
+- `codigo_contrato` requerido y unico
+- `fecha_inicio` requerida
+- `fecha_fin` debe ser nula o mayor o igual a `fecha_inicio`
+- no requiere `If-Match-Version`
+
+Reglas de negocio:
+
+- el contrato queda en estado `borrador`; el flujo de activacion es independiente y sigue las mismas reglas que un contrato creado directamente
+- `id_reserva_locativa` en `contrato_alquiler` se setea con el FK a la reserva origen; no puede informarse por el caller
+- los objetos del contrato son copia directa de los `reserva_locativa_objeto` de la reserva; el caller no los declara
+- no modifica disponibilidad ni ocupacion
+- no emite evento outbox
+- la unicidad de contrato activo por reserva se garantiza en dos capas: validacion explicita en aplicacion y `UNIQUE INDEX uq_ca_reserva_activa ON contrato_alquiler (id_reserva_locativa) WHERE id_reserva_locativa IS NOT NULL AND deleted_at IS NULL`
+
 ## 7. Reads
 
 ### 7.1 `contrato_alquiler`
@@ -629,7 +674,7 @@ Observacion:
 - `contrato_alquiler` es la raiz del agregado locativo minimo
 - `contrato_objeto_locativo` se consume embebido en el contrato
 - `condicion_economica_alquiler` se expone solo bajo el contrato padre
-- `v1` no expone `solicitud_alquiler` ni `reserva_locativa`
+- `v1` no expone la gestión ampliada de `solicitud_alquiler` ni de `reserva_locativa`; los endpoints implementados y documentados explícitamente en este documento sí son parte del contrato `v1`
 - `v1` no expone `ajuste_alquiler`, `modificacion_locativa`, `rescision_finalizacion_alquiler` ni `entrega_restitucion_inmueble`
 - `v1` no expone write local de partes intervinientes porque esa semantica sigue dependiendo de soporte transversal
 - la activacion del contrato debe revalidar que las partes principales ya existan por soporte transversal

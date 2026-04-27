@@ -69,7 +69,7 @@ La reserva es **multiobjeto**: una sola `reserva_locativa` puede cubrir varios i
 | `observaciones` | text | nullable |
 | metadatos `CORE-EF` | — | `version_registro`, `created_at`, `updated_at`, `deleted_at`, `id_instalacion_*`, `op_id_*` |
 
-**`reserva_locativa_objeto`** — detalle multiobjeto, **pendiente de migración SQL**:
+**`reserva_locativa_objeto`** — detalle multiobjeto, materializada en schema oficial:
 
 | Campo | Tipo | Notas |
 |---|---|---|
@@ -131,9 +131,51 @@ Esta regla se controla a nivel de objeto, no de reserva:
 | Capa | Mecanismo |
 |---|---|
 | Aplicación | Validación explícita antes de insertar `reserva_locativa_objeto` |
-| SQL | Índice único parcial pendiente de migración: `UNIQUE (id_inmueble, id_reserva_locativa) WHERE estado IN ('pendiente', 'confirmada')` vía join o trigger |
+| SQL | Índice único parcial implementado: validación a nivel de `has_conflicting_active_reserva_locativa` vía join `reserva_locativa_objeto → reserva_locativa` filtrando por `estado_reserva IN ('pendiente', 'confirmada')` |
 
 La validación en aplicación es bloqueante. El índice SQL actúa como red de seguridad ante concurrencia.
+
+---
+
+### 3.4 Generación de contrato desde reserva locativa
+
+El endpoint `POST /api/v1/reservas-locativas/{id}/generar-contrato` permite crear un `contrato_alquiler` tomando como origen una reserva confirmada.
+
+#### Reglas
+
+- Solo se puede generar contrato a partir de una reserva en estado `confirmada`.
+- Solo puede existir **un contrato activo por reserva**. Si ya existe un `contrato_alquiler` con `id_reserva_locativa = :id` y `deleted_at IS NULL`, la operación es rechazada.
+- Los objetos del contrato se copian desde `reserva_locativa_objeto`. El caller no declara objetos en el body; son tomados directamente de la reserva.
+- El contrato queda en estado `borrador`. El flujo de activación es independiente.
+- El campo `id_reserva_locativa` en `contrato_alquiler` queda seteado con el FK a la reserva origen.
+
+#### Impacto operativo
+
+- **No modifica disponibilidad.** El estado del objeto en el dominio inmobiliario no cambia al generar el contrato.
+- **No modifica ocupación.** La ocupación se registra al momento de la entrega (`entrega_locativa_registrada`), no al alta del contrato.
+- **No emite evento outbox.** La generación del contrato no produce ningún mensaje hacia otros dominios.
+
+#### Garantía de unicidad
+
+| Capa | Mecanismo |
+|---|---|
+| Aplicación | Validación explícita `has_contrato_for_reserva_locativa` antes de insertar |
+| SQL | `UNIQUE INDEX uq_ca_reserva_activa ON contrato_alquiler (id_reserva_locativa) WHERE id_reserva_locativa IS NOT NULL AND deleted_at IS NULL` |
+
+La validación en aplicación es bloqueante y produce error claro (`RESERVA_YA_TIENE_CONTRATO`). El índice SQL actúa como red de seguridad ante concurrencia.
+
+#### Body del request
+
+```json
+{
+  "codigo_contrato": "string",
+  "fecha_inicio": "date",
+  "fecha_fin": "date | null",
+  "observaciones": "string | null"
+}
+```
+
+Los objetos **no se declaran**: se copian automáticamente desde la reserva.
 
 ---
 
@@ -231,9 +273,9 @@ activo disponible
 |---|---|
 | `contrato_alquiler` | ✔ implementado |
 | `condiciones_economicas_alquiler` | ✔ implementado |
-| `reserva_locativa` (tabla SQL) | ✔ tabla SQL existe; backend no implementado |
-| `reserva_locativa_objeto` | ❌ tabla SQL pendiente de migración |
-| `solicitud_alquiler` | ❌ |
+| `reserva_locativa` (tabla SQL + backend) | ✔ implementado |
+| `reserva_locativa_objeto` | ✔ implementado |
+| `solicitud_alquiler` | ✔ implementado |
 | impacto operativo (eventos) | ❌ parcial |
 
 ---
