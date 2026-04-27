@@ -1,5 +1,56 @@
+# ───────────────
+# Python
+# ───────────────
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+*.sqlite3
+
+# ───────────────
+# Entornos virtuales
+# ───────────────
+.venv/
+venv/
+env/
+
+# ───────────────
+# VSCode / IDEs
+# ───────────────
 .vscode/
-.codex_tmp_pypdf/
+.idea/
+
+# ───────────────
+# Claude / IA tools
+# ───────────────
+.claude/
+
+# ───────────────
+# Pytest
+# ───────────────
+.pytest_cache/
+.cache/
+
+# ───────────────
+# Logs
+# ───────────────
+*.log
+
+# ───────────────
+# OS
+# ───────────────
+.DS_Store
+Thumbs.db
+
+# ───────────────
+# Archivos temporales
+# ───────────────
+*.tmp
+*.bak
+*.swp
+
+# ───────────────
+# Secrets (por las dudas)
+# ───────────────
+.env
+.env.*
