@@ -1611,6 +1611,42 @@ class LocativoRepository:
             self.db.rollback()
             raise
 
+    def has_reserva_locativa_for_solicitud(self, id_solicitud_alquiler: int) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM reserva_locativa
+            WHERE id_solicitud_alquiler = :id AND deleted_at IS NULL
+            """
+        )
+        return (
+            self.db.execute(stmt, {"id": id_solicitud_alquiler}).scalar_one_or_none()
+            is not None
+        )
+
+    def vincular_solicitud_a_reserva_locativa(
+        self, id_reserva_locativa: int, id_solicitud_alquiler: int
+    ) -> None:
+        stmt = text(
+            """
+            UPDATE reserva_locativa
+            SET id_solicitud_alquiler = :id_solicitud_alquiler
+            WHERE id_reserva_locativa = :id_reserva_locativa
+            """
+        )
+        try:
+            self.db.execute(
+                stmt,
+                {
+                    "id_reserva_locativa": id_reserva_locativa,
+                    "id_solicitud_alquiler": id_solicitud_alquiler,
+                },
+            )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
     # ── solicitud_alquiler ────────────────────────────────────────────────────
 
     def _solicitud_row_to_dict(self, row: Any) -> dict[str, Any]:

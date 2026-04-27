@@ -280,6 +280,15 @@ class ReservaLocativaResponse(BaseModel):
     data: ReservaLocativaData
 
 
+class ConvertirSolicitudAlquilerRequest(BaseModel):
+    codigo_reserva: str
+    fecha_reserva: datetime
+    fecha_vencimiento: datetime | None = None
+    observaciones: str | None = None
+    objetos: list[ReservaLocativaObjetoRequest]
+    confirmar: bool = False
+
+
 class ErrorResponse(BaseModel):
     ok: bool = False
     error_code: str

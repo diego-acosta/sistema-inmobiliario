@@ -11,6 +11,7 @@ from app.api.schemas.locativo import (
     SolicitudAlquilerCreateRequest,
     SolicitudAlquilerData,
     SolicitudAlquilerResponse,
+    ConvertirSolicitudAlquilerRequest,
     ReservaLocativaCreateRequest,
     ReservaLocativaData,
     ReservaLocativaResponse,
@@ -91,6 +92,12 @@ from app.application.locativo.commands.cancelar_solicitud_alquiler import (
 )
 from app.application.locativo.services.cancelar_solicitud_alquiler_service import (
     CancelarSolicitudAlquilerService,
+)
+from app.application.locativo.commands.convert_solicitud_alquiler_to_reserva_locativa import (
+    ConvertSolicitudAlquilerToReservaLocativaCommand,
+)
+from app.application.locativo.services.convert_solicitud_alquiler_to_reserva_locativa_service import (
+    ConvertSolicitudAlquilerToReservaLocativaService,
 )
 from app.application.locativo.commands.create_reserva_locativa import (
     CreateReservaLocativaCommand,
@@ -1730,3 +1737,101 @@ def cancelar_solicitud_alquiler(
         )
     return SolicitudAlquilerResponse(data=SolicitudAlquilerData(**result.data))
 
+
+@router.post(
+    "/api/v1/solicitudes-alquiler/{id_solicitud_alquiler}/convertir-a-reserva",
+    status_code=201,
+    response_model=ReservaLocativaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def convertir_solicitud_alquiler_a_reserva(
+    id_solicitud_alquiler: int,
+    request: ConvertirSolicitudAlquilerRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ReservaLocativaResponse | JSONResponse:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+
+    command = ConvertSolicitudAlquilerToReservaLocativaCommand(
+        context=context,
+        id_solicitud_alquiler=id_solicitud_alquiler,
+        codigo_reserva=request.codigo_reserva,
+        fecha_reserva=request.fecha_reserva,
+        fecha_vencimiento=request.fecha_vencimiento,
+        observaciones=request.observaciones,
+        objetos=[
+            CreateReservaLocativaObjetoCommand(
+                id_inmueble=o.id_inmueble,
+                id_unidad_funcional=o.id_unidad_funcional,
+                observaciones=o.observaciones,
+            )
+            for o in request.objetos
+        ],
+        confirmar=request.confirmar,
+    )
+
+    repository = LocativoRepository(db)
+    service = ConvertSolicitudAlquilerToReservaLocativaService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_SOLICITUD_ALQUILER" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La solicitud de alquiler indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "SOLICITUD_NOT_APROBADA" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="Solo una solicitud en estado aprobada puede convertirse a reserva.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "SOLICITUD_YA_CONVERTIDA" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="La solicitud ya tiene una reserva locativa asociada.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if any(e in result.errors for e in ("NOT_FOUND_INMUEBLE", "NOT_FOUND_UNIDAD_FUNCIONAL")):
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="El objeto inmobiliario indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo convertir la solicitud a reserva locativa.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return ReservaLocativaResponse(data=ReservaLocativaData(**result.data))
