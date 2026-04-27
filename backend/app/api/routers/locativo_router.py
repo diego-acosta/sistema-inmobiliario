@@ -16,6 +16,9 @@ from app.api.schemas.locativo import (
     EntregaLocativaRequest,
     EntregaLocativaData,
     EntregaLocativaResponse,
+    RestitucionLocativaRequest,
+    RestitucionLocativaData,
+    RestitucionLocativaResponse,
     GenerarContratoDesdeReservaRequest,
     ReservaLocativaCreateRequest,
     ReservaLocativaData,
@@ -115,6 +118,12 @@ from app.application.locativo.commands.registrar_entrega_locativa import (
 )
 from app.application.locativo.services.registrar_entrega_locativa_service import (
     RegistrarEntregaLocativaService,
+)
+from app.application.locativo.commands.registrar_restitucion_locativa import (
+    RegistrarRestitucionLocativaCommand,
+)
+from app.application.locativo.services.registrar_restitucion_locativa_service import (
+    RegistrarRestitucionLocativaService,
 )
 from app.application.locativo.commands.create_reserva_locativa import (
     CreateReservaLocativaCommand,
@@ -984,6 +993,104 @@ def entregar_contrato_alquiler(
         )
 
     return EntregaLocativaResponse(data=EntregaLocativaData(**result.data))
+
+
+@router.post(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}/restituir",
+    status_code=201,
+    response_model=RestitucionLocativaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def restituir_contrato_alquiler(
+    id_contrato_alquiler: int,
+    request: RestitucionLocativaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> RestitucionLocativaResponse | JSONResponse:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+
+    command = RegistrarRestitucionLocativaCommand(
+        context=context,
+        id_contrato_alquiler=id_contrato_alquiler,
+        fecha_restitucion=request.fecha_restitucion,
+        estado_inmueble=request.estado_inmueble,
+        observaciones=request.observaciones,
+    )
+
+    repository = LocativoRepository(db)
+    service = RegistrarRestitucionLocativaService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONTRATO_ALQUILER" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="El contrato de alquiler indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "CONTRATO_ESTADO_INVALIDO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="Solo un contrato activo o finalizado puede registrar una restitución.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "CONTRATO_SIN_ENTREGA" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="El contrato no tiene una entrega registrada previa.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "CONTRATO_SIN_OCUPACION_ACTIVA" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="El contrato no tiene una ocupación activa de alquiler.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "CONTRATO_YA_TIENE_RESTITUCION" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="El contrato ya tiene una restitución registrada.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo registrar la restitución locativa.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return RestitucionLocativaResponse(data=RestitucionLocativaData(**result.data))
 
 
 @router.patch(

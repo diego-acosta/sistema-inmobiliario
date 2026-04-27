@@ -1698,6 +1698,108 @@ class LocativoRepository:
             "deleted_at": None,
         }
 
+    def has_ocupacion_activa_for_contrato(self, id_contrato_alquiler: int) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM contrato_objeto_locativo col
+            JOIN ocupacion o ON (
+                (col.id_inmueble IS NOT NULL
+                    AND o.id_inmueble = col.id_inmueble
+                    AND o.id_unidad_funcional IS NULL)
+                OR
+                (col.id_unidad_funcional IS NOT NULL
+                    AND o.id_unidad_funcional = col.id_unidad_funcional
+                    AND o.id_inmueble IS NULL)
+            )
+            WHERE col.id_contrato_alquiler = :id
+              AND col.deleted_at IS NULL
+              AND o.deleted_at IS NULL
+              AND UPPER(o.tipo_ocupacion) = 'ALQUILER'
+              AND o.fecha_hasta IS NULL
+            LIMIT 1
+            """
+        )
+        return (
+            self.db.execute(stmt, {"id": id_contrato_alquiler}).scalar_one_or_none()
+            is not None
+        )
+
+    def has_restitucion_for_contrato(self, id_contrato_alquiler: int) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM restitucion_locativa
+            WHERE id_contrato_alquiler = :id AND deleted_at IS NULL
+            """
+        )
+        return (
+            self.db.execute(stmt, {"id": id_contrato_alquiler}).scalar_one_or_none()
+            is not None
+        )
+
+    def create_restitucion_locativa_sin_commit(
+        self, payload: Any, outbox_event: Any
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO restitucion_locativa (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_contrato_alquiler, fecha_restitucion, estado_inmueble, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_contrato_alquiler, :fecha_restitucion, :estado_inmueble, :observaciones
+            )
+            RETURNING
+                id_restitucion_locativa, uid_global, version_registro,
+                id_contrato_alquiler, fecha_restitucion, estado_inmueble, observaciones, deleted_at
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "uid_global": values["uid_global"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_contrato_alquiler": values["id_contrato_alquiler"],
+                "fecha_restitucion": values["fecha_restitucion"],
+                "estado_inmueble": values["estado_inmueble"],
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+
+        outbox_values = self._values(outbox_event)
+        OutboxRepository(self.db).add_event(
+            event_type=outbox_values["event_type"],
+            aggregate_type=outbox_values["aggregate_type"],
+            aggregate_id=outbox_values["aggregate_id"],
+            payload=outbox_values["payload"],
+            occurred_at=outbox_values["occurred_at"],
+            status=outbox_values.get("status", "PENDING"),
+        )
+
+        return {
+            "id_restitucion_locativa": row["id_restitucion_locativa"],
+            "uid_global": str(row["uid_global"]),
+            "version_registro": row["version_registro"],
+            "id_contrato_alquiler": row["id_contrato_alquiler"],
+            "fecha_restitucion": row["fecha_restitucion"],
+            "estado_inmueble": row["estado_inmueble"],
+            "observaciones": row["observaciones"],
+            "deleted_at": None,
+        }
+
     def has_contrato_for_reserva_locativa(self, id_reserva_locativa: int) -> bool:
         stmt = text(
             """

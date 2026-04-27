@@ -300,6 +300,28 @@ class EntregaLocativaResponse(BaseModel):
     data: EntregaLocativaData
 
 
+class RestitucionLocativaRequest(BaseModel):
+    fecha_restitucion: date
+    estado_inmueble: str | None = None
+    observaciones: str | None = None
+
+
+class RestitucionLocativaData(BaseModel):
+    id_restitucion_locativa: int
+    uid_global: str
+    version_registro: int
+    id_contrato_alquiler: int
+    fecha_restitucion: date
+    estado_inmueble: str | None
+    observaciones: str | None
+    deleted_at: datetime | None = None
+
+
+class RestitucionLocativaResponse(BaseModel):
+    ok: bool = True
+    data: RestitucionLocativaData
+
+
 class GenerarContratoDesdeReservaRequest(BaseModel):
     codigo_contrato: str
     fecha_inicio: date
