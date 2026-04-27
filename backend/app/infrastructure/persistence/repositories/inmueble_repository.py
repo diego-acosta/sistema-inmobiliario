@@ -2659,3 +2659,102 @@ class InmuebleRepository(BaseRepository[Any]):
         except Exception:
             self.db.rollback()
             raise
+
+    # ── consumer helpers (sin commit — el caller gestiona la transacción) ─────
+
+    def create_entrega_restitucion_inmueble_sin_commit(
+        self, payload: Any
+    ) -> dict[str, Any]:
+        from dataclasses import asdict, is_dataclass
+        if isinstance(payload, dict):
+            values = payload
+        elif is_dataclass(payload):
+            values = asdict(payload)
+        else:
+            values = vars(payload)
+
+        stmt = text(
+            """
+            INSERT INTO entrega_restitucion_inmueble (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_contrato_alquiler, fecha_entrega, estado_inmueble, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_contrato_alquiler, :fecha_entrega, :estado_inmueble, :observaciones
+            )
+            RETURNING id_entrega_restitucion
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "uid_global": values["uid_global"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_contrato_alquiler": values["id_contrato_alquiler"],
+                "fecha_entrega": values["fecha_entrega"],
+                "estado_inmueble": values["estado_inmueble"],
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+        return {"id_entrega_restitucion": row["id_entrega_restitucion"]}
+
+    def create_ocupacion_sin_commit(self, payload: Any) -> dict[str, Any]:
+        from dataclasses import asdict, is_dataclass
+        if isinstance(payload, dict):
+            values = payload
+        elif is_dataclass(payload):
+            values = asdict(payload)
+        else:
+            values = vars(payload)
+
+        stmt = text(
+            """
+            INSERT INTO ocupacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_inmueble, id_unidad_funcional,
+                tipo_ocupacion, fecha_desde, fecha_hasta, descripcion, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_inmueble, :id_unidad_funcional,
+                :tipo_ocupacion, :fecha_desde, :fecha_hasta, :descripcion, :observaciones
+            )
+            RETURNING id_ocupacion
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "uid_global": values["uid_global"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values["id_instalacion_ultima_modificacion"],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_inmueble": values["id_inmueble"],
+                "id_unidad_funcional": values["id_unidad_funcional"],
+                "tipo_ocupacion": values["tipo_ocupacion"],
+                "fecha_desde": values["fecha_desde"],
+                "fecha_hasta": values["fecha_hasta"],
+                "descripcion": values["descripcion"],
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+        return {"id_ocupacion": row["id_ocupacion"]}
