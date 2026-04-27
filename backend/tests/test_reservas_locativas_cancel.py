@@ -2,14 +2,13 @@ from sqlalchemy import text
 
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_locativas_create import (
-    _apply_patch,
     _crear_inmueble_disponible,
     _payload_reserva,
 )
 
 
-def _crear_reserva_pendiente(client, db_session, *, codigo: str, codigo_inm: str) -> dict:
-    id_inmueble = _crear_inmueble_disponible(client, db_session, codigo=codigo_inm)
+def _crear_reserva_pendiente(client, *, codigo: str, codigo_inm: str) -> dict:
+    id_inmueble = _crear_inmueble_disponible(client, codigo=codigo_inm)
     response = client.post(
         "/api/v1/reservas-locativas",
         headers=HEADERS,
@@ -29,9 +28,8 @@ def _confirmar(client, reserva: dict) -> dict:
 
 
 def test_cancelar_reserva_locativa_desde_pendiente(client, db_session) -> None:
-    _apply_patch(db_session)
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CAN-001", codigo_inm="INM-RL-CAN-001"
+        client, codigo="RL-CAN-001", codigo_inm="INM-RL-CAN-001"
     )
 
     response = client.patch(
@@ -52,10 +50,9 @@ def test_cancelar_reserva_locativa_desde_pendiente(client, db_session) -> None:
     assert row["estado_reserva"] == "cancelada"
 
 
-def test_cancelar_reserva_locativa_desde_confirmada(client, db_session) -> None:
-    _apply_patch(db_session)
+def test_cancelar_reserva_locativa_desde_confirmada(client) -> None:
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CAN-002", codigo_inm="INM-RL-CAN-002"
+        client, codigo="RL-CAN-002", codigo_inm="INM-RL-CAN-002"
     )
     confirmada = _confirmar(client, reserva)
     assert confirmada["estado_reserva"] == "confirmada"
@@ -69,9 +66,7 @@ def test_cancelar_reserva_locativa_desde_confirmada(client, db_session) -> None:
     assert response.json()["data"]["estado_reserva"] == "cancelada"
 
 
-def test_cancelar_reserva_locativa_devuelve_404_si_no_existe(client, db_session) -> None:
-    _apply_patch(db_session)
-
+def test_cancelar_reserva_locativa_devuelve_404_si_no_existe(client) -> None:
     response = client.patch(
         "/api/v1/reservas-locativas/999999/cancelar",
         headers={**HEADERS, "If-Match-Version": "1"},
@@ -83,10 +78,9 @@ def test_cancelar_reserva_locativa_devuelve_404_si_no_existe(client, db_session)
     assert body["error_code"] == "NOT_FOUND"
 
 
-def test_cancelar_reserva_locativa_devuelve_400_si_ya_cancelada(client, db_session) -> None:
-    _apply_patch(db_session)
+def test_cancelar_reserva_locativa_devuelve_400_si_ya_cancelada(client) -> None:
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CAN-003", codigo_inm="INM-RL-CAN-003"
+        client, codigo="RL-CAN-003", codigo_inm="INM-RL-CAN-003"
     )
 
     first = client.patch(
@@ -107,12 +101,9 @@ def test_cancelar_reserva_locativa_devuelve_400_si_ya_cancelada(client, db_sessi
     assert body["error_code"] == "APPLICATION_ERROR"
 
 
-def test_cancelar_reserva_locativa_devuelve_409_si_version_no_coincide(
-    client, db_session
-) -> None:
-    _apply_patch(db_session)
+def test_cancelar_reserva_locativa_devuelve_409_si_version_no_coincide(client) -> None:
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CAN-004", codigo_inm="INM-RL-CAN-004"
+        client, codigo="RL-CAN-004", codigo_inm="INM-RL-CAN-004"
     )
 
     response = client.patch(

@@ -1,25 +1,10 @@
-from pathlib import Path
-
 from sqlalchemy import text
 
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import _crear_disponibilidad, _crear_inmueble
 
 
-PATCH_SQL_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "database"
-    / "patch_reserva_locativa_objeto_20260426.sql"
-)
-
-
-def _apply_patch(db_session) -> None:
-    raw_connection = db_session.connection().connection
-    with raw_connection.cursor() as cursor:
-        cursor.execute(PATCH_SQL_PATH.read_text(encoding="utf-8"))
-
-
-def _crear_inmueble_disponible(client, db_session, *, codigo: str) -> int:
+def _crear_inmueble_disponible(client, *, codigo: str) -> int:
     id_inmueble = _crear_inmueble(client, codigo=codigo)
     _crear_disponibilidad(
         client,
@@ -42,8 +27,7 @@ def _payload_reserva(*, codigo: str, id_inmueble: int) -> dict:
 
 
 def test_create_reserva_locativa_exitosa(client, db_session) -> None:
-    _apply_patch(db_session)
-    id_inmueble = _crear_inmueble_disponible(client, db_session, codigo="INM-RL-CRE-001")
+    id_inmueble = _crear_inmueble_disponible(client, codigo="INM-RL-CRE-001")
 
     response = client.post(
         "/api/v1/reservas-locativas",
@@ -80,8 +64,7 @@ def test_create_reserva_locativa_exitosa(client, db_session) -> None:
     assert obj_row["id_inmueble"] == id_inmueble
 
 
-def test_create_reserva_locativa_sin_disponibilidad_devuelve_400(client, db_session) -> None:
-    _apply_patch(db_session)
+def test_create_reserva_locativa_sin_disponibilidad_devuelve_400(client) -> None:
     id_inmueble = _crear_inmueble(client, codigo="INM-RL-NODISP-001")
 
     response = client.post(
@@ -96,11 +79,8 @@ def test_create_reserva_locativa_sin_disponibilidad_devuelve_400(client, db_sess
     assert body["details"]["errors"] == ["OBJECT_NOT_AVAILABLE"]
 
 
-def test_create_reserva_locativa_conflicto_reserva_existente_devuelve_400(
-    client, db_session
-) -> None:
-    _apply_patch(db_session)
-    id_inmueble = _crear_inmueble_disponible(client, db_session, codigo="INM-RL-CONF-001")
+def test_create_reserva_locativa_conflicto_reserva_existente_devuelve_400(client) -> None:
+    id_inmueble = _crear_inmueble_disponible(client, codigo="INM-RL-CONF-001")
 
     first = client.post(
         "/api/v1/reservas-locativas",
@@ -119,9 +99,7 @@ def test_create_reserva_locativa_conflicto_reserva_existente_devuelve_400(
     assert response.json()["details"]["errors"] == ["CONFLICTING_RESERVA_LOCATIVA"]
 
 
-def test_create_reserva_locativa_sin_objetos_devuelve_400(client, db_session) -> None:
-    _apply_patch(db_session)
-
+def test_create_reserva_locativa_sin_objetos_devuelve_400(client) -> None:
     response = client.post(
         "/api/v1/reservas-locativas",
         headers=HEADERS,
@@ -136,9 +114,7 @@ def test_create_reserva_locativa_sin_objetos_devuelve_400(client, db_session) ->
     assert response.json()["details"]["errors"] == ["OBJETOS_REQUIRED"]
 
 
-def test_create_reserva_locativa_inmueble_no_existe_devuelve_404(client, db_session) -> None:
-    _apply_patch(db_session)
-
+def test_create_reserva_locativa_inmueble_no_existe_devuelve_404(client) -> None:
     response = client.post(
         "/api/v1/reservas-locativas",
         headers=HEADERS,
@@ -151,11 +127,8 @@ def test_create_reserva_locativa_inmueble_no_existe_devuelve_404(client, db_sess
     assert body["error_code"] == "NOT_FOUND"
 
 
-def test_create_reserva_locativa_fecha_vencimiento_invalida_devuelve_400(
-    client, db_session
-) -> None:
-    _apply_patch(db_session)
-    id_inmueble = _crear_inmueble_disponible(client, db_session, codigo="INM-RL-FECH-001")
+def test_create_reserva_locativa_fecha_vencimiento_invalida_devuelve_400(client) -> None:
+    id_inmueble = _crear_inmueble_disponible(client, codigo="INM-RL-FECH-001")
 
     response = client.post(
         "/api/v1/reservas-locativas",

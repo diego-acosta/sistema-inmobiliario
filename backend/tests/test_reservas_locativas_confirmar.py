@@ -2,14 +2,13 @@ from sqlalchemy import text
 
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_locativas_create import (
-    _apply_patch,
     _crear_inmueble_disponible,
     _payload_reserva,
 )
 
 
-def _crear_reserva_pendiente(client, db_session, *, codigo: str, codigo_inm: str) -> dict:
-    id_inmueble = _crear_inmueble_disponible(client, db_session, codigo=codigo_inm)
+def _crear_reserva_pendiente(client, *, codigo: str, codigo_inm: str) -> dict:
+    id_inmueble = _crear_inmueble_disponible(client, codigo=codigo_inm)
     response = client.post(
         "/api/v1/reservas-locativas",
         headers=HEADERS,
@@ -20,9 +19,8 @@ def _crear_reserva_pendiente(client, db_session, *, codigo: str, codigo_inm: str
 
 
 def test_confirmar_reserva_locativa_pendiente_a_confirmada(client, db_session) -> None:
-    _apply_patch(db_session)
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CONF-OK-001", codigo_inm="INM-RL-CONF-OK-001"
+        client, codigo="RL-CONF-OK-001", codigo_inm="INM-RL-CONF-OK-001"
     )
     assert reserva["estado_reserva"] == "pendiente"
     assert reserva["version_registro"] == 1
@@ -51,9 +49,8 @@ def test_confirmar_reserva_locativa_pendiente_a_confirmada(client, db_session) -
 
 
 def test_confirmar_emite_outbox_reserva_locativa_confirmada(client, db_session) -> None:
-    _apply_patch(db_session)
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CONF-EVT-001", codigo_inm="INM-RL-CONF-EVT-001"
+        client, codigo="RL-CONF-EVT-001", codigo_inm="INM-RL-CONF-EVT-001"
     )
 
     client.patch(
@@ -80,9 +77,7 @@ def test_confirmar_emite_outbox_reserva_locativa_confirmada(client, db_session) 
     assert outbox_row["status"] == "PENDING"
 
 
-def test_confirmar_reserva_locativa_devuelve_404_si_no_existe(client, db_session) -> None:
-    _apply_patch(db_session)
-
+def test_confirmar_reserva_locativa_devuelve_404_si_no_existe(client) -> None:
     response = client.patch(
         "/api/v1/reservas-locativas/999999/confirmar",
         headers={**HEADERS, "If-Match-Version": "1"},
@@ -94,12 +89,9 @@ def test_confirmar_reserva_locativa_devuelve_404_si_no_existe(client, db_session
     assert body["error_code"] == "NOT_FOUND"
 
 
-def test_confirmar_reserva_locativa_devuelve_400_si_estado_no_es_pendiente(
-    client, db_session
-) -> None:
-    _apply_patch(db_session)
+def test_confirmar_reserva_locativa_devuelve_400_si_estado_no_es_pendiente(client) -> None:
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CONF-ST-001", codigo_inm="INM-RL-CONF-ST-001"
+        client, codigo="RL-CONF-ST-001", codigo_inm="INM-RL-CONF-ST-001"
     )
 
     first = client.patch(
@@ -121,12 +113,9 @@ def test_confirmar_reserva_locativa_devuelve_400_si_estado_no_es_pendiente(
     assert "pendiente" in body["error_message"]
 
 
-def test_confirmar_reserva_locativa_devuelve_409_si_version_no_coincide(
-    client, db_session
-) -> None:
-    _apply_patch(db_session)
+def test_confirmar_reserva_locativa_devuelve_409_si_version_no_coincide(client) -> None:
     reserva = _crear_reserva_pendiente(
-        client, db_session, codigo="RL-CONF-VER-001", codigo_inm="INM-RL-CONF-VER-001"
+        client, codigo="RL-CONF-VER-001", codigo_inm="INM-RL-CONF-VER-001"
     )
 
     response = client.patch(

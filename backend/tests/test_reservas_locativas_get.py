@@ -1,13 +1,12 @@
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_locativas_create import (
-    _apply_patch,
     _crear_inmueble_disponible,
     _payload_reserva,
 )
 
 
-def _crear_reserva(client, db_session, *, codigo: str, codigo_inm: str) -> dict:
-    id_inmueble = _crear_inmueble_disponible(client, db_session, codigo=codigo_inm)
+def _crear_reserva(client, *, codigo: str, codigo_inm: str) -> dict:
+    id_inmueble = _crear_inmueble_disponible(client, codigo=codigo_inm)
     response = client.post(
         "/api/v1/reservas-locativas",
         headers=HEADERS,
@@ -17,9 +16,8 @@ def _crear_reserva(client, db_session, *, codigo: str, codigo_inm: str) -> dict:
     return response.json()["data"]
 
 
-def test_get_reserva_locativa_devuelve_detalle_con_objetos(client, db_session) -> None:
-    _apply_patch(db_session)
-    reserva = _crear_reserva(client, db_session, codigo="RL-GET-001", codigo_inm="INM-RL-GET-001")
+def test_get_reserva_locativa_devuelve_detalle_con_objetos(client) -> None:
+    reserva = _crear_reserva(client, codigo="RL-GET-001", codigo_inm="INM-RL-GET-001")
 
     response = client.get(f"/api/v1/reservas-locativas/{reserva['id_reserva_locativa']}")
 
@@ -38,9 +36,7 @@ def test_get_reserva_locativa_devuelve_detalle_con_objetos(client, db_session) -
     assert data["deleted_at"] is None
 
 
-def test_get_reserva_locativa_devuelve_404_si_no_existe(client, db_session) -> None:
-    _apply_patch(db_session)
-
+def test_get_reserva_locativa_devuelve_404_si_no_existe(client) -> None:
     response = client.get("/api/v1/reservas-locativas/999999")
 
     assert response.status_code == 404
