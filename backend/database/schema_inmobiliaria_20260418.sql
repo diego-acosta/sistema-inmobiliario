@@ -7212,10 +7212,11 @@ CREATE INDEX idx_ca_contrato_anterior ON public.contrato_alquiler USING btree (i
 
 
 --
--- Name: idx_ca_reserva; Type: INDEX; Schema: public; Owner: -
+-- Name: uq_ca_reserva_activa; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ca_reserva ON public.contrato_alquiler USING btree (id_reserva_locativa);
+CREATE UNIQUE INDEX uq_ca_reserva_activa ON public.contrato_alquiler (id_reserva_locativa)
+    WHERE id_reserva_locativa IS NOT NULL AND deleted_at IS NULL;
 
 
 --

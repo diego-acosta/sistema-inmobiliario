@@ -12,6 +12,7 @@ from app.api.schemas.locativo import (
     SolicitudAlquilerData,
     SolicitudAlquilerResponse,
     ConvertirSolicitudAlquilerRequest,
+    GenerarContratoDesdeReservaRequest,
     ReservaLocativaCreateRequest,
     ReservaLocativaData,
     ReservaLocativaResponse,
@@ -98,6 +99,12 @@ from app.application.locativo.commands.convert_solicitud_alquiler_to_reserva_loc
 )
 from app.application.locativo.services.convert_solicitud_alquiler_to_reserva_locativa_service import (
     ConvertSolicitudAlquilerToReservaLocativaService,
+)
+from app.application.locativo.commands.generar_contrato_desde_reserva_locativa import (
+    GenerarContratoDesdeReservaLocativaCommand,
+)
+from app.application.locativo.services.generar_contrato_desde_reserva_locativa_service import (
+    GenerarContratoDesdeReservaLocativaService,
 )
 from app.application.locativo.commands.create_reserva_locativa import (
     CreateReservaLocativaCommand,
@@ -1472,6 +1479,96 @@ def cancel_reserva_locativa(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return ReservaLocativaResponse(data=ReservaLocativaData(**result.data))
+
+
+@router.post(
+    "/api/v1/reservas-locativas/{id_reserva_locativa}/generar-contrato",
+    status_code=201,
+    response_model=ContratoAlquilerCreateResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def generar_contrato_desde_reserva_locativa(
+    id_reserva_locativa: int,
+    request: GenerarContratoDesdeReservaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ContratoAlquilerCreateResponse | JSONResponse:
+    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+
+    command = GenerarContratoDesdeReservaLocativaCommand(
+        context=context,
+        id_reserva_locativa=id_reserva_locativa,
+        codigo_contrato=request.codigo_contrato,
+        fecha_inicio=request.fecha_inicio,
+        fecha_fin=request.fecha_fin,
+        observaciones=request.observaciones,
+    )
+
+    repository = LocativoRepository(db)
+    service = GenerarContratoDesdeReservaLocativaService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_RESERVA_LOCATIVA" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La reserva locativa indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "RESERVA_NOT_CONFIRMADA" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="Solo una reserva en estado confirmada puede generar un contrato.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "RESERVA_YA_TIENE_CONTRATO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="APPLICATION_ERROR",
+                    error_message="La reserva ya tiene un contrato de alquiler asociado.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if any(e in result.errors for e in ("NOT_FOUND_INMUEBLE", "NOT_FOUND_UNIDAD_FUNCIONAL")):
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="El objeto inmobiliario indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo generar el contrato desde la reserva.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return ContratoAlquilerCreateResponse(data=ContratoAlquilerCreateData(**result.data))
 
 
 # ── solicitudes_alquiler ──────────────────────────────────────────────────────

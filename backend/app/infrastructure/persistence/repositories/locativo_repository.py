@@ -1625,6 +1625,19 @@ class LocativoRepository:
             self.db.rollback()
             raise
 
+    def has_contrato_for_reserva_locativa(self, id_reserva_locativa: int) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM contrato_alquiler
+            WHERE id_reserva_locativa = :id AND deleted_at IS NULL
+            """
+        )
+        return (
+            self.db.execute(stmt, {"id": id_reserva_locativa}).scalar_one_or_none()
+            is not None
+        )
+
     def has_reserva_locativa_for_solicitud(self, id_solicitud_alquiler: int) -> bool:
         stmt = text(
             """

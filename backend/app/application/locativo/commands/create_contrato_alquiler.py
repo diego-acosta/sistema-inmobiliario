@@ -19,3 +19,4 @@ class CreateContratoAlquilerCommand:
     fecha_fin: date | None
     observaciones: str | None
     objetos: list[CreateContratoAlquilerObjetoCommand]
+    id_reserva_locativa: int | None = None

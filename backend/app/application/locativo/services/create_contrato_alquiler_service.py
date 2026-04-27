@@ -106,7 +106,7 @@ class CreateContratoAlquilerService:
             id_instalacion_ultima_modificacion=id_instalacion,
             op_id_alta=op_id,
             op_id_ultima_modificacion=op_id,
-            id_reserva_locativa=None,
+            id_reserva_locativa=command.id_reserva_locativa,
             id_cartera_locativa=None,
             id_contrato_anterior=None,
         )

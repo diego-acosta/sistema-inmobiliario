@@ -280,6 +280,13 @@ class ReservaLocativaResponse(BaseModel):
     data: ReservaLocativaData
 
 
+class GenerarContratoDesdeReservaRequest(BaseModel):
+    codigo_contrato: str
+    fecha_inicio: date
+    fecha_fin: date | None = None
+    observaciones: str | None = None
+
+
 class ConvertirSolicitudAlquilerRequest(BaseModel):
     codigo_reserva: str
     fecha_reserva: datetime
