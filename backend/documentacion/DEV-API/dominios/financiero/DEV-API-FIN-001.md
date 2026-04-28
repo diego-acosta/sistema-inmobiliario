@@ -48,14 +48,26 @@ El dominio financiero gestiona el ciclo economico completo del sistema: generaci
 
 ### Estado de implementacion
 
-**NO existe router financiero en backend.** No existe ninguna de las siguientes capas:
+Existe un MVP backend acotado para `relacion_generadora`:
 
-- `api/routers/financiero_router.py`
-- `api/schemas/financiero.py`
-- `application/financiero/`
-- `infrastructure/persistence/repositories/financiero_repository.py`
+- `POST /api/v1/financiero/relaciones-generadoras`
+- `GET /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}`
+- `GET /api/v1/financiero/relaciones-generadoras`
 
-Todo endpoint documentado aqui es un contrato de referencia. Ningun endpoint es operable hoy.
+El resto de endpoints documentados aqui sigue como contrato de referencia no operable.
+
+### Nota MVP relacion generadora
+
+En este MVP:
+
+- `estado_relacion_generadora` NO se devuelve en la API.
+- `estado_relacion_generadora` sigue siendo conceptual, no persistido y fuera del alcance MVP.
+- No debe agregarse todavia ninguna columna SQL `estado_relacion_generadora`.
+- Las transiciones `activar`, `cancelar` y `finalizar` quedan pendientes.
+- No se implementa activacion ni generacion de `obligacion_financiera` o `composicion_obligacion`.
+- Los errores usan codigos transversales basicos: `NOT_FOUND`, `APPLICATION_ERROR` e `INTERNAL_ERROR`.
+- La migracion de errores del MVP a codigos `ERR-FIN-XXX` queda pendiente para una iteracion posterior.
+- `tipo_origen` se acepta como input en uppercase, se persiste en lowercase porque el trigger SQL vigente lo espera asi, y se devuelve en uppercase como contrato API.
 
 ---
 
@@ -74,7 +86,7 @@ Criterios aplicados:
 
 - no se inventan entidades fuera de SQL
 - cuando el DEV-SRV documenta columnas o estados que no existen aun en SQL, se marca PENDIENTE
-- `relacion_generadora` no tiene columna `estado_relacion_generadora` en SQL vigente; el estado se gestionara por logica de servicio — se documenta la transicion esperada pero se marca como PENDIENTE fisico
+- `relacion_generadora` no tiene columna `estado_relacion_generadora` en SQL vigente; en el MVP el estado sigue conceptual, no se devuelve por API y no debe agregarse columna todavia
 - `composicion_obligacion` referencia `id_concepto_financiero`; `concepto_financiero` existe como tabla en SQL
 - `aplicacion_financiera` no tiene columna `estado_aplicacion` en SQL vigente — ERR-FIN y EST-FIN documentan estados de imputacion; su almacenamiento fisico queda PENDIENTE
 - `movimiento_financiero` no tiene FK explicita a `relacion_generadora` ni a `obligacion_financiera` en SQL; la asociacion se materializa exclusivamente a traves de `aplicacion_financiera` — ver ATENCION en seccion 7.3
@@ -263,7 +275,6 @@ Response `201`:
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
     "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
-    "estado_relacion_generadora": "borrador", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
     "fecha_alta": "2026-04-28T10:00:00",
     "created_at": "2026-04-28T10:00:00",
     "updated_at": "2026-04-28T10:00:00",
@@ -272,7 +283,9 @@ Response `201`:
 }
 ```
 
-Nota sobre `estado_relacion_generadora`: campo no existe en SQL vigente; su almacenamiento fisico es PENDIENTE. Se documenta como campo de la respuesta contractual esperada.
+Nota MVP sobre `estado_relacion_generadora`: el campo no existe en SQL vigente, no se devuelve en la API y su almacenamiento fisico queda fuera del MVP.
+
+Nota MVP sobre `tipo_origen`: la API acepta valores en uppercase; la persistencia usa lowercase por compatibilidad con el trigger SQL vigente; las responses devuelven uppercase.
 
 Validaciones:
 - `tipo_origen` requerido y valor valido del catalogo
@@ -288,9 +301,10 @@ Reglas de negocio:
 
 Errores posibles:
 - `400 APPLICATION_ERROR` — validacion de negocio sin equivalente FIN especifico (fallback transversal)
-- `409 op_id_duplicado (ERR-FIN-038)` — op_id ya ejecutado; responder con resultado original
-- `409 relacion_generadora_duplicada (ERR-FIN-005)` — ya existe relacion incompatible activa
+- `404 NOT_FOUND` — origen no encontrado o dado de baja
 - `500 INTERNAL_ERROR`
+
+La migracion de errores de este MVP a codigos `ERR-FIN-XXX` queda pendiente.
 
 ---
 
@@ -780,7 +794,6 @@ Response `200`:
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
     "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
-    "estado_relacion_generadora": "activa", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
     "fecha_alta": "2026-04-28T10:00:00",
     "obligaciones": [
       {
@@ -835,7 +848,6 @@ Objetivo:
 Filtros permitidos:
 - `tipo_origen` — filtrar por tipo de origen (`VENTA`, `CONTRATO_ALQUILER`, `SERVICIO_TRASLADADO`)
 - `id_origen` — filtrar por ID del origen en su dominio
-- `estado_relacion_generadora` — filtrar por estado
 - `vigente` — excluir dadas de baja cuando `true`
 
 Paginacion basica:
@@ -856,7 +868,6 @@ Response `200`:
         "tipo_origen": "CONTRATO_ALQUILER",
         "id_origen": 42,
         "descripcion": "Relacion generadora CA-0042",
-        "estado_relacion_generadora": "activa", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
         "fecha_alta": "2026-04-28T10:00:00",
         "saldo_total_pendiente": 15000.00,
         "deleted_at": null
@@ -1224,10 +1235,11 @@ Queda PENDIENTE de implementacion:
 
 | Bloque | Entidad SQL | Router backend | Estado |
 |--------|-------------|----------------|--------|
-| Relaciones generadoras — alta | `relacion_generadora` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Relaciones generadoras — activar | `relacion_generadora` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Relaciones generadoras — cancelar | `relacion_generadora` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Relaciones generadoras — finalizar | `relacion_generadora` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
+| Relaciones generadoras — alta | `relacion_generadora` | EXISTE MVP | IMPLEMENTADO MVP |
+| Relaciones generadoras — reads basicos | `relacion_generadora` | EXISTE MVP | IMPLEMENTADO MVP |
+| Relaciones generadoras — activar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
+| Relaciones generadoras — cancelar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
+| Relaciones generadoras — finalizar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
 | Obligaciones — lectura | `obligacion_financiera` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
 | Composicion — lectura | `composicion_obligacion` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
 | Obligados — lectura | `obligacion_obligado` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
@@ -1242,7 +1254,7 @@ Queda PENDIENTE de implementacion:
 
 | Campo | Entidad | Estado en SQL | Nota |
 |-------|---------|--------------|------|
-| `estado_relacion_generadora` | `relacion_generadora` | NO EXISTE en SQL | documentado como campo de respuesta contractual; PENDIENTE fisico |
+| `estado_relacion_generadora` | `relacion_generadora` | NO EXISTE en SQL | conceptual, no persistido y no devuelto por el MVP; no agregar columna todavia |
 | `estado_aplicacion` | `aplicacion_financiera` | NO EXISTE en SQL | EST-FIN documenta estados de imputacion; almacenamiento fisico PENDIENTE |
 | Columna FK directa a `relacion_generadora` en `movimiento_financiero` | `movimiento_financiero` | NO EXISTE | asociacion via `aplicacion_financiera` |
 
@@ -1254,7 +1266,7 @@ Para materializar este contrato en backend se requiere, en orden logico:
 2. schemas Pydantic para cada endpoint
 3. servicios de aplicacion por caso de uso (SRV-FIN-001 a SRV-FIN-008)
 4. repositorios de persistencia para cada entidad financiera
-5. columna `estado_relacion_generadora` en SQL (ALTER TABLE o migracion)
+5. decision posterior sobre persistencia fisica de `estado_relacion_generadora`; no agregar columna en el MVP
 6. columna `estado_aplicacion` en SQL para `aplicacion_financiera`
 7. registro de outbox para eventos financieros
 8. API backend para `factura_servicio` en dominio inmobiliario (prerequisito de SERVICIO_TRASLADADO)

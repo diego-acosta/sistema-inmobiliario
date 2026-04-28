@@ -8,6 +8,7 @@ from app.api.routers.health_router import router as health_router
 from app.api.routers.personas_router import router as personas_router
 from app.api.routers.servicios_router import router as servicios_router
 from app.api.routers.locativo_router import router as locativo_router
+from app.api.routers.financiero_router import router as financiero_router
 from app.config.settings import get_settings
 
 
@@ -31,6 +32,10 @@ OPENAPI_TAGS = [
         "description": "Dominio locativo: contratos de alquiler, objetos locativos y participaciones.",
     },
     {
+        "name": "Financiero",
+        "description": "Dominio financiero: relaciones generadoras, obligaciones y movimientos.",
+    },
+    {
         "name": "health",
         "description": "Endpoints tecnicos de salud del servicio.",
     },
@@ -50,3 +55,4 @@ app.include_router(personas_router)
 app.include_router(servicios_router)
 app.include_router(comercial_router)
 app.include_router(locativo_router)
+app.include_router(financiero_router)
