@@ -97,6 +97,10 @@ class InmuebleRepository(Protocol):
         self, payload: EntregaRestitucionPayload
     ) -> dict[str, Any]: ...
 
+    def has_entrega_restitucion_inmueble_for_contrato_fecha_sin_commit(
+        self, *, id_contrato_alquiler: int, fecha_entrega: date
+    ) -> bool: ...
+
 
 class OutboxRepository(Protocol):
     def get_pending_events(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
@@ -316,22 +320,29 @@ class ConsumeRestitucionLocativaService:
                 )
 
             # ── crear entrega_restitucion_inmueble ─────────────────────────────
-            self.inmueble_repository.create_entrega_restitucion_inmueble_sin_commit(
-                EntregaRestitucionPayload(
+            entrega_exists = (
+                self.inmueble_repository.has_entrega_restitucion_inmueble_for_contrato_fecha_sin_commit(
                     id_contrato_alquiler=id_contrato_alquiler,
                     fecha_entrega=fecha_restitucion_date,
-                    estado_inmueble=None,
-                    observaciones=None,
-                    uid_global=str(self.uuid_generator()),
-                    version_registro=1,
-                    created_at=now,
-                    updated_at=now,
-                    id_instalacion_origen=None,
-                    id_instalacion_ultima_modificacion=None,
-                    op_id_alta=consumer_op_id,
-                    op_id_ultima_modificacion=consumer_op_id,
                 )
             )
+            if not entrega_exists:
+                self.inmueble_repository.create_entrega_restitucion_inmueble_sin_commit(
+                    EntregaRestitucionPayload(
+                        id_contrato_alquiler=id_contrato_alquiler,
+                        fecha_entrega=fecha_restitucion_date,
+                        estado_inmueble=None,
+                        observaciones=None,
+                        uid_global=str(self.uuid_generator()),
+                        version_registro=1,
+                        created_at=now,
+                        updated_at=now,
+                        id_instalacion_origen=None,
+                        id_instalacion_ultima_modificacion=None,
+                        op_id_alta=consumer_op_id,
+                        op_id_ultima_modificacion=consumer_op_id,
+                    )
+                )
 
             # ── commit único: inbox + outbox + todo el DML ────────────────────
             self.inbox_repository.mark_as_processed(

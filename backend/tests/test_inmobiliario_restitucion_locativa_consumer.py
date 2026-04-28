@@ -290,10 +290,17 @@ def test_consume_restitucion_doble_procesamiento_no_duplica(client, db_session) 
     ).mappings().one()["total"]
     assert disp_count == 1
 
-    # entrega_restitucion_inmueble creada exactamente una vez
+    # Fila de restitución creada exactamente una vez.
+    # El setup ya materializa la entrega locativa inicial en la misma tabla.
     eri_count = db_session.execute(
         text(
-            "SELECT COUNT(*) AS total FROM entrega_restitucion_inmueble WHERE id_contrato_alquiler = :id AND deleted_at IS NULL"
+            """
+            SELECT COUNT(*) AS total
+            FROM entrega_restitucion_inmueble
+            WHERE id_contrato_alquiler = :id
+              AND fecha_entrega = DATE '2026-09-01'
+              AND deleted_at IS NULL
+            """
         ),
         {"id": data["id_contrato_alquiler"]},
     ).mappings().one()["total"]
@@ -351,12 +358,13 @@ def test_consume_restitucion_disponibilidad_invalida_rechaza(client, db_session)
     """Disponibilidad en estado inesperado → REJECTED con CURRENT_NOT_RESERVADA."""
     data = _setup(client, db_session, codigo="CA-CREST-NODISP-001")
 
-    # Forzar disponibilidad a un estado que no es NO_DISPONIBLE
+    # Forzar disponibilidad a un estado que no es NO_DISPONIBLE sin solapar
+    # otro tramo histórico del mismo estado.
     db_session.execute(
         text(
             """
             UPDATE disponibilidad
-            SET estado_disponibilidad = 'RESERVADA'
+            SET estado_disponibilidad = 'BLOQUEADA'
             WHERE id_inmueble = :id
               AND fecha_hasta IS NULL
               AND deleted_at IS NULL
@@ -384,7 +392,6 @@ def test_consume_restitucion_disponibilidad_invalida_rechaza(client, db_session)
             SELECT COUNT(*) AS t FROM entrega_restitucion_inmueble
             WHERE id_contrato_alquiler = :id
               AND deleted_at IS NULL
-            ORDER BY id_entrega_restitucion DESC
             """
         ),
         {"id": data["id_contrato_alquiler"]},

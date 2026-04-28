@@ -2662,6 +2662,30 @@ class InmuebleRepository(BaseRepository[Any]):
 
     # ── consumer helpers (sin commit — el caller gestiona la transacción) ─────
 
+    def has_entrega_restitucion_inmueble_for_contrato_fecha_sin_commit(
+        self, *, id_contrato_alquiler: int, fecha_entrega
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM entrega_restitucion_inmueble
+            WHERE id_contrato_alquiler = :id_contrato_alquiler
+              AND fecha_entrega = :fecha_entrega
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+        return (
+            self.db.execute(
+                stmt,
+                {
+                    "id_contrato_alquiler": id_contrato_alquiler,
+                    "fecha_entrega": fecha_entrega,
+                },
+            ).scalar_one_or_none()
+            is not None
+        )
+
     def create_entrega_restitucion_inmueble_sin_commit(
         self, payload: Any
     ) -> dict[str, Any]:
