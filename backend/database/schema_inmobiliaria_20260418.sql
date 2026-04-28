@@ -299,6 +299,51 @@ $$;
 
 
 --
+-- Name: trg_factura_servicio_validar_asociacion(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.trg_factura_servicio_validar_asociacion() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NOT (
+        (NEW.id_inmueble IS NOT NULL AND NEW.id_unidad_funcional IS NULL)
+        OR
+        (NEW.id_inmueble IS NULL AND NEW.id_unidad_funcional IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'Debe especificarse exactamente uno: id_inmueble o id_unidad_funcional';
+    END IF;
+
+    IF NEW.id_inmueble IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.inmueble_servicio isv
+            WHERE isv.id_inmueble = NEW.id_inmueble
+              AND isv.id_servicio = NEW.id_servicio
+              AND isv.deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'No existe asociacion activa entre inmueble % y servicio %', NEW.id_inmueble, NEW.id_servicio;
+        END IF;
+    END IF;
+
+    IF NEW.id_unidad_funcional IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.unidad_funcional_servicio ufs
+            WHERE ufs.id_unidad_funcional = NEW.id_unidad_funcional
+              AND ufs.id_servicio = NEW.id_servicio
+              AND ufs.deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'No existe asociacion activa entre unidad funcional % y servicio %', NEW.id_unidad_funcional, NEW.id_servicio;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: trg_desarrollo_sucursal_no_solapada(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2455,6 +2500,63 @@ CREATE SEQUENCE public.evento_numeracion_id_evento_numeracion_seq
 --
 
 ALTER SEQUENCE public.evento_numeracion_id_evento_numeracion_seq OWNED BY public.evento_numeracion.id_evento_numeracion;
+
+
+--
+-- Name: factura_servicio; Type: TABLE; Schema: public; Owner: -
+--
+-- Registro estructural de facturas externas de servicios emitidas por proveedores.
+-- El sistema no factura servicios ni genera obligaciones financieras desde este dominio.
+-- El evento factura_servicio_registrada queda pendiente de contrato/emision real; no existe
+-- patron SQL generico de outbox para eventos de dominio en este schema.
+
+CREATE TABLE public.factura_servicio (
+    id_factura_servicio bigint NOT NULL,
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
+    id_servicio bigint NOT NULL,
+    id_inmueble bigint,
+    id_unidad_funcional bigint,
+    proveedor character varying(150) NOT NULL,
+    numero_factura character varying(100) NOT NULL,
+    fecha_emision date NOT NULL,
+    fecha_vencimiento date,
+    periodo_desde date,
+    periodo_hasta date,
+    importe_total numeric(18,2) NOT NULL,
+    estado_factura_servicio character varying(30) DEFAULT 'REGISTRADA'::character varying NOT NULL,
+    observaciones text,
+    CONSTRAINT chk_factura_servicio_importe_no_negativo CHECK ((importe_total >= (0)::numeric)),
+    CONSTRAINT chk_factura_servicio_objeto_xor CHECK ((((id_inmueble IS NOT NULL) AND (id_unidad_funcional IS NULL)) OR ((id_inmueble IS NULL) AND (id_unidad_funcional IS NOT NULL)))),
+    CONSTRAINT chk_factura_servicio_periodo CHECK (((periodo_hasta IS NULL) OR (periodo_desde IS NULL) OR (periodo_hasta >= periodo_desde))),
+    CONSTRAINT chk_factura_servicio_vencimiento CHECK (((fecha_vencimiento IS NULL) OR (fecha_vencimiento >= fecha_emision)))
+);
+
+
+--
+-- Name: factura_servicio_id_factura_servicio_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.factura_servicio_id_factura_servicio_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: factura_servicio_id_factura_servicio_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.factura_servicio_id_factura_servicio_seq OWNED BY public.factura_servicio.id_factura_servicio;
 
 
 --
@@ -5200,6 +5302,13 @@ ALTER TABLE ONLY public.evento_numeracion ALTER COLUMN id_evento_numeracion SET 
 
 
 --
+-- Name: factura_servicio id_factura_servicio; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.factura_servicio ALTER COLUMN id_factura_servicio SET DEFAULT nextval('public.factura_servicio_id_factura_servicio_seq'::regclass);
+
+
+--
 -- Name: historial_acceso id_historial_acceso; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5911,6 +6020,14 @@ ALTER TABLE ONLY public.evento_auditoria
 
 ALTER TABLE ONLY public.evento_numeracion
     ADD CONSTRAINT evento_numeracion_pkey PRIMARY KEY (id_evento_numeracion);
+
+
+--
+-- Name: factura_servicio factura_servicio_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.factura_servicio
+    ADD CONSTRAINT factura_servicio_pkey PRIMARY KEY (id_factura_servicio);
 
 
 --
@@ -6631,6 +6748,14 @@ ALTER TABLE ONLY public.escrituracion
 
 ALTER TABLE ONLY public.evento_numeracion
     ADD CONSTRAINT uq_evento_numeracion_uid_global UNIQUE (uid_global);
+
+
+--
+-- Name: factura_servicio uq_factura_servicio_uid_global; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.factura_servicio
+    ADD CONSTRAINT uq_factura_servicio_uid_global UNIQUE (uid_global);
 
 
 --
@@ -7626,6 +7751,55 @@ CREATE INDEX idx_ev_num ON public.evento_numeracion USING btree (id_emision_nume
 --
 
 CREATE INDEX idx_evento_numeracion_uid_global ON public.evento_numeracion USING btree (uid_global);
+
+
+--
+-- Name: idx_factura_servicio_deleted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_factura_servicio_deleted_at ON public.factura_servicio USING btree (deleted_at);
+
+
+--
+-- Name: idx_factura_servicio_estado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_factura_servicio_estado ON public.factura_servicio USING btree (estado_factura_servicio);
+
+
+--
+-- Name: idx_factura_servicio_fecha_vencimiento; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_factura_servicio_fecha_vencimiento ON public.factura_servicio USING btree (fecha_vencimiento);
+
+
+--
+-- Name: idx_factura_servicio_id_inmueble; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_factura_servicio_id_inmueble ON public.factura_servicio USING btree (id_inmueble);
+
+
+--
+-- Name: idx_factura_servicio_id_servicio; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_factura_servicio_id_servicio ON public.factura_servicio USING btree (id_servicio);
+
+
+--
+-- Name: idx_factura_servicio_id_unidad_funcional; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_factura_servicio_id_unidad_funcional ON public.factura_servicio USING btree (id_unidad_funcional);
+
+
+--
+-- Name: idx_factura_servicio_uid_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_factura_servicio_uid_global ON public.factura_servicio USING btree (uid_global);
 
 
 --
@@ -8875,6 +9049,13 @@ CREATE UNIQUE INDEX ux_inmueble_servicio_activo ON public.inmueble_servicio USIN
 
 
 --
+-- Name: ux_factura_servicio_activa_proveedor_numero; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_factura_servicio_activa_proveedor_numero ON public.factura_servicio USING btree (proveedor, numero_factura) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: ux_parametro_opcion_parametro_codigo; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8970,6 +9151,13 @@ CREATE TRIGGER trg_bi_documento_entidad_core_ef BEFORE INSERT ON public.document
 --
 
 CREATE TRIGGER trg_bi_emision_numeracion_core_ef BEFORE INSERT ON public.emision_numeracion FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
+
+--
+-- Name: factura_servicio trg_bi_factura_servicio_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_factura_servicio_core_ef BEFORE INSERT ON public.factura_servicio FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
 
 
 --
@@ -9131,6 +9319,13 @@ CREATE TRIGGER trg_biu_documento_entidad_polimorfica BEFORE INSERT OR UPDATE ON 
 --
 
 CREATE TRIGGER trg_biu_emision_numeracion_polimorfica BEFORE INSERT OR UPDATE ON public.emision_numeracion FOR EACH ROW EXECUTE FUNCTION public.trg_emision_numeracion_polimorfica();
+
+
+--
+-- Name: factura_servicio trg_biu_factura_servicio_validar_asociacion; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_biu_factura_servicio_validar_asociacion BEFORE INSERT OR UPDATE ON public.factura_servicio FOR EACH ROW EXECUTE FUNCTION public.trg_factura_servicio_validar_asociacion();
 
 
 --
@@ -9299,6 +9494,13 @@ CREATE TRIGGER trg_bu_documento_entidad_core_ef BEFORE UPDATE ON public.document
 --
 
 CREATE TRIGGER trg_bu_emision_numeracion_core_ef BEFORE UPDATE ON public.emision_numeracion FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
+
+--
+-- Name: factura_servicio trg_bu_factura_servicio_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_factura_servicio_core_ef BEFORE UPDATE ON public.factura_servicio FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
 
 
 --
@@ -9802,6 +10004,30 @@ ALTER TABLE ONLY public.escrituracion
 
 ALTER TABLE ONLY public.evento_numeracion
     ADD CONSTRAINT fk_ev_num FOREIGN KEY (id_emision_numeracion) REFERENCES public.emision_numeracion(id_emision_numeracion) ON DELETE RESTRICT;
+
+
+--
+-- Name: factura_servicio fk_factura_servicio_inmueble; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.factura_servicio
+    ADD CONSTRAINT fk_factura_servicio_inmueble FOREIGN KEY (id_inmueble) REFERENCES public.inmueble(id_inmueble) ON DELETE RESTRICT;
+
+
+--
+-- Name: factura_servicio fk_factura_servicio_servicio; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.factura_servicio
+    ADD CONSTRAINT fk_factura_servicio_servicio FOREIGN KEY (id_servicio) REFERENCES public.servicio(id_servicio) ON DELETE RESTRICT;
+
+
+--
+-- Name: factura_servicio fk_factura_servicio_unidad_funcional; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.factura_servicio
+    ADD CONSTRAINT fk_factura_servicio_unidad_funcional FOREIGN KEY (id_unidad_funcional) REFERENCES public.unidad_funcional(id_unidad_funcional) ON DELETE RESTRICT;
 
 
 --
