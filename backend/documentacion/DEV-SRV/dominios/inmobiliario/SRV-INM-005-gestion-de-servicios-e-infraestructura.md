@@ -31,7 +31,7 @@
 ## Funcionalidad pendiente
 - modelar `infraestructura` como entidad propia: `NO IMPLEMENTADO`
 - catalogos especializados de cobertura o capacidad del servicio: `CONCEPTUAL`
-- registrar factura de servicio emitida por proveedor externo: `NO IMPLEMENTADO`
+- registrar factura de servicio emitida por proveedor externo: `SQL IMPLEMENTADO` / `API-BACKEND-EVENTO-CONSUMER NO IMPLEMENTADOS`
 - disparar integracion con `financiero` para generar obligacion derivada de una factura de servicio externa: `NO IMPLEMENTADO`
 
 ## Registro de facturas externas de servicios (PENDIENTE)
@@ -39,18 +39,18 @@
 ### Clasificacion
 - `servicio`: soporte transversal del activo inmobiliario.
 - asociacion `inmueble_servicio` / `unidad_funcional_servicio`: soporte transversal.
-- `factura_servicio`: entidad conceptual pendiente, vinculada al servicio y al activo alcanzado.
+- `factura_servicio`: tabla SQL estructural implementada, vinculada al servicio y al activo alcanzado; sin API/backend funcional vigente.
 - obligacion financiera derivada: nucleo del dominio `financiero`.
 
 ### Definicion del concepto
-`factura_servicio` representa el registro interno, pendiente y no implementado, de una factura emitida por un proveedor externo de servicios como agua, luz, gas u otros servicios asociados a un objeto inmobiliario.
+`factura_servicio` representa el registro interno, implementado solo a nivel SQL estructural, de una factura emitida por un proveedor externo de servicios como agua, luz, gas u otros servicios asociados a un objeto inmobiliario.
 
-El sistema no factura servicios. Solo podria registrar los datos de la factura recibida del proveedor para conservar trazabilidad operativa y actuar como origen conceptual de deuda financiera.
+El sistema no factura servicios. La tabla SQL permite estructurar el origen operativo recibido del proveedor, pero no existe API/backend para registrarlo funcionalmente ni circuito financiero implementado.
 
 ### Regla de ownership
 El sistema no factura servicios. La factura es emitida por un proveedor externo.
 
-El dominio inmobiliario solo podria registrar la existencia operativa de esa factura externa cuando este soportado por SQL, backend y API. Ese registro no debe calcular deuda como fuente primaria, no debe emitir comprobantes y no debe reemplazar la obligacion financiera.
+El dominio inmobiliario solo registra el origen operativo de esa factura externa. Hoy ese soporte existe solo en SQL estructural; no existe API/backend para operar el registro. Ese registro no debe calcular deuda como fuente primaria, no debe emitir comprobantes y no debe reemplazar la obligacion financiera.
 
 El dominio `financiero` es el responsable de crear la `relacion_generadora`, generar la `obligacion_financiera` y sus `composicion_obligacion` cuando reciba un origen compatible.
 
@@ -65,24 +65,26 @@ El dominio `operativo` no adquiere ownership sobre esta factura. Su alcance vige
 
 Representacion resumida:
 
-`factura externa` -> `registro en sistema` -> `factura_servicio_registrada` (evento conceptual pendiente) -> `financiero genera obligacion`
+`factura externa` -> `registro SQL estructural disponible / API pendiente` -> `factura_servicio_registrada` (evento NO IMPLEMENTADO) -> `financiero genera obligacion` (NO IMPLEMENTADO)
 
 La integracion debe ser event-driven a nivel conceptual: `inmobiliario` publica el hecho de registro y `financiero` reacciona sin que `inmobiliario` cree obligaciones ni ejecute logica financiera.
 
 El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotente. La clave conceptual recomendada es `id_factura_servicio`; el consumidor financiero no debe crear obligaciones duplicadas ante reintentos del mismo evento.
 
 ### Estado de implementacion
-- no existe hoy tabla especifica documentada en este workspace para registrar la factura externa de servicio.
-- no existe hoy endpoint inmobiliario documentado para registrar facturas de servicio externas.
+- `factura_servicio` existe como tabla SQL estructural.
+- no existe hoy API/backend inmobiliario para registrar facturas de servicio externas.
 - no existe hoy evento implementado que represente el registro de factura externa; `factura_servicio_registrada` es solo un nombre conceptual pendiente de contrato/evento real.
-- la integracion con `financiero` queda pendiente hasta definir contrato, entidad origen y endpoint/evento existente.
+- no existe consumer financiero para `factura_servicio_registrada`.
+- no se genera `relacion_generadora` ni `obligacion_financiera` desde `factura_servicio`.
+- la integracion con `financiero` queda pendiente hasta definir contrato, API/backend, evento y consumer.
 
 ### Relacion conceptual con financiero
 - `factura_servicio` actua como origen conceptual de `SERVICIO_TRASLADADO`.
 - decision recomendada: 1 servicio asociado a inmueble o unidad funcional -> 1 `relacion_generadora` en `financiero`.
 - decision recomendada: esa `relacion_generadora` puede existir antes de la primera `factura_servicio`.
 - decision recomendada: cada `factura_servicio` posterior -> 1 `obligacion_financiera` dentro de esa misma `relacion_generadora`.
-- esta decision queda `PENDIENTE` de implementacion fisica y no implica tablas, endpoints, eventos ni consumers existentes.
+- esta decision queda `PENDIENTE` de implementacion funcional y no implica API/backend, eventos, consumers ni generacion financiera existentes.
 
 ## Modelo conceptual futuro
 - si el negocio necesita distinguir infraestructura fisica de servicio, debe aparecer como modelo nuevo y no como alias de `servicio`

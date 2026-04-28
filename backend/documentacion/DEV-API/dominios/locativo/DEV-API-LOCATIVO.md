@@ -2,29 +2,51 @@
 
 ## Estado del documento
 
-- version: `1.0`
-- estado: `propuesto para implementacion (v1 minimo)`
-- fuente: `DER-LOCATIVO + DEV-SRV locativo + SQL real`
-- ultima actualizacion: `2026-04-23`
-- caracter: `normativo para diseno v1; no materializado aun en backend`
+- version: `1.1`
+- estado: `contrato vigente parcial/amplio`
+- fuente: `backend real + DER-LOCATIVO + DEV-SRV locativo + SQL real`
+- ultima actualizacion: `2026-04-28`
+- caracter: `normativo para el surface locativo materializado parcialmente/ampliamente en backend`
 
 ## 1. Alcance
 
-Este documento define el contrato minimo `v1` propuesto para el dominio `locativo`, validado contra:
+Este documento define el contrato `v1` vigente para el dominio `locativo`, validado contra:
 
+- `backend/app/api/routers/locativo_router.py`
+- `backend/app/api/schemas/locativo.py`
+- `backend/app/application/locativo`
+- `backend/app/infrastructure/persistence/repositories/locativo_repository.py`
+- `backend/tests/test_*locativ*.py`
+- `backend/tests/test_contratos_alquiler_*.py`
+- `backend/tests/test_solicitudes_alquiler_*.py`
 - `backend/documentacion/DER/DER-LOCATIVO.md`
 - `backend/documentacion/DEV-SRV/dominios/locativo/SRV-LOC-001-gestion-de-contratos-de-alquiler.md`
 - `backend/documentacion/DEV-SRV/dominios/locativo/SRV-LOC-002-gestion-de-condiciones-locativas.md`
 - catalogos `RN-LOC`, `ERR-LOC`, `EST-LOC`, `CU-LOC`
 - `backend/database/schema_inmobiliaria_20260418.sql`
 
-El objetivo de esta version es fijar un contrato operativo minimo para futura implementacion, sin inventar bloques que hoy no esten cerrados por DER y documentacion vigente.
+Dominio locativo materializado parcialmente/ampliamente en backend; pendientes especificos segun endpoints/subflujos no implementados.
 
-El alcance queda limitado a:
+Estado real verificado:
+
+- router locativo: `IMPLEMENTADO`
+- schemas locativos: `IMPLEMENTADO`
+- services locativos: `IMPLEMENTADO parcial/amplio`
+- repository locativo: `IMPLEMENTADO`
+- tests locativos: `IMPLEMENTADO parcial/amplio`
+
+El alcance implementado verificado incluye:
 
 - `contrato_alquiler` como recurso raiz
 - `contrato_objeto_locativo` como detalle embebido del contrato
 - `condicion_economica_alquiler` como recurso hijo del contrato
+- `solicitud_alquiler`
+- `reserva_locativa`
+- conversion de `solicitud_alquiler` a `reserva_locativa`
+- generacion de `contrato_alquiler` desde `reserva_locativa`
+- entrega locativa
+- restitucion locativa
+- objetos locativos / multiobjeto mediante `contrato_objeto_locativo` y `reserva_locativa_objeto`
 
 Quedan explicitamente fuera de `v1`:
 
@@ -697,7 +719,7 @@ Observacion:
 
 ## 10. Notas de implementacion
 
-- este documento define un contrato objetivo minimo para futura implementacion
-- no debe leerse como contrato ya materializado en routers, schemas, services o tests
-- si durante la implementacion aparece necesidad de exponer intervinientes, reserva, rescision o entrega, debe abrirse un bloque adicional y no ampliarse este `v1` por arrastre
-- si el backend futuro decide exponer `contrato_objeto_locativo` como recurso autonomo, ese cambio debera justificarse contra `DER-LOCATIVO` porque hoy el modelo minimo lo trata como detalle embebido
+- este documento define un contrato vigente para el surface locativo verificado en routers, schemas, services, repository y tests
+- no debe leerse como dominio locativo completo; hay subflujos fuera del surface implementado vigente
+- si aparece necesidad de exponer intervinientes, rescision o renovaciones, debe abrirse un bloque adicional y no ampliarse este `v1` por arrastre
+- si el backend decide exponer `contrato_objeto_locativo` como recurso autonomo, ese cambio debera justificarse contra `DER-LOCATIVO` porque hoy el modelo vigente lo trata como detalle embebido

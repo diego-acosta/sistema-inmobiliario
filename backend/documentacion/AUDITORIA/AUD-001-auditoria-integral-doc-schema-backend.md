@@ -38,7 +38,7 @@ Estado de verificación:
 Conclusión ejecutiva:
 
 - El backend real está más avanzado que parte de la documentación en locativo y comercial.
-- `factura_servicio` ya existe en SQL, pero varias fuentes siguen diciendo que no existe entidad/tabla formal.
+- `factura_servicio` ya existe en SQL; al momento de la auditoría varias fuentes aún afirmaban ausencia de entidad/tabla formal.
 - Financiero tiene schema y documentación funcional amplia, pero no tiene router/service/repository propio materializado.
 - La regla SQL documentada para conflicto activo de `reserva_locativa_objeto` no coincide con el soporte físico real: la validación cross-reserva está en aplicación, no en constraint SQL.
 - No se detectó que `factura_servicio` genere `relacion_generadora` u `obligacion_financiera` automáticamente.
@@ -55,13 +55,13 @@ Conclusión ejecutiva:
   - `backend/documentacion/DEV-SRV/dominios/inmobiliario/catalogos/RN-INM.md`
   - `backend/documentacion/DEV-SRV/dominios/inmobiliario/catalogos/CU-INM.md`
   - `backend/documentacion/DECISIONES/integracion/INT-FIN-002-resolucion-obligado-financiero.md`
-- Descripción: `factura_servicio` está implementada como tabla SQL, pero documentación vigente aún afirma que no existe entidad/tabla formal o que el registro es completamente no implementado.
+- Descripción: `factura_servicio` está implementada como tabla SQL, pero la documentación vigente al momento de la auditoría aún afirmaba ausencia de entidad/tabla formal o que el registro era completamente no implementado.
 - Evidencia:
   - SQL: `CREATE TABLE public.factura_servicio` en `schema_inmobiliaria_20260418.sql`.
   - SQL: índices `idx_factura_servicio_*`, unique parcial `ux_factura_servicio_activa_proveedor_numero`, FKs y trigger `trg_biu_factura_servicio_validar_asociacion`.
-  - Docs: `SRV-INM-005` dice que no existe tabla formal.
-  - Docs: `RN-INM` marca registro de `factura_servicio` como `NO IMPLEMENTADO`.
-  - Docs: `CU-INM-047` dice que no existe entidad.
+  - Docs: `SRV-INM-005` afirmaba ausencia de tabla formal.
+  - Docs: `RN-INM` marcaba registro de `factura_servicio` como completamente `NO IMPLEMENTADO`.
+  - Docs: `CU-INM-047` afirmaba ausencia de entidad.
   - Docs: `INT-FIN-002` dice que `factura_servicio` no existe como tabla formal documentada e implementada.
 - Impacto: genera ambigüedad de estado. El concepto ya no es puramente conceptual a nivel de schema, aunque sigue sin API/backend/evento/consumer financiero.
 - Recomendación: actualizar documentación para separar estados: `SQL estructural IMPLEMENTADO`, `API/backend NO IMPLEMENTADO`, `evento/consumer financiero NO IMPLEMENTADO`.
@@ -81,17 +81,17 @@ Conclusión ejecutiva:
   - `backend/app/application/locativo`
   - `backend/app/infrastructure/persistence/repositories/locativo_repository.py`
   - `backend/tests/test_*locativ*.py`, `backend/tests/test_contratos_alquiler_*.py`, `backend/tests/test_solicitudes_alquiler_*.py`
-- Descripción: documentación relevante marca locativo como no materializado o sin router/tests, pero existe implementación backend y cobertura de tests.
+- Descripción: documentación relevante marcaba locativo como pendiente de materialización o sin router/tests, pero existe implementación backend y cobertura de tests.
 - Evidencia:
-  - `DEV-API-LOCATIVO.md`: carácter “no materializado aún en backend”.
-  - `DER-LOCATIVO.md`: “backend locativo propio con router/schema/service/repository: no materializado” y “tests locativos versionados: no materializados”.
-  - `ROADMAP_MAESTRO_ACTUALIZADO.md`: locativo indica “no hay router, schemas, services ni tests propios”.
+  - `DEV-API-LOCATIVO.md`: antes indicaba carácter pendiente de materialización backend.
+  - `DER-LOCATIVO.md`: antes indicaba ausencia de backend locativo propio y tests locativos versionados.
+  - `ROADMAP_MAESTRO_ACTUALIZADO.md`: antes indicaba ausencia de router, schemas, services y tests propios.
   - Backend real: `locativo_router.py` expone contratos, condiciones, reservas locativas, solicitudes, entrega y restitución.
   - Tests reales: existen tests para contratos, reservas locativas, solicitudes, entrega, restitución y condiciones económicas.
 - Impacto: un lector o agente podría omitir backend real, duplicar diseño o clasificar mal cambios locativos.
 - Recomendación: actualizar documentos locativos y roadmap para reflejar implementación real y dejar pendientes solo los subflujos no implementados.
 - Fix sugerido: cambiar estado de `DEV-API-LOCATIVO`, `DER-LOCATIVO` y roadmap a “implementado parcial/materializado” con lista exacta de endpoints existentes.
-- Estado sugerido: PENDIENTE
+- Estado sugerido: CORREGIDO DOCUMENTALMENTE. Seguimiento pendiente: mantener `DEV-API-LOCATIVO`, `DER-LOCATIVO` y roadmap sincronizados con futuros subflujos locativos.
 
 ### AUD-CRIT-003
 
@@ -104,15 +104,15 @@ Conclusión ejecutiva:
   - `backend/app/application/comercial`
   - `backend/app/infrastructure/persistence/repositories/comercial_repository.py`
   - `backend/tests/test_reservas_venta_*.py`, `backend/tests/test_ventas_*.py`, `backend/tests/test_cesiones_*.py`, `backend/tests/test_escrituraciones_*.py`
-- Descripción: `DER-COMERCIAL.md` contiene una afirmación obsoleta indicando que no existe router, schema, service ni repository comercial, aunque el backend comercial existe y está probado.
+- Descripción: `DER-COMERCIAL.md` contenía una afirmación obsoleta indicando que no existía router, schema, service ni repository comercial, aunque el backend comercial existe y está probado.
 - Evidencia:
-  - `DER-COMERCIAL.md`: “no existe hoy router, schema, service ni repository del dominio Comercial”.
+  - `DER-COMERCIAL.md`: antes indicaba “no existe hoy router, schema, service ni repository del dominio Comercial”.
   - Backend real: `comercial_router.py`, schemas, services y repository implementados.
   - Tests reales: reservas de venta, generación de venta, venta multiobjeto, condiciones comerciales, instrumentos, cesiones y escrituraciones.
 - Impacto: contradicción documental directa con implementación vigente. Puede inducir decisiones inválidas o duplicación de módulos.
-- Recomendación: actualizar el bloque obsoleto del DER comercial y mantener una sección de “estado implementado real”.
-- Fix sugerido: reemplazar la nota histórica por una tabla con backend implementado y pendientes reales.
-- Estado sugerido: PENDIENTE
+- Recomendación: mantener el bloque corregido del DER comercial y revisarlo ante nuevos subflujos comerciales.
+- Fix sugerido: reemplazar la nota histórica por estado backend vigente con implementado real y pendientes reales.
+- Estado sugerido: CORREGIDO DOCUMENTALMENTE. Seguimiento pendiente: mantener `DER-COMERCIAL` sincronizado con backend real y distinguir subflujos pendientes.
 
 ## 4. Hallazgos altos
 
@@ -267,13 +267,13 @@ Conclusión ejecutiva:
   - `backend/documentacion/DER/DER-COMERCIAL.md`
   - `backend/database/schema_inmobiliaria_20260418.sql`
   - `backend/app/infrastructure/persistence/repositories/comercial_repository.py`
-- Descripción: el DER comercial mezcla afirmaciones actuales con notas históricas; algunas contradicen el estado real.
+- Descripción: el DER comercial mezclaba afirmaciones actuales con notas históricas; algunas contradecían el estado real.
 - Evidencia:
-  - El documento inicia declarando backend real como fuente, pero más adelante afirma que no existe backend comercial.
+  - El documento iniciaba declarando backend real como fuente, pero más adelante afirmaba que no existía backend comercial.
 - Impacto: no rompe implementación, pero reduce confiabilidad del documento.
 - Recomendación: separar “estado histórico” de “estado vigente”.
 - Fix sugerido: sección “Notas obsoletas reemplazadas” o limpieza directa.
-- Estado sugerido: PENDIENTE
+- Estado sugerido: CORREGIDO DOCUMENTALMENTE. Seguimiento pendiente: mantener separadas las notas históricas del estado backend vigente.
 
 ### AUD-MED-004
 
@@ -285,11 +285,11 @@ Conclusión ejecutiva:
 - Descripción: el contrato locativo documentado como “v1 mínimo” no refleja todo el surface real actual: solicitudes, reservas, generación de contrato, entrega y restitución están implementadas.
 - Evidencia:
   - Router real expone `solicitudes-alquiler`, `reservas-locativas`, `generar-contrato`, `entregar`, `restituir`.
-  - Documento se presenta como no materializado y con alcance mínimo.
+  - Documento se presentaba como pendiente de materialización y con alcance mínimo.
 - Impacto: clientes pueden desconocer endpoints existentes.
 - Recomendación: actualizar DEV-API locativo como contrato vigente o crear anexo de endpoints implementados.
 - Fix sugerido: sincronizar DEV-API con router real.
-- Estado sugerido: PENDIENTE
+- Estado sugerido: CORREGIDO DOCUMENTALMENTE. Seguimiento pendiente: revisar endpoints/subflujos locativos nuevos en futuras auditorias.
 
 ### AUD-MED-005
 
@@ -328,7 +328,7 @@ Conclusión ejecutiva:
 - Archivo(s):
   - `backend/documentacion/ROADMAP_MAESTRO_ACTUALIZADO.md`
 - Descripción: roadmap mezcla estado de implementación antiguo con estado actual.
-- Evidencia: locativo figura sin routers/tests pese a implementación real.
+- Evidencia: locativo figuraba sin routers/tests pese a implementación real.
 - Impacto: planificación desactualizada.
 - Recomendación: actualizar después de corregir documentos de dominio.
 - Fix sugerido: usar resultado de esta auditoría como input.
@@ -353,7 +353,7 @@ Conclusión ejecutiva:
 |---|---|---|---|---|---|
 | Personas | Alta, alineada en general | IMPLEMENTADO | IMPLEMENTADO | IMPLEMENTADO | OK con auditoría puntual pendiente |
 | Inmobiliario | Alta, con drift en `factura_servicio` | IMPLEMENTADO + `factura_servicio` SQL | IMPLEMENTADO salvo `factura_servicio` | IMPLEMENTADO salvo `factura_servicio` | DESAJUSTE PARCIAL |
-| Comercial | Alta, con DER obsoleto puntual | IMPLEMENTADO | IMPLEMENTADO | IMPLEMENTADO | DESAJUSTE DOCUMENTAL |
+| Comercial | Alta, DER corregido documentalmente | IMPLEMENTADO | IMPLEMENTADO | IMPLEMENTADO | CORREGIDO DOCUMENTALMENTE |
 | Locativo | Desactualizada en DEV-API/DER/roadmap | IMPLEMENTADO parcial/amplio | IMPLEMENTADO | IMPLEMENTADO | DESAJUSTE DOCUMENTAL CRÍTICO |
 | Financiero | Alta funcional, estado físico/API difuso | IMPLEMENTADO SQL | NO IMPLEMENTADO como API propia | NO IMPLEMENTADO como endpoints | DESAJUSTE API/DOC |
 | Integración | Decisiones existentes | outbox/inbox IMPLEMENTADO | Producers/consumers parciales | Tests parciales | PARCIAL |
@@ -420,7 +420,7 @@ Conclusión ejecutiva:
 - No tiene router/schema/service/repository/tests.
 - No genera obligación financiera.
 - No emite outbox real desde SQL ni backend.
-- Documentación debe pasar de “no existe entidad/tabla” a “SQL estructural implementado; circuito funcional pendiente”.
+- Documentación debe pasar de “ausencia de entidad/tabla” a “SQL estructural implementado; circuito funcional pendiente”.
 
 ### `SERVICIO_TRASLADADO`
 
@@ -460,7 +460,7 @@ Conclusión ejecutiva:
 - Existe `reserva_venta_objeto_inmobiliario`.
 - Existe `venta_objeto_inmobiliario`.
 - Backend y tests cubren creación, generación de venta y condiciones por objeto.
-- `DER-COMERCIAL` tiene una nota obsoleta sobre ausencia de backend.
+- `DER-COMERCIAL` tenía una nota obsoleta sobre ausencia de backend; estado: CORREGIDO DOCUMENTALMENTE.
 
 ### `outbox_event`
 
@@ -475,7 +475,7 @@ Conclusión ejecutiva:
 1. Fixes críticos:
    - Actualizar estado documental de `factura_servicio` diferenciando SQL implementado vs API/evento/consumer pendientes.
    - Actualizar `DEV-API-LOCATIVO`, `DER-LOCATIVO` y roadmap con backend/tests reales.
-   - Corregir nota obsoleta de `DER-COMERCIAL`.
+   - Mantener seguimiento de `DER-COMERCIAL` tras la corrección documental del estado backend comercial.
 
 2. Fixes altos:
    - Marcar `API-FIN-001` como no implementado o crear backend financiero mínimo.

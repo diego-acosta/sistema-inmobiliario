@@ -303,13 +303,13 @@ SRV-FIN-012
 - origen conceptual: `SERVICIO_TRASLADADO`
 - la factura la emite un proveedor externo; el sistema no factura servicios
 - la obligacion derivada se modela en financiero mediante relacion_generadora, obligacion_financiera y composicion_obligacion
-- requiere entidad intermedia PENDIENTE `factura_servicio`
+- requiere entidad intermedia `factura_servicio`; la tabla SQL estructural existe, pero no existe API/backend, evento ni consumer financiero
 - una `factura_servicio` no debe generar mas de una obligacion financiera activa
-- la generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`, PENDIENTE / NO IMPLEMENTADO hasta que exista entidad o campo real
+- la generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`; queda PENDIENTE / NO IMPLEMENTADO a nivel funcional
 - decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado a inmueble o unidad funcional -> 1 `relacion_generadora`; cada `factura_servicio` registrada -> 1 `obligacion_financiera` dentro de esa relacion
 - ciclo de vida conceptual: para `SERVICIO_TRASLADADO`, la `relacion_generadora` puede existir antes de la primera `factura_servicio`; las facturas posteriores generan obligaciones dentro de esa misma relacion
-- esta decision queda PENDIENTE / NO IMPLEMENTADO hasta que exista entidad, contrato y soporte fisico
-- no existe hoy tabla ni endpoint documentado para ese origen en inmobiliario; queda pendiente de contrato implementado
+- esta decision queda PENDIENTE / NO IMPLEMENTADO hasta que exista contrato, API/backend, evento y consumer financiero
+- existe tabla SQL `factura_servicio`, pero no existe endpoint documentado vigente para ese origen en inmobiliario y no se genera `relacion_generadora` ni `obligacion_financiera`
 
 ### Personas
 - obligacion_obligado → persona

@@ -250,13 +250,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Una `factura_servicio` no debe generar mas de una obligacion financiera activa. La generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: PENDIENTE / NO IMPLEMENTADO hasta que exista entidad o campo real.
+- estado: PENDIENTE / NO IMPLEMENTADO a nivel funcional; `factura_servicio` existe como tabla SQL estructural, pero no existe API/backend, evento ni consumer financiero.
 
 ### RN-FIN-047 — Relacion generadora para SERVICIO_TRASLADADO
 - descripcion: Para `SERVICIO_TRASLADADO`, la decision conceptual recomendada es que 1 servicio asociado a inmueble o unidad funcional use 1 `relacion_generadora`, que esa relacion pueda existir antes de la primera `factura_servicio`, y que cada factura posterior genere 1 `obligacion_financiera` dentro de esa misma relacion.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: CONCEPTUAL / PENDIENTE / NO IMPLEMENTADO hasta que exista entidad, contrato y soporte fisico.
+- estado: CONCEPTUAL / PENDIENTE / NO IMPLEMENTADO a nivel funcional; `factura_servicio` existe como tabla SQL estructural, pero no existe contrato, API/backend, evento ni consumer financiero.
 
 ### RN-FIN-048 — Resolucion de obligado para SERVICIO_TRASLADADO
 - descripcion: Antes de generar la obligacion por `factura_servicio`, financiero debe resolver o solicitar la resolucion del obligado segun contrato locativo vigente si el objeto esta ocupado/alquilado, ocupacion vigente, o propietario/responsable operativo si no hay contrato locativo vigente.

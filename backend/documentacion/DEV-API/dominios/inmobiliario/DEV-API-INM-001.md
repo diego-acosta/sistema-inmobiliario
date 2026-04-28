@@ -694,7 +694,7 @@ Este bloque conserva informacion del PDF fuente cuando difiere del backend vigen
 #### termino `infraestructura`
 - estado: heredado
 - fuente: PDF y `SRV-INM-005`
-- observacion: hoy no existe entidad, router ni schema vigente bajo ese nombre
+- observacion: hoy no hay entidad, router ni schema vigente bajo ese nombre
 
 ## 8. Pendiente
 
@@ -779,16 +779,18 @@ Estado actual:
 
 Estado actual:
 
-- `factura_servicio` es una entidad conceptual pendiente para registrar facturas externas de servicios
-- no existe endpoint inmobiliario vigente para registrar `factura_servicio`
+- `factura_servicio` existe como tabla SQL estructural para registrar facturas externas de servicios
+- no existe endpoint inmobiliario vigente, schema Pydantic, service ni repository para registrar `factura_servicio`
 - no existe payload documentado para factura emitida por proveedor externo
-- no existe evento publicado documentado para disparar generacion de obligacion financiera desde ese origen
+- no existe evento publicado documentado ni implementado para disparar generacion de obligacion financiera desde ese origen
+- no existe consumer financiero para `factura_servicio_registrada`
+- `factura_servicio` no genera `relacion_generadora` ni `obligacion_financiera`
 - el sistema no emite facturas de servicio
 
 Clasificacion:
 
-- estado: no implementado
-- ownership del registro origen: pendiente en inmobiliario, vinculado a `servicio` y al activo alcanzado
+- estado: SQL IMPLEMENTADO / API-BACKEND-EVENTO-CONSUMER NO IMPLEMENTADOS
+- ownership del registro origen: inmobiliario, vinculado a `servicio` y al activo alcanzado; operativo solo a nivel SQL estructural
 - ownership de la obligacion derivada: `financiero`
 - contrato requerido: origen compatible para `relacion_generadora` antes de exponer API
 

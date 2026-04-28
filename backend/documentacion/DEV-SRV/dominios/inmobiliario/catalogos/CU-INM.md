@@ -58,7 +58,7 @@ Catalogar los casos de uso del dominio con estado explicito respecto de SQL, bac
 | CU-INM-042 | Gestion de mejoras | CONCEPTUAL | No existe `inmueble_mejora` en la implementacion real |
 | CU-INM-043 | Relacion inmobiliaria vigente | CONCEPTUAL | No existe `relacion_inmobiliaria` hoy en SQL ni backend |
 | CU-INM-044 | Consulta integral de inmueble | CONCEPTUAL | El backend no expone esa vista consolidada |
-| CU-INM-047 | Registro de factura de servicio externo | NO IMPLEMENTADO | Actor: operador. Entrada: datos de factura del proveedor externo. Salida: registro interno + evento conceptual pendiente `factura_servicio_registrada`. Impacto: genera obligacion financiera indirecta por reaccion de `financiero`; no existe hoy entidad, endpoint ni evento implementado |
+| CU-INM-047 | Registro de factura de servicio externo | SQL IMPLEMENTADO / API-BACKEND NO IMPLEMENTADOS | Actor: operador. Entrada: datos de factura del proveedor externo. Salida esperada futura: registro interno + evento conceptual pendiente `factura_servicio_registrada`. Existe tabla SQL estructural `factura_servicio`, pero no existe endpoint, schema, service, evento implementado ni consumer financiero; no genera obligacion financiera |
 | CU-INM-048 | Disparo de integracion financiera por `factura_servicio` | NO IMPLEMENTADO | La obligacion derivada pertenece a `financiero`; requiere contrato de origen compatible con `relacion_generadora` |
 
 ## Fuera de alcance

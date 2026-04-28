@@ -298,11 +298,11 @@ Observacion:
 - `reserva_venta` se vincula con `inmueble` o `unidad_funcional` a traves de `reserva_venta_objeto_inmobiliario`
 - `venta` se vincula con `inmueble` o `unidad_funcional` a traves de `venta_objeto_inmobiliario`
 - `instrumento_compraventa` se vincula con `inmueble` o `unidad_funcional` a traves de `instrumento_objeto_inmobiliario`
-- `reserva_venta` no tiene hoy una relacion materializada con `inmueble` o `unidad_funcional`
+- `reserva_venta` no tiene hoy FK directa a `inmueble` o `unidad_funcional`; la relacion vigente se materializa por `reserva_venta_objeto_inmobiliario`
 
 Observacion:
 - ambos detalles usan patron XOR y no una superentidad abstracta `objeto_inmobiliario`
-- por eso no puede declararse hoy una cardinalidad estructural `reserva_venta <-> objeto inmobiliario`; esa asociacion no existe en SQL
+- por eso la cardinalidad estructural debe declararse por `reserva_venta_objeto_inmobiliario`, no como FK directa desde `reserva_venta`
 
 ### Con Documental
 
@@ -515,8 +515,9 @@ Flujo base hoy soportado por el modelo:
 Lectura de implementacion:
 
 - el flujo esta soportado estructuralmente en SQL
-- no existe todavia API comercial propia que lo exponga como contrato operativo integral
-- el backend actual solo toca parte del flujo de forma indirecta desde `personas`
+- existe API/backend comercial propia para el surface verificado de reservas, ventas derivadas, condiciones comerciales, instrumentos, cesiones y escrituraciones
+- Dominio comercial materializado en backend con cobertura funcional relevante; pueden existir subflujos o ampliaciones pendientes.
+- no debe leerse como dominio comercial completo ni como enforcement total de todas las reglas conceptuales del DER
 
 ## Ajustes realizados
 
@@ -552,13 +553,33 @@ Lectura de implementacion:
 - `reserva_venta_objeto_inmobiliario` se incorpora como relacion materializada multiobjeto para que la reserva tenga trazabilidad estructural sobre el objeto reservado
 - `venta_objeto_inmobiliario` e `instrumento_objeto_inmobiliario` se reinterpretan como relaciones materializadas y no como entidades de negocio autonomas
 
-### Diferencias con el backend
+### Estado backend vigente
 
-- no existe hoy router, schema, service ni repository del dominio Comercial
-- no existe `DEV-API` comercial implementado
-- el unico uso operativo backend del nucleo comercial hoy visible es indirecto:
-  - validacion desde `personas` sobre `reserva_venta`, `venta`, `cesion` y `escrituracion`
-  - soporte de `relacion_generadora` para `venta`
+Dominio comercial materializado en backend con cobertura funcional relevante; pueden existir subflujos o ampliaciones pendientes.
+
+Estado verificado:
+
+- router comercial: IMPLEMENTADO
+- schemas comerciales: IMPLEMENTADO
+- services comerciales: IMPLEMENTADO
+- repository comercial: IMPLEMENTADO
+- tests comerciales: IMPLEMENTADO parcial/amplio
+
+Capacidades verificadas:
+
+- reservas de venta
+- generacion de venta desde reserva
+- confirmacion de venta
+- venta multiobjeto mediante `reserva_venta_objeto_inmobiliario` y `venta_objeto_inmobiliario`
+- condiciones comerciales sobre venta
+- instrumentos comerciales / instrumentos de compraventa
+- cesiones
+- escrituraciones
+
+NOTA HISTORICA (obsoleta -- reemplazada por estado actual):
+
+- una version anterior de este DER indicaba que no existia router, schema, service ni repository del dominio Comercial
+- esa afirmacion ya no representa el workspace vigente
 
 ## Notas importantes
 

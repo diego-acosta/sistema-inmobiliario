@@ -118,7 +118,7 @@ Cuando el origen sea `factura_servicio`, emitida por proveedor externo y registr
 
 El importe, vencimiento, obligado, concepto y composicion financiera deben resolverse dentro de `financiero` segun la relacion generadora y la parametrizacion aplicable. El registro inmobiliario no calcula deuda como fuente primaria.
 
-Decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado a inmueble o unidad funcional usa 1 `relacion_generadora`; esa relacion puede existir antes de la primera `factura_servicio`; cada factura posterior genera 1 `obligacion_financiera` dentro de esa misma relacion. Esta decision queda `PENDIENTE` / `NO IMPLEMENTADO` hasta que exista entidad, contrato y soporte fisico.
+Decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado a inmueble o unidad funcional usa 1 `relacion_generadora`; esa relacion puede existir antes de la primera `factura_servicio`; cada factura posterior genera 1 `obligacion_financiera` dentro de esa misma relacion. `factura_servicio` existe como tabla SQL estructural, pero esta decision queda `PENDIENTE` / `NO IMPLEMENTADO` a nivel funcional hasta que exista contrato, API/backend, evento y consumer financiero.
 
 ### Hacia abajo
 - cronograma y consulta de deuda

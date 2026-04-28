@@ -20,7 +20,7 @@ Fuente de verdad usada:
 Criterio aplicado:
 
 - el SQL vigente prevalece sobre el PDF y sobre formulaciones conceptuales de `DEV-SRV` cuando exista drift
-- este DER no define endpoints ni implica backend locativo ya materializado
+- este DER describe el modelo estructural y se alinea con backend locativo ya materializado parcialmente/ampliamente
 - se modela `contrato_alquiler` como raiz juridica del dominio locativo
 - se conservan solo entidades fisicamente materializadas en SQL
 - las relaciones transversales se documentan como soporte, no como ownership local del dominio
@@ -380,11 +380,24 @@ Estado actual del workspace:
 
 - SQL locativo materializado: si
 - `DEV-SRV` locativo modular: si
-- backend locativo propio con router/schema/service/repository: no materializado
-- tests locativos versionados en `backend/tests`: no materializados
+- backend locativo propio con router/schema/service/repository: `IMPLEMENTADO parcial/amplio`
+- router locativo: `IMPLEMENTADO`
+- schemas locativos: `IMPLEMENTADO`
+- services locativos: `IMPLEMENTADO parcial/amplio`
+- repository locativo: `IMPLEMENTADO`
+- tests locativos versionados en `backend/tests`: `IMPLEMENTADO parcial/amplio`
+- contratos de alquiler: `IMPLEMENTADO`
+- condiciones economicas: `IMPLEMENTADO`
+- solicitudes de alquiler: `IMPLEMENTADO`
+- reservas locativas: `IMPLEMENTADO`
+- conversion/generacion de contrato desde reserva locativa: `IMPLEMENTADO`
+- entrega locativa: `IMPLEMENTADO`
+- restitucion locativa: `IMPLEMENTADO`
+- objetos locativos / multiobjeto: `IMPLEMENTADO` mediante `contrato_objeto_locativo` y `reserva_locativa_objeto`
 - soporte transversal ya conectado a `contrato_alquiler`: si, en `relacion_persona_rol`, `documento_entidad`, `emision_numeracion` y `relacion_generadora`
 
 Conclusion operativa:
 
-- este DER queda apto como base estructural y semantica para definir `DEV-API-LOCATIVO`
-- la futura API debe partir del SQL vigente y de este consolidado, no de los shapes mas ricos del PDF historico
+- este DER queda apto como base estructural y semantica para mantener `DEV-API-LOCATIVO`
+- el dominio locativo esta materializado parcialmente/ampliamente en backend; quedan pendientes especificos segun endpoints/subflujos no implementados y no debe leerse como dominio completo
+- cualquier ampliacion futura debe partir del SQL vigente, backend real y este consolidado, no de los shapes mas ricos del PDF historico

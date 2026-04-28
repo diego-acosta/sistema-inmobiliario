@@ -129,7 +129,7 @@ Estado sugerido:
 
 1. `PENDIENTE_RESOLUCION_OBLIGADO`
 
-Esta regla queda `CONCEPTUAL` / `PENDIENTE` / `NO IMPLEMENTADO` hasta que exista implementacion, contrato de integracion, entidad `factura_servicio`, evento `factura_servicio_registrada` y reglas fisicas para propietario / responsable operativo.
+Esta regla queda `CONCEPTUAL` / `PENDIENTE` / `NO IMPLEMENTADO` a nivel funcional. `factura_servicio` existe como tabla SQL estructural, pero no existe API/backend, contrato de integracion, evento `factura_servicio_registrada`, consumer financiero ni reglas fisicas para propietario / responsable operativo.
 
 ## 6. Resolucion por periodo
 
@@ -222,7 +222,7 @@ El obligado se resuelve cruzando:
 4. ocupacion
 5. responsable operativo / propietario
 
-`factura_servicio` y el evento conceptual `factura_servicio_registrada` quedan `PENDIENTE` / `NO IMPLEMENTADO`.
+`factura_servicio` existe como tabla SQL estructural. La API/backend para operar ese registro, el evento conceptual `factura_servicio_registrada`, el consumer financiero y la generacion de `relacion_generadora` / `obligacion_financiera` quedan `PENDIENTE` / `NO IMPLEMENTADO`.
 
 ## 10. Responsabilidades por dominio
 
@@ -232,7 +232,7 @@ El obligado se resuelve cruzando:
 
 1. objeto afectado
 2. servicio asociado
-3. factura registrada, cuando exista `factura_servicio`
+3. factura registrada, cuando exista API/backend para operar `factura_servicio`
 4. disponibilidad
 5. ocupacion
 
@@ -306,7 +306,7 @@ Queda `PENDIENTE`:
 1. servicio formal de resolucion de obligado
 2. contrato de integracion
 3. endpoint o consumer
-4. tabla `factura_servicio`
+4. API/backend para operar la tabla SQL `factura_servicio`
 5. evento `factura_servicio_registrada`
 6. reglas fisicas para propietario / responsable operativo
 7. catalogo o estado fisico para `PENDIENTE_RESOLUCION_OBLIGADO`
@@ -330,8 +330,9 @@ Esta decision se apoya en documentacion existente del workspace:
 
 ## 14. Contradicciones y limites
 
-1. `factura_servicio` no existe como tabla formal documentada e implementada en el workspace.
-2. `factura_servicio_registrada` no existe como evento implementado.
-3. `propietario` / `responsable operativo` para este circuito no tiene regla fisica final documentada.
-4. `PENDIENTE_RESOLUCION_OBLIGADO` es un estado sugerido conceptual, no un estado implementado.
-5. Este documento no modifica ownership de ningun dominio.
+1. `factura_servicio` existe como tabla SQL estructural, pero no existe API/backend para operarla.
+2. `factura_servicio_registrada` no existe como evento implementado ni existe consumer financiero.
+3. `factura_servicio` no genera `relacion_generadora` ni `obligacion_financiera`.
+4. `propietario` / `responsable operativo` para este circuito no tiene regla fisica final documentada.
+5. `PENDIENTE_RESOLUCION_OBLIGADO` es un estado sugerido conceptual, no un estado implementado.
+6. Este documento no modifica ownership de ningun dominio.
