@@ -236,6 +236,35 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - aplica_a: relacion_generadora, obligacion_financiera, aplicacion_financiera, ajuste_financiero
 - origen_principal: DEV-SRV
 
+### RN-FIN-044 — factura_servicio como origen, no como emision propia
+- descripcion: `factura_servicio` puede actuar como origen de generacion financiera bajo tipo_origen conceptual `SERVICIO_TRASLADADO` solo cuando exista registro de origen compatible; el sistema no emite esa factura.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: DEV-SRV
+
+### RN-FIN-045 — Obligacion derivada de factura_servicio
+- descripcion: La obligacion financiera derivada de `factura_servicio` debe generarse desde una relacion generadora valida y no puede quedar como deuda suelta ni ser calculada por el dominio inmobiliario.
+- aplica_a: relacion_generadora, obligacion_financiera, composicion_obligacion
+- origen_principal: DEV-SRV
+
+### RN-FIN-046 — Unicidad de obligacion activa por factura_servicio
+- descripcion: Una `factura_servicio` no debe generar mas de una obligacion financiera activa. La generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: DEV-SRV
+- estado: PENDIENTE / NO IMPLEMENTADO hasta que exista entidad o campo real.
+
+### RN-FIN-047 — Relacion generadora para SERVICIO_TRASLADADO
+- descripcion: Para `SERVICIO_TRASLADADO`, la decision conceptual recomendada es que 1 servicio asociado a inmueble o unidad funcional use 1 `relacion_generadora`, que esa relacion pueda existir antes de la primera `factura_servicio`, y que cada factura posterior genere 1 `obligacion_financiera` dentro de esa misma relacion.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: DEV-SRV
+- estado: CONCEPTUAL / PENDIENTE / NO IMPLEMENTADO hasta que exista entidad, contrato y soporte fisico.
+
+### RN-FIN-048 — Resolucion de obligado para SERVICIO_TRASLADADO
+- descripcion: Antes de generar la obligacion por `factura_servicio`, financiero debe resolver o solicitar la resolucion del obligado segun contrato locativo vigente si el objeto esta ocupado/alquilado, ocupacion vigente, o propietario/responsable operativo si no hay contrato locativo vigente.
+- aplica_a: relacion_generadora, obligacion_financiera, obligacion_obligado
+- origen_principal: DEV-SRV
+- estado: CONCEPTUAL / PENDIENTE de formalizacion completa.
+- observaciones: inmobiliario no decide deuda ni crea obligaciones; financiero conserva ownership sobre la generacion y la composicion de la deuda. Pendiente de formalización en INT-FIN-002 — Resolución de obligado financiero.
+
 ---
 
 ## Reglas de normalización

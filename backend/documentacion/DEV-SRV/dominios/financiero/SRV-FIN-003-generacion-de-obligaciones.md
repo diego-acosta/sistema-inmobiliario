@@ -10,6 +10,7 @@ Este servicio cubre:
 - generación por venta financiada
 - generación por anticipo
 - generación por expensas, servicios e impuestos
+- generación por `factura_servicio` registrada en inmobiliario, cuando exista origen implementado
 - generación por garantía monetaria cuando corresponda
 - generación extraordinaria
 - liquidación final
@@ -60,6 +61,7 @@ No cubre directamente:
 - período o fecha de corte cuando corresponda
 - parámetros de cálculo necesarios
 - motivo u observación cuando aplique
+- referencia al origen inmobiliario `factura_servicio` cuando corresponda
 
 ## Resultado esperado
 - identificador de relación generadora afectada
@@ -88,6 +90,8 @@ No cubre directamente:
 - origen formal compatible
 - parámetros mínimos disponibles
 - no duplicidad indebida de emisión o generación
+- no duplicidad de obligacion activa para la misma `factura_servicio` registrada como origen
+- idempotencia de generacion por `factura_servicio` usando clave conceptual `id_factura_servicio`
 - consistencia entre obligación y composición
 - idempotencia en reintentos
 - coherencia con refinanciación, regularización o reemisión cuando corresponda
@@ -107,6 +111,14 @@ No cubre directamente:
 - parametrización financiera vigente
 - índices financieros cuando apliquen
 - origen comercial o locativo compatible
+- origen inmobiliario por `factura_servicio` cuando exista contrato implementado
+
+### factura_servicio
+Cuando el origen sea `factura_servicio`, emitida por proveedor externo y registrada por el dominio inmobiliario, este servicio debe tratarla como origen de generacion de obligacion, no como factura emitida por el sistema.
+
+El importe, vencimiento, obligado, concepto y composicion financiera deben resolverse dentro de `financiero` segun la relacion generadora y la parametrizacion aplicable. El registro inmobiliario no calcula deuda como fuente primaria.
+
+Decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado a inmueble o unidad funcional usa 1 `relacion_generadora`; esa relacion puede existir antes de la primera `factura_servicio`; cada factura posterior genera 1 `obligacion_financiera` dentro de esa misma relacion. Esta decision queda `PENDIENTE` / `NO IMPLEMENTADO` hasta que exista entidad, contrato y soporte fisico.
 
 ### Hacia abajo
 - cronograma y consulta de deuda

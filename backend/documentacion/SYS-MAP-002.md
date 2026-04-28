@@ -85,7 +85,8 @@ Solo consume información para consultas y reportes.
 - `inmobiliario` es base para `comercial`, `locativo`, `documental`, `analitico` y parte de `operativo`.
 - `comercial` genera relaciones que pueden derivar en obligaciones de `financiero`.
 - `locativo` genera relaciones contractuales que alimentan a `financiero`.
-- `financiero` consume origen comercial o locativo, pero mantiene motor único de deuda y cobro.
+- `inmobiliario` puede originar obligaciones en `financiero` por registro de `factura_servicio` cuando exista contrato implementado; el sistema no emite esa factura.
+- `financiero` consume origen comercial, locativo u otro origen compatible documentado, pero mantiene motor único de deuda y cobro.
 - `documental` se asocia transversalmente a entidades de `inmobiliario`, `comercial`, `locativo`, `financiero`, `personas` y `administrativo`.
 - `administrativo` controla acceso, parametrización y auditoría global sobre todos los dominios.
 - `operativo` interactúa con `administrativo` por sucursal y usuario, y con `financiero` por movimientos y caja operativa.
@@ -93,6 +94,28 @@ Solo consume información para consultas y reportes.
 - `gestion_operativa`, cuando se implemente como dominio real, deberá consumir estados y eventos de otros dominios sin reemplazar su semántica.
 - `tecnico` soporta sincronización, integridad e idempotencia para dominios write sincronizables.
 - `analitico` consume información de todos los dominios funcionales y transversales, sin convertirse en fuente primaria de verdad.
+
+### 6.1 Flujo conceptual pendiente: factura_servicio
+
+Estado: `CONCEPTUAL` / `NO IMPLEMENTADO`
+
+```text
+INMOBILIARIO
+  registra factura_servicio
+        |
+        v
+EVENTO conceptual pendiente
+  factura_servicio_registrada
+        |
+        v
+FINANCIERO
+  crea relacion_generadora
+  crea obligacion_financiera
+```
+
+El dominio inmobiliario no crea obligaciones financieras. Solo registra el origen cuando exista soporte implementado y publicaria el evento conceptual pendiente `factura_servicio_registrada`. El dominio financiero conserva ownership exclusivo sobre `relacion_generadora`, `obligacion_financiera` y calculo de deuda.
+
+El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotente. La clave conceptual recomendada es `id_factura_servicio`; el consumidor financiero no debe crear obligaciones duplicadas ante reintentos. Este evento queda `NO IMPLEMENTADO` y pendiente de contrato/evento real.
 
 ## 7. Decisiones de nomenclatura
 

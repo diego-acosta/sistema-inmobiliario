@@ -55,6 +55,16 @@ No cubre directamente:
 - identificador de relación generadora cuando aplique
 - motivo u observación cuando aplique
 
+### Origen por factura_servicio
+- estado: `PENDIENTE`
+- dominio origen: `inmobiliario`
+- concepto origen: `factura_servicio`, factura de servicio emitida por proveedor externo
+- tipo_origen conceptual: `SERVICIO_TRASLADADO`
+- clasificacion: soporte transversal de origen; la obligacion derivada es nucleo de `financiero`
+- condicion: debe existir un registro de origen real en SQL/backend/API antes de habilitarlo como `tipo_origen`
+- restriccion: el sistema no emite la factura de servicio; solo recibe el origen externo y genera la estructura financiera correspondiente cuando el origen sea compatible
+- idempotencia pendiente: la clave conceptual recomendada para reintentos es `id_factura_servicio`
+
 ## Resultado esperado
 - id_relacion_generadora
 - estado_resultante
@@ -126,6 +136,7 @@ No cubre directamente:
 - origen comercial válido
 - origen locativo válido
 - otros orígenes financieros permitidos
+- origen inmobiliario por `factura_servicio` cuando exista contrato implementado
 
 ### Hacia abajo
 - generación de obligaciones

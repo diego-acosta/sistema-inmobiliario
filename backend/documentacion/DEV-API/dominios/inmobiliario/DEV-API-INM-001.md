@@ -775,6 +775,23 @@ Estado actual:
 - estado: pendiente
 - observacion: no existe router vigente bajo `/api/v1/inmobiliario/...`
 
+### 8.7 factura_servicio
+
+Estado actual:
+
+- `factura_servicio` es una entidad conceptual pendiente para registrar facturas externas de servicios
+- no existe endpoint inmobiliario vigente para registrar `factura_servicio`
+- no existe payload documentado para factura emitida por proveedor externo
+- no existe evento publicado documentado para disparar generacion de obligacion financiera desde ese origen
+- el sistema no emite facturas de servicio
+
+Clasificacion:
+
+- estado: no implementado
+- ownership del registro origen: pendiente en inmobiliario, vinculado a `servicio` y al activo alcanzado
+- ownership de la obligacion derivada: `financiero`
+- contrato requerido: origen compatible para `relacion_generadora` antes de exponer API
+
 ## 9. Reglas visibles del contrato
 
 - `inmueble` es la raiz operativa del dominio.
@@ -787,6 +804,7 @@ Estado actual:
 - las respuestas de error incluyen `ok: false`, `error_code`, `error_message` y `details`
 - `instalacion` no es entidad del dominio inmobiliario; solo aparece como metadata tecnica y como concepto propio del dominio `operativo`
 - `servicio` se implementa como catalogo reutilizable asociado a inmuebles y unidades funcionales
+- `factura_servicio` no tiene endpoint vigente y no debe confundirse con facturacion propia del sistema
 - las consultas del dominio no generan efectos persistentes
 - `disponibilidad` forma parte del contrato API implementado para alta, consulta, modificacion, cierre y baja logica
 - `ocupacion` forma parte del contrato API implementado para alta, consulta, modificacion, cierre y baja logica

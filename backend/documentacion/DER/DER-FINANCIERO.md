@@ -298,6 +298,19 @@ SRV-FIN-012
 ### Comercial
 - venta → relacion_generadora
 
+### Inmobiliario
+- `factura_servicio` registrada como origen operativo pendiente -> relacion_generadora
+- origen conceptual: `SERVICIO_TRASLADADO`
+- la factura la emite un proveedor externo; el sistema no factura servicios
+- la obligacion derivada se modela en financiero mediante relacion_generadora, obligacion_financiera y composicion_obligacion
+- requiere entidad intermedia PENDIENTE `factura_servicio`
+- una `factura_servicio` no debe generar mas de una obligacion financiera activa
+- la generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`, PENDIENTE / NO IMPLEMENTADO hasta que exista entidad o campo real
+- decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado a inmueble o unidad funcional -> 1 `relacion_generadora`; cada `factura_servicio` registrada -> 1 `obligacion_financiera` dentro de esa relacion
+- ciclo de vida conceptual: para `SERVICIO_TRASLADADO`, la `relacion_generadora` puede existir antes de la primera `factura_servicio`; las facturas posteriores generan obligaciones dentro de esa misma relacion
+- esta decision queda PENDIENTE / NO IMPLEMENTADO hasta que exista entidad, contrato y soporte fisico
+- no existe hoy tabla ni endpoint documentado para ese origen en inmobiliario; queda pendiente de contrato implementado
+
 ### Personas
 - obligacion_obligado → persona
 
