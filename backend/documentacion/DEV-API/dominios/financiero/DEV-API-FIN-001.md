@@ -310,10 +310,35 @@ La migracion de errores de este MVP a codigos `ERR-FIN-XXX` queda pendiente.
 
 #### `PATCH /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/activar`
 
+> **CONCEPTUAL / NO IMPLEMENTADO EN BACKEND**
+>
+> Este endpoint queda pendiente hasta definir e implementar una estrategia de activacion por `tipo_origen`. Una implementacion directa sin estrategia por origen es invalida.
+
 Objetivo:
 - transicion de `borrador` a `activa`
 - habilita la relacion generadora para producir efecto financiero
 - puede generar obligaciones iniciales y composiciones de forma atomica cuando corresponda
+
+##### Comportamiento de generacion de obligaciones
+
+La activacion de una relacion generadora NO tiene comportamiento unico.
+
+La generacion de obligaciones depende del `tipo_origen`. `financiero` NO define la cantidad de obligaciones; ejecuta la materializacion segun condiciones del dominio origen.
+
+Ver `INT-FIN-003-politica-generacion-obligaciones.md`.
+
+Politica por `tipo_origen`:
+
+- `VENTA`:
+  - contado -> 1 `obligacion_financiera`
+  - financiada -> multiples `obligacion_financiera`
+  - anticipo/saldo -> combinacion de obligaciones
+- `CONTRATO_ALQUILER`:
+  - generacion periodica
+- `SERVICIO_TRASLADADO`:
+  - 1 `factura_servicio` -> 1 `obligacion_financiera`
+
+Advertencia: `activar relacion_generadora` requiere estrategia por `tipo_origen`; implementar una logica unica para todos los origenes contradice INT-FIN-003.
 
 Headers requeridos:
 - `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
