@@ -147,3 +147,43 @@ class ObligacionFinancieraData(BaseModel):
 class ObligacionFinancieraResponse(BaseModel):
     ok: bool = True
     data: ObligacionFinancieraData
+
+
+# ── imputacion_financiera ─────────────────────────────────────────────────────
+
+class ImputacionCreateRequest(BaseModel):
+    id_obligacion_financiera: int
+    monto: float
+
+    @field_validator("id_obligacion_financiera")
+    @classmethod
+    def id_obligacion_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("id_obligacion_financiera debe ser mayor que cero.")
+        return v
+
+    @field_validator("monto")
+    @classmethod
+    def monto_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("monto debe ser mayor que cero.")
+        return v
+
+
+class AplicacionItemData(BaseModel):
+    id_aplicacion_financiera: int
+    id_composicion_obligacion: int
+    importe_aplicado: float
+    orden_aplicacion: int
+
+
+class ImputacionData(BaseModel):
+    id_obligacion_financiera: int
+    id_movimiento_financiero: int
+    monto_aplicado: float
+    aplicaciones: list[AplicacionItemData]
+
+
+class ImputacionResponse(BaseModel):
+    ok: bool = True
+    data: ImputacionData

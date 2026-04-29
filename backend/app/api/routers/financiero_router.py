@@ -7,11 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.schemas.financiero import (
+    AplicacionItemData,
     ComposicionCreateItem,
     ConceptoFinancieroData,
     ConceptoFinancieroListData,
     ConceptoFinancieroListResponse,
     ErrorResponse,
+    ImputacionCreateRequest,
+    ImputacionData,
+    ImputacionResponse,
     ObligacionFinancieraCreateRequest,
     ObligacionFinancieraData,
     ObligacionFinancieraResponse,
@@ -31,9 +35,15 @@ from app.application.financiero.services.create_relacion_generadora_service impo
 from app.application.financiero.services.get_relacion_generadora_service import (
     GetRelacionGeneradoraService,
 )
+from app.application.financiero.commands.create_imputacion_financiera import (
+    CreateImputacionFinancieraCommand,
+)
 from app.application.financiero.commands.create_obligacion_financiera import (
     ComposicionInput,
     CreateObligacionFinancieraCommand,
+)
+from app.application.financiero.services.create_imputacion_financiera_service import (
+    CreateImputacionFinancieraService,
 )
 from app.application.financiero.services.create_obligacion_financiera_service import (
     CreateObligacionFinancieraService,
@@ -267,6 +277,93 @@ def list_conceptos_financieros(
         data=ConceptoFinancieroListData(
             items=[ConceptoFinancieroData(**item) for item in result.data["items"]],
             total=result.data["total"],
+        )
+    )
+
+
+@router.post(
+    "/api/v1/financiero/imputaciones",
+    status_code=201,
+    response_model=ImputacionResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_imputacion_financiera(
+    request: ImputacionCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ImputacionResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+
+    command = CreateImputacionFinancieraCommand(
+        context=context,
+        id_obligacion_financiera=request.id_obligacion_financiera,
+        monto=request.monto,
+    )
+
+    repository = FinancieroRepository(db)
+    service = CreateImputacionFinancieraService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_OBLIGACION" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La obligación financiera indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "MONTO_EXCEDE_SALDO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="MONTO_EXCEDE_SALDO",
+                    error_message="El monto excede el saldo pendiente de la obligación.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "ESTADO_NO_ACEPTA_IMPUTACION" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="ESTADO_INVALIDO",
+                    error_message="El estado de la obligación no acepta imputaciones.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo registrar la imputación.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    data = result.data
+    return ImputacionResponse(
+        data=ImputacionData(
+            id_obligacion_financiera=data["id_obligacion_financiera"],
+            id_movimiento_financiero=data["id_movimiento_financiero"],
+            monto_aplicado=data["monto_aplicado"],
+            aplicaciones=[AplicacionItemData(**a) for a in data["aplicaciones"]],
         )
     )
 

@@ -248,6 +248,172 @@ class FinancieroRepository:
             "total": total,
         }
 
+    # ── imputacion / aplicacion_financiera ───────────────────────────────────
+
+    def get_obligacion_para_imputacion(
+        self, id_obligacion_financiera: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                saldo_pendiente,
+                estado_obligacion,
+                deleted_at
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
+            """
+        )
+        row = (
+            self.db.execute(stmt, {"id": id_obligacion_financiera})
+            .mappings()
+            .one_or_none()
+        )
+        return dict(row) if row else None
+
+    def get_composiciones_para_imputar(
+        self, id_obligacion_financiera: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                c.orden_composicion,
+                c.saldo_componente,
+                cf.codigo_concepto_financiero
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+                ON c.id_concepto_financiero = cf.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND c.estado_composicion_obligacion = 'ACTIVA'
+              AND c.saldo_componente > 0
+              AND c.deleted_at IS NULL
+            ORDER BY c.orden_composicion ASC
+            """
+        )
+        rows = (
+            self.db.execute(stmt, {"id": id_obligacion_financiera})
+            .mappings()
+            .all()
+        )
+        return [dict(r) for r in rows]
+
+    def create_imputacion(self, payload: Any) -> dict[str, Any]:
+        mov = payload.movimiento
+        mov_values = self._values(mov)
+
+        mov_stmt = text(
+            """
+            INSERT INTO movimiento_financiero (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                fecha_movimiento, tipo_movimiento, importe, signo, estado_movimiento
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :fecha_movimiento, :tipo_movimiento, :importe, :signo, :estado_movimiento
+            )
+            RETURNING id_movimiento_financiero
+            """
+        )
+
+        aplic_stmt = text(
+            """
+            INSERT INTO aplicacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_movimiento_financiero, id_obligacion_financiera,
+                id_composicion_obligacion, fecha_aplicacion,
+                tipo_aplicacion, orden_aplicacion, importe_aplicado,
+                origen_automatico_o_manual
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_movimiento_financiero, :id_obligacion_financiera,
+                :id_composicion_obligacion, :fecha_aplicacion,
+                :tipo_aplicacion, :orden_aplicacion, :importe_aplicado,
+                :origen_automatico_o_manual
+            )
+            RETURNING
+                id_aplicacion_financiera, id_composicion_obligacion,
+                importe_aplicado, orden_aplicacion
+            """
+        )
+
+        try:
+            mov_row = self.db.execute(
+                mov_stmt,
+                {
+                    "uid_global": mov_values["uid_global"],
+                    "version_registro": mov_values["version_registro"],
+                    "created_at": mov_values["created_at"],
+                    "updated_at": mov_values["updated_at"],
+                    "id_instalacion_origen": mov_values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": mov_values["id_instalacion_ultima_modificacion"],
+                    "op_id_alta": mov_values["op_id_alta"],
+                    "op_id_ultima_modificacion": mov_values["op_id_ultima_modificacion"],
+                    "fecha_movimiento": mov_values["fecha_movimiento"],
+                    "tipo_movimiento": mov_values["tipo_movimiento"],
+                    "importe": mov_values["importe"],
+                    "signo": mov_values["signo"],
+                    "estado_movimiento": mov_values["estado_movimiento"],
+                },
+            ).mappings().one()
+
+            id_movimiento = mov_row["id_movimiento_financiero"]
+            aplicaciones: list[dict[str, Any]] = []
+
+            for linea in payload.lineas:
+                lv = self._values(linea)
+                aplic_row = self.db.execute(
+                    aplic_stmt,
+                    {
+                        "uid_global": lv["uid_global"],
+                        "version_registro": lv["version_registro"],
+                        "created_at": lv["created_at"],
+                        "updated_at": lv["updated_at"],
+                        "id_instalacion_origen": lv["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": lv["id_instalacion_ultima_modificacion"],
+                        "op_id_alta": lv["op_id_alta"],
+                        "op_id_ultima_modificacion": lv["op_id_ultima_modificacion"],
+                        "id_movimiento_financiero": id_movimiento,
+                        "id_obligacion_financiera": payload.id_obligacion_financiera,
+                        "id_composicion_obligacion": lv["id_composicion_obligacion"],
+                        "fecha_aplicacion": payload.fecha_aplicacion,
+                        "tipo_aplicacion": payload.tipo_aplicacion,
+                        "orden_aplicacion": lv["orden_aplicacion"],
+                        "importe_aplicado": lv["importe_aplicado"],
+                        "origen_automatico_o_manual": payload.origen_automatico_o_manual,
+                    },
+                ).mappings().one()
+                aplicaciones.append(dict(aplic_row))
+
+            self.db.commit()
+
+            return {
+                "id_obligacion_financiera": payload.id_obligacion_financiera,
+                "id_movimiento_financiero": id_movimiento,
+                "monto_aplicado": float(sum(a["importe_aplicado"] for a in aplicaciones)),
+                "aplicaciones": [
+                    {
+                        "id_aplicacion_financiera": a["id_aplicacion_financiera"],
+                        "id_composicion_obligacion": a["id_composicion_obligacion"],
+                        "importe_aplicado": float(a["importe_aplicado"]),
+                        "orden_aplicacion": a["orden_aplicacion"],
+                    }
+                    for a in aplicaciones
+                ],
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
     # ── obligacion_financiera ─────────────────────────────────────────────────
 
     def get_obligacion_financiera(
