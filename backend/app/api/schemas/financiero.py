@@ -81,6 +81,40 @@ class ConceptoFinancieroListResponse(BaseModel):
     data: ConceptoFinancieroListData
 
 
+# ── obligacion_financiera create ──────────────────────────────────────────────
+
+class ComposicionCreateItem(BaseModel):
+    codigo_concepto_financiero: str
+    importe_componente: float
+
+    @field_validator("importe_componente")
+    @classmethod
+    def importe_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("importe_componente debe ser mayor que cero.")
+        return v
+
+
+class ObligacionFinancieraCreateRequest(BaseModel):
+    id_relacion_generadora: int
+    fecha_vencimiento: date
+    composiciones: list[ComposicionCreateItem]
+
+    @field_validator("id_relacion_generadora")
+    @classmethod
+    def id_rg_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("id_relacion_generadora debe ser mayor que cero.")
+        return v
+
+    @field_validator("composiciones")
+    @classmethod
+    def composiciones_not_empty(cls, v: list) -> list:
+        if not v:
+            raise ValueError("Debe incluir al menos una composición.")
+        return v
+
+
 # ── obligacion_financiera ─────────────────────────────────────────────────────
 
 class ComposicionObligacionData(BaseModel):

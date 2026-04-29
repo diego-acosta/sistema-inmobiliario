@@ -29,6 +29,23 @@ class FinancieroRepository:
         )
         return self.db.execute(stmt, {"id": id_factura_servicio}).scalar_one_or_none() is not None
 
+    def relacion_generadora_exists(self, id_relacion_generadora: int) -> bool:
+        stmt = text(
+            "SELECT 1 FROM relacion_generadora WHERE id_relacion_generadora = :id AND deleted_at IS NULL"
+        )
+        return self.db.execute(stmt, {"id": id_relacion_generadora}).scalar_one_or_none() is not None
+
+    def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT id_concepto_financiero, codigo_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = :codigo AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"codigo": codigo}).mappings().one_or_none()
+        return dict(row) if row else None
+
     # ── relacion_generadora ───────────────────────────────────────────────────
 
     def create_relacion_generadora(self, payload: Any) -> dict[str, Any]:
@@ -293,6 +310,117 @@ class FinancieroRepository:
         result["uid_global"] = str(result["uid_global"])
         result["composiciones"] = [dict(c) for c in comp_rows]
         return result
+
+    def create_obligacion_financiera(
+        self,
+        obligacion: Any,
+        composiciones: list[Any],
+    ) -> dict[str, Any]:
+        ob_values = self._values(obligacion)
+
+        ob_stmt = text(
+            """
+            INSERT INTO obligacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_relacion_generadora, fecha_emision, fecha_vencimiento,
+                importe_total, saldo_pendiente, estado_obligacion
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_relacion_generadora, :fecha_emision, :fecha_vencimiento,
+                :importe_total, :importe_total, :estado_obligacion
+            )
+            RETURNING
+                id_obligacion_financiera, uid_global, version_registro,
+                id_relacion_generadora, codigo_obligacion_financiera,
+                descripcion_operativa, fecha_emision, fecha_vencimiento,
+                periodo_desde, periodo_hasta, importe_total, saldo_pendiente,
+                estado_obligacion
+            """
+        )
+
+        comp_stmt = text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_concepto_financiero,
+                :orden_composicion, :importe_componente, :importe_componente
+            )
+            RETURNING
+                id_composicion_obligacion, orden_composicion,
+                estado_composicion_obligacion, importe_componente,
+                saldo_componente, moneda_componente
+            """
+        )
+
+        try:
+            ob_row = self.db.execute(
+                ob_stmt,
+                {
+                    "uid_global": ob_values["uid_global"],
+                    "version_registro": ob_values["version_registro"],
+                    "created_at": ob_values["created_at"],
+                    "updated_at": ob_values["updated_at"],
+                    "id_instalacion_origen": ob_values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": ob_values["id_instalacion_ultima_modificacion"],
+                    "op_id_alta": ob_values["op_id_alta"],
+                    "op_id_ultima_modificacion": ob_values["op_id_ultima_modificacion"],
+                    "id_relacion_generadora": ob_values["id_relacion_generadora"],
+                    "fecha_emision": ob_values["fecha_emision"],
+                    "fecha_vencimiento": ob_values["fecha_vencimiento"],
+                    "importe_total": ob_values["importe_total"],
+                    "estado_obligacion": ob_values["estado_obligacion"],
+                },
+            ).mappings().one()
+
+            ob_id = ob_row["id_obligacion_financiera"]
+            comp_results: list[dict[str, Any]] = []
+
+            for comp in composiciones:
+                cv = self._values(comp)
+                comp_row = self.db.execute(
+                    comp_stmt,
+                    {
+                        "uid_global": cv["uid_global"],
+                        "version_registro": cv["version_registro"],
+                        "created_at": cv["created_at"],
+                        "updated_at": cv["updated_at"],
+                        "id_instalacion_origen": cv["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": cv["id_instalacion_ultima_modificacion"],
+                        "op_id_alta": cv["op_id_alta"],
+                        "op_id_ultima_modificacion": cv["op_id_ultima_modificacion"],
+                        "id_obligacion_financiera": ob_id,
+                        "id_concepto_financiero": cv["id_concepto_financiero"],
+                        "orden_composicion": cv["orden_composicion"],
+                        "importe_componente": cv["importe_componente"],
+                    },
+                ).mappings().one()
+                comp_results.append(
+                    {**dict(comp_row), "codigo_concepto_financiero": cv["codigo_concepto_financiero"]}
+                )
+
+            self.db.commit()
+
+            result = dict(ob_row)
+            result["uid_global"] = str(result["uid_global"])
+            result["composiciones"] = comp_results
+            return result
+        except Exception:
+            self.db.rollback()
+            raise
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
