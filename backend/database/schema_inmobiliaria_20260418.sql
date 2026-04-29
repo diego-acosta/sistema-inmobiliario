@@ -3813,7 +3813,9 @@ CREATE TABLE public.relacion_generadora (
     tipo_origen character varying(50) NOT NULL,
     id_origen bigint NOT NULL,
     descripcion text,
-    fecha_alta timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    fecha_alta timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    estado_relacion_generadora character varying(30) DEFAULT 'BORRADOR'::character varying NOT NULL,
+    CONSTRAINT chk_relacion_generadora_estado CHECK (((estado_relacion_generadora)::text = ANY ((ARRAY['BORRADOR'::character varying, 'ACTIVA'::character varying, 'CANCELADA'::character varying, 'FINALIZADA'::character varying])::text[])))
 );
 
 

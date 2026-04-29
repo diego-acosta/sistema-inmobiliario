@@ -33,6 +33,7 @@ class RelacionGeneradoraData(BaseModel):
     tipo_origen: str
     id_origen: int
     descripcion: str | None
+    estado_relacion_generadora: str
     fecha_alta: datetime
 
 

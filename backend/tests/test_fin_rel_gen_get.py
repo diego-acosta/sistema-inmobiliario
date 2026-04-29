@@ -28,6 +28,7 @@ def test_fin_rel_gen_get_by_id_ok(client) -> None:
     assert data["tipo_origen"] == "CONTRATO_ALQUILER"
     assert data["id_origen"] == contrato["id_contrato_alquiler"]
     assert data["descripcion"] == "Cuota 1"
+    assert data["estado_relacion_generadora"] == "BORRADOR"
     assert data["version_registro"] == 1
     assert data["uid_global"] == rg["uid_global"]
     assert data["fecha_alta"] is not None
@@ -68,6 +69,7 @@ def test_fin_rel_gen_list_filtra_por_tipo_origen(client) -> None:
     assert response.status_code == 200
     items = response.json()["data"]["items"]
     assert all(i["tipo_origen"] == "CONTRATO_ALQUILER" for i in items)
+    assert all(i["estado_relacion_generadora"] == "BORRADOR" for i in items)
     ids = [i["id_relacion_generadora"] for i in items]
     assert rg["id_relacion_generadora"] in ids
 

@@ -1,7 +1,9 @@
 """
 Tests de integración para POST /api/v1/financiero/relaciones-generadoras.
 """
+import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from tests.test_contratos_alquiler_activate import _crear_contrato_borrador
 from tests.test_disponibilidades_create import HEADERS
@@ -64,6 +66,7 @@ def test_fin_rel_gen_create_contrato_alquiler_ok(client, db_session) -> None:
     assert data["tipo_origen"] == "CONTRATO_ALQUILER"
     assert data["id_origen"] == contrato["id_contrato_alquiler"]
     assert data["descripcion"] == "Alquiler mes 1"
+    assert data["estado_relacion_generadora"] == "BORRADOR"
     assert data["version_registro"] == 1
     assert data["uid_global"] is not None
     assert data["fecha_alta"] is not None
@@ -83,7 +86,12 @@ def test_fin_rel_gen_create_persiste_en_db(client, db_session) -> None:
     row = db_session.execute(
         text(
             """
-            SELECT id_relacion_generadora, tipo_origen, id_origen, deleted_at
+            SELECT
+                id_relacion_generadora,
+                tipo_origen,
+                id_origen,
+                estado_relacion_generadora,
+                deleted_at
             FROM relacion_generadora
             WHERE id_relacion_generadora = :id
             """
@@ -94,6 +102,7 @@ def test_fin_rel_gen_create_persiste_en_db(client, db_session) -> None:
     assert row is not None
     assert row["tipo_origen"] == "contrato_alquiler"
     assert row["id_origen"] == contrato["id_contrato_alquiler"]
+    assert row["estado_relacion_generadora"] == "BORRADOR"
     assert row["deleted_at"] is None
 
 
@@ -108,6 +117,34 @@ def test_fin_rel_gen_create_descripcion_nula(client) -> None:
 
     assert response.status_code == 201
     assert response.json()["data"]["descripcion"] is None
+    assert response.json()["data"]["estado_relacion_generadora"] == "BORRADOR"
+
+
+def test_fin_rel_gen_estado_invalido_falla_por_constraint_sql(client, db_session) -> None:
+    contrato = _crear_contrato(client, codigo="FIN-RG-CHK-001")
+
+    with pytest.raises(IntegrityError):
+        db_session.execute(
+            text(
+                """
+                INSERT INTO relacion_generadora (
+                    tipo_origen,
+                    id_origen,
+                    descripcion,
+                    estado_relacion_generadora
+                )
+                VALUES (
+                    'contrato_alquiler',
+                    :id_origen,
+                    'Estado invalido',
+                    'INVALIDO'
+                )
+                """
+            ),
+            {"id_origen": contrato["id_contrato_alquiler"]},
+        )
+
+    db_session.rollback()
 
 
 # ── tests de error: origen inexistente ───────────────────────────────────────

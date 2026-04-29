@@ -62,9 +62,8 @@ El resto de endpoints documentados aqui sigue como contrato de referencia no ope
 
 En este MVP:
 
-- `estado_relacion_generadora` NO se devuelve en la API.
-- `estado_relacion_generadora` sigue siendo conceptual, no persistido y fuera del alcance MVP.
-- No debe agregarse todavia ninguna columna SQL `estado_relacion_generadora`.
+- `estado_relacion_generadora` existe estructuralmente en SQL y se devuelve en la API MVP.
+- Los registros nuevos inician con `estado_relacion_generadora = BORRADOR`.
 - Las transiciones `activar`, `cancelar` y `finalizar` quedan pendientes.
 - No se implementa activacion ni materializacion/generacion de `obligacion_financiera` o `composicion_obligacion`.
 - Los errores usan codigos transversales basicos: `NOT_FOUND`, `APPLICATION_ERROR` e `INTERNAL_ERROR`.
@@ -90,7 +89,7 @@ Criterios aplicados:
 
 - no se inventan entidades fuera de SQL
 - cuando el DEV-SRV documenta columnas o estados que no existen aun en SQL, se marca PENDIENTE
-- `relacion_generadora` no tiene columna `estado_relacion_generadora` en SQL vigente; en el MVP el estado sigue conceptual, no se devuelve por API y no debe agregarse columna todavia
+- `relacion_generadora` tiene columna `estado_relacion_generadora` en SQL vigente; el MVP la expone como estado estructural, pero no implementa transiciones
 - `composicion_obligacion` referencia `id_concepto_financiero`; `concepto_financiero` existe como tabla en SQL
 - `aplicacion_financiera` no tiene columna `estado_aplicacion` en SQL vigente — ERR-FIN y EST-FIN documentan estados de imputacion; su almacenamiento fisico queda PENDIENTE
 - `movimiento_financiero` no tiene FK explicita a `relacion_generadora` ni a `obligacion_financiera` en SQL; la asociacion se materializa exclusivamente a traves de `aplicacion_financiera` — ver ATENCION en seccion 7.3
@@ -282,6 +281,7 @@ Response `201`:
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
     "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
+    "estado_relacion_generadora": "BORRADOR",
     "fecha_alta": "2026-04-28T10:00:00",
     "created_at": "2026-04-28T10:00:00",
     "updated_at": "2026-04-28T10:00:00",
@@ -290,7 +290,7 @@ Response `201`:
 }
 ```
 
-Nota MVP sobre `estado_relacion_generadora`: el campo no existe en SQL vigente, no se devuelve en la API y su almacenamiento fisico queda fuera del MVP.
+Nota MVP sobre `estado_relacion_generadora`: el campo existe en SQL vigente, se devuelve en la API y se asigna por default como `BORRADOR`. Las transiciones `activar`, `cancelar` y `finalizar` siguen no implementadas.
 
 Nota MVP sobre `tipo_origen`: la API acepta valores en uppercase; la persistencia usa lowercase por compatibilidad con el trigger SQL vigente; las responses devuelven uppercase.
 
@@ -302,7 +302,7 @@ Validaciones:
 - `X-Op-Id` evaluado para idempotencia; si ya fue ejecutado con mismo op_id, responder con el resultado anterior
 
 Reglas de negocio:
-- `borrador` es el unico estado inicial valido
+- `BORRADOR` es el unico estado inicial valido
 - en alta, `estado_relacion_generadora` no se recibe por request; se asigna internamente
 - una misma combinacion `tipo_origen` + `id_origen` puede generar mas de una relacion generadora segun regla financiera; la politica exacta de duplicidad queda PENDIENTE
 
@@ -322,7 +322,7 @@ La migracion de errores de este MVP a codigos `ERR-FIN-XXX` queda pendiente.
 > Este endpoint queda pendiente de implementacion como transicion conceptual de estado de `relacion_generadora`. No materializa obligaciones.
 
 Objetivo:
-- transicion de `borrador` a `activa`
+- transicion de `BORRADOR` a `ACTIVA`
 - habilita y da vigencia a la relacion generadora para que pueda producir obligaciones durante su vigencia
 - mantener la relacion activa mientras exista la relacion economica/origen compatible
 
@@ -362,7 +362,7 @@ Response `200`:
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
     "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
-    "estado_relacion_generadora": "activa", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
+    "estado_relacion_generadora": "ACTIVA",
     "fecha_alta": "2026-04-28T10:00:00",
     "updated_at": "2026-04-28T10:05:00"
   }
@@ -372,7 +372,7 @@ Response `200`:
 Validaciones:
 - `id_relacion_generadora` debe existir y no estar dada de baja
 - version de `If-Match-Version` debe coincidir con `version_registro` vigente
-- estado actual debe ser `borrador`
+- estado actual debe ser `BORRADOR`
 - no debe existir lock logico activo
 - el origen asociado debe estar en estado compatible con la activacion
 - deben cumplirse las condiciones minimas de activacion definidas en SRV-FIN-001
@@ -503,9 +503,9 @@ Errores posibles:
 #### `PATCH /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/cancelar`
 
 Objetivo:
-- transicion a estado `cancelada`
+- transicion a estado `CANCELADA`
 - la relacion no admite nuevas obligaciones ni operaciones incompatibles con ese estado
-- `cancelada` es estado final
+- `CANCELADA` es estado final
 
 Headers requeridos:
 - `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
@@ -529,7 +529,7 @@ Response `200`:
     "version_registro": 3,
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
-    "estado_relacion_generadora": "cancelada", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
+    "estado_relacion_generadora": "CANCELADA",
     "updated_at": "2026-04-28T11:00:00"
   }
 }
@@ -538,7 +538,7 @@ Response `200`:
 Validaciones:
 - debe existir y no estar dada de baja
 - `If-Match-Version` debe coincidir
-- estado actual debe ser `borrador` o `activa`
+- estado actual debe ser `BORRADOR` o `ACTIVA`
 - no debe existir lock logico activo
 - la cancelabilidad puede requerir validacion de obligaciones pendientes no saldadas; regla exacta PENDIENTE
 
@@ -556,9 +556,9 @@ Errores posibles:
 #### `PATCH /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/finalizar`
 
 Objetivo:
-- transicion a estado `finalizada`
+- transicion a estado `FINALIZADA`
 - cierre funcional completo cuando todas las obligaciones estan saldadas
-- `finalizada` es estado final
+- `FINALIZADA` es estado final
 
 Headers requeridos:
 - `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
@@ -577,7 +577,7 @@ Response `200`:
     "version_registro": 4,
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
-    "estado_relacion_generadora": "finalizada", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
+    "estado_relacion_generadora": "FINALIZADA",
     "updated_at": "2026-04-28T12:00:00"
   }
 }
@@ -586,7 +586,7 @@ Response `200`:
 Validaciones:
 - debe existir y no estar dada de baja
 - `If-Match-Version` debe coincidir
-- estado actual debe ser `activa`
+- estado actual debe ser `ACTIVA`
 - no debe existir lock logico activo
 - no debe existir ninguna obligacion con saldo pendiente asociada a esta relacion
 - no deben existir operaciones financieras futuras incompatibles con el cierre
@@ -919,6 +919,7 @@ Response `200`:
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
     "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
+    "estado_relacion_generadora": "ACTIVA",
     "fecha_alta": "2026-04-28T10:00:00",
     "obligaciones": [
       {
@@ -993,6 +994,7 @@ Response `200`:
         "tipo_origen": "CONTRATO_ALQUILER",
         "id_origen": 42,
         "descripcion": "Relacion generadora CA-0042",
+        "estado_relacion_generadora": "ACTIVA",
         "fecha_alta": "2026-04-28T10:00:00",
         "saldo_total_pendiente": 15000.00,
         "deleted_at": null
@@ -1275,7 +1277,7 @@ Response `200`:
     "id_relacion_generadora": 1,
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
-    "estado_relacion_generadora": "activa", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
+    "estado_relacion_generadora": "ACTIVA",
     "fecha_referencia": "2026-04-28",
     "estado_deuda": "con_deuda",
     "saldo_total_pendiente": 15000.00,
@@ -1380,7 +1382,6 @@ Queda PENDIENTE de implementacion:
 
 | Campo | Entidad | Estado en SQL | Nota |
 |-------|---------|--------------|------|
-| `estado_relacion_generadora` | `relacion_generadora` | NO EXISTE en SQL | conceptual, no persistido y no devuelto por el MVP; no agregar columna todavia |
 | `estado_aplicacion` | `aplicacion_financiera` | NO EXISTE en SQL | EST-FIN documenta estados de imputacion; almacenamiento fisico PENDIENTE |
 | Columna FK directa a `relacion_generadora` en `movimiento_financiero` | `movimiento_financiero` | NO EXISTE | asociacion via `aplicacion_financiera` |
 
@@ -1392,7 +1393,7 @@ Para materializar este contrato en backend se requiere, en orden logico:
 2. schemas Pydantic para cada endpoint
 3. servicios de aplicacion por caso de uso (SRV-FIN-001 a SRV-FIN-008)
 4. repositorios de persistencia para cada entidad financiera
-5. decision posterior sobre persistencia fisica de `estado_relacion_generadora`; no agregar columna en el MVP
+5. implementacion futura de transiciones `activar`, `cancelar` y `finalizar` de `relacion_generadora`
 6. columna `estado_aplicacion` en SQL para `aplicacion_financiera`
 7. registro de outbox para eventos financieros
 8. API backend para `factura_servicio` en dominio inmobiliario (prerequisito de SERVICIO_TRASLADADO)

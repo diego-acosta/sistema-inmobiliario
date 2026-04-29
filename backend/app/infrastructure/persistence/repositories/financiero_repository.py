@@ -68,6 +68,7 @@ class FinancieroRepository:
                 tipo_origen,
                 id_origen,
                 descripcion,
+                estado_relacion_generadora,
                 fecha_alta,
                 deleted_at
             """
@@ -109,6 +110,7 @@ class FinancieroRepository:
                 tipo_origen,
                 id_origen,
                 descripcion,
+                estado_relacion_generadora,
                 fecha_alta,
                 deleted_at
             FROM relacion_generadora
@@ -161,6 +163,7 @@ class FinancieroRepository:
                 tipo_origen,
                 id_origen,
                 descripcion,
+                estado_relacion_generadora,
                 fecha_alta,
                 deleted_at
             FROM relacion_generadora
@@ -192,6 +195,7 @@ class FinancieroRepository:
             "tipo_origen": row["tipo_origen"].upper(),
             "id_origen": row["id_origen"],
             "descripcion": row["descripcion"],
+            "estado_relacion_generadora": row["estado_relacion_generadora"].upper(),
             "fecha_alta": row["fecha_alta"],
             "deleted_at": row["deleted_at"],
         }
