@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, field_validator
@@ -57,3 +57,59 @@ class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
     details: dict[str, Any] | None = None
+
+
+# ── concepto_financiero ───────────────────────────────────────────────────────
+
+class ConceptoFinancieroData(BaseModel):
+    id_concepto_financiero: int
+    codigo_concepto_financiero: str
+    nombre_concepto_financiero: str
+    descripcion_concepto_financiero: str | None
+    tipo_concepto_financiero: str
+    naturaleza_concepto: str
+    estado_concepto_financiero: str
+
+
+class ConceptoFinancieroListData(BaseModel):
+    items: list[ConceptoFinancieroData]
+    total: int
+
+
+class ConceptoFinancieroListResponse(BaseModel):
+    ok: bool = True
+    data: ConceptoFinancieroListData
+
+
+# ── obligacion_financiera ─────────────────────────────────────────────────────
+
+class ComposicionObligacionData(BaseModel):
+    id_composicion_obligacion: int
+    orden_composicion: int
+    estado_composicion_obligacion: str
+    importe_componente: float
+    saldo_componente: float
+    moneda_componente: str
+    codigo_concepto_financiero: str
+
+
+class ObligacionFinancieraData(BaseModel):
+    id_obligacion_financiera: int
+    uid_global: str
+    version_registro: int
+    id_relacion_generadora: int
+    codigo_obligacion_financiera: str | None
+    descripcion_operativa: str | None
+    fecha_emision: date
+    fecha_vencimiento: date | None
+    periodo_desde: date | None
+    periodo_hasta: date | None
+    importe_total: float
+    saldo_pendiente: float
+    estado_obligacion: str
+    composiciones: list[ComposicionObligacionData]
+
+
+class ObligacionFinancieraResponse(BaseModel):
+    ok: bool = True
+    data: ObligacionFinancieraData

@@ -33,6 +33,7 @@ No cubre directamente:
 ## Entidades relacionadas
 - obligacion_financiera
 - composicion_obligacion
+- concepto_financiero
 
 ## Casos de uso cubiertos
 - generación de obligaciones por activación inicial
@@ -57,11 +58,12 @@ No cubre directamente:
 
 ### Datos de negocio
 - id_relacion_generadora
-- tipo de generación o método financiero aplicable
+- metodo financiero aplicable, sin codificar `tipo_obligacion` como eje estructural
 - período o fecha de corte cuando corresponda
 - parámetros de cálculo necesarios
 - motivo u observación cuando aplique
 - referencia al origen inmobiliario `factura_servicio` cuando corresponda
+- composiciones esperadas por `concepto_financiero` cuando el plan recibido ya las detalle
 
 ## Resultado esperado
 - identificador de relación generadora afectada
@@ -77,9 +79,9 @@ No cubre directamente:
 2. cargar relación generadora
 3. validar existencia, estado y elegibilidad para generar
 4. resolver método financiero aplicable
-5. determinar conceptos, vencimientos e importes
+5. determinar vencimientos, importes y conceptos financieros
 6. crear obligaciones financieras
-7. crear composiciones por concepto
+7. crear composiciones por `concepto_financiero`
 8. persistir de forma atómica
 9. registrar outbox
 10. devolver resultado
@@ -93,6 +95,11 @@ No cubre directamente:
 - no duplicidad de obligacion activa para la misma `factura_servicio` registrada como origen
 - idempotencia de generacion por `factura_servicio` usando clave conceptual `id_factura_servicio`
 - consistencia entre obligación y composición
+- toda obligacion materializada debe tener una o mas composiciones
+- toda composicion debe referenciar exactamente un `concepto_financiero`
+- la naturaleza economica debe surgir de `composicion_obligacion` + `concepto_financiero`, no de una columna rigida de tipo de obligacion
+- el saldo consolidado de la obligacion debe ser conciliable contra sus composiciones
+- cuando exista saldo por componente, `saldo_pendiente` debe igualar la suma de `saldo_componente` de composiciones activas, salvo transicion tecnica documentada
 - idempotencia en reintentos
 - coherencia con refinanciación, regularización o reemisión cuando corresponda
 
@@ -132,6 +139,7 @@ Decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado 
 
 ## Referencias
 - [[00-INDICE-FINANCIERO]]
+- [[MODELO-FINANCIERO-FIN]]
 - [[RN-FIN]]
 - [[ERR-FIN]]
 - [[EST-FIN]]
@@ -140,7 +148,7 @@ Decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado 
 - DER financiero
 
 ## Pendientes abiertos
-- definición exacta por tipo de obligación y método financiero
+- definición exacta por metodo financiero y composiciones por `concepto_financiero`
 - política de reemisión versus regularización
 - reglas de duplicidad por período, concepto y relación
 - estrategia exacta de corte para generación extraordinaria y liquidación final

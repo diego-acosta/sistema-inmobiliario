@@ -76,6 +76,64 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y estado de 
 - estado_inicial: no
 - estado_final: sí
 
+### Estados normalizados de obligacion_financiera
+
+Estos estados formalizan el ciclo conceptual completo de `obligacion_financiera`. No implican por si mismos migracion SQL ni backend; la implementacion fisica queda `PENDIENTE SQL-BACKEND` para los estados no soportados por la persistencia vigente.
+
+| Codigo | Significado | Estado fisico actual |
+|---|---|---|
+| `PROYECTADA` | Obligacion calculada o prevista, aun no emitida formalmente. | PENDIENTE |
+| `EMITIDA` | Obligacion generada formalmente, aun no necesariamente vencida. | PENDIENTE |
+| `EXIGIBLE` | Obligacion reclamable segun fecha, emision o condicion de exigibilidad. | PENDIENTE |
+| `PARCIALMENTE_CANCELADA` | Obligacion con imputaciones parciales y saldo pendiente mayor a cero. | Equivalente conceptual de `parcialmente_cancelada` |
+| `CANCELADA` | Obligacion con saldo pendiente cero y componentes sin saldo vivo. | Equivalente conceptual de `cancelada` |
+| `VENCIDA` | Obligacion exigible con fecha de vencimiento superada y saldo pendiente mayor a cero. | Equivalente conceptual de `vencida`; puede ser materializada o derivada |
+| `ANULADA` | Obligacion invalidada por error, reversion o decision formal. | PENDIENTE |
+| `REEMPLAZADA` | Obligacion sustituida por refinanciacion, regeneracion o reemision. | PENDIENTE |
+
+### Transiciones validas de obligacion_financiera
+
+| Desde | Hacia | Condicion |
+|---|---|---|
+| `PROYECTADA` | `EMITIDA` | Emision formal desde relacion generadora valida. |
+| `PROYECTADA` | `ANULADA` | Motivo formal y trazabilidad. |
+| `EMITIDA` | `EXIGIBLE` | Condicion de exigibilidad cumplida. |
+| `EMITIDA` | `ANULADA` | Motivo formal y trazabilidad. |
+| `EXIGIBLE` | `PARCIALMENTE_CANCELADA` | Imputacion parcial con saldo pendiente mayor a cero. |
+| `EXIGIBLE` | `CANCELADA` | Imputacion total; `saldo_pendiente = 0` y componentes sin saldo vivo. |
+| `EXIGIBLE` | `VENCIDA` | Fecha de vencimiento superada con saldo pendiente mayor a cero. |
+| `EXIGIBLE` | `REEMPLAZADA` | Obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
+| `PARCIALMENTE_CANCELADA` | `CANCELADA` | Imputacion total del saldo remanente. |
+| `PARCIALMENTE_CANCELADA` | `VENCIDA` | Fecha de vencimiento superada con saldo pendiente mayor a cero. |
+| `PARCIALMENTE_CANCELADA` | `REEMPLAZADA` | Obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
+| `VENCIDA` | `PARCIALMENTE_CANCELADA` | Imputacion parcial. |
+| `VENCIDA` | `CANCELADA` | Imputacion total. |
+| `VENCIDA` | `REEMPLAZADA` | Obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
+| `PROYECTADA` / `EMITIDA` / `EXIGIBLE` / `VENCIDA` / `PARCIALMENTE_CANCELADA` | `ANULADA` | Solo con motivo formal y trazabilidad. |
+| Cualquier estado activo | `REEMPLAZADA` | Solo si existe obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
+
+### Transiciones prohibidas de obligacion_financiera
+
+| Desde | Hacia | Motivo |
+|---|---|---|
+| `CANCELADA` | `EXIGIBLE` | La cancelacion es cierre financiero. |
+| `CANCELADA` | `VENCIDA` | La cancelacion elimina saldo exigible. |
+| `CANCELADA` | `PARCIALMENTE_CANCELADA` | No debe reabrirse sin proceso correctivo documentado. |
+| `ANULADA` | `EXIGIBLE` | La obligacion invalidada no puede volverse exigible. |
+| `ANULADA` | `CANCELADA` | La anulacion no equivale a cancelacion por pago. |
+| `REEMPLAZADA` | `EXIGIBLE` | La exigibilidad corresponde a la obligacion nueva o proceso resultante. |
+| `REEMPLAZADA` | `CANCELADA` | Prohibido sin proceso correctivo documentado. |
+| Cualquier estado | Cualquier estado que reduzca saldo | Prohibido sin `aplicacion_financiera`, anulacion formal o credito documentado. |
+
+### Reglas de estado
+
+- No se puede cancelar una obligacion sin `saldo_pendiente = 0`.
+- No se puede cancelar una obligacion si alguna composicion activa tiene `saldo_componente > 0`.
+- No se puede emitir una obligacion si su `relacion_generadora` no esta en estado valido para generar o emitir.
+- No se puede reemplazar una obligacion sin dejar trazabilidad hacia la obligacion nueva o proceso origen.
+- No se puede anular una obligacion con pagos aplicados sin reversion o tratamiento documentado.
+- `VENCIDA` puede ser estado materializado o derivado por `fecha_vencimiento + saldo`; la decision fisica queda `PENDIENTE`.
+
 ## C. Estados de imputaciones
 
 ### EST-FIN-009 — Registrada

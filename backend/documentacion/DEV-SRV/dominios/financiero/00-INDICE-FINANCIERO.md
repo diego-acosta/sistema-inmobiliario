@@ -9,6 +9,8 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
 - [[ERR-FIN]]
 - [[EVT-FIN]]
 - [[EST-FIN]]
+- [[MODELO-FINANCIERO-FIN]]
+- [[TIPO-OBLIGACION-FIN]]
 
 ## Servicios del dominio
 - [[SRV-FIN-001-gestion-relacion-generadora]]

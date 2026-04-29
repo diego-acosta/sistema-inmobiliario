@@ -10,7 +10,7 @@ Este servicio cubre:
 - detalle de obligación
 - consulta de composición por concepto
 - consulta de estado visible de cada obligación
-- navegación por vencimiento, emisión, saldo y tipo de obligación
+- navegación por vencimiento, emisión, saldo, origen financiero y concepto financiero
 
 No cubre:
 - generación de obligaciones
@@ -44,7 +44,10 @@ No cubre:
 - incluir_obligados
 - incluir_resumen
 - filtros por estado
+- filtros por origen financiero
+- filtros por concepto financiero
 - filtros por vencimiento
+- filtros por saldo
 - paginación
 - orden cronológico
 - corte a fecha cuando corresponda
@@ -105,6 +108,7 @@ No cubre:
 - DER financiero
 
 ## Pendientes abiertos
+- soporte fisico de saldo por componente (`saldo_componente`) pendiente de SQL/backend
 - criterio final de saldo visible a fecha
 - nivel exacto de detalle del estado de obligación expuesto en lectura
 - política de agrupación del cronograma por período, vencimiento o emisión

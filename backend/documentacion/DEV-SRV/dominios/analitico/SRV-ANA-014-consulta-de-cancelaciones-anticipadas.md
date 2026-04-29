@@ -40,7 +40,7 @@ No incluye:
 - filtros por cliente / persona / locatario
 - filtros por relación generadora
 - filtros por contrato o venta
-- filtros por tipo de obligación
+- filtros por origen de relacion generadora o concepto financiero
 - agrupación temporal
 - agrupación por dimensión financiera
 
@@ -106,6 +106,6 @@ No incluye:
 
 ## Pendientes abiertos
 - definición de métricas estándar de cancelación anticipada
-- definición de segmentación por tipo de obligación y sujeto
+- definición de segmentación por origen financiero, concepto financiero y sujeto
 - política de granularidad temporal
 - estrategia de optimización (materialización / cache)

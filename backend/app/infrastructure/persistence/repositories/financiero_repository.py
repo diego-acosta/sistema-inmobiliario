@@ -185,6 +185,115 @@ class FinancieroRepository:
             "total": total,
         }
 
+    # ── concepto_financiero ───────────────────────────────────────────────────
+
+    def list_conceptos_financieros(
+        self,
+        *,
+        estado: str | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        filters: list[str] = ["deleted_at IS NULL"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if estado is not None:
+            filters.append("estado_concepto_financiero = :estado")
+            params["estado"] = estado.strip().upper()
+
+        where_clause = " AND ".join(filters)
+
+        list_stmt = text(
+            f"""
+            SELECT
+                id_concepto_financiero,
+                codigo_concepto_financiero,
+                nombre_concepto_financiero,
+                descripcion_concepto_financiero,
+                tipo_concepto_financiero,
+                naturaleza_concepto,
+                estado_concepto_financiero
+            FROM concepto_financiero
+            WHERE {where_clause}
+            ORDER BY codigo_concepto_financiero ASC
+            LIMIT :limit OFFSET :offset
+            """
+        )
+        total_stmt = text(
+            f"SELECT COUNT(*) FROM concepto_financiero WHERE {where_clause}"
+        )
+
+        rows = self.db.execute(list_stmt, params).mappings().all()
+        total = self.db.execute(total_stmt, params).scalar_one()
+
+        return {
+            "items": [dict(row) for row in rows],
+            "total": total,
+        }
+
+    # ── obligacion_financiera ─────────────────────────────────────────────────
+
+    def get_obligacion_financiera(
+        self, id_obligacion_financiera: int
+    ) -> dict[str, Any] | None:
+        ob_stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                uid_global,
+                version_registro,
+                id_relacion_generadora,
+                codigo_obligacion_financiera,
+                descripcion_operativa,
+                fecha_emision,
+                fecha_vencimiento,
+                periodo_desde,
+                periodo_hasta,
+                importe_total,
+                saldo_pendiente,
+                estado_obligacion,
+                deleted_at
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
+            """
+        )
+        row = (
+            self.db.execute(ob_stmt, {"id": id_obligacion_financiera})
+            .mappings()
+            .one_or_none()
+        )
+        if row is None:
+            return None
+
+        comp_stmt = text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                c.orden_composicion,
+                c.estado_composicion_obligacion,
+                c.importe_componente,
+                c.saldo_componente,
+                c.moneda_componente,
+                cf.codigo_concepto_financiero
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+                ON c.id_concepto_financiero = cf.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND c.deleted_at IS NULL
+            ORDER BY c.orden_composicion ASC
+            """
+        )
+        comp_rows = (
+            self.db.execute(comp_stmt, {"id": id_obligacion_financiera})
+            .mappings()
+            .all()
+        )
+
+        result = dict(row)
+        result["uid_global"] = str(result["uid_global"])
+        result["composiciones"] = [dict(c) for c in comp_rows]
+        return result
+
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _rg_row_to_dict(self, row: Any) -> dict[str, Any]:

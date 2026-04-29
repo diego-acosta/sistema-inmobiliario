@@ -41,7 +41,7 @@ No incluye:
 - filtros por relación generadora
 - filtros por persona, cliente o locatario
 - filtros por estado financiero
-- filtros por tipo de obligación o movimiento
+- filtros por origen de relacion generadora, concepto financiero o movimiento
 - agrupación por dimensión financiera
 
 ## Resultado esperado

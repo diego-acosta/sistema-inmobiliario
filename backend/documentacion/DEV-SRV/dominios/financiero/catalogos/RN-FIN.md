@@ -267,6 +267,128 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 
 ---
 
+## G. Reglas estructurales de obligacion y conceptos
+
+### RN-FIN-049 — Origen desde relacion generadora
+- descripcion: El origen de una obligacion financiera se interpreta desde `relacion_generadora.tipo_origen` e `id_origen`; no desde un tipo rigido persistido en la obligacion.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN
+
+### RN-FIN-050 — Naturaleza economica por composicion
+- descripcion: La naturaleza economica de una obligacion se interpreta desde sus filas de `composicion_obligacion` y el `concepto_financiero` asociado.
+- aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
+- origen_principal: MODELO-FINANCIERO-FIN
+
+### RN-FIN-051 — Prohibicion de tipo_obligacion como eje estructural
+- descripcion: La obligacion financiera no debe codificar rigidamente como logica central si es venta, alquiler, servicio, expensa u otra categoria de negocio.
+- aplica_a: obligacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN
+
+### RN-FIN-052 — Composicion obligatoria
+- descripcion: Toda obligacion financiera materializada debe tener una o mas composiciones economicas.
+- aplica_a: obligacion_financiera, composicion_obligacion
+- origen_principal: MODELO-FINANCIERO-FIN
+
+### RN-FIN-053 — Concepto obligatorio por composicion
+- descripcion: Toda composicion de obligacion debe referenciar exactamente un `concepto_financiero`.
+- aplica_a: composicion_obligacion, concepto_financiero
+- origen_principal: MODELO-FINANCIERO-FIN
+
+### RN-FIN-054 — Multiples conceptos por obligacion
+- descripcion: Si una obligacion combina varios conceptos economicos, cada concepto debe representarse en una fila separada de `composicion_obligacion`.
+- aplica_a: obligacion_financiera, composicion_obligacion
+- origen_principal: MODELO-FINANCIERO-FIN
+
+### RN-FIN-055 — Saldo conciliable contra componentes
+- descripcion: El saldo de la obligacion debe ser reconstruible o conciliable contra sus componentes financieros.
+- aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN
+- estado: CONCEPTUAL / PENDIENTE de politica fisica de saldo por componente.
+
+### RN-FIN-056 — Cancelacion mediante imputacion
+- descripcion: Un pago no cancela directamente una obligacion; la cancelacion total o parcial debe pasar por `aplicacion_financiera` / imputacion financiera.
+- aplica_a: movimiento_financiero, aplicacion_financiera, obligacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN
+
+---
+
+### RN-FIN-057 — Saldo operativo por componente
+- descripcion: El saldo operativo real debe poder existir a nivel `composicion_obligacion`; `saldo_componente` representa el saldo vivo de ese concepto dentro de la obligacion.
+- aplica_a: composicion_obligacion
+- origen_principal: MODELO-FINANCIERO-FIN
+- estado: CONCEPTUAL / PENDIENTE SQL; SQL vigente no posee `saldo_componente`.
+
+### RN-FIN-058 — Saldo consolidado de obligacion
+- descripcion: `obligacion_financiera.saldo_pendiente` representa el saldo total consolidado y debe ser igual a la suma de `saldo_componente` de composiciones activas, salvo transicion tecnica documentada.
+- aplica_a: obligacion_financiera, composicion_obligacion
+- origen_principal: MODELO-FINANCIERO-FIN
+- estado: CONCEPTUAL / PENDIENTE SQL para saldo por componente.
+
+### RN-FIN-059 — Imputacion preferente por componente
+- descripcion: La imputacion financiera debe aplicarse contra componentes cuando exista desglose economico; si se registra a nivel obligacion, debe distribuirse hacia componentes por politica documentada.
+- aplica_a: aplicacion_financiera, obligacion_financiera, composicion_obligacion
+- origen_principal: MODELO-FINANCIERO-FIN
+
+### RN-FIN-060 — Prioridad de distribucion de pago global
+- descripcion: Cuando un pago global deba distribuirse hacia componentes, la prioridad base es `INTERES_MORA`, `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre.
+- aplica_a: aplicacion_financiera, composicion_obligacion, concepto_financiero
+- origen_principal: MODELO-FINANCIERO-FIN
+- estado: DEFINIDA CONCEPTUALMENTE / PENDIENTE SQL-BACKEND.
+
+### RN-FIN-061 — Cancelacion exige componentes sin saldo
+- descripcion: No debe permitirse que una obligacion figure cancelada si alguna composicion activa conserva `saldo_componente > 0`.
+- aplica_a: obligacion_financiera, composicion_obligacion
+- origen_principal: MODELO-FINANCIERO-FIN
+- estado: CONCEPTUAL / PENDIENTE SQL para saldo por componente.
+
+### RN-FIN-062 — Saldo negativo de composicion prohibido
+- descripcion: No debe permitirse que una composicion quede con saldo negativo salvo nota de credito o credito manual explicitamente modelado.
+- aplica_a: composicion_obligacion, aplicacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN
+- estado: CONCEPTUAL / PENDIENTE SQL para saldo por componente.
+
+### RN-FIN-063 — Saldos conciliables con aplicaciones
+- descripcion: Los saldos acumulados de la obligacion y sus componentes deben ser conciliables con movimientos y aplicaciones financieras.
+- aplica_a: obligacion_financiera, composicion_obligacion, movimiento_financiero, aplicacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN
+
+---
+
+## H. Reglas de estados y transiciones de obligacion_financiera
+
+### RN-FIN-064 — Cancelacion solo sin saldo
+- descripcion: No se puede cancelar una obligacion sin `saldo_pendiente = 0` y sin componentes activos con saldo vivo.
+- aplica_a: obligacion_financiera, composicion_obligacion
+- origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
+
+### RN-FIN-065 — Emision con relacion generadora valida
+- descripcion: No se puede emitir una obligacion si su `relacion_generadora` no esta en estado valido para generar o emitir.
+- aplica_a: relacion_generadora, obligacion_financiera
+- origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
+
+### RN-FIN-066 — Reemplazo con trazabilidad
+- descripcion: No se puede reemplazar una obligacion sin dejar trazabilidad hacia la obligacion nueva o hacia el proceso formal de refinanciacion, regeneracion o reemision.
+- aplica_a: obligacion_financiera
+- origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
+
+### RN-FIN-067 — Anulacion con pagos aplicados
+- descripcion: No se puede anular una obligacion con pagos aplicados sin reversion de imputaciones o tratamiento financiero documentado.
+- aplica_a: obligacion_financiera, aplicacion_financiera
+- origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
+
+### RN-FIN-068 — Vencida materializada o derivada
+- descripcion: `VENCIDA` puede ser estado materializado o derivado por `fecha_vencimiento` superada y saldo pendiente mayor a cero.
+- aplica_a: obligacion_financiera
+- origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
+- estado: DECISION FISICA PENDIENTE.
+
+### RN-FIN-069 — Reduccion de saldo controlada
+- descripcion: Ninguna transicion puede reducir saldo sin `aplicacion_financiera`, anulacion formal o credito documentado.
+- aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera
+- origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
+
+---
+
 ## Reglas de normalización
 
 1. No duplicar reglas.

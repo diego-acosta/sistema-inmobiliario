@@ -37,6 +37,59 @@ BEGIN
             'seed_minimo.sql requiere baseline tecnico previo con sucursal=1 e instalacion=1';
     END IF;
 
+    INSERT INTO public.concepto_financiero (
+        id_instalacion_origen,
+        id_instalacion_ultima_modificacion,
+        op_id_alta,
+        op_id_ultima_modificacion,
+        codigo_concepto_financiero,
+        nombre_concepto_financiero,
+        descripcion_concepto_financiero,
+        tipo_concepto_financiero,
+        naturaleza_concepto,
+        afecta_capital,
+        afecta_interes,
+        afecta_mora,
+        afecta_impuesto,
+        afecta_caja,
+        es_imputable,
+        permite_saldo,
+        estado_concepto_financiero,
+        observaciones
+    )
+    VALUES
+        (1, 1, v_op_id, v_op_id, 'CAPITAL_VENTA', 'Capital de venta', 'Componente de capital asociado a una venta.', 'CAPITAL', 'DEBITO', true, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'ANTICIPO_VENTA', 'Anticipo de venta', 'Anticipo financiero asociado a una venta.', 'CAPITAL', 'DEBITO', true, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'SALDO_EXTRAORDINARIO', 'Saldo extraordinario', 'Saldo extraordinario generado fuera del cronograma ordinario.', 'CAPITAL', 'DEBITO', true, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'CANON_LOCATIVO', 'Canon locativo', 'Canon periodico de contrato locativo.', 'CAPITAL', 'DEBITO', true, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'EXPENSA_TRASLADADA', 'Expensa trasladada', 'Expensa trasladada al obligado financiero.', 'TRASLADO', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'SERVICIO_TRASLADADO', 'Servicio trasladado', 'Servicio trasladado al obligado financiero.', 'TRASLADO', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'IMPUESTO_TRASLADADO', 'Impuesto trasladado', 'Impuesto trasladado al obligado financiero.', 'TRASLADO', 'DEBITO', false, false, false, true, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'INTERES_FINANCIERO', 'Interes financiero', 'Interes financiero ordinario.', 'INTERES', 'DEBITO', false, true, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'INTERES_MORA', 'Interes de mora', 'Interes generado por mora.', 'MORA', 'DEBITO', false, true, true, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'PUNITORIO', 'Punitorio', 'Cargo punitorio por incumplimiento.', 'MORA', 'DEBITO', false, false, true, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'CARGO_ADMINISTRATIVO', 'Cargo administrativo', 'Cargo administrativo financiero.', 'CARGO', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'LIQUIDACION_FINAL', 'Liquidacion final', 'Componente de liquidacion final.', 'CIERRE', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'REFINANCIACION', 'Refinanciacion', 'Componente asociado a refinanciacion.', 'REFINANCIACION', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'CANCELACION_ANTICIPADA', 'Cancelacion anticipada', 'Componente asociado a cancelacion anticipada.', 'CIERRE', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'AJUSTE_INDEXACION', 'Ajuste por indexacion', 'Ajuste financiero por indice o actualizacion.', 'AJUSTE', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'CREDITO_MANUAL', 'Credito manual', 'Credito manual documentado.', 'AJUSTE', 'CREDITO', false, false, false, false, false, true, true, 'ACTIVO', 'Catalogo financiero base'),
+        (1, 1, v_op_id, v_op_id, 'DEBITO_MANUAL', 'Debito manual', 'Debito manual documentado.', 'AJUSTE', 'DEBITO', false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base')
+    ON CONFLICT (codigo_concepto_financiero) DO UPDATE SET
+        nombre_concepto_financiero = EXCLUDED.nombre_concepto_financiero,
+        descripcion_concepto_financiero = EXCLUDED.descripcion_concepto_financiero,
+        tipo_concepto_financiero = EXCLUDED.tipo_concepto_financiero,
+        naturaleza_concepto = EXCLUDED.naturaleza_concepto,
+        afecta_capital = EXCLUDED.afecta_capital,
+        afecta_interes = EXCLUDED.afecta_interes,
+        afecta_mora = EXCLUDED.afecta_mora,
+        afecta_impuesto = EXCLUDED.afecta_impuesto,
+        afecta_caja = EXCLUDED.afecta_caja,
+        es_imputable = EXCLUDED.es_imputable,
+        permite_saldo = EXCLUDED.permite_saldo,
+        estado_concepto_financiero = EXCLUDED.estado_concepto_financiero,
+        observaciones = EXCLUDED.observaciones;
+
     INSERT INTO public.desarrollo (
         id_instalacion_origen,
         id_instalacion_ultima_modificacion,

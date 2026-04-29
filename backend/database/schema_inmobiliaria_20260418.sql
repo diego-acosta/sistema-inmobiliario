@@ -94,22 +94,76 @@ CREATE FUNCTION public.trg_aplicacion_financiera_refrescar_saldo_obligacion() RE
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    v_id_obligacion BIGINT;
 BEGIN
-    v_id_obligacion := COALESCE(NEW.id_obligacion_financiera, OLD.id_obligacion_financiera);
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        IF OLD.id_composicion_obligacion IS NOT NULL THEN
+            UPDATE composicion_obligacion c
+               SET saldo_componente = GREATEST(
+                    0,
+                    c.importe_componente - COALESCE((
+                        SELECT SUM(a.importe_aplicado)
+                        FROM aplicacion_financiera a
+                        WHERE a.id_composicion_obligacion = c.id_composicion_obligacion
+                    ), 0)
+               ),
+                   updated_at = CURRENT_TIMESTAMP,
+                   version_registro = c.version_registro + 1
+             WHERE c.id_composicion_obligacion = OLD.id_composicion_obligacion;
+        END IF;
 
-    UPDATE obligacion_financiera o
-       SET saldo_pendiente = GREATEST(
-            0,
-            o.importe_original - COALESCE((
-                SELECT SUM(a.importe_aplicado)
-                FROM aplicacion_financiera a
-                WHERE a.id_obligacion_financiera = o.id_obligacion_financiera
-            ), 0)
-       ),
-           updated_at = CURRENT_TIMESTAMP,
-           version_registro = o.version_registro + 1
-     WHERE o.id_obligacion_financiera = v_id_obligacion;
+        UPDATE obligacion_financiera o
+           SET saldo_pendiente = GREATEST(
+                0,
+                o.importe_total - COALESCE((
+                    SELECT SUM(a.importe_aplicado)
+                    FROM aplicacion_financiera a
+                    WHERE a.id_obligacion_financiera = o.id_obligacion_financiera
+                ), 0)
+           ),
+               importe_cancelado_acumulado = COALESCE((
+                    SELECT SUM(a.importe_aplicado)
+                    FROM aplicacion_financiera a
+                    WHERE a.id_obligacion_financiera = o.id_obligacion_financiera
+                ), 0),
+               updated_at = CURRENT_TIMESTAMP,
+               version_registro = o.version_registro + 1
+         WHERE o.id_obligacion_financiera = OLD.id_obligacion_financiera;
+    END IF;
+
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        IF NEW.id_composicion_obligacion IS NOT NULL THEN
+            UPDATE composicion_obligacion c
+               SET saldo_componente = GREATEST(
+                    0,
+                    c.importe_componente - COALESCE((
+                        SELECT SUM(a.importe_aplicado)
+                        FROM aplicacion_financiera a
+                        WHERE a.id_composicion_obligacion = c.id_composicion_obligacion
+                    ), 0)
+               ),
+                   updated_at = CURRENT_TIMESTAMP,
+                   version_registro = c.version_registro + 1
+             WHERE c.id_composicion_obligacion = NEW.id_composicion_obligacion;
+        END IF;
+
+        UPDATE obligacion_financiera o
+           SET saldo_pendiente = GREATEST(
+                0,
+                o.importe_total - COALESCE((
+                    SELECT SUM(a.importe_aplicado)
+                    FROM aplicacion_financiera a
+                    WHERE a.id_obligacion_financiera = o.id_obligacion_financiera
+                ), 0)
+           ),
+               importe_cancelado_acumulado = COALESCE((
+                    SELECT SUM(a.importe_aplicado)
+                    FROM aplicacion_financiera a
+                    WHERE a.id_obligacion_financiera = o.id_obligacion_financiera
+                ), 0),
+               updated_at = CURRENT_TIMESTAMP,
+               version_registro = o.version_registro + 1
+         WHERE o.id_obligacion_financiera = NEW.id_obligacion_financiera;
+    END IF;
 
     RETURN COALESCE(NEW, OLD);
 END;
@@ -131,7 +185,7 @@ DECLARE
     v_aplicado_composicion NUMERIC(18,2);
 BEGIN
     IF NEW.id_composicion_obligacion IS NOT NULL THEN
-        SELECT c.id_obligacion_financiera, c.importe
+        SELECT c.id_obligacion_financiera, c.importe_componente
           INTO v_id_obligacion_composicion, v_importe_total_composicion
           FROM composicion_obligacion c
          WHERE c.id_composicion_obligacion = NEW.id_composicion_obligacion;
@@ -159,7 +213,7 @@ BEGIN
         END IF;
     END IF;
 
-    SELECT o.importe_original
+    SELECT o.importe_total
       INTO v_importe_total_obligacion
       FROM obligacion_financiera o
      WHERE o.id_obligacion_financiera = NEW.id_obligacion_financiera;
@@ -1349,10 +1403,18 @@ CREATE TABLE public.composicion_obligacion (
     op_id_ultima_modificacion uuid,
     id_obligacion_financiera bigint NOT NULL,
     id_concepto_financiero bigint NOT NULL,
-    importe numeric(14,2) NOT NULL,
+    orden_composicion integer DEFAULT 1 NOT NULL,
+    estado_composicion_obligacion character varying(30) DEFAULT 'ACTIVA'::character varying NOT NULL,
+    importe_componente numeric(14,2) NOT NULL,
+    saldo_componente numeric(14,2) NOT NULL,
+    moneda_componente character varying(10) DEFAULT 'ARS'::character varying NOT NULL,
+    detalle_calculo text,
     observaciones text,
-    CONSTRAINT chk_composicion_importes_no_negativos CHECK ((importe >= (0)::numeric)),
-    CONSTRAINT chk_composicion_saldo_no_supera_importe CHECK ((importe >= (0)::numeric))
+    CONSTRAINT chk_composicion_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at))),
+    CONSTRAINT chk_composicion_estado CHECK (((estado_composicion_obligacion)::text = ANY ((ARRAY['ACTIVA'::character varying, 'CANCELADA'::character varying, 'ANULADA'::character varying])::text[]))),
+    CONSTRAINT chk_composicion_importes_no_negativos CHECK (((importe_componente >= (0)::numeric) AND (saldo_componente >= (0)::numeric))),
+    CONSTRAINT chk_composicion_orden_positivo CHECK ((orden_composicion > 0)),
+    CONSTRAINT chk_composicion_saldo_no_supera_importe CHECK ((saldo_componente <= importe_componente))
 );
 
 
@@ -1390,10 +1452,22 @@ CREATE TABLE public.concepto_financiero (
     id_instalacion_ultima_modificacion bigint,
     op_id_alta uuid,
     op_id_ultima_modificacion uuid,
-    codigo_concepto character varying(50) NOT NULL,
-    nombre_concepto character varying(150) NOT NULL,
-    tipo_concepto character varying(50),
-    estado_concepto character varying(30) NOT NULL
+    codigo_concepto_financiero character varying(50) NOT NULL,
+    nombre_concepto_financiero character varying(150) NOT NULL,
+    descripcion_concepto_financiero text,
+    tipo_concepto_financiero character varying(50) NOT NULL,
+    naturaleza_concepto character varying(50) NOT NULL,
+    afecta_capital boolean DEFAULT false NOT NULL,
+    afecta_interes boolean DEFAULT false NOT NULL,
+    afecta_mora boolean DEFAULT false NOT NULL,
+    afecta_impuesto boolean DEFAULT false NOT NULL,
+    afecta_caja boolean DEFAULT true NOT NULL,
+    es_imputable boolean DEFAULT true NOT NULL,
+    permite_saldo boolean DEFAULT true NOT NULL,
+    estado_concepto_financiero character varying(30) DEFAULT 'ACTIVO'::character varying NOT NULL,
+    observaciones text,
+    CONSTRAINT chk_concepto_financiero_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at))),
+    CONSTRAINT chk_concepto_financiero_estado CHECK (((estado_concepto_financiero)::text = ANY ((ARRAY['ACTIVO'::character varying, 'INACTIVO'::character varying, 'ANULADO'::character varying])::text[])))
 );
 
 
@@ -3305,16 +3379,38 @@ CREATE TABLE public.obligacion_financiera (
     op_id_alta uuid,
     op_id_ultima_modificacion uuid,
     id_relacion_generadora bigint NOT NULL,
-    codigo_obligacion character varying(50),
+    codigo_obligacion_financiera character varying(50),
+    descripcion_operativa text,
+    fecha_generacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     fecha_emision date NOT NULL,
     fecha_vencimiento date,
-    importe_original numeric(14,2) NOT NULL,
+    periodo_desde date,
+    periodo_hasta date,
+    fecha_cierre timestamp without time zone,
+    importe_total numeric(14,2) NOT NULL,
     saldo_pendiente numeric(14,2) NOT NULL,
+    importe_cancelado_acumulado numeric(14,2) DEFAULT 0 NOT NULL,
+    importe_bonificado_acumulado numeric(14,2) DEFAULT 0 NOT NULL,
+    importe_anulado_acumulado numeric(14,2) DEFAULT 0 NOT NULL,
+    moneda character varying(10) DEFAULT 'ARS'::character varying NOT NULL,
     estado_obligacion character varying(30) NOT NULL,
+    es_exigible boolean DEFAULT false NOT NULL,
+    es_proyectada boolean DEFAULT false NOT NULL,
+    es_emitida boolean DEFAULT false NOT NULL,
+    es_vencida boolean DEFAULT false NOT NULL,
+    genera_recibo boolean DEFAULT true NOT NULL,
+    afecta_estado_cuenta boolean DEFAULT true NOT NULL,
+    afecta_libre_deuda boolean DEFAULT true NOT NULL,
+    id_obligacion_reemplazada bigint,
+    id_obligacion_reemplazante bigint,
+    motivo_reemplazo text,
     observaciones text,
+    CONSTRAINT chk_obligacion_financiera_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at))),
     CONSTRAINT chk_obligacion_financiera_fechas CHECK (((fecha_vencimiento IS NULL) OR (fecha_vencimiento >= fecha_emision))),
-    CONSTRAINT chk_obligacion_importes_no_negativos CHECK (((importe_original >= (0)::numeric) AND (saldo_pendiente >= (0)::numeric))),
-    CONSTRAINT chk_obligacion_saldo_no_supera_original CHECK ((saldo_pendiente <= importe_original))
+    CONSTRAINT chk_obligacion_financiera_periodo CHECK (((periodo_hasta IS NULL) OR (periodo_desde IS NULL) OR (periodo_hasta >= periodo_desde))),
+    CONSTRAINT chk_obligacion_estado CHECK (((estado_obligacion)::text = ANY ((ARRAY['PROYECTADA'::character varying, 'EMITIDA'::character varying, 'EXIGIBLE'::character varying, 'PARCIALMENTE_CANCELADA'::character varying, 'CANCELADA'::character varying, 'VENCIDA'::character varying, 'ANULADA'::character varying, 'REEMPLAZADA'::character varying])::text[]))),
+    CONSTRAINT chk_obligacion_importes_no_negativos CHECK (((importe_total >= (0)::numeric) AND (saldo_pendiente >= (0)::numeric) AND (importe_cancelado_acumulado >= (0)::numeric) AND (importe_bonificado_acumulado >= (0)::numeric) AND (importe_anulado_acumulado >= (0)::numeric))),
+    CONSTRAINT chk_obligacion_saldo_no_supera_total CHECK ((saldo_pendiente <= importe_total))
 );
 
 
@@ -6565,7 +6661,7 @@ ALTER TABLE ONLY public.composicion_obligacion
 --
 
 ALTER TABLE ONLY public.concepto_financiero
-    ADD CONSTRAINT uq_concepto_codigo UNIQUE (codigo_concepto);
+    ADD CONSTRAINT uq_concepto_codigo UNIQUE (codigo_concepto_financiero);
 
 
 --
@@ -7472,6 +7568,34 @@ CREATE INDEX idx_co_obl ON public.composicion_obligacion USING btree (id_obligac
 
 
 --
+-- Name: idx_co_concepto; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_co_concepto ON public.composicion_obligacion USING btree (id_concepto_financiero);
+
+
+--
+-- Name: idx_composicion_obligacion_deleted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_composicion_obligacion_deleted_at ON public.composicion_obligacion USING btree (deleted_at);
+
+
+--
+-- Name: idx_concepto_financiero_codigo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_concepto_financiero_codigo ON public.concepto_financiero USING btree (codigo_concepto_financiero);
+
+
+--
+-- Name: idx_concepto_financiero_deleted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_concepto_financiero_deleted_at ON public.concepto_financiero USING btree (deleted_at);
+
+
+--
 -- Name: idx_col_contrato; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7977,6 +8101,41 @@ CREATE INDEX idx_numerador_serie_uid_global ON public.numerador_serie USING btre
 --
 
 CREATE INDEX idx_obl_rg ON public.obligacion_financiera USING btree (id_relacion_generadora);
+
+
+--
+-- Name: idx_obligacion_financiera_deleted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_obligacion_financiera_deleted_at ON public.obligacion_financiera USING btree (deleted_at);
+
+
+--
+-- Name: idx_obligacion_financiera_estado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_obligacion_financiera_estado ON public.obligacion_financiera USING btree (estado_obligacion);
+
+
+--
+-- Name: idx_obligacion_financiera_fecha_vencimiento; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_obligacion_financiera_fecha_vencimiento ON public.obligacion_financiera USING btree (fecha_vencimiento);
+
+
+--
+-- Name: idx_obligacion_financiera_reemplazada; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_obligacion_financiera_reemplazada ON public.obligacion_financiera USING btree (id_obligacion_reemplazada);
+
+
+--
+-- Name: idx_obligacion_financiera_reemplazante; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_obligacion_financiera_reemplazante ON public.obligacion_financiera USING btree (id_obligacion_reemplazante);
 
 
 --
@@ -9121,6 +9280,20 @@ CREATE TRIGGER trg_bi_cliente_comprador_core_ef BEFORE INSERT ON public.cliente_
 
 
 --
+-- Name: composicion_obligacion trg_bi_composicion_obligacion_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_composicion_obligacion_core_ef BEFORE INSERT ON public.composicion_obligacion FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
+
+--
+-- Name: concepto_financiero trg_bi_concepto_financiero_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_concepto_financiero_core_ef BEFORE INSERT ON public.concepto_financiero FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
+
+--
 -- Name: desarrollo trg_bi_desarrollo_core_ef; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9461,6 +9634,20 @@ CREATE TRIGGER trg_bu_aplicacion_financiera_core_ef BEFORE UPDATE ON public.apli
 --
 
 CREATE TRIGGER trg_bu_cliente_comprador_core_ef BEFORE UPDATE ON public.cliente_comprador FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
+
+--
+-- Name: composicion_obligacion trg_bu_composicion_obligacion_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_composicion_obligacion_core_ef BEFORE UPDATE ON public.composicion_obligacion FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
+
+--
+-- Name: concepto_financiero trg_bu_concepto_financiero_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_concepto_financiero_core_ef BEFORE UPDATE ON public.concepto_financiero FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
 
 
 --
@@ -10246,6 +10433,22 @@ ALTER TABLE ONLY public.numerador_serie
 
 ALTER TABLE ONLY public.obligacion_financiera
     ADD CONSTRAINT fk_obl_rg FOREIGN KEY (id_relacion_generadora) REFERENCES public.relacion_generadora(id_relacion_generadora) ON DELETE RESTRICT;
+
+
+--
+-- Name: obligacion_financiera fk_obl_reemplazada; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.obligacion_financiera
+    ADD CONSTRAINT fk_obl_reemplazada FOREIGN KEY (id_obligacion_reemplazada) REFERENCES public.obligacion_financiera(id_obligacion_financiera) ON DELETE RESTRICT;
+
+
+--
+-- Name: obligacion_financiera fk_obl_reemplazante; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.obligacion_financiera
+    ADD CONSTRAINT fk_obl_reemplazante FOREIGN KEY (id_obligacion_reemplazante) REFERENCES public.obligacion_financiera(id_obligacion_financiera) ON DELETE RESTRICT;
 
 
 --

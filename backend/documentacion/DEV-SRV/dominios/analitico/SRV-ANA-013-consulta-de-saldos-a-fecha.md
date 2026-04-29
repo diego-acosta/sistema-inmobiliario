@@ -8,7 +8,7 @@ Incluye:
 - análisis de saldos financieros a fecha
 - distribución de saldos al corte por dimensión
 - comparación de saldos entre fechas cuando corresponda
-- agregación por sucursal, relación, sujeto o tipo de obligación
+- agregación por sucursal, relación, sujeto, origen financiero o concepto financiero
 - soporte para reporting y dashboards temporales
 
 No incluye:
@@ -39,7 +39,7 @@ No incluye:
 - filtros por sucursal
 - filtros por cliente / persona / locatario
 - filtros por relación generadora
-- filtros por tipo o estado de obligación
+- filtros por origen financiero, concepto financiero o estado de obligación
 - agrupación por dimensión financiera
 
 ## Resultado esperado

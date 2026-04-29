@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.schemas.financiero import (
+    ConceptoFinancieroData,
+    ConceptoFinancieroListData,
+    ConceptoFinancieroListResponse,
     ErrorResponse,
+    ObligacionFinancieraData,
+    ObligacionFinancieraResponse,
     RelacionGeneradoraCreateRequest,
     RelacionGeneradoraData,
     RelacionGeneradoraListData,
@@ -23,6 +28,12 @@ from app.application.financiero.services.create_relacion_generadora_service impo
 )
 from app.application.financiero.services.get_relacion_generadora_service import (
     GetRelacionGeneradoraService,
+)
+from app.application.financiero.services.get_obligacion_financiera_service import (
+    GetObligacionFinancieraService,
+)
+from app.application.financiero.services.list_conceptos_financieros_service import (
+    ListConceptosFinancierosService,
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
@@ -125,7 +136,7 @@ def create_relacion_generadora(
                 status_code=400,
                 content=ErrorResponse(
                     error_code="APPLICATION_ERROR",
-                    error_message="tipo_origen debe ser VENTA, CONTRATO_ALQUILER o SERVICIO_TRASLADADO.",
+                    error_message="tipo_origen debe ser VENTA o CONTRATO_ALQUILER.",
                     details={"errors": result.errors},
                 ).model_dump(),
             )
@@ -216,4 +227,63 @@ def list_relaciones_generadoras(
             items=[RelacionGeneradoraData(**item) for item in result.data["items"]],
             total=result.data["total"],
         )
+    )
+
+
+@router.get(
+    "/api/v1/financiero/conceptos-financieros",
+    response_model=ConceptoFinancieroListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_conceptos_financieros(
+    estado: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=0, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> ConceptoFinancieroListResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = ListConceptosFinancierosService(repository=repository)
+
+    try:
+        result = service.execute(estado=estado, limit=limit, offset=offset)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    return ConceptoFinancieroListResponse(
+        data=ConceptoFinancieroListData(
+            items=[ConceptoFinancieroData(**item) for item in result.data["items"]],
+            total=result.data["total"],
+        )
+    )
+
+
+@router.get(
+    "/api/v1/financiero/obligaciones/{id_obligacion_financiera}",
+    response_model=ObligacionFinancieraResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_obligacion_financiera(
+    id_obligacion_financiera: int,
+    db: Session = Depends(get_db),
+) -> ObligacionFinancieraResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetObligacionFinancieraService(repository=repository)
+    result = service.execute(id_obligacion_financiera)
+
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La obligación financiera indicada no existe.",
+            ).model_dump(),
+        )
+
+    return ObligacionFinancieraResponse(
+        data=ObligacionFinancieraData(**result.data)
     )

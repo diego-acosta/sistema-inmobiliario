@@ -45,13 +45,13 @@ Incluye generación de obligaciones, imputaciones, ajustes y consultas de estado
 ### CU-FIN-006 — Generación de obligación
 - tipo: write
 - objetivo: Generar una obligación financiera individual a partir de una relación generadora válida.
-- entidades: relacion_generadora, obligacion_financiera
+- entidades: relacion_generadora, obligacion_financiera, composicion_obligacion, concepto_financiero
 - criticidad: crítica
 
 ### CU-FIN-007 — Generación masiva de obligaciones
 - tipo: write
 - objetivo: Generar múltiples obligaciones financieras dentro de un mismo proceso de emisión o exigibilidad.
-- entidades: relacion_generadora, obligacion_financiera
+- entidades: relacion_generadora, obligacion_financiera, composicion_obligacion, concepto_financiero
 - criticidad: crítica
 
 ### CU-FIN-008 — Reversión de generación de obligación
@@ -105,7 +105,7 @@ Incluye generación de obligaciones, imputaciones, ajustes y consultas de estado
 ### CU-FIN-015 — Cancelación de obligación
 - tipo: write
 - objetivo: Cancelar una obligación financiera al extinguirse completamente su saldo exigible.
-- entidades: obligacion_financiera
+- entidades: obligacion_financiera, composicion_obligacion, concepto_financiero
 - criticidad: crítica
 
 ### CU-FIN-016 — Regularización de deuda
@@ -162,6 +162,7 @@ Incluye generación de obligaciones, imputaciones, ajustes y consultas de estado
 
 - Este dominio gestiona el estado económico del sistema.
 - Todas las obligaciones derivan de una relación generadora.
+- La naturaleza economica de una obligacion deriva de sus composiciones y conceptos financieros, no de un tipo rigido de obligacion.
 - La imputación modifica el estado de deuda.
 - La reversión implica deshacer una operación financiera previa dentro de un circuito válido.
 - La cancelación implica la extinción final de una obligación sin modificar su historial.

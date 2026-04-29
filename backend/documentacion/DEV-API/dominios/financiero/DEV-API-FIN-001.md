@@ -91,6 +91,7 @@ Criterios aplicados:
 - cuando el DEV-SRV documenta columnas o estados que no existen aun en SQL, se marca PENDIENTE
 - `relacion_generadora` tiene columna `estado_relacion_generadora` en SQL vigente; el MVP la expone como estado estructural, pero no implementa transiciones
 - `composicion_obligacion` referencia `id_concepto_financiero`; `concepto_financiero` existe como tabla en SQL
+- la obligacion no debe codificar rigidamente `tipo_obligacion`; el origen se interpreta desde `relacion_generadora` y la naturaleza economica desde `composicion_obligacion` + `concepto_financiero`
 - `aplicacion_financiera` no tiene columna `estado_aplicacion` en SQL vigente — ERR-FIN y EST-FIN documentan estados de imputacion; su almacenamiento fisico queda PENDIENTE
 - `movimiento_financiero` no tiene FK explicita a `relacion_generadora` ni a `obligacion_financiera` en SQL; la asociacion se materializa exclusivamente a traves de `aplicacion_financiera` — ver ATENCION en seccion 7.3
 - para `factura_servicio` como origen financiero: la tabla SQL existe, pero NO existe API backend, evento ni consumer — se documenta como CONCEPTUAL / NO IMPLEMENTADO
@@ -108,6 +109,7 @@ Criterios aplicados:
   - `servicios-trasladados`
 - los recursos hijos de `relacion_generadora` se listan anidados bajo la relacion padre cuando corresponde
 - `composicion_obligacion` no tiene endpoint autonomo de alta; es un efecto interno de la materializacion de obligaciones
+- `concepto_financiero` define el significado economico de cada componente; no se expone como tipo rigido de obligacion en este contrato
 - `obligacion_obligado` no tiene endpoint autonomo de alta; la resolucion del obligado es efecto de la materializacion/generacion financiera (INT-FIN-002)
 - las transiciones de estado de `relacion_generadora` son endpoints PATCH independientes: `activar`, `cancelar`, `finalizar`
 - la materializacion de obligaciones es una operacion separada de la activacion de `relacion_generadora`
@@ -430,21 +432,33 @@ Request:
 
 ```json
 {
+  "id_relacion_generadora": 1,
   "plan_generacion_obligaciones": {
     "tipo_origen": "VENTA",
     "id_origen": 10,
     "obligaciones": [
       {
-        "concepto": "ANTICIPO",
-        "importe": 100000,
         "fecha_emision": "2026-04-28",
         "fecha_vencimiento": "2026-05-10",
-        "observaciones": "Anticipo venta"
+        "moneda": "ARS",
+        "observaciones": "Cuota venta",
+        "composiciones": [
+          {
+            "codigo_concepto_financiero": "CAPITAL_VENTA",
+            "importe_componente": 100000.00
+          },
+          {
+            "codigo_concepto_financiero": "INTERES_FINANCIERO",
+            "importe_componente": 15000.00
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+Nota: el request no recibe `tipo_obligacion` como eje normativo. La naturaleza economica debe venir por composiciones y `codigo_concepto_financiero`. Cualquier campo legacy equivalente a tipo de obligacion debe tratarse solo como compatibilidad documental y no como discriminador de calculo.
 
 Response conceptual `201`:
 
@@ -459,10 +473,24 @@ Response conceptual `201`:
       {
         "id_obligacion_financiera": 10,
         "codigo_obligacion": "OBL-0010",
-        "importe_original": 100000.00,
+        "importe_original": 115000.00,
         "fecha_emision": "2026-04-28",
         "fecha_vencimiento": "2026-05-10",
-        "estado_obligacion": "pendiente"
+        "estado_obligacion": "EMITIDA",
+        "composiciones": [
+          {
+            "id_composicion_obligacion": 1,
+            "codigo_concepto_financiero": "CAPITAL_VENTA",
+            "importe_componente": 100000.00,
+            "saldo_componente": 100000.00
+          },
+          {
+            "id_composicion_obligacion": 2,
+            "codigo_concepto_financiero": "INTERES_FINANCIERO",
+            "importe_componente": 15000.00,
+            "saldo_componente": 15000.00
+          }
+        ]
       }
     ]
   }
@@ -478,6 +506,8 @@ Validaciones:
 - `plan_generacion_obligaciones` debe existir y tener al menos una obligacion a materializar
 - `plan_generacion_obligaciones.tipo_origen` debe coincidir con `relacion_generadora.tipo_origen`
 - `plan_generacion_obligaciones.id_origen` debe coincidir con `relacion_generadora.id_origen`
+- cada obligacion del plan debe incluir una o mas `composiciones`
+- cada composicion debe informar `codigo_concepto_financiero` e `importe_componente`
 - si el plan no coincide con la `relacion_generadora`, debe rechazarse con error de negocio
 - si el plan corresponde a obligaciones ya materializadas y activas para la relacion, no deben duplicarse obligaciones
 
@@ -487,6 +517,9 @@ Reglas de negocio:
 - la materializacion es atomica con la generacion de obligaciones y composiciones segun el plan recibido
 - si falla la generacion de alguna obligacion, falla toda la materializacion con rollback completo
 - `financiero` persiste `obligacion_financiera` y `composicion_obligacion` segun el plan, sin recalcular importes, cuotas ni cantidad de obligaciones
+- toda obligacion materializada debe contar con una o mas composiciones referenciando `concepto_financiero`
+- la naturaleza economica de la deuda surge de la composicion y sus conceptos, no de `tipo_obligacion`
+- `saldo_pendiente` debe ser conciliable contra las composiciones; cuando exista `saldo_componente`, la regla preferida es `saldo_pendiente = SUM(saldo_componente)` de composiciones activas
 - se registra evento en outbox para sincronizacion
 
 Errores posibles:
@@ -751,7 +784,8 @@ Validaciones:
 
 Reglas de negocio:
 - el registro es atomico: si falla la generacion de cualquier imputacion, falla todo el pago con rollback completo
-- el pago actualiza `saldo_pendiente` en cada `obligacion_financiera` imputada
+- el pago no cancela directamente una obligacion; la cancelacion total o parcial se produce mediante `aplicacion_financiera`
+- la imputacion actualiza `saldo_pendiente` en cada `obligacion_financiera` imputada
 - si el request incluye `imputaciones` explicitas, se aplican en el orden informado
 - si el request no incluye `imputaciones`, el motor distribuye automaticamente segun el orden base: `fecha_vencimiento ASC`, luego `fecha_emision ASC`; este criterio es la politica base y puede extenderse en versiones futuras sin romper el contrato
 - se registra evento en outbox
@@ -942,7 +976,9 @@ Response `200`:
           {
             "id_composicion_obligacion": 1,
             "id_concepto_financiero": 3,
-            "importe": 15000.00,
+            "codigo_concepto_financiero": "CANON_LOCATIVO",
+            "importe_componente": 15000.00,
+            "saldo_componente": 15000.00,
             "observaciones": "Capital mensual"
           }
         ]
@@ -1017,7 +1053,11 @@ Objetivo:
 - listado de obligaciones financieras de una relacion generadora especifica
 
 Filtros permitidos:
-- `estado_obligacion` — `pendiente`, `vencida`, `parcialmente_cancelada`, `cancelada`
+- `estado_obligacion` — estados normalizados de obligacion financiera; hasta migracion fisica, mantener compatibilidad con `pendiente`, `vencida`, `parcialmente_cancelada`, `cancelada`
+- `codigo_concepto_financiero` — filtro conceptual por composicion; PENDIENTE de soporte backend
+- `fecha_vencimiento_desde`
+- `fecha_vencimiento_hasta`
+- `con_saldo_pendiente`
 - `vigente`
 
 Response `200`:
@@ -1089,7 +1129,9 @@ Response `200`:
       {
         "id_composicion_obligacion": 1,
         "id_concepto_financiero": 3,
-        "importe": 15000.00,
+        "codigo_concepto_financiero": "CANON_LOCATIVO",
+        "importe_componente": 15000.00,
+        "saldo_componente": 15000.00,
         "observaciones": "Capital mensual"
       }
     ],
@@ -1123,7 +1165,11 @@ Objetivo:
 
 Filtros permitidos:
 - `id_relacion_generadora`
-- `estado_obligacion` — `pendiente`, `vencida`, `parcialmente_cancelada`, `cancelada`
+- `tipo_origen` — origen financiero de la `relacion_generadora`
+- `id_origen` — entidad generadora en el dominio origen
+- `estado_obligacion` — estados normalizados de obligacion financiera; hasta migracion fisica, mantener compatibilidad con `pendiente`, `vencida`, `parcialmente_cancelada`, `cancelada`
+- `codigo_concepto_financiero` — filtro conceptual por composicion; PENDIENTE de soporte backend
+- `id_persona_obligada` — persona obligada; PENDIENTE de soporte backend
 - `fecha_emision_desde`
 - `fecha_emision_hasta`
 - `fecha_vencimiento_desde`

@@ -77,6 +77,21 @@ El estado financiero se reconstruye dinámicamente.
 
 ---
 
+### FIN-PR-005 — Composicion economica por conceptos
+
+La `obligacion_financiera` no debe tipificarse rigidamente como venta, alquiler, servicio, expensa u otra categoria de negocio.
+
+El origen financiero se interpreta desde `relacion_generadora`.
+
+La naturaleza economica de la deuda se interpreta desde:
+
+- `composicion_obligacion`
+- `concepto_financiero`
+
+Por lo tanto, una cuota de venta, un anticipo, un canon locativo, un servicio trasladado, una mora o una liquidacion final se representan por sus componentes y conceptos financieros, no por una columna central de tipo de obligacion.
+
+---
+
 ## 4. Entidades principales
 
 ---
@@ -97,7 +112,7 @@ Se crea desde otros dominios (ej: contrato, venta).
 ### 4.2 obligacion_financiera
 
 #### Descripción
-Representa una obligación económica.
+Representa una deuda exigible o proyectada dentro del dominio financiero.
 
 #### Generación
 Definida en:
@@ -107,8 +122,11 @@ Definida en:
 #### Relaciones
 - pertenece a relacion_generadora
 - tiene obligados
-- puede tener composiciones
+- debe tener una o mas composiciones cuando se materializa como deuda persistente
 - se cancela mediante aplicaciones
+
+#### Nota estructural
+La obligacion no codifica rigidamente el tipo economico. El significado de sus importes surge de `composicion_obligacion` y `concepto_financiero`.
 
 ---
 
@@ -125,16 +143,39 @@ Dominio personas.
 ### 4.4 composicion_obligacion
 
 #### Descripción
-Detalle de una obligación.
+Detalle economico de una obligacion.
 
 #### Uso
 - capital
 - interés
 - mora
 - recargos
+- impuestos
+- cargos administrativos
+- bonificaciones o creditos cuando corresponda
 
 #### Nota
-La mora se modela como composición o como nueva obligación según RN-FIN.
+Toda composicion debe referenciar exactamente un `concepto_financiero`.
+
+---
+
+### 4.4.1 concepto_financiero
+
+#### Descripción
+Catalogo financiero que define el significado de cada componente economico de una obligacion.
+
+#### Funcion
+- clasificar la naturaleza economica de una composicion
+- permitir que una obligacion combine varios conceptos
+- evitar que `obligacion_financiera` codifique tipos rigidos como venta, alquiler, servicio o expensa
+
+#### Ejemplos conceptuales
+- `CAPITAL_VENTA`
+- `ANTICIPO_VENTA`
+- `CANON_LOCATIVO`
+- `SERVICIO_TRASLADADO`
+- `INTERES_MORA`
+- `PUNITORIO`
 
 ---
 
@@ -219,9 +260,10 @@ Detalle de conciliación.
 
 ### Núcleo
 
-- relacion_generadora → obligacion_financiera
-- obligacion_financiera → obligacion_obligado
-- obligacion_financiera → composicion_obligacion
+- relacion_generadora 1 --- N obligacion_financiera
+- obligacion_financiera 1 --- N obligacion_obligado
+- obligacion_financiera 1 --- N composicion_obligacion
+- concepto_financiero 1 --- N composicion_obligacion
 
 ---
 
@@ -229,6 +271,7 @@ Detalle de conciliación.
 
 - movimiento_financiero → aplicacion_financiera
 - obligacion_financiera → aplicacion_financiera
+- composicion_obligacion 0..1 → aplicacion_financiera
 
 ---
 

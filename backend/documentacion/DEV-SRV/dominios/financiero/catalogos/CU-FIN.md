@@ -81,7 +81,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones financieras, ajustes 
 - servicio_origen: SRV-FIN-002
 - tipo: write
 - objetivo: Generar una obligación financiera a partir de la relación generadora correspondiente.
-- entidades: obligacion_financiera, relacion_generadora
+- entidades: obligacion_financiera, relacion_generadora, composicion_obligacion, concepto_financiero
 - criticidad: crítica
 - sincronizable: sí
 - requiere_versionado: sí
@@ -94,7 +94,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones financieras, ajustes 
 - servicio_origen: SRV-FIN-005
 - tipo: read
 - objetivo: Obtener el detalle operativo de una obligación financiera.
-- entidades: obligacion_financiera
+- entidades: obligacion_financiera, composicion_obligacion, concepto_financiero
 - criticidad: media
 - sincronizable: no
 - requiere_versionado: no

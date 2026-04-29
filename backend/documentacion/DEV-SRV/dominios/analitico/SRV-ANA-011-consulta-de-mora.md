@@ -38,7 +38,7 @@ No incluye:
 - filtros por sucursal
 - filtros por cliente / persona / locatario
 - filtros por relación generadora
-- filtros por tipo de obligación
+- filtros por origen de relacion generadora o concepto financiero
 - filtros por estado de mora
 - agrupación temporal
 - agrupación por dimensión financiera

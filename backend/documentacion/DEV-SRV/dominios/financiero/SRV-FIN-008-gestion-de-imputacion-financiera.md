@@ -124,6 +124,14 @@ Permite visualizar cómo se aplicaron los pagos sobre la deuda.
 - reversión solo sobre aplicaciones válidas
 - idempotencia en operaciones write
 
+### Politica base de distribucion
+
+Cuando exista desglose por `composicion_obligacion`, la imputacion debe impactar componentes o aplicar la politica documentada de distribucion definida en `MODELO-FINANCIERO-FIN`.
+
+La prioridad conceptual por defecto para pagos globales es: `INTERES_MORA`, `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre.
+
+Esta politica queda `DEFINIDA CONCEPTUALMENTE / PENDIENTE SQL-BACKEND`.
+
 ## Efectos transaccionales
 - alta o modificación de aplicacion_financiera
 - actualización de saldo en obligacion_financiera
@@ -152,6 +160,7 @@ Permite visualizar cómo se aplicaron los pagos sobre la deuda.
 
 ## Referencias
 - [[00-INDICE-FINANCIERO]]
+- [[MODELO-FINANCIERO-FIN]]
 - [[SRV-FIN-007-simulacion-y-registro-de-pago]]
 - [[SRV-FIN-006-cronograma-y-obligaciones]]
 - [[RN-FIN]]
@@ -161,8 +170,8 @@ Permite visualizar cómo se aplicaron los pagos sobre la deuda.
 - DER financiero
 
 ## Pendientes abiertos
-- política exacta de distribución de pago (FIFO, proporcional, manual, etc.)
-- reglas de prioridad entre conceptos de composición
+- implementacion SQL/backend de la politica conceptual de distribucion por defecto definida en `MODELO-FINANCIERO-FIN`
+- definicion de variantes futuras de distribucion de pago (FIFO, proporcional, manual, etc.)
 - estrategia de imputación automática versus manual
 - tratamiento de pagos parciales y excedentes
 - trazabilidad exacta de reaplicaciones múltiples
