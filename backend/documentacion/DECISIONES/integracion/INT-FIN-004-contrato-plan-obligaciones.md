@@ -4,7 +4,7 @@
 
 - estado: `DEFINIDO`
 - impacto: `ALTO`
-- bloquea: implementacion de activacion y generacion de obligaciones
+- bloquea: implementacion de materializacion de obligaciones
 
 ---
 
@@ -30,13 +30,16 @@ Se define el contrato de entrada:
 
 El dominio origen construye el plan segun sus condiciones economicas.
 
-`financiero` recibe ese plan, valida su integridad y materializa las obligaciones financieras persistentes.
+`financiero` recibe ese plan en la operacion de materializacion, valida su integridad y materializa las obligaciones financieras persistentes.
+
+`PlanGeneracionObligaciones` no es input de `activar relacion_generadora`. La activacion solo habilita y da vigencia a la `relacion_generadora`; no crea obligaciones.
 
 Resumen:
 
 ```text
 dominio origen calcula estrategia
 -> PlanGeneracionObligaciones
+-> operacion materializar-obligaciones
 -> financiero valida integridad
 -> financiero persiste obligaciones
 ```
@@ -79,8 +82,10 @@ Campos base:
 - `financiero` no modifica importes.
 - `financiero` no calcula cuotas.
 - `financiero` no decide la cantidad de obligaciones.
+- `financiero` recibe el plan en la operacion de materializacion, no en la activacion de la relacion generadora.
 - `financiero` valida integridad estructural del plan.
 - `financiero` valida que el origen referenciado sea compatible con la `relacion_generadora`.
+- `financiero` valida que la `relacion_generadora` este activa antes de materializar.
 - `financiero` persiste `obligacion_financiera` y `composicion_obligacion` segun el plan.
 - El dominio origen es responsable de la coherencia economica del plan.
 - Si el plan es invalido o inconsistente, `financiero` debe rechazar la materializacion y no dejar efectos parciales.
@@ -101,12 +106,16 @@ El plan no reemplaza a `relacion_generadora`.
 
 El plan describe que obligaciones deben generarse; `relacion_generadora` conserva la trazabilidad, ownership financiero y agrupacion de esas obligaciones.
 
+La `relacion_generadora` debe estar activa para materializar obligaciones, pero su activacion no implica materializarlas.
+
+Una misma `relacion_generadora` activa puede recibir uno o mas planes de generacion durante su vigencia, siempre que cada materializacion sea valida e idempotente respecto de las obligaciones ya persistidas.
+
 ---
 
 ## 6. Estado
 
 - estado: `DEFINIDO`
 - impacto: `ALTO`
-- bloquea: implementacion de activacion y generacion de obligaciones
+- bloquea: implementacion de materializacion de obligaciones
 
-Esta decision es base para una implementacion futura de `activar relacion_generadora` y de la generacion de obligaciones. No modifica SQL, backend ni tests.
+Esta decision es base para una implementacion futura de `materializar obligaciones`. No modifica SQL, backend ni tests.

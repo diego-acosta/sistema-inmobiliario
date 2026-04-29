@@ -4,7 +4,7 @@
 
 - version: `1.1`
 - estado: `DOCUMENTADO / NO IMPLEMENTADO EN BACKEND`
-- fuente: `DER-FINANCIERO + SQL real + DEV-SRV-FIN + CAT-CU-FIN + INT-FIN-002`
+- fuente: `DER-FINANCIERO + SQL real + DEV-SRV-FIN + CAT-CU-FIN + INT-FIN-002 + INT-FIN-003 + INT-FIN-004`
 - ultima actualizacion: `2026-04-28`
 - caracter: `contrato de referencia normativo; ningun endpoint existe en backend vigente`
 
@@ -19,6 +19,8 @@ Este documento define el contrato de API `v1` del dominio `financiero`, tomando 
 - `backend/documentacion/DEV-SRV/dominios/financiero/`
 - `backend/documentacion/CAT-CU/dominios/financiero/CU-FIN.md`
 - `backend/documentacion/DECISIONES/integracion/INT-FIN-002-resolucion-obligado-financiero.md`
+- `backend/documentacion/DECISIONES/integracion/INT-FIN-003-politica-generacion-obligaciones.md`
+- `backend/documentacion/DECISIONES/integracion/INT-FIN-004-contrato-plan-obligaciones.md`
 
 El dominio financiero gestiona el ciclo economico completo del sistema: generacion de obligaciones, registro de movimientos, imputacion de pagos, ajustes y consultas financieras. Es un dominio transversal desacoplado de los dominios de negocio.
 
@@ -64,7 +66,7 @@ En este MVP:
 - `estado_relacion_generadora` sigue siendo conceptual, no persistido y fuera del alcance MVP.
 - No debe agregarse todavia ninguna columna SQL `estado_relacion_generadora`.
 - Las transiciones `activar`, `cancelar` y `finalizar` quedan pendientes.
-- No se implementa activacion ni generacion de `obligacion_financiera` o `composicion_obligacion`.
+- No se implementa activacion ni materializacion/generacion de `obligacion_financiera` o `composicion_obligacion`.
 - Los errores usan codigos transversales basicos: `NOT_FOUND`, `APPLICATION_ERROR` e `INTERNAL_ERROR`.
 - La migracion de errores del MVP a codigos `ERR-FIN-XXX` queda pendiente para una iteracion posterior.
 - `tipo_origen` se acepta como input en uppercase, se persiste en lowercase porque el trigger SQL vigente lo espera asi, y se devuelve en uppercase como contrato API.
@@ -80,6 +82,8 @@ Orden de prioridad para este contrato:
 - `DEV-SRV-FIN` como fuente funcional
 - `CAT-CU-FIN` como fuente de casos de uso
 - `INT-FIN-002` para resolucion de obligado
+- `INT-FIN-003` para politica de materializacion de obligaciones por tipo de origen
+- `INT-FIN-004` para contrato de plan de generacion de obligaciones
 - `ERR-FIN` y `EST-FIN` como catalogos normativos del dominio
 
 Criterios aplicados:
@@ -104,9 +108,10 @@ Criterios aplicados:
   - `imputaciones`
   - `servicios-trasladados`
 - los recursos hijos de `relacion_generadora` se listan anidados bajo la relacion padre cuando corresponde
-- `composicion_obligacion` no tiene endpoint autonomo de alta; es un efecto interno de la activacion de la relacion generadora
-- `obligacion_obligado` no tiene endpoint autonomo de alta; la resolucion del obligado es efecto de la generacion financiera (INT-FIN-002)
+- `composicion_obligacion` no tiene endpoint autonomo de alta; es un efecto interno de la materializacion de obligaciones
+- `obligacion_obligado` no tiene endpoint autonomo de alta; la resolucion del obligado es efecto de la materializacion/generacion financiera (INT-FIN-002)
 - las transiciones de estado de `relacion_generadora` son endpoints PATCH independientes: `activar`, `cancelar`, `finalizar`
+- la materializacion de obligaciones es una operacion separada de la activacion de `relacion_generadora`
 - no se expone `indice_financiero`, `cuenta_financiera`, `movimiento_tesoreria` ni `conciliacion_bancaria` en esta version
 - `simulacion de pago` es una operacion de solo lectura de calculo; no persiste datos
 - todos los writes exigen control de idempotencia por `X-Op-Id`
@@ -214,6 +219,7 @@ Codigos transversales sin equivalente FIN (se mantienen como fallback):
 - `X-Instalacion-Id` — ID de instalacion; requerido en todos los writes financieros
 - `If-Match-Version` — requerido en:
   - `PATCH /api/v1/financiero/relaciones-generadoras/{id}/activar`
+  - `POST /api/v1/financiero/relaciones-generadoras/{id}/materializar-obligaciones`
   - `PATCH /api/v1/financiero/relaciones-generadoras/{id}/cancelar`
   - `PATCH /api/v1/financiero/relaciones-generadoras/{id}/finalizar`
   - `PATCH /api/v1/financiero/imputaciones/{id}/reversar`
@@ -229,7 +235,8 @@ Regla de idempotencia de `X-Op-Id`:
 - todas las operaciones criticas deben ejecutarse de forma atomica
 - si falla cualquier paso de la operacion, debe aplicarse rollback completo
 - no deben quedar estados intermedios inconsistentes entre la entidad principal y sus efectos acoplados
-- la activacion de una `relacion_generadora` debe ser atomica con la generacion de `obligacion_financiera` y `composicion_obligacion` cuando corresponda
+- la activacion de una `relacion_generadora` es una transicion atomica de estado conceptual; no genera obligaciones
+- la materializacion de obligaciones debe ser atomica con la generacion de `obligacion_financiera` y `composicion_obligacion`
 - el registro de un pago debe ser atomico con la generacion de `aplicacion_financiera`
 - registro de outbox obligatorio en operaciones sincronizables
 
@@ -312,40 +319,36 @@ La migracion de errores de este MVP a codigos `ERR-FIN-XXX` queda pendiente.
 
 > **CONCEPTUAL / NO IMPLEMENTADO EN BACKEND**
 >
-> Este endpoint queda pendiente hasta definir e implementar una estrategia de activacion por `tipo_origen`. Una implementacion directa sin estrategia por origen es invalida.
+> Este endpoint queda pendiente de implementacion como transicion conceptual de estado de `relacion_generadora`. No materializa obligaciones.
 
 Objetivo:
 - transicion de `borrador` a `activa`
-- habilita la relacion generadora para producir efecto financiero
-- puede generar obligaciones iniciales y composiciones de forma atomica cuando corresponda
+- habilita y da vigencia a la relacion generadora para que pueda producir obligaciones durante su vigencia
+- mantener la relacion activa mientras exista la relacion economica/origen compatible
 
-##### Comportamiento de generacion de obligaciones
+##### Separacion entre activacion y materializacion
 
-La activacion de una relacion generadora NO tiene comportamiento unico.
+Activar `relacion_generadora` NO significa generar obligaciones.
 
-La generacion de obligaciones depende del `tipo_origen`. `financiero` NO define la cantidad de obligaciones; ejecuta la materializacion segun condiciones del dominio origen.
+La activacion solo habilita la relacion formal entre `tipo_origen` + `id_origen` y el circuito financiero. La generacion/materializacion de obligaciones ocurre en una operacion separada:
 
-Ver `INT-FIN-003-politica-generacion-obligaciones.md`.
+`POST /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/materializar-obligaciones`
 
-Politica por `tipo_origen`:
+Ver `INT-FIN-004-contrato-plan-obligaciones.md`.
 
-- `VENTA`:
-  - contado -> 1 `obligacion_financiera`
-  - financiada -> multiples `obligacion_financiera`
-  - anticipo/saldo -> combinacion de obligaciones
-- `CONTRATO_ALQUILER`:
-  - generacion periodica
-- `SERVICIO_TRASLADADO`:
-  - 1 `factura_servicio` -> 1 `obligacion_financiera`
+Reglas:
 
-Advertencia: `activar relacion_generadora` requiere estrategia por `tipo_origen`; implementar una logica unica para todos los origenes contradice INT-FIN-003.
+- la relacion generadora activa puede producir obligaciones una o muchas veces durante su vigencia
+- `PlanGeneracionObligaciones` no pertenece a `activar`; pertenece a la operacion de materializacion
+- `financiero` no calcula cuotas, no modifica importes y no decide cantidad de obligaciones al activar
+- contado, cuotas, anticipo/saldo y periodicidad son modalidades definidas por el dominio origen y recibidas por financiero en el plan de materializacion
 
 Headers requeridos:
 - `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
 
 Request:
 - sin body obligatorio
-- puede incluir parametros de configuracion de activacion segun regla financiera (PENDIENTE de definicion fina)
+- no recibe `PlanGeneracionObligaciones`
 
 Response `200`:
 
@@ -361,16 +364,6 @@ Response `200`:
     "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
     "estado_relacion_generadora": "activa", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
     "fecha_alta": "2026-04-28T10:00:00",
-    "obligaciones_generadas": [
-      {
-        "id_obligacion_financiera": 10,
-        "codigo_obligacion": "OBL-0010",
-        "importe_original": 15000.00,
-        "fecha_emision": "2026-04-28",
-        "fecha_vencimiento": "2026-05-10",
-        "estado_obligacion": "pendiente"
-      }
-    ],
     "updated_at": "2026-04-28T10:05:00"
   }
 }
@@ -385,16 +378,123 @@ Validaciones:
 - deben cumplirse las condiciones minimas de activacion definidas en SRV-FIN-001
 
 Reglas de negocio:
-- la activacion es atomica con la generacion de obligaciones y composiciones iniciales cuando corresponda
-- si falla la generacion de alguna obligacion, falla toda la activacion con rollback completo
+- `relacion_generadora` sigue siendo el vinculo formal entre el origen economico y las obligaciones que puedan materializarse durante su vigencia
+- la activacion no crea `obligacion_financiera`
+- la activacion no crea `composicion_obligacion`
+- la activacion no recibe ni interpreta `PlanGeneracionObligaciones`
 - se registra evento en outbox para sincronizacion
-- la politica exacta de generacion de obligaciones al activar (inmediata vs habilitacion previa) queda PENDIENTE de definicion fina
 
 Errores posibles:
 - `404 NOT_FOUND` — relacion no encontrada
 - `409 version_esperada_invalida (ERR-FIN-035)` — version de `If-Match-Version` no coincide
 - `409 lock_logico_activo (ERR-FIN-036)` — lock logico activo
 - `409 transicion_estado_relacion_invalida (ERR-FIN-007)` — estado actual no admite activacion
+- `409 op_id_duplicado (ERR-FIN-038)` — op_id ya ejecutado
+- `500 INTERNAL_ERROR`
+
+---
+
+#### `POST /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/materializar-obligaciones`
+
+> **CONCEPTUAL / NO IMPLEMENTADO EN BACKEND**
+>
+> Este endpoint representa la operacion separada de materializacion de obligaciones. Recibe un `PlanGeneracionObligaciones` definido por el dominio origen y crea obligaciones financieras persistentes.
+
+Objetivo:
+- materializar obligaciones financieras para una `relacion_generadora` activa
+- crear `obligacion_financiera` y `composicion_obligacion` de forma atomica segun el plan recibido
+- permitir una o muchas materializaciones durante la vigencia de la relacion economica/origen
+
+##### Comportamiento de materializacion de obligaciones
+
+La materializacion de obligaciones depende del `PlanGeneracionObligaciones` construido por el dominio origen. `financiero` valida la integridad del plan y materializa obligaciones persistentes asociadas a la `relacion_generadora`.
+
+Ver `INT-FIN-003-politica-generacion-obligaciones.md`.
+Ver `INT-FIN-004-contrato-plan-obligaciones.md`.
+
+Reglas de ownership:
+
+- el dominio origen define el `PlanGeneracionObligaciones`
+- `financiero` valida y materializa el plan
+- `financiero` no calcula cuotas
+- `financiero` no modifica importes
+- `financiero` no decide cantidad de obligaciones
+- contado, cuotas, anticipo/saldo y periodicidad son modalidades definidas por el dominio origen y recibidas por financiero en el plan
+
+Headers requeridos:
+- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
+
+Request:
+- body conceptual requerido para la futura implementacion
+- el plan debe coincidir con `tipo_origen` e `id_origen` de la `relacion_generadora`
+
+```json
+{
+  "plan_generacion_obligaciones": {
+    "tipo_origen": "VENTA",
+    "id_origen": 10,
+    "obligaciones": [
+      {
+        "concepto": "ANTICIPO",
+        "importe": 100000,
+        "fecha_emision": "2026-04-28",
+        "fecha_vencimiento": "2026-05-10",
+        "observaciones": "Anticipo venta"
+      }
+    ]
+  }
+}
+```
+
+Response conceptual `201`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_relacion_generadora": 1,
+    "tipo_origen": "VENTA",
+    "id_origen": 10,
+    "obligaciones_generadas": [
+      {
+        "id_obligacion_financiera": 10,
+        "codigo_obligacion": "OBL-0010",
+        "importe_original": 100000.00,
+        "fecha_emision": "2026-04-28",
+        "fecha_vencimiento": "2026-05-10",
+        "estado_obligacion": "pendiente"
+      }
+    ]
+  }
+}
+```
+
+Validaciones:
+- `id_relacion_generadora` debe existir y no estar dada de baja
+- version de `If-Match-Version` debe coincidir con `version_registro` vigente
+- estado actual de la relacion debe ser `activa`
+- no debe existir lock logico activo
+- el origen asociado debe estar vigente o en estado compatible con la materializacion
+- `plan_generacion_obligaciones` debe existir y tener al menos una obligacion a materializar
+- `plan_generacion_obligaciones.tipo_origen` debe coincidir con `relacion_generadora.tipo_origen`
+- `plan_generacion_obligaciones.id_origen` debe coincidir con `relacion_generadora.id_origen`
+- si el plan no coincide con la `relacion_generadora`, debe rechazarse con error de negocio
+- si el plan corresponde a obligaciones ya materializadas y activas para la relacion, no deben duplicarse obligaciones
+
+Reglas de negocio:
+- `relacion_generadora` sigue siendo el vinculo formal entre el origen, el plan recibido y las obligaciones persistidas
+- el plan no reemplaza a `relacion_generadora`
+- la materializacion es atomica con la generacion de obligaciones y composiciones segun el plan recibido
+- si falla la generacion de alguna obligacion, falla toda la materializacion con rollback completo
+- `financiero` persiste `obligacion_financiera` y `composicion_obligacion` segun el plan, sin recalcular importes, cuotas ni cantidad de obligaciones
+- se registra evento en outbox para sincronizacion
+
+Errores posibles:
+- `404 NOT_FOUND` — relacion no encontrada
+- `409 version_esperada_invalida (ERR-FIN-035)` — version de `If-Match-Version` no coincide
+- `409 lock_logico_activo (ERR-FIN-036)` — lock logico activo
+- `409 relacion_generadora_inactiva (ERR-FIN-002)` — la relacion no esta activa
+- `409 obligacion_duplicada (ERR-FIN-010)` — el plan intenta duplicar obligaciones ya materializadas
 - `409 op_id_duplicado (ERR-FIN-038)` — op_id ya ejecutado
 - `500 INTERNAL_ERROR`
 
@@ -1263,6 +1363,7 @@ Queda PENDIENTE de implementacion:
 | Relaciones generadoras — alta | `relacion_generadora` | EXISTE MVP | IMPLEMENTADO MVP |
 | Relaciones generadoras — reads basicos | `relacion_generadora` | EXISTE MVP | IMPLEMENTADO MVP |
 | Relaciones generadoras — activar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
+| Relaciones generadoras — materializar obligaciones | `obligacion_financiera` + `composicion_obligacion` | NO EXISTE | CONCEPTUAL / NO IMPLEMENTADO |
 | Relaciones generadoras — cancelar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
 | Relaciones generadoras — finalizar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
 | Obligaciones — lectura | `obligacion_financiera` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
