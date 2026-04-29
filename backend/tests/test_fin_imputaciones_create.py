@@ -6,6 +6,7 @@ from tests.test_fin_rel_gen_create import _crear_contrato, _crear_relacion_gener
 
 URL = "/api/v1/financiero/imputaciones"
 URL_OBLIGACIONES = "/api/v1/financiero/obligaciones"
+URL_GET_OBLIGACION = "/api/v1/financiero/obligaciones/{id}"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -172,3 +173,39 @@ def test_imputacion_falla_si_obligacion_inexistente(client) -> None:
     body = response.json()
     assert body["ok"] is False
     assert body["error_code"] == "NOT_FOUND"
+
+
+# ── actualización automática de estado ───────────────────────────────────────
+
+def test_imputacion_parcial_actualiza_estado_parcialmente_cancelada(client, db_session) -> None:
+    rg = _crear_rg(client, codigo="IMP-EST-P-001")
+    ob = _crear_obligacion(
+        client,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[{"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 1000.00}],
+    )
+
+    _imputar(client, id_obligacion_financiera=ob["id_obligacion_financiera"], monto=600.00)
+
+    get_resp = client.get(
+        URL_GET_OBLIGACION.format(id=ob["id_obligacion_financiera"]), headers=HEADERS
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json()["data"]["estado_obligacion"] == "PARCIALMENTE_CANCELADA"
+
+
+def test_imputacion_total_actualiza_estado_cancelada(client, db_session) -> None:
+    rg = _crear_rg(client, codigo="IMP-EST-T-001")
+    ob = _crear_obligacion(
+        client,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[{"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 1000.00}],
+    )
+
+    _imputar(client, id_obligacion_financiera=ob["id_obligacion_financiera"], monto=1000.00)
+
+    get_resp = client.get(
+        URL_GET_OBLIGACION.format(id=ob["id_obligacion_financiera"]), headers=HEADERS
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json()["data"]["estado_obligacion"] == "CANCELADA"

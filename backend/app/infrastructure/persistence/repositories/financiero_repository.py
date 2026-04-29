@@ -394,6 +394,24 @@ class FinancieroRepository:
                 ).mappings().one()
                 aplicaciones.append(dict(aplic_row))
 
+            # El trigger ya actualizó saldo_pendiente; leemos el valor final para
+            # decidir el estado sin recalcular nada.
+            self.db.execute(
+                text(
+                    """
+                    UPDATE obligacion_financiera
+                    SET estado_obligacion = CASE
+                            WHEN saldo_pendiente = 0             THEN 'CANCELADA'
+                            WHEN saldo_pendiente < importe_total THEN 'PARCIALMENTE_CANCELADA'
+                            ELSE estado_obligacion
+                        END
+                    WHERE id_obligacion_financiera = :id
+                      AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+                    """
+                ),
+                {"id": payload.id_obligacion_financiera},
+            )
+
             self.db.commit()
 
             return {
