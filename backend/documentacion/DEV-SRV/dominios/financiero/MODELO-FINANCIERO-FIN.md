@@ -272,6 +272,30 @@ Notas:
 
 ---
 
+## Procesamiento de eventos (Inbox)
+
+El dominio financiero implementa un endpoint de inbox para procesar eventos externos:
+
+`POST /api/v1/financiero/inbox`
+
+Flujo:
+
+- recibe `event_type` y `payload`
+- despacha a handler correspondiente
+- ejecuta logica de negocio
+- devuelve `204`
+
+Eventos soportados:
+
+- `venta_confirmada`
+
+Notas:
+
+- procesamiento sincronico (no worker)
+- no hay confirmacion de exito del handler en la respuesta HTTP
+
+---
+
 ## 9. Pendientes reales
 
 - transiciones de `relacion_generadora`
@@ -320,3 +344,33 @@ Pendiente:
 Prioridad:
 
 - Media
+
+### Falta de pipeline outbox -> inbox
+
+Actualmente:
+
+- los eventos se generan en `outbox_event`
+- el inbox existe y procesa eventos
+- NO existe mecanismo automatico que conecte ambos
+
+Implicacion:
+
+- el procesamiento de eventos requiere invocacion manual del endpoint inbox
+
+Pendiente:
+
+- implementar dispatcher automatico (polling, worker o integracion externa)
+
+Prioridad:
+
+- Media
+
+### Manejo de errores
+
+- errores en handlers no se exponen en HTTP
+- no existe persistencia de errores de procesamiento
+
+Pendiente:
+
+- logging estructurado
+- tabla de eventos fallidos

@@ -401,9 +401,56 @@ Alcance:
 
 ---
 
+## Ejecucion por eventos
+
+La materializacion del plan financiero de venta se realiza a traves del inbox:
+
+```text
+venta_confirmada
+-> POST /api/v1/financiero/inbox
+-> HandleVentaConfirmadaEventService
+-> relacion_generadora + obligacion CAPITAL_VENTA
+```
+
+---
+
 ## Consideraciones tecnicas
 
 - La materializacion del plan financiero V1 (venta contado)
   se ejecuta de forma atomica junto con la creacion de la relacion generadora.
 - No existe riesgo de inconsistencias intermedias.
 - La idempotencia sigue siendo aplicativa.
+
+---
+
+## Limitaciones tecnicas actuales
+
+### Falta de pipeline outbox -> inbox
+
+Actualmente:
+
+- los eventos se generan en `outbox_event`
+- el inbox existe y procesa eventos
+- NO existe mecanismo automatico que conecte ambos
+
+Implicacion:
+
+- el procesamiento de eventos requiere invocacion manual del endpoint inbox
+
+Pendiente:
+
+- implementar dispatcher automatico (polling, worker o integracion externa)
+
+Prioridad:
+
+- Media
+
+### Manejo de errores
+
+- errores en handlers no se exponen en HTTP
+- no existe persistencia de errores de procesamiento
+
+Pendiente:
+
+- logging estructurado
+- tabla de eventos fallidos
