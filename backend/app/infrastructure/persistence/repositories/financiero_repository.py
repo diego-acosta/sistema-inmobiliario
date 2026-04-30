@@ -360,6 +360,172 @@ class FinancieroRepository:
 
         return {"items": items, "total": total}
 
+    # ── estado de cuenta ────────────────────────────────────────────────────
+
+    def get_estado_cuenta_financiero(
+        self,
+        *,
+        id_relacion_generadora: int,
+        incluir_canceladas: bool,
+        fecha_desde: date | None,
+        fecha_hasta: date | None,
+    ) -> dict[str, Any]:
+        filters = ["o.id_relacion_generadora = :id_relacion_generadora", "o.deleted_at IS NULL"]
+        params: dict[str, Any] = {"id_relacion_generadora": id_relacion_generadora}
+
+        if not incluir_canceladas:
+            filters.append(
+                "o.estado_obligacion NOT IN ('CANCELADA', 'ANULADA', 'REEMPLAZADA')"
+            )
+        if fecha_desde is not None:
+            filters.append("o.fecha_vencimiento >= :fecha_desde")
+            params["fecha_desde"] = fecha_desde
+        if fecha_hasta is not None:
+            filters.append("o.fecha_vencimiento <= :fecha_hasta")
+            params["fecha_hasta"] = fecha_hasta
+
+        where = " AND ".join(filters)
+        ob_stmt = text(
+            f"""
+            SELECT
+                o.id_obligacion_financiera,
+                o.estado_obligacion,
+                o.fecha_emision,
+                o.fecha_vencimiento,
+                o.importe_total,
+                o.saldo_pendiente,
+                o.importe_cancelado_acumulado
+            FROM obligacion_financiera o
+            WHERE {where}
+            ORDER BY o.fecha_vencimiento ASC NULLS LAST, o.id_obligacion_financiera ASC
+            """
+        )
+        ob_rows = self.db.execute(ob_stmt, params).mappings().all()
+
+        if not ob_rows:
+            return {
+                "id_relacion_generadora": id_relacion_generadora,
+                "resumen": {
+                    "importe_total": 0.0,
+                    "saldo_pendiente": 0.0,
+                    "importe_cancelado": 0.0,
+                    "cantidad_obligaciones": 0,
+                    "cantidad_vencidas": 0,
+                },
+                "obligaciones": [],
+            }
+
+        ids = [row["id_obligacion_financiera"] for row in ob_rows]
+
+        comp_stmt = text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                c.id_obligacion_financiera,
+                cf.codigo_concepto_financiero,
+                c.orden_composicion,
+                c.estado_composicion_obligacion,
+                c.importe_componente,
+                c.saldo_componente
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+                ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE c.id_obligacion_financiera IN :ids
+              AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
+            ORDER BY c.id_obligacion_financiera, c.orden_composicion ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        comp_rows = self.db.execute(comp_stmt, {"ids": ids}).mappings().all()
+
+        aplic_stmt = text(
+            """
+            SELECT
+                a.id_aplicacion_financiera,
+                a.id_obligacion_financiera,
+                a.id_movimiento_financiero,
+                a.id_composicion_obligacion,
+                a.fecha_aplicacion,
+                a.tipo_aplicacion,
+                a.orden_aplicacion,
+                a.importe_aplicado,
+                a.origen_automatico_o_manual
+            FROM aplicacion_financiera a
+            WHERE a.id_obligacion_financiera IN :ids
+              AND a.deleted_at IS NULL
+            ORDER BY
+                a.id_obligacion_financiera,
+                a.fecha_aplicacion ASC,
+                a.orden_aplicacion ASC NULLS LAST,
+                a.id_aplicacion_financiera ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        aplic_rows = self.db.execute(aplic_stmt, {"ids": ids}).mappings().all()
+
+        comps_by_ob: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for row in comp_rows:
+            comps_by_ob[row["id_obligacion_financiera"]].append(
+                {
+                    "id_composicion_obligacion": row["id_composicion_obligacion"],
+                    "codigo_concepto_financiero": row["codigo_concepto_financiero"],
+                    "orden_composicion": row["orden_composicion"],
+                    "estado_composicion_obligacion": row[
+                        "estado_composicion_obligacion"
+                    ],
+                    "importe_componente": float(row["importe_componente"]),
+                    "saldo_componente": float(row["saldo_componente"]),
+                }
+            )
+
+        aplics_by_ob: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for row in aplic_rows:
+            aplics_by_ob[row["id_obligacion_financiera"]].append(
+                {
+                    "id_aplicacion_financiera": row["id_aplicacion_financiera"],
+                    "id_movimiento_financiero": row["id_movimiento_financiero"],
+                    "id_composicion_obligacion": row["id_composicion_obligacion"],
+                    "fecha_aplicacion": row["fecha_aplicacion"],
+                    "tipo_aplicacion": row["tipo_aplicacion"],
+                    "orden_aplicacion": row["orden_aplicacion"],
+                    "importe_aplicado": float(row["importe_aplicado"]),
+                    "origen_automatico_o_manual": row["origen_automatico_o_manual"],
+                }
+            )
+
+        obligaciones = [
+            {
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "estado_obligacion": row["estado_obligacion"],
+                "fecha_emision": row["fecha_emision"],
+                "fecha_vencimiento": row["fecha_vencimiento"],
+                "importe_total": float(row["importe_total"]),
+                "saldo_pendiente": float(row["saldo_pendiente"]),
+                "composiciones": comps_by_ob[row["id_obligacion_financiera"]],
+                "aplicaciones": aplics_by_ob[row["id_obligacion_financiera"]],
+            }
+            for row in ob_rows
+        ]
+
+        return {
+            "id_relacion_generadora": id_relacion_generadora,
+            "resumen": {
+                "importe_total": float(sum(row["importe_total"] for row in ob_rows)),
+                "saldo_pendiente": float(sum(row["saldo_pendiente"] for row in ob_rows)),
+                "importe_cancelado": float(
+                    sum(row["importe_cancelado_acumulado"] for row in ob_rows)
+                ),
+                "cantidad_obligaciones": len(ob_rows),
+                "cantidad_vencidas": sum(
+                    1
+                    for row in ob_rows
+                    if row["fecha_vencimiento"] is not None
+                    and row["fecha_vencimiento"] < date.today()
+                    and row["saldo_pendiente"] > 0
+                ),
+            },
+            "obligaciones": obligaciones,
+        }
+
     # ── mora financiera ─────────────────────────────────────────────────────
 
     def buscar_obligaciones_elegibles_mora(

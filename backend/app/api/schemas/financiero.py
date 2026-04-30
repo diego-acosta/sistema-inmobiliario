@@ -231,3 +231,53 @@ class DeudaListData(BaseModel):
 class DeudaListResponse(BaseModel):
     ok: bool = True
     data: DeudaListData
+
+
+class EstadoCuentaComposicionItem(BaseModel):
+    id_composicion_obligacion: int
+    codigo_concepto_financiero: str
+    orden_composicion: int
+    estado_composicion_obligacion: str
+    importe_componente: float
+    saldo_componente: float
+
+
+class EstadoCuentaAplicacionItem(BaseModel):
+    id_aplicacion_financiera: int
+    id_movimiento_financiero: int
+    id_composicion_obligacion: int | None
+    fecha_aplicacion: datetime
+    tipo_aplicacion: str | None
+    orden_aplicacion: int | None
+    importe_aplicado: float
+    origen_automatico_o_manual: str | None
+
+
+class EstadoCuentaObligacionItem(BaseModel):
+    id_obligacion_financiera: int
+    estado_obligacion: str
+    fecha_emision: date
+    fecha_vencimiento: date | None
+    importe_total: float
+    saldo_pendiente: float
+    composiciones: list[EstadoCuentaComposicionItem]
+    aplicaciones: list[EstadoCuentaAplicacionItem]
+
+
+class EstadoCuentaResumenData(BaseModel):
+    importe_total: float
+    saldo_pendiente: float
+    importe_cancelado: float
+    cantidad_obligaciones: int
+    cantidad_vencidas: int
+
+
+class EstadoCuentaData(BaseModel):
+    id_relacion_generadora: int
+    resumen: EstadoCuentaResumenData
+    obligaciones: list[EstadoCuentaObligacionItem]
+
+
+class EstadoCuentaResponse(BaseModel):
+    ok: bool = True
+    data: EstadoCuentaData

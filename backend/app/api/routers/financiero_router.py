@@ -18,6 +18,8 @@ from app.api.schemas.financiero import (
     DeudaListData,
     DeudaListResponse,
     ErrorResponse,
+    EstadoCuentaData,
+    EstadoCuentaResponse,
     ImputacionCreateRequest,
     ImputacionData,
     ImputacionResponse,
@@ -61,6 +63,9 @@ from app.application.financiero.services.create_obligacion_financiera_service im
 )
 from app.application.financiero.services.get_obligacion_financiera_service import (
     GetObligacionFinancieraService,
+)
+from app.application.financiero.services.get_estado_cuenta_financiero_service import (
+    GetEstadoCuentaFinancieroService,
 )
 from app.application.financiero.services.generar_mora_financiera_service import (
     GenerarMoraFinancieraService,
@@ -320,6 +325,71 @@ def list_deuda_consolidada(
             total=result.data["total"],
         )
     )
+
+
+@router.get(
+    "/api/v1/financiero/estado-cuenta",
+    response_model=EstadoCuentaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_estado_cuenta_financiero(
+    id_relacion_generadora: int = Query(..., gt=0),
+    incluir_canceladas: bool = Query(default=False),
+    fecha_desde: date | None = Query(default=None),
+    fecha_hasta: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> EstadoCuentaResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetEstadoCuentaFinancieroService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_relacion_generadora=id_relacion_generadora,
+            incluir_canceladas=incluir_canceladas,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_RELACION" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La relacion generadora indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "FECHA_RANGO_INVALIDO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="FECHA_RANGO_INVALIDO",
+                    error_message="fecha_hasta debe ser mayor o igual a fecha_desde.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo consultar el estado de cuenta.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return EstadoCuentaResponse(data=EstadoCuentaData(**result.data))
 
 
 @router.get(
