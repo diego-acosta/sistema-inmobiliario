@@ -172,3 +172,10 @@ composicion = INTERES_MORA
 - politica configurable de tasa
 - punitorios
 - reversion/anulacion especifica de mora
+
+## Notas de integración
+
+- La generación de mora depende indirectamente de la existencia de
+  `relacion_generadora` creada desde eventos del dominio comercial.
+- La idempotencia de dicha relación no está garantizada a nivel SQL.
+- Ver sección de limitaciones técnicas en el modelo financiero.

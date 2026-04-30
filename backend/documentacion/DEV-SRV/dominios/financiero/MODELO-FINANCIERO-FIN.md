@@ -283,3 +283,35 @@ Notas:
 - clave unica SQL para evitar duplicidad de mora por obligacion base y fecha
 - idempotencia completa por `X-Op-Id`
 - outbox financiero para estos writes
+
+---
+
+## Limitaciones técnicas actuales
+
+### Idempotencia en creación de relación generadora desde eventos
+
+La creación de `relacion_generadora` a partir del evento `venta_confirmada`
+es actualmente idempotente a nivel de aplicación mediante una verificación previa
+por `(tipo_origen, id_origen)`.
+
+Sin embargo, no existe una restricción única a nivel de base de datos que garantice
+esta unicidad en escenarios concurrentes.
+
+Riesgo:
+
+- Posible duplicación de `relacion_generadora` si el evento es procesado
+  en paralelo por múltiples procesos o workers.
+
+Estado actual:
+
+- Controlado en capa de aplicación.
+- No protegido a nivel SQL.
+
+Pendiente:
+
+- Incorporar constraint única en base de datos:
+  `UNIQUE(tipo_origen, id_origen)`
+
+Prioridad:
+
+- Media (no crítica en entorno actual sin procesamiento concurrente real).
