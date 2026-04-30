@@ -23,6 +23,7 @@ from app.api.schemas.financiero import (
     ImputacionCreateRequest,
     ImputacionData,
     ImputacionResponse,
+    InboxEventRequest,
     MoraGenerarData,
     MoraGenerarRequest,
     MoraGenerarResponse,
@@ -75,6 +76,9 @@ from app.application.financiero.services.list_conceptos_financieros_service impo
 )
 from app.application.financiero.services.list_deuda_consolidada_service import (
     ListDeudaConsolidadaService,
+)
+from app.application.financiero.services.inbox_event_dispatcher import (
+    InboxEventDispatcher,
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
@@ -669,4 +673,15 @@ def get_obligacion_financiera(
 
     return ObligacionFinancieraResponse(
         data=ObligacionFinancieraData(**result.data)
+    )
+
+
+@router.post("/api/v1/financiero/inbox", status_code=204)
+def financiero_inbox(
+    request: InboxEventRequest,
+    db: Session = Depends(get_db),
+) -> None:
+    InboxEventDispatcher(db).dispatch(
+        event_type=request.event_type,
+        payload=request.payload,
     )

@@ -281,3 +281,10 @@ class EstadoCuentaData(BaseModel):
 class EstadoCuentaResponse(BaseModel):
     ok: bool = True
     data: EstadoCuentaData
+
+
+# ── inbox de eventos ──────────────────────────────────────────────────────────
+
+class InboxEventRequest(BaseModel):
+    event_type: str
+    payload: dict[str, Any]
