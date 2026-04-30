@@ -145,6 +145,44 @@ class FinancieroRepository:
             return None
         return self._rg_row_to_dict(row)
 
+    def get_relacion_generadora_by_origen(
+        self, tipo_origen: str, id_origen: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_relacion_generadora,
+                uid_global,
+                version_registro,
+                tipo_origen,
+                id_origen,
+                descripcion,
+                estado_relacion_generadora,
+                fecha_alta,
+                deleted_at
+            FROM relacion_generadora
+            WHERE UPPER(tipo_origen) = :tipo_origen
+              AND id_origen = :id_origen
+              AND deleted_at IS NULL
+            ORDER BY id_relacion_generadora ASC
+            LIMIT 1
+            """
+        )
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "tipo_origen": tipo_origen.strip().upper(),
+                    "id_origen": id_origen,
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if row is None:
+            return None
+        return self._rg_row_to_dict(row)
+
     def list_relaciones_generadoras(
         self,
         *,
