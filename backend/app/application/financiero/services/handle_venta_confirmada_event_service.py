@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -29,7 +30,14 @@ class HandleVentaConfirmadaEventData:
     id_obligacion_financiera: int | None
 
 
+class _RollbackAppResult(Exception):
+    def __init__(self, result: AppResult[dict[str, Any]]) -> None:
+        self.result = result
+
+
 class FinancieroRepository(Protocol):
+    db: Any
+
     def get_venta_minima_para_financiero(
         self, id_venta: int
     ) -> dict[str, Any] | None:
@@ -66,6 +74,7 @@ class FinancieroRepository(Protocol):
 class HandleVentaConfirmadaEventService:
     def __init__(self, repository: FinancieroRepository, uuid_generator=None) -> None:
         self.repository = repository
+        self.db = repository.db
         self.uuid_generator = uuid_generator or uuid4
 
     def execute(self, event: dict[str, Any]) -> AppResult[dict[str, Any]]:
@@ -80,6 +89,15 @@ class HandleVentaConfirmadaEventService:
         if not isinstance(id_venta, int) or id_venta <= 0:
             return AppResult.fail("INVALID_EVENT_PAYLOAD")
 
+        try:
+            with self._transaction():
+                return self._execute_in_transaction(event, id_venta)
+        except _RollbackAppResult as exc:
+            return exc.result
+
+    def _execute_in_transaction(
+        self, event: dict[str, Any], id_venta: int
+    ) -> AppResult[dict[str, Any]]:
         venta = self.repository.get_venta_minima_para_financiero(id_venta)
         if venta is None:
             return AppResult.fail("NOT_FOUND_VENTA")
@@ -120,7 +138,9 @@ class HandleVentaConfirmadaEventService:
             CONCEPTO_CAPITAL_VENTA
         )
         if concepto is None:
-            return AppResult.fail(f"NOT_FOUND_CONCEPTO:{CONCEPTO_CAPITAL_VENTA}")
+            raise _RollbackAppResult(
+                AppResult.fail(f"NOT_FOUND_CONCEPTO:{CONCEPTO_CAPITAL_VENTA}")
+            )
 
         now = datetime.now(UTC)
         fecha_venta = venta["fecha_venta"]
@@ -168,7 +188,9 @@ class HandleVentaConfirmadaEventService:
                 "created": relacion_generadora_created,
                 "relacion_generadora_created": relacion_generadora_created,
                 "obligacion_created": True,
-                "id_obligacion_financiera": obligacion["id_obligacion_financiera"],
+                "id_obligacion_financiera": obligacion[
+                    "id_obligacion_financiera"
+                ],
             }
         )
 
@@ -191,6 +213,11 @@ class HandleVentaConfirmadaEventService:
                 op_id_ultima_modificacion=self._parse_op_id(event),
             )
         )
+
+    def _transaction(self) -> AbstractContextManager[Any]:
+        if self.db.in_transaction():
+            return self.db.begin_nested()
+        return self.db.begin()
 
     @staticmethod
     def _parse_op_id(event: dict[str, Any]) -> UUID | None:

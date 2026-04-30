@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import text
 
 from app.application.financiero.services.handle_venta_confirmada_event_service import (
@@ -13,6 +14,11 @@ def _build_service(db_session) -> HandleVentaConfirmadaEventService:
     return HandleVentaConfirmadaEventService(
         repository=FinancieroRepository(db_session),
     )
+
+
+class FailingObligacionFinancieraRepository(FinancieroRepository):
+    def create_obligacion_financiera(self, obligacion, composiciones) -> dict:
+        raise RuntimeError("forced obligation creation failure")
 
 
 def _get_venta_confirmada_event(db_session, *, id_venta: int) -> dict:
@@ -292,3 +298,22 @@ def test_fin_venta_confirmada_si_ya_existe_obligacion_no_crea_otra(
         )
         == 1
     )
+
+
+def test_fin_venta_confirmada_rollback_si_falla_creacion_obligacion(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_confirmada_con_monto(db_session, monto_total=150000)
+    event = dict(_get_venta_confirmada_event(db_session, id_venta=id_venta))
+    service = HandleVentaConfirmadaEventService(
+        repository=FailingObligacionFinancieraRepository(db_session),
+    )
+
+    with pytest.raises(RuntimeError, match="forced obligation creation failure"):
+        service.execute(event)
+
+    assert _count_relaciones_venta(db_session, id_venta=id_venta) == 0
+    obligaciones = db_session.execute(
+        text("SELECT COUNT(*) AS total FROM obligacion_financiera")
+    ).mappings().one()
+    assert obligaciones["total"] == 0

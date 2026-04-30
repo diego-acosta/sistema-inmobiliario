@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Protocol
@@ -45,6 +46,8 @@ class ComposicionCreatePayload:
 
 
 class FinancieroRepository(Protocol):
+    db: Any
+
     def relacion_generadora_exists(self, id_relacion_generadora: int) -> bool: ...
 
     def get_concepto_financiero_by_codigo(
@@ -63,6 +66,7 @@ class CreateObligacionFinancieraService:
         self, repository: FinancieroRepository, uuid_generator=None
     ) -> None:
         self.repository = repository
+        self.db = repository.db
         self.uuid_generator = uuid_generator or uuid4
 
     def execute(
@@ -71,6 +75,12 @@ class CreateObligacionFinancieraService:
         if not command.composiciones:
             return AppResult.fail("COMPOSICIONES_REQUERIDAS")
 
+        with self._transaction():
+            return self._execute_in_transaction(command)
+
+    def _execute_in_transaction(
+        self, command: CreateObligacionFinancieraCommand
+    ) -> AppResult[dict[str, Any]]:
         if not self.repository.relacion_generadora_exists(command.id_relacion_generadora):
             return AppResult.fail("NOT_FOUND_RELACION")
 
@@ -129,3 +139,8 @@ class CreateObligacionFinancieraService:
             obligacion_payload, composicion_payloads
         )
         return AppResult.ok(created)
+
+    def _transaction(self) -> AbstractContextManager[Any]:
+        if self.db.in_transaction():
+            return self.db.begin_nested()
+        return self.db.begin()

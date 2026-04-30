@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -32,6 +33,8 @@ class RelacionGeneradoraCreatePayload:
 
 
 class FinancieroRepository(Protocol):
+    db: Any
+
     def venta_exists(self, id_venta: int) -> bool: ...
 
     def contrato_alquiler_exists(self, id_contrato_alquiler: int) -> bool: ...
@@ -44,6 +47,7 @@ class FinancieroRepository(Protocol):
 class CreateRelacionGeneradoraService:
     def __init__(self, repository: FinancieroRepository, uuid_generator=None) -> None:
         self.repository = repository
+        self.db = repository.db
         self.uuid_generator = uuid_generator or uuid4
 
     def execute(
@@ -53,6 +57,12 @@ class CreateRelacionGeneradoraService:
         if tipo not in TIPOS_ORIGEN_VALIDOS:
             return AppResult.fail("TIPO_ORIGEN_INVALIDO")
 
+        with self._transaction():
+            return self._execute_in_transaction(command, tipo)
+
+    def _execute_in_transaction(
+        self, command: CreateRelacionGeneradoraCommand, tipo: str
+    ) -> AppResult[dict[str, Any]]:
         if tipo == "VENTA":
             if not self.repository.venta_exists(command.id_origen):
                 return AppResult.fail("NOT_FOUND_ORIGEN")
@@ -82,3 +92,8 @@ class CreateRelacionGeneradoraService:
 
         created = self.repository.create_relacion_generadora(payload)
         return AppResult.ok(created)
+
+    def _transaction(self) -> AbstractContextManager[Any]:
+        if self.db.in_transaction():
+            return self.db.begin_nested()
+        return self.db.begin()
