@@ -184,7 +184,7 @@ Reglas implementadas:
 - error funcional: `SIN_CONDICION_ECONOMICA`
 - locativo no genera obligaciones financieras directamente
 - financiero materializa una unica obligacion inicial V1
-- no existe pipeline automatico `outbox_event -> inbox`
+- existe pipeline automatico interno `outbox_event -> inbox` mediante worker financiero
 
 ## Errores
 - [[ERR-LOC]]
@@ -225,4 +225,4 @@ Reglas implementadas:
 - relación exacta entre contrato y objeto locativo
 - cronograma financiero locativo mensual
 - resolucion de obligado financiero o locatario
-- pipeline automatico `outbox_event -> inbox`
+- definicion de ejecucion operativa del worker financiero

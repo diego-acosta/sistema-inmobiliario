@@ -492,9 +492,10 @@ Response:
 Notas:
 
 - procesamiento sincronico
-- no hay worker
+- el endpoint existe para invocacion HTTP manual
+- el worker interno `outbox_to_inbox_worker` no utiliza este endpoint
+- el procesamiento automatico usa `InboxEventDispatcher` directo, sin HTTP
 - no hay confirmacion de exito del handler en la respuesta HTTP
-- no existe pipeline automatico `outbox_event -> inbox`
 
 ---
 

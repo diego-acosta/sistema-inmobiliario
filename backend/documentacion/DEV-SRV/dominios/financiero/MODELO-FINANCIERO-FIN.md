@@ -309,6 +309,30 @@ Integraciones por evento implementadas:
 
 ---
 
+## Procesamiento automatico de eventos (Outbox -> Inbox)
+
+Flujo real implementado:
+
+```text
+outbox_event (status = PENDING)
+-> worker interno (outbox_to_inbox_worker)
+-> InboxEventDispatcher.dispatch(event_type, payload)
+-> ejecucion de handler correspondiente
+-> actualizacion:
+   status = PUBLISHED
+   published_at
+   processed_at
+```
+
+Caracteristicas:
+
+- procesamiento interno (sin HTTP)
+- ejecucion sincronica por evento
+- el worker continua ante errores
+- eventos fallidos permanecen en estado `PENDING`
+
+---
+
 ## 9. Pendientes reales
 
 - transiciones de `relacion_generadora`
@@ -358,25 +382,48 @@ Prioridad:
 
 - Media
 
-### Falta de pipeline outbox -> inbox
+## Limitaciones actuales del pipeline de eventos
 
-Actualmente:
+### Resultado del dispatcher no expuesto
 
-- los eventos se generan en `outbox_event`
-- el inbox existe y procesa eventos
-- NO existe mecanismo automatico que conecte ambos
+- `InboxEventDispatcher.dispatch()` no devuelve resultado del handler.
+- El worker solo detecta:
+  - excepciones (errores duros)
+  - payloads invalidos basicos
 
 Implicacion:
 
-- el procesamiento de eventos requiere invocacion manual del endpoint inbox
+- no es posible distinguir todos los casos de fallo logico (`AppResult.fail`)
+- algunos eventos podrian marcarse como procesados sin verificacion completa de
+  exito
 
 Pendiente:
 
-- implementar dispatcher automatico (polling, worker o integracion externa)
+- hacer que `dispatch()` devuelva resultado explicito del handler
 
 Prioridad:
 
 - Media
+
+### Procesamiento sin control de concurrencia
+
+- no se utiliza locking (ej: `SELECT FOR UPDATE SKIP LOCKED`)
+- potencial procesamiento duplicado en ejecucion concurrente
+
+Semantica implementada:
+
+- at-least-once
+- un evento puede procesarse mas de una vez
+- no existe garantia exactly-once
+- se depende de la idempotencia de los handlers
+
+Motivo:
+
+- no hay locking ni deduplicacion a nivel `outbox_event`
+
+Mitigacion actual:
+
+- idempotencia en handlers
 
 ### Manejo de errores
 

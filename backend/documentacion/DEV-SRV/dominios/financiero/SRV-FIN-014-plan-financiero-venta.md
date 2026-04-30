@@ -425,21 +425,24 @@ venta_confirmada
 
 ## Limitaciones tecnicas actuales
 
-### Falta de pipeline outbox -> inbox
+### Pipeline outbox -> inbox
 
 Actualmente:
 
 - los eventos se generan en `outbox_event`
-- el inbox existe y procesa eventos
-- NO existe mecanismo automatico que conecte ambos
+- existe worker interno `outbox_to_inbox_worker`
+- el worker invoca `InboxEventDispatcher` directamente, sin HTTP
 
-Implicacion:
+Limitacion:
 
-- el procesamiento de eventos requiere invocacion manual del endpoint inbox
+- no hay scheduler externo ni cola distribuida
+- no hay garantia de exactly-once
+- el worker no utiliza locking para ejecucion concurrente
 
 Pendiente:
 
-- implementar dispatcher automatico (polling, worker o integracion externa)
+- definir ejecucion operativa del worker
+- evaluar control de concurrencia
 
 Prioridad:
 

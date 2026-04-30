@@ -63,8 +63,8 @@ relacion generadora y la obligacion inicial.
   esto debe revisarse.
 - Usa `ARS` como fallback tecnico si `condicion_economica_alquiler.moneda` es
   `NULL`.
-- No hay pipeline automatico `outbox_event -> inbox`; el inbox existe pero
-  requiere invocacion.
+- Existe pipeline automatico interno `outbox_event -> inbox` mediante
+  `outbox_to_inbox_worker`, sin HTTP.
 - No hay generacion de expensas, servicios ni impuestos trasladados.
 
 ---
@@ -76,7 +76,7 @@ relacion generadora y la obligacion inicial.
 - Normalizacion de periodicidad.
 - Definicion de fecha de vencimiento real y dias de gracia.
 - Constraint SQL para idempotencia.
-- Pipeline automatico `outbox_event -> inbox`.
+- Definicion de ejecucion operativa del worker interno.
 
 ---
 
