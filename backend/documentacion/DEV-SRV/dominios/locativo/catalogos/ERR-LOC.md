@@ -246,6 +246,14 @@ Incluye solicitudes, reservas, contratos, condiciones, ajustes, modificaciones, 
 - origen: DEV-SRV
 - es_reintento_valido: no
 
+### Error implementado — Sin condición económica
+- codigo_backend: `SIN_CONDICION_ECONOMICA`
+- descripcion: no se permite activar un contrato de alquiler sin `condicion_economica_alquiler`.
+- tipo: funcional
+- aplica_a: contrato_alquiler, condicion_economica_alquiler
+- origen: backend actual
+- es_reintento_valido: sí, luego de registrar una condición económica válida
+
 ## D. Errores de condiciones económicas
 
 ### ERR-LOC-030 — Condición económica no encontrada

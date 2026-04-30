@@ -288,11 +288,24 @@ Flujo:
 Eventos soportados:
 
 - `venta_confirmada`
+- `contrato_alquiler_activado`
 
 Notas:
 
 - procesamiento sincronico (no worker)
 - no hay confirmacion de exito del handler en la respuesta HTTP
+
+Integraciones por evento implementadas:
+
+- Comercial -> Financiero:
+  - `venta_confirmada`
+  - crea o reutiliza `relacion_generadora` con `tipo_origen = 'venta'`
+  - materializa una obligacion `CAPITAL_VENTA` para V1 contado
+- Locativo -> Financiero:
+  - `contrato_alquiler_activado`
+  - crea o reutiliza `relacion_generadora` con
+    `tipo_origen = 'contrato_alquiler'`
+  - materializa una obligacion inicial `CANON_LOCATIVO`
 
 ---
 
@@ -374,3 +387,18 @@ Pendiente:
 
 - logging estructurado
 - tabla de eventos fallidos
+
+### Limitaciones locativas actuales
+
+- La integracion `contrato_alquiler_activado` genera una unica obligacion
+  inicial `CANON_LOCATIVO`.
+- No genera cronograma mensual.
+- No usa periodicidad todavia.
+- No aplica dias de gracia.
+- No resuelve locatario u obligado financiero.
+- Si no hay condicion vigente exacta para la fecha de inicio del contrato, el
+  handler usa fallback a la primera condicion disponible segun la implementacion
+  actual.
+- Usa `ARS` como fallback tecnico si `condicion_economica_alquiler.moneda` es
+  `NULL`.
+- No hay generacion de expensas, servicios ni impuestos trasladados.

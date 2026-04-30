@@ -139,6 +139,8 @@ Incluye solicitudes, reservas, contratos, condiciones, ajustes, modificaciones, 
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad: sí
+- payload implementado: `{"id_contrato_alquiler": int}`
+- consumidor financiero: `POST /api/v1/financiero/inbox`
 
 ### EVT-LOC-015 — Contrato de alquiler cancelado
 - codigo: contrato_alquiler_cancelado

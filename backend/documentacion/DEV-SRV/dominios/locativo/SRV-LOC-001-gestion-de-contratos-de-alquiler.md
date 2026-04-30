@@ -122,10 +122,11 @@ Permite visualizar contratos y su composición básica.
 1. validar contexto técnico
 2. cargar contrato
 3. validar elegibilidad para activación
-4. aplicar cambio de estado
-5. persistir actualización
-6. registrar outbox
-7. devolver resultado
+4. validar existencia de `condicion_economica_alquiler`
+5. aplicar cambio de estado
+6. persistir actualización
+7. registrar outbox `contrato_alquiler_activado`
+8. devolver resultado
 
 ### Finalización
 1. validar contexto técnico
@@ -148,6 +149,7 @@ Permite visualizar contratos y su composición básica.
 - consistencia de fechas contractuales
 - coherencia de estados y transiciones
 - no superposición indebida según política funcional
+- existencia de `condicion_economica_alquiler` antes de activar
 - control de versionado
 - idempotencia en alta
 
@@ -158,6 +160,31 @@ Permite visualizar contratos y su composición básica.
 - aplicación de borrado lógico cuando corresponda
 - actualización de metadatos transversales
 - registro de outbox en operaciones sincronizables
+
+## Integracion con financiero
+
+Al activar `contrato_alquiler`, locativo emite `outbox_event` con:
+
+- `event_type = contrato_alquiler_activado`
+- `aggregate_type = contrato_alquiler`
+- `payload = {"id_contrato_alquiler": int}`
+
+El procesamiento financiero posterior se realiza por inbox financiero:
+
+```text
+contrato_alquiler_activado
+-> POST /api/v1/financiero/inbox
+-> relacion_generadora tipo_origen = contrato_alquiler
+-> obligacion_financiera CANON_LOCATIVO
+```
+
+Reglas implementadas:
+
+- si no existe `condicion_economica_alquiler`, la activacion falla
+- error funcional: `SIN_CONDICION_ECONOMICA`
+- locativo no genera obligaciones financieras directamente
+- financiero materializa una unica obligacion inicial V1
+- no existe pipeline automatico `outbox_event -> inbox`
 
 ## Errores
 - [[ERR-LOC]]
@@ -196,4 +223,6 @@ Permite visualizar contratos y su composición básica.
 - reglas de activación y suspensión
 - política exacta de superposición contractual
 - relación exacta entre contrato y objeto locativo
-- integración completa con dominio financiero
+- cronograma financiero locativo mensual
+- resolucion de obligado financiero o locatario
+- pipeline automatico `outbox_event -> inbox`

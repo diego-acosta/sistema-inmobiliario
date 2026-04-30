@@ -44,6 +44,10 @@ Este documento describe los endpoints financieros actualmente implementados en b
 
 - `POST /api/v1/financiero/mora/generar`
 
+### Inbox de eventos
+
+- `POST /api/v1/financiero/inbox`
+
 ---
 
 ## 2. Convencion de respuesta
@@ -457,7 +461,44 @@ Limitacion:
 
 ---
 
-## 10. Funcionalidad no implementada
+## 10. Inbox de eventos
+
+### POST /api/v1/financiero/inbox
+
+Procesa eventos externos soportados por el dominio financiero.
+
+Request:
+
+```json
+{
+  "event_type": "contrato_alquiler_activado",
+  "payload": {
+    "id_contrato_alquiler": 42
+  }
+}
+```
+
+Eventos soportados:
+
+- `venta_confirmada`
+  - payload: `{"id_venta": int}`
+- `contrato_alquiler_activado`
+  - payload: `{"id_contrato_alquiler": int}`
+
+Response:
+
+- `204 No Content`
+
+Notas:
+
+- procesamiento sincronico
+- no hay worker
+- no hay confirmacion de exito del handler en la respuesta HTTP
+- no existe pipeline automatico `outbox_event -> inbox`
+
+---
+
+## 11. Funcionalidad no implementada
 
 Sigue pendiente:
 
