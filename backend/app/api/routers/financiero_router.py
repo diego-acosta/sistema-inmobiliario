@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -12,6 +13,10 @@ from app.api.schemas.financiero import (
     ConceptoFinancieroData,
     ConceptoFinancieroListData,
     ConceptoFinancieroListResponse,
+    DeudaComposicionItem,
+    DeudaItem,
+    DeudaListData,
+    DeudaListResponse,
     ErrorResponse,
     ImputacionCreateRequest,
     ImputacionData,
@@ -53,6 +58,9 @@ from app.application.financiero.services.get_obligacion_financiera_service impor
 )
 from app.application.financiero.services.list_conceptos_financieros_service import (
     ListConceptosFinancierosService,
+)
+from app.application.financiero.services.list_deuda_consolidada_service import (
+    ListDeudaConsolidadaService,
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
@@ -244,6 +252,62 @@ def list_relaciones_generadoras(
     return RelacionGeneradoraListResponse(
         data=RelacionGeneradoraListData(
             items=[RelacionGeneradoraData(**item) for item in result.data["items"]],
+            total=result.data["total"],
+        )
+    )
+
+
+@router.get(
+    "/api/v1/financiero/deuda",
+    response_model=DeudaListResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_deuda_consolidada(
+    id_relacion_generadora: int | None = Query(default=None),
+    estado_obligacion: str | None = Query(default=None),
+    fecha_vencimiento_desde: date | None = Query(default=None),
+    fecha_vencimiento_hasta: date | None = Query(default=None),
+    con_saldo: bool | None = Query(default=None),
+    limit: int = Query(default=50, ge=0, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> DeudaListResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = ListDeudaConsolidadaService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_relacion_generadora=id_relacion_generadora,
+            estado_obligacion=estado_obligacion,
+            fecha_vencimiento_desde=fecha_vencimiento_desde,
+            fecha_vencimiento_hasta=fecha_vencimiento_hasta,
+            con_saldo=con_saldo,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="FECHA_RANGO_INVALIDO",
+                error_message="fecha_vencimiento_hasta debe ser mayor o igual a fecha_vencimiento_desde.",
+            ).model_dump(),
+        )
+
+    return DeudaListResponse(
+        data=DeudaListData(
+            items=[DeudaItem(**item) for item in result.data["items"]],
             total=result.data["total"],
         )
     )

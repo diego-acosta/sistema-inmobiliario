@@ -187,3 +187,32 @@ class ImputacionData(BaseModel):
 class ImputacionResponse(BaseModel):
     ok: bool = True
     data: ImputacionData
+
+
+# ── deuda consolidada ─────────────────────────────────────────────────────────
+
+class DeudaComposicionItem(BaseModel):
+    id_composicion_obligacion: int
+    codigo_concepto_financiero: str
+    importe_componente: float
+    saldo_componente: float
+
+
+class DeudaItem(BaseModel):
+    id_obligacion_financiera: int
+    id_relacion_generadora: int
+    estado_obligacion: str
+    fecha_vencimiento: date | None
+    importe_total: float
+    saldo_pendiente: float
+    composiciones: list[DeudaComposicionItem]
+
+
+class DeudaListData(BaseModel):
+    items: list[DeudaItem]
+    total: int
+
+
+class DeudaListResponse(BaseModel):
+    ok: bool = True
+    data: DeudaListData

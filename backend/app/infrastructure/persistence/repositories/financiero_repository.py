@@ -1,7 +1,9 @@
+from collections import defaultdict
 from dataclasses import asdict, is_dataclass
+from datetime import date
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 
@@ -248,6 +250,116 @@ class FinancieroRepository:
             "total": total,
         }
 
+    # ── deuda consolidada ─────────────────────────────────────────────────────
+
+    def list_deuda_consolidada(
+        self,
+        *,
+        id_relacion_generadora: int | None,
+        estado_obligacion: str | None,
+        fecha_vencimiento_desde: date | None,
+        fecha_vencimiento_hasta: date | None,
+        con_saldo: bool | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        filters: list[str] = ["o.deleted_at IS NULL"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if id_relacion_generadora is not None:
+            filters.append("o.id_relacion_generadora = :id_relacion_generadora")
+            params["id_relacion_generadora"] = id_relacion_generadora
+
+        if estado_obligacion is not None:
+            filters.append("o.estado_obligacion = :estado_obligacion")
+            params["estado_obligacion"] = estado_obligacion.strip().upper()
+
+        if fecha_vencimiento_desde is not None:
+            filters.append("o.fecha_vencimiento >= :fecha_desde")
+            params["fecha_desde"] = fecha_vencimiento_desde
+
+        if fecha_vencimiento_hasta is not None:
+            filters.append("o.fecha_vencimiento <= :fecha_hasta")
+            params["fecha_hasta"] = fecha_vencimiento_hasta
+
+        if con_saldo is True:
+            filters.append("o.saldo_pendiente > 0")
+
+        where = " AND ".join(filters)
+
+        ob_stmt = text(
+            f"""
+            SELECT
+                o.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                o.estado_obligacion,
+                o.fecha_vencimiento,
+                o.importe_total,
+                o.saldo_pendiente
+            FROM obligacion_financiera o
+            WHERE {where}
+            ORDER BY o.id_obligacion_financiera DESC
+            LIMIT :limit OFFSET :offset
+            """
+        )
+        total_stmt = text(
+            f"SELECT COUNT(*) FROM obligacion_financiera o WHERE {where}"
+        )
+
+        ob_rows = self.db.execute(ob_stmt, params).mappings().all()
+        total = self.db.execute(total_stmt, params).scalar_one()
+
+        if not ob_rows:
+            return {"items": [], "total": total}
+
+        ids = [row["id_obligacion_financiera"] for row in ob_rows]
+
+        comp_stmt = text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                c.id_obligacion_financiera,
+                cf.codigo_concepto_financiero,
+                c.importe_componente,
+                c.saldo_componente
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+                ON c.id_concepto_financiero = cf.id_concepto_financiero
+            WHERE c.id_obligacion_financiera IN :ids
+              AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
+            ORDER BY c.id_obligacion_financiera, c.orden_composicion ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+
+        comp_rows = self.db.execute(comp_stmt, {"ids": ids}).mappings().all()
+
+        comps_by_ob: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for row in comp_rows:
+            comps_by_ob[row["id_obligacion_financiera"]].append(
+                {
+                    "id_composicion_obligacion": row["id_composicion_obligacion"],
+                    "codigo_concepto_financiero": row["codigo_concepto_financiero"],
+                    "importe_componente": float(row["importe_componente"]),
+                    "saldo_componente": float(row["saldo_componente"]),
+                }
+            )
+
+        items = [
+            {
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "id_relacion_generadora": row["id_relacion_generadora"],
+                "estado_obligacion": row["estado_obligacion"],
+                "fecha_vencimiento": row["fecha_vencimiento"],
+                "importe_total": float(row["importe_total"]),
+                "saldo_pendiente": float(row["saldo_pendiente"]),
+                "composiciones": comps_by_ob[row["id_obligacion_financiera"]],
+            }
+            for row in ob_rows
+        ]
+
+        return {"items": items, "total": total}
+
     # ── imputacion / aplicacion_financiera ───────────────────────────────────
 
     def get_obligacion_para_imputacion(
@@ -288,6 +400,7 @@ class FinancieroRepository:
               AND c.estado_composicion_obligacion = 'ACTIVA'
               AND c.saldo_componente > 0
               AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
             ORDER BY c.orden_composicion ASC
             """
         )
@@ -481,6 +594,7 @@ class FinancieroRepository:
                 ON c.id_concepto_financiero = cf.id_concepto_financiero
             WHERE c.id_obligacion_financiera = :id
               AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
             ORDER BY c.orden_composicion ASC
             """
         )
