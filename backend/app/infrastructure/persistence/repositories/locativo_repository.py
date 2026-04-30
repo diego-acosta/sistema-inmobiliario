@@ -474,7 +474,17 @@ class LocativoRepository:
             self.db.rollback()
             raise
 
-    def activate_contrato_alquiler(self, payload: Any) -> dict[str, Any]:
+    def has_condicion_economica_alquiler(self, id_contrato_alquiler: int) -> bool:
+        stmt = text(
+            """
+            SELECT 1 FROM condicion_economica_alquiler
+            WHERE id_contrato_alquiler = :id AND deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+        return self.db.execute(stmt, {"id": id_contrato_alquiler}).scalar_one_or_none() is not None
+
+    def activate_contrato_alquiler(self, payload: Any, outbox_event: Any) -> dict[str, Any]:
         values = self._values(payload)
 
         statement = text(
@@ -526,6 +536,17 @@ class LocativoRepository:
 
             id_contrato = updated["id_contrato_alquiler"]
             objetos = self._get_objetos_for_contrato(id_contrato)
+
+            outbox_values = self._values(outbox_event)
+            OutboxRepository(self.db).add_event(
+                event_type=outbox_values["event_type"],
+                aggregate_type=outbox_values["aggregate_type"],
+                aggregate_id=outbox_values["aggregate_id"],
+                payload=outbox_values["payload"],
+                occurred_at=outbox_values["occurred_at"],
+                status=outbox_values.get("status", "PENDING"),
+            )
+
             self.db.commit()
             return {
                 "status": "OK",

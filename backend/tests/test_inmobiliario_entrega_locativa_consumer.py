@@ -31,6 +31,11 @@ def _build_service(db_session) -> ConsumeEntregaLocativaService:
 
 
 def _activar_contrato(client, contrato: dict) -> dict:
+    client.post(
+        f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/condiciones-economicas-alquiler",
+        headers=HEADERS,
+        json={"monto_base": "150000.00", "fecha_desde": "2026-05-01"},
+    )
     response = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
         headers={**HEADERS, "If-Match-Version": str(contrato["version_registro"])},

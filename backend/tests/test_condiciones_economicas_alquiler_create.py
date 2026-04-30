@@ -23,6 +23,12 @@ def _crear_contrato_borrador(client, *, codigo: str) -> dict:
 
 def _crear_contrato_activo(client, *, codigo: str) -> dict:
     contrato = _crear_contrato_borrador(client, codigo=codigo)
+    # Rango cerrado en el pasado para no solapar con las condiciones que crean los tests.
+    client.post(
+        f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/condiciones-economicas-alquiler",
+        headers=HEADERS,
+        json={"monto_base": "150000.00", "fecha_desde": "2024-01-01", "fecha_hasta": "2024-12-31"},
+    )
     activate = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
         headers={**HEADERS, "If-Match-Version": str(contrato["version_registro"])},

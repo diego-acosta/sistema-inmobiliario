@@ -5,6 +5,15 @@ from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import _crear_inmueble
 
 
+def _crear_condicion_minima(client, *, id_contrato: int) -> None:
+    """Crea una condición económica mínima requerida para activar el contrato."""
+    client.post(
+        f"/api/v1/contratos-alquiler/{id_contrato}/condiciones-economicas-alquiler",
+        headers=HEADERS,
+        json={"monto_base": "150000.00", "fecha_desde": "2026-05-01"},
+    )
+
+
 def _crear_contrato_borrador(client, *, codigo: str) -> dict:
     id_inmueble = _crear_inmueble(client, codigo=f"INM-{codigo}")
 
@@ -24,6 +33,7 @@ def test_activate_contrato_alquiler_pasa_de_borrador_a_activo(client, db_session
     contrato = _crear_contrato_borrador(client, codigo="CA-ACT-001")
     assert contrato["estado_contrato"] == "borrador"
     assert contrato["version_registro"] == 1
+    _crear_condicion_minima(client, id_contrato=contrato["id_contrato_alquiler"])
 
     response = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
@@ -69,6 +79,7 @@ def test_activate_contrato_alquiler_devuelve_400_si_estado_no_es_borrador(
     client,
 ) -> None:
     contrato = _crear_contrato_borrador(client, codigo="CA-ACT-002")
+    _crear_condicion_minima(client, id_contrato=contrato["id_contrato_alquiler"])
 
     first = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",

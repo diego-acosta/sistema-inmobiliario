@@ -71,6 +71,55 @@ class FinancieroRepository:
         )
         return dict(row) if row else None
 
+    # ── contrato_alquiler / condicion_economica (lectura para financiero) ────────
+
+    def get_contrato_alquiler_para_financiero(
+        self, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT id_contrato_alquiler, fecha_inicio, estado_contrato, deleted_at
+            FROM contrato_alquiler
+            WHERE id_contrato_alquiler = :id AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_contrato_alquiler}).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def get_condicion_economica_vigente_para_financiero(
+        self, id_contrato_alquiler: int, fecha_referencia: date
+    ) -> dict[str, Any] | None:
+        # Condicion que cubre fecha_referencia
+        stmt = text(
+            """
+            SELECT monto_base, moneda
+            FROM condicion_economica_alquiler
+            WHERE id_contrato_alquiler = :id
+              AND deleted_at IS NULL
+              AND fecha_desde <= :fecha
+              AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha)
+            ORDER BY fecha_desde ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(
+            stmt, {"id": id_contrato_alquiler, "fecha": fecha_referencia}
+        ).mappings().one_or_none()
+        if row is not None:
+            return dict(row)
+        # Fallback: primera condicion disponible
+        stmt_fallback = text(
+            """
+            SELECT monto_base, moneda
+            FROM condicion_economica_alquiler
+            WHERE id_contrato_alquiler = :id AND deleted_at IS NULL
+            ORDER BY fecha_desde ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt_fallback, {"id": id_contrato_alquiler}).mappings().one_or_none()
+        return dict(row) if row else None
+
     # ── relacion_generadora ───────────────────────────────────────────────────
 
     def create_relacion_generadora(self, payload: Any) -> dict[str, Any]:

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from app.application.common.outbox import OutboxEventPayload
 from app.application.common.results import AppResult
 from app.application.locativo.commands.activate_contrato_alquiler import (
     ActivateContratoAlquilerCommand,
@@ -13,6 +14,8 @@ from app.application.locativo.commands.activate_contrato_alquiler import (
 
 ESTADO_BORRADOR = "borrador"
 ESTADO_ACTIVO = "activo"
+EVENT_TYPE = "contrato_alquiler_activado"
+AGGREGATE_TYPE = "contrato_alquiler"
 
 
 @dataclass(slots=True)
@@ -29,7 +32,11 @@ class ContratoAlquilerActivatePayload:
 class LocativoRepository(Protocol):
     def get_contrato_alquiler(self, id_contrato_alquiler: int) -> dict[str, Any] | None: ...
 
-    def activate_contrato_alquiler(self, payload: ContratoAlquilerActivatePayload) -> dict[str, Any]: ...
+    def has_condicion_economica_alquiler(self, id_contrato_alquiler: int) -> bool: ...
+
+    def activate_contrato_alquiler(
+        self, payload: ContratoAlquilerActivatePayload, outbox_event: OutboxEventPayload
+    ) -> dict[str, Any]: ...
 
 
 class ActivateContratoAlquilerService:
@@ -53,6 +60,9 @@ class ActivateContratoAlquilerService:
         if estado_actual != ESTADO_BORRADOR:
             return AppResult.fail("INVALID_CONTRATO_STATE")
 
+        if not self.repository.has_condicion_economica_alquiler(command.id_contrato_alquiler):
+            return AppResult.fail("SIN_CONDICION_ECONOMICA")
+
         now = datetime.now(UTC)
         id_instalacion = getattr(command.context, "id_instalacion", None)
         op_id = getattr(command.context, "op_id", None)
@@ -67,7 +77,15 @@ class ActivateContratoAlquilerService:
             op_id_ultima_modificacion=op_id,
         )
 
-        result = self.repository.activate_contrato_alquiler(payload)
+        outbox_event = OutboxEventPayload(
+            event_type=EVENT_TYPE,
+            aggregate_type=AGGREGATE_TYPE,
+            aggregate_id=command.id_contrato_alquiler,
+            payload={"id_contrato_alquiler": command.id_contrato_alquiler},
+            occurred_at=now,
+        )
+
+        result = self.repository.activate_contrato_alquiler(payload, outbox_event)
         if result.get("status") == "CONCURRENCY_ERROR":
             return AppResult.fail("CONCURRENCY_ERROR")
         return AppResult.ok(result["data"])

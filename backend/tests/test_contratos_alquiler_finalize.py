@@ -19,6 +19,12 @@ def _crear_contrato_activo(client, *, codigo: str) -> dict:
     assert create_response.status_code == 201
     contrato = create_response.json()["data"]
 
+    client.post(
+        f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/condiciones-economicas-alquiler",
+        headers=HEADERS,
+        json={"monto_base": "150000.00", "fecha_desde": "2026-05-01"},
+    )
+
     activate_response = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
         headers={**HEADERS, "If-Match-Version": str(contrato["version_registro"])},
