@@ -21,6 +21,9 @@ from app.api.schemas.financiero import (
     ImputacionCreateRequest,
     ImputacionData,
     ImputacionResponse,
+    MoraGenerarData,
+    MoraGenerarRequest,
+    MoraGenerarResponse,
     ObligacionFinancieraCreateRequest,
     ObligacionFinancieraData,
     ObligacionFinancieraResponse,
@@ -33,6 +36,9 @@ from app.api.schemas.financiero import (
 from app.application.common.commands import CommandContext
 from app.application.financiero.commands.create_relacion_generadora import (
     CreateRelacionGeneradoraCommand,
+)
+from app.application.financiero.commands.generar_mora_financiera import (
+    GenerarMoraFinancieraCommand,
 )
 from app.application.financiero.services.create_relacion_generadora_service import (
     CreateRelacionGeneradoraService,
@@ -55,6 +61,9 @@ from app.application.financiero.services.create_obligacion_financiera_service im
 )
 from app.application.financiero.services.get_obligacion_financiera_service import (
     GetObligacionFinancieraService,
+)
+from app.application.financiero.services.generar_mora_financiera_service import (
+    GenerarMoraFinancieraService,
 )
 from app.application.financiero.services.list_conceptos_financieros_service import (
     ListConceptosFinancierosService,
@@ -430,6 +439,63 @@ def create_imputacion_financiera(
             aplicaciones=[AplicacionItemData(**a) for a in data["aplicaciones"]],
         )
     )
+
+
+@router.post(
+    "/api/v1/financiero/mora/generar",
+    response_model=MoraGenerarResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def generar_mora_financiera(
+    request: MoraGenerarRequest | None = None,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> MoraGenerarResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    command = GenerarMoraFinancieraCommand(
+        context=context,
+        fecha_proceso=request.fecha_proceso if request is not None else None,
+    )
+
+    repository = FinancieroRepository(db)
+    service = GenerarMoraFinancieraService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONCEPTO_INTERES_MORA" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="El concepto financiero INTERES_MORA no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo generar la mora financiera.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return MoraGenerarResponse(data=MoraGenerarData(**result.data))
 
 
 @router.post(

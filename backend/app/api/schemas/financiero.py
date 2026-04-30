@@ -191,6 +191,21 @@ class ImputacionResponse(BaseModel):
 
 # ── deuda consolidada ─────────────────────────────────────────────────────────
 
+class MoraGenerarRequest(BaseModel):
+    fecha_proceso: date | None = None
+
+
+class MoraGenerarData(BaseModel):
+    fecha_proceso: date
+    procesadas: int
+    generadas: int
+
+
+class MoraGenerarResponse(BaseModel):
+    ok: bool = True
+    data: MoraGenerarData
+
+
 class DeudaComposicionItem(BaseModel):
     id_composicion_obligacion: int
     codigo_concepto_financiero: str

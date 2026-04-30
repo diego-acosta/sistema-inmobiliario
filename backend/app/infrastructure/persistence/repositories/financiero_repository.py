@@ -360,6 +360,168 @@ class FinancieroRepository:
 
         return {"items": items, "total": total}
 
+    # ── mora financiera ─────────────────────────────────────────────────────
+
+    def buscar_obligaciones_elegibles_mora(
+        self, fecha_proceso: date
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                o.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                o.fecha_vencimiento,
+                o.saldo_pendiente,
+                o.estado_obligacion
+            FROM obligacion_financiera o
+            WHERE o.fecha_vencimiento < :fecha_proceso
+              AND o.saldo_pendiente > 0
+              AND o.deleted_at IS NULL
+              AND o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA', 'CANCELADA')
+              AND COALESCE(o.observaciones, '') NOT LIKE 'MORA_AUTO id_obligacion_base=%'
+            ORDER BY o.id_obligacion_financiera ASC
+            FOR UPDATE
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"fecha_proceso": fecha_proceso}
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def existe_mora_para_obligacion_fecha(
+        self, id_obligacion_base: int, fecha_proceso: date
+    ) -> bool:
+        marker = (
+            f"MORA_AUTO id_obligacion_base={id_obligacion_base} "
+            f"fecha_proceso={fecha_proceso.isoformat()}%"
+        )
+        stmt = text(
+            """
+            SELECT 1
+            FROM obligacion_financiera o
+            JOIN composicion_obligacion c
+                ON c.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN concepto_financiero cf
+                ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE o.deleted_at IS NULL
+              AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
+              AND cf.codigo_concepto_financiero = 'INTERES_MORA'
+              AND o.observaciones LIKE :marker
+            LIMIT 1
+            """
+        )
+        return self.db.execute(stmt, {"marker": marker}).scalar_one_or_none() is not None
+
+    def crear_moras_financieras(self, moras: list[tuple[Any, Any]]) -> None:
+        if not moras:
+            return
+
+        ob_stmt = text(
+            """
+            INSERT INTO obligacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_relacion_generadora, fecha_emision, fecha_vencimiento,
+                importe_total, saldo_pendiente, estado_obligacion, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_relacion_generadora, :fecha_emision, :fecha_vencimiento,
+                :importe_total, :importe_total, :estado_obligacion, :observaciones
+            )
+            RETURNING id_obligacion_financiera
+            """
+        )
+
+        comp_stmt = text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente,
+                detalle_calculo
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_concepto_financiero,
+                :orden_composicion, :importe_componente, :importe_componente,
+                :detalle_calculo
+            )
+            """
+        )
+
+        try:
+            for obligacion, composicion in moras:
+                ob_values = self._values(obligacion)
+                comp_values = self._values(composicion)
+                ob_row = self.db.execute(
+                    ob_stmt,
+                    {
+                        "uid_global": ob_values["uid_global"],
+                        "version_registro": ob_values["version_registro"],
+                        "created_at": ob_values["created_at"],
+                        "updated_at": ob_values["updated_at"],
+                        "id_instalacion_origen": ob_values["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": ob_values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_alta": ob_values["op_id_alta"],
+                        "op_id_ultima_modificacion": ob_values[
+                            "op_id_ultima_modificacion"
+                        ],
+                        "id_relacion_generadora": ob_values[
+                            "id_relacion_generadora"
+                        ],
+                        "fecha_emision": ob_values["fecha_emision"],
+                        "fecha_vencimiento": ob_values["fecha_vencimiento"],
+                        "importe_total": ob_values["importe_total"],
+                        "estado_obligacion": ob_values["estado_obligacion"],
+                        "observaciones": ob_values["observaciones"],
+                    },
+                ).mappings().one()
+
+                self.db.execute(
+                    comp_stmt,
+                    {
+                        "uid_global": comp_values["uid_global"],
+                        "version_registro": comp_values["version_registro"],
+                        "created_at": comp_values["created_at"],
+                        "updated_at": comp_values["updated_at"],
+                        "id_instalacion_origen": comp_values[
+                            "id_instalacion_origen"
+                        ],
+                        "id_instalacion_ultima_modificacion": comp_values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_alta": comp_values["op_id_alta"],
+                        "op_id_ultima_modificacion": comp_values[
+                            "op_id_ultima_modificacion"
+                        ],
+                        "id_obligacion_financiera": ob_row[
+                            "id_obligacion_financiera"
+                        ],
+                        "id_concepto_financiero": comp_values[
+                            "id_concepto_financiero"
+                        ],
+                        "orden_composicion": comp_values["orden_composicion"],
+                        "importe_componente": comp_values["importe_componente"],
+                        "detalle_calculo": comp_values["detalle_calculo"],
+                    },
+                )
+
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
     # ── imputacion / aplicacion_financiera ───────────────────────────────────
 
     def get_obligacion_para_imputacion(
