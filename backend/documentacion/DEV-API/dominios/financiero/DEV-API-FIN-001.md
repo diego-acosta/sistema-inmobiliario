@@ -36,6 +36,10 @@ Este documento describe los endpoints financieros actualmente implementados en b
 
 - `GET /api/v1/financiero/deuda`
 
+### Estado de cuenta
+
+- `GET /api/v1/financiero/estado-cuenta`
+
 ### Mora
 
 - `POST /api/v1/financiero/mora/generar`
@@ -340,7 +344,68 @@ Response:
 
 ---
 
-## 8. Mora
+## 8. Estado de cuenta
+
+### GET /api/v1/financiero/estado-cuenta
+
+Devuelve el estado de cuenta financiero consolidado de una relacion generadora.
+
+Query params:
+
+- `id_relacion_generadora` int, obligatorio
+- `incluir_canceladas` bool, opcional, default `false`
+- `fecha_desde` date, opcional
+- `fecha_hasta` date, opcional
+
+Response:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_relacion_generadora": 1,
+    "resumen": {
+      "importe_total": 100000.00,
+      "saldo_pendiente": 60000.00,
+      "importe_cancelado": 40000.00,
+      "cantidad_obligaciones": 1,
+      "cantidad_vencidas": 0
+    },
+    "obligaciones": [
+      {
+        "id_obligacion_financiera": 10,
+        "estado_obligacion": "PARCIALMENTE_CANCELADA",
+        "fecha_emision": "2026-04-30",
+        "fecha_vencimiento": "2026-12-31",
+        "importe_total": 100000.00,
+        "saldo_pendiente": 60000.00,
+        "composiciones": [],
+        "aplicaciones": []
+      }
+    ]
+  }
+}
+```
+
+Reglas:
+
+- no recalcula saldos en backend
+- usa datos persistidos en DB
+- excluye `CANCELADA`, `ANULADA`, `REEMPLAZADA` por default
+- `incluir_canceladas=true` permite verlas
+- filtra por `fecha_vencimiento` si se envian fechas
+- incluye composiciones reales
+- incluye aplicaciones reales
+- endpoint read-only
+
+Notas:
+
+- `importe_cancelado` se obtiene de campo persistido; no es una suma dinamica en backend.
+- `cantidad_vencidas` usa la fecha actual del sistema.
+
+---
+
+## 9. Mora
 
 ### POST /api/v1/financiero/mora/generar
 
@@ -392,7 +457,7 @@ Limitacion:
 
 ---
 
-## 9. Funcionalidad no implementada
+## 10. Funcionalidad no implementada
 
 Sigue pendiente:
 

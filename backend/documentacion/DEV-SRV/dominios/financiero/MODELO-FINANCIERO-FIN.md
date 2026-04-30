@@ -243,12 +243,42 @@ La consulta es read-only y no recalcula saldos.
 
 ---
 
-## 8. Pendientes reales
+## 8. Estado de cuenta financiero
+
+Descripcion:
+
+Vista consolidada del estado financiero de una relacion generadora.
+
+Incluye:
+
+- obligaciones
+- composiciones
+- imputaciones mediante `aplicacion_financiera`
+- saldos actuales
+- estados de obligacion
+
+Reglas:
+
+- es una proyeccion del modelo, no una logica de negocio nueva
+- no modifica datos
+- usa saldos calculados por la DB
+- usa datos persistidos para el resumen
+- incluye composiciones y aplicaciones reales asociadas a cada obligacion
+
+Notas:
+
+- `cantidad_vencidas` se calcula contra la fecha actual del sistema.
+- No existe aun fecha de referencia configurable para esta vista.
+
+---
+
+## 9. Pendientes reales
 
 - transiciones de `relacion_generadora`
 - reversion de imputaciones
 - endpoint autonomo de pagos
 - endpoint autonomo de composiciones
+- fecha de referencia configurable para estado de cuenta
 - relacion fisica entre mora y obligacion base
 - clave unica SQL para evitar duplicidad de mora por obligacion base y fecha
 - idempotencia completa por `X-Op-Id`
