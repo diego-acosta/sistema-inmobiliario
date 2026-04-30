@@ -398,3 +398,12 @@ Alcance:
 - `MODELO-FINANCIERO-FIN`
 - `INT-FIN-004-contrato-plan-obligaciones`
 - `TIPO-OBLIGACION-FIN`
+
+---
+
+## Consideraciones tecnicas
+
+- La materializacion del plan financiero V1 (venta contado)
+  se ejecuta de forma atomica junto con la creacion de la relacion generadora.
+- No existe riesgo de inconsistencias intermedias.
+- La idempotencia sigue siendo aplicativa.

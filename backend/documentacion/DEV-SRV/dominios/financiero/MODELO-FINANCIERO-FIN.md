@@ -288,47 +288,35 @@ Notas:
 
 ## Limitaciones técnicas actuales
 
-### Idempotencia en creación de relación generadora desde eventos
+### Atomicidad en integración comercial-financiera
 
-La creación de `relacion_generadora` a partir del evento `venta_confirmada`
-es actualmente idempotente a nivel de aplicación mediante una verificación previa
-por `(tipo_origen, id_origen)`.
+La creación de `relacion_generadora` y `obligacion_financiera`
+desde el evento `venta_confirmada` se realiza actualmente dentro
+de una única transacción.
 
-Sin embargo, no existe una restricción única a nivel de base de datos que garantice
-esta unicidad en escenarios concurrentes.
+Garantía:
+
+- No pueden existir relaciones generadoras sin obligación
+  por fallos intermedios en el proceso.
+
+### Idempotencia en creación de relación generadora
+
+La creación de `relacion_generadora` es idempotente a nivel de aplicación
+mediante verificación previa por `(tipo_origen, id_origen)`.
+
+Limitación:
+
+- No existe restricción única en base de datos.
 
 Riesgo:
 
-- Posible duplicación de `relacion_generadora` si el evento es procesado
-  en paralelo por múltiples procesos o workers.
-
-Estado actual:
-
-- Controlado en capa de aplicación.
-- No protegido a nivel SQL.
+- Posible duplicación en escenarios concurrentes.
 
 Pendiente:
 
-- Incorporar constraint única en base de datos:
+- Incorporar constraint SQL:
   `UNIQUE(tipo_origen, id_origen)`
 
 Prioridad:
 
-- Media (no crítica en entorno actual sin procesamiento concurrente real).
-
-### Limitación técnica — Atomicidad en integración comercial-financiera
-
-La creación de `relacion_generadora` y la posterior generación de
-`obligacion_financiera` no se encuentran actualmente en una única
-transacción.
-
-Riesgo:
-- Posible estado inconsistente donde existe `relacion_generadora`
-  sin obligaciones asociadas si ocurre un error intermedio.
-
-Pendiente:
-- Unificar ambas operaciones dentro de una transacción única a nivel
-  de repositorio o servicio.
-
-Prioridad:
-- Media (relevante ante fallos o retries en producción)
+- Media
