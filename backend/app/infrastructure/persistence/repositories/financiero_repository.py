@@ -48,6 +48,29 @@ class FinancieroRepository:
         row = self.db.execute(stmt, {"codigo": codigo}).mappings().one_or_none()
         return dict(row) if row else None
 
+    def get_venta_minima_para_financiero(
+        self, id_venta: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_venta,
+                fecha_venta,
+                estado_venta,
+                monto_total,
+                deleted_at
+            FROM venta
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            """
+        )
+        row = (
+            self.db.execute(stmt, {"id_venta": id_venta})
+            .mappings()
+            .one_or_none()
+        )
+        return dict(row) if row else None
+
     # ── relacion_generadora ───────────────────────────────────────────────────
 
     def create_relacion_generadora(self, payload: Any) -> dict[str, Any]:
@@ -399,6 +422,26 @@ class FinancieroRepository:
         return {"items": items, "total": total}
 
     # ── estado de cuenta ────────────────────────────────────────────────────
+
+    def has_obligaciones_by_relacion_generadora(
+        self, id_relacion_generadora: int
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM obligacion_financiera
+            WHERE id_relacion_generadora = :id_relacion_generadora
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+        return (
+            self.db.execute(
+                stmt,
+                {"id_relacion_generadora": id_relacion_generadora},
+            ).scalar_one_or_none()
+            is not None
+        )
 
     def get_estado_cuenta_financiero(
         self,

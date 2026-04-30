@@ -315,3 +315,20 @@ Pendiente:
 Prioridad:
 
 - Media (no crítica en entorno actual sin procesamiento concurrente real).
+
+### Limitación técnica — Atomicidad en integración comercial-financiera
+
+La creación de `relacion_generadora` y la posterior generación de
+`obligacion_financiera` no se encuentran actualmente en una única
+transacción.
+
+Riesgo:
+- Posible estado inconsistente donde existe `relacion_generadora`
+  sin obligaciones asociadas si ocurre un error intermedio.
+
+Pendiente:
+- Unificar ambas operaciones dentro de una transacción única a nivel
+  de repositorio o servicio.
+
+Prioridad:
+- Media (relevante ante fallos o retries en producción)

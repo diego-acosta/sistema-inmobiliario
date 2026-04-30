@@ -6,6 +6,10 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from app.application.common.results import AppResult
+from app.application.financiero.services.create_obligacion_financiera_service import (
+    ComposicionCreatePayload,
+    ObligacionCreatePayload,
+)
 from app.application.financiero.services.create_relacion_generadora_service import (
     RelacionGeneradoraCreatePayload,
 )
@@ -13,16 +17,24 @@ from app.application.financiero.services.create_relacion_generadora_service impo
 
 EVENT_TYPE_VENTA_CONFIRMADA = "venta_confirmada"
 TIPO_ORIGEN_VENTA = "venta"
+CONCEPTO_CAPITAL_VENTA = "CAPITAL_VENTA"
 
 
 @dataclass(slots=True)
 class HandleVentaConfirmadaEventData:
     id_venta: int
     id_relacion_generadora: int
-    created: bool
+    relacion_generadora_created: bool
+    obligacion_created: bool
+    id_obligacion_financiera: int | None
 
 
 class FinancieroRepository(Protocol):
+    def get_venta_minima_para_financiero(
+        self, id_venta: int
+    ) -> dict[str, Any] | None:
+        ...
+
     def get_relacion_generadora_by_origen(
         self, tipo_origen: str, id_origen: int
     ) -> dict[str, Any] | None:
@@ -30,6 +42,23 @@ class FinancieroRepository(Protocol):
 
     def create_relacion_generadora(
         self, payload: RelacionGeneradoraCreatePayload
+    ) -> dict[str, Any]:
+        ...
+
+    def has_obligaciones_by_relacion_generadora(
+        self, id_relacion_generadora: int
+    ) -> bool:
+        ...
+
+    def get_concepto_financiero_by_codigo(
+        self, codigo: str
+    ) -> dict[str, Any] | None:
+        ...
+
+    def create_obligacion_financiera(
+        self,
+        obligacion: ObligacionCreatePayload,
+        composiciones: list[ComposicionCreatePayload],
     ) -> dict[str, Any]:
         ...
 
@@ -51,21 +80,103 @@ class HandleVentaConfirmadaEventService:
         if not isinstance(id_venta, int) or id_venta <= 0:
             return AppResult.fail("INVALID_EVENT_PAYLOAD")
 
-        existing = self.repository.get_relacion_generadora_by_origen(
+        venta = self.repository.get_venta_minima_para_financiero(id_venta)
+        if venta is None:
+            return AppResult.fail("NOT_FOUND_VENTA")
+
+        estado_venta = (venta["estado_venta"] or "").strip().lower()
+        if estado_venta != "confirmada":
+            return AppResult.fail("INVALID_VENTA_STATE")
+
+        monto_total = venta["monto_total"]
+        if monto_total is None or monto_total <= 0:
+            return AppResult.fail("INVALID_MONTO_TOTAL")
+
+        relacion_generadora = self.repository.get_relacion_generadora_by_origen(
             TIPO_ORIGEN_VENTA,
             id_venta,
         )
-        if existing is not None:
+        relacion_generadora_created = False
+        if relacion_generadora is None:
+            relacion_generadora = self._create_relacion_generadora(id_venta, event)
+            relacion_generadora_created = True
+
+        id_relacion_generadora = relacion_generadora["id_relacion_generadora"]
+        if self.repository.has_obligaciones_by_relacion_generadora(
+            id_relacion_generadora
+        ):
             return AppResult.ok(
                 {
                     "id_venta": id_venta,
-                    "id_relacion_generadora": existing["id_relacion_generadora"],
-                    "created": False,
+                    "id_relacion_generadora": id_relacion_generadora,
+                    "created": relacion_generadora_created,
+                    "relacion_generadora_created": relacion_generadora_created,
+                    "obligacion_created": False,
+                    "id_obligacion_financiera": None,
                 }
             )
 
+        concepto = self.repository.get_concepto_financiero_by_codigo(
+            CONCEPTO_CAPITAL_VENTA
+        )
+        if concepto is None:
+            return AppResult.fail(f"NOT_FOUND_CONCEPTO:{CONCEPTO_CAPITAL_VENTA}")
+
         now = datetime.now(UTC)
-        created = self.repository.create_relacion_generadora(
+        fecha_venta = venta["fecha_venta"]
+        fecha_vencimiento = (
+            fecha_venta.date() if isinstance(fecha_venta, datetime) else fecha_venta
+        )
+        obligacion = self.repository.create_obligacion_financiera(
+            ObligacionCreatePayload(
+                id_relacion_generadora=id_relacion_generadora,
+                fecha_emision=fecha_vencimiento,
+                fecha_vencimiento=fecha_vencimiento,
+                importe_total=float(monto_total),
+                estado_obligacion="PROYECTADA",
+                uid_global=str(self.uuid_generator()),
+                version_registro=1,
+                created_at=now,
+                updated_at=now,
+                id_instalacion_origen=None,
+                id_instalacion_ultima_modificacion=None,
+                op_id_alta=self._parse_op_id(event),
+                op_id_ultima_modificacion=self._parse_op_id(event),
+            ),
+            [
+                ComposicionCreatePayload(
+                    id_concepto_financiero=concepto["id_concepto_financiero"],
+                    codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
+                    orden_composicion=1,
+                    importe_componente=float(monto_total),
+                    uid_global=str(self.uuid_generator()),
+                    version_registro=1,
+                    created_at=now,
+                    updated_at=now,
+                    id_instalacion_origen=None,
+                    id_instalacion_ultima_modificacion=None,
+                    op_id_alta=self._parse_op_id(event),
+                    op_id_ultima_modificacion=self._parse_op_id(event),
+                )
+            ],
+        )
+
+        return AppResult.ok(
+            {
+                "id_venta": id_venta,
+                "id_relacion_generadora": id_relacion_generadora,
+                "created": relacion_generadora_created,
+                "relacion_generadora_created": relacion_generadora_created,
+                "obligacion_created": True,
+                "id_obligacion_financiera": obligacion["id_obligacion_financiera"],
+            }
+        )
+
+    def _create_relacion_generadora(
+        self, id_venta: int, event: dict[str, Any]
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        return self.repository.create_relacion_generadora(
             RelacionGeneradoraCreatePayload(
                 tipo_origen=TIPO_ORIGEN_VENTA,
                 id_origen=id_venta,
@@ -79,14 +190,6 @@ class HandleVentaConfirmadaEventService:
                 op_id_alta=self._parse_op_id(event),
                 op_id_ultima_modificacion=self._parse_op_id(event),
             )
-        )
-
-        return AppResult.ok(
-            {
-                "id_venta": id_venta,
-                "id_relacion_generadora": created["id_relacion_generadora"],
-                "created": True,
-            }
         )
 
     @staticmethod
