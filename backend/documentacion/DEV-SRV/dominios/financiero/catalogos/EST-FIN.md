@@ -1,355 +1,178 @@
-# EST-FIN — Estados del dominio Financiero
+# EST-FIN - Estados del dominio Financiero
 
 ## Objetivo
-Definir los estados del dominio financiero.
+
+Definir los estados financieros usados por el backend vigente y separar los estados conceptuales no implementados.
 
 ## Alcance
-Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y estado de deuda.
+
+Incluye:
+
+- `relacion_generadora`
+- `obligacion_financiera`
+- `aplicacion_financiera` como entidad SQL sin estado persistido propio
+- estado de deuda como lectura derivada
 
 ---
 
-## A. Estados de relaciones generadoras
+## A. Estados de relacion_generadora
 
-### EST-FIN-001 — Borrador
-- codigo: borrador
-- tipo: entidad
-- aplica_a: relacion_generadora
-- descripcion: Estado inicial de una relación generadora aún no activada.
-- estado_inicial: sí
-- estado_final: no
+Estados SQL vigentes:
 
-### EST-FIN-002 — Activa
-- codigo: activa
-- tipo: entidad
-- aplica_a: relacion_generadora
-- descripcion: La relación generadora se encuentra habilitada para producir efecto financiero.
-- estado_inicial: no
-- estado_final: no
+| Estado | Uso |
+|---|---|
+| `BORRADOR` | Estado inicial de las relaciones creadas por API. |
+| `ACTIVA` | Estado soportado por SQL, sin transicion backend implementada. |
+| `CANCELADA` | Estado soportado por SQL, sin transicion backend implementada. |
+| `FINALIZADA` | Estado soportado por SQL, sin transicion backend implementada. |
 
-### EST-FIN-003 — Cancelada
-- codigo: cancelada
-- tipo: entidad
-- aplica_a: relacion_generadora
-- descripcion: La relación generadora dejó de habilitar nuevas obligaciones u operaciones futuras compatibles.
-- estado_inicial: no
-- estado_final: sí
+Implementado:
 
-### EST-FIN-004 — Finalizada
-- codigo: finalizada
-- tipo: entidad
-- aplica_a: relacion_generadora
-- descripcion: La relación generadora alcanzó su cierre funcional completo sin pendientes incompatibles.
-- estado_inicial: no
-- estado_final: sí
+- alta de relacion en `BORRADOR`
+- lectura y listado
 
-## B. Estados de obligaciones
+No implementado:
 
-### EST-FIN-005 — Pendiente
-- codigo: pendiente
-- tipo: entidad
-- aplica_a: obligacion_financiera
-- descripcion: La obligación se encuentra vigente con saldo exigible pendiente de cancelación.
-- estado_inicial: sí
-- estado_final: no
-
-### EST-FIN-006 — Vencida
-- codigo: vencida
-- tipo: entidad
-- aplica_a: obligacion_financiera
-- descripcion: La obligación superó su fecha de vencimiento manteniendo saldo pendiente.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-007 — Parcialmente cancelada
-- codigo: parcialmente_cancelada
-- tipo: entidad
-- aplica_a: obligacion_financiera
-- descripcion: La obligación recibió imputaciones parciales pero aún conserva saldo pendiente.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-008 — Cancelada
-- codigo: cancelada
-- tipo: entidad
-- aplica_a: obligacion_financiera
-- descripcion: La obligación quedó cancelada en forma total y ya no mantiene saldo exigible.
-- estado_inicial: no
-- estado_final: sí
-
-### Estados normalizados de obligacion_financiera
-
-Estos estados formalizan el ciclo conceptual completo de `obligacion_financiera`. No implican por si mismos migracion SQL ni backend; la implementacion fisica queda `PENDIENTE SQL-BACKEND` para los estados no soportados por la persistencia vigente.
-
-| Codigo | Significado | Estado fisico actual |
-|---|---|---|
-| `PROYECTADA` | Obligacion calculada o prevista, aun no emitida formalmente. | PENDIENTE |
-| `EMITIDA` | Obligacion generada formalmente, aun no necesariamente vencida. | PENDIENTE |
-| `EXIGIBLE` | Obligacion reclamable segun fecha, emision o condicion de exigibilidad. | PENDIENTE |
-| `PARCIALMENTE_CANCELADA` | Obligacion con imputaciones parciales y saldo pendiente mayor a cero. | Equivalente conceptual de `parcialmente_cancelada` |
-| `CANCELADA` | Obligacion con saldo pendiente cero y componentes sin saldo vivo. | Equivalente conceptual de `cancelada` |
-| `VENCIDA` | Obligacion exigible con fecha de vencimiento superada y saldo pendiente mayor a cero. | Equivalente conceptual de `vencida`; puede ser materializada o derivada |
-| `ANULADA` | Obligacion invalidada por error, reversion o decision formal. | PENDIENTE |
-| `REEMPLAZADA` | Obligacion sustituida por refinanciacion, regeneracion o reemision. | PENDIENTE |
-
-### Transiciones validas de obligacion_financiera
-
-| Desde | Hacia | Condicion |
-|---|---|---|
-| `PROYECTADA` | `EMITIDA` | Emision formal desde relacion generadora valida. |
-| `PROYECTADA` | `ANULADA` | Motivo formal y trazabilidad. |
-| `EMITIDA` | `EXIGIBLE` | Condicion de exigibilidad cumplida. |
-| `EMITIDA` | `ANULADA` | Motivo formal y trazabilidad. |
-| `EXIGIBLE` | `PARCIALMENTE_CANCELADA` | Imputacion parcial con saldo pendiente mayor a cero. |
-| `EXIGIBLE` | `CANCELADA` | Imputacion total; `saldo_pendiente = 0` y componentes sin saldo vivo. |
-| `EXIGIBLE` | `VENCIDA` | Fecha de vencimiento superada con saldo pendiente mayor a cero. |
-| `EXIGIBLE` | `REEMPLAZADA` | Obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
-| `PARCIALMENTE_CANCELADA` | `CANCELADA` | Imputacion total del saldo remanente. |
-| `PARCIALMENTE_CANCELADA` | `VENCIDA` | Fecha de vencimiento superada con saldo pendiente mayor a cero. |
-| `PARCIALMENTE_CANCELADA` | `REEMPLAZADA` | Obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
-| `VENCIDA` | `PARCIALMENTE_CANCELADA` | Imputacion parcial. |
-| `VENCIDA` | `CANCELADA` | Imputacion total. |
-| `VENCIDA` | `REEMPLAZADA` | Obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
-| `PROYECTADA` / `EMITIDA` / `EXIGIBLE` / `VENCIDA` / `PARCIALMENTE_CANCELADA` | `ANULADA` | Solo con motivo formal y trazabilidad. |
-| Cualquier estado activo | `REEMPLAZADA` | Solo si existe obligacion nueva vinculada o proceso formal de refinanciacion/reemision. |
-
-### Transiciones prohibidas de obligacion_financiera
-
-| Desde | Hacia | Motivo |
-|---|---|---|
-| `CANCELADA` | `EXIGIBLE` | La cancelacion es cierre financiero. |
-| `CANCELADA` | `VENCIDA` | La cancelacion elimina saldo exigible. |
-| `CANCELADA` | `PARCIALMENTE_CANCELADA` | No debe reabrirse sin proceso correctivo documentado. |
-| `ANULADA` | `EXIGIBLE` | La obligacion invalidada no puede volverse exigible. |
-| `ANULADA` | `CANCELADA` | La anulacion no equivale a cancelacion por pago. |
-| `REEMPLAZADA` | `EXIGIBLE` | La exigibilidad corresponde a la obligacion nueva o proceso resultante. |
-| `REEMPLAZADA` | `CANCELADA` | Prohibido sin proceso correctivo documentado. |
-| Cualquier estado | Cualquier estado que reduzca saldo | Prohibido sin `aplicacion_financiera`, anulacion formal o credito documentado. |
-
-### Reglas de estado
-
-- No se puede cancelar una obligacion sin `saldo_pendiente = 0`.
-- No se puede cancelar una obligacion si alguna composicion activa tiene `saldo_componente > 0`.
-- No se puede emitir una obligacion si su `relacion_generadora` no esta en estado valido para generar o emitir.
-- No se puede reemplazar una obligacion sin dejar trazabilidad hacia la obligacion nueva o proceso origen.
-- No se puede anular una obligacion con pagos aplicados sin reversion o tratamiento documentado.
-- `VENCIDA` puede ser estado materializado o derivado por `fecha_vencimiento + saldo`; la decision fisica queda `PENDIENTE`.
-
-## C. Estados de imputaciones
-
-### EST-FIN-009 — Registrada
-- codigo: registrada
-- tipo: entidad
-- aplica_a: aplicacion_financiera
-- descripcion: La imputación fue registrada dentro del circuito financiero.
-- estado_inicial: sí
-- estado_final: no
-
-### EST-FIN-010 — Aplicada
-- codigo: aplicada
-- tipo: entidad
-- aplica_a: aplicacion_financiera
-- descripcion: La imputación ya produjo efecto sobre el saldo de la obligación objetivo.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-011 — Parcial
-- codigo: parcial
-- tipo: entidad
-- aplica_a: aplicacion_financiera
-- descripcion: La imputación cubrió solo una parte del saldo aplicable.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-012 — Anulada
-- codigo: anulada
-- tipo: entidad
-- aplica_a: aplicacion_financiera
-- descripcion: La imputación fue anulada según el circuito financiero permitido.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-013 — Revertida
-- codigo: revertida
-- tipo: entidad
-- aplica_a: aplicacion_financiera
-- descripcion: La imputación fue revertida, restaurando su efecto financiero anterior.
-- estado_inicial: no
-- estado_final: sí
-
-## D. Estados de ajustes
-
-### EST-FIN-014 — Generado
-- codigo: generado
-- tipo: entidad
-- aplica_a: ajuste_financiero
-- descripcion: El ajuste financiero fue creado y se encuentra disponible para su aplicación.
-- estado_inicial: sí
-- estado_final: no
-
-### EST-FIN-015 — Aplicado
-- codigo: aplicado
-- tipo: entidad
-- aplica_a: ajuste_financiero
-- descripcion: El ajuste financiero produjo efecto sobre la obligación o saldo correspondiente.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-016 — Anulado
-- codigo: anulado
-- tipo: entidad
-- aplica_a: ajuste_financiero
-- descripcion: El ajuste financiero fue dejado sin efecto.
-- estado_inicial: no
-- estado_final: sí
-
-## E. Estados de deuda
-
-### EST-FIN-017 — Sin deuda
-- codigo: sin_deuda
-- tipo: entidad
-- aplica_a: estado_deuda
-- descripcion: El sujeto, relación o universo consultado no presenta deuda exigible.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-018 — Con deuda
-- codigo: con_deuda
-- tipo: entidad
-- aplica_a: estado_deuda
-- descripcion: Existe deuda financiera vigente en el universo consultado.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-019 — Deuda parcial
-- codigo: deuda_parcial
-- tipo: entidad
-- aplica_a: estado_deuda
-- descripcion: La deuda se encuentra parcialmente cancelada pero aún mantiene saldo remanente.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-020 — Deuda vencida
-- codigo: deuda_vencida
-- tipo: entidad
-- aplica_a: estado_deuda
-- descripcion: Existe deuda con vencimiento superado y saldo aún pendiente.
-- estado_inicial: no
-- estado_final: no
-
-### EST-FIN-021 — Deuda cancelada
-- codigo: deuda_cancelada
-- tipo: entidad
-- aplica_a: estado_deuda
-- descripcion: La deuda del universo consultado quedó totalmente cancelada.
-- estado_inicial: no
-- estado_final: sí
-
-## F. Estados operativos transversales
-
-### EST-FIN-022 — Éxito
-- codigo: exito
-- tipo: operativo
-- aplica_a: ejecucion_servicio_financiero
-- descripcion: La operación financiera se ejecutó correctamente.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-023 — Error
-- codigo: error
-- tipo: operativo
-- aplica_a: ejecucion_servicio_financiero
-- descripcion: La operación financiera finalizó con error bloqueante.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-024 — Conflicto
-- codigo: conflicto
-- tipo: operativo
-- aplica_a: ejecucion_servicio_financiero
-- descripcion: La operación detectó una colisión funcional o técnica que impide su cierre normal.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-025 — Rechazado
-- codigo: rechazado
-- tipo: operativo
-- aplica_a: ejecucion_servicio_financiero
-- descripcion: La operación fue rechazada por validación o por regla financiera aplicable.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-026 — Bloqueado
-- codigo: bloqueado
-- tipo: operativo
-- aplica_a: ejecucion_servicio_financiero
-- descripcion: La operación no puede avanzar por lock o restricción vigente.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-027 — Inconsistente
-- codigo: inconsistente
-- tipo: operativo
-- aplica_a: ejecucion_servicio_financiero
-- descripcion: La operación detectó inconsistencias entre contexto, entidad y estado esperado.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-028 — Versión válida
-- codigo: version_valida
-- tipo: operativo
-- aplica_a: control_versionado_financiero
-- descripcion: La versión esperada coincide con la versión vigente de la entidad financiera.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-029 — Versión inválida
-- codigo: version_invalida
-- tipo: operativo
-- aplica_a: control_versionado_financiero
-- descripcion: La versión esperada no coincide con la versión vigente de la entidad financiera.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-030 — Ejecutado
-- codigo: ejecutado
-- tipo: operativo
-- aplica_a: control_idempotencia_financiera
-- descripcion: La operación fue ejecutada y registrada válidamente.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-031 — Duplicado
-- codigo: duplicado
-- tipo: operativo
-- aplica_a: control_idempotencia_financiera
-- descripcion: La operación ya había sido registrada previamente con el mismo identificador operativo.
-- estado_inicial: no
-- estado_final: sí
-
-### EST-FIN-032 — Duplicado con conflicto
-- codigo: duplicado_con_conflicto
-- tipo: operativo
-- aplica_a: control_idempotencia_financiera
-- descripcion: La operación repite identificador pero con diferencias incompatibles respecto de la ejecución previa.
-- estado_inicial: no
-- estado_final: sí
+- activar
+- cancelar
+- finalizar
 
 ---
 
-## Reglas de normalización
+## B. Estados de obligacion_financiera
 
-1. No duplicar estados.
-2. Consolidar estados comunes.
-3. No mezclar estados con eventos.
-4. Mantener estados reutilizables.
-5. Mantener numeración `EST-FIN-XXX`.
+Estados SQL vigentes y usados por backend:
+
+| Estado | Uso implementado |
+|---|---|
+| `PROYECTADA` | Estado inicial de obligaciones creadas manualmente por API. Acepta imputacion. |
+| `EMITIDA` | Estado aceptado para imputacion. No existe transicion backend que lo asigne. |
+| `EXIGIBLE` | Estado aceptado para imputacion. La mora automatica se crea en este estado. |
+| `PARCIALMENTE_CANCELADA` | Asignado por backend despues de imputacion parcial. Acepta imputacion. |
+| `CANCELADA` | Asignado por backend cuando el saldo queda en cero. No acepta imputacion. |
+| `VENCIDA` | Estado aceptado para imputacion. No se materializa automaticamente por fecha en backend. |
+| `ANULADA` | Estado excluido de imputacion y de generacion de mora. |
+| `REEMPLAZADA` | Estado excluido de imputacion y de generacion de mora. |
+
+Estados solicitados como base operativa principal:
+
+- `PROYECTADA`
+- `EMITIDA`
+- `PARCIALMENTE_CANCELADA`
+- `CANCELADA`
+- `ANULADA`
+- `REEMPLAZADA`
+
+Ademas, el SQL y backend actual tambien reconocen:
+
+- `EXIGIBLE`
+- `VENCIDA`
+
+No deben eliminarse de la documentacion porque existen en constraints SQL y son usados por servicios.
 
 ---
 
-## Notas
+## C. Reglas de transicion implementadas
 
-- Este catálogo deriva del DEV-SRV y del DER financiero.
-- Es uno de los dominios más críticos del sistema.
-- No define lógica, solo estados posibles.
-- Debe mantenerse alineado con RN-FIN.
-- Sirve como base para validaciones y flujos.
+### Alta de obligacion
+
+`POST /api/v1/financiero/obligaciones`:
+
+```text
+nueva obligacion -> PROYECTADA
+```
+
+### Imputacion
+
+Luego de registrar `aplicacion_financiera`, la DB actualiza saldos por triggers y el backend actualiza estado segun saldo resultante:
+
+```text
+saldo_pendiente = 0
+    -> CANCELADA
+
+saldo_pendiente < importe_total
+    -> PARCIALMENTE_CANCELADA
+```
+
+La actualizacion no modifica obligaciones en estado:
+
+- `ANULADA`
+- `REEMPLAZADA`
+
+### Mora
+
+`POST /api/v1/financiero/mora/generar` crea nuevas obligaciones de mora en estado:
+
+```text
+EXIGIBLE
+```
+
+La mora no cambia el estado de la obligacion base.
+
+---
+
+## D. Estados que aceptan imputacion
+
+El backend acepta imputacion para:
+
+- `PROYECTADA`
+- `EMITIDA`
+- `EXIGIBLE`
+- `PARCIALMENTE_CANCELADA`
+- `VENCIDA`
+
+El backend rechaza imputacion para:
+
+- `CANCELADA`
+- `ANULADA`
+- `REEMPLAZADA`
+
+---
+
+## E. Estados excluidos de mora
+
+La generacion automatica de mora excluye:
+
+- `ANULADA`
+- `REEMPLAZADA`
+- `CANCELADA`
+
+Tambien excluye obligaciones ya generadas por mora automatica, identificadas por marca en `observaciones`.
+
+---
+
+## F. Estado de aplicacion_financiera
+
+SQL vigente no tiene columna `estado_aplicacion`.
+
+La imputacion queda representada por:
+
+- `movimiento_financiero`
+- `aplicacion_financiera`
+- saldo actualizado por triggers
+- estado resultante de `obligacion_financiera`
+
+Estados documentales como `REGISTRADA`, `APLICADA`, `ANULADA` o `REVERTIDA` quedan pendientes hasta que exista soporte fisico o endpoint de reversion.
+
+---
+
+## G. Estados de deuda
+
+La consulta implementada `GET /api/v1/financiero/deuda` no persiste un estado agregado de deuda. Devuelve obligaciones y composiciones con:
+
+- `estado_obligacion`
+- `saldo_pendiente`
+- `fecha_vencimiento`
+- composiciones con `saldo_componente`
+
+Estados agregados como `sin_deuda`, `con_deuda`, `deuda_parcial`, `deuda_vencida` o `deuda_cancelada` son conceptuales para reportes futuros; no son persistidos por el backend actual.
+
+---
+
+## H. Pendientes
+
+- transiciones explicitas de `relacion_generadora`
+- transiciones explicitas de obligacion fuera de imputacion y mora
+- reversion de imputaciones
+- estado persistido de `aplicacion_financiera`
+- estado agregado persistido de deuda

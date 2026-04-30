@@ -1,154 +1,126 @@
-# SRV-FIN-003 — Generación de obligaciones
+# SRV-FIN-003 - Generacion de obligaciones
 
 ## Objetivo
-Materializar deuda financiera a partir de una relación generadora válida, creando obligaciones financieras y sus composiciones según el método y origen aplicable.
 
-## Alcance
-Este servicio cubre:
-- generación inicial de obligaciones
-- generación locativa
-- generación por venta financiada
-- generación por anticipo
-- generación por expensas, servicios e impuestos
-- generación por `factura_servicio` registrada en inmobiliario, cuando exista origen implementado
-- generación por garantía monetaria cuando corresponda
-- generación extraordinaria
-- liquidación final
-- refinanciación
-- cancelación anticipada
-- regularización
-- reemisión
+Crear obligaciones financieras dentro de una `relacion_generadora`, con una o mas composiciones economicas basadas en `concepto_financiero`.
 
-No cubre directamente:
-- parametrización financiera general
-- mantenimiento de índices
-- registro de pago
-- imputación de pago
-- caja operativa
-- emisión documental final
+## Estado
 
-## Agregado principal
-- relacion_generadora
+- estado: `IMPLEMENTADO PARCIAL`
+- endpoint implementado: `POST /api/v1/financiero/obligaciones`
+- no modifica SQL
+- no usa `tipo_obligacion`
 
-## Entidades relacionadas
-- obligacion_financiera
-- composicion_obligacion
-- concepto_financiero
+## Alcance implementado
 
-## Casos de uso cubiertos
-- generación de obligaciones por activación inicial
-- generación de obligaciones locativas
-- generación de obligaciones extraordinarias
-- liquidación final
-- refinanciación
-- cancelación anticipada
-- regularización
-- reemisión
+Este servicio cubre actualmente:
 
-## Reglas
-- [[RN-FIN]]
+- generacion manual de una obligacion financiera
+- validacion de existencia de `relacion_generadora`
+- validacion de existencia de cada `concepto_financiero`
+- creacion atomica de `obligacion_financiera`
+- creacion atomica de `composicion_obligacion`
+- calculo de `importe_total` como suma de composiciones recibidas
+- estado inicial `PROYECTADA`
 
-## Entradas conceptuales
-### Contexto técnico
-- usuario_id
-- sucursal_id
-- instalacion_id
-- op_id
-- version_esperada cuando corresponda
+No cubre actualmente:
 
-### Datos de negocio
-- id_relacion_generadora
-- metodo financiero aplicable, sin codificar `tipo_obligacion` como eje estructural
-- período o fecha de corte cuando corresponda
-- parámetros de cálculo necesarios
-- motivo u observación cuando aplique
-- referencia al origen inmobiliario `factura_servicio` cuando corresponda
-- composiciones esperadas por `concepto_financiero` cuando el plan recibido ya las detalle
+- activacion de relacion generadora
+- materializacion desde plan externo
+- generacion automatica por contrato, venta o factura_servicio
+- resolucion de obligado financiero
+- outbox financiero
+- idempotencia completa por `X-Op-Id`
 
-## Resultado esperado
-- identificador de relación generadora afectada
-- cantidad de obligaciones generadas
-- cantidad de composiciones generadas
-- versión resultante cuando corresponda
-- op_id
-- resumen de efectos generados
-- errores estructurados cuando corresponda
+## Entidades
 
-## Flujo de alto nivel
-1. validar contexto técnico e idempotencia
-2. cargar relación generadora
-3. validar existencia, estado y elegibilidad para generar
-4. resolver método financiero aplicable
-5. determinar vencimientos, importes y conceptos financieros
-6. crear obligaciones financieras
-7. crear composiciones por `concepto_financiero`
-8. persistir de forma atómica
-9. registrar outbox
-10. devolver resultado
+- `relacion_generadora`
+- `obligacion_financiera`
+- `composicion_obligacion`
+- `concepto_financiero`
 
-## Validaciones clave
-- relación generadora existente
-- relación en estado compatible con generación
-- origen formal compatible
-- parámetros mínimos disponibles
-- no duplicidad indebida de emisión o generación
-- no duplicidad de obligacion activa para la misma `factura_servicio` registrada como origen
-- idempotencia de generacion por `factura_servicio` usando clave conceptual `id_factura_servicio`
-- consistencia entre obligación y composición
-- toda obligacion materializada debe tener una o mas composiciones
-- toda composicion debe referenciar exactamente un `concepto_financiero`
-- la naturaleza economica debe surgir de `composicion_obligacion` + `concepto_financiero`, no de una columna rigida de tipo de obligacion
-- el saldo consolidado de la obligacion debe ser conciliable contra sus composiciones
-- cuando exista saldo por componente, `saldo_pendiente` debe igualar la suma de `saldo_componente` de composiciones activas, salvo transicion tecnica documentada
-- idempotencia en reintentos
-- coherencia con refinanciación, regularización o reemisión cuando corresponda
+## Entrada implementada
 
-## Efectos transaccionales
-- alta de obligacion_financiera
-- alta de composicion_obligacion
-- actualización de metadatos transversales
-- registro de outbox en operaciones sincronizables
+```json
+{
+  "id_relacion_generadora": 1,
+  "fecha_vencimiento": "2026-12-31",
+  "composiciones": [
+    {
+      "codigo_concepto_financiero": "CANON_LOCATIVO",
+      "importe_componente": 100000.00
+    }
+  ]
+}
+```
 
-## Errores
-- [[ERR-FIN]]
+Reglas de request:
 
-## Dependencias
-### Hacia arriba
-- relación generadora válida
-- parametrización financiera vigente
-- índices financieros cuando apliquen
-- origen comercial o locativo compatible
-- origen inmobiliario por `factura_servicio` cuando exista contrato implementado
+- `id_relacion_generadora` debe ser mayor a cero
+- `fecha_vencimiento` es obligatoria
+- `composiciones` debe tener al menos un item
+- cada `importe_componente` debe ser mayor a cero
 
-### factura_servicio
-Cuando el origen sea `factura_servicio`, emitida por proveedor externo y registrada por el dominio inmobiliario, este servicio debe tratarla como origen de generacion de obligacion, no como factura emitida por el sistema.
+## Flujo implementado
 
-El importe, vencimiento, obligado, concepto y composicion financiera deben resolverse dentro de `financiero` segun la relacion generadora y la parametrizacion aplicable. El registro inmobiliario no calcula deuda como fuente primaria.
+1. validar composiciones requeridas
+2. validar existencia de `relacion_generadora`
+3. validar cada `concepto_financiero` por codigo
+4. sumar importes de composiciones
+5. construir `obligacion_financiera`
+6. construir composiciones con `orden_composicion`
+7. insertar obligacion y composiciones en una transaccion
+8. devolver obligacion con composiciones
 
-Decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado a inmueble o unidad funcional usa 1 `relacion_generadora`; esa relacion puede existir antes de la primera `factura_servicio`; cada factura posterior genera 1 `obligacion_financiera` dentro de esa misma relacion. `factura_servicio` existe como tabla SQL estructural, pero esta decision queda `PENDIENTE` / `NO IMPLEMENTADO` a nivel funcional hasta que exista contrato, API/backend, evento y consumer financiero.
+## Reglas de negocio
 
-### Hacia abajo
-- cronograma y consulta de deuda
-- pagos e imputación
-- emisión financiera
-- analítica financiera
+- Toda obligacion creada por backend pertenece a una `relacion_generadora`.
+- Toda obligacion creada por backend tiene al menos una `composicion_obligacion`.
+- Toda composicion referencia un `concepto_financiero` existente.
+- La naturaleza economica no se guarda en `tipo_obligacion`; se interpreta desde `concepto_financiero`.
+- `saldo_pendiente` inicial se persiste igual a `importe_total`.
+- `saldo_componente` inicial se persiste igual a `importe_componente`.
 
-## Transversales
-- [[TRANSVERSALES]]
-- [[CORE-EF-001-infraestructura-transversal]]
+## Resultado implementado
 
-## Referencias
-- [[00-INDICE-FINANCIERO]]
-- [[MODELO-FINANCIERO-FIN]]
-- [[RN-FIN]]
-- [[ERR-FIN]]
-- [[EST-FIN]]
-- CAT-CU-001
-- DEV-SRV-001 legado
-- DER financiero
+```json
+{
+  "ok": true,
+  "data": {
+    "id_obligacion_financiera": 10,
+    "id_relacion_generadora": 1,
+    "fecha_emision": "2026-04-30",
+    "fecha_vencimiento": "2026-12-31",
+    "importe_total": 100000.00,
+    "saldo_pendiente": 100000.00,
+    "estado_obligacion": "PROYECTADA",
+    "composiciones": [
+      {
+        "id_composicion_obligacion": 20,
+        "orden_composicion": 1,
+        "estado_composicion_obligacion": "ACTIVA",
+        "importe_componente": 100000.00,
+        "saldo_componente": 100000.00,
+        "moneda_componente": "ARS",
+        "codigo_concepto_financiero": "CANON_LOCATIVO"
+      }
+    ]
+  }
+}
+```
 
-## Pendientes abiertos
-- definición exacta por metodo financiero y composiciones por `concepto_financiero`
-- política de reemisión versus regularización
-- reglas de duplicidad por período, concepto y relación
-- estrategia exacta de corte para generación extraordinaria y liquidación final
+## Errores implementados
+
+- `404 NOT_FOUND` si la relacion generadora no existe
+- `404 NOT_FOUND` si un concepto financiero no existe
+- `400 APPLICATION_ERROR` para validaciones de aplicacion no especificas
+- `422` para validaciones Pydantic del request
+- `500 INTERNAL_ERROR` para errores no controlados
+
+## Pendientes
+
+- duplicidad funcional por periodo/concepto/relacion
+- generacion masiva
+- materializacion desde plan de origen
+- generacion desde `factura_servicio`
+- resolucion y persistencia de `obligacion_obligado`

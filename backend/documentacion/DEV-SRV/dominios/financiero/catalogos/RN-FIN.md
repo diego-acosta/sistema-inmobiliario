@@ -333,7 +333,8 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Cuando un pago global deba distribuirse hacia componentes, la prioridad base es `INTERES_MORA`, `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre.
 - aplica_a: aplicacion_financiera, composicion_obligacion, concepto_financiero
 - origen_principal: MODELO-FINANCIERO-FIN
-- estado: DEFINIDA CONCEPTUALMENTE / PENDIENTE SQL-BACKEND.
+- estado: IMPLEMENTADA PARCIALMENTE en `POST /api/v1/financiero/imputaciones`.
+- observaciones: La implementacion actual distribuye dentro de una obligacion, genera una o mas aplicaciones y usa `orden_aplicacion`.
 
 ### RN-FIN-061 — Cancelacion exige componentes sin saldo
 - descripcion: No debe permitirse que una obligacion figure cancelada si alguna composicion activa conserva `saldo_componente > 0`.
@@ -386,6 +387,38 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Ninguna transicion puede reducir saldo sin `aplicacion_financiera`, anulacion formal o credito documentado.
 - aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera
 - origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
+
+### RN-FIN-070 - Calculo de mora diaria simple
+- descripcion: La mora automatica implementada se calcula como `saldo_pendiente * 0.001`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente.
+- aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
+- origen_principal: SRV-FIN-013-generacion-de-mora
+- estado: IMPLEMENTADA.
+
+### RN-FIN-071 - Mora no capitalizable
+- descripcion: La mora diaria se registra como una nueva obligacion financiera con la misma `relacion_generadora`; no incrementa el saldo de la obligacion base.
+- aplica_a: obligacion_financiera, composicion_obligacion
+- origen_principal: SRV-FIN-013-generacion-de-mora
+- estado: IMPLEMENTADA.
+
+### RN-FIN-072 - No duplicidad de mora por obligacion y fecha
+- descripcion: No debe generarse mas de una mora automatica para la misma obligacion base y la misma fecha de proceso.
+- aplica_a: obligacion_financiera
+- origen_principal: SRV-FIN-013-generacion-de-mora
+- estado: IMPLEMENTADA con limitacion.
+- observaciones: El backend controla duplicado mediante marca en `observaciones`; no existe constraint SQL ni FK a obligacion base.
+
+### RN-FIN-073 - Transicion automatica por saldo luego de imputacion
+- descripcion: Despues de registrar aplicaciones, si `saldo_pendiente = 0` la obligacion pasa a `CANCELADA`; si `saldo_pendiente < importe_total` pasa a `PARCIALMENTE_CANCELADA`.
+- aplica_a: obligacion_financiera, aplicacion_financiera
+- origen_principal: SRV-FIN-008-gestion-de-imputacion-financiera
+- estado: IMPLEMENTADA.
+- observaciones: La base de datos actualiza saldos por triggers; el backend actualiza el estado leyendo el saldo resultante.
+
+### RN-FIN-074 - Backend no recalcula saldos como fuente primaria
+- descripcion: El saldo de obligacion y composicion se actualiza en la base de datos; los servicios backend no deben duplicar ese calculo como verdad primaria.
+- aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN
+- estado: IMPLEMENTADA.
 
 ---
 

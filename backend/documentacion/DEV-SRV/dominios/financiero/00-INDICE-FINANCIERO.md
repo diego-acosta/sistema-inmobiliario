@@ -25,6 +25,7 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
 - [[SRV-FIN-010-emision-financiera]]
 - [[SRV-FIN-011-gestion-de-caja-financiera-y-garantias-monetarias]]
 - [[SRV-FIN-012-consulta-y-reporte-financiero-consolidado]]
+- [[SRV-FIN-013-generacion-de-mora]]
 
 ## Notas
 - Este dominio se está refactorizando desde el DEV-SRV-001 legado hacia una estructura modular.

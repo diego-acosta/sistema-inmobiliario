@@ -1,8 +1,22 @@
 # AUDITORIA-SQL-FIN - Auditoria documental vs SQL financiero
 
-Estado: AUDITORIA DOCUMENTAL / SIN CAMBIOS SQL
+Estado: AUDITORIA HISTORICA / PARCIALMENTE OBSOLETA
 
 Fecha: 2026-04-29
+
+Nota 2026-04-30:
+
+Esta auditoria queda como registro historico. La documentacion operativa vigente del dominio financiero fue alineada contra el backend real en:
+
+- `MODELO-FINANCIERO-FIN.md`
+- `SRV-FIN-003-generacion-de-obligaciones.md`
+- `SRV-FIN-008-gestion-de-imputacion-financiera.md`
+- `SRV-FIN-013-generacion-de-mora.md`
+- `catalogos/RN-FIN.md`
+- `catalogos/EST-FIN.md`
+- `backend/documentacion/DEV-API/dominios/financiero/DEV-API-FIN-001.md`
+
+Algunas brechas indicadas abajo, como la ausencia de `saldo_componente`, ya no reflejan el SQL/backend usado por los tests financieros actuales.
 
 ## 1. Alcance
 
@@ -49,7 +63,7 @@ La brecha principal no es la ausencia completa del modelo, sino que la documenta
 - los estados normalizados documentados no tienen `CHECK` SQL;
 - no hay vinculos fisicos para reemplazo, reemision o refinanciacion;
 - no hay seeds para el catalogo base de `concepto_financiero`;
-- la regla `saldo_pendiente = SUM(saldo_componente)` no puede implementarse aun porque `saldo_componente` no existe fisicamente.
+- OBSOLETO 2026-04-30: esta brecha ya no debe tomarse como vigente en la documentacion operativa actual.
 
 ## 3. Tabla documentado vs existente en SQL
 

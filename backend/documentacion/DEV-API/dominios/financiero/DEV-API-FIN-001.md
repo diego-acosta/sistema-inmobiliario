@@ -1,145 +1,50 @@
-# DEV-API-FIN-001 — Dominio Financiero
+# DEV-API-FIN-001 - Dominio Financiero
 
 ## Estado del documento
 
-- version: `1.1`
-- estado: `DOCUMENTADO / NO IMPLEMENTADO EN BACKEND`
-- fuente: `DER-FINANCIERO + SQL real + DEV-SRV-FIN + CAT-CU-FIN + INT-FIN-002 + INT-FIN-003 + INT-FIN-004`
-- ultima actualizacion: `2026-04-28`
-- caracter: `contrato de referencia normativo; ningun endpoint existe en backend vigente`
+- version: `1.2`
+- estado: `IMPLEMENTADO PARCIAL / ALINEADO A BACKEND`
+- ultima actualizacion: `2026-04-30`
+- fuente: backend real + SQL vigente + tests financieros
+
+Este documento describe los endpoints financieros actualmente implementados en backend. No documenta como operable funcionalidad que siga pendiente.
 
 ---
 
-## 1. Alcance
+## 1. Endpoints implementados
 
-Este documento define el contrato de API `v1` del dominio `financiero`, tomando como base:
-
-- `backend/documentacion/DER/DER-FINANCIERO.md`
-- `backend/database/schema_inmobiliaria_20260418.sql`
-- `backend/documentacion/DEV-SRV/dominios/financiero/`
-- `backend/documentacion/CAT-CU/dominios/financiero/CU-FIN.md`
-- `backend/documentacion/DECISIONES/integracion/INT-FIN-002-resolucion-obligado-financiero.md`
-- `backend/documentacion/DECISIONES/integracion/INT-FIN-003-politica-generacion-obligaciones.md`
-- `backend/documentacion/DECISIONES/integracion/INT-FIN-004-contrato-plan-obligaciones.md`
-
-El dominio financiero gestiona el ciclo economico completo del sistema: generacion de obligaciones, registro de movimientos, imputacion de pagos, ajustes y consultas financieras. Es un dominio transversal desacoplado de los dominios de negocio.
-
-### Bloques documentados en este contrato
-
-1. relaciones generadoras
-2. obligaciones financieras
-3. composicion de obligaciones
-4. obligados financieros
-5. pagos y movimientos financieros
-6. imputaciones financieras
-7. consultas financieras
-8. servicios trasladados / `factura_servicio`
-9. resolucion de obligado financiero (INT-FIN-002)
-
-### Quedan fuera de este documento
-
-- `indice_financiero` — gestion de indices financieros (SRV-FIN-004/005); PENDIENTE
-- `cuenta_financiera` y `movimiento_tesoreria` — caja y tesoreria (SRV-FIN-011); PENDIENTE
-- `conciliacion_bancaria` — conciliacion (SRV-FIN-011); PENDIENTE
-- cronogramas de pago (SRV-FIN-006); PENDIENTE
-- mora, creditos y debitos (SRV-FIN-009); PENDIENTE
-- emision financiera (SRV-FIN-010); PENDIENTE
-- reporting financiero consolidado (SRV-FIN-012); PENDIENTE
-- integracion documental del dominio financiero
-- reportes y consultas analiticas de corte gerencial
-
-### Estado de implementacion
-
-Existe un MVP backend acotado para `relacion_generadora`:
+### Relaciones generadoras
 
 - `POST /api/v1/financiero/relaciones-generadoras`
 - `GET /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}`
 - `GET /api/v1/financiero/relaciones-generadoras`
 
-El resto de endpoints documentados aqui sigue como contrato de referencia no operable.
+### Conceptos financieros
 
-### Nota MVP relacion generadora
+- `GET /api/v1/financiero/conceptos-financieros`
 
-En este MVP:
+### Obligaciones
 
-- `estado_relacion_generadora` existe estructuralmente en SQL y se devuelve en la API MVP.
-- Los registros nuevos inician con `estado_relacion_generadora = BORRADOR`.
-- Las transiciones `activar`, `cancelar` y `finalizar` quedan pendientes.
-- No se implementa activacion ni materializacion/generacion de `obligacion_financiera` o `composicion_obligacion`.
-- Los errores usan codigos transversales basicos: `NOT_FOUND`, `APPLICATION_ERROR` e `INTERNAL_ERROR`.
-- La migracion de errores del MVP a codigos `ERR-FIN-XXX` queda pendiente para una iteracion posterior.
-- `tipo_origen` se acepta como input en uppercase, se persiste en lowercase porque el trigger SQL vigente lo espera asi, y se devuelve en uppercase como contrato API.
+- `POST /api/v1/financiero/obligaciones`
+- `GET /api/v1/financiero/obligaciones/{id_obligacion_financiera}`
 
----
+### Imputaciones
 
-## 2. Fuente de verdad y criterio operativo
+- `POST /api/v1/financiero/imputaciones`
 
-Orden de prioridad para este contrato:
+### Deuda consolidada
 
-- SQL real (`schema_inmobiliaria_20260418.sql`)
-- `DER-FINANCIERO`
-- `DEV-SRV-FIN` como fuente funcional
-- `CAT-CU-FIN` como fuente de casos de uso
-- `INT-FIN-002` para resolucion de obligado
-- `INT-FIN-003` para politica de materializacion de obligaciones por tipo de origen
-- `INT-FIN-004` para contrato de plan de generacion de obligaciones
-- `ERR-FIN` y `EST-FIN` como catalogos normativos del dominio
+- `GET /api/v1/financiero/deuda`
 
-Criterios aplicados:
+### Mora
 
-- no se inventan entidades fuera de SQL
-- cuando el DEV-SRV documenta columnas o estados que no existen aun en SQL, se marca PENDIENTE
-- `relacion_generadora` tiene columna `estado_relacion_generadora` en SQL vigente; el MVP la expone como estado estructural, pero no implementa transiciones
-- `composicion_obligacion` referencia `id_concepto_financiero`; `concepto_financiero` existe como tabla en SQL
-- la obligacion no debe codificar rigidamente `tipo_obligacion`; el origen se interpreta desde `relacion_generadora` y la naturaleza economica desde `composicion_obligacion` + `concepto_financiero`
-- `aplicacion_financiera` no tiene columna `estado_aplicacion` en SQL vigente — ERR-FIN y EST-FIN documentan estados de imputacion; su almacenamiento fisico queda PENDIENTE
-- `movimiento_financiero` no tiene FK explicita a `relacion_generadora` ni a `obligacion_financiera` en SQL; la asociacion se materializa exclusivamente a traves de `aplicacion_financiera` — ver ATENCION en seccion 7.3
-- para `factura_servicio` como origen financiero: la tabla SQL existe, pero NO existe API backend, evento ni consumer — se documenta como CONCEPTUAL / NO IMPLEMENTADO
+- `POST /api/v1/financiero/mora/generar`
 
 ---
 
-## 3. Criterios de diseno
+## 2. Convencion de respuesta
 
-- el dominio financiero usa prefijo `/api/v1/financiero/` para evitar colision con recursos de otros dominios con nombres comunes (`pagos`, `obligaciones`)
-- los recursos usan plural kebab-case:
-  - `relaciones-generadoras`
-  - `obligaciones`
-  - `pagos`
-  - `imputaciones`
-  - `servicios-trasladados`
-- los recursos hijos de `relacion_generadora` se listan anidados bajo la relacion padre cuando corresponde
-- `composicion_obligacion` no tiene endpoint autonomo de alta; es un efecto interno de la materializacion de obligaciones
-- `concepto_financiero` define el significado economico de cada componente; no se expone como tipo rigido de obligacion en este contrato
-- `obligacion_obligado` no tiene endpoint autonomo de alta; la resolucion del obligado es efecto de la materializacion/generacion financiera (INT-FIN-002)
-- las transiciones de estado de `relacion_generadora` son endpoints PATCH independientes: `activar`, `cancelar`, `finalizar`
-- la materializacion de obligaciones es una operacion separada de la activacion de `relacion_generadora`
-- no se expone `indice_financiero`, `cuenta_financiera`, `movimiento_tesoreria` ni `conciliacion_bancaria` en esta version
-- `simulacion de pago` es una operacion de solo lectura de calculo; no persiste datos
-- todos los writes exigen control de idempotencia por `X-Op-Id`
-- `If-Match-Version` es requerido en transiciones de estado y en operaciones que muten entidades existentes
-
----
-
-## 4. Ownership
-
-- `financiero` es dueno semantico de:
-  - `relacion_generadora`
-  - `obligacion_financiera`
-  - `composicion_obligacion`
-  - `obligacion_obligado`
-  - `movimiento_financiero`
-  - `aplicacion_financiera`
-- `comercial` genera el origen `VENTA` que da lugar a `relacion_generadora`; no crea estructuras financieras
-- `locativo` genera el origen `CONTRATO_ALQUILER`; no crea estructuras financieras
-- `inmobiliario` registra `factura_servicio` que conceptualmente origina `SERVICIO_TRASLADADO`; no crea estructuras financieras
-- `personas` provee la identidad base para `obligacion_obligado`; no define roles financieros
-- `financiero` no inventa sujetos fuera de los dominios origen (ver INT-FIN-002)
-
----
-
-## 5. Convencion de errores y headers
-
-### Formato de respuesta exitosa
+Respuesta exitosa:
 
 ```json
 {
@@ -148,113 +53,35 @@ Criterios aplicados:
 }
 ```
 
-### Formato de error
+Respuesta de error:
 
 ```json
 {
   "ok": false,
   "error_code": "CODIGO",
-  "error_message": "Mensaje descriptivo",
+  "error_message": "Mensaje",
   "details": {
     "errors": []
   }
 }
 ```
 
-### Jerarquia de codigos de error
+Codigos usados por el backend actual:
 
-El dominio financiero prioriza los codigos de `ERR-FIN` sobre los codigos transversales. Los codigos transversales se usan como fallback unicamente cuando no existe un equivalente especifico en el catalogo financiero.
-
-Equivalencias entre codigos transversales y ERR-FIN:
-
-| Codigo transversal | Equivalente ERR-FIN | Descripcion |
-|--------------------|---------------------|-------------|
-| `CONCURRENCY_ERROR` | `version_esperada_invalida` (ERR-FIN-035) | Version de `If-Match-Version` no coincide |
-| `LOCK_ACTIVE` | `lock_logico_activo` (ERR-FIN-036) | Lock logico activo sobre la entidad |
-| `IDEMPOTENT_DUPLICATE` | `op_id_duplicado` (ERR-FIN-038) | Operacion ya ejecutada con mismo `X-Op-Id` |
-| `TECHNICAL_INCONSISTENCY` | `inconsistencia_financiera_global` (ERR-FIN-045) | Inconsistencia global en el estado financiero |
-
-Codigos transversales sin equivalente FIN (se mantienen como fallback):
-
-- `NOT_FOUND` — entidad no encontrada o dada de baja
-- `APPLICATION_ERROR` — validacion de negocio sin equivalente FIN especifico
-- `SYNC_CONFLICT` — conflicto de sincronizacion entre instalaciones
-- `INTERNAL_ERROR` — error tecnico no controlado
-
-### Codigos especificos del dominio financiero (ERR-FIN)
-
-**relacion_generadora:**
-- `relacion_generadora_no_encontrada` (ERR-FIN-001)
-- `relacion_generadora_inactiva` (ERR-FIN-002)
-- `relacion_generadora_cancelada` (ERR-FIN-003)
-- `relacion_generadora_finalizada` (ERR-FIN-004)
-- `relacion_generadora_duplicada` (ERR-FIN-005)
-- `estado_relacion_invalido` (ERR-FIN-006)
-- `transicion_estado_relacion_invalida` (ERR-FIN-007)
-
-**obligacion_financiera:**
-- `obligacion_no_encontrada` (ERR-FIN-008)
-- `obligacion_inactiva` (ERR-FIN-009)
-- `obligacion_duplicada` (ERR-FIN-010)
-- `estado_obligacion_invalido` (ERR-FIN-012)
-- `saldo_negativo` (ERR-FIN-013)
-- `monto_obligacion_invalido` (ERR-FIN-016)
-
-**aplicacion_financiera:**
-- `imputacion_no_encontrada` (ERR-FIN-017)
-- `imputacion_invalida` (ERR-FIN-018)
-- `imputacion_excede_saldo` (ERR-FIN-021)
-- `reversion_imputacion_invalida` (ERR-FIN-025)
-
-**transversales financieros:**
-- `version_esperada_invalida` (ERR-FIN-035)
-- `lock_logico_activo` (ERR-FIN-036)
-- `op_id_duplicado` (ERR-FIN-038)
-- `inconsistencia_financiera_global` (ERR-FIN-045)
-
-### Headers write
-
-- `X-Op-Id` — UUID de operacion; requerido en todos los writes; base de idempotencia
-- `X-Usuario-Id` — ID de usuario; requerido en todos los writes
-- `X-Sucursal-Id` — ID de sucursal; requerido en todos los writes
-- `X-Instalacion-Id` — ID de instalacion; requerido en todos los writes financieros
-- `If-Match-Version` — requerido en:
-  - `PATCH /api/v1/financiero/relaciones-generadoras/{id}/activar`
-  - `POST /api/v1/financiero/relaciones-generadoras/{id}/materializar-obligaciones`
-  - `PATCH /api/v1/financiero/relaciones-generadoras/{id}/cancelar`
-  - `PATCH /api/v1/financiero/relaciones-generadoras/{id}/finalizar`
-  - `PATCH /api/v1/financiero/imputaciones/{id}/reversar`
-
-Regla de idempotencia de `X-Op-Id`:
-
-- `X-Op-Id` debe ser unico por operacion logica de negocio, no por request HTTP individual
-- si el mismo request se reintenta con el mismo `X-Op-Id`, el sistema debe devolver el resultado de la ejecucion original sin ejecutar la operacion nuevamente
-- un `X-Op-Id` distinto representa una operacion de negocio distinta; nunca reutilizar el mismo UUID para reintentar con payload diferente
-
-### Reglas operativas transaccionales
-
-- todas las operaciones criticas deben ejecutarse de forma atomica
-- si falla cualquier paso de la operacion, debe aplicarse rollback completo
-- no deben quedar estados intermedios inconsistentes entre la entidad principal y sus efectos acoplados
-- la activacion de una `relacion_generadora` es una transicion atomica de estado conceptual; no genera obligaciones
-- la materializacion de obligaciones debe ser atomica con la generacion de `obligacion_financiera` y `composicion_obligacion`
-- el registro de un pago debe ser atomico con la generacion de `aplicacion_financiera`
-- registro de outbox obligatorio en operaciones sincronizables
+- `NOT_FOUND`
+- `APPLICATION_ERROR`
+- `MONTO_EXCEDE_SALDO`
+- `ESTADO_INVALIDO`
+- `FECHA_RANGO_INVALIDO`
+- `INTERNAL_ERROR`
 
 ---
 
-## 6. Writes
+## 3. Relaciones generadoras
 
-### 6.1 `relacion_generadora`
+### POST /api/v1/financiero/relaciones-generadoras
 
-#### `POST /api/v1/financiero/relaciones-generadoras`
-
-Objetivo:
-- alta de relacion generadora como raiz formal del circuito financiero
-- se crea en estado inicial `borrador`
-
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`
+Crea una relacion generadora.
 
 Request:
 
@@ -262,14 +89,14 @@ Request:
 {
   "tipo_origen": "CONTRATO_ALQUILER",
   "id_origen": 42,
-  "descripcion": "Relacion generadora para contrato de alquiler CA-0042"
+  "descripcion": "Relacion generadora"
 }
 ```
 
-Valores validos de `tipo_origen`:
-- `VENTA` — origen en dominio comercial
-- `CONTRATO_ALQUILER` — origen en dominio locativo
-- `SERVICIO_TRASLADADO` — origen en dominio inmobiliario via `factura_servicio`; PENDIENTE / NO IMPLEMENTADO como tipo operativo hasta que exista contrato de integracion
+Valores operativos implementados:
+
+- `VENTA`
+- `CONTRATO_ALQUILER`
 
 Response `201`:
 
@@ -282,465 +109,93 @@ Response `201`:
     "version_registro": 1,
     "tipo_origen": "CONTRATO_ALQUILER",
     "id_origen": 42,
-    "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
+    "descripcion": "Relacion generadora",
     "estado_relacion_generadora": "BORRADOR",
-    "fecha_alta": "2026-04-28T10:00:00",
-    "created_at": "2026-04-28T10:00:00",
-    "updated_at": "2026-04-28T10:00:00",
-    "deleted_at": null
+    "fecha_alta": "2026-04-30T10:00:00"
   }
 }
 ```
 
-Nota MVP sobre `estado_relacion_generadora`: el campo existe en SQL vigente, se devuelve en la API y se asigna por default como `BORRADOR`. Las transiciones `activar`, `cancelar` y `finalizar` siguen no implementadas.
+### GET /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}
 
-Nota MVP sobre `tipo_origen`: la API acepta valores en uppercase; la persistencia usa lowercase por compatibilidad con el trigger SQL vigente; las responses devuelven uppercase.
+Consulta una relacion generadora por ID.
 
-Validaciones:
-- `tipo_origen` requerido y valor valido del catalogo
-- `id_origen` requerido y mayor que cero
-- el origen referenciado debe existir en su dominio correspondiente
-- no debe existir una relacion generadora activa e incompatible para el mismo `tipo_origen` e `id_origen`
-- `X-Op-Id` evaluado para idempotencia; si ya fue ejecutado con mismo op_id, responder con el resultado anterior
+### GET /api/v1/financiero/relaciones-generadoras
 
-Reglas de negocio:
-- `BORRADOR` es el unico estado inicial valido
-- en alta, `estado_relacion_generadora` no se recibe por request; se asigna internamente
-- una misma combinacion `tipo_origen` + `id_origen` puede generar mas de una relacion generadora segun regla financiera; la politica exacta de duplicidad queda PENDIENTE
+Filtros:
 
-Errores posibles:
-- `400 APPLICATION_ERROR` — validacion de negocio sin equivalente FIN especifico (fallback transversal)
-- `404 NOT_FOUND` — origen no encontrado o dado de baja
-- `500 INTERNAL_ERROR`
-
-La migracion de errores de este MVP a codigos `ERR-FIN-XXX` queda pendiente.
+- `tipo_origen`
+- `id_origen`
+- `vigente`
+- `limit`
+- `offset`
 
 ---
 
-#### `PATCH /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/activar`
+## 4. Conceptos financieros
 
-> **CONCEPTUAL / NO IMPLEMENTADO EN BACKEND**
->
-> Este endpoint queda pendiente de implementacion como transicion conceptual de estado de `relacion_generadora`. No materializa obligaciones.
+### GET /api/v1/financiero/conceptos-financieros
 
-Objetivo:
-- transicion de `BORRADOR` a `ACTIVA`
-- habilita y da vigencia a la relacion generadora para que pueda producir obligaciones durante su vigencia
-- mantener la relacion activa mientras exista la relacion economica/origen compatible
+Lista conceptos financieros.
 
-##### Separacion entre activacion y materializacion
+Filtros:
 
-Activar `relacion_generadora` NO significa generar obligaciones.
+- `estado`
+- `limit`
+- `offset`
 
-La activacion solo habilita la relacion formal entre `tipo_origen` + `id_origen` y el circuito financiero. La generacion/materializacion de obligaciones ocurre en una operacion separada:
-
-`POST /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/materializar-obligaciones`
-
-Ver `INT-FIN-004-contrato-plan-obligaciones.md`.
-
-Reglas:
-
-- la relacion generadora activa puede producir obligaciones una o muchas veces durante su vigencia
-- `PlanGeneracionObligaciones` no pertenece a `activar`; pertenece a la operacion de materializacion
-- `financiero` no calcula cuotas, no modifica importes y no decide cantidad de obligaciones al activar
-- contado, cuotas, anticipo/saldo y periodicidad son modalidades definidas por el dominio origen y recibidas por financiero en el plan de materializacion
-
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
-
-Request:
-- sin body obligatorio
-- no recibe `PlanGeneracionObligaciones`
-
-Response `200`:
+Response:
 
 ```json
 {
   "ok": true,
   "data": {
-    "id_relacion_generadora": 1,
-    "uid_global": "uuid",
-    "version_registro": 2,
-    "tipo_origen": "CONTRATO_ALQUILER",
-    "id_origen": 42,
-    "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
-    "estado_relacion_generadora": "ACTIVA",
-    "fecha_alta": "2026-04-28T10:00:00",
-    "updated_at": "2026-04-28T10:05:00"
-  }
-}
-```
-
-Validaciones:
-- `id_relacion_generadora` debe existir y no estar dada de baja
-- version de `If-Match-Version` debe coincidir con `version_registro` vigente
-- estado actual debe ser `BORRADOR`
-- no debe existir lock logico activo
-- el origen asociado debe estar en estado compatible con la activacion
-- deben cumplirse las condiciones minimas de activacion definidas en SRV-FIN-001
-
-Reglas de negocio:
-- `relacion_generadora` sigue siendo el vinculo formal entre el origen economico y las obligaciones que puedan materializarse durante su vigencia
-- la activacion no crea `obligacion_financiera`
-- la activacion no crea `composicion_obligacion`
-- la activacion no recibe ni interpreta `PlanGeneracionObligaciones`
-- se registra evento en outbox para sincronizacion
-
-Errores posibles:
-- `404 NOT_FOUND` — relacion no encontrada
-- `409 version_esperada_invalida (ERR-FIN-035)` — version de `If-Match-Version` no coincide
-- `409 lock_logico_activo (ERR-FIN-036)` — lock logico activo
-- `409 transicion_estado_relacion_invalida (ERR-FIN-007)` — estado actual no admite activacion
-- `409 op_id_duplicado (ERR-FIN-038)` — op_id ya ejecutado
-- `500 INTERNAL_ERROR`
-
----
-
-#### `POST /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/materializar-obligaciones`
-
-> **CONCEPTUAL / NO IMPLEMENTADO EN BACKEND**
->
-> Este endpoint representa la operacion separada de materializacion de obligaciones. Recibe un `PlanGeneracionObligaciones` definido por el dominio origen y crea obligaciones financieras persistentes.
-
-Objetivo:
-- materializar obligaciones financieras para una `relacion_generadora` activa
-- crear `obligacion_financiera` y `composicion_obligacion` de forma atomica segun el plan recibido
-- permitir una o muchas materializaciones durante la vigencia de la relacion economica/origen
-
-##### Comportamiento de materializacion de obligaciones
-
-La materializacion de obligaciones depende del `PlanGeneracionObligaciones` construido por el dominio origen. `financiero` valida la integridad del plan y materializa obligaciones persistentes asociadas a la `relacion_generadora`.
-
-Ver `INT-FIN-003-politica-generacion-obligaciones.md`.
-Ver `INT-FIN-004-contrato-plan-obligaciones.md`.
-
-Reglas de ownership:
-
-- el dominio origen define el `PlanGeneracionObligaciones`
-- `financiero` valida y materializa el plan
-- `financiero` no calcula cuotas
-- `financiero` no modifica importes
-- `financiero` no decide cantidad de obligaciones
-- contado, cuotas, anticipo/saldo y periodicidad son modalidades definidas por el dominio origen y recibidas por financiero en el plan
-
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
-
-Request:
-- body conceptual requerido para la futura implementacion
-- el plan debe coincidir con `tipo_origen` e `id_origen` de la `relacion_generadora`
-
-```json
-{
-  "id_relacion_generadora": 1,
-  "plan_generacion_obligaciones": {
-    "tipo_origen": "VENTA",
-    "id_origen": 10,
-    "obligaciones": [
+    "items": [
       {
-        "fecha_emision": "2026-04-28",
-        "fecha_vencimiento": "2026-05-10",
-        "moneda": "ARS",
-        "observaciones": "Cuota venta",
-        "composiciones": [
-          {
-            "codigo_concepto_financiero": "CAPITAL_VENTA",
-            "importe_componente": 100000.00
-          },
-          {
-            "codigo_concepto_financiero": "INTERES_FINANCIERO",
-            "importe_componente": 15000.00
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Nota: el request no recibe `tipo_obligacion` como eje normativo. La naturaleza economica debe venir por composiciones y `codigo_concepto_financiero`. Cualquier campo legacy equivalente a tipo de obligacion debe tratarse solo como compatibilidad documental y no como discriminador de calculo.
-
-Response conceptual `201`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_relacion_generadora": 1,
-    "tipo_origen": "VENTA",
-    "id_origen": 10,
-    "obligaciones_generadas": [
-      {
-        "id_obligacion_financiera": 10,
-        "codigo_obligacion": "OBL-0010",
-        "importe_original": 115000.00,
-        "fecha_emision": "2026-04-28",
-        "fecha_vencimiento": "2026-05-10",
-        "estado_obligacion": "EMITIDA",
-        "composiciones": [
-          {
-            "id_composicion_obligacion": 1,
-            "codigo_concepto_financiero": "CAPITAL_VENTA",
-            "importe_componente": 100000.00,
-            "saldo_componente": 100000.00
-          },
-          {
-            "id_composicion_obligacion": 2,
-            "codigo_concepto_financiero": "INTERES_FINANCIERO",
-            "importe_componente": 15000.00,
-            "saldo_componente": 15000.00
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Validaciones:
-- `id_relacion_generadora` debe existir y no estar dada de baja
-- version de `If-Match-Version` debe coincidir con `version_registro` vigente
-- estado actual de la relacion debe ser `activa`
-- no debe existir lock logico activo
-- el origen asociado debe estar vigente o en estado compatible con la materializacion
-- `plan_generacion_obligaciones` debe existir y tener al menos una obligacion a materializar
-- `plan_generacion_obligaciones.tipo_origen` debe coincidir con `relacion_generadora.tipo_origen`
-- `plan_generacion_obligaciones.id_origen` debe coincidir con `relacion_generadora.id_origen`
-- cada obligacion del plan debe incluir una o mas `composiciones`
-- cada composicion debe informar `codigo_concepto_financiero` e `importe_componente`
-- si el plan no coincide con la `relacion_generadora`, debe rechazarse con error de negocio
-- si el plan corresponde a obligaciones ya materializadas y activas para la relacion, no deben duplicarse obligaciones
-
-Reglas de negocio:
-- `relacion_generadora` sigue siendo el vinculo formal entre el origen, el plan recibido y las obligaciones persistidas
-- el plan no reemplaza a `relacion_generadora`
-- la materializacion es atomica con la generacion de obligaciones y composiciones segun el plan recibido
-- si falla la generacion de alguna obligacion, falla toda la materializacion con rollback completo
-- `financiero` persiste `obligacion_financiera` y `composicion_obligacion` segun el plan, sin recalcular importes, cuotas ni cantidad de obligaciones
-- toda obligacion materializada debe contar con una o mas composiciones referenciando `concepto_financiero`
-- la naturaleza economica de la deuda surge de la composicion y sus conceptos, no de `tipo_obligacion`
-- `saldo_pendiente` debe ser conciliable contra las composiciones; cuando exista `saldo_componente`, la regla preferida es `saldo_pendiente = SUM(saldo_componente)` de composiciones activas
-- se registra evento en outbox para sincronizacion
-
-Errores posibles:
-- `404 NOT_FOUND` — relacion no encontrada
-- `409 version_esperada_invalida (ERR-FIN-035)` — version de `If-Match-Version` no coincide
-- `409 lock_logico_activo (ERR-FIN-036)` — lock logico activo
-- `409 relacion_generadora_inactiva (ERR-FIN-002)` — la relacion no esta activa
-- `409 obligacion_duplicada (ERR-FIN-010)` — el plan intenta duplicar obligaciones ya materializadas
-- `409 op_id_duplicado (ERR-FIN-038)` — op_id ya ejecutado
-- `500 INTERNAL_ERROR`
-
----
-
-#### `PATCH /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/cancelar`
-
-Objetivo:
-- transicion a estado `CANCELADA`
-- la relacion no admite nuevas obligaciones ni operaciones incompatibles con ese estado
-- `CANCELADA` es estado final
-
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
-
-Request:
-
-```json
-{
-  "motivo": "Cancelacion por rescision del contrato locativo"
-}
-```
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_relacion_generadora": 1,
-    "uid_global": "uuid",
-    "version_registro": 3,
-    "tipo_origen": "CONTRATO_ALQUILER",
-    "id_origen": 42,
-    "estado_relacion_generadora": "CANCELADA",
-    "updated_at": "2026-04-28T11:00:00"
-  }
-}
-```
-
-Validaciones:
-- debe existir y no estar dada de baja
-- `If-Match-Version` debe coincidir
-- estado actual debe ser `BORRADOR` o `ACTIVA`
-- no debe existir lock logico activo
-- la cancelabilidad puede requerir validacion de obligaciones pendientes no saldadas; regla exacta PENDIENTE
-
-Errores posibles:
-- `404 NOT_FOUND`
-- `409 version_esperada_invalida (ERR-FIN-035)`
-- `409 lock_logico_activo (ERR-FIN-036)`
-- `409 transicion_estado_relacion_invalida (ERR-FIN-007)`
-- `409 relacion_generadora_finalizada (ERR-FIN-004)` — si ya estaba finalizada
-- `409 op_id_duplicado (ERR-FIN-038)`
-- `500 INTERNAL_ERROR`
-
----
-
-#### `PATCH /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/finalizar`
-
-Objetivo:
-- transicion a estado `FINALIZADA`
-- cierre funcional completo cuando todas las obligaciones estan saldadas
-- `FINALIZADA` es estado final
-
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
-
-Request:
-- sin body obligatorio
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_relacion_generadora": 1,
-    "uid_global": "uuid",
-    "version_registro": 4,
-    "tipo_origen": "CONTRATO_ALQUILER",
-    "id_origen": 42,
-    "estado_relacion_generadora": "FINALIZADA",
-    "updated_at": "2026-04-28T12:00:00"
-  }
-}
-```
-
-Validaciones:
-- debe existir y no estar dada de baja
-- `If-Match-Version` debe coincidir
-- estado actual debe ser `ACTIVA`
-- no debe existir lock logico activo
-- no debe existir ninguna obligacion con saldo pendiente asociada a esta relacion
-- no deben existir operaciones financieras futuras incompatibles con el cierre
-
-Errores posibles:
-- `404 NOT_FOUND`
-- `409 version_esperada_invalida (ERR-FIN-035)`
-- `409 lock_logico_activo (ERR-FIN-036)`
-- `409 transicion_estado_relacion_invalida (ERR-FIN-007)`
-- `409 relacion_generadora_cancelada (ERR-FIN-003)` — si ya estaba cancelada
-- `409 obligacion_inactiva (ERR-FIN-009)` — si existen obligaciones con saldo pendiente
-- `409 op_id_duplicado (ERR-FIN-038)`
-- `500 INTERNAL_ERROR`
-
----
-
-### 6.2 `pagos`
-
-#### `POST /api/v1/financiero/pagos/simular`
-
-Objetivo:
-- calculo sin persistencia de la distribucion de un pago sobre obligaciones pendientes
-- permite al operador conocer el resultado esperado antes de registrar el pago
-- no crea ninguna entidad; es una operacion de solo lectura de calculo
-
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`
-
-Request:
-
-```json
-{
-  "id_relacion_generadora": 1,
-  "importe": 15000.00,
-  "fecha_pago": "2026-04-28",
-  "observaciones": "Simulacion previo al cobro"
-}
-```
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_relacion_generadora": 1,
-    "importe_simulado": 15000.00,
-    "fecha_pago": "2026-04-28",
-    "saldo_total_pendiente": 15000.00,
-    "resultado": "cancela_total",
-    "distribucion": [
-      {
-        "id_obligacion_financiera": 10,
-        "codigo_obligacion": "OBL-0010",
-        "estado_obligacion": "pendiente",
-        "saldo_pendiente": 15000.00,
-        "importe_a_aplicar": 15000.00,
-        "estado_resultante": "cancelada"
+        "id_concepto_financiero": 1,
+        "codigo_concepto_financiero": "INTERES_MORA",
+        "nombre_concepto_financiero": "Interes de mora",
+        "descripcion_concepto_financiero": "Interes generado por mora.",
+        "tipo_concepto_financiero": "MORA",
+        "naturaleza_concepto": "DEBITO",
+        "estado_concepto_financiero": "ACTIVO"
       }
     ],
-    "saldo_remanente": 0.00
+    "total": 1
   }
 }
 ```
 
-Valores posibles de `resultado`:
-- `cancela_total` — el importe cubre la totalidad del saldo
-- `cancela_parcial` — el importe cubre parte del saldo
-- `excede_saldo` — el importe supera el saldo total pendiente
-
-Validaciones:
-- `id_relacion_generadora` debe existir y estar en estado `activa`
-- `importe` debe ser mayor que cero
-- `fecha_pago` requerida
-
-Reglas de negocio:
-- la simulacion no persiste datos
-- orden de distribucion del importe entre obligaciones pendientes (politica base):
-  1. `fecha_vencimiento ASC` — primero las obligaciones mas proximas a vencer o ya vencidas
-  2. `fecha_emision ASC` como desempate — primero las mas antiguas dentro del mismo vencimiento
-  - este criterio es la politica base y puede extenderse en versiones futuras sin romper el contrato
-- **la simulacion no garantiza el mismo resultado en el registro real del pago si el estado financiero cambia entre ambas operaciones** — entre la simulacion y el registro real pueden crearse nuevas obligaciones, aplicarse pagos concurrentes o vencer plazos; la simulacion es una herramienta de calculo orientativo, no un bloqueo de estado
-
-Errores posibles:
-- `400 APPLICATION_ERROR` — validacion sin equivalente FIN especifico (fallback transversal)
-- `404 relacion_generadora_no_encontrada (ERR-FIN-001)`
-- `409 relacion_generadora_inactiva (ERR-FIN-002)`
-- `500 INTERNAL_ERROR`
-
 ---
 
-#### `POST /api/v1/financiero/pagos`
+## 5. Obligaciones
 
-Objetivo:
-- registro de un pago como `movimiento_financiero` y generacion de imputaciones (`aplicacion_financiera`) sobre las obligaciones correspondientes
-- operacion transaccional y atomica
+### POST /api/v1/financiero/obligaciones
 
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`
+Crea una obligacion financiera con composiciones.
 
 Request:
 
 ```json
 {
   "id_relacion_generadora": 1,
-  "tipo_movimiento": "PAGO",
-  "importe": 15000.00,
-  "fecha_movimiento": "2026-04-28T10:30:00",
-  "observaciones": "Pago mensual abril 2026",
-  "imputaciones": [
+  "fecha_vencimiento": "2026-12-31",
+  "composiciones": [
     {
-      "id_obligacion_financiera": 10,
-      "importe_aplicado": 15000.00
+      "codigo_concepto_financiero": "CANON_LOCATIVO",
+      "importe_componente": 100000.00
     }
   ]
 }
 ```
 
-Valores validos de `tipo_movimiento`:
-- `PAGO` — pago recibido
-- `CREDITO` — acreditacion financiera
+Reglas:
+
+- `id_relacion_generadora` debe existir
+- debe existir al menos una composicion
+- cada composicion debe referenciar un `concepto_financiero` existente
+- no se usa `tipo_obligacion`
+- estado inicial: `PROYECTADA`
 
 Response `201`:
 
@@ -748,700 +203,205 @@ Response `201`:
 {
   "ok": true,
   "data": {
-    "id_movimiento_financiero": 5,
+    "id_obligacion_financiera": 10,
     "uid_global": "uuid",
     "version_registro": 1,
-    "tipo_movimiento": "PAGO",
-    "importe": 15000.00,
-    "signo": "HABER",
-    "fecha_movimiento": "2026-04-28T10:30:00",
-    "estado_movimiento": "registrado",
-    "observaciones": "Pago mensual abril 2026",
-    "imputaciones": [
+    "id_relacion_generadora": 1,
+    "codigo_obligacion_financiera": null,
+    "descripcion_operativa": null,
+    "fecha_emision": "2026-04-30",
+    "fecha_vencimiento": "2026-12-31",
+    "periodo_desde": null,
+    "periodo_hasta": null,
+    "importe_total": 100000.00,
+    "saldo_pendiente": 100000.00,
+    "estado_obligacion": "PROYECTADA",
+    "composiciones": [
       {
-        "id_aplicacion_financiera": 1,
-        "id_obligacion_financiera": 10,
-        "importe_aplicado": 15000.00,
-        "tipo_aplicacion": "DIRECTA",
-        "origen_automatico_o_manual": "MANUAL",
-        "fecha_aplicacion": "2026-04-28T10:30:00"
+        "id_composicion_obligacion": 20,
+        "orden_composicion": 1,
+        "estado_composicion_obligacion": "ACTIVA",
+        "importe_componente": 100000.00,
+        "saldo_componente": 100000.00,
+        "moneda_componente": "ARS",
+        "codigo_concepto_financiero": "CANON_LOCATIVO"
       }
-    ],
-    "created_at": "2026-04-28T10:30:00",
-    "updated_at": "2026-04-28T10:30:00"
+    ]
   }
 }
 ```
 
-Validaciones:
-- `id_relacion_generadora` debe existir y estar en estado `activa`
-- `importe` debe ser mayor que cero
-- `fecha_movimiento` requerida
-- cada `id_obligacion_financiera` en `imputaciones` debe existir, pertenecer a la relacion indicada y tener saldo pendiente
-- la suma de `importe_aplicado` no puede superar el `importe` del movimiento
-- `importe_aplicado` de cada imputacion no puede superar el `saldo_pendiente` de la obligacion
-- `X-Op-Id` evaluado para idempotencia
+### GET /api/v1/financiero/obligaciones/{id_obligacion_financiera}
 
-Reglas de negocio:
-- el registro es atomico: si falla la generacion de cualquier imputacion, falla todo el pago con rollback completo
-- el pago no cancela directamente una obligacion; la cancelacion total o parcial se produce mediante `aplicacion_financiera`
-- la imputacion actualiza `saldo_pendiente` en cada `obligacion_financiera` imputada
-- si el request incluye `imputaciones` explicitas, se aplican en el orden informado
-- si el request no incluye `imputaciones`, el motor distribuye automaticamente segun el orden base: `fecha_vencimiento ASC`, luego `fecha_emision ASC`; este criterio es la politica base y puede extenderse en versiones futuras sin romper el contrato
-- se registra evento en outbox
-- `signo` es determinado internamente segun `tipo_movimiento`
-
-Errores posibles:
-- `400 APPLICATION_ERROR` — validacion sin equivalente FIN especifico (fallback transversal)
-- `400 imputacion_excede_saldo (ERR-FIN-021)` — alguna imputacion excede saldo de obligacion
-- `400 saldo_negativo (ERR-FIN-013)` — resultado produciria saldo negativo
-- `404 relacion_generadora_no_encontrada (ERR-FIN-001)`
-- `404 obligacion_no_encontrada (ERR-FIN-008)` — alguna obligacion referenciada no existe
-- `409 relacion_generadora_inactiva (ERR-FIN-002)`
-- `409 op_id_duplicado (ERR-FIN-038)`
-- `500 INTERNAL_ERROR`
+Consulta una obligacion con sus composiciones.
 
 ---
 
-### 6.3 `imputaciones`
+## 6. Imputaciones
 
-#### `PATCH /api/v1/financiero/imputaciones/{id_aplicacion_financiera}/reversar`
+### POST /api/v1/financiero/imputaciones
 
-Objetivo:
-- reversion de una imputacion financiera existente
-- restaura el saldo de la obligacion afectada al valor previo a la imputacion
-- operacion transaccional y atomica
-
-Headers requeridos:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`, `If-Match-Version`
+Imputa un monto a una obligacion financiera.
 
 Request:
 
 ```json
 {
-  "motivo": "Error en la asignacion de pago al periodo"
+  "id_obligacion_financiera": 10,
+  "monto": 5000.00
 }
 ```
 
-Response `200`:
+Reglas:
+
+- la obligacion debe existir
+- el monto debe ser mayor a cero
+- el monto no puede exceder `saldo_pendiente`
+- el estado debe aceptar imputacion
+- la imputacion se distribuye contra composiciones activas con saldo
+- la DB actualiza saldos por triggers
+- el backend actualiza estado luego de leer el saldo resultante
+
+Response `201`:
 
 ```json
 {
   "ok": true,
   "data": {
-    "id_aplicacion_financiera": 1,
-    "uid_global": "uuid",
-    "version_registro": 2,
-    "id_movimiento_financiero": 5,
     "id_obligacion_financiera": 10,
-    "importe_aplicado": 15000.00,
-    "estado_aplicacion": "revertida", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
-    "updated_at": "2026-04-28T14:00:00"
-  }
-}
-```
-
-Validaciones:
-- `id_aplicacion_financiera` debe existir y no estar dada de baja
-- `If-Match-Version` debe coincidir con `version_registro` vigente
-- el estado actual debe permitir reversion (no debe estar ya `anulada` o `revertida`)
-- la obligacion afectada debe existir y no estar dada de baja
-- la reversion no debe producir inconsistencia de saldo en la obligacion
-
-Reglas de negocio:
-- la reversion es atomica: revierte la imputacion y restaura el `saldo_pendiente` de la obligacion
-- si la obligacion estaba en estado `cancelada` y la reversion la deja con saldo, debe volver a `pendiente` o `vencida` segun fecha
-- se registra evento en outbox
-- los estados de imputacion invalidos para reversion: `anulada`, `revertida` (ERR-FIN-025)
-
-Errores posibles:
-- `404 imputacion_no_encontrada (ERR-FIN-017)`
-- `409 version_esperada_invalida (ERR-FIN-035)`
-- `409 reversion_imputacion_invalida (ERR-FIN-025)` — estado actual no admite reversion
-- `409 op_id_duplicado (ERR-FIN-038)`
-- `500 INTERNAL_ERROR`
-
----
-
-### 6.4 `servicios-trasladados`
-
-#### `POST /api/v1/financiero/servicios-trasladados/generar-obligacion`
-
-> **CONCEPTUAL / NO IMPLEMENTADO**
->
-> Este endpoint es un contrato conceptual derivado de INT-FIN-002 y DER-FINANCIERO. No existe implementacion backend. No existe evento `factura_servicio_registrada`. No existe consumer financiero. La tabla SQL `factura_servicio` existe estructuralmente pero no tiene API backend en el dominio inmobiliario. Este endpoint no debe usarse hasta que exista contrato de integracion completo, API/backend de `factura_servicio` y consumer financiero.
-
-Objetivo conceptual:
-- recibir referencia a una `factura_servicio` existente en SQL
-- generar o vincular una `relacion_generadora` de tipo `SERVICIO_TRASLADADO`
-- generar una `obligacion_financiera` asociada
-- resolver el obligado financiero segun las reglas de INT-FIN-002
-- la operacion debe ser idempotente: una misma `factura_servicio` no puede generar mas de una obligacion financiera activa
-
-Headers requeridos conceptualmente:
-- `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`
-
-Request conceptual:
-
-```json
-{
-  "id_factura_servicio": 17,
-  "observaciones": "Traslado de servicio de expensas — enero 2026"
-}
-```
-
-Response conceptual `201`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_relacion_generadora": 8,
-    "tipo_origen": "SERVICIO_TRASLADADO",
-    "id_origen": 17,
-    "id_obligacion_financiera": 20,
-    "codigo_obligacion": "OBL-0020",
-    "importe_original": 1500.00,
-    "fecha_emision": "2026-01-15",
-    "fecha_vencimiento": "2026-02-15",
-    "estado_obligacion": "pendiente",
-    "obligados": [
+    "id_movimiento_financiero": 30,
+    "monto_aplicado": 5000.00,
+    "aplicaciones": [
       {
-        "id_persona": 5,
-        "rol_obligado": "LOCATARIO",
-        "porcentaje_responsabilidad": 100.00
+        "id_aplicacion_financiera": 40,
+        "id_composicion_obligacion": 20,
+        "importe_aplicado": 5000.00,
+        "orden_aplicacion": 1
       }
     ]
   }
 }
 ```
 
-Validaciones conceptuales:
-- `id_factura_servicio` debe existir en SQL y no estar dada de baja
-- no debe existir una obligacion financiera activa para la misma `factura_servicio` (idempotencia por `id_factura_servicio`)
-- el objeto afectado por la factura (inmueble o unidad funcional) debe ser resoluble
-- la resolucion del obligado sigue las reglas de INT-FIN-002 (locatario > ocupante > propietario)
-- si el obligado no puede resolverse, no se genera la obligacion exigible automaticamente
-
-Restricciones del estado NO IMPLEMENTADO:
-- no existe evento `factura_servicio_registrada`
-- no existe consumer financiero que consuma dicho evento
-- no existe API/backend para operar `factura_servicio` desde el dominio inmobiliario
-- la resolucion de `propietario / responsable operativo` no tiene regla fisica final documentada
-- el estado `PENDIENTE_RESOLUCION_OBLIGADO` es conceptual y no implementado
-
 ---
 
-## 7. Reads
+## 7. Deuda consolidada
 
-### 7.1 `relaciones-generadoras`
+### GET /api/v1/financiero/deuda
 
-#### `GET /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}`
+Consulta obligaciones financieras con sus composiciones. Es read-only.
 
-Objetivo:
-- consulta integral de una relacion generadora con sus obligaciones activas y composiciones
+Filtros:
 
-Response `200`:
+- `id_relacion_generadora`
+- `estado_obligacion`
+- `fecha_vencimiento_desde`
+- `fecha_vencimiento_hasta`
+- `con_saldo`
+- `limit`
+- `offset`
+
+Reglas:
+
+- lista obligaciones no dadas de baja
+- si `con_saldo=true`, solo incluye `saldo_pendiente > 0`
+- no recalcula saldos
+- muestra composiciones activas asociadas a cada obligacion
+- valida que `fecha_vencimiento_hasta >= fecha_vencimiento_desde`
+
+Response:
 
 ```json
 {
   "ok": true,
   "data": {
-    "id_relacion_generadora": 1,
-    "uid_global": "uuid",
-    "version_registro": 2,
-    "tipo_origen": "CONTRATO_ALQUILER",
-    "id_origen": 42,
-    "descripcion": "Relacion generadora para contrato de alquiler CA-0042",
-    "estado_relacion_generadora": "ACTIVA",
-    "fecha_alta": "2026-04-28T10:00:00",
-    "obligaciones": [
+    "items": [
       {
         "id_obligacion_financiera": 10,
-        "codigo_obligacion": "OBL-0010",
-        "fecha_emision": "2026-04-28",
-        "fecha_vencimiento": "2026-05-10",
-        "importe_original": 15000.00,
-        "saldo_pendiente": 15000.00,
-        "estado_obligacion": "pendiente",
-        "obligados": [
+        "id_relacion_generadora": 1,
+        "estado_obligacion": "PROYECTADA",
+        "fecha_vencimiento": "2026-12-31",
+        "importe_total": 100000.00,
+        "saldo_pendiente": 100000.00,
+        "composiciones": [
           {
-            "id_obligacion_obligado": 1,
-            "id_persona": 5,
-            "rol_obligado": "LOCATARIO",
-            "porcentaje_responsabilidad": 100.00
-          }
-        ],
-        "composicion": [
-          {
-            "id_composicion_obligacion": 1,
-            "id_concepto_financiero": 3,
+            "id_composicion_obligacion": 20,
             "codigo_concepto_financiero": "CANON_LOCATIVO",
-            "importe_componente": 15000.00,
-            "saldo_componente": 15000.00,
-            "observaciones": "Capital mensual"
+            "importe_componente": 100000.00,
+            "saldo_componente": 100000.00
           }
         ]
       }
     ],
-    "resumen": {
-      "total_obligaciones": 1,
-      "saldo_total_pendiente": 15000.00,
-      "estado_deuda": "con_deuda"
-    },
-    "created_at": "2026-04-28T10:00:00",
-    "updated_at": "2026-04-28T10:05:00",
-    "deleted_at": null
-  }
-}
-```
-
-Errores posibles:
-- `404 NOT_FOUND` — relacion no encontrada o dada de baja
-- `500 INTERNAL_ERROR`
-
----
-
-#### `GET /api/v1/financiero/relaciones-generadoras`
-
-Objetivo:
-- listado paginado de relaciones generadoras con filtros basicos
-
-Filtros permitidos:
-- `tipo_origen` — filtrar por tipo de origen (`VENTA`, `CONTRATO_ALQUILER`, `SERVICIO_TRASLADADO`)
-- `id_origen` — filtrar por ID del origen en su dominio
-- `vigente` — excluir dadas de baja cuando `true`
-
-Paginacion basica:
-- `limit`
-- `offset`
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "items": [
-      {
-        "id_relacion_generadora": 1,
-        "uid_global": "uuid",
-        "version_registro": 2,
-        "tipo_origen": "CONTRATO_ALQUILER",
-        "id_origen": 42,
-        "descripcion": "Relacion generadora CA-0042",
-        "estado_relacion_generadora": "ACTIVA",
-        "fecha_alta": "2026-04-28T10:00:00",
-        "saldo_total_pendiente": 15000.00,
-        "deleted_at": null
-      }
-    ],
     "total": 1
   }
 }
 ```
 
-Errores posibles:
-- `400 APPLICATION_ERROR` — filtros invalidos (fallback transversal)
-- `500 INTERNAL_ERROR`
-
 ---
 
-#### `GET /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/obligaciones`
+## 8. Mora
 
-Objetivo:
-- listado de obligaciones financieras de una relacion generadora especifica
+### POST /api/v1/financiero/mora/generar
 
-Filtros permitidos:
-- `estado_obligacion` — estados normalizados de obligacion financiera; hasta migracion fisica, mantener compatibilidad con `pendiente`, `vencida`, `parcialmente_cancelada`, `cancelada`
-- `codigo_concepto_financiero` — filtro conceptual por composicion; PENDIENTE de soporte backend
-- `fecha_vencimiento_desde`
-- `fecha_vencimiento_hasta`
-- `con_saldo_pendiente`
-- `vigente`
+Genera obligaciones de mora diaria para obligaciones vencidas con saldo pendiente.
 
-Response `200`:
+Request:
+
+```json
+{
+  "fecha_proceso": "2026-05-01"
+}
+```
+
+`fecha_proceso` es opcional. Si no se informa, el backend usa la fecha actual.
+
+Response:
 
 ```json
 {
   "ok": true,
   "data": {
-    "id_relacion_generadora": 1,
-    "items": [
-      {
-        "id_obligacion_financiera": 10,
-        "uid_global": "uuid",
-        "version_registro": 1,
-        "codigo_obligacion": "OBL-0010",
-        "fecha_emision": "2026-04-28",
-        "fecha_vencimiento": "2026-05-10",
-        "importe_original": 15000.00,
-        "saldo_pendiente": 15000.00,
-        "estado_obligacion": "pendiente",
-        "observaciones": null,
-        "deleted_at": null
-      }
-    ],
-    "total": 1
+    "fecha_proceso": "2026-05-01",
+    "procesadas": 10,
+    "generadas": 7
   }
 }
 ```
 
-Errores posibles:
-- `404 NOT_FOUND` — relacion no encontrada
-- `500 INTERNAL_ERROR`
+Reglas implementadas:
+
+- selecciona obligaciones con `fecha_vencimiento < fecha_proceso`
+- requiere `saldo_pendiente > 0`
+- requiere `deleted_at IS NULL`
+- excluye estados `ANULADA`, `REEMPLAZADA`, `CANCELADA`
+- excluye obligaciones generadas por mora automatica
+- concepto obligatorio: `INTERES_MORA`
+- tasa fija: `0.001`
+- calculo: `saldo_pendiente * 0.001`
+- redondeo a 2 decimales
+- si `importe_mora <= 0`, no genera
+- no capitalizable: no modifica la obligacion base
+- crea una nueva obligacion con la misma `id_relacion_generadora`
+- no duplica mora por obligacion base y fecha de proceso usando control por `observaciones`
+
+Limitacion:
+
+- no existe FK SQL entre obligacion de mora y obligacion base
+- no existe constraint unica SQL para obligacion base + fecha de proceso
 
 ---
 
-### 7.2 `obligaciones`
+## 9. Funcionalidad no implementada
 
-#### `GET /api/v1/financiero/obligaciones/{id_obligacion_financiera}`
+Sigue pendiente:
 
-Objetivo:
-- consulta de una obligacion financiera con su composicion, obligados e imputaciones
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_obligacion_financiera": 10,
-    "uid_global": "uuid",
-    "version_registro": 1,
-    "id_relacion_generadora": 1,
-    "codigo_obligacion": "OBL-0010",
-    "fecha_emision": "2026-04-28",
-    "fecha_vencimiento": "2026-05-10",
-    "importe_original": 15000.00,
-    "saldo_pendiente": 15000.00,
-    "estado_obligacion": "pendiente",
-    "observaciones": null,
-    "obligados": [
-      {
-        "id_obligacion_obligado": 1,
-        "id_persona": 5,
-        "rol_obligado": "LOCATARIO",
-        "porcentaje_responsabilidad": 100.00
-      }
-    ],
-    "composicion": [
-      {
-        "id_composicion_obligacion": 1,
-        "id_concepto_financiero": 3,
-        "codigo_concepto_financiero": "CANON_LOCATIVO",
-        "importe_componente": 15000.00,
-        "saldo_componente": 15000.00,
-        "observaciones": "Capital mensual"
-      }
-    ],
-    "imputaciones": [
-      {
-        "id_aplicacion_financiera": 1,
-        "id_movimiento_financiero": 5,
-        "importe_aplicado": 0.00,
-        "tipo_aplicacion": null,
-        "fecha_aplicacion": null,
-        "estado_aplicacion": null // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
-      }
-    ],
-    "created_at": "2026-04-28T10:05:00",
-    "updated_at": "2026-04-28T10:05:00",
-    "deleted_at": null
-  }
-}
-```
-
-Errores posibles:
-- `404 NOT_FOUND` — obligacion no encontrada o dada de baja
-- `500 INTERNAL_ERROR`
-
----
-
-#### `GET /api/v1/financiero/obligaciones`
-
-Objetivo:
-- listado paginado de obligaciones financieras con filtros
-
-Filtros permitidos:
-- `id_relacion_generadora`
-- `tipo_origen` — origen financiero de la `relacion_generadora`
-- `id_origen` — entidad generadora en el dominio origen
-- `estado_obligacion` — estados normalizados de obligacion financiera; hasta migracion fisica, mantener compatibilidad con `pendiente`, `vencida`, `parcialmente_cancelada`, `cancelada`
-- `codigo_concepto_financiero` — filtro conceptual por composicion; PENDIENTE de soporte backend
-- `id_persona_obligada` — persona obligada; PENDIENTE de soporte backend
-- `fecha_emision_desde`
-- `fecha_emision_hasta`
-- `fecha_vencimiento_desde`
-- `fecha_vencimiento_hasta`
-- `con_saldo_pendiente` — `true` para mostrar solo obligaciones con `saldo_pendiente > 0`
-- `vigente`
-
-Paginacion basica:
-- `limit`
-- `offset`
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "items": [
-      {
-        "id_obligacion_financiera": 10,
-        "id_relacion_generadora": 1,
-        "codigo_obligacion": "OBL-0010",
-        "fecha_emision": "2026-04-28",
-        "fecha_vencimiento": "2026-05-10",
-        "importe_original": 15000.00,
-        "saldo_pendiente": 15000.00,
-        "estado_obligacion": "pendiente",
-        "deleted_at": null
-      }
-    ],
-    "total": 1
-  }
-}
-```
-
-Errores posibles:
-- `400 APPLICATION_ERROR` — filtros invalidos (fallback transversal)
-- `500 INTERNAL_ERROR`
-
----
-
-### 7.3 `pagos`
-
-> **ATENCION:** `movimiento_financiero` NO posee FK directa a `relacion_generadora` ni a `obligacion_financiera` en el SQL vigente. La relacion entre un pago y sus obligaciones se establece exclusivamente a traves de `aplicacion_financiera`. Cualquier consulta que requiera vincular movimientos con relaciones generadoras debe hacerse navegando por `aplicacion_financiera.id_obligacion_financiera` → `obligacion_financiera.id_relacion_generadora`.
-
-#### `GET /api/v1/financiero/pagos/{id_movimiento_financiero}`
-
-Objetivo:
-- consulta de un movimiento financiero registrado con sus imputaciones
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_movimiento_financiero": 5,
-    "uid_global": "uuid",
-    "version_registro": 1,
-    "tipo_movimiento": "PAGO",
-    "importe": 15000.00,
-    "signo": "HABER",
-    "fecha_movimiento": "2026-04-28T10:30:00",
-    "estado_movimiento": "registrado",
-    "observaciones": "Pago mensual abril 2026",
-    "imputaciones": [
-      {
-        "id_aplicacion_financiera": 1,
-        "id_obligacion_financiera": 10,
-        "id_composicion_obligacion": null,
-        "importe_aplicado": 15000.00,
-        "tipo_aplicacion": "DIRECTA",
-        "orden_aplicacion": 1,
-        "origen_automatico_o_manual": "MANUAL",
-        "fecha_aplicacion": "2026-04-28T10:30:00",
-        "observaciones": null
-      }
-    ],
-    "created_at": "2026-04-28T10:30:00",
-    "updated_at": "2026-04-28T10:30:00",
-    "deleted_at": null
-  }
-}
-```
-
-Errores posibles:
-- `404 NOT_FOUND` — movimiento no encontrado o dado de baja
-- `500 INTERNAL_ERROR`
-
----
-
-#### `GET /api/v1/financiero/pagos/{id_movimiento_financiero}/imputaciones`
-
-Objetivo:
-- listado de imputaciones de un movimiento financiero especifico
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_movimiento_financiero": 5,
-    "items": [
-      {
-        "id_aplicacion_financiera": 1,
-        "uid_global": "uuid",
-        "version_registro": 1,
-        "id_obligacion_financiera": 10,
-        "id_composicion_obligacion": null,
-        "importe_aplicado": 15000.00,
-        "tipo_aplicacion": "DIRECTA",
-        "orden_aplicacion": 1,
-        "origen_automatico_o_manual": "MANUAL",
-        "fecha_aplicacion": "2026-04-28T10:30:00",
-        "estado_aplicacion": "aplicada", // CAMPO DERIVADO (NO PERSISTIDO EN SQL)
-        "observaciones": null,
-        "deleted_at": null
-      }
-    ],
-    "total": 1
-  }
-}
-```
-
-Nota sobre `estado_aplicacion`: campo no existe en SQL vigente de `aplicacion_financiera`; se documenta como campo contractual esperado; su almacenamiento fisico es PENDIENTE.
-
-Errores posibles:
-- `404 NOT_FOUND` — movimiento no encontrado
-- `500 INTERNAL_ERROR`
-
----
-
-### 7.4 Consultas financieras
-
-#### `GET /api/v1/financiero/relaciones-generadoras/{id_relacion_generadora}/estado-deuda`
-
-Objetivo:
-- consulta del estado de deuda consolidado de una relacion generadora a fecha dada
-- reconstruye el estado financiero dinamicamente segun SRV-FIN-012
-
-Query params:
-- `fecha_referencia` — fecha de corte para el calculo; si no se informa, se usa la fecha del sistema
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_relacion_generadora": 1,
-    "tipo_origen": "CONTRATO_ALQUILER",
-    "id_origen": 42,
-    "estado_relacion_generadora": "ACTIVA",
-    "fecha_referencia": "2026-04-28",
-    "estado_deuda": "con_deuda",
-    "saldo_total_pendiente": 15000.00,
-    "obligaciones_pendientes": 1,
-    "obligaciones_vencidas": 0,
-    "obligaciones_canceladas": 0,
-    "detalle": [
-      {
-        "id_obligacion_financiera": 10,
-        "codigo_obligacion": "OBL-0010",
-        "fecha_vencimiento": "2026-05-10",
-        "importe_original": 15000.00,
-        "saldo_pendiente": 15000.00,
-        "estado_obligacion": "pendiente",
-        "dias_vencido": 0
-      }
-    ]
-  }
-}
-```
-
-Valores posibles de `estado_deuda` (EST-FIN):
-- `sin_deuda` — no hay deuda exigible
-- `con_deuda` — existe deuda vigente
-- `deuda_parcial` — deuda parcialmente cancelada con saldo remanente
-- `deuda_vencida` — existe deuda con vencimiento superado
-- `deuda_cancelada` — toda la deuda fue cancelada
-
-Errores posibles:
-- `404 NOT_FOUND` — relacion no encontrada
-- `409 inconsistencia_calculo_deuda (ERR-FIN-033)` — resultado inconsistente
-- `500 INTERNAL_ERROR`
-
----
-
-## 8. Resolucion de obligado financiero (INT-FIN-002)
-
-Esta seccion resume la decision documental INT-FIN-002 aplicada a los endpoints de este contrato.
-
-### Principio rector
-
-`financiero` genera la obligacion pero no inventa el obligado.
-
-El obligado se resuelve desde los dominios origen:
-
-- `comercial` → compradores de la venta
-- `locativo` → locatarios del contrato
-- `inmobiliario` → locatario > ocupante > propietario (segun periodo y estado)
-
-### Resolucion por tipo de origen
-
-**VENTA:**
-- obligado = comprador o compradores de `cliente_comprador` o `relacion_persona_rol`
-- politica de multiples compradores: PENDIENTE
-
-**CONTRATO_ALQUILER:**
-- obligado = locatario o locatarios vigentes de `relacion_persona_rol`
-- garantes y codeudores como obligados complementarios: PENDIENTE
-
-**SERVICIO_TRASLADADO:**
-- si existe contrato locativo vigente sobre el objeto y periodo: obligado = locatario
-- si existe ocupacion vigente sin contrato: obligado = ocupante responsable
-- si no existe ocupacion vigente: obligado = propietario / responsable operativo
-- si no puede resolverse: no generar obligacion exigible automaticamente; dejar en estado `PENDIENTE_RESOLUCION_OBLIGADO`
-- `PENDIENTE_RESOLUCION_OBLIGADO` es un estado conceptual no implementado
-
-### Estado de implementacion de la resolucion
-
-Queda PENDIENTE de implementacion:
-
-- servicio formal de resolucion de obligado
-- endpoint o consumer de resolucion
-- API/backend para operar `factura_servicio` desde inmobiliario
-- evento `factura_servicio_registrada`
-- reglas fisicas para propietario / responsable operativo
-- estado fisico `PENDIENTE_RESOLUCION_OBLIGADO`
-- politica de multiples obligados, solidaridad, porcentajes y prorrateo
-
----
-
-## 9. Estado de implementacion por bloque
-
-| Bloque | Entidad SQL | Router backend | Estado |
-|--------|-------------|----------------|--------|
-| Relaciones generadoras — alta | `relacion_generadora` | EXISTE MVP | IMPLEMENTADO MVP |
-| Relaciones generadoras — reads basicos | `relacion_generadora` | EXISTE MVP | IMPLEMENTADO MVP |
-| Relaciones generadoras — activar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
-| Relaciones generadoras — materializar obligaciones | `obligacion_financiera` + `composicion_obligacion` | NO EXISTE | CONCEPTUAL / NO IMPLEMENTADO |
-| Relaciones generadoras — cancelar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
-| Relaciones generadoras — finalizar | `relacion_generadora` | NO EXISTE | PENDIENTE / FUERA MVP |
-| Obligaciones — lectura | `obligacion_financiera` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Composicion — lectura | `composicion_obligacion` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Obligados — lectura | `obligacion_obligado` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Pagos — simulacion | `movimiento_financiero` (no persiste) | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Pagos — registro | `movimiento_financiero` + `aplicacion_financiera` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Imputaciones — reversion | `aplicacion_financiera` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Estado de deuda — consulta | derivado de `obligacion_financiera` | NO EXISTE | DOCUMENTADO / NO IMPLEMENTADO |
-| Servicios trasladados — generar obligacion | `factura_servicio` (SQL existe; API no) | NO EXISTE | CONCEPTUAL / NO IMPLEMENTADO |
-| Resolucion de obligado | multiples dominios | NO EXISTE | CONCEPTUAL / NO IMPLEMENTADO |
-
-### Campos SQL con drift documental
-
-| Campo | Entidad | Estado en SQL | Nota |
-|-------|---------|--------------|------|
-| `estado_aplicacion` | `aplicacion_financiera` | NO EXISTE en SQL | EST-FIN documenta estados de imputacion; almacenamiento fisico PENDIENTE |
-| Columna FK directa a `relacion_generadora` en `movimiento_financiero` | `movimiento_financiero` | NO EXISTE | asociacion via `aplicacion_financiera` |
-
-### Proximos pasos para implementacion
-
-Para materializar este contrato en backend se requiere, en orden logico:
-
-1. router financiero (`api/routers/financiero_router.py`)
-2. schemas Pydantic para cada endpoint
-3. servicios de aplicacion por caso de uso (SRV-FIN-001 a SRV-FIN-008)
-4. repositorios de persistencia para cada entidad financiera
-5. implementacion futura de transiciones `activar`, `cancelar` y `finalizar` de `relacion_generadora`
-6. columna `estado_aplicacion` en SQL para `aplicacion_financiera`
-7. registro de outbox para eventos financieros
-8. API backend para `factura_servicio` en dominio inmobiliario (prerequisito de SERVICIO_TRASLADADO)
-9. evento `factura_servicio_registrada` y consumer financiero
-10. servicio de resolucion de obligado (INT-FIN-002)
+- activar/cancelar/finalizar `relacion_generadora`
+- materializacion de obligaciones desde plan externo
+- endpoint autonomo de pagos
+- reversion de imputaciones
+- obligados financieros
+- generacion desde `factura_servicio`
+- resolucion de obligado financiero
+- outbox financiero en estos writes
+- idempotencia completa por `X-Op-Id`

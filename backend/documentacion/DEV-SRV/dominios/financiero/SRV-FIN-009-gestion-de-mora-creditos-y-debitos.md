@@ -4,6 +4,10 @@
 Ajustar saldo vivo de la deuda emitida mediante mora, punitorios, rectificaciones por índice y créditos o débitos manuales autorizados, manteniendo coherencia con el circuito financiero existente.
 
 ## Alcance
+Estado actual:
+- La generacion automatica de mora diaria simple esta implementada y documentada en `SRV-FIN-013-generacion-de-mora`.
+- Punitorios, rectificacion por indice, creditos manuales, debitos manuales y consulta especifica de ajustes siguen pendientes.
+
 Este servicio cubre:
 - cálculo y registro de mora
 - generación de punitorios

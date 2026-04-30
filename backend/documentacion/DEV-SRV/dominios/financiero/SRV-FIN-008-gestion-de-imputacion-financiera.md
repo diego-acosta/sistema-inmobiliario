@@ -1,177 +1,159 @@
-# SRV-FIN-008 — Gestión de imputación financiera
+# SRV-FIN-008 - Gestion de imputacion financiera
 
 ## Objetivo
-Aplicar, revertir y reaplicar movimientos financieros sobre deuda emitida, determinando de forma explícita cómo impacta cada pago en obligaciones y sus composiciones.
 
-## Alcance
-Este servicio cubre:
-- imputación de pagos sobre obligaciones
-- distribución de importes sobre composición por concepto
-- reversión de imputaciones
-- reaplicación de pagos
-- consulta de aplicación financiera
+Aplicar un monto sobre una obligacion financiera, distribuyendolo contra sus composiciones segun prioridad de conceptos, y dejando que la base de datos actualice saldos mediante triggers.
 
-No cubre:
-- registro de pago (movimiento financiero)
-- generación de obligaciones
-- recalculo estructural de deuda
-- caja operativa
-- emisión documental
+## Estado
 
-## Entidades principales
-- aplicacion_financiera
-- movimiento_financiero
-- obligacion_financiera
-- composicion_obligacion
+- estado: `IMPLEMENTADO PARCIAL`
+- endpoint implementado: `POST /api/v1/financiero/imputaciones`
+- no modifica SQL
+- no recalcula saldo en backend como fuente primaria
 
-## Modos del servicio
+## Alcance implementado
 
-### Imputación
-Asocia un movimiento financiero a una o más obligaciones y sus composiciones.
+Este servicio cubre actualmente:
 
-### Reversión
-Deshace total o parcialmente una imputación previamente registrada.
+- imputacion manual de un monto sobre una obligacion
+- creacion de `movimiento_financiero`
+- creacion de una o mas `aplicacion_financiera`
+- distribucion contra composiciones activas con saldo
+- uso de `orden_aplicacion`
+- actualizacion de estado de obligacion despues de aplicar
 
-### Reaplicación
-Reasigna un movimiento financiero ya existente a nuevas obligaciones o composiciones.
+No cubre actualmente:
 
-### Consulta
-Permite visualizar cómo se aplicaron los pagos sobre la deuda.
+- reversion de imputaciones
+- reaplicacion de pagos
+- endpoint autonomo de movimientos/pagos
+- imputacion distribuida entre varias obligaciones
+- estado persistido de aplicacion
+- outbox financiero
 
-## Entradas conceptuales
+## Entidades
 
-### Contexto técnico (write)
-- usuario_id
-- sucursal_id
-- instalacion_id
-- op_id
-- version_esperada cuando corresponda
+- `obligacion_financiera`
+- `composicion_obligacion`
+- `concepto_financiero`
+- `movimiento_financiero`
+- `aplicacion_financiera`
 
-### Datos de negocio
-- identificador de movimiento financiero
-- obligaciones objetivo
-- criterios de imputación
-- importe a aplicar
-- tipo de operación: imputación, reversión o reaplicación
-- motivo u observación cuando corresponda
+## Entrada implementada
 
-### Parámetros de consulta
-- id_movimiento_financiero
-- id_obligacion_financiera
-- filtros por estado
-- nivel de detalle de composición
+```json
+{
+  "id_obligacion_financiera": 10,
+  "monto": 5000.00
+}
+```
 
-## Resultado esperado
+Reglas de request:
 
-### Para imputación / reversión / reaplicación
-- identificador de la aplicación financiera
-- movimiento financiero afectado
-- obligaciones impactadas
-- composición afectada
-- saldo resultante por obligación
-- versión resultante
-- op_id
-- errores estructurados cuando corresponda
+- `id_obligacion_financiera` debe ser mayor a cero
+- `monto` debe ser mayor a cero
 
-### Para consulta
-- detalle de aplicación por movimiento
-- relación movimiento → obligación
-- desglose por composición
-- estado de aplicación
+## Estados que aceptan imputacion
 
-## Flujo de alto nivel
+- `PROYECTADA`
+- `EMITIDA`
+- `EXIGIBLE`
+- `PARCIALMENTE_CANCELADA`
+- `VENCIDA`
 
-### Imputación
-1. validar contexto técnico e idempotencia
-2. cargar movimiento financiero
-3. validar deuda objetivo
-4. determinar criterios de distribución
-5. aplicar sobre obligaciones y composiciones
-6. actualizar saldos
-7. persistir de forma atómica
-8. registrar outbox
-9. devolver resultado
+Estados que no aceptan imputacion:
 
-### Reversión
-1. validar contexto técnico
-2. cargar aplicación existente
-3. validar reversibilidad
-4. revertir impacto en obligaciones
-5. actualizar saldos
-6. persistir cambios
-7. registrar outbox
-8. devolver resultado
+- `CANCELADA`
+- `ANULADA`
+- `REEMPLAZADA`
 
-### Reaplicación
-1. revertir imputación previa
-2. recalcular nueva aplicación
-3. aplicar sobre nuevas obligaciones
-4. persistir cambios atómicos
-5. registrar outbox
-6. devolver resultado
+## Politica de distribucion implementada
 
-### Consulta
-1. validar parámetros de lectura
-2. cargar aplicaciones financieras
-3. resolver relaciones con movimientos y obligaciones
-4. devolver vista consolidada
+La imputacion busca composiciones activas con saldo y las ordena por prioridad legal implementada.
 
-## Validaciones clave
-- movimiento financiero existente
-- coherencia entre importe y deuda objetivo
-- no sobreimputación indebida
-- consistencia entre aplicación y composición
-- reversión solo sobre aplicaciones válidas
-- idempotencia en operaciones write
+Prioridad:
 
-### Politica base de distribucion
+1. `INTERES_MORA`
+2. `PUNITORIO`
+3. `CARGO_ADMINISTRATIVO`
+4. `INTERES_FINANCIERO`
+5. `AJUSTE_INDEXACION`
+6. `CAPITAL_VENTA`
+7. `ANTICIPO_VENTA`
+8. `CANON_LOCATIVO`
+9. `EXPENSA_TRASLADADA`
+10. `SERVICIO_TRASLADADO`
+11. `IMPUESTO_TRASLADADO`
+12. otros conceptos por `orden_composicion`
 
-Cuando exista desglose por `composicion_obligacion`, la imputacion debe impactar componentes o aplicar la politica documentada de distribucion definida en `MODELO-FINANCIERO-FIN`.
+Si el monto alcanza a mas de una composicion, el backend crea multiples filas en `aplicacion_financiera`.
 
-La prioridad conceptual por defecto para pagos globales es: `INTERES_MORA`, `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre.
+`orden_aplicacion` se asigna segun el orden real de distribucion.
 
-Esta politica queda `DEFINIDA CONCEPTUALMENTE / PENDIENTE SQL-BACKEND`.
+## Flujo implementado
 
-## Efectos transaccionales
-- alta o modificación de aplicacion_financiera
-- actualización de saldo en obligacion_financiera
-- actualización de composición cuando corresponda
-- actualización de metadatos transversales
-- registro de outbox
+1. cargar obligacion
+2. validar existencia y baja logica
+3. validar monto positivo
+4. validar estado de obligacion
+5. validar que el monto no exceda `saldo_pendiente`
+6. cargar composiciones activas con `saldo_componente > 0`
+7. ordenar composiciones por prioridad de concepto y `orden_composicion`
+8. construir lineas de aplicacion
+9. insertar `movimiento_financiero`
+10. insertar `aplicacion_financiera`
+11. la DB actualiza saldos por triggers
+12. el backend actualiza `estado_obligacion` segun saldo resultante
 
-## Errores
-- [[ERR-FIN]]
+## Actualizacion de saldo y estado
 
-## Dependencias
+La DB actualiza:
 
-### Hacia arriba
-- movimientos financieros registrados
-- deuda emitida (obligaciones)
-- permisos de operación financiera
+- `composicion_obligacion.saldo_componente`
+- `obligacion_financiera.saldo_pendiente`
 
-### Hacia abajo
-- emisión financiera
-- analítica financiera
-- reportes de deuda y pagos
+El backend no recalcula esos saldos.
 
-## Transversales
-- [[TRANSVERSALES]]
-- [[CORE-EF-001-infraestructura-transversal]]
+Luego del insert de aplicaciones, el backend ejecuta:
 
-## Referencias
-- [[00-INDICE-FINANCIERO]]
-- [[MODELO-FINANCIERO-FIN]]
-- [[SRV-FIN-007-simulacion-y-registro-de-pago]]
-- [[SRV-FIN-006-cronograma-y-obligaciones]]
-- [[RN-FIN]]
-- [[ERR-FIN]]
-- CAT-CU-001
-- DEV-SRV-001 legado
-- DER financiero
+- `CANCELADA` si `saldo_pendiente = 0`
+- `PARCIALMENTE_CANCELADA` si `saldo_pendiente < importe_total`
+- no modifica `ANULADA` ni `REEMPLAZADA`
 
-## Pendientes abiertos
-- implementacion SQL/backend de la politica conceptual de distribucion por defecto definida en `MODELO-FINANCIERO-FIN`
-- definicion de variantes futuras de distribucion de pago (FIFO, proporcional, manual, etc.)
-- estrategia de imputación automática versus manual
-- tratamiento de pagos parciales y excedentes
-- trazabilidad exacta de reaplicaciones múltiples
+## Resultado implementado
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_obligacion_financiera": 10,
+    "id_movimiento_financiero": 30,
+    "monto_aplicado": 5000.00,
+    "aplicaciones": [
+      {
+        "id_aplicacion_financiera": 40,
+        "id_composicion_obligacion": 20,
+        "importe_aplicado": 5000.00,
+        "orden_aplicacion": 1
+      }
+    ]
+  }
+}
+```
+
+## Errores implementados
+
+- `404 NOT_FOUND` si la obligacion no existe
+- `400 MONTO_EXCEDE_SALDO` si el monto excede el saldo pendiente
+- `400 ESTADO_INVALIDO` si el estado no acepta imputacion
+- `400 APPLICATION_ERROR` para validaciones de aplicacion no especificas
+- `422` para validaciones Pydantic del request
+- `500 INTERNAL_ERROR` para errores no controlados
+
+## Pendientes
+
+- reversion
+- reaplicacion
+- imputacion multi-obligacion
+- idempotencia completa por `X-Op-Id`
+- outbox financiero
