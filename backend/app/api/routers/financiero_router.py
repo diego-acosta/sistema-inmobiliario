@@ -14,6 +14,11 @@ from app.api.schemas.financiero import (
     ConceptoFinancieroListData,
     ConceptoFinancieroListResponse,
     DeudaComposicionItem,
+    DeudaConsolidadoData,
+    DeudaConsolidadoRelacionItem,
+    DeudaConsolidadoResumen,
+    DeudaConsolidadoResponse,
+    DeudaConsolidadoTipoOrigenResumen,
     DeudaItem,
     DeudaListData,
     DeudaListResponse,
@@ -71,6 +76,9 @@ from app.application.financiero.services.get_obligacion_financiera_service impor
 )
 from app.application.financiero.services.get_estado_cuenta_financiero_service import (
     GetEstadoCuentaFinancieroService,
+)
+from app.application.financiero.services.get_deuda_consolidado_service import (
+    GetDeudaConsolidadoService,
 )
 from app.application.financiero.services.get_estado_cuenta_persona_service import (
     GetEstadoCuentaPersonaService,
@@ -401,6 +409,45 @@ def get_estado_cuenta_financiero(
         )
 
     return EstadoCuentaResponse(data=EstadoCuentaData(**result.data))
+
+
+@router.get(
+    "/api/v1/financiero/deuda/consolidado",
+    response_model=DeudaConsolidadoResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def get_deuda_consolidado(
+    tipo_origen: str | None = Query(default=None),
+    fecha_corte: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> DeudaConsolidadoResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetDeudaConsolidadoService(repository=repository)
+
+    try:
+        result = service.execute(tipo_origen=tipo_origen, fecha_corte=fecha_corte)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    data = result.data
+    return DeudaConsolidadoResponse(
+        data=DeudaConsolidadoData(
+            fecha_corte=data["fecha_corte"],
+            resumen=DeudaConsolidadoResumen(**data["resumen"]),
+            por_tipo_origen={
+                t: DeudaConsolidadoTipoOrigenResumen(**v)
+                for t, v in data["por_tipo_origen"].items()
+            },
+            relaciones=[
+                DeudaConsolidadoRelacionItem(**r) for r in data["relaciones"]
+            ],
+        )
+    )
 
 
 @router.get(

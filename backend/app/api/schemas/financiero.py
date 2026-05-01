@@ -238,6 +238,49 @@ class DeudaListResponse(BaseModel):
     data: DeudaListData
 
 
+# ── deuda consolidado global ──────────────────────────────────────────────────
+
+class DeudaConsolidadoResumen(BaseModel):
+    saldo_pendiente_total: float
+    saldo_vencido: float
+    saldo_futuro: float
+    mora_calculada: float
+    total_con_mora: float
+
+
+class DeudaConsolidadoTipoOrigenResumen(BaseModel):
+    saldo_pendiente_total: float
+    saldo_vencido: float
+    saldo_futuro: float
+    mora_calculada: float
+    total_con_mora: float
+    cantidad_relaciones: int
+
+
+class DeudaConsolidadoRelacionItem(BaseModel):
+    id_relacion_generadora: int
+    tipo_origen: str
+    id_origen: int
+    saldo_pendiente: float
+    saldo_vencido: float
+    saldo_futuro: float
+    mora_calculada: float
+    total_con_mora: float
+    cantidad_obligaciones: int
+
+
+class DeudaConsolidadoData(BaseModel):
+    fecha_corte: date
+    resumen: DeudaConsolidadoResumen
+    por_tipo_origen: dict[str, DeudaConsolidadoTipoOrigenResumen]
+    relaciones: list[DeudaConsolidadoRelacionItem]
+
+
+class DeudaConsolidadoResponse(BaseModel):
+    ok: bool = True
+    data: DeudaConsolidadoData
+
+
 class EstadoCuentaComposicionItem(BaseModel):
     id_composicion_obligacion: int
     codigo_concepto_financiero: str

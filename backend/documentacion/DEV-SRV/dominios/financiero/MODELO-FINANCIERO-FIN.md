@@ -350,6 +350,31 @@ Notas:
 - procesamiento sincronico (no worker)
 - no hay confirmacion de exito del handler en la respuesta HTTP
 
+---
+
+## 10. Estado de deuda consolidado
+
+Endpoint: `GET /api/v1/financiero/deuda/consolidado`
+
+Vista agregada de deuda global, agrupada por `relacion_generadora` y por `tipo_origen`.
+
+Incluye:
+
+- resumen global: `saldo_pendiente_total`, `saldo_vencido`, `saldo_futuro`, `mora_calculada`, `total_con_mora`
+- resumen por `tipo_origen` (ej: `CONTRATO_ALQUILER`, `VENTA`)
+- detalle por `relacion_generadora`: saldos, mora y cantidad de obligaciones
+
+Reglas:
+
+- solo obligaciones con `saldo_pendiente > 0`
+- excluye `ANULADA` y `REEMPLAZADA`
+- mora dinamica calculada con `fecha_corte` (configurable, default `date.today()`)
+- `fecha_corte` no modifica estados persistidos
+- filtro opcional por `tipo_origen`
+- respuesta sin paginacion (agrega todo en memoria)
+
+Referencia: `SRV-FIN-017-deuda-consolidado`
+
 Integraciones por evento implementadas:
 
 - Comercial -> Financiero:

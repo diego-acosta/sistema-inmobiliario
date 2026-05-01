@@ -697,6 +697,155 @@ class FinancieroRepository:
 
         return {"items": items, "total": total}
 
+    # ── deuda consolidado global ─────────────────────────────────────────────
+
+    def get_deuda_consolidado(
+        self,
+        *,
+        tipo_origen: str | None,
+        fecha_corte: date,
+    ) -> dict[str, Any]:
+        filters = [
+            "o.deleted_at IS NULL",
+            "rg.deleted_at IS NULL",
+            "o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')",
+            "o.saldo_pendiente > 0",
+        ]
+        params: dict[str, Any] = {}
+
+        if tipo_origen is not None:
+            filters.append("UPPER(rg.tipo_origen) = :tipo_origen")
+            params["tipo_origen"] = tipo_origen.strip().upper()
+
+        where = " AND ".join(filters)
+
+        stmt = text(
+            f"""
+            SELECT
+                o.id_relacion_generadora,
+                rg.tipo_origen,
+                rg.id_origen,
+                o.fecha_vencimiento,
+                o.saldo_pendiente
+            FROM obligacion_financiera o
+            JOIN relacion_generadora rg
+                ON rg.id_relacion_generadora = o.id_relacion_generadora
+            WHERE {where}
+            ORDER BY rg.tipo_origen ASC, o.id_relacion_generadora ASC
+            """
+        )
+
+        rows = self.db.execute(stmt, params).mappings().all()
+
+        # Aggregate per relacion_generadora
+        rg_map: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            id_rg = row["id_relacion_generadora"]
+            if id_rg not in rg_map:
+                rg_map[id_rg] = {
+                    "id_relacion_generadora": id_rg,
+                    "tipo_origen": str(row["tipo_origen"]).upper(),
+                    "id_origen": row["id_origen"],
+                    "saldo_pendiente": Decimal("0"),
+                    "saldo_vencido": Decimal("0"),
+                    "saldo_futuro": Decimal("0"),
+                    "mora_calculada": Decimal("0"),
+                    "cantidad_obligaciones": 0,
+                }
+
+            mora = _calcular_mora_dinamica(
+                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte
+            )
+            saldo = Decimal(str(row["saldo_pendiente"]))
+            mora_dec = Decimal(str(mora["mora_calculada"]))
+            fv = row["fecha_vencimiento"]
+
+            rg_map[id_rg]["saldo_pendiente"] += saldo
+            rg_map[id_rg]["mora_calculada"] += mora_dec
+            rg_map[id_rg]["cantidad_obligaciones"] += 1
+            if fv is not None and fv < fecha_corte and saldo > 0:
+                rg_map[id_rg]["saldo_vencido"] += saldo
+            else:
+                rg_map[id_rg]["saldo_futuro"] += saldo
+
+        relaciones: list[dict[str, Any]] = []
+        for rg in rg_map.values():
+            sp = rg["saldo_pendiente"]
+            mc = rg["mora_calculada"]
+            tc = (sp + mc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            relaciones.append(
+                {
+                    "id_relacion_generadora": rg["id_relacion_generadora"],
+                    "tipo_origen": rg["tipo_origen"],
+                    "id_origen": rg["id_origen"],
+                    "saldo_pendiente": float(sp),
+                    "saldo_vencido": float(rg["saldo_vencido"]),
+                    "saldo_futuro": float(rg["saldo_futuro"]),
+                    "mora_calculada": float(mc),
+                    "total_con_mora": float(tc),
+                    "cantidad_obligaciones": rg["cantidad_obligaciones"],
+                }
+            )
+
+        # Resumen global
+        _D0 = Decimal("0")
+        total_sp = sum((Decimal(str(r["saldo_pendiente"])) for r in relaciones), _D0)
+        total_vencido = sum((Decimal(str(r["saldo_vencido"])) for r in relaciones), _D0)
+        total_futuro = sum((Decimal(str(r["saldo_futuro"])) for r in relaciones), _D0)
+        total_mora = sum((Decimal(str(r["mora_calculada"])) for r in relaciones), _D0)
+        total_con_mora = (total_sp + total_mora).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+        resumen = {
+            "saldo_pendiente_total": float(total_sp),
+            "saldo_vencido": float(total_vencido),
+            "saldo_futuro": float(total_futuro),
+            "mora_calculada": float(total_mora),
+            "total_con_mora": float(total_con_mora),
+        }
+
+        # Agrupación por tipo_origen
+        por_tipo: dict[str, dict[str, Any]] = {}
+        for r in relaciones:
+            t = r["tipo_origen"]
+            if t not in por_tipo:
+                por_tipo[t] = {
+                    "saldo_pendiente_total": Decimal("0"),
+                    "saldo_vencido": Decimal("0"),
+                    "saldo_futuro": Decimal("0"),
+                    "mora_calculada": Decimal("0"),
+                    "cantidad_relaciones": 0,
+                }
+            por_tipo[t]["saldo_pendiente_total"] += Decimal(str(r["saldo_pendiente"]))
+            por_tipo[t]["saldo_vencido"] += Decimal(str(r["saldo_vencido"]))
+            por_tipo[t]["saldo_futuro"] += Decimal(str(r["saldo_futuro"]))
+            por_tipo[t]["mora_calculada"] += Decimal(str(r["mora_calculada"]))
+            por_tipo[t]["cantidad_relaciones"] += 1
+
+        por_tipo_origen = {
+            t: {
+                "saldo_pendiente_total": float(v["saldo_pendiente_total"]),
+                "saldo_vencido": float(v["saldo_vencido"]),
+                "saldo_futuro": float(v["saldo_futuro"]),
+                "mora_calculada": float(v["mora_calculada"]),
+                "total_con_mora": float(
+                    (v["saldo_pendiente_total"] + v["mora_calculada"]).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                ),
+                "cantidad_relaciones": v["cantidad_relaciones"],
+            }
+            for t, v in por_tipo.items()
+        }
+
+        return {
+            "fecha_corte": fecha_corte,
+            "resumen": resumen,
+            "por_tipo_origen": por_tipo_origen,
+            "relaciones": relaciones,
+        }
+
     # ── estado de cuenta ────────────────────────────────────────────────────
 
     def has_obligaciones_by_relacion_generadora(
