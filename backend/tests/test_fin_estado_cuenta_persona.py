@@ -441,3 +441,257 @@ def test_estado_cuenta_persona_mora_cambia_segun_fecha_corte(client, db_session)
     assert ob5["mora_calculada"] == pytest.approx(250.00)
     assert ob20["dias_atraso"] == 20
     assert ob20["mora_calculada"] == pytest.approx(1000.00)
+
+
+# ── tests: filtros individuales y combinaciones ───────────────────────────────
+
+def test_filtro_estado_devuelve_solo_estado_solicitado(client, db_session) -> None:
+    """estado=EMITIDA excluye las que fueron forzadas a VENCIDA."""
+    id_persona, contrato = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-EST-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-06-30",
+        monto=10000.00,
+    )
+    # Forzar la primera obligación a VENCIDA
+    db_session.execute(
+        text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = 'VENCIDA'
+            WHERE id_obligacion_financiera = (
+                SELECT o.id_obligacion_financiera
+                FROM obligacion_financiera o
+                WHERE o.id_relacion_generadora = (
+                    SELECT id_relacion_generadora FROM relacion_generadora
+                    WHERE tipo_origen = 'contrato_alquiler'
+                      AND id_origen = :id_contrato AND deleted_at IS NULL LIMIT 1
+                ) AND o.deleted_at IS NULL
+                ORDER BY o.id_obligacion_financiera ASC
+                LIMIT 1
+            )
+            """
+        ),
+        {"id_contrato": contrato["id_contrato_alquiler"]},
+    )
+
+    resp_emitida = client.get(_url(id_persona), headers=HEADERS, params={"estado": "EMITIDA"})
+    resp_vencida = client.get(_url(id_persona), headers=HEADERS, params={"estado": "VENCIDA"})
+
+    assert resp_emitida.status_code == 200
+    assert resp_vencida.status_code == 200
+    emitidas = resp_emitida.json()["data"]["obligaciones"]
+    vencidas = resp_vencida.json()["data"]["obligaciones"]
+    assert len(emitidas) == 1
+    assert len(vencidas) == 1
+    assert all(o["estado_obligacion"] == "EMITIDA" for o in emitidas)
+    assert all(o["estado_obligacion"] == "VENCIDA" for o in vencidas)
+
+
+def test_filtro_id_origen_devuelve_solo_obligaciones_del_origen(client, db_session) -> None:
+    """id_origen filtra por relacion_generadora.id_origen."""
+    id_persona, contrato1 = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-ID-OR-A",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    # Segundo contrato para la misma persona
+    from tests.test_fin_event_contrato_alquiler import _crear_contrato_borrador, _crear_condicion
+    from tests.test_reservas_venta_create import _crear_inmueble
+    inmueble2 = _crear_inmueble(client, codigo="INM-ECP-ID-OR-B")
+    from tests.test_contratos_alquiler_create import _payload_base
+    resp2 = client.post(
+        "/api/v1/contratos-alquiler",
+        headers=HEADERS,
+        json=_payload_base(
+            codigo_contrato="ECP-ID-OR-B",
+            objetos=[{"id_inmueble": inmueble2, "id_unidad_funcional": None, "observaciones": None}],
+            fecha_inicio="2026-05-01",
+            fecha_fin="2026-05-31",
+        ),
+    )
+    assert resp2.status_code == 201
+    contrato2 = resp2.json()["data"]
+    _crear_condicion(client, contrato2["id_contrato_alquiler"], 20000.00, "2026-05-01")
+    # Reusar el mismo locatario ya creado insertando relacion_persona_rol
+    id_rol = db_session.execute(
+        text("SELECT id_rol_participacion FROM rol_participacion WHERE codigo_rol = 'LOCATARIO_PRINCIPAL' LIMIT 1")
+    ).scalar_one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO relacion_persona_rol (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_persona, id_rol_participacion,
+                tipo_relacion, id_relacion, fecha_desde, fecha_hasta, observaciones
+            ) VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id, :id_persona, :id_rol,
+                'contrato_alquiler', :id_contrato, TIMESTAMP '2026-05-01', NULL, NULL
+            )
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "id_persona": id_persona,
+         "id_rol": id_rol, "id_contrato": contrato2["id_contrato_alquiler"]},
+    )
+    from tests.test_fin_event_contrato_alquiler import _activar
+    _activar(client, contrato2["id_contrato_alquiler"], contrato2["version_registro"])
+
+    resp = client.get(
+        _url(id_persona), headers=HEADERS,
+        params={"id_origen": contrato1["id_contrato_alquiler"]},
+    )
+
+    assert resp.status_code == 200
+    obs = resp.json()["data"]["obligaciones"]
+    assert len(obs) == 1
+    assert obs[0]["id_origen"] == contrato1["id_contrato_alquiler"]
+
+
+def test_filtro_rango_fechas_vencimiento(client, db_session) -> None:
+    """fecha_vencimiento_desde/hasta filtra por rango de vencimiento."""
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-RANGO-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-07-31",
+        monto=10000.00,
+        dia_vencimiento_canon=1,
+    )
+    # Mayo: venc 2026-05-01, Junio: 2026-06-01, Julio: 2026-07-01
+    resp = client.get(
+        _url(id_persona), headers=HEADERS,
+        params={"fecha_vencimiento_desde": "2026-05-15", "fecha_vencimiento_hasta": "2026-06-15"},
+    )
+
+    assert resp.status_code == 200
+    obs = resp.json()["data"]["obligaciones"]
+    assert len(obs) == 1
+    assert obs[0]["fecha_vencimiento"] == "2026-06-01"
+
+
+def test_filtro_combinado_tipo_origen_y_estado(client, db_session) -> None:
+    """tipo_origen AND estado se combinan correctamente."""
+    id_persona, contrato = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-COMB-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-06-30",
+        monto=10000.00,
+    )
+    # Forzar una a VENCIDA
+    db_session.execute(
+        text(
+            """
+            UPDATE obligacion_financiera SET estado_obligacion = 'VENCIDA'
+            WHERE id_obligacion_financiera = (
+                SELECT o.id_obligacion_financiera
+                FROM obligacion_financiera o
+                WHERE o.id_relacion_generadora = (
+                    SELECT id_relacion_generadora FROM relacion_generadora
+                    WHERE tipo_origen = 'contrato_alquiler'
+                      AND id_origen = :id AND deleted_at IS NULL LIMIT 1
+                ) AND o.deleted_at IS NULL
+                ORDER BY o.id_obligacion_financiera ASC
+                LIMIT 1
+            )
+            """
+        ),
+        {"id": contrato["id_contrato_alquiler"]},
+    )
+
+    # tipo_origen=CONTRATO_ALQUILER AND estado=EMITIDA → solo la EMITIDA
+    resp = client.get(
+        _url(id_persona), headers=HEADERS,
+        params={"tipo_origen": "CONTRATO_ALQUILER", "estado": "EMITIDA"},
+    )
+    assert resp.status_code == 200
+    obs = resp.json()["data"]["obligaciones"]
+    assert len(obs) == 1
+    assert obs[0]["estado_obligacion"] == "EMITIDA"
+    assert obs[0]["tipo_origen"] == "CONTRATO_ALQUILER"
+
+
+def test_filtro_vencidas_usa_fecha_corte_personalizada(client, db_session) -> None:
+    """
+    vencidas=True respeta fecha_corte.
+    Obligación con vencimiento 2026-04-01:
+    - fecha_corte=2026-04-15 → incluida (2026-04-01 < 2026-04-15)
+    - fecha_corte=2026-03-15 → excluida (2026-04-01 >= 2026-03-15)
+    """
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-VFC-001",
+        fecha_inicio="2026-04-01",
+        fecha_fin="2026-04-30",
+        monto=10000.00,
+        dia_vencimiento_canon=1,
+    )
+
+    resp_incluida = client.get(
+        _url(id_persona), headers=HEADERS,
+        params={"vencidas": True, "fecha_corte": "2026-04-15"},
+    )
+    resp_excluida = client.get(
+        _url(id_persona), headers=HEADERS,
+        params={"vencidas": True, "fecha_corte": "2026-03-15"},
+    )
+
+    assert resp_incluida.status_code == 200
+    assert resp_excluida.status_code == 200
+    assert len(resp_incluida.json()["data"]["obligaciones"]) == 1
+    assert resp_excluida.json()["data"]["obligaciones"] == []
+
+
+def test_filtro_vencidas_y_rango_sin_interseccion_devuelve_vacio(client, db_session) -> None:
+    """
+    vencidas=True (< fecha_corte=2026-05-01) combinado con
+    fecha_vencimiento_desde=2026-06-01 es contradictorio → lista vacía, sin error.
+    """
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-CONTRA-001",
+        fecha_inicio="2026-04-01",
+        fecha_fin="2026-06-30",
+        monto=10000.00,
+        dia_vencimiento_canon=1,
+    )
+
+    resp = client.get(
+        _url(id_persona), headers=HEADERS,
+        params={
+            "vencidas": True,
+            "fecha_corte": "2026-05-01",
+            "fecha_vencimiento_desde": "2026-06-01",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["obligaciones"] == []
+
+
+def test_filtro_rango_invertido_devuelve_vacio_sin_error(client, db_session) -> None:
+    """
+    fecha_vencimiento_desde > fecha_vencimiento_hasta es un rango imposible.
+    No debe devolver error 400; devuelve lista vacía con 200.
+    """
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-INV-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+
+    resp = client.get(
+        _url(id_persona), headers=HEADERS,
+        params={"fecha_vencimiento_desde": "2026-12-01", "fecha_vencimiento_hasta": "2026-01-01"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["obligaciones"] == []

@@ -79,6 +79,15 @@ persona
 - devuelve `404` si la persona no existe
 - devuelve resumen en cero y lista vacia si la persona existe pero no tiene obligaciones
 
+## Reglas de filtros
+
+- todos los filtros activos se combinan con AND
+- un filtro no invalida a otro; combinaciones contradictorias producen lista vacía con HTTP 200
+- `vencidas=True` aplica `fecha_vencimiento < fecha_corte AND saldo_pendiente > 0`; usa la `fecha_corte` efectiva de la consulta
+- `fecha_vencimiento_desde` y `fecha_vencimiento_hasta` son independientes de `vencidas`; se pueden combinar
+- rango invertido (`fecha_desde > fecha_hasta`) no es error; produce lista vacía
+- no se validan ni rechazan combinaciones mutuamente excluyentes
+
 ---
 
 ## Alcance V1
@@ -92,7 +101,6 @@ persona
 
 ## Pendientes
 
-- Validacion explicita de combinacion de filtros mutuamente excluyentes (ej: `vencidas=True` con `fecha_vencimiento_desde` en el futuro).
 - Evaluacion de paginacion si el volumen de obligaciones por persona crece en produccion.
 
 ---

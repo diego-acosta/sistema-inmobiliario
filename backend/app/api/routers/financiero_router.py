@@ -725,14 +725,6 @@ def get_estado_cuenta_persona(
                     error_message="La persona indicada no existe.",
                 ).model_dump(),
             )
-        if "FECHA_RANGO_INVALIDO" in result.errors:
-            return JSONResponse(
-                status_code=400,
-                content=ErrorResponse(
-                    error_code="FECHA_RANGO_INVALIDO",
-                    error_message="fecha_vencimiento_hasta debe ser mayor o igual a fecha_vencimiento_desde.",
-                ).model_dump(),
-            )
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(

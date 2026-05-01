@@ -39,13 +39,6 @@ class GetEstadoCuentaPersonaService:
         fecha_vencimiento_hasta: date | None,
         fecha_corte: date | None,
     ) -> AppResult[dict[str, Any]]:
-        if (
-            fecha_vencimiento_desde is not None
-            and fecha_vencimiento_hasta is not None
-            and fecha_vencimiento_hasta < fecha_vencimiento_desde
-        ):
-            return AppResult.fail("FECHA_RANGO_INVALIDO")
-
         if not self.repository.persona_exists(id_persona):
             return AppResult.fail("NOT_FOUND_PERSONA")
 
