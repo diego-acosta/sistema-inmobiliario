@@ -32,6 +32,35 @@ No cubre:
 - refinanciacion
 - reversion especifica de mora
 
+## Decisión V1 — Mora dinámica no persistida
+
+En la versión actual, la mora no genera obligaciones financieras accesorias ni composiciones `INTERES_MORA`.
+
+El proceso de mora V1 solo realiza:
+
+- marcado idempotente de obligaciones `EMITIDA -> VENCIDA`
+- cálculo dinámico de `mora_calculada` en consultas de deuda y estado de cuenta
+- exposición de `dias_atraso` y `tasa_diaria_mora`
+
+La mora calculada no modifica:
+
+- `importe_total`
+- `saldo_pendiente`
+- `composicion_obligacion`
+- `obligacion_obligado`
+
+## Pendientes explícitos
+
+- parametrizar `tasa_diaria_mora`
+- definir días de gracia
+- definir política de mora por contrato, concepto o relación generadora
+- definir si habrá Mora V2 persistida
+- definir cuándo una mora calculada se liquida formalmente
+- definir si una liquidación de mora futura genera:
+  - una nueva `obligacion_financiera`
+  - una `composicion_obligacion` accesoria
+  - o un movimiento/ajuste financiero específico
+
 ## Endpoint
 
 `POST /api/v1/financiero/mora/generar`

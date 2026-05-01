@@ -473,3 +473,23 @@ Reglas implementadas:
   economicas; debe mantenerse alineada con el dominio locativo.
 - La politica de moneda no esta normalizada.
 - La regla real de vencimiento y dias de gracia esta pendiente.
+
+## Mora — Estado actual (V1)
+
+La mora V1 es dinámica y de lectura. No representa aún deuda accesoria persistida.
+
+Esto implica:
+
+- No se generan obligaciones financieras de tipo INTERES_MORA.
+- No se modifica el saldo de la obligación base.
+- No se altera la composición de la obligación.
+- La mora se calcula dinámicamente en consultas (estado de cuenta, deuda).
+- El único efecto persistido es el cambio de estado EMITIDA → VENCIDA.
+
+## Evolución prevista
+
+En versiones futuras (Mora V2), se evaluará:
+
+- generación de obligaciones accesorias de mora
+- liquidación formal de intereses
+- parametrización por contrato/concepto
