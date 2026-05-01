@@ -272,6 +272,49 @@ Notas:
 
 ---
 
+## 9. Estado de cuenta por persona
+
+Endpoint: `GET /api/v1/financiero/personas/{id_persona}/estado-cuenta`
+
+Descripcion:
+
+Vista consolidada de las obligaciones financieras de una persona fisica o juridica, consultada desde `obligacion_obligado`.
+
+Ruta de consulta: `persona -> obligacion_obligado -> obligacion_financiera -> relacion_generadora`
+
+Incluye:
+
+- todas las obligaciones donde la persona figura como obligada
+- `porcentaje_responsabilidad` por obligacion
+- `monto_responsabilidad = saldo_pendiente * porcentaje_responsabilidad / 100`
+- mora dinamica calculada (no persistida) cuando `fecha_vencimiento < fecha_corte`
+- `total_con_mora = (saldo_pendiente + mora_calculada) * porcentaje_responsabilidad / 100`
+- resumen: `saldo_pendiente_total`, `saldo_vencido`, `saldo_futuro`, `mora_calculada`, `total_con_mora`
+
+Reglas:
+
+- excluye obligaciones con estado `ANULADA` o `REEMPLAZADA`
+- incluye `EMITIDA` y `VENCIDA` por defecto
+- mora solo si `saldo_pendiente > 0` y `fecha_vencimiento < fecha_corte`
+- `fecha_corte = date.today()` — no configurable en V1
+- mora no se persiste
+
+Filtros opcionales:
+
+- `estado`: filtra por `estado_obligacion`
+- `tipo_origen`: filtra por `relacion_generadora.tipo_origen`
+- `id_origen`: filtra por `relacion_generadora.id_origen`
+- `vencidas=True`: solo obligaciones con `fecha_vencimiento < hoy AND saldo_pendiente > 0`
+- `fecha_vencimiento_desde`, `fecha_vencimiento_hasta`
+
+Devuelve 404 si la persona no existe.
+
+Devuelve resumen en cero y lista vacia si existe pero no tiene obligaciones.
+
+Referencia: `SRV-FIN-016-estado-cuenta-por-persona`
+
+---
+
 ## Procesamiento de eventos (Inbox)
 
 El dominio financiero implementa un endpoint de inbox para procesar eventos externos:

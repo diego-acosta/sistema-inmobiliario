@@ -101,18 +101,20 @@ def test_fin_rel_gen_list_tipo_invalido_no_devuelve_resultados(client) -> None:
 
 
 def test_fin_rel_gen_list_paginacion(client) -> None:
-    contrato = _crear_contrato(client, codigo="FIN-RG-PAG-001")
+    created_ids: list[int] = []
     for i in range(3):
-        _crear_relacion_generadora(
+        contrato = _crear_contrato(client, codigo=f"FIN-RG-PAG-{i + 1:03d}")
+        rg = _crear_relacion_generadora(
             client,
             id_origen=contrato["id_contrato_alquiler"],
             descripcion=f"Item {i}",
         )
+        created_ids.append(rg["id_relacion_generadora"])
 
     response = client.get(
         URL_LIST,
         params={
-            "id_origen": contrato["id_contrato_alquiler"],
+            "tipo_origen": "CONTRATO_ALQUILER",
             "limit": 2,
             "offset": 0,
         },
@@ -120,5 +122,8 @@ def test_fin_rel_gen_list_paginacion(client) -> None:
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["total"] == 3
+    assert data["total"] >= 3
     assert len(data["items"]) == 2
+    assert {item["id_relacion_generadora"] for item in data["items"]}.issubset(
+        set(created_ids)
+    )

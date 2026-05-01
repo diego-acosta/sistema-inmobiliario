@@ -19,6 +19,10 @@ from app.api.schemas.financiero import (
     DeudaListResponse,
     ErrorResponse,
     EstadoCuentaData,
+    EstadoCuentaPersonaData,
+    EstadoCuentaPersonaObligacionItem,
+    EstadoCuentaPersonaResumen,
+    EstadoCuentaPersonaResponse,
     EstadoCuentaResponse,
     ImputacionCreateRequest,
     ImputacionData,
@@ -67,6 +71,9 @@ from app.application.financiero.services.get_obligacion_financiera_service impor
 )
 from app.application.financiero.services.get_estado_cuenta_financiero_service import (
     GetEstadoCuentaFinancieroService,
+)
+from app.application.financiero.services.get_estado_cuenta_persona_service import (
+    GetEstadoCuentaPersonaService,
 )
 from app.application.financiero.services.generar_mora_financiera_service import (
     GenerarMoraFinancieraService,
@@ -664,6 +671,85 @@ def get_obligacion_financiera(
 
     return ObligacionFinancieraResponse(
         data=ObligacionFinancieraData(**result.data)
+    )
+
+
+@router.get(
+    "/api/v1/financiero/personas/{id_persona}/estado-cuenta",
+    response_model=EstadoCuentaPersonaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_estado_cuenta_persona(
+    id_persona: int,
+    estado: str | None = Query(default=None),
+    tipo_origen: str | None = Query(default=None),
+    id_origen: int | None = Query(default=None),
+    vencidas: bool | None = Query(default=None),
+    fecha_vencimiento_desde: date | None = Query(default=None),
+    fecha_vencimiento_hasta: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> EstadoCuentaPersonaResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetEstadoCuentaPersonaService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_persona=id_persona,
+            estado=estado,
+            tipo_origen=tipo_origen,
+            id_origen=id_origen,
+            vencidas=vencidas,
+            fecha_vencimiento_desde=fecha_vencimiento_desde,
+            fecha_vencimiento_hasta=fecha_vencimiento_hasta,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_PERSONA" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La persona indicada no existe.",
+                ).model_dump(),
+            )
+        if "FECHA_RANGO_INVALIDO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="FECHA_RANGO_INVALIDO",
+                    error_message="fecha_vencimiento_hasta debe ser mayor o igual a fecha_vencimiento_desde.",
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo consultar el estado de cuenta.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    data = result.data
+    return EstadoCuentaPersonaResponse(
+        data=EstadoCuentaPersonaData(
+            id_persona=data["id_persona"],
+            resumen=EstadoCuentaPersonaResumen(**data["resumen"]),
+            obligaciones=[
+                EstadoCuentaPersonaObligacionItem(**ob)
+                for ob in data["obligaciones"]
+            ],
+        )
     )
 
 

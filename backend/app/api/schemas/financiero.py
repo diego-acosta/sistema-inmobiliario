@@ -292,6 +292,46 @@ class EstadoCuentaResponse(BaseModel):
     data: EstadoCuentaData
 
 
+# ── estado de cuenta por persona ─────────────────────────────────────────────
+
+class EstadoCuentaPersonaObligacionItem(BaseModel):
+    id_obligacion_financiera: int
+    id_relacion_generadora: int
+    tipo_origen: str
+    id_origen: int
+    periodo_desde: date | None
+    periodo_hasta: date | None
+    fecha_vencimiento: date | None
+    estado_obligacion: str
+    importe_total: float
+    saldo_pendiente: float
+    porcentaje_responsabilidad: float
+    monto_responsabilidad: float
+    dias_atraso: int = 0
+    tasa_diaria_mora: float = 0.001
+    mora_calculada: float = 0.0
+    total_con_mora: float = 0.0
+
+
+class EstadoCuentaPersonaResumen(BaseModel):
+    saldo_pendiente_total: float
+    saldo_vencido: float
+    saldo_futuro: float
+    mora_calculada: float
+    total_con_mora: float
+
+
+class EstadoCuentaPersonaData(BaseModel):
+    id_persona: int
+    resumen: EstadoCuentaPersonaResumen
+    obligaciones: list[EstadoCuentaPersonaObligacionItem]
+
+
+class EstadoCuentaPersonaResponse(BaseModel):
+    ok: bool = True
+    data: EstadoCuentaPersonaData
+
+
 # ── inbox de eventos ──────────────────────────────────────────────────────────
 
 class InboxEventRequest(BaseModel):

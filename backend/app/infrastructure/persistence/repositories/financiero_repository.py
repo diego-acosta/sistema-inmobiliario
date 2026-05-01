@@ -48,6 +48,12 @@ class FinancieroRepository:
 
     # ── existence checks ──────────────────────────────────────────────────────
 
+    def persona_exists(self, id_persona: int) -> bool:
+        stmt = text(
+            "SELECT 1 FROM persona WHERE id_persona = :id AND deleted_at IS NULL"
+        )
+        return self.db.execute(stmt, {"id": id_persona}).scalar_one_or_none() is not None
+
     def venta_exists(self, id_venta: int) -> bool:
         stmt = text(
             "SELECT 1 FROM venta WHERE id_venta = :id AND deleted_at IS NULL"
@@ -1284,6 +1290,141 @@ class FinancieroRepository:
         result["uid_global"] = str(result["uid_global"])
         result["composiciones"] = comp_results
         return result
+
+    # ── estado de cuenta por persona ────────────────────────────────────────
+
+    def get_estado_cuenta_por_persona(
+        self,
+        *,
+        id_persona: int,
+        estado: str | None,
+        tipo_origen: str | None,
+        id_origen: int | None,
+        vencidas: bool | None,
+        fecha_vencimiento_desde: date | None,
+        fecha_vencimiento_hasta: date | None,
+        fecha_corte: date,
+    ) -> dict[str, Any]:
+        filters = [
+            "oo.id_persona = :id_persona",
+            "oo.deleted_at IS NULL",
+            "o.deleted_at IS NULL",
+            "rg.deleted_at IS NULL",
+            "o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')",
+        ]
+        params: dict[str, Any] = {"id_persona": id_persona}
+
+        if estado is not None:
+            filters.append("o.estado_obligacion = :estado")
+            params["estado"] = estado.strip().upper()
+        if tipo_origen is not None:
+            filters.append("UPPER(rg.tipo_origen) = :tipo_origen")
+            params["tipo_origen"] = tipo_origen.strip().upper()
+        if id_origen is not None:
+            filters.append("rg.id_origen = :id_origen")
+            params["id_origen"] = id_origen
+        if vencidas is True:
+            filters.append("o.fecha_vencimiento < :fecha_corte_v AND o.saldo_pendiente > 0")
+            params["fecha_corte_v"] = fecha_corte
+        if fecha_vencimiento_desde is not None:
+            filters.append("o.fecha_vencimiento >= :fec_desde")
+            params["fec_desde"] = fecha_vencimiento_desde
+        if fecha_vencimiento_hasta is not None:
+            filters.append("o.fecha_vencimiento <= :fec_hasta")
+            params["fec_hasta"] = fecha_vencimiento_hasta
+
+        where = " AND ".join(filters)
+
+        ob_stmt = text(
+            f"""
+            SELECT
+                o.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                rg.tipo_origen,
+                rg.id_origen,
+                o.periodo_desde,
+                o.periodo_hasta,
+                o.fecha_vencimiento,
+                o.estado_obligacion,
+                o.importe_total,
+                o.saldo_pendiente,
+                oo.porcentaje_responsabilidad
+            FROM obligacion_obligado oo
+            JOIN obligacion_financiera o
+                ON o.id_obligacion_financiera = oo.id_obligacion_financiera
+            JOIN relacion_generadora rg
+                ON rg.id_relacion_generadora = o.id_relacion_generadora
+            WHERE {where}
+            ORDER BY o.fecha_vencimiento ASC NULLS LAST, o.id_obligacion_financiera ASC
+            """
+        )
+
+        rows = self.db.execute(ob_stmt, params).mappings().all()
+
+        obligaciones = []
+        saldo_total = Decimal("0")
+        saldo_vencido = Decimal("0")
+        saldo_futuro = Decimal("0")
+        mora_total = Decimal("0")
+
+        for row in rows:
+            saldo = Decimal(str(row["saldo_pendiente"]))
+            pct = Decimal(str(row["porcentaje_responsabilidad"]))
+
+            mora = _calcular_mora_dinamica(
+                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte
+            )
+            mora_dec = Decimal(str(mora["mora_calculada"]))
+
+            monto_resp = (saldo * pct / 100).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            total_con_mora_ob = ((saldo + mora_dec) * pct / 100).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+
+            saldo_total += saldo
+            mora_total += mora_dec
+            fv = row["fecha_vencimiento"]
+            if fv is not None and fv < fecha_corte and saldo > 0:
+                saldo_vencido += saldo
+            else:
+                saldo_futuro += saldo
+
+            obligaciones.append(
+                {
+                    "id_obligacion_financiera": row["id_obligacion_financiera"],
+                    "id_relacion_generadora": row["id_relacion_generadora"],
+                    "tipo_origen": str(row["tipo_origen"]).upper(),
+                    "id_origen": row["id_origen"],
+                    "periodo_desde": row["periodo_desde"],
+                    "periodo_hasta": row["periodo_hasta"],
+                    "fecha_vencimiento": fv,
+                    "estado_obligacion": row["estado_obligacion"],
+                    "importe_total": float(row["importe_total"]),
+                    "saldo_pendiente": float(saldo),
+                    "porcentaje_responsabilidad": float(pct),
+                    "monto_responsabilidad": float(monto_resp),
+                    **mora,
+                    "total_con_mora": float(total_con_mora_ob),
+                }
+            )
+
+        total_con_mora_res = (saldo_total + mora_total).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+        return {
+            "id_persona": id_persona,
+            "resumen": {
+                "saldo_pendiente_total": float(saldo_total),
+                "saldo_vencido": float(saldo_vencido),
+                "saldo_futuro": float(saldo_futuro),
+                "mora_calculada": float(mora_total),
+                "total_con_mora": float(total_con_mora_res),
+            },
+            "obligaciones": obligaciones,
+        }
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
