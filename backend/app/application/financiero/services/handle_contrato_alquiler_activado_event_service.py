@@ -1,60 +1,122 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+import calendar
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from app.application.common.results import AppResult
-from app.application.financiero.services.create_obligacion_financiera_service import (
-    ComposicionCreatePayload,
-    ObligacionCreatePayload,
-)
-from app.application.financiero.services.create_relacion_generadora_service import (
-    RelacionGeneradoraCreatePayload,
-)
 
 
-EVENT_TYPE_CONTRATO_ALQUILER_ACTIVADO = "contrato_alquiler_activado"
-TIPO_ORIGEN_CONTRATO_ALQUILER = "contrato_alquiler"
-CONCEPTO_CANON_LOCATIVO = "CANON_LOCATIVO"
+# ── helpers de período ────────────────────────────────────────────────────────
+
+def generate_monthly_periods(
+    fecha_inicio: date, fecha_fin: date
+) -> list[tuple[date, date]]:
+    """
+    Divide [fecha_inicio, fecha_fin] en tramos mensuales reales.
+
+    Ejemplo: 01/01 → 15/03
+      → (01/01, 31/01), (01/02, 28/02), (01/03, 15/03)
+    """
+    periods: list[tuple[date, date]] = []
+    current = fecha_inicio
+    while current <= fecha_fin:
+        period_desde = current
+        last_day = date(
+            current.year,
+            current.month,
+            calendar.monthrange(current.year, current.month)[1],
+        )
+        period_hasta = min(last_day, fecha_fin)
+        periods.append((period_desde, period_hasta))
+        if current.month == 12:
+            current = date(current.year + 1, 1, 1)
+        else:
+            current = date(current.year, current.month + 1, 1)
+    return periods
+
+
+def get_condicion_vigente_para_periodo(
+    condiciones: list[dict[str, Any]], periodo_desde: date
+) -> dict[str, Any] | None:
+    """
+    Retorna la condición económica vigente para periodo_desde, o None.
+
+    Vigente si:
+      fecha_desde <= periodo_desde
+      y (fecha_hasta is None OR fecha_hasta >= periodo_desde)
+
+    Si hay más de una, gana la de fecha_desde más reciente.
+    """
+    vigentes = [
+        c for c in condiciones
+        if c["fecha_desde"] <= periodo_desde
+        and (c.get("fecha_hasta") is None or c["fecha_hasta"] >= periodo_desde)
+    ]
+    if not vigentes:
+        return None
+    return max(vigentes, key=lambda c: c["fecha_desde"])
+
+
+# ── payloads ──────────────────────────────────────────────────────────────────
+
+@dataclass(slots=True)
+class RelacionGeneradoraForCronogramaPayload:
+    tipo_origen: str
+    id_origen: int
+    descripcion: str | None
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    id_instalacion_origen: Any
+    id_instalacion_ultima_modificacion: Any
+    op_id_alta: UUID | None
+    op_id_ultima_modificacion: UUID | None
 
 
 @dataclass(slots=True)
-class HandleContratoAlquilerActivadoEventData:
-    id_contrato_alquiler: int
+class PeriodoCronogramaPayload:
     id_relacion_generadora: int
-    relacion_generadora_created: bool
-    obligacion_created: bool
-    id_obligacion_financiera: int | None
+    fecha_emision: date
+    fecha_vencimiento: date
+    periodo_desde: date
+    periodo_hasta: date
+    importe_total: float
+    moneda: str
+    estado_obligacion: str
+    id_concepto_financiero: int
+    uid_global_obligacion: str
+    uid_global_composicion: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    id_instalacion_origen: Any
+    id_instalacion_ultima_modificacion: Any
+    op_id_alta: UUID | None
+    op_id_ultima_modificacion: UUID | None
 
 
-class _RollbackAppResult(Exception):
-    def __init__(self, result: AppResult[dict[str, Any]]) -> None:
-        self.result = result
+# ── protocols ─────────────────────────────────────────────────────────────────
 
-
-class FinancieroRepository(Protocol):
-    db: Any
-
-    def get_contrato_alquiler_para_financiero(
+class LocativoRepository(Protocol):
+    def get_contrato_alquiler(
         self, id_contrato_alquiler: int
     ) -> dict[str, Any] | None: ...
 
-    def get_condicion_economica_vigente_para_financiero(
-        self, id_contrato_alquiler: int, fecha_referencia: date
-    ) -> dict[str, Any] | None: ...
 
+class FinancieroRepository(Protocol):
     def get_relacion_generadora_by_origen(
         self, tipo_origen: str, id_origen: int
     ) -> dict[str, Any] | None: ...
 
     def create_relacion_generadora(
-        self, payload: RelacionGeneradoraCreatePayload
+        self, payload: RelacionGeneradoraForCronogramaPayload
     ) -> dict[str, Any]: ...
 
-    def has_obligaciones_by_relacion_generadora(
+    def obligaciones_exist_for_relacion_generadora(
         self, id_relacion_generadora: int
     ) -> bool: ...
 
@@ -62,160 +124,111 @@ class FinancieroRepository(Protocol):
         self, codigo: str
     ) -> dict[str, Any] | None: ...
 
-    def create_obligacion_financiera(
-        self,
-        obligacion: ObligacionCreatePayload,
-        composiciones: list[ComposicionCreatePayload],
-    ) -> dict[str, Any]: ...
+    def create_cronograma_obligaciones(
+        self, periodos: list[PeriodoCronogramaPayload]
+    ) -> int: ...
 
+
+# ── service ───────────────────────────────────────────────────────────────────
 
 class HandleContratoAlquilerActivadoEventService:
-    def __init__(self, repository: FinancieroRepository, uuid_generator=None) -> None:
-        self.repository = repository
-        self.db = repository.db
+    def __init__(
+        self,
+        locativo_repository: LocativoRepository,
+        financiero_repository: FinancieroRepository,
+        uuid_generator=None,
+    ) -> None:
+        self.locativo_repo = locativo_repository
+        self.financiero_repo = financiero_repository
         self.uuid_generator = uuid_generator or uuid4
 
-    def execute(self, event: dict[str, Any]) -> AppResult[dict[str, Any]]:
-        if event.get("event_type") != EVENT_TYPE_CONTRATO_ALQUILER_ACTIVADO:
-            return AppResult.fail("INVALID_EVENT_TYPE")
-
-        payload = event.get("payload")
-        if not isinstance(payload, dict):
-            return AppResult.fail("INVALID_EVENT_PAYLOAD")
-
-        id_contrato_alquiler = payload.get("id_contrato_alquiler")
-        if not isinstance(id_contrato_alquiler, int) or id_contrato_alquiler <= 0:
-            return AppResult.fail("INVALID_EVENT_PAYLOAD")
-
-        try:
-            with self._transaction():
-                return self._execute_in_transaction(event, id_contrato_alquiler)
-        except _RollbackAppResult as exc:
-            return exc.result
-
-    def _execute_in_transaction(
-        self, event: dict[str, Any], id_contrato_alquiler: int
+    def execute(
+        self,
+        id_contrato_alquiler: int,
+        context: Any,
     ) -> AppResult[dict[str, Any]]:
-        contrato = self.repository.get_contrato_alquiler_para_financiero(id_contrato_alquiler)
-        if contrato is None:
-            return AppResult.fail("NOT_FOUND_CONTRATO_ALQUILER")
+        contrato = self.locativo_repo.get_contrato_alquiler(id_contrato_alquiler)
+        if contrato is None or contrato.get("deleted_at") is not None:
+            return AppResult.fail("NOT_FOUND_CONTRATO")
 
-        relacion_generadora = self.repository.get_relacion_generadora_by_origen(
-            TIPO_ORIGEN_CONTRATO_ALQUILER, id_contrato_alquiler
-        )
-        relacion_generadora_created = False
-        if relacion_generadora is None:
-            relacion_generadora = self._create_relacion_generadora(id_contrato_alquiler, event)
-            relacion_generadora_created = True
+        fecha_fin = contrato.get("fecha_fin")
+        if fecha_fin is None:
+            return AppResult.ok({"generadas": 0, "omitidas": 0, "razon": "sin_fecha_fin"})
 
-        id_relacion_generadora = relacion_generadora["id_relacion_generadora"]
+        condiciones = contrato.get("condiciones_economicas_alquiler") or []
+        periodos = generate_monthly_periods(contrato["fecha_inicio"], fecha_fin)
 
-        if self.repository.has_obligaciones_by_relacion_generadora(id_relacion_generadora):
-            return AppResult.ok(
-                {
-                    "id_contrato_alquiler": id_contrato_alquiler,
-                    "id_relacion_generadora": id_relacion_generadora,
-                    "relacion_generadora_created": relacion_generadora_created,
-                    "obligacion_created": False,
-                    "id_obligacion_financiera": None,
-                }
-            )
+        # Resolver condición vigente por período ANTES de tocar repositorio financiero
+        periodos_aplicables: list[tuple[date, date, dict[str, Any]]] = []
+        omitidas = 0
+        for periodo_desde, periodo_hasta in periodos:
+            condicion = get_condicion_vigente_para_periodo(condiciones, periodo_desde)
+            if condicion is None:
+                omitidas += 1
+            else:
+                periodos_aplicables.append((periodo_desde, periodo_hasta, condicion))
 
-        fecha_inicio = contrato["fecha_inicio"]
-        fecha_ref = fecha_inicio.date() if isinstance(fecha_inicio, datetime) else fecha_inicio
+        if not periodos_aplicables:
+            return AppResult.ok({"generadas": 0, "omitidas": omitidas, "razon": "sin_condicion_aplicable"})
 
-        condicion = self.repository.get_condicion_economica_vigente_para_financiero(
-            id_contrato_alquiler, fecha_ref
-        )
-        if condicion is None:
-            raise _RollbackAppResult(AppResult.fail("NOT_FOUND_CONDICION_ECONOMICA"))
-
-        concepto = self.repository.get_concepto_financiero_by_codigo(CONCEPTO_CANON_LOCATIVO)
-        if concepto is None:
-            raise _RollbackAppResult(
-                AppResult.fail(f"NOT_FOUND_CONCEPTO:{CONCEPTO_CANON_LOCATIVO}")
-            )
-
+        id_instalacion = getattr(context, "id_instalacion", None)
+        op_id = getattr(context, "op_id", None)
         now = datetime.now(UTC)
-        monto_base = float(condicion["monto_base"])
-        moneda = condicion.get("moneda") or "ARS"
-        op_id = self._parse_op_id(event)
 
-        obligacion = self.repository.create_obligacion_financiera(
-            ObligacionCreatePayload(
-                id_relacion_generadora=id_relacion_generadora,
-                fecha_emision=fecha_ref,
-                fecha_vencimiento=fecha_ref,
-                importe_total=monto_base,
-                estado_obligacion="PROYECTADA",
+        # Obtener o crear relacion_generadora (solo si hay períodos a generar)
+        relacion = self.financiero_repo.get_relacion_generadora_by_origen(
+            "contrato_alquiler", id_contrato_alquiler
+        )
+        if relacion is None:
+            rg_payload = RelacionGeneradoraForCronogramaPayload(
+                tipo_origen="contrato_alquiler",
+                id_origen=id_contrato_alquiler,
+                descripcion=None,
                 uid_global=str(self.uuid_generator()),
                 version_registro=1,
                 created_at=now,
                 updated_at=now,
-                id_instalacion_origen=None,
-                id_instalacion_ultima_modificacion=None,
+                id_instalacion_origen=id_instalacion,
+                id_instalacion_ultima_modificacion=id_instalacion,
                 op_id_alta=op_id,
                 op_id_ultima_modificacion=op_id,
-            ),
-            [
-                ComposicionCreatePayload(
-                    id_concepto_financiero=concepto["id_concepto_financiero"],
-                    codigo_concepto_financiero=CONCEPTO_CANON_LOCATIVO,
-                    orden_composicion=1,
-                    importe_componente=monto_base,
-                    uid_global=str(self.uuid_generator()),
-                    version_registro=1,
-                    created_at=now,
-                    updated_at=now,
-                    id_instalacion_origen=None,
-                    id_instalacion_ultima_modificacion=None,
-                    op_id_alta=op_id,
-                    op_id_ultima_modificacion=op_id,
-                )
-            ],
-        )
+            )
+            relacion = self.financiero_repo.create_relacion_generadora(rg_payload)
 
-        return AppResult.ok(
-            {
-                "id_contrato_alquiler": id_contrato_alquiler,
-                "id_relacion_generadora": id_relacion_generadora,
-                "relacion_generadora_created": relacion_generadora_created,
-                "obligacion_created": True,
-                "id_obligacion_financiera": obligacion["id_obligacion_financiera"],
-            }
-        )
+        id_rg = relacion["id_relacion_generadora"]
 
-    def _create_relacion_generadora(
-        self, id_contrato_alquiler: int, event: dict[str, Any]
-    ) -> dict[str, Any]:
-        now = datetime.now(UTC)
-        return self.repository.create_relacion_generadora(
-            RelacionGeneradoraCreatePayload(
-                tipo_origen=TIPO_ORIGEN_CONTRATO_ALQUILER,
-                id_origen=id_contrato_alquiler,
-                descripcion="Relacion generadora creada desde contrato_alquiler_activado",
-                uid_global=str(self.uuid_generator()),
+        if self.financiero_repo.obligaciones_exist_for_relacion_generadora(id_rg):
+            return AppResult.ok({"generadas": 0, "omitidas": 0, "razon": "ya_generado"})
+
+        concepto = self.financiero_repo.get_concepto_financiero_by_codigo("CANON_LOCATIVO")
+        if concepto is None:
+            return AppResult.fail("NOT_FOUND_CONCEPTO_CANON_LOCATIVO")
+
+        id_concepto = concepto["id_concepto_financiero"]
+
+        payloads = [
+            PeriodoCronogramaPayload(
+                id_relacion_generadora=id_rg,
+                fecha_emision=periodo_desde,
+                fecha_vencimiento=periodo_desde,
+                periodo_desde=periodo_desde,
+                periodo_hasta=periodo_hasta,
+                importe_total=float(condicion["monto_base"]),
+                moneda=condicion.get("moneda") or "ARS",
+                estado_obligacion="EMITIDA",
+                id_concepto_financiero=id_concepto,
+                uid_global_obligacion=str(self.uuid_generator()),
+                uid_global_composicion=str(self.uuid_generator()),
                 version_registro=1,
                 created_at=now,
                 updated_at=now,
-                id_instalacion_origen=None,
-                id_instalacion_ultima_modificacion=None,
-                op_id_alta=self._parse_op_id(event),
-                op_id_ultima_modificacion=self._parse_op_id(event),
+                id_instalacion_origen=id_instalacion,
+                id_instalacion_ultima_modificacion=id_instalacion,
+                op_id_alta=op_id,
+                op_id_ultima_modificacion=op_id,
             )
-        )
+            for periodo_desde, periodo_hasta, condicion in periodos_aplicables
+        ]
 
-    def _transaction(self) -> AbstractContextManager[Any]:
-        if self.db.in_transaction():
-            return self.db.begin_nested()
-        return self.db.begin()
-
-    @staticmethod
-    def _parse_op_id(event: dict[str, Any]) -> UUID | None:
-        value = event.get("op_id") or event.get("request_id")
-        if not isinstance(value, str):
-            return None
-        try:
-            return UUID(value)
-        except ValueError:
-            return None
+        generadas = self.financiero_repo.create_cronograma_obligaciones(payloads)
+        return AppResult.ok({"generadas": generadas, "omitidas": omitidas})

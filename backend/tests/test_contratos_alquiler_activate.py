@@ -6,7 +6,6 @@ from tests.test_reservas_venta_create import _crear_inmueble
 
 
 def _crear_condicion_minima(client, *, id_contrato: int) -> None:
-    """Crea una condición económica mínima requerida para activar el contrato."""
     client.post(
         f"/api/v1/contratos-alquiler/{id_contrato}/condiciones-economicas-alquiler",
         headers=HEADERS,
@@ -33,7 +32,6 @@ def test_activate_contrato_alquiler_pasa_de_borrador_a_activo(client, db_session
     contrato = _crear_contrato_borrador(client, codigo="CA-ACT-001")
     assert contrato["estado_contrato"] == "borrador"
     assert contrato["version_registro"] == 1
-    _crear_condicion_minima(client, id_contrato=contrato["id_contrato_alquiler"])
 
     response = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",

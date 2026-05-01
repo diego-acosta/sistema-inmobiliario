@@ -183,6 +183,12 @@ from app.application.locativo.services.delete_contrato_alquiler_service import (
 from app.infrastructure.persistence.repositories.locativo_repository import (
     LocativoRepository,
 )
+from app.infrastructure.persistence.repositories.financiero_repository import (
+    FinancieroRepository,
+)
+from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    HandleContratoAlquilerActivadoEventService,
+)
 
 
 router = APIRouter(tags=["Locativo"])
@@ -878,20 +884,19 @@ def activate_contrato_alquiler(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "SIN_CONDICION_ECONOMICA" in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="No se puede activar un contrato sin condicion economica registrada.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudo activar el contrato de alquiler.",
             details={"errors": result.errors},
         )
         return JSONResponse(status_code=400, content=error.model_dump())
+
+    financiero_repo = FinancieroRepository(db)
+    handler = HandleContratoAlquilerActivadoEventService(
+        locativo_repository=repository,
+        financiero_repository=financiero_repo,
+    )
+    handler.execute(id_contrato_alquiler=id_contrato_alquiler, context=context)
 
     return ContratoAlquilerActivateResponse(
         data=ContratoAlquilerActivateData(**result.data)

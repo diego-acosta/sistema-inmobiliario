@@ -32,8 +32,6 @@ class ContratoAlquilerActivatePayload:
 class LocativoRepository(Protocol):
     def get_contrato_alquiler(self, id_contrato_alquiler: int) -> dict[str, Any] | None: ...
 
-    def has_condicion_economica_alquiler(self, id_contrato_alquiler: int) -> bool: ...
-
     def activate_contrato_alquiler(
         self, payload: ContratoAlquilerActivatePayload, outbox_event: OutboxEventPayload
     ) -> dict[str, Any]: ...
@@ -59,9 +57,6 @@ class ActivateContratoAlquilerService:
         estado_actual = (contrato["estado_contrato"] or "").strip().lower()
         if estado_actual != ESTADO_BORRADOR:
             return AppResult.fail("INVALID_CONTRATO_STATE")
-
-        if not self.repository.has_condicion_economica_alquiler(command.id_contrato_alquiler):
-            return AppResult.fail("SIN_CONDICION_ECONOMICA")
 
         now = datetime.now(UTC)
         id_instalacion = getattr(command.context, "id_instalacion", None)

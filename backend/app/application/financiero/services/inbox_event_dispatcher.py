@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.application.common.commands import CommandContext
 from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
     HandleContratoAlquilerActivadoEventService,
 )
@@ -12,6 +13,9 @@ from app.application.financiero.services.handle_venta_confirmada_event_service i
 )
 from app.infrastructure.persistence.repositories.financiero_repository import (
     FinancieroRepository,
+)
+from app.infrastructure.persistence.repositories.locativo_repository import (
+    LocativoRepository,
 )
 
 
@@ -28,8 +32,12 @@ class InboxEventDispatcher:
             return
 
         if event_type == "contrato_alquiler_activado":
-            repository = FinancieroRepository(self._db)
-            HandleContratoAlquilerActivadoEventService(repository=repository).execute(event)
+            locativo_repository = LocativoRepository(self._db)
+            financiero_repository = FinancieroRepository(self._db)
+            HandleContratoAlquilerActivadoEventService(
+                locativo_repository=locativo_repository,
+                financiero_repository=financiero_repository,
+            ).execute(payload["id_contrato_alquiler"], CommandContext())
             return
 
         # Evento no reconocido: ignorar silenciosamente.

@@ -138,11 +138,16 @@ def _count_obligaciones(db_session, *, id_relacion_generadora: int) -> int:
     ).mappings().one()["total"]
 
 
-def _get_obligacion_concepto(db_session, *, id_relacion_generadora: int) -> dict:
-    return db_session.execute(
+def _get_obligaciones_concepto(db_session, *, id_relacion_generadora: int) -> list[dict]:
+    rows = db_session.execute(
         text(
             """
-            SELECT o.importe_total, o.saldo_pendiente, cf.codigo_concepto_financiero
+            SELECT
+                o.importe_total,
+                o.saldo_pendiente,
+                o.periodo_desde,
+                o.periodo_hasta,
+                cf.codigo_concepto_financiero
             FROM obligacion_financiera o
             JOIN composicion_obligacion c
               ON c.id_obligacion_financiera = o.id_obligacion_financiera
@@ -150,10 +155,21 @@ def _get_obligacion_concepto(db_session, *, id_relacion_generadora: int) -> dict
               ON cf.id_concepto_financiero = c.id_concepto_financiero
             WHERE o.id_relacion_generadora = :id_relacion_generadora
               AND o.deleted_at IS NULL
+            ORDER BY o.periodo_desde NULLS FIRST, o.id_obligacion_financiera
             """
         ),
         {"id_relacion_generadora": id_relacion_generadora},
-    ).mappings().one()
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _get_obligacion_concepto(db_session, *, id_relacion_generadora: int) -> dict:
+    obligaciones = _get_obligaciones_concepto(
+        db_session,
+        id_relacion_generadora=id_relacion_generadora,
+    )
+    assert len(obligaciones) == 1
+    return obligaciones[0]
 
 
 def _activar_contrato_con_condicion(client, *, codigo: str) -> dict:
@@ -204,15 +220,16 @@ def test_worker_procesa_contrato_alquiler_activado_crea_obligacion_canon_locativ
         tipo_origen="contrato_alquiler",
         id_origen=id_contrato,
     )
-    obligacion = _get_obligacion_concepto(
+    obligaciones = _get_obligaciones_concepto(
         db_session,
         id_relacion_generadora=relacion["id_relacion_generadora"],
     )
     outbox = _get_outbox_event(db_session, event_id=event_id)
 
-    assert obligacion["codigo_concepto_financiero"] == "CANON_LOCATIVO"
-    assert str(obligacion["importe_total"]) == "150000.00"
-    assert str(obligacion["saldo_pendiente"]) == "150000.00"
+    assert len(obligaciones) == 6
+    assert {ob["codigo_concepto_financiero"] for ob in obligaciones} == {"CANON_LOCATIVO"}
+    assert {str(ob["importe_total"]) for ob in obligaciones} == {"150000.00"}
+    assert {str(ob["saldo_pendiente"]) for ob in obligaciones} == {"150000.00"}
     assert outbox["status"] == "PUBLISHED"
 
 

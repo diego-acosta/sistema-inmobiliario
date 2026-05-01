@@ -37,6 +37,146 @@ class FinancieroRepository:
         )
         return self.db.execute(stmt, {"id": id_relacion_generadora}).scalar_one_or_none() is not None
 
+    def get_relacion_generadora_by_origen(
+        self, tipo_origen: str, id_origen: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_relacion_generadora,
+                uid_global,
+                version_registro,
+                tipo_origen,
+                id_origen,
+                descripcion,
+                estado_relacion_generadora,
+                fecha_alta,
+                deleted_at
+            FROM relacion_generadora
+            WHERE tipo_origen = :tipo_origen
+              AND id_origen = :id_origen
+              AND deleted_at IS NULL
+            ORDER BY id_relacion_generadora DESC
+            LIMIT 1
+            """
+        )
+        row = (
+            self.db.execute(
+                stmt,
+                {"tipo_origen": tipo_origen.lower(), "id_origen": id_origen},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return self._rg_row_to_dict(row) if row else None
+
+    def obligaciones_exist_for_relacion_generadora(
+        self, id_relacion_generadora: int
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT 1 FROM obligacion_financiera
+            WHERE id_relacion_generadora = :id AND deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+        return (
+            self.db.execute(stmt, {"id": id_relacion_generadora}).scalar_one_or_none()
+            is not None
+        )
+
+    def create_cronograma_obligaciones(self, periodos: list[Any]) -> int:
+        ob_stmt = text(
+            """
+            INSERT INTO obligacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_relacion_generadora, fecha_emision, fecha_vencimiento,
+                periodo_desde, periodo_hasta,
+                importe_total, saldo_pendiente, moneda, estado_obligacion
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_relacion_generadora, :fecha_emision, :fecha_vencimiento,
+                :periodo_desde, :periodo_hasta,
+                :importe_total, :importe_total, :moneda, :estado_obligacion
+            )
+            RETURNING id_obligacion_financiera
+            """
+        )
+
+        comp_stmt = text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_concepto_financiero,
+                1, :importe_componente, :importe_componente
+            )
+            """
+        )
+
+        try:
+            count = 0
+            for periodo in periodos:
+                pv = self._values(periodo)
+                ob_row = self.db.execute(
+                    ob_stmt,
+                    {
+                        "uid_global": pv["uid_global_obligacion"],
+                        "version_registro": pv["version_registro"],
+                        "created_at": pv["created_at"],
+                        "updated_at": pv["updated_at"],
+                        "id_instalacion_origen": pv["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
+                        "op_id_alta": pv["op_id_alta"],
+                        "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
+                        "id_relacion_generadora": pv["id_relacion_generadora"],
+                        "fecha_emision": pv["fecha_emision"],
+                        "fecha_vencimiento": pv["fecha_vencimiento"],
+                        "periodo_desde": pv["periodo_desde"],
+                        "periodo_hasta": pv["periodo_hasta"],
+                        "importe_total": pv["importe_total"],
+                        "moneda": pv["moneda"],
+                        "estado_obligacion": pv["estado_obligacion"],
+                    },
+                ).mappings().one()
+
+                self.db.execute(
+                    comp_stmt,
+                    {
+                        "uid_global": pv["uid_global_composicion"],
+                        "version_registro": pv["version_registro"],
+                        "created_at": pv["created_at"],
+                        "updated_at": pv["updated_at"],
+                        "id_instalacion_origen": pv["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
+                        "op_id_alta": pv["op_id_alta"],
+                        "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
+                        "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
+                        "id_concepto_financiero": pv["id_concepto_financiero"],
+                        "importe_componente": pv["importe_total"],
+                    },
+                )
+                count += 1
+
+            self.db.commit()
+            return count
+        except Exception:
+            self.db.rollback()
+            raise
+
     def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
         stmt = text(
             """
