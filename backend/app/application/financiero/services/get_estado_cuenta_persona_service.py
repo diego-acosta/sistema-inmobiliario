@@ -37,6 +37,7 @@ class GetEstadoCuentaPersonaService:
         vencidas: bool | None,
         fecha_vencimiento_desde: date | None,
         fecha_vencimiento_hasta: date | None,
+        fecha_corte: date | None,
     ) -> AppResult[dict[str, Any]]:
         if (
             fecha_vencimiento_desde is not None
@@ -48,6 +49,8 @@ class GetEstadoCuentaPersonaService:
         if not self.repository.persona_exists(id_persona):
             return AppResult.fail("NOT_FOUND_PERSONA")
 
+        corte = fecha_corte if fecha_corte is not None else date.today()
+
         return AppResult.ok(
             self.repository.get_estado_cuenta_por_persona(
                 id_persona=id_persona,
@@ -57,6 +60,6 @@ class GetEstadoCuentaPersonaService:
                 vencidas=vencidas,
                 fecha_vencimiento_desde=fecha_vencimiento_desde,
                 fecha_vencimiento_hasta=fecha_vencimiento_hasta,
-                fecha_corte=date.today(),
+                fecha_corte=corte,
             )
         )

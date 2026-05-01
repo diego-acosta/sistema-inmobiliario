@@ -1416,6 +1416,7 @@ class FinancieroRepository:
 
         return {
             "id_persona": id_persona,
+            "fecha_corte": fecha_corte,
             "resumen": {
                 "saldo_pendiente_total": float(saldo_total),
                 "saldo_vencido": float(saldo_vencido),

@@ -139,6 +139,25 @@ obligacion los mismos campos y en resumen:
 
 El saldo persistido no se modifica por la mora calculada.
 
+## Desacople entre estado persistido y cálculo financiero
+
+En Mora V1, fecha real y `fecha_corte` cumplen roles distintos y no deben
+confundirse:
+
+- El **estado de la obligacion** (`EMITIDA → VENCIDA`) se determina usando la
+  fecha real del sistema. Solo `POST /api/v1/financiero/mora/generar` modifica
+  ese estado, y lo hace contra `date.today()` en el momento de ejecucion.
+
+- El **calculo de mora** (`dias_atraso`, `mora_calculada`) usa `fecha_corte`
+  cuando se provee en la consulta. Si se omite, usa `date.today()`.
+
+Esta separacion es intencional: permite simular escenarios a una fecha pasada o
+futura sin alterar los estados persistidos en base de datos.
+
+Ejemplo: una obligacion con `estado_obligacion = 'EMITIDA'` y
+`fecha_vencimiento = 2026-04-01` puede mostrar mora calculada si se consulta
+con `fecha_corte = 2026-04-10`, aunque `mora/generar` aun no haya corrido.
+
 ## Pendientes
 
 - tasa configurable por parametro formal

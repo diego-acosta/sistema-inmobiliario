@@ -691,6 +691,7 @@ def get_estado_cuenta_persona(
     vencidas: bool | None = Query(default=None),
     fecha_vencimiento_desde: date | None = Query(default=None),
     fecha_vencimiento_hasta: date | None = Query(default=None),
+    fecha_corte: date | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> EstadoCuentaPersonaResponse | JSONResponse:
     repository = FinancieroRepository(db)
@@ -705,6 +706,7 @@ def get_estado_cuenta_persona(
             vencidas=vencidas,
             fecha_vencimiento_desde=fecha_vencimiento_desde,
             fecha_vencimiento_hasta=fecha_vencimiento_hasta,
+            fecha_corte=fecha_corte,
         )
     except Exception as exc:
         return JSONResponse(
@@ -744,6 +746,7 @@ def get_estado_cuenta_persona(
     return EstadoCuentaPersonaResponse(
         data=EstadoCuentaPersonaData(
             id_persona=data["id_persona"],
+            fecha_corte=data["fecha_corte"],
             resumen=EstadoCuentaPersonaResumen(**data["resumen"]),
             obligaciones=[
                 EstadoCuentaPersonaObligacionItem(**ob)

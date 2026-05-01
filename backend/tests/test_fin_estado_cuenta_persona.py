@@ -332,3 +332,112 @@ def test_estado_cuenta_persona_filtra_por_vencidas(client, db_session) -> None:
     assert len(data["obligaciones"]) == 1
     ob = data["obligaciones"][0]
     assert ob["fecha_vencimiento"] < str(date.today())
+
+
+# ── tests: fecha_corte ────────────────────────────────────────────────────────
+
+def test_estado_cuenta_persona_sin_fecha_corte_usa_today(client, db_session) -> None:
+    """Sin fecha_corte la respuesta devuelve fecha_corte = date.today()."""
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-FC-TODAY-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=20000.00,
+    )
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["fecha_corte"] == str(date.today())
+
+
+def test_estado_cuenta_persona_fecha_corte_pasado_calcula_mora(client, db_session) -> None:
+    """
+    Obligación con vencimiento 2026-04-01.
+    fecha_corte=2026-04-11 → 10 días de atraso → mora = 50000 * 0.001 * 10 = 500.
+    """
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-FC-PAST-001",
+        fecha_inicio="2026-04-01",
+        fecha_fin="2026-04-30",
+        monto=50000.00,
+        dia_vencimiento_canon=1,
+    )
+
+    resp = client.get(
+        _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-04-11"}
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["fecha_corte"] == "2026-04-11"
+    ob = data["obligaciones"][0]
+    assert ob["dias_atraso"] == 10
+    assert ob["mora_calculada"] == pytest.approx(500.00)
+    assert ob["total_con_mora"] == pytest.approx(50500.00)
+    assert data["resumen"]["mora_calculada"] == pytest.approx(500.00)
+
+
+def test_estado_cuenta_persona_fecha_corte_antes_del_vencimiento_sin_mora(client, db_session) -> None:
+    """
+    Obligación con vencimiento 2026-04-01.
+    fecha_corte=2026-03-15 → aún no venció → dias_atraso=0, mora=0.
+    """
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-FC-FUT-001",
+        fecha_inicio="2026-04-01",
+        fecha_fin="2026-04-30",
+        monto=30000.00,
+        dia_vencimiento_canon=1,
+    )
+
+    resp = client.get(
+        _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-03-15"}
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["fecha_corte"] == "2026-03-15"
+    ob = data["obligaciones"][0]
+    assert ob["dias_atraso"] == 0
+    assert ob["mora_calculada"] == pytest.approx(0.0)
+    assert ob["total_con_mora"] == pytest.approx(30000.00)
+    assert data["resumen"]["mora_calculada"] == pytest.approx(0.0)
+
+
+def test_estado_cuenta_persona_mora_cambia_segun_fecha_corte(client, db_session) -> None:
+    """
+    Misma obligación con vencimiento 2026-04-01, dos fechas_corte distintas.
+    fecha_corte=2026-04-06 → 5 días → mora = 50000 * 0.001 * 5 = 250.
+    fecha_corte=2026-04-21 → 20 días → mora = 50000 * 0.001 * 20 = 1000.
+    """
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client, db_session,
+        codigo="ECP-FC-DIFF-001",
+        fecha_inicio="2026-04-01",
+        fecha_fin="2026-04-30",
+        monto=50000.00,
+        dia_vencimiento_canon=1,
+    )
+
+    resp5 = client.get(
+        _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-04-06"}
+    )
+    resp20 = client.get(
+        _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-04-21"}
+    )
+
+    assert resp5.status_code == 200
+    assert resp20.status_code == 200
+
+    ob5 = resp5.json()["data"]["obligaciones"][0]
+    ob20 = resp20.json()["data"]["obligaciones"][0]
+
+    assert ob5["dias_atraso"] == 5
+    assert ob5["mora_calculada"] == pytest.approx(250.00)
+    assert ob20["dias_atraso"] == 20
+    assert ob20["mora_calculada"] == pytest.approx(1000.00)

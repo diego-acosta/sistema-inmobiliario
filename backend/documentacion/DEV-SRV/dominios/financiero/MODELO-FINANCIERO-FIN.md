@@ -225,6 +225,16 @@ Limitacion:
 - tasa fija documentada hasta que exista politica parametrizable.
 - no hay dias de gracia.
 
+Nota: Mora V1 desacopla dos responsabilidades:
+
+- estado persistido (`EMITIDA → VENCIDA`) → se determina contra la fecha real
+  del sistema en el momento de correr `mora/generar`
+- calculo financiero (`dias_atraso`, `mora_calculada`) → usa `fecha_corte` si
+  se provee en la consulta, o `date.today()` si se omite
+
+Ver detalle en `SRV-FIN-013` seccion "Desacople entre estado persistido y
+calculo financiero".
+
 ---
 
 ## 7. Consulta de deuda consolidada

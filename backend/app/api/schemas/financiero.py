@@ -323,6 +323,7 @@ class EstadoCuentaPersonaResumen(BaseModel):
 
 class EstadoCuentaPersonaData(BaseModel):
     id_persona: int
+    fecha_corte: date
     resumen: EstadoCuentaPersonaResumen
     obligaciones: list[EstadoCuentaPersonaObligacionItem]
 
