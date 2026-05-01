@@ -107,6 +107,11 @@ Raíz del circuito financiero.
 #### Origen
 Se crea desde otros dominios (ej: contrato, venta).
 
+#### Idempotencia estructural
+
+`relacion_generadora` tiene unicidad parcial por
+`(tipo_origen, id_origen) WHERE deleted_at IS NULL`.
+
 ---
 
 ### 4.2 obligacion_financiera
@@ -127,6 +132,9 @@ Definida en:
 
 #### Nota estructural
 La obligacion no codifica rigidamente el tipo economico. El significado de sus importes surge de `composicion_obligacion` y `concepto_financiero`.
+
+Para cronogramas periodicos, la DB impide duplicar obligaciones activas con la
+misma `(id_relacion_generadora, periodo_desde, periodo_hasta)`.
 
 #### Cronograma locativo V2 minimo
 

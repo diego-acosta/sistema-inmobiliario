@@ -138,8 +138,12 @@ Alcance actual:
 - Si ya existen obligaciones para esa `relacion_generadora`, no se crea otra.
 - Si no hay ningun periodo con condicion aplicable, no se crea
   `relacion_generadora`.
-- La unicidad sigue siendo aplicativa; no existe constraint SQL
-  `UNIQUE(tipo_origen, id_origen)`.
+- La base de datos refuerza la idempotencia con indices unicos parciales:
+  - `relacion_generadora(tipo_origen, id_origen) WHERE deleted_at IS NULL`
+  - `obligacion_financiera(id_relacion_generadora, periodo_desde, periodo_hasta)
+    WHERE deleted_at IS NULL`
+- El repositorio mantiene la verificacion aplicativa y usa conflicto SQL como
+  defensa ante retry o concurrencia.
 
 ---
 
@@ -171,7 +175,6 @@ Alcance actual:
 - Normalizacion de periodicidad.
 - Incorporar conceptos locativos adicionales solo cuando exista definicion
   funcional correspondiente: expensas, servicios, impuestos o punitorios.
-- Constraint SQL para idempotencia.
 - Definicion de ejecucion operativa del worker interno.
 
 ---

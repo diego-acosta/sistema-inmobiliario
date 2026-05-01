@@ -369,22 +369,18 @@ Garantía:
 La creación de `relacion_generadora` es idempotente a nivel de aplicación
 mediante verificación previa por `(tipo_origen, id_origen)`.
 
-Limitación:
+Garantía SQL:
 
-- No existe restricción única en base de datos.
-
-Riesgo:
-
-- Posible duplicación en escenarios concurrentes.
-
-Pendiente:
-
-- Incorporar constraint SQL:
-  `UNIQUE(tipo_origen, id_origen)`
+- Implementado con indices unicos parciales:
+  `relacion_generadora(tipo_origen, id_origen) WHERE deleted_at IS NULL`
+  y `obligacion_financiera(id_relacion_generadora, periodo_desde, periodo_hasta)
+  WHERE deleted_at IS NULL`.
+- El repositorio conserva la verificacion previa y usa conflicto SQL como
+  defensa ante retry o concurrencia.
 
 Prioridad:
 
-- Media
+- Implementada para cronograma locativo-financiero.
 
 ## Limitaciones actuales del pipeline de eventos
 

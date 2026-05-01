@@ -104,6 +104,9 @@ class FinancieroRepository:
                 :periodo_desde, :periodo_hasta,
                 :importe_total, :importe_total, :moneda, :estado_obligacion
             )
+            ON CONFLICT (id_relacion_generadora, periodo_desde, periodo_hasta)
+            WHERE (deleted_at IS NULL)
+            DO NOTHING
             RETURNING id_obligacion_financiera
             """
         )
@@ -170,7 +173,10 @@ class FinancieroRepository:
                         "moneda": pv["moneda"],
                         "estado_obligacion": pv["estado_obligacion"],
                     },
-                ).mappings().one()
+                ).mappings().one_or_none()
+
+                if ob_row is None:
+                    continue
 
                 self.db.execute(
                     comp_stmt,
@@ -327,6 +333,8 @@ class FinancieroRepository:
                 :id_origen,
                 :descripcion
             )
+            ON CONFLICT (tipo_origen, id_origen) WHERE (deleted_at IS NULL)
+            DO UPDATE SET updated_at = relacion_generadora.updated_at
             RETURNING
                 id_relacion_generadora,
                 uid_global,

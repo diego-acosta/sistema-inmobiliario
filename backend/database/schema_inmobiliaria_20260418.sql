@@ -8106,6 +8106,13 @@ CREATE INDEX idx_obl_rg ON public.obligacion_financiera USING btree (id_relacion
 
 
 --
+-- Name: uq_obligacion_financiera_cronograma_periodo_activo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_obligacion_financiera_cronograma_periodo_activo ON public.obligacion_financiera USING btree (id_relacion_generadora, periodo_desde, periodo_hasta) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: idx_obligacion_financiera_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8341,6 +8348,13 @@ CREATE INDEX idx_reserva_venta_uid_global ON public.reserva_venta USING btree (u
 --
 
 CREATE INDEX idx_rg_origen ON public.relacion_generadora USING btree (tipo_origen, id_origen);
+
+
+--
+-- Name: uq_relacion_generadora_origen_activo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_relacion_generadora_origen_activo ON public.relacion_generadora USING btree (tipo_origen, id_origen) WHERE (deleted_at IS NULL);
 
 
 --

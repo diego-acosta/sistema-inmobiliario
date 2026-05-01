@@ -6,6 +6,7 @@ que crea N obligaciones_financieras (una por período mensual) con CANON_LOCATIV
 from datetime import date
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 
 from app.application.common.commands import CommandContext
@@ -217,6 +218,27 @@ def _get_relacion_for_contrato(db_session, id_contrato_alquiler: int) -> int:
     return row["id_relacion_generadora"]
 
 
+def _ensure_idempotencia_sql_cronograma(db_session) -> None:
+    db_session.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_relacion_generadora_origen_activo
+                ON public.relacion_generadora (tipo_origen, id_origen)
+                WHERE deleted_at IS NULL
+            """
+        )
+    )
+    db_session.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_obligacion_financiera_cronograma_periodo_activo
+                ON public.obligacion_financiera (id_relacion_generadora, periodo_desde, periodo_hasta)
+                WHERE deleted_at IS NULL
+            """
+        )
+    )
+
+
 # ── unit tests: generate_monthly_periods ─────────────────────────────────────
 
 def test_generate_monthly_periods_3_meses_completos() -> None:
@@ -364,6 +386,7 @@ def test_cronograma_ultimo_periodo_cortado_en_fecha_fin(client, db_session) -> N
 
 
 def test_cronograma_idempotencia_no_duplica(client, db_session) -> None:
+    _ensure_idempotencia_sql_cronograma(db_session)
     contrato = _crear_contrato_borrador(
         client, codigo="CRON-IDEM-001",
         fecha_inicio="2026-05-01", fecha_fin="2026-07-31",
@@ -389,7 +412,80 @@ def test_cronograma_idempotencia_no_duplica(client, db_session) -> None:
     assert result.data["generadas"] == 0
     assert result.data["razon"] == "ya_generado"
     # Cuenta no cambió
+    relaciones = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM relacion_generadora
+            WHERE tipo_origen = 'contrato_alquiler'
+              AND id_origen = :id
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id": contrato["id_contrato_alquiler"]},
+    ).scalar()
+    assert relaciones == 1
     assert len(_get_obligaciones_de_relacion(db_session, id_rg)) == 3
+
+
+def test_cronograma_constraints_sql_rechazan_duplicado_directo(client, db_session) -> None:
+    _ensure_idempotencia_sql_cronograma(db_session)
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-UQ-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-07-31",
+    )
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 20000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            db_session.execute(
+                text(
+                    """
+                    INSERT INTO relacion_generadora (tipo_origen, id_origen)
+                    VALUES ('contrato_alquiler', :id_contrato)
+                    """
+                ),
+                {"id_contrato": contrato["id_contrato_alquiler"]},
+            )
+
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            db_session.execute(
+                text(
+                    """
+                    INSERT INTO obligacion_financiera (
+                        id_relacion_generadora,
+                        fecha_emision,
+                        fecha_vencimiento,
+                        periodo_desde,
+                        periodo_hasta,
+                        importe_total,
+                        saldo_pendiente,
+                        estado_obligacion
+                    )
+                    VALUES (
+                        :id_rg,
+                        :periodo_desde,
+                        :periodo_desde,
+                        :periodo_desde,
+                        :periodo_hasta,
+                        20000.00,
+                        20000.00,
+                        'EMITIDA'
+                    )
+                    """
+                ),
+                {
+                    "id_rg": id_rg,
+                    "periodo_desde": obligaciones[0]["periodo_desde"],
+                    "periodo_hasta": obligaciones[0]["periodo_hasta"],
+                },
+            )
 
 
 def test_cronograma_con_condicion_sin_locatario_principal_falla(db_session, client) -> None:
