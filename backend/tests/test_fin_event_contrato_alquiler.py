@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.application.common.commands import CommandContext
 from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
     HandleContratoAlquilerActivadoEventService,
+    calcular_fecha_vencimiento_canon,
     generate_monthly_periods,
     get_condicion_vigente_para_periodo,
 )
@@ -72,6 +73,76 @@ def _crear_condicion(
     return response.json()["data"]
 
 
+def _crear_locatario_principal(client, db_session, id_contrato: int) -> int:
+    persona_response = client.post(
+        "/api/v1/personas",
+        headers=HEADERS,
+        json={
+            "tipo_persona": "FISICA",
+            "nombre": "Locatario",
+            "apellido": f"Principal {id_contrato}",
+            "razon_social": None,
+            "estado_persona": "ACTIVA",
+            "observaciones": "Locatario principal para cronograma locativo",
+        },
+    )
+    assert persona_response.status_code == 201
+    id_persona = persona_response.json()["data"]["id_persona"]
+
+    id_rol = db_session.execute(
+        text(
+            """
+            INSERT INTO rol_participacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                codigo_rol, nombre_rol, descripcion, estado_rol
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id,
+                'LOCATARIO_PRINCIPAL', 'Locatario principal',
+                'Rol locativo principal para cronograma financiero', 'ACTIVO'
+            )
+            ON CONFLICT (codigo_rol) DO UPDATE
+            SET updated_at = EXCLUDED.updated_at
+            RETURNING id_rol_participacion
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"]},
+    ).scalar_one()
+
+    db_session.execute(
+        text(
+            """
+            INSERT INTO relacion_persona_rol (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_persona, id_rol_participacion,
+                tipo_relacion, id_relacion, fecha_desde, fecha_hasta,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id,
+                :id_persona, :id_rol,
+                'contrato_alquiler', :id_contrato,
+                TIMESTAMP '2026-05-01 00:00:00', NULL,
+                'Locatario principal vigente'
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_persona": id_persona,
+            "id_rol": id_rol,
+            "id_contrato": id_contrato,
+        },
+    )
+    return id_persona
+
+
 def _activar(client, id_contrato: int, version: int) -> dict:
     response = client.patch(
         URL_ACTIVAR.format(id=id_contrato),
@@ -89,12 +160,32 @@ def _get_obligaciones_de_relacion(db_session, id_relacion_generadora: int) -> li
                 id_obligacion_financiera,
                 periodo_desde,
                 periodo_hasta,
+                fecha_vencimiento,
                 importe_total,
                 estado_obligacion
             FROM obligacion_financiera
             WHERE id_relacion_generadora = :id
               AND deleted_at IS NULL
             ORDER BY periodo_desde ASC
+            """
+        ),
+        {"id": id_relacion_generadora},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def _get_obligados_de_relacion(db_session, id_relacion_generadora: int) -> list:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT oo.id_persona, oo.rol_obligado, oo.porcentaje_responsabilidad
+            FROM obligacion_obligado oo
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = oo.id_obligacion_financiera
+            WHERE o.id_relacion_generadora = :id
+              AND o.deleted_at IS NULL
+              AND oo.deleted_at IS NULL
+            ORDER BY o.periodo_desde ASC, oo.id_obligacion_obligado ASC
             """
         ),
         {"id": id_relacion_generadora},
@@ -156,6 +247,46 @@ def test_generate_monthly_periods_sin_huecos_ni_solapamiento() -> None:
     assert periods[-1][1] == date(2026, 3, 15)
 
 
+def test_calcular_fecha_vencimiento_canon_usa_dia_de_condicion() -> None:
+    vencimiento = calcular_fecha_vencimiento_canon(
+        date(2026, 2, 1),
+        contrato={},
+        condicion={"dia_vencimiento_canon": 10},
+    )
+
+    assert vencimiento == date(2026, 2, 10)
+
+
+def test_calcular_fecha_vencimiento_canon_ajusta_al_ultimo_dia_del_mes() -> None:
+    vencimiento = calcular_fecha_vencimiento_canon(
+        date(2026, 2, 1),
+        contrato={},
+        condicion={"dia_vencimiento_canon": 31},
+    )
+
+    assert vencimiento == date(2026, 2, 28)
+
+
+def test_calcular_fecha_vencimiento_canon_fallback_periodo_desde() -> None:
+    vencimiento = calcular_fecha_vencimiento_canon(
+        date(2026, 5, 1),
+        contrato={},
+        condicion={},
+    )
+
+    assert vencimiento == date(2026, 5, 1)
+
+
+def test_calcular_fecha_vencimiento_canon_no_devuelve_fecha_anterior_al_periodo() -> None:
+    vencimiento = calcular_fecha_vencimiento_canon(
+        date(2026, 5, 10),
+        contrato={"dia_vencimiento_canon": 5},
+        condicion={},
+    )
+
+    assert vencimiento == date(2026, 5, 10)
+
+
 # ── integración: cronograma generado al activar ───────────────────────────────
 
 def test_cronograma_genera_3_obligaciones_para_contrato_de_3_meses(client, db_session) -> None:
@@ -164,15 +295,27 @@ def test_cronograma_genera_3_obligaciones_para_contrato_de_3_meses(client, db_se
         fecha_inicio="2026-05-01", fecha_fin="2026-07-31",
     )
     _crear_condicion(client, contrato["id_contrato_alquiler"], 50000.00, "2026-05-01")
+    id_locatario = _crear_locatario_principal(
+        client,
+        db_session,
+        contrato["id_contrato_alquiler"],
+    )
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
 
     id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
     obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+    obligados = _get_obligados_de_relacion(db_session, id_rg)
 
     assert len(obligaciones) == 3
+    assert len(obligados) == 3
     for ob in obligaciones:
         assert float(ob["importe_total"]) == 50000.00
         assert ob["estado_obligacion"] == "EMITIDA"
+        assert ob["fecha_vencimiento"] == ob["periodo_desde"]
+    for obligado in obligados:
+        assert obligado["id_persona"] == id_locatario
+        assert obligado["rol_obligado"] == "LOCATARIO_PRINCIPAL"
+        assert float(obligado["porcentaje_responsabilidad"]) == 100.00
 
     # Períodos correctos
     assert obligaciones[0]["periodo_desde"] == date(2026, 5, 1)
@@ -189,6 +332,7 @@ def test_cronograma_ultimo_periodo_cortado_en_fecha_fin(client, db_session) -> N
         fecha_inicio="2026-05-01", fecha_fin="2026-06-15",
     )
     _crear_condicion(client, contrato["id_contrato_alquiler"], 30000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
 
     id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
@@ -209,6 +353,7 @@ def test_cronograma_idempotencia_no_duplica(client, db_session) -> None:
         fecha_inicio="2026-05-01", fecha_fin="2026-07-31",
     )
     _crear_condicion(client, contrato["id_contrato_alquiler"], 20000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
 
     id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
@@ -229,6 +374,31 @@ def test_cronograma_idempotencia_no_duplica(client, db_session) -> None:
     assert result.data["razon"] == "ya_generado"
     # Cuenta no cambió
     assert len(_get_obligaciones_de_relacion(db_session, id_rg)) == 3
+
+
+def test_cronograma_con_condicion_sin_locatario_principal_falla(db_session, client) -> None:
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-SIN-LOC-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-07-31",
+    )
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 20000.00, "2026-05-01")
+
+    handler = HandleContratoAlquilerActivadoEventService(
+        locativo_repository=LocativoRepository(db_session),
+        financiero_repository=FinancieroRepository(db_session),
+    )
+    result = handler.execute(contrato["id_contrato_alquiler"], CommandContext())
+
+    assert not result.success
+    assert "SIN_LOCATARIO_PRINCIPAL" in result.errors
+    count = db_session.execute(
+        text(
+            "SELECT COUNT(*) FROM relacion_generadora "
+            "WHERE tipo_origen = 'contrato_alquiler' AND id_origen = :id"
+        ),
+        {"id": contrato["id_contrato_alquiler"]},
+    ).scalar()
+    assert count == 0
 
 
 def test_cronograma_sin_condicion_no_genera_obligaciones(client, db_session) -> None:
@@ -299,6 +469,7 @@ def test_cronograma_usa_condicion_vigente_por_periodo(client, db_session) -> Non
     _crear_condicion(
         client, contrato["id_contrato_alquiler"], 70000.00, "2026-07-01",
     )
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
 
     id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
@@ -319,6 +490,7 @@ def test_cronograma_omite_periodos_sin_condicion_aplicable(client, db_session) -
     )
     # Condición arranca en julio → mayo y junio quedan sin condición
     _crear_condicion(client, contrato["id_contrato_alquiler"], 30000.00, "2026-07-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
 
     id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])

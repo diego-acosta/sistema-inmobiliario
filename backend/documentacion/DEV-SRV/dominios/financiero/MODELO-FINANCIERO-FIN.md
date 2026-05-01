@@ -308,6 +308,8 @@ Integraciones por evento implementadas:
   - materializa un cronograma mensual de obligaciones `CANON_LOCATIVO`
   - omite los periodos mensuales sin condicion economica aplicable
   - no crea `relacion_generadora` si ningun periodo tiene condicion aplicable
+  - materializa `obligacion_obligado` para el locatario principal resuelto
+    desde el contrato locativo
 
 ---
 
@@ -446,22 +448,25 @@ Reglas implementadas:
 
 - una `obligacion_financiera` por periodo mensual aplicable
 - cada obligacion tiene una composicion `CANON_LOCATIVO`
+- cada obligacion tiene un `obligacion_obligado` para el locatario principal
 - el monto surge de `condicion_economica_alquiler.monto_base`
 - la condicion aplicable se resuelve contra `periodo_desde`
 - si un periodo no tiene condicion aplicable, se omite
 - si ningun periodo tiene condicion aplicable, no se crea
   `relacion_generadora`
+- si no existe locatario principal, no se genera cronograma completo y el
+  handler devuelve error funcional
 - si ya existen obligaciones para la relacion generadora, no se duplican
 - `moneda = condicion.moneda` o fallback `ARS`
 - `fecha_emision = periodo_desde`
-- `fecha_vencimiento = periodo_desde`
+- `fecha_vencimiento` deriva de regla locativa; si no hay soporte fisico para
+  `dia_vencimiento_canon`, se usa `periodo_desde` como fallback tecnico
 - estado inicial: `EMITIDA`
 
 ### Limitaciones locativas actuales
 
 - Solo se genera `CANON_LOCATIVO`.
 - No se generan expensas, servicios, impuestos ni punitorios.
-- No se resuelve locatario u obligado financiero.
 - No usa periodicidad para dividir periodos; el cronograma implementado es
   mensual.
 - No hay prorrateo si una condicion cambia dentro del mes.

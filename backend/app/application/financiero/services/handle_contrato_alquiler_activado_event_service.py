@@ -9,6 +9,9 @@ from uuid import UUID, uuid4
 from app.application.common.results import AppResult
 
 
+ROL_OBLIGADO_LOCATARIO = "LOCATARIO_PRINCIPAL"
+
+
 # ── helpers de período ────────────────────────────────────────────────────────
 
 def generate_monthly_periods(
@@ -60,6 +63,33 @@ def get_condicion_vigente_para_periodo(
     return max(vigentes, key=lambda c: c["fecha_desde"])
 
 
+def calcular_fecha_vencimiento_canon(
+    periodo_desde: date,
+    contrato: dict[str, Any],
+    condicion: dict[str, Any],
+) -> date:
+    dia_vencimiento = (
+        condicion.get("dia_vencimiento_canon")
+        or contrato.get("dia_vencimiento_canon")
+    )
+    if dia_vencimiento is None:
+        return periodo_desde
+
+    try:
+        dia = int(dia_vencimiento)
+    except (TypeError, ValueError):
+        return periodo_desde
+
+    if dia < 1:
+        return periodo_desde
+
+    ultimo_dia = calendar.monthrange(periodo_desde.year, periodo_desde.month)[1]
+    vencimiento = date(periodo_desde.year, periodo_desde.month, min(dia, ultimo_dia))
+    if vencimiento < periodo_desde:
+        return periodo_desde
+    return vencimiento
+
+
 # ── payloads ──────────────────────────────────────────────────────────────────
 
 @dataclass(slots=True)
@@ -90,6 +120,9 @@ class PeriodoCronogramaPayload:
     id_concepto_financiero: int
     uid_global_obligacion: str
     uid_global_composicion: str
+    uid_global_obligado: str
+    id_persona_obligado: int
+    rol_obligado: str
     version_registro: int
     created_at: datetime
     updated_at: datetime
@@ -103,6 +136,10 @@ class PeriodoCronogramaPayload:
 
 class LocativoRepository(Protocol):
     def get_contrato_alquiler(
+        self, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None: ...
+
+    def get_locatario_principal_contrato(
         self, id_contrato_alquiler: int
     ) -> dict[str, Any] | None: ...
 
@@ -171,6 +208,12 @@ class HandleContratoAlquilerActivadoEventService:
         if not periodos_aplicables:
             return AppResult.ok({"generadas": 0, "omitidas": omitidas, "razon": "sin_condicion_aplicable"})
 
+        locatario = self.locativo_repo.get_locatario_principal_contrato(
+            id_contrato_alquiler
+        )
+        if locatario is None:
+            return AppResult.fail("SIN_LOCATARIO_PRINCIPAL")
+
         id_instalacion = getattr(context, "id_instalacion", None)
         op_id = getattr(context, "op_id", None)
         now = datetime.now(UTC)
@@ -210,7 +253,9 @@ class HandleContratoAlquilerActivadoEventService:
             PeriodoCronogramaPayload(
                 id_relacion_generadora=id_rg,
                 fecha_emision=periodo_desde,
-                fecha_vencimiento=periodo_desde,
+                fecha_vencimiento=calcular_fecha_vencimiento_canon(
+                    periodo_desde, contrato, condicion
+                ),
                 periodo_desde=periodo_desde,
                 periodo_hasta=periodo_hasta,
                 importe_total=float(condicion["monto_base"]),
@@ -219,6 +264,9 @@ class HandleContratoAlquilerActivadoEventService:
                 id_concepto_financiero=id_concepto,
                 uid_global_obligacion=str(self.uuid_generator()),
                 uid_global_composicion=str(self.uuid_generator()),
+                uid_global_obligado=str(self.uuid_generator()),
+                id_persona_obligado=locatario["id_persona"],
+                rol_obligado=ROL_OBLIGADO_LOCATARIO,
                 version_registro=1,
                 created_at=now,
                 updated_at=now,

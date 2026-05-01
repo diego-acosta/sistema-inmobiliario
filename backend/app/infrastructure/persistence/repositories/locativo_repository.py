@@ -285,6 +285,38 @@ class LocativoRepository:
             "deleted_at": row["deleted_at"],
         }
 
+    def get_locatario_principal_contrato(
+        self, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None:
+        statement = text(
+            """
+            SELECT
+                rpr.id_persona,
+                rpr.id_relacion_persona_rol,
+                rp.codigo_rol
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+            WHERE rpr.tipo_relacion = 'contrato_alquiler'
+              AND rpr.id_relacion = :id_contrato_alquiler
+              AND rpr.deleted_at IS NULL
+              AND rp.deleted_at IS NULL
+              AND rp.estado_rol = 'ACTIVO'
+              AND UPPER(rp.codigo_rol) = 'LOCATARIO_PRINCIPAL'
+            ORDER BY rpr.fecha_desde ASC, rpr.id_relacion_persona_rol ASC
+            LIMIT 1
+            """
+        )
+        row = (
+            self.db.execute(
+                statement,
+                {"id_contrato_alquiler": id_contrato_alquiler},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return dict(row) if row else None
+
     def get_contrato_alquiler(self, id_contrato_alquiler: int) -> dict[str, Any] | None:
         contrato_statement = text(
             """

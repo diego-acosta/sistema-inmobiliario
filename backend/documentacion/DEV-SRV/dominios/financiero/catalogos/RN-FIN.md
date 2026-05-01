@@ -383,6 +383,18 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
 - estado: DECISION FISICA PENDIENTE.
 
+### RN-LOC-FIN-001 - Condicion economica aplicable al periodo locativo
+- descripcion: La condicion economica aplicable a un periodo locativo es la vigente en `periodo_desde`, salvo regla explicita de prorrateo o division del periodo.
+- aplica_a: contrato_alquiler, condicion_economica_alquiler, obligacion_financiera
+- origen_principal: SRV-FIN-015-plan-financiero-locativo
+- estado: IMPLEMENTADA sin prorrateo.
+
+### RN-LOC-FIN-002 - Obligado principal del canon locativo
+- descripcion: El obligado financiero principal del canon locativo se resuelve desde el locatario principal del contrato. El garante no se incorpora automaticamente como obligado principal.
+- aplica_a: contrato_alquiler, relacion_persona_rol, rol_participacion, obligacion_obligado
+- origen_principal: SRV-FIN-015-plan-financiero-locativo / INT-FIN-002
+- estado: IMPLEMENTACION MINIMA.
+
 ### RN-FIN-069 — Reduccion de saldo controlada
 - descripcion: Ninguna transicion puede reducir saldo sin `aplicacion_financiera`, anulacion formal o credito documentado.
 - aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera

@@ -46,27 +46,29 @@ Estados SQL vigentes y usados por backend:
 | Estado | Uso implementado |
 |---|---|
 | `PROYECTADA` | Estado inicial de obligaciones creadas manualmente por API. Acepta imputacion. |
-| `EMITIDA` | Estado aceptado para imputacion. No existe transicion backend que lo asigne. |
+| `EMITIDA` | Estado aceptado para imputacion. El cronograma locativo la usa como estado inicial. |
 | `EXIGIBLE` | Estado aceptado para imputacion. La mora automatica se crea en este estado. |
 | `PARCIALMENTE_CANCELADA` | Asignado por backend despues de imputacion parcial. Acepta imputacion. |
 | `CANCELADA` | Asignado por backend cuando el saldo queda en cero. No acepta imputacion. |
 | `VENCIDA` | Estado aceptado para imputacion. No se materializa automaticamente por fecha en backend. |
 | `ANULADA` | Estado excluido de imputacion y de generacion de mora. |
 | `REEMPLAZADA` | Estado excluido de imputacion y de generacion de mora. |
+| `PENDIENTE_AJUSTE` | Estado reservado para obligaciones que requieran ajuste o regeneracion controlada. |
 
 Estados solicitados como base operativa principal:
 
-- `PROYECTADA`
 - `EMITIDA`
-- `PARCIALMENTE_CANCELADA`
+- `VENCIDA`
 - `CANCELADA`
 - `ANULADA`
 - `REEMPLAZADA`
+- `PENDIENTE_AJUSTE`
 
 Ademas, el SQL y backend actual tambien reconocen:
 
+- `PROYECTADA`
 - `EXIGIBLE`
-- `VENCIDA`
+- `PARCIALMENTE_CANCELADA`
 
 No deben eliminarse de la documentacion porque existen en constraints SQL y son usados por servicios.
 
@@ -126,6 +128,7 @@ El backend rechaza imputacion para:
 - `CANCELADA`
 - `ANULADA`
 - `REEMPLAZADA`
+- `PENDIENTE_AJUSTE`
 
 ---
 
@@ -136,6 +139,7 @@ La generacion automatica de mora excluye:
 - `ANULADA`
 - `REEMPLAZADA`
 - `CANCELADA`
+- `PENDIENTE_AJUSTE`
 
 Tambien excluye obligaciones ya generadas por mora automatica, identificadas por marca en `observaciones`.
 

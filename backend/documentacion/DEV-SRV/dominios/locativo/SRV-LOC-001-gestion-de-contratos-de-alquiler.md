@@ -184,6 +184,11 @@ Reglas implementadas:
 - financiero materializa el cronograma mensual `CANON_LOCATIVO`
 - financiero evalua la condicion economica vigente al inicio de cada periodo
   mensual
+- financiero resuelve el obligado desde el locatario principal del contrato y
+  persiste `obligacion_obligado`
+- garante no es obligado principal automatico
+- si no existe locatario principal, el cronograma financiero no debe generar
+  obligaciones completas y debe devolver error funcional explicito
 - financiero omite periodos sin condicion economica aplicable
 - si no hay ningun periodo con condicion aplicable, financiero no crea
   `relacion_generadora`
@@ -195,9 +200,11 @@ Limitaciones financieras vigentes:
 - no se divide un periodo mensual cuando una condicion cambia a mitad de mes
 - si dos condiciones aplican al mismo inicio de periodo, gana la de
   `fecha_desde` mas reciente
-- la politica de moneda y la regla real de vencimiento permanecen pendientes
+- la politica de moneda permanece pendiente
+- `fecha_vencimiento` usa regla locativa cuando exista
+  `dia_vencimiento_canon`; si no existe soporte fisico, usa `periodo_desde`
+  como fallback tecnico
 - no se generan expensas, servicios, impuestos ni punitorios
-- no se resuelve obligado financiero o locatario
 
 ## Errores
 - [[ERR-LOC]]
@@ -237,5 +244,7 @@ Limitaciones financieras vigentes:
 - política exacta de superposición contractual
 - relación exacta entre contrato y objeto locativo
 - prorrateo del cronograma financiero cuando cambien condiciones dentro del mes
-- resolucion de obligado financiero o locatario
+- formalizacion completa de multiples locatarios, solidaridad y garantes
+- persistencia fisica de `dia_vencimiento_canon` si se adopta como regla
+  locativa estable
 - definicion de ejecucion operativa del worker financiero

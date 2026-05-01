@@ -352,6 +352,12 @@ Observaciones:
 - una renovacion sustancial se representa hoy como nuevo `contrato_alquiler` enlazado por `id_contrato_anterior`
 - una prorroga menor puede representarse como `modificacion_locativa` mientras no exista una entidad mas rica materializada
 - `condicion_economica_alquiler` es la forma persistida vigente de la configuracion economica del contrato
+- para el cronograma locativo-financiero, la condicion aplicable a un periodo
+  es la vigente en `periodo_desde`, salvo regla explicita futura de prorrateo
+  o division
+- el locatario principal del contrato se resuelve por `relacion_persona_rol` y
+  `rol_participacion`; esa asociacion alimenta `obligacion_obligado` en el
+  dominio financiero
 - `ajuste_alquiler` no reemplaza ni redefine el contrato base; ajusta su operacion
 - `rescision_finalizacion_alquiler` conserva historial y no elimina el contrato
 - `entrega_restitucion_inmueble` registra entrega o restitucion contractual, pero no sustituye por si sola el modelo de ocupacion

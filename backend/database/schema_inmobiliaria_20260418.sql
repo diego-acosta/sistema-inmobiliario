@@ -3408,7 +3408,7 @@ CREATE TABLE public.obligacion_financiera (
     CONSTRAINT chk_obligacion_financiera_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at))),
     CONSTRAINT chk_obligacion_financiera_fechas CHECK (((fecha_vencimiento IS NULL) OR (fecha_vencimiento >= fecha_emision))),
     CONSTRAINT chk_obligacion_financiera_periodo CHECK (((periodo_hasta IS NULL) OR (periodo_desde IS NULL) OR (periodo_hasta >= periodo_desde))),
-    CONSTRAINT chk_obligacion_estado CHECK (((estado_obligacion)::text = ANY ((ARRAY['PROYECTADA'::character varying, 'EMITIDA'::character varying, 'EXIGIBLE'::character varying, 'PARCIALMENTE_CANCELADA'::character varying, 'CANCELADA'::character varying, 'VENCIDA'::character varying, 'ANULADA'::character varying, 'REEMPLAZADA'::character varying])::text[]))),
+    CONSTRAINT chk_obligacion_estado CHECK (((estado_obligacion)::text = ANY ((ARRAY['PROYECTADA'::character varying, 'EMITIDA'::character varying, 'EXIGIBLE'::character varying, 'PARCIALMENTE_CANCELADA'::character varying, 'CANCELADA'::character varying, 'VENCIDA'::character varying, 'ANULADA'::character varying, 'REEMPLAZADA'::character varying, 'PENDIENTE_AJUSTE'::character varying])::text[]))),
     CONSTRAINT chk_obligacion_importes_no_negativos CHECK (((importe_total >= (0)::numeric) AND (saldo_pendiente >= (0)::numeric) AND (importe_cancelado_acumulado >= (0)::numeric) AND (importe_bonificado_acumulado >= (0)::numeric) AND (importe_anulado_acumulado >= (0)::numeric))),
     CONSTRAINT chk_obligacion_saldo_no_supera_total CHECK ((saldo_pendiente <= importe_total))
 );

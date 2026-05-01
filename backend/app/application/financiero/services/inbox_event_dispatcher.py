@@ -28,16 +28,20 @@ class InboxEventDispatcher:
 
         if event_type == "venta_confirmada":
             repository = FinancieroRepository(self._db)
-            HandleVentaConfirmadaEventService(repository=repository).execute(event)
+            result = HandleVentaConfirmadaEventService(repository=repository).execute(event)
+            if not result.success:
+                raise ValueError(";".join(result.errors))
             return
 
         if event_type == "contrato_alquiler_activado":
             locativo_repository = LocativoRepository(self._db)
             financiero_repository = FinancieroRepository(self._db)
-            HandleContratoAlquilerActivadoEventService(
+            result = HandleContratoAlquilerActivadoEventService(
                 locativo_repository=locativo_repository,
                 financiero_repository=financiero_repository,
             ).execute(payload["id_contrato_alquiler"], CommandContext())
+            if not result.success:
+                raise ValueError(";".join(result.errors))
             return
 
         # Evento no reconocido: ignorar silenciosamente.

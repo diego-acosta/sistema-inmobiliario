@@ -127,6 +127,25 @@ class FinancieroRepository:
             """
         )
 
+        obligado_stmt = text(
+            """
+            INSERT INTO obligacion_obligado (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_persona,
+                rol_obligado, porcentaje_responsabilidad
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_persona,
+                :rol_obligado, 100.00
+            )
+            """
+        )
+
         try:
             count = 0
             for periodo in periodos:
@@ -167,6 +186,22 @@ class FinancieroRepository:
                         "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
                         "id_concepto_financiero": pv["id_concepto_financiero"],
                         "importe_componente": pv["importe_total"],
+                    },
+                )
+                self.db.execute(
+                    obligado_stmt,
+                    {
+                        "uid_global": pv["uid_global_obligado"],
+                        "version_registro": pv["version_registro"],
+                        "created_at": pv["created_at"],
+                        "updated_at": pv["updated_at"],
+                        "id_instalacion_origen": pv["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
+                        "op_id_alta": pv["op_id_alta"],
+                        "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
+                        "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
+                        "id_persona": pv["id_persona_obligado"],
+                        "rol_obligado": pv["rol_obligado"],
                     },
                 )
                 count += 1
@@ -640,7 +675,7 @@ class FinancieroRepository:
 
         if not incluir_canceladas:
             filters.append(
-                "o.estado_obligacion NOT IN ('CANCELADA', 'ANULADA', 'REEMPLAZADA')"
+                "o.estado_obligacion NOT IN ('CANCELADA', 'ANULADA', 'REEMPLAZADA', 'PENDIENTE_AJUSTE')"
             )
         if fecha_desde is not None:
             filters.append("o.fecha_vencimiento >= :fecha_desde")
@@ -808,7 +843,7 @@ class FinancieroRepository:
             WHERE o.fecha_vencimiento < :fecha_proceso
               AND o.saldo_pendiente > 0
               AND o.deleted_at IS NULL
-              AND o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA', 'CANCELADA')
+              AND o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA', 'CANCELADA', 'PENDIENTE_AJUSTE')
               AND COALESCE(o.observaciones, '') NOT LIKE 'MORA_AUTO id_obligacion_base=%'
             ORDER BY o.id_obligacion_financiera ASC
             FOR UPDATE

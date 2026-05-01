@@ -128,6 +128,14 @@ Definida en:
 #### Nota estructural
 La obligacion no codifica rigidamente el tipo economico. El significado de sus importes surge de `composicion_obligacion` y `concepto_financiero`.
 
+#### Cronograma locativo V2 minimo
+
+Para obligaciones generadas desde `contrato_alquiler`, el obligado principal se
+materializa en `obligacion_obligado` a partir del locatario principal asociado
+al contrato por `relacion_persona_rol` y `rol_participacion`.
+
+El garante no se incorpora automaticamente como obligado principal.
+
 ---
 
 ### 4.3 obligacion_obligado

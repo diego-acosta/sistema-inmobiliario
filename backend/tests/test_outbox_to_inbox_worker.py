@@ -9,6 +9,7 @@ from tests.test_contratos_alquiler_activate import (
 )
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_escrituraciones_create import _confirmar_venta_publica
+from tests.test_fin_event_contrato_alquiler import _crear_locatario_principal
 
 
 def _insert_outbox_event(
@@ -172,9 +173,10 @@ def _get_obligacion_concepto(db_session, *, id_relacion_generadora: int) -> dict
     return obligaciones[0]
 
 
-def _activar_contrato_con_condicion(client, *, codigo: str) -> dict:
+def _activar_contrato_con_condicion(client, db_session, *, codigo: str) -> dict:
     contrato = _crear_contrato_borrador(client, codigo=codigo)
     _crear_condicion_minima(client, id_contrato=contrato["id_contrato_alquiler"])
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     response = client.patch(
         f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
         headers={**HEADERS, "If-Match-Version": str(contrato["version_registro"])},
@@ -209,7 +211,7 @@ def test_worker_procesa_venta_confirmada_crea_relacion_y_obligacion(
 def test_worker_procesa_contrato_alquiler_activado_crea_obligacion_canon_locativo(
     client, db_session
 ) -> None:
-    contrato = _activar_contrato_con_condicion(client, codigo="OW-CA-001")
+    contrato = _activar_contrato_con_condicion(client, db_session, codigo="OW-CA-001")
     id_contrato = contrato["id_contrato_alquiler"]
     event_id = _get_contrato_activado_event_id(db_session, id_contrato=id_contrato)
 
@@ -231,6 +233,32 @@ def test_worker_procesa_contrato_alquiler_activado_crea_obligacion_canon_locativ
     assert {str(ob["importe_total"]) for ob in obligaciones} == {"150000.00"}
     assert {str(ob["saldo_pendiente"]) for ob in obligaciones} == {"150000.00"}
     assert outbox["status"] == "PUBLISHED"
+
+
+def test_worker_no_publica_contrato_alquiler_sin_locatario_principal(
+    client, db_session
+) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="OW-CA-SIN-LOC-001")
+    _crear_condicion_minima(client, id_contrato=contrato["id_contrato_alquiler"])
+    response = client.patch(
+        f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
+        headers={**HEADERS, "If-Match-Version": str(contrato["version_registro"])},
+    )
+    assert response.status_code == 200
+
+    id_contrato = contrato["id_contrato_alquiler"]
+    event_id = _get_contrato_activado_event_id(db_session, id_contrato=id_contrato)
+
+    run_outbox_worker_once(db_session)
+
+    outbox = _get_outbox_event(db_session, event_id=event_id)
+    assert outbox["status"] == "PENDING"
+    assert outbox["published_at"] is None
+    assert _count_relaciones(
+        db_session,
+        tipo_origen="contrato_alquiler",
+        id_origen=id_contrato,
+    ) == 0
 
 
 def test_worker_ignora_evento_desconocido_sin_romper(db_session) -> None:
