@@ -376,6 +376,44 @@ class EstadoCuentaPersonaResponse(BaseModel):
     data: EstadoCuentaPersonaData
 
 
+# ── simulación de pago por persona ───────────────────────────────────────────
+
+class SimularPagoPersonaRequest(BaseModel):
+    monto: float
+    fecha_corte: date | None = None
+
+    @field_validator("monto")
+    @classmethod
+    def monto_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("monto debe ser mayor que cero.")
+        return v
+
+
+class SimularPagoObligacionItem(BaseModel):
+    id_obligacion_financiera: int
+    saldo_pendiente: float
+    mora_calculada: float
+    total_a_cubrir: float
+    monto_aplicado: float
+    saldo_restante_simulado: float
+
+
+class SimularPagoPersonaData(BaseModel):
+    id_persona: int
+    fecha_corte: date
+    monto_ingresado: float
+    monto_aplicado: float
+    remanente: float
+    total_deuda_considerada: float
+    detalle: list[SimularPagoObligacionItem]
+
+
+class SimularPagoPersonaResponse(BaseModel):
+    ok: bool = True
+    data: SimularPagoPersonaData
+
+
 # ── inbox de eventos ──────────────────────────────────────────────────────────
 
 class InboxEventRequest(BaseModel):

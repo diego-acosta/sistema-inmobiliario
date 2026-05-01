@@ -1440,6 +1440,46 @@ class FinancieroRepository:
         result["composiciones"] = comp_results
         return result
 
+    # ── simulación de pago por persona ──────────────────────────────────────
+
+    def get_obligaciones_para_simular_pago(
+        self,
+        *,
+        id_persona: int,
+        fecha_corte: date,
+    ) -> list[dict[str, Any]]:
+        """
+        Obligaciones con saldo > 0 de la persona, ordenadas vencidas primero.
+        Vencida = fecha_vencimiento < fecha_corte.
+        """
+        stmt = text(
+            """
+            SELECT
+                o.id_obligacion_financiera,
+                o.fecha_vencimiento,
+                o.saldo_pendiente,
+                oo.porcentaje_responsabilidad
+            FROM obligacion_obligado oo
+            JOIN obligacion_financiera o
+                ON o.id_obligacion_financiera = oo.id_obligacion_financiera
+            WHERE oo.id_persona = :id_persona
+              AND oo.deleted_at IS NULL
+              AND o.deleted_at IS NULL
+              AND o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+              AND o.saldo_pendiente > 0
+            ORDER BY
+              CASE WHEN o.fecha_vencimiento IS NOT NULL
+                        AND o.fecha_vencimiento < :fecha_corte
+                   THEN 0 ELSE 1 END ASC,
+              o.fecha_vencimiento ASC NULLS LAST,
+              o.id_obligacion_financiera ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_persona": id_persona, "fecha_corte": fecha_corte}
+        ).mappings().all()
+        return [dict(r) for r in rows]
+
     # ── estado de cuenta por persona ────────────────────────────────────────
 
     def get_estado_cuenta_por_persona(

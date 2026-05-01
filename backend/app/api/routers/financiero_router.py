@@ -29,6 +29,10 @@ from app.api.schemas.financiero import (
     EstadoCuentaPersonaResumen,
     EstadoCuentaPersonaResponse,
     EstadoCuentaResponse,
+    SimularPagoObligacionItem,
+    SimularPagoPersonaData,
+    SimularPagoPersonaRequest,
+    SimularPagoPersonaResponse,
     ImputacionCreateRequest,
     ImputacionData,
     ImputacionResponse,
@@ -82,6 +86,9 @@ from app.application.financiero.services.get_deuda_consolidado_service import (
 )
 from app.application.financiero.services.get_estado_cuenta_persona_service import (
     GetEstadoCuentaPersonaService,
+)
+from app.application.financiero.services.simular_pago_persona_service import (
+    SimularPagoPersonaService,
 )
 from app.application.financiero.services.generar_mora_financiera_service import (
     GenerarMoraFinancieraService,
@@ -791,6 +798,77 @@ def get_estado_cuenta_persona(
                 EstadoCuentaPersonaObligacionItem(**ob)
                 for ob in data["obligaciones"]
             ],
+        )
+    )
+
+
+@router.post(
+    "/api/v1/financiero/personas/{id_persona}/simular-pago",
+    response_model=SimularPagoPersonaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def simular_pago_persona(
+    id_persona: int,
+    request: SimularPagoPersonaRequest,
+    db: Session = Depends(get_db),
+) -> SimularPagoPersonaResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = SimularPagoPersonaService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_persona=id_persona,
+            monto=request.monto,
+            fecha_corte=request.fecha_corte,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_PERSONA" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La persona indicada no existe.",
+                ).model_dump(),
+            )
+        if "MONTO_INVALIDO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="MONTO_INVALIDO",
+                    error_message="El monto debe ser mayor que cero.",
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo simular el pago.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    data = result.data
+    return SimularPagoPersonaResponse(
+        data=SimularPagoPersonaData(
+            id_persona=data["id_persona"],
+            fecha_corte=data["fecha_corte"],
+            monto_ingresado=data["monto_ingresado"],
+            monto_aplicado=data["monto_aplicado"],
+            remanente=data["remanente"],
+            total_deuda_considerada=data["total_deuda_considerada"],
+            detalle=[SimularPagoObligacionItem(**d) for d in data["detalle"]],
         )
     )
 

@@ -375,6 +375,31 @@ Reglas:
 
 Referencia: `SRV-FIN-017-deuda-consolidado`
 
+---
+
+## 11. Simulación de pago por persona
+
+Endpoint: `POST /api/v1/financiero/personas/{id_persona}/simular-pago`
+
+Simula la aplicación de un monto sobre la deuda de una persona sin persistir cambios.
+
+Incluye:
+
+- ordenamiento: obligaciones vencidas primero, luego futuras; dentro de cada grupo por `fecha_vencimiento ASC`
+- mora dinámica incluida en `total_a_cubrir` por obligación
+- aplicación secuencial del monto hasta agotarlo o cubrir toda la deuda
+- `remanente` si el monto supera la deuda total
+
+Reglas:
+
+- no crea `movimiento_financiero`, `aplicacion_financiera` ni `INTERES_MORA`
+- no modifica ningún saldo en DB
+- excluye `ANULADA` y `REEMPLAZADA`, solo obligaciones con `saldo_pendiente > 0`
+- `fecha_corte` configurable; si se omite usa `date.today()`
+- `monto` debe ser mayor que cero (validado en schema)
+
+Referencia: `SRV-FIN-018-simulacion-pago-persona`
+
 Integraciones por evento implementadas:
 
 - Comercial -> Financiero:
