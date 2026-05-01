@@ -1675,7 +1675,9 @@ CREATE TABLE public.contrato_alquiler (
     fecha_fin date,
     estado_contrato character varying(30) NOT NULL,
     observaciones text,
-    CONSTRAINT chk_contrato_alquiler_periodo CHECK (((fecha_fin IS NULL) OR (fecha_fin >= fecha_inicio)))
+    dia_vencimiento_canon integer,
+    CONSTRAINT chk_contrato_alquiler_periodo CHECK (((fecha_fin IS NULL) OR (fecha_fin >= fecha_inicio))),
+    CONSTRAINT chk_dia_vencimiento_canon CHECK ((dia_vencimiento_canon IS NULL) OR (dia_vencimiento_canon BETWEEN 1 AND 31))
 );
 
 

@@ -120,6 +120,7 @@ class LocativoRepository:
             "fecha_fin": contrato_values["fecha_fin"],
             "estado_contrato": contrato_values["estado_contrato"],
             "observaciones": contrato_values["observaciones"],
+            "dia_vencimiento_canon": contrato_values.get("dia_vencimiento_canon"),
         }
 
         contrato_statement = text(
@@ -140,7 +141,8 @@ class LocativoRepository:
                 fecha_inicio,
                 fecha_fin,
                 estado_contrato,
-                observaciones
+                observaciones,
+                dia_vencimiento_canon
             )
             VALUES (
                 :uid_global,
@@ -158,7 +160,8 @@ class LocativoRepository:
                 :fecha_inicio,
                 :fecha_fin,
                 :estado_contrato,
-                :observaciones
+                :observaciones,
+                :dia_vencimiento_canon
             )
             RETURNING id_contrato_alquiler
             """
@@ -329,6 +332,7 @@ class LocativoRepository:
                 fecha_fin,
                 estado_contrato,
                 observaciones,
+                dia_vencimiento_canon,
                 deleted_at
             FROM contrato_alquiler
             WHERE id_contrato_alquiler = :id
@@ -355,6 +359,7 @@ class LocativoRepository:
             "fecha_fin": contrato_row["fecha_fin"],
             "estado_contrato": contrato_row["estado_contrato"],
             "observaciones": contrato_row["observaciones"],
+            "dia_vencimiento_canon": contrato_row["dia_vencimiento_canon"],
             "deleted_at": contrato_row["deleted_at"],
             "objetos": objetos,
             "condiciones_economicas_alquiler": condiciones,
@@ -384,6 +389,7 @@ class LocativoRepository:
                 fecha_fin,
                 estado_contrato,
                 observaciones,
+                dia_vencimiento_canon,
                 deleted_at
             """
         )
@@ -425,6 +431,7 @@ class LocativoRepository:
                     "fecha_fin": updated["fecha_fin"],
                     "estado_contrato": updated["estado_contrato"],
                     "observaciones": updated["observaciones"],
+                    "dia_vencimiento_canon": updated["dia_vencimiento_canon"],
                     "objetos": objetos,
                     "condiciones_economicas_alquiler": [],
                     "deleted_at": updated["deleted_at"],
@@ -457,7 +464,8 @@ class LocativoRepository:
                 fecha_inicio,
                 fecha_fin,
                 estado_contrato,
-                observaciones
+                observaciones,
+                dia_vencimiento_canon
             """
         )
 
@@ -498,6 +506,7 @@ class LocativoRepository:
                     "fecha_fin": updated["fecha_fin"],
                     "estado_contrato": updated["estado_contrato"],
                     "observaciones": updated["observaciones"],
+                    "dia_vencimiento_canon": updated["dia_vencimiento_canon"],
                     "objetos": objetos,
                     "condiciones_economicas_alquiler": [],
                 },
@@ -539,7 +548,8 @@ class LocativoRepository:
                 fecha_inicio,
                 fecha_fin,
                 estado_contrato,
-                observaciones
+                observaciones,
+                dia_vencimiento_canon
             """
         )
 
@@ -591,6 +601,7 @@ class LocativoRepository:
                     "fecha_fin": updated["fecha_fin"],
                     "estado_contrato": updated["estado_contrato"],
                     "observaciones": updated["observaciones"],
+                    "dia_vencimiento_canon": updated["dia_vencimiento_canon"],
                     "objetos": objetos,
                     "condiciones_economicas_alquiler": [],
                 },
@@ -1025,7 +1036,8 @@ class LocativoRepository:
                 fecha_inicio,
                 fecha_fin,
                 estado_contrato,
-                observaciones
+                observaciones,
+                dia_vencimiento_canon
             """
         )
 
@@ -1066,6 +1078,7 @@ class LocativoRepository:
                     "fecha_fin": updated["fecha_fin"],
                     "estado_contrato": updated["estado_contrato"],
                     "observaciones": updated["observaciones"],
+                    "dia_vencimiento_canon": updated["dia_vencimiento_canon"],
                     "objetos": objetos,
                     "condiciones_economicas_alquiler": [],
                 },

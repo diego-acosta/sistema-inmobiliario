@@ -49,8 +49,10 @@ existe al menos una condicion economica aplicable.
 - `importe_total = condicion_economica_alquiler.monto_base` vigente al inicio
   del periodo
 - `fecha_emision = periodo_desde`
-- `fecha_vencimiento` deriva de regla locativa cuando exista soporte fisico;
-  usa `periodo_desde` como fallback tecnico
+- `fecha_vencimiento` = día `contrato_alquiler.dia_vencimiento_canon` dentro del
+  mes de `periodo_desde`; si ese día no existe en el mes, se usa el último día
+  real del mes; si `dia_vencimiento_canon` es NULL, se usa `periodo_desde` como
+  fallback técnico (RN-LOC-FIN-003)
 - `moneda = condicion_economica_alquiler.moneda` o `ARS` si es `NULL`
 - estado inicial: `EMITIDA`
 - composicion unica por obligacion con `CANON_LOCATIVO`
@@ -95,14 +97,20 @@ contrato_alquiler
 
 ---
 
-## Regla de vencimiento V2 minimo
+## Regla de vencimiento V2 (RN-LOC-FIN-003)
 
-- La fecha de vencimiento debe derivar de una regla locativa.
-- Si existe `dia_vencimiento_canon` en contrato o condicion, se usa ese dia
-  dentro del mes del periodo, limitado al ultimo dia real del mes.
-- Si no existe soporte fisico para `dia_vencimiento_canon`, se mantiene
-  `fecha_vencimiento = periodo_desde` como fallback tecnico.
-- El fallback no debe interpretarse como regla conceptual definitiva.
+- `contrato_alquiler.dia_vencimiento_canon` determina el día del mes en que
+  vence el canon locativo.
+- Si el campo está informado, `fecha_vencimiento` se calcula como ese día
+  dentro del mes de `periodo_desde`.
+- Si el día no existe en el mes (ej: 31 en febrero), se usa el último día real.
+- Si el día calculado quedara antes de `periodo_desde`, se usa `periodo_desde`.
+- Si `dia_vencimiento_canon` es NULL, se usa `periodo_desde` como fallback
+  técnico. El fallback no es una regla conceptual definitiva.
+- `dia_vencimiento_canon` pertenece a `contrato_alquiler`, no a
+  `condicion_economica_alquiler`.
+- No hay días de gracia implementados.
+- No hay ajuste por feriados ni días inhábiles.
 
 ---
 
@@ -146,8 +154,7 @@ Alcance actual:
 - Si dos condiciones economicas aplican al mismo `periodo_desde`, gana la de
   `fecha_desde` mas reciente.
 - No normaliza politica de moneda; usa `condicion.moneda` o fallback `ARS`.
-- `fecha_vencimiento = periodo_desde` cuando no exista soporte fisico para
-  `dia_vencimiento_canon`.
+- `fecha_vencimiento = periodo_desde` cuando `dia_vencimiento_canon` sea NULL.
 - Existe pipeline automatico interno `outbox_event -> inbox` mediante
   `outbox_to_inbox_worker`, sin HTTP.
 
@@ -159,8 +166,7 @@ Alcance actual:
   cambia dentro del mes.
 - Validar o prevenir solapamientos en `condicion_economica_alquiler`.
 - Normalizar politica de moneda.
-- Persistir `dia_vencimiento_canon` en contrato o condicion si se formaliza la
-  regla de vencimiento locativo.
+- `dia_vencimiento_canon` ya está implementado en `contrato_alquiler`.
 - Definir dias de gracia.
 - Normalizacion de periodicidad.
 - Incorporar conceptos locativos adicionales solo cuando exista definicion

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class ContratoAlquilerObjetoRequest(BaseModel):
@@ -27,6 +27,7 @@ class ContratoAlquilerCreateRequest(BaseModel):
     fecha_fin: date | None = None
     observaciones: str | None = None
     objetos: list[ContratoAlquilerObjetoRequest]
+    dia_vencimiento_canon: int | None = Field(default=None, ge=1, le=31)
 
 
 class ContratoAlquilerObjetoData(BaseModel):
@@ -45,6 +46,7 @@ class ContratoAlquilerCreateData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    dia_vencimiento_canon: int | None = None
     objetos: list[ContratoAlquilerObjetoData]
     condiciones_economicas_alquiler: list[Any] = []
 
@@ -107,6 +109,7 @@ class ContratoAlquilerGetData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    dia_vencimiento_canon: int | None = None
     objetos: list[ContratoAlquilerObjetoData]
     condiciones_economicas_alquiler: list[CondicionEconomicaAlquilerData] = []
     deleted_at: datetime | None
@@ -126,6 +129,7 @@ class ContratoAlquilerActivateData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    dia_vencimiento_canon: int | None = None
     objetos: list[ContratoAlquilerObjetoData]
     condiciones_economicas_alquiler: list[Any] = []
 
@@ -144,6 +148,7 @@ class ContratoAlquilerFinalizeData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    dia_vencimiento_canon: int | None = None
     objetos: list[ContratoAlquilerObjetoData]
     condiciones_economicas_alquiler: list[Any] = []
 
@@ -162,6 +167,7 @@ class ContratoAlquilerCancelData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    dia_vencimiento_canon: int | None = None
     objetos: list[ContratoAlquilerObjetoData]
     condiciones_economicas_alquiler: list[Any] = []
 
@@ -180,6 +186,7 @@ class ContratoAlquilerBajaData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    dia_vencimiento_canon: int | None = None
     objetos: list[ContratoAlquilerObjetoData]
     condiciones_economicas_alquiler: list[Any] = []
     deleted_at: datetime

@@ -65,26 +65,21 @@ def get_condicion_vigente_para_periodo(
 
 def calcular_fecha_vencimiento_canon(
     periodo_desde: date,
-    contrato: dict[str, Any],
-    condicion: dict[str, Any],
+    dia_vencimiento_canon: int | None,
 ) -> date:
-    dia_vencimiento = (
-        condicion.get("dia_vencimiento_canon")
-        or contrato.get("dia_vencimiento_canon")
-    )
-    if dia_vencimiento is None:
-        return periodo_desde
+    """
+    Calcula fecha_vencimiento para el canon locativo.
 
-    try:
-        dia = int(dia_vencimiento)
-    except (TypeError, ValueError):
-        return periodo_desde
-
-    if dia < 1:
+    Fuente: contrato_alquiler.dia_vencimiento_canon.
+    Si es NULL, retorna periodo_desde como fallback técnico (RN-LOC-FIN-003).
+    Si el día no existe en el mes, usa el último día real del mes.
+    Si el día calculado quedara antes de periodo_desde, usa periodo_desde.
+    """
+    if dia_vencimiento_canon is None:
         return periodo_desde
 
     ultimo_dia = calendar.monthrange(periodo_desde.year, periodo_desde.month)[1]
-    vencimiento = date(periodo_desde.year, periodo_desde.month, min(dia, ultimo_dia))
+    vencimiento = date(periodo_desde.year, periodo_desde.month, min(dia_vencimiento_canon, ultimo_dia))
     if vencimiento < periodo_desde:
         return periodo_desde
     return vencimiento
@@ -254,7 +249,7 @@ class HandleContratoAlquilerActivadoEventService:
                 id_relacion_generadora=id_rg,
                 fecha_emision=periodo_desde,
                 fecha_vencimiento=calcular_fecha_vencimiento_canon(
-                    periodo_desde, contrato, condicion
+                    periodo_desde, contrato.get("dia_vencimiento_canon")
                 ),
                 periodo_desde=periodo_desde,
                 periodo_hasta=periodo_hasta,

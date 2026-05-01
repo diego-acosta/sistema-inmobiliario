@@ -110,11 +110,14 @@ Atributos clave:
 - `fecha_fin`
 - `estado_contrato`
 - `observaciones`
+- `dia_vencimiento_canon` INTEGER nullable — día del mes en que vence el canon; BETWEEN 1 AND 31
 
 Observaciones:
 
 - incluye metadatos `CORE-EF`
 - tiene `CHECK` de coherencia temporal: `fecha_fin >= fecha_inicio` cuando `fecha_fin` no es null
+- tiene `CHECK chk_dia_vencimiento_canon`: `dia_vencimiento_canon IS NULL OR dia_vencimiento_canon BETWEEN 1 AND 31`
+- `dia_vencimiento_canon` determina la `fecha_vencimiento` del canon en el cronograma financiero; si es NULL se usa `periodo_desde` como fallback tecnico (RN-LOC-FIN-003)
 - `id_contrato_anterior` materializa continuidad historica entre contratos
 - `id_reserva_locativa` permite trazabilidad desde reserva, pero no materializa por si solo unicidad 1:1
 - `id_cartera_locativa` quedo alineado al modelo actual por `fk_ca_cartera`

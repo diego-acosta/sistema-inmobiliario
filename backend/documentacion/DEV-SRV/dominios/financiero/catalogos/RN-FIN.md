@@ -395,6 +395,12 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-015-plan-financiero-locativo / INT-FIN-002
 - estado: IMPLEMENTACION MINIMA.
 
+### RN-LOC-FIN-003 - Fecha de vencimiento del canon locativo
+- descripcion: La fecha de vencimiento de una obligacion locativa se determina a partir de `contrato_alquiler.dia_vencimiento_canon`. Si el campo esta informado, `fecha_vencimiento` es ese dia dentro del mes del periodo. Si el dia no existe en el mes, se usa el ultimo dia real del mes. Si el dia calculado quedara antes de `periodo_desde`, se usa `periodo_desde`. Si `dia_vencimiento_canon` es NULL, se usa `periodo_desde` como fallback tecnico. No hay dias de gracia ni ajuste por feriados.
+- aplica_a: contrato_alquiler, obligacion_financiera
+- origen_principal: SRV-FIN-015-plan-financiero-locativo
+- estado: IMPLEMENTADA.
+
 ### RN-FIN-069 — Reduccion de saldo controlada
 - descripcion: Ninguna transicion puede reducir saldo sin `aplicacion_financiera`, anulacion formal o credito documentado.
 - aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera

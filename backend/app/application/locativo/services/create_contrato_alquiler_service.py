@@ -47,6 +47,7 @@ class ContratoAlquilerCreatePayload:
     id_reserva_locativa: int | None
     id_cartera_locativa: int | None
     id_contrato_anterior: int | None
+    dia_vencimiento_canon: int | None = None
 
 
 class LocativoRepository(Protocol):
@@ -109,6 +110,7 @@ class CreateContratoAlquilerService:
             id_reserva_locativa=command.id_reserva_locativa,
             id_cartera_locativa=None,
             id_contrato_anterior=None,
+            dia_vencimiento_canon=command.dia_vencimiento_canon,
         )
 
         objetos_payload: list[ContratoAlquilerObjetoCreatePayload] = []
@@ -141,6 +143,7 @@ class CreateContratoAlquilerService:
                 "fecha_fin": payload.fecha_fin,
                 "estado_contrato": payload.estado_contrato,
                 "observaciones": payload.observaciones,
+                "dia_vencimiento_canon": payload.dia_vencimiento_canon,
                 "objetos": created["objetos"],
                 "condiciones_economicas_alquiler": [],
             }

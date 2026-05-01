@@ -67,6 +67,7 @@ Permite visualizar contratos y su composición básica.
 - fecha de inicio
 - fecha de fin prevista
 - estado contractual
+- dia de vencimiento del canon (dia_vencimiento_canon, entero entre 1 y 31, opcional)
 - destino locativo cuando corresponda
 - observaciones contractuales
 
@@ -201,9 +202,9 @@ Limitaciones financieras vigentes:
 - si dos condiciones aplican al mismo inicio de periodo, gana la de
   `fecha_desde` mas reciente
 - la politica de moneda permanece pendiente
-- `fecha_vencimiento` usa regla locativa cuando exista
-  `dia_vencimiento_canon`; si no existe soporte fisico, usa `periodo_desde`
-  como fallback tecnico
+- `fecha_vencimiento` usa `contrato_alquiler.dia_vencimiento_canon` cuando
+  esta informado; si es NULL, usa `periodo_desde` como fallback tecnico
+  (RN-LOC-FIN-003)
 - no se generan expensas, servicios, impuestos ni punitorios
 
 ## Errores
@@ -245,6 +246,5 @@ Limitaciones financieras vigentes:
 - relación exacta entre contrato y objeto locativo
 - prorrateo del cronograma financiero cuando cambien condiciones dentro del mes
 - formalizacion completa de multiples locatarios, solidaridad y garantes
-- persistencia fisica de `dia_vencimiento_canon` si se adopta como regla
-  locativa estable
+- `dia_vencimiento_canon` ya esta implementado en `contrato_alquiler`
 - definicion de ejecucion operativa del worker financiero

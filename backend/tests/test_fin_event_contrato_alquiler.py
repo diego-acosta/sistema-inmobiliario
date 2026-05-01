@@ -32,18 +32,24 @@ URL_CONDICIONES = "/api/v1/contratos-alquiler/{id}/condiciones-economicas-alquil
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _crear_contrato_borrador(client, *, codigo: str, fecha_inicio: str, fecha_fin: str) -> dict:
+def _crear_contrato_borrador(
+    client,
+    *,
+    codigo: str,
+    fecha_inicio: str,
+    fecha_fin: str,
+    dia_vencimiento_canon: int | None = None,
+) -> dict:
     id_inmueble = _crear_inmueble(client, codigo=f"INM-{codigo}")
-    response = client.post(
-        URL_CONTRATOS,
-        headers=HEADERS,
-        json=_payload_base(
-            codigo_contrato=codigo,
-            objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}],
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-        ),
+    payload = _payload_base(
+        codigo_contrato=codigo,
+        objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}],
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
     )
+    if dia_vencimiento_canon is not None:
+        payload["dia_vencimiento_canon"] = dia_vencimiento_canon
+    response = client.post(URL_CONTRATOS, headers=HEADERS, json=payload)
     assert response.status_code == 201
     return response.json()["data"]
 
@@ -247,41 +253,51 @@ def test_generate_monthly_periods_sin_huecos_ni_solapamiento() -> None:
     assert periods[-1][1] == date(2026, 3, 15)
 
 
-def test_calcular_fecha_vencimiento_canon_usa_dia_de_condicion() -> None:
+def test_calcular_fecha_vencimiento_canon_usa_dia_de_contrato() -> None:
+    """dia_vencimiento_canon=10 en contrato_alquiler → vence el 10 del mes."""
     vencimiento = calcular_fecha_vencimiento_canon(
-        date(2026, 2, 1),
-        contrato={},
-        condicion={"dia_vencimiento_canon": 10},
+        date(2026, 5, 1),
+        dia_vencimiento_canon=10,
     )
 
-    assert vencimiento == date(2026, 2, 10)
+    assert vencimiento == date(2026, 5, 10)
 
 
 def test_calcular_fecha_vencimiento_canon_ajusta_al_ultimo_dia_del_mes() -> None:
+    """dia=31 en febrero → último día real del mes (28 en año no bisiesto)."""
     vencimiento = calcular_fecha_vencimiento_canon(
         date(2026, 2, 1),
-        contrato={},
-        condicion={"dia_vencimiento_canon": 31},
+        dia_vencimiento_canon=31,
     )
 
     assert vencimiento == date(2026, 2, 28)
 
 
+def test_calcular_fecha_vencimiento_canon_ajusta_al_ultimo_dia_mes_bisiesto() -> None:
+    """dia=31 en febrero bisiesto → 29."""
+    vencimiento = calcular_fecha_vencimiento_canon(
+        date(2028, 2, 1),
+        dia_vencimiento_canon=31,
+    )
+
+    assert vencimiento == date(2028, 2, 29)
+
+
 def test_calcular_fecha_vencimiento_canon_fallback_periodo_desde() -> None:
+    """dia_vencimiento_canon=None → fallback técnico: fecha_vencimiento = periodo_desde."""
     vencimiento = calcular_fecha_vencimiento_canon(
         date(2026, 5, 1),
-        contrato={},
-        condicion={},
+        dia_vencimiento_canon=None,
     )
 
     assert vencimiento == date(2026, 5, 1)
 
 
 def test_calcular_fecha_vencimiento_canon_no_devuelve_fecha_anterior_al_periodo() -> None:
+    """Si el día calculado quedara antes de periodo_desde, se usa periodo_desde."""
     vencimiento = calcular_fecha_vencimiento_canon(
         date(2026, 5, 10),
-        contrato={"dia_vencimiento_canon": 5},
-        condicion={},
+        dia_vencimiento_canon=5,
     )
 
     assert vencimiento == date(2026, 5, 10)
@@ -520,3 +536,84 @@ def test_cronograma_sin_condicion_aplicable_no_crea_relacion_generadora(client, 
         {"id": contrato["id_contrato_alquiler"]},
     ).scalar()
     assert count == 0
+
+
+# ── integración: dia_vencimiento_canon ───────────────────────────────────────
+
+def test_cronograma_usa_dia_vencimiento_canon_del_contrato(client, db_session) -> None:
+    """dia_vencimiento_canon=10 → fecha_vencimiento = día 10 de cada periodo_desde."""
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-DVC-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-07-31",
+        dia_vencimiento_canon=10,
+    )
+    assert contrato["dia_vencimiento_canon"] == 10
+
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 60000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 3
+    assert obligaciones[0]["fecha_vencimiento"] == date(2026, 5, 10)
+    assert obligaciones[1]["fecha_vencimiento"] == date(2026, 6, 10)
+    assert obligaciones[2]["fecha_vencimiento"] == date(2026, 7, 10)
+
+
+def test_cronograma_dia_vencimiento_31_en_febrero_usa_ultimo_dia(client, db_session) -> None:
+    """dia=31 en febrero → último día real del mes."""
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-DVC-FEB-001",
+        fecha_inicio="2026-02-01", fecha_fin="2026-02-28",
+        dia_vencimiento_canon=31,
+    )
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 40000.00, "2026-02-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 1
+    assert obligaciones[0]["fecha_vencimiento"] == date(2026, 2, 28)
+
+
+def test_cronograma_sin_dia_vencimiento_usa_periodo_desde(client, db_session) -> None:
+    """Sin dia_vencimiento_canon → fallback técnico: fecha_vencimiento = periodo_desde."""
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-DVC-NULL-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-06-30",
+    )
+    assert contrato["dia_vencimiento_canon"] is None
+
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 25000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 2
+    for ob in obligaciones:
+        assert ob["fecha_vencimiento"] == ob["periodo_desde"]
+
+
+def test_contrato_create_rechaza_dia_vencimiento_fuera_de_rango(client) -> None:
+    """dia_vencimiento_canon=0 o >31 debe ser rechazado por validación Pydantic (422)."""
+    id_inmueble = _crear_inmueble(client, codigo="INM-DVC-RANGE-001")
+    for dia_invalido in (0, 32, -1):
+        response = client.post(
+            URL_CONTRATOS,
+            headers=HEADERS,
+            json={
+                "codigo_contrato": f"DVC-RANGE-{dia_invalido}",
+                "fecha_inicio": "2026-05-01",
+                "fecha_fin": "2026-07-31",
+                "observaciones": None,
+                "objetos": [{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}],
+                "dia_vencimiento_canon": dia_invalido,
+            },
+        )
+        assert response.status_code == 422, f"Esperaba 422 para dia={dia_invalido}"

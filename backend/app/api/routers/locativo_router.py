@@ -257,6 +257,7 @@ def create_contrato_alquiler(
         fecha_inicio=request.fecha_inicio,
         fecha_fin=request.fecha_fin,
         observaciones=request.observaciones,
+        dia_vencimiento_canon=request.dia_vencimiento_canon,
         objetos=[
             CreateContratoAlquilerObjetoCommand(
                 id_inmueble=item.id_inmueble,
