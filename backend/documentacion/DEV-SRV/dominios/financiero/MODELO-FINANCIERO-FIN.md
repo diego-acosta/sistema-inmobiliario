@@ -305,7 +305,9 @@ Integraciones por evento implementadas:
   - `contrato_alquiler_activado`
   - crea o reutiliza `relacion_generadora` con
     `tipo_origen = 'contrato_alquiler'`
-  - materializa una obligacion inicial `CANON_LOCATIVO`
+  - materializa un cronograma mensual de obligaciones `CANON_LOCATIVO`
+  - omite los periodos mensuales sin condicion economica aplicable
+  - no crea `relacion_generadora` si ningun periodo tiene condicion aplicable
 
 ---
 
@@ -435,17 +437,38 @@ Pendiente:
 - logging estructurado
 - tabla de eventos fallidos
 
+### Cronograma locativo mensual implementado
+
+La integracion `contrato_alquiler_activado` genera obligaciones mensuales para
+el concepto `CANON_LOCATIVO`.
+
+Reglas implementadas:
+
+- una `obligacion_financiera` por periodo mensual aplicable
+- cada obligacion tiene una composicion `CANON_LOCATIVO`
+- el monto surge de `condicion_economica_alquiler.monto_base`
+- la condicion aplicable se resuelve contra `periodo_desde`
+- si un periodo no tiene condicion aplicable, se omite
+- si ningun periodo tiene condicion aplicable, no se crea
+  `relacion_generadora`
+- si ya existen obligaciones para la relacion generadora, no se duplican
+- `moneda = condicion.moneda` o fallback `ARS`
+- `fecha_emision = periodo_desde`
+- `fecha_vencimiento = periodo_desde`
+- estado inicial: `EMITIDA`
+
 ### Limitaciones locativas actuales
 
-- La integracion `contrato_alquiler_activado` genera una unica obligacion
-  inicial `CANON_LOCATIVO`.
-- No genera cronograma mensual.
-- No usa periodicidad todavia.
-- No aplica dias de gracia.
-- No resuelve locatario u obligado financiero.
-- Si no hay condicion vigente exacta para la fecha de inicio del contrato, el
-  handler usa fallback a la primera condicion disponible segun la implementacion
-  actual.
-- Usa `ARS` como fallback tecnico si `condicion_economica_alquiler.moneda` es
-  `NULL`.
-- No hay generacion de expensas, servicios ni impuestos trasladados.
+- Solo se genera `CANON_LOCATIVO`.
+- No se generan expensas, servicios, impuestos ni punitorios.
+- No se resuelve locatario u obligado financiero.
+- No usa periodicidad para dividir periodos; el cronograma implementado es
+  mensual.
+- No hay prorrateo si una condicion cambia dentro del mes.
+- No se divide un periodo mensual por cambios de condicion intermedios.
+- Si dos condiciones aplican al mismo `periodo_desde`, gana la condicion con
+  `fecha_desde` mas reciente.
+- La prevencion de solapamientos depende de validaciones de condiciones
+  economicas; debe mantenerse alineada con el dominio locativo.
+- La politica de moneda no esta normalizada.
+- La regla real de vencimiento y dias de gracia esta pendiente.

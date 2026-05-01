@@ -246,13 +246,13 @@ Incluye solicitudes, reservas, contratos, condiciones, ajustes, modificaciones, 
 - origen: DEV-SRV
 - es_reintento_valido: no
 
-### Error implementado — Sin condición económica
+### Error heredado no vigente — Sin condición económica
 - codigo_backend: `SIN_CONDICION_ECONOMICA`
-- descripcion: no se permite activar un contrato de alquiler sin `condicion_economica_alquiler`.
-- tipo: funcional
+- descripcion: error heredado de la activacion locativa anterior; la activacion de contrato ya no se bloquea por ausencia de `condicion_economica_alquiler`.
+- tipo: compatibilidad heredada
 - aplica_a: contrato_alquiler, condicion_economica_alquiler
-- origen: backend actual
-- es_reintento_valido: sí, luego de registrar una condición económica válida
+- origen: documentacion historica
+- es_reintento_valido: no aplica
 
 ## D. Errores de condiciones económicas
 
