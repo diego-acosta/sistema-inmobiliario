@@ -551,15 +551,6 @@ def generar_mora_financiera(
         )
 
     if not result.success or result.data is None:
-        if "NOT_FOUND_CONCEPTO_INTERES_MORA" in result.errors:
-            return JSONResponse(
-                status_code=404,
-                content=ErrorResponse(
-                    error_code="NOT_FOUND",
-                    error_message="El concepto financiero INTERES_MORA no existe.",
-                    details={"errors": result.errors},
-                ).model_dump(),
-            )
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(

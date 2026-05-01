@@ -47,10 +47,10 @@ Estados SQL vigentes y usados por backend:
 |---|---|
 | `PROYECTADA` | Estado inicial de obligaciones creadas manualmente por API. Acepta imputacion. |
 | `EMITIDA` | Estado aceptado para imputacion. El cronograma locativo la usa como estado inicial. |
-| `EXIGIBLE` | Estado aceptado para imputacion. La mora automatica se crea en este estado. |
+| `EXIGIBLE` | Estado aceptado para imputacion. No es usado por Mora V1 simple. |
 | `PARCIALMENTE_CANCELADA` | Asignado por backend despues de imputacion parcial. Acepta imputacion. |
 | `CANCELADA` | Asignado por backend cuando el saldo queda en cero. No acepta imputacion. |
-| `VENCIDA` | Estado aceptado para imputacion. No se materializa automaticamente por fecha en backend. |
+| `VENCIDA` | Estado aceptado para imputacion. Mora V1 simple lo materializa desde `EMITIDA` vencida con saldo. |
 | `ANULADA` | Estado excluido de imputacion y de generacion de mora. |
 | `REEMPLAZADA` | Estado excluido de imputacion y de generacion de mora. |
 | `PENDIENTE_AJUSTE` | Estado reservado para obligaciones que requieran ajuste o regeneracion controlada. |
@@ -103,13 +103,14 @@ La actualizacion no modifica obligaciones en estado:
 
 ### Mora
 
-`POST /api/v1/financiero/mora/generar` crea nuevas obligaciones de mora en estado:
+`POST /api/v1/financiero/mora/generar` marca obligaciones vencidas:
 
 ```text
-EXIGIBLE
+EMITIDA -> VENCIDA
 ```
 
-La mora no cambia el estado de la obligacion base.
+La mora no crea obligaciones nuevas ni modifica saldos persistidos; el importe
+de mora se calcula dinamicamente en lecturas.
 
 ---
 
@@ -134,14 +135,14 @@ El backend rechaza imputacion para:
 
 ## E. Estados excluidos de mora
 
-La generacion automatica de mora excluye:
+La marca automatica de mora solo aplica sobre `EMITIDA`; por lo tanto excluye:
 
 - `ANULADA`
 - `REEMPLAZADA`
 - `CANCELADA`
 - `PENDIENTE_AJUSTE`
 
-Tambien excluye obligaciones ya generadas por mora automatica, identificadas por marca en `observaciones`.
+Tambien excluye cualquier obligacion que ya no este en `EMITIDA`.
 
 ---
 
@@ -167,6 +168,7 @@ La consulta implementada `GET /api/v1/financiero/deuda` no persiste un estado ag
 - `estado_obligacion`
 - `saldo_pendiente`
 - `fecha_vencimiento`
+- `mora_calculada`
 - composiciones con `saldo_componente`
 
 Estados agregados como `sin_deuda`, `con_deuda`, `deuda_parcial`, `deuda_vencida` o `deuda_cancelada` son conceptuales para reportes futuros; no son persistidos por el backend actual.

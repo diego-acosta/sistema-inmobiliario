@@ -1,34 +1,36 @@
-# SRV-FIN-013 - Generacion de mora diaria
+# SRV-FIN-013 - Mora V1 simple
 
 ## Objetivo
 
-Generar obligaciones financieras de mora diaria para obligaciones vencidas con saldo pendiente, sin modificar la obligacion base.
+Marcar obligaciones vencidas y exponer mora diaria calculada dinamicamente,
+sin crear obligaciones financieras nuevas por mora.
 
 ## Estado
 
 - estado: `IMPLEMENTADO`
 - endpoint: `POST /api/v1/financiero/mora/generar`
-- no modifica SQL
+- no modifica SQL estructural
 - no usa `tipo_obligacion`
+- no crea `INTERES_MORA` como obligacion
 
 ## Alcance
 
 Este servicio cubre:
 
-- seleccion de obligaciones vencidas con saldo
-- calculo simple de mora diaria
-- creacion de nueva `obligacion_financiera`
-- creacion de `composicion_obligacion` con concepto `INTERES_MORA`
-- control operativo de duplicado por obligacion base y fecha de proceso
+- seleccion de obligaciones `EMITIDA` vencidas con saldo
+- transicion idempotente a `VENCIDA`
+- calculo simple de mora diaria en lecturas
+- exposicion de `mora_calculada`, `dias_atraso` y `tasa_diaria_mora` en deuda
+  consolidada y estado de cuenta
 
 No cubre:
 
-- punitorios
+- creacion de obligaciones de mora
 - capitalizacion de mora
-- actualizacion de la obligacion base
+- punitorios
 - politicas variables de tasa
 - refinanciacion
-- reversion de mora
+- reversion especifica de mora
 
 ## Endpoint
 
@@ -52,130 +54,67 @@ Response:
   "data": {
     "fecha_proceso": "2026-05-01",
     "procesadas": 10,
-    "generadas": 7
+    "marcadas": 10,
+    "generadas": 0,
+    "tasa_diaria": "0.001"
   }
 }
 ```
 
+`generadas` se mantiene en `0` porque Mora V1 simple no crea obligaciones de
+mora.
+
 ## Reglas de negocio
 
-Una obligacion es elegible si cumple:
+Una obligacion pasa a `VENCIDA` si cumple:
 
 - `fecha_vencimiento < fecha_proceso`
 - `saldo_pendiente > 0`
 - `deleted_at IS NULL`
-- `estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA', 'CANCELADA')`
-- no es una obligacion generada por mora automatica
+- `estado_obligacion = 'EMITIDA'`
 
-Reglas de calculo:
+La transicion es idempotente: una obligacion ya `VENCIDA`, `CANCELADA`,
+`ANULADA`, `REEMPLAZADA`, `PENDIENTE_AJUSTE` o en otro estado no vuelve a
+modificarse por este proceso.
 
-- concepto financiero obligatorio: `INTERES_MORA`
+## Calculo dinamico
+
+La mora no se persiste como deuda ni como composicion.
+
+Formula:
+
+```text
+mora_calculada = saldo_pendiente * tasa_diaria * dias_atraso
+```
+
+Reglas:
+
 - tasa diaria fija inicial: `0.001`
-- `importe_mora = saldo_pendiente * 0.001`
+- `dias_atraso = fecha_actual - fecha_vencimiento` cuando la obligacion esta
+  vencida
+- si no hay atraso o el saldo es cero, `mora_calculada = 0`
 - redondeo a 2 decimales
-- no se genera mora si `importe_mora <= 0`
 
-Reglas de persistencia:
+## Lecturas afectadas
 
-- se crea una nueva `obligacion_financiera`
-- se usa la misma `id_relacion_generadora` de la obligacion base
-- `fecha_emision = fecha_proceso`
-- `fecha_vencimiento = fecha_proceso`
-- `importe_total = importe_mora`
-- `saldo_pendiente = importe_mora`
-- `estado_obligacion = EXIGIBLE`
-- se crea una unica composicion con `INTERES_MORA`
+`GET /api/v1/financiero/deuda` agrega por obligacion:
 
-Reglas de no capitalizacion:
+- `dias_atraso`
+- `mora_calculada`
+- `tasa_diaria_mora`
 
-- la mora no incrementa el saldo de la obligacion base
-- la mora queda como obligacion separada
-- la consulta de deuda consolidada la muestra como otra obligacion de la misma relacion generadora
+`GET /api/v1/financiero/relaciones-generadoras/{id}/estado-cuenta` agrega por
+obligacion los mismos campos y en resumen:
 
-## Algoritmo implementado
+- `mora_calculada`
 
-1. resolver `fecha_proceso`
-2. buscar `concepto_financiero` con codigo `INTERES_MORA`
-3. seleccionar obligaciones elegibles con bloqueo `FOR UPDATE`
-4. excluir obligaciones de mora automatica
-5. verificar duplicado para obligacion base y fecha
-6. calcular `saldo_pendiente * 0.001`
-7. redondear a 2 decimales
-8. omitir importes no positivos
-9. crear obligacion de mora
-10. crear composicion `INTERES_MORA`
-11. confirmar transaccion
-
-## Control de duplicado
-
-Limitacion SQL actual:
-
-- no existe FK desde obligacion de mora hacia obligacion base
-- no existe columna `id_obligacion_base`
-- no existe constraint unica para obligacion base + fecha de proceso
-
-Control implementado:
-
-- la obligacion de mora guarda en `observaciones` una marca:
-
-```text
-MORA_AUTO id_obligacion_base=<id> fecha_proceso=<yyyy-mm-dd> tasa_diaria=0.001
-```
-
-- el repositorio busca esa marca junto con una composicion `INTERES_MORA`
-- el proceso no genera otra mora para la misma obligacion base y fecha si encuentra esa marca
-
-Este control es operativo y compatible con el SQL vigente, pero no reemplaza una restriccion unica fisica.
-
-## Ejemplo
-
-Obligacion base:
-
-```text
-id_obligacion_financiera = 10
-id_relacion_generadora = 1
-fecha_vencimiento = 2026-04-01
-saldo_pendiente = 1000.00
-estado_obligacion = PROYECTADA
-```
-
-Proceso:
-
-```json
-{
-  "fecha_proceso": "2026-05-01"
-}
-```
-
-Resultado:
-
-```text
-importe_mora = 1000.00 * 0.001 = 1.00
-```
-
-Nueva obligacion:
-
-```text
-id_relacion_generadora = 1
-fecha_emision = 2026-05-01
-fecha_vencimiento = 2026-05-01
-importe_total = 1.00
-saldo_pendiente = 1.00
-estado_obligacion = EXIGIBLE
-composicion = INTERES_MORA
-```
+El saldo persistido no se modifica por la mora calculada.
 
 ## Pendientes
 
-- FK o referencia estructural a obligacion base
-- restriccion unica fisica para no duplicar mora por dia
-- politica configurable de tasa
+- tasa configurable por parametro formal
+- dias de gracia
+- politica por tipo de contrato/concepto
+- eventual generacion de cargos de mora si se define V2
 - punitorios
 - reversion/anulacion especifica de mora
-
-## Notas de integración
-
-- La generación de mora depende indirectamente de la existencia de
-  `relacion_generadora` creada desde eventos del dominio comercial.
-- La idempotencia de dicha relación no está garantizada a nivel SQL.
-- Ver sección de limitaciones técnicas en el modelo financiero.

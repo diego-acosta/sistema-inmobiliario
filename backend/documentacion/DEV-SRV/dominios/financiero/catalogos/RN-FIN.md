@@ -407,23 +407,22 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
 
 ### RN-FIN-070 - Calculo de mora diaria simple
-- descripcion: La mora automatica implementada se calcula como `saldo_pendiente * 0.001`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente.
-- aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
+- descripcion: La mora V1 se calcula dinamicamente como `saldo_pendiente * 0.001 * dias_atraso`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente.
+- aplica_a: obligacion_financiera, estado_cuenta, deuda_consolidada
 - origen_principal: SRV-FIN-013-generacion-de-mora
 - estado: IMPLEMENTADA.
 
 ### RN-FIN-071 - Mora no capitalizable
-- descripcion: La mora diaria se registra como una nueva obligacion financiera con la misma `relacion_generadora`; no incrementa el saldo de la obligacion base.
-- aplica_a: obligacion_financiera, composicion_obligacion
+- descripcion: La mora diaria no se persiste como obligacion financiera ni incrementa el saldo de la obligacion base; se expone como calculo de lectura.
+- aplica_a: obligacion_financiera, estado_cuenta, deuda_consolidada
 - origen_principal: SRV-FIN-013-generacion-de-mora
 - estado: IMPLEMENTADA.
 
-### RN-FIN-072 - No duplicidad de mora por obligacion y fecha
-- descripcion: No debe generarse mas de una mora automatica para la misma obligacion base y la misma fecha de proceso.
+### RN-FIN-072 - Marcado idempotente de vencidas
+- descripcion: El proceso de mora solo cambia `EMITIDA` a `VENCIDA` cuando `fecha_vencimiento < fecha_proceso` y `saldo_pendiente > 0`; ejecuciones repetidas no vuelven a modificar la obligacion.
 - aplica_a: obligacion_financiera
 - origen_principal: SRV-FIN-013-generacion-de-mora
-- estado: IMPLEMENTADA con limitacion.
-- observaciones: El backend controla duplicado mediante marca en `observaciones`; no existe constraint SQL ni FK a obligacion base.
+- estado: IMPLEMENTADA.
 
 ### RN-FIN-073 - Transicion automatica por saldo luego de imputacion
 - descripcion: Despues de registrar aplicaciones, si `saldo_pendiente = 0` la obligacion pasa a `CANCELADA`; si `saldo_pendiente < importe_total` pasa a `PARCIALMENTE_CANCELADA`.

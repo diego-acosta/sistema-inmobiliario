@@ -34,7 +34,7 @@ Flujo operativo:
 5. Una imputacion crea un `movimiento_financiero` y una o mas `aplicacion_financiera`.
 6. La base de datos actualiza saldos por triggers.
 7. El backend lee los saldos resultantes y actualiza `estado_obligacion` cuando corresponde.
-8. El proceso de mora genera nuevas obligaciones con composicion `INTERES_MORA` para deuda vencida con saldo.
+8. El proceso de mora marca obligaciones `EMITIDA` vencidas como `VENCIDA` y calcula mora dinamica en lecturas.
 
 ---
 
@@ -105,7 +105,7 @@ Catalogo financiero que define la naturaleza economica de una composicion.
 Implementado:
 
 - consulta por `GET /api/v1/financiero/conceptos-financieros`
-- busqueda interna por codigo para crear obligaciones, imputaciones y mora
+- busqueda interna por codigo para crear obligaciones e imputaciones
 - catalogo base con `INTERES_MORA` disponible en seeds actuales
 
 ### 2.5 movimiento_financiero y aplicacion_financiera
@@ -192,11 +192,11 @@ Regla implementada despues de imputar:
 - si `saldo_pendiente < importe_total`, el backend actualiza `estado_obligacion` a `PARCIALMENTE_CANCELADA`
 - no cambia estados `ANULADA` ni `REEMPLAZADA`
 
-El backend no materializa automaticamente `VENCIDA` por fecha. La mora usa la fecha de vencimiento y el saldo como criterio de seleccion, sin requerir que el estado sea `VENCIDA`.
+El proceso de mora materializa `VENCIDA` solo para obligaciones `EMITIDA` con `fecha_vencimiento < fecha_proceso` y `saldo_pendiente > 0`.
 
 ---
 
-## 6. Mora diaria implementada
+## 6. Mora V1 simple implementada
 
 Endpoint:
 
@@ -206,24 +206,24 @@ Regla:
 
 - selecciona obligaciones con `fecha_vencimiento < fecha_proceso`
 - requiere `saldo_pendiente > 0`
-- excluye `ANULADA`, `REEMPLAZADA`, `CANCELADA`
-- excluye obligaciones ya generadas por mora automatica
+- requiere `estado_obligacion = 'EMITIDA'`
 - tasa diaria fija: `0.001`
-- importe: `saldo_pendiente * 0.001`
+- importe dinamico: `saldo_pendiente * 0.001 * dias_atraso`
 - redondeo a 2 decimales
-- si el importe calculado es `<= 0`, no genera obligacion
+- si no hay atraso o saldo, la mora calculada es `0`
 
 Efecto:
 
-- crea una nueva `obligacion_financiera`
-- usa la misma `id_relacion_generadora` de la obligacion base
-- crea una composicion `INTERES_MORA`
+- cambia `estado_obligacion` de `EMITIDA` a `VENCIDA`
+- no crea `obligacion_financiera` nueva
+- no crea composicion `INTERES_MORA`
 - no capitaliza sobre la obligacion base
+- expone `mora_calculada`, `dias_atraso` y `tasa_diaria_mora` en lecturas
 
 Limitacion:
 
-- no existe FK fisica desde la obligacion de mora hacia la obligacion base.
-- el control de duplicado por obligacion base y fecha usa `obligacion_financiera.observaciones` con una marca `MORA_AUTO`.
+- tasa fija documentada hasta que exista politica parametrizable.
+- no hay dias de gracia.
 
 ---
 

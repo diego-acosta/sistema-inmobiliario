@@ -198,7 +198,9 @@ class MoraGenerarRequest(BaseModel):
 class MoraGenerarData(BaseModel):
     fecha_proceso: date
     procesadas: int
+    marcadas: int
     generadas: int
+    tasa_diaria: str
 
 
 class MoraGenerarResponse(BaseModel):
@@ -220,6 +222,9 @@ class DeudaItem(BaseModel):
     fecha_vencimiento: date | None
     importe_total: float
     saldo_pendiente: float
+    dias_atraso: int = 0
+    mora_calculada: float = 0.0
+    tasa_diaria_mora: float = 0.001
     composiciones: list[DeudaComposicionItem]
 
 
@@ -260,6 +265,9 @@ class EstadoCuentaObligacionItem(BaseModel):
     fecha_vencimiento: date | None
     importe_total: float
     saldo_pendiente: float
+    dias_atraso: int = 0
+    mora_calculada: float = 0.0
+    tasa_diaria_mora: float = 0.001
     composiciones: list[EstadoCuentaComposicionItem]
     aplicaciones: list[EstadoCuentaAplicacionItem]
 
@@ -267,6 +275,7 @@ class EstadoCuentaObligacionItem(BaseModel):
 class EstadoCuentaResumenData(BaseModel):
     importe_total: float
     saldo_pendiente: float
+    mora_calculada: float = 0.0
     importe_cancelado: float
     cantidad_obligaciones: int
     cantidad_vencidas: int

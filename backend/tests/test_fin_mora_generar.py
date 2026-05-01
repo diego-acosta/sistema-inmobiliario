@@ -1,6 +1,9 @@
 """
-Tests de integración para POST /api/v1/financiero/mora/generar.
+Tests de integracion para POST /api/v1/financiero/mora/generar.
+Mora V1 simple: marca obligaciones vencidas y calcula mora dinamica en lectura.
 """
+from datetime import date
+
 from sqlalchemy import text
 
 from tests.test_disponibilidades_create import HEADERS
@@ -8,6 +11,7 @@ from tests.test_fin_rel_gen_create import _crear_contrato, _crear_relacion_gener
 
 
 URL = "/api/v1/financiero/mora/generar"
+URL_DEUDA = "/api/v1/financiero/deuda"
 URL_OBLIGACIONES = "/api/v1/financiero/obligaciones"
 
 
@@ -23,7 +27,7 @@ def _crear_obligacion(
     codigo: str,
     importe: float = 1000.00,
     fecha_vencimiento: str = "2026-04-01",
-    estado: str = "PROYECTADA",
+    estado: str = "EMITIDA",
     saldo_pendiente: float | None = None,
 ) -> dict:
     rg = _crear_rg(client, codigo=codigo)
@@ -76,6 +80,7 @@ def _crear_obligacion(
             "saldo_pendiente": saldo,
         },
     )
+    obligacion["id_relacion_generadora"] = rg["id_relacion_generadora"]
     return obligacion
 
 
@@ -89,70 +94,51 @@ def _generar_mora(client, *, fecha_proceso: str = "2026-05-01") -> dict:
     return response.json()["data"]
 
 
-def _moras_de_base(db_session, id_obligacion_base: int) -> list[dict]:
-    rows = db_session.execute(
+def _estado_obligacion(db_session, id_obligacion: int) -> str:
+    return db_session.execute(
         text(
             """
-            SELECT
-                o.id_obligacion_financiera,
-                o.importe_total,
-                o.saldo_pendiente,
-                o.fecha_vencimiento,
-                cf.codigo_concepto_financiero
-            FROM obligacion_financiera o
-            JOIN composicion_obligacion c
-                ON c.id_obligacion_financiera = o.id_obligacion_financiera
-            JOIN concepto_financiero cf
-                ON cf.id_concepto_financiero = c.id_concepto_financiero
-            WHERE o.observaciones LIKE :marker
-              AND o.deleted_at IS NULL
-              AND c.deleted_at IS NULL
-            ORDER BY o.id_obligacion_financiera
+            SELECT estado_obligacion
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
             """
         ),
-        {"marker": f"MORA_AUTO id_obligacion_base={id_obligacion_base} %"},
-    ).mappings().all()
-    return [dict(row) for row in rows]
+        {"id": id_obligacion},
+    ).scalar_one()
 
 
-def test_generar_mora_para_obligacion_vencida_con_saldo(client, db_session) -> None:
-    ob = _crear_obligacion(
-        client,
-        db_session=db_session,
-        codigo="MORA-OK-001",
-        importe=1000.00,
-    )
-
-    data = _generar_mora(client)
-
-    assert data == {
-        "fecha_proceso": "2026-05-01",
-        "procesadas": 1,
-        "generadas": 1,
-    }
-    moras = _moras_de_base(db_session, ob["id_obligacion_financiera"])
-    assert len(moras) == 1
-    assert float(moras[0]["importe_total"]) == 1.00
-    assert float(moras[0]["saldo_pendiente"]) == 1.00
-    assert moras[0]["codigo_concepto_financiero"] == "INTERES_MORA"
+def _count_moras_persistidas(db_session) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM obligacion_financiera o
+            JOIN composicion_obligacion c
+              ON c.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE cf.codigo_concepto_financiero = 'INTERES_MORA'
+              AND o.deleted_at IS NULL
+              AND c.deleted_at IS NULL
+            """
+        )
+    ).scalar_one()
 
 
-def test_no_genera_mora_si_saldo_es_cero(client, db_session) -> None:
-    _crear_obligacion(
-        client,
-        db_session=db_session,
-        codigo="MORA-SALDO-000",
-        saldo_pendiente=0.00,
-    )
+def test_emitida_vencida_con_saldo_pasa_a_vencida(client, db_session) -> None:
+    ob = _crear_obligacion(client, db_session=db_session, codigo="MORA-VENC-001")
 
     data = _generar_mora(client)
 
-    assert data["procesadas"] == 0
+    assert data["procesadas"] == 1
+    assert data["marcadas"] == 1
     assert data["generadas"] == 0
+    assert _estado_obligacion(db_session, ob["id_obligacion_financiera"]) == "VENCIDA"
+    assert _count_moras_persistidas(db_session) == 0
 
 
-def test_no_genera_mora_si_no_esta_vencida(client, db_session) -> None:
-    _crear_obligacion(
+def test_emitida_no_vencida_no_cambia(client, db_session) -> None:
+    ob = _crear_obligacion(
         client,
         db_session=db_session,
         codigo="MORA-NOVENC-001",
@@ -162,58 +148,67 @@ def test_no_genera_mora_si_no_esta_vencida(client, db_session) -> None:
     data = _generar_mora(client, fecha_proceso="2026-05-01")
 
     assert data["procesadas"] == 0
-    assert data["generadas"] == 0
+    assert data["marcadas"] == 0
+    assert _estado_obligacion(db_session, ob["id_obligacion_financiera"]) == "EMITIDA"
 
 
-def test_no_genera_mora_para_estados_excluidos(client, db_session) -> None:
+def test_estados_no_emitida_no_cambian(client, db_session) -> None:
+    ids = []
     for estado in ("CANCELADA", "ANULADA", "REEMPLAZADA"):
-        _crear_obligacion(
+        ob = _crear_obligacion(
             client,
             db_session=db_session,
             codigo=f"MORA-EST-{estado}",
             estado=estado,
         )
+        ids.append((ob["id_obligacion_financiera"], estado))
 
     data = _generar_mora(client)
 
     assert data["procesadas"] == 0
-    assert data["generadas"] == 0
+    assert data["marcadas"] == 0
+    for id_obligacion, estado in ids:
+        assert _estado_obligacion(db_session, id_obligacion) == estado
 
 
-def test_no_duplica_mora_para_misma_obligacion_y_fecha(client, db_session) -> None:
+def test_mora_calculada_en_deuda_consolidada(client, db_session) -> None:
     ob = _crear_obligacion(
         client,
         db_session=db_session,
-        codigo="MORA-DUP-001",
-        importe=2000.00,
+        codigo="MORA-CALC-001",
+        importe=1000.00,
+        fecha_vencimiento="2026-04-01",
     )
+
+    _generar_mora(client, fecha_proceso="2026-05-01")
+    response = client.get(
+        URL_DEUDA,
+        headers=HEADERS,
+        params={"id_relacion_generadora": ob["id_relacion_generadora"]},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["data"]["items"][0]
+    dias_atraso = max((date.today() - date(2026, 4, 1)).days, 0)
+    assert item["dias_atraso"] == dias_atraso
+    assert item["mora_calculada"] == round(1000.00 * 0.001 * dias_atraso, 2)
+    assert item["saldo_pendiente"] == 1000.00
+
+
+def test_mora_es_idempotente_y_no_crea_obligacion_financiera(client, db_session) -> None:
+    _crear_obligacion(client, db_session=db_session, codigo="MORA-IDEM-001")
+    before = db_session.execute(
+        text("SELECT COUNT(*) FROM obligacion_financiera WHERE deleted_at IS NULL")
+    ).scalar_one()
 
     primera = _generar_mora(client)
     segunda = _generar_mora(client)
+    after = db_session.execute(
+        text("SELECT COUNT(*) FROM obligacion_financiera WHERE deleted_at IS NULL")
+    ).scalar_one()
 
-    assert primera["generadas"] == 1
-    assert segunda["procesadas"] == 1
-    assert segunda["generadas"] == 0
-    assert len(_moras_de_base(db_session, ob["id_obligacion_financiera"])) == 1
-
-
-def test_genera_multiples_moras_en_lote(client, db_session) -> None:
-    ob1 = _crear_obligacion(
-        client,
-        db_session=db_session,
-        codigo="MORA-LOTE-001",
-        importe=1000.00,
-    )
-    ob2 = _crear_obligacion(
-        client,
-        db_session=db_session,
-        codigo="MORA-LOTE-002",
-        importe=2500.00,
-    )
-
-    data = _generar_mora(client)
-
-    assert data["procesadas"] == 2
-    assert data["generadas"] == 2
-    assert len(_moras_de_base(db_session, ob1["id_obligacion_financiera"])) == 1
-    assert len(_moras_de_base(db_session, ob2["id_obligacion_financiera"])) == 1
+    assert primera["marcadas"] == 1
+    assert segunda["procesadas"] == 0
+    assert segunda["marcadas"] == 0
+    assert after == before
+    assert _count_moras_persistidas(db_session) == 0

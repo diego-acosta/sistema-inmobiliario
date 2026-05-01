@@ -1,10 +1,45 @@
 from collections import defaultdict
 from dataclasses import asdict, is_dataclass
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
+
+
+TASA_DIARIA_MORA = Decimal("0.001")
+
+
+def _calcular_mora_dinamica(
+    saldo_pendiente: Any,
+    fecha_vencimiento: date | None,
+    fecha_corte: date,
+) -> dict[str, Any]:
+    if fecha_vencimiento is None or fecha_vencimiento >= fecha_corte:
+        return {
+            "dias_atraso": 0,
+            "mora_calculada": 0.0,
+            "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+        }
+
+    saldo = Decimal(str(saldo_pendiente))
+    if saldo <= 0:
+        return {
+            "dias_atraso": 0,
+            "mora_calculada": 0.0,
+            "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+        }
+
+    dias_atraso = (fecha_corte - fecha_vencimiento).days
+    mora = (saldo * TASA_DIARIA_MORA * Decimal(dias_atraso)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    return {
+        "dias_atraso": dias_atraso,
+        "mora_calculada": float(mora),
+        "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+    }
 
 
 class FinancieroRepository:
@@ -633,18 +668,26 @@ class FinancieroRepository:
                 }
             )
 
-        items = [
-            {
-                "id_obligacion_financiera": row["id_obligacion_financiera"],
-                "id_relacion_generadora": row["id_relacion_generadora"],
-                "estado_obligacion": row["estado_obligacion"],
-                "fecha_vencimiento": row["fecha_vencimiento"],
-                "importe_total": float(row["importe_total"]),
-                "saldo_pendiente": float(row["saldo_pendiente"]),
-                "composiciones": comps_by_ob[row["id_obligacion_financiera"]],
-            }
-            for row in ob_rows
-        ]
+        fecha_corte = date.today()
+        items = []
+        for row in ob_rows:
+            mora = _calcular_mora_dinamica(
+                row["saldo_pendiente"],
+                row["fecha_vencimiento"],
+                fecha_corte,
+            )
+            items.append(
+                {
+                    "id_obligacion_financiera": row["id_obligacion_financiera"],
+                    "id_relacion_generadora": row["id_relacion_generadora"],
+                    "estado_obligacion": row["estado_obligacion"],
+                    "fecha_vencimiento": row["fecha_vencimiento"],
+                    "importe_total": float(row["importe_total"]),
+                    "saldo_pendiente": float(row["saldo_pendiente"]),
+                    **mora,
+                    "composiciones": comps_by_ob[row["id_obligacion_financiera"]],
+                }
+            )
 
         return {"items": items, "total": total}
 
@@ -800,25 +843,36 @@ class FinancieroRepository:
                 }
             )
 
-        obligaciones = [
-            {
-                "id_obligacion_financiera": row["id_obligacion_financiera"],
-                "estado_obligacion": row["estado_obligacion"],
-                "fecha_emision": row["fecha_emision"],
-                "fecha_vencimiento": row["fecha_vencimiento"],
-                "importe_total": float(row["importe_total"]),
-                "saldo_pendiente": float(row["saldo_pendiente"]),
-                "composiciones": comps_by_ob[row["id_obligacion_financiera"]],
-                "aplicaciones": aplics_by_ob[row["id_obligacion_financiera"]],
-            }
-            for row in ob_rows
-        ]
+        fecha_corte = date.today()
+        obligaciones = []
+        for row in ob_rows:
+            mora = _calcular_mora_dinamica(
+                row["saldo_pendiente"],
+                row["fecha_vencimiento"],
+                fecha_corte,
+            )
+            obligaciones.append(
+                {
+                    "id_obligacion_financiera": row["id_obligacion_financiera"],
+                    "estado_obligacion": row["estado_obligacion"],
+                    "fecha_emision": row["fecha_emision"],
+                    "fecha_vencimiento": row["fecha_vencimiento"],
+                    "importe_total": float(row["importe_total"]),
+                    "saldo_pendiente": float(row["saldo_pendiente"]),
+                    **mora,
+                    "composiciones": comps_by_ob[row["id_obligacion_financiera"]],
+                    "aplicaciones": aplics_by_ob[row["id_obligacion_financiera"]],
+                }
+            )
 
         return {
             "id_relacion_generadora": id_relacion_generadora,
             "resumen": {
                 "importe_total": float(sum(row["importe_total"] for row in ob_rows)),
                 "saldo_pendiente": float(sum(row["saldo_pendiente"] for row in ob_rows)),
+                "mora_calculada": float(
+                    sum(obligacion["mora_calculada"] for obligacion in obligaciones)
+                ),
                 "importe_cancelado": float(
                     sum(row["importe_cancelado_acumulado"] for row in ob_rows)
                 ),
@@ -851,8 +905,7 @@ class FinancieroRepository:
             WHERE o.fecha_vencimiento < :fecha_proceso
               AND o.saldo_pendiente > 0
               AND o.deleted_at IS NULL
-              AND o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA', 'CANCELADA', 'PENDIENTE_AJUSTE')
-              AND COALESCE(o.observaciones, '') NOT LIKE 'MORA_AUTO id_obligacion_base=%'
+              AND o.estado_obligacion = 'EMITIDA'
             ORDER BY o.id_obligacion_financiera ASC
             FOR UPDATE
             """
@@ -862,139 +915,21 @@ class FinancieroRepository:
         ).mappings().all()
         return [dict(row) for row in rows]
 
-    def existe_mora_para_obligacion_fecha(
-        self, id_obligacion_base: int, fecha_proceso: date
-    ) -> bool:
-        marker = (
-            f"MORA_AUTO id_obligacion_base={id_obligacion_base} "
-            f"fecha_proceso={fecha_proceso.isoformat()}%"
-        )
+    def marcar_obligaciones_vencidas(self, fecha_proceso: date) -> int:
         stmt = text(
             """
-            SELECT 1
-            FROM obligacion_financiera o
-            JOIN composicion_obligacion c
-                ON c.id_obligacion_financiera = o.id_obligacion_financiera
-            JOIN concepto_financiero cf
-                ON cf.id_concepto_financiero = c.id_concepto_financiero
-            WHERE o.deleted_at IS NULL
-              AND c.deleted_at IS NULL
-              AND cf.deleted_at IS NULL
-              AND cf.codigo_concepto_financiero = 'INTERES_MORA'
-              AND o.observaciones LIKE :marker
-            LIMIT 1
+            UPDATE obligacion_financiera
+            SET estado_obligacion = 'VENCIDA',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE fecha_vencimiento < :fecha_proceso
+              AND saldo_pendiente > 0
+              AND deleted_at IS NULL
+              AND estado_obligacion = 'EMITIDA'
             """
         )
-        return self.db.execute(stmt, {"marker": marker}).scalar_one_or_none() is not None
-
-    def crear_moras_financieras(self, moras: list[tuple[Any, Any]]) -> None:
-        if not moras:
-            return
-
-        ob_stmt = text(
-            """
-            INSERT INTO obligacion_financiera (
-                uid_global, version_registro, created_at, updated_at,
-                id_instalacion_origen, id_instalacion_ultima_modificacion,
-                op_id_alta, op_id_ultima_modificacion,
-                id_relacion_generadora, fecha_emision, fecha_vencimiento,
-                importe_total, saldo_pendiente, estado_obligacion, observaciones
-            )
-            VALUES (
-                :uid_global, :version_registro, :created_at, :updated_at,
-                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
-                :op_id_alta, :op_id_ultima_modificacion,
-                :id_relacion_generadora, :fecha_emision, :fecha_vencimiento,
-                :importe_total, :importe_total, :estado_obligacion, :observaciones
-            )
-            RETURNING id_obligacion_financiera
-            """
-        )
-
-        comp_stmt = text(
-            """
-            INSERT INTO composicion_obligacion (
-                uid_global, version_registro, created_at, updated_at,
-                id_instalacion_origen, id_instalacion_ultima_modificacion,
-                op_id_alta, op_id_ultima_modificacion,
-                id_obligacion_financiera, id_concepto_financiero,
-                orden_composicion, importe_componente, saldo_componente,
-                detalle_calculo
-            )
-            VALUES (
-                :uid_global, :version_registro, :created_at, :updated_at,
-                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
-                :op_id_alta, :op_id_ultima_modificacion,
-                :id_obligacion_financiera, :id_concepto_financiero,
-                :orden_composicion, :importe_componente, :importe_componente,
-                :detalle_calculo
-            )
-            """
-        )
-
-        try:
-            for obligacion, composicion in moras:
-                ob_values = self._values(obligacion)
-                comp_values = self._values(composicion)
-                ob_row = self.db.execute(
-                    ob_stmt,
-                    {
-                        "uid_global": ob_values["uid_global"],
-                        "version_registro": ob_values["version_registro"],
-                        "created_at": ob_values["created_at"],
-                        "updated_at": ob_values["updated_at"],
-                        "id_instalacion_origen": ob_values["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": ob_values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_alta": ob_values["op_id_alta"],
-                        "op_id_ultima_modificacion": ob_values[
-                            "op_id_ultima_modificacion"
-                        ],
-                        "id_relacion_generadora": ob_values[
-                            "id_relacion_generadora"
-                        ],
-                        "fecha_emision": ob_values["fecha_emision"],
-                        "fecha_vencimiento": ob_values["fecha_vencimiento"],
-                        "importe_total": ob_values["importe_total"],
-                        "estado_obligacion": ob_values["estado_obligacion"],
-                        "observaciones": ob_values["observaciones"],
-                    },
-                ).mappings().one()
-
-                self.db.execute(
-                    comp_stmt,
-                    {
-                        "uid_global": comp_values["uid_global"],
-                        "version_registro": comp_values["version_registro"],
-                        "created_at": comp_values["created_at"],
-                        "updated_at": comp_values["updated_at"],
-                        "id_instalacion_origen": comp_values[
-                            "id_instalacion_origen"
-                        ],
-                        "id_instalacion_ultima_modificacion": comp_values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_alta": comp_values["op_id_alta"],
-                        "op_id_ultima_modificacion": comp_values[
-                            "op_id_ultima_modificacion"
-                        ],
-                        "id_obligacion_financiera": ob_row[
-                            "id_obligacion_financiera"
-                        ],
-                        "id_concepto_financiero": comp_values[
-                            "id_concepto_financiero"
-                        ],
-                        "orden_composicion": comp_values["orden_composicion"],
-                        "importe_componente": comp_values["importe_componente"],
-                        "detalle_calculo": comp_values["detalle_calculo"],
-                    },
-                )
-
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
+        result = self.db.execute(stmt, {"fecha_proceso": fecha_proceso})
+        self.db.commit()
+        return result.rowcount or 0
 
     # ── imputacion / aplicacion_financiera ───────────────────────────────────
 
