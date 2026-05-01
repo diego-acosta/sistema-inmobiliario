@@ -311,6 +311,8 @@ Devuelve 404 si la persona no existe.
 
 Devuelve resumen en cero y lista vacia si existe pero no tiene obligaciones.
 
+Nota: la pertenencia de una obligacion a una persona se determina exclusivamente por `obligacion_obligado`. No se infiere desde el contrato de alquiler ni desde la venta. Si `obligacion_obligado` no tiene una fila para esa persona, la obligacion no aparece en esta vista.
+
 Referencia: `SRV-FIN-016-estado-cuenta-por-persona`
 
 ---

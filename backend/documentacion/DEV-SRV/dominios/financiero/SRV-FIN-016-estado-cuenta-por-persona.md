@@ -74,13 +74,20 @@ persona
 
 ---
 
-## Limitaciones actuales
+## Alcance V1
 
-- fecha de corte no configurable (siempre `hoy`)
-- no incluye composiciones por obligacion (solo totales)
-- no incluye aplicaciones financieras (pagos) por obligacion
-- no agrega solidaridad ni prorrateo entre obligados de la misma obligacion
-- no desagrega mora por concepto
+- `obligacion_obligado` es la fuente de verdad del obligado. La consulta no infiere obligados desde el contrato ni desde la venta — solo expone lo que está materializado en la tabla.
+- No incluye composiciones por obligacion ni aplicaciones financieras (pagos). Solo totales de saldo y mora.
+- No incluye paginacion. Devuelve todas las obligaciones aplicables en una sola respuesta.
+- `fecha_corte` no es configurable. Siempre es `date.today()` en V1.
+
+---
+
+## Pendientes
+
+- `fecha_corte` configurable por query param, para consultas a una fecha pasada o futura.
+- Validacion explicita de combinacion de filtros mutuamente excluyentes (ej: `vencidas=True` con `fecha_vencimiento_desde` en el futuro).
+- Evaluacion de paginacion si el volumen de obligaciones por persona crece en produccion.
 
 ---
 

@@ -144,6 +144,10 @@ Alcance actual:
     WHERE deleted_at IS NULL`
 - El repositorio mantiene la verificacion aplicativa y usa conflicto SQL como
   defensa ante retry o concurrencia.
+- El indice unico `(tipo_origen, id_origen) WHERE deleted_at IS NULL` impide
+  que existan multiples `relacion_generadora` activas para el mismo origen. Los
+  tests que verifican listados o conteo de relaciones deben usar `id_origen`
+  distintos para evitar colisiones entre casos de prueba.
 
 ---
 
