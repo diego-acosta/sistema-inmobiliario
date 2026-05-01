@@ -2,6 +2,7 @@ from collections import defaultdict
 from dataclasses import asdict, is_dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
+import json
 from typing import Any
 
 from sqlalchemy import bindparam, text
@@ -1439,6 +1440,230 @@ class FinancieroRepository:
         result["uid_global"] = str(result["uid_global"])
         result["composiciones"] = comp_results
         return result
+
+    # ── registro de pago (multi-obligación) ─────────────────────────────────
+
+    def get_pago_persona_by_op_id(
+        self, *, id_persona: int, op_id: Any
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                m.id_movimiento_financiero,
+                m.fecha_movimiento,
+                m.importe AS monto_consumido,
+                m.observaciones,
+                a.id_obligacion_financiera,
+                COALESCE(SUM(a.importe_aplicado), 0) AS monto_aplicado,
+                o.estado_obligacion AS estado_resultante
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = a.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = o.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+             AND oo.id_persona = :id_persona
+            WHERE m.op_id_alta = :op_id
+              AND m.tipo_movimiento = 'PAGO'
+              AND m.deleted_at IS NULL
+            GROUP BY
+                m.id_movimiento_financiero,
+                m.fecha_movimiento,
+                m.importe,
+                m.observaciones,
+                a.id_obligacion_financiera,
+                o.estado_obligacion
+            ORDER BY m.id_movimiento_financiero ASC
+            """
+        )
+        rows = (
+            self.db.execute(stmt, {"id_persona": id_persona, "op_id": op_id})
+            .mappings()
+            .all()
+        )
+        if not rows:
+            return None
+
+        obligaciones_pagadas = [
+            {
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "id_movimiento_financiero": row["id_movimiento_financiero"],
+                "monto_aplicado": float(row["monto_aplicado"]),
+                "estado_resultante": row["estado_resultante"],
+            }
+            for row in rows
+        ]
+        resumen = None
+        if rows[0]["observaciones"]:
+            try:
+                parsed = json.loads(rows[0]["observaciones"])
+                if parsed.get("tipo") == "pago_persona":
+                    resumen = parsed
+            except (TypeError, ValueError):
+                resumen = None
+
+        return {
+            "fecha_pago": (
+                date.fromisoformat(resumen["fecha_pago"])
+                if resumen is not None
+                else rows[0]["fecha_movimiento"].date()
+            ),
+            "monto_aplicado": float(
+                resumen["monto_aplicado"]
+                if resumen is not None
+                else sum(row["monto_aplicado"] for row in rows)
+            ),
+            "monto_consumido": float(
+                (Decimal(str(resumen["monto_ingresado"])) - Decimal(str(resumen["remanente"])))
+                if resumen is not None
+                else sum(row["monto_consumido"] for row in rows)
+            ),
+            "obligaciones_pagadas": obligaciones_pagadas,
+        }
+
+    def registrar_pago_multipago(
+        self,
+        pagos: list[Any],
+    ) -> list[dict[str, Any]]:
+        """
+        Persiste movimiento_financiero + aplicacion_financiera para una lista de
+        obligaciones en una sola transacción. Commit único al final.
+        """
+        mov_stmt = text(
+            """
+            INSERT INTO movimiento_financiero (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                fecha_movimiento, tipo_movimiento, importe, signo, estado_movimiento,
+                observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :fecha_movimiento, :tipo_movimiento, :importe, :signo, :estado_movimiento,
+                :observaciones
+            )
+            RETURNING id_movimiento_financiero
+            """
+        )
+
+        aplic_stmt = text(
+            """
+            INSERT INTO aplicacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_movimiento_financiero, id_obligacion_financiera,
+                id_composicion_obligacion, fecha_aplicacion,
+                tipo_aplicacion, orden_aplicacion, importe_aplicado,
+                origen_automatico_o_manual
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_movimiento_financiero, :id_obligacion_financiera,
+                :id_composicion_obligacion, :fecha_aplicacion,
+                :tipo_aplicacion, :orden_aplicacion, :importe_aplicado,
+                :origen_automatico_o_manual
+            )
+            RETURNING id_aplicacion_financiera, id_composicion_obligacion,
+                      importe_aplicado, orden_aplicacion
+            """
+        )
+
+        estado_stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = CASE
+                    WHEN saldo_pendiente = 0             THEN 'CANCELADA'
+                    WHEN saldo_pendiente < importe_total THEN 'PARCIALMENTE_CANCELADA'
+                    ELSE estado_obligacion
+                END
+            WHERE id_obligacion_financiera = :id
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            RETURNING estado_obligacion, saldo_pendiente
+            """
+        )
+
+        try:
+            resultados: list[dict[str, Any]] = []
+
+            for pago in pagos:
+                pv = self._values(pago)
+                mov_row = self.db.execute(
+                    mov_stmt,
+                    {
+                        "uid_global": pv["uid_global_movimiento"],
+                        "version_registro": pv["version_registro"],
+                        "created_at": pv["created_at"],
+                        "updated_at": pv["updated_at"],
+                        "id_instalacion_origen": pv["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
+                        "op_id_alta": pv["op_id_alta"],
+                        "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
+                        "fecha_movimiento": pv["fecha_movimiento"],
+                        "tipo_movimiento": "PAGO",
+                        "importe": pv["monto_a_aplicar"],
+                        "signo": "CREDITO",
+                        "estado_movimiento": "APLICADO",
+                        "observaciones": pv["observaciones"],
+                    },
+                ).mappings().one()
+
+                id_movimiento = mov_row["id_movimiento_financiero"]
+                aplics: list[dict[str, Any]] = []
+
+                for i, linea in enumerate(pv["lineas"]):
+                    lv = self._values(linea) if not isinstance(linea, dict) else linea
+                    aplic_row = self.db.execute(
+                        aplic_stmt,
+                        {
+                            "uid_global": lv["uid_global"],
+                            "version_registro": pv["version_registro"],
+                            "created_at": pv["created_at"],
+                            "updated_at": pv["updated_at"],
+                            "id_instalacion_origen": pv["id_instalacion_origen"],
+                            "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
+                            "op_id_alta": pv["op_id_alta"],
+                            "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
+                            "id_movimiento_financiero": id_movimiento,
+                            "id_obligacion_financiera": pv["id_obligacion_financiera"],
+                            "id_composicion_obligacion": lv["id_composicion_obligacion"],
+                            "fecha_aplicacion": pv["fecha_movimiento"],
+                            "tipo_aplicacion": "PAGO",
+                            "orden_aplicacion": i + 1,
+                            "importe_aplicado": lv["importe_aplicado"],
+                            "origen_automatico_o_manual": "MANUAL",
+                        },
+                    ).mappings().one()
+                    aplics.append(dict(aplic_row))
+
+                estado_row = self.db.execute(
+                    estado_stmt,
+                    {"id": pv["id_obligacion_financiera"]},
+                ).mappings().one_or_none()
+
+                resultados.append(
+                    {
+                        "id_obligacion_financiera": pv["id_obligacion_financiera"],
+                        "id_movimiento_financiero": id_movimiento,
+                        "monto_aplicado": float(pv["monto_a_aplicar"]),
+                        "estado_resultante": estado_row["estado_obligacion"] if estado_row else None,
+                    }
+                )
+
+            self.db.commit()
+            return resultados
+        except Exception:
+            self.db.rollback()
+            raise
 
     # ── simulación de pago por persona ──────────────────────────────────────
 

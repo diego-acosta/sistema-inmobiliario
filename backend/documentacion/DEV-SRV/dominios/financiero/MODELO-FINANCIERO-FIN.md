@@ -56,7 +56,7 @@ No implementado:
 - activar
 - cancelar
 - finalizar
-- idempotencia completa por `X-Op-Id`
+- validacion de reutilizacion de `X-Op-Id` con payload distinto
 
 ### 2.2 obligacion_financiera
 
@@ -400,6 +400,31 @@ Reglas:
 
 Referencia: `SRV-FIN-018-simulacion-pago-persona`
 
+---
+
+## 12. Registro de pago por persona V1
+
+Endpoint: `POST /api/v1/financiero/pagos?id_persona={id}`
+
+Aplica un pago contra la deuda de una persona, creando `movimiento_financiero` y `aplicacion_financiera` por cada obligación cubierta.
+
+Reglas:
+
+- orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras
+- mora dinámica incluida en `total_a_cubrir`; la porción de mora consume del monto pero no se persiste como componente
+- la porción aplicada a saldo (`monto_a_saldo`) se registra en `aplicacion_financiera` y actualiza `saldo_pendiente` vía trigger
+- si saldo llega a 0 → `CANCELADA`; si reduce parcialmente → `PARCIALMENTE_CANCELADA`
+- operación transaccional: si alguna escritura falla, se hace rollback de todas
+- con `X-Op-Id`, si ya existen movimientos `PAGO` asociados al mismo `op_id_alta`
+  para la persona, se devuelve el resultado persistido sin crear nuevos
+  movimientos ni volver a reducir saldos
+- idempotencia V1 evita duplicados, pero no garantiza equivalencia del request;
+  V2 deberá validar hash o campos clave del payload
+- no crea `INTERES_MORA` ni modifica reglas de mora existentes
+- `fecha_pago` registrada en `movimiento_financiero`; también usada como `fecha_corte` para mora
+
+Referencia: `SRV-FIN-019-registro-pago-persona`
+
 Integraciones por evento implementadas:
 
 - Comercial -> Financiero:
@@ -451,7 +476,7 @@ Caracteristicas:
 - fecha de referencia configurable para estado de cuenta
 - relacion fisica entre mora y obligacion base
 - clave unica SQL para evitar duplicidad de mora por obligacion base y fecha
-- idempotencia completa por `X-Op-Id`
+- validacion de reutilizacion de `X-Op-Id` con payload distinto
 - outbox financiero para estos writes
 
 ---

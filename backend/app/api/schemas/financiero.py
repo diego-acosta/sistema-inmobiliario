@@ -376,6 +376,41 @@ class EstadoCuentaPersonaResponse(BaseModel):
     data: EstadoCuentaPersonaData
 
 
+# ── registro de pago por persona ─────────────────────────────────────────────
+
+class RegistrarPagoPersonaRequest(BaseModel):
+    monto: float
+    fecha_pago: date | None = None
+
+    @field_validator("monto")
+    @classmethod
+    def monto_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("monto debe ser mayor que cero.")
+        return v
+
+
+class PagoObligacionResultado(BaseModel):
+    id_obligacion_financiera: int
+    id_movimiento_financiero: int
+    monto_aplicado: float
+    estado_resultante: str | None
+
+
+class RegistrarPagoPersonaData(BaseModel):
+    id_persona: int
+    fecha_pago: date
+    monto_ingresado: float
+    monto_aplicado: float
+    remanente: float
+    obligaciones_pagadas: list[PagoObligacionResultado]
+
+
+class RegistrarPagoPersonaResponse(BaseModel):
+    ok: bool = True
+    data: RegistrarPagoPersonaData
+
+
 # ── simulación de pago por persona ───────────────────────────────────────────
 
 class SimularPagoPersonaRequest(BaseModel):

@@ -29,6 +29,10 @@ from app.api.schemas.financiero import (
     EstadoCuentaPersonaResumen,
     EstadoCuentaPersonaResponse,
     EstadoCuentaResponse,
+    PagoObligacionResultado,
+    RegistrarPagoPersonaData,
+    RegistrarPagoPersonaRequest,
+    RegistrarPagoPersonaResponse,
     SimularPagoObligacionItem,
     SimularPagoPersonaData,
     SimularPagoPersonaRequest,
@@ -89,6 +93,9 @@ from app.application.financiero.services.get_estado_cuenta_persona_service impor
 )
 from app.application.financiero.services.simular_pago_persona_service import (
     SimularPagoPersonaService,
+)
+from app.application.financiero.services.registrar_pago_persona_service import (
+    RegistrarPagoPersonaService,
 )
 from app.application.financiero.services.generar_mora_financiera_service import (
     GenerarMoraFinancieraService,
@@ -869,6 +876,85 @@ def simular_pago_persona(
             remanente=data["remanente"],
             total_deuda_considerada=data["total_deuda_considerada"],
             detalle=[SimularPagoObligacionItem(**d) for d in data["detalle"]],
+        )
+    )
+
+
+@router.post(
+    "/api/v1/financiero/pagos",
+    status_code=201,
+    response_model=RegistrarPagoPersonaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def registrar_pago_persona(
+    id_persona: int = Query(..., gt=0),
+    request: RegistrarPagoPersonaRequest = ...,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> RegistrarPagoPersonaResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = RegistrarPagoPersonaService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_persona=id_persona,
+            monto=request.monto,
+            fecha_pago=request.fecha_pago,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_PERSONA" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La persona indicada no existe.",
+                ).model_dump(),
+            )
+        if "MONTO_INVALIDO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="MONTO_INVALIDO",
+                    error_message="El monto debe ser mayor que cero.",
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo registrar el pago.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    data = result.data
+    return RegistrarPagoPersonaResponse(
+        data=RegistrarPagoPersonaData(
+            id_persona=data["id_persona"],
+            fecha_pago=data["fecha_pago"],
+            monto_ingresado=data["monto_ingresado"],
+            monto_aplicado=data["monto_aplicado"],
+            remanente=data["remanente"],
+            obligaciones_pagadas=[
+                PagoObligacionResultado(**ob) for ob in data["obligaciones_pagadas"]
+            ],
         )
     )
 
