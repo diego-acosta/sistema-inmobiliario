@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import asdict, is_dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import json
 from typing import Any
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 
 TASA_DIARIA_MORA = Decimal("0.001")
+DIAS_GRACIA_MORA = 5
 
 
 def _calcular_mora_dinamica(
@@ -17,7 +18,7 @@ def _calcular_mora_dinamica(
     fecha_vencimiento: date | None,
     fecha_corte: date,
 ) -> dict[str, Any]:
-    if fecha_vencimiento is None or fecha_vencimiento >= fecha_corte:
+    if fecha_vencimiento is None:
         return {
             "dias_atraso": 0,
             "mora_calculada": 0.0,
@@ -32,7 +33,15 @@ def _calcular_mora_dinamica(
             "tasa_diaria_mora": float(TASA_DIARIA_MORA),
         }
 
-    dias_atraso = (fecha_corte - fecha_vencimiento).days
+    fecha_inicio_mora = fecha_vencimiento + timedelta(days=DIAS_GRACIA_MORA)
+    dias_atraso = max(0, (fecha_corte - fecha_inicio_mora).days)
+    if dias_atraso == 0:
+        return {
+            "dias_atraso": 0,
+            "mora_calculada": 0.0,
+            "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+        }
+
     mora = (saldo * TASA_DIARIA_MORA * Decimal(dias_atraso)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )

@@ -106,8 +106,8 @@ def test_estado_cuenta_persona_separa_vencida_futura(client, db_session) -> None
 def test_estado_cuenta_persona_incluye_mora_dinamica(client, db_session) -> None:
     """
     Obligación con fecha_vencimiento en el pasado → mora_calculada > 0.
-    dia_vencimiento_canon=1 → vencimiento 2026-04-01, hoy 2026-05-01 → 30 días.
-    mora = 50000 * 0.001 * 30 = 1500.00
+    dia_vencimiento_canon=1 → vencimiento 2026-04-01, hoy 2026-05-01.
+    Con 5 dias de gracia, la mora inicia el 2026-04-06.
     """
     id_persona, _ = _setup_contrato_con_obligaciones(
         client, db_session,
@@ -124,13 +124,13 @@ def test_estado_cuenta_persona_incluye_mora_dinamica(client, db_session) -> None
     data = resp.json()["data"]
     ob = data["obligaciones"][0]
 
-    assert ob["dias_atraso"] == 30
-    assert ob["mora_calculada"] == pytest.approx(1500.00)
+    dias_esperados = max((date.today() - date(2026, 4, 6)).days, 0)
+    assert ob["dias_atraso"] == dias_esperados
+    assert ob["mora_calculada"] == pytest.approx(50000.00 * 0.001 * dias_esperados)
     assert ob["tasa_diaria_mora"] == pytest.approx(0.001)
-    # total_con_mora = (50000 + 1500) * 100 / 100 = 51500
-    assert ob["total_con_mora"] == pytest.approx(51500.00)
-    assert data["resumen"]["mora_calculada"] == pytest.approx(1500.00)
-    assert data["resumen"]["total_con_mora"] == pytest.approx(51500.00)
+    assert ob["total_con_mora"] == pytest.approx(50000.00 + ob["mora_calculada"])
+    assert data["resumen"]["mora_calculada"] == pytest.approx(ob["mora_calculada"])
+    assert data["resumen"]["total_con_mora"] == pytest.approx(ob["total_con_mora"])
 
 
 def test_estado_cuenta_persona_sin_deuda_devuelve_cero(client, db_session) -> None:
@@ -356,7 +356,7 @@ def test_estado_cuenta_persona_sin_fecha_corte_usa_today(client, db_session) -> 
 def test_estado_cuenta_persona_fecha_corte_pasado_calcula_mora(client, db_session) -> None:
     """
     Obligación con vencimiento 2026-04-01.
-    fecha_corte=2026-04-11 → 10 días de atraso → mora = 50000 * 0.001 * 10 = 500.
+    fecha_corte=2026-04-11 → 5 días de mora por gracia → 50000 * 0.001 * 5 = 250.
     """
     id_persona, _ = _setup_contrato_con_obligaciones(
         client, db_session,
@@ -375,10 +375,10 @@ def test_estado_cuenta_persona_fecha_corte_pasado_calcula_mora(client, db_sessio
     data = resp.json()["data"]
     assert data["fecha_corte"] == "2026-04-11"
     ob = data["obligaciones"][0]
-    assert ob["dias_atraso"] == 10
-    assert ob["mora_calculada"] == pytest.approx(500.00)
-    assert ob["total_con_mora"] == pytest.approx(50500.00)
-    assert data["resumen"]["mora_calculada"] == pytest.approx(500.00)
+    assert ob["dias_atraso"] == 5
+    assert ob["mora_calculada"] == pytest.approx(250.00)
+    assert ob["total_con_mora"] == pytest.approx(50250.00)
+    assert data["resumen"]["mora_calculada"] == pytest.approx(250.00)
 
 
 def test_estado_cuenta_persona_fecha_corte_antes_del_vencimiento_sin_mora(client, db_session) -> None:
@@ -412,8 +412,9 @@ def test_estado_cuenta_persona_fecha_corte_antes_del_vencimiento_sin_mora(client
 def test_estado_cuenta_persona_mora_cambia_segun_fecha_corte(client, db_session) -> None:
     """
     Misma obligación con vencimiento 2026-04-01, dos fechas_corte distintas.
-    fecha_corte=2026-04-06 → 5 días → mora = 50000 * 0.001 * 5 = 250.
-    fecha_corte=2026-04-21 → 20 días → mora = 50000 * 0.001 * 20 = 1000.
+    fecha_corte=2026-04-05 → dentro de gracia → mora = 0.
+    fecha_corte=2026-04-06 → límite exacto de gracia → mora = 0.
+    fecha_corte=2026-04-21 → 15 días de mora → mora = 50000 * 0.001 * 15 = 750.
     """
     id_persona, _ = _setup_contrato_con_obligaciones(
         client, db_session,
@@ -424,23 +425,30 @@ def test_estado_cuenta_persona_mora_cambia_segun_fecha_corte(client, db_session)
         dia_vencimiento_canon=1,
     )
 
-    resp5 = client.get(
+    resp_dentro = client.get(
+        _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-04-05"}
+    )
+    resp_limite = client.get(
         _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-04-06"}
     )
-    resp20 = client.get(
+    resp_fuera = client.get(
         _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-04-21"}
     )
 
-    assert resp5.status_code == 200
-    assert resp20.status_code == 200
+    assert resp_dentro.status_code == 200
+    assert resp_limite.status_code == 200
+    assert resp_fuera.status_code == 200
 
-    ob5 = resp5.json()["data"]["obligaciones"][0]
-    ob20 = resp20.json()["data"]["obligaciones"][0]
+    ob_dentro = resp_dentro.json()["data"]["obligaciones"][0]
+    ob_limite = resp_limite.json()["data"]["obligaciones"][0]
+    ob_fuera = resp_fuera.json()["data"]["obligaciones"][0]
 
-    assert ob5["dias_atraso"] == 5
-    assert ob5["mora_calculada"] == pytest.approx(250.00)
-    assert ob20["dias_atraso"] == 20
-    assert ob20["mora_calculada"] == pytest.approx(1000.00)
+    assert ob_dentro["dias_atraso"] == 0
+    assert ob_dentro["mora_calculada"] == pytest.approx(0.00)
+    assert ob_limite["dias_atraso"] == 0
+    assert ob_limite["mora_calculada"] == pytest.approx(0.00)
+    assert ob_fuera["dias_atraso"] == 15
+    assert ob_fuera["mora_calculada"] == pytest.approx(750.00)
 
 
 # ── tests: filtros individuales y combinaciones ───────────────────────────────

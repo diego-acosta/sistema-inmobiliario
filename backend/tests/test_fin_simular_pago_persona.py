@@ -108,8 +108,8 @@ def test_simular_pago_persona_sin_deuda(client, db_session) -> None:
 def test_simular_pago_incluye_mora_dinamica(client, db_session) -> None:
     """
     Obligación con vencimiento 2026-05-15, saldo 50000.
-    fecha_corte=2026-05-25 → mora = 50000 * 0.001 * 10 = 500.
-    total_a_cubrir = 50500.
+    fecha_corte=2026-05-25 → 5 días de mora por gracia → 50000 * 0.001 * 5 = 250.
+    total_a_cubrir = 50250.
     """
     id_persona, _ = _setup(
         client, db_session,
@@ -122,9 +122,29 @@ def test_simular_pago_incluye_mora_dinamica(client, db_session) -> None:
     data = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-25")
 
     ob = data["detalle"][0]
-    assert ob["mora_calculada"] == pytest.approx(500.00)
-    assert ob["total_a_cubrir"] == pytest.approx(50500.00)
-    assert data["total_deuda_considerada"] == pytest.approx(50500.00)
+    assert ob["mora_calculada"] == pytest.approx(250.00)
+    assert ob["total_a_cubrir"] == pytest.approx(50250.00)
+    assert data["total_deuda_considerada"] == pytest.approx(50250.00)
+
+
+def test_simular_pago_mora_respeta_dias_gracia(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="SIM-GRACIA-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    dentro = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-14")
+    limite = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-15")
+    fuera = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-16")
+
+    assert dentro["detalle"][0]["mora_calculada"] == pytest.approx(0.00)
+    assert limite["detalle"][0]["mora_calculada"] == pytest.approx(0.00)
+    assert fuera["detalle"][0]["mora_calculada"] == pytest.approx(10.00)
 
 
 def test_simular_pago_remanente_cuando_sobra_monto(client, db_session) -> None:

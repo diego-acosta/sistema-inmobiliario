@@ -36,7 +36,7 @@ def _crear_obligacion(
         headers=HEADERS,
         json={
             "id_relacion_generadora": rg["id_relacion_generadora"],
-            "fecha_vencimiento": "2026-05-01",
+            "fecha_vencimiento": "2026-12-31",
             "composiciones": [
                 {
                     "codigo_concepto_financiero": "CANON_LOCATIVO",
@@ -45,7 +45,7 @@ def _crear_obligacion(
             ],
         },
     )
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     obligacion = response.json()["data"]
     saldo = importe if saldo_pendiente is None else saldo_pendiente
 
@@ -189,7 +189,7 @@ def test_mora_calculada_en_deuda_consolidada(client, db_session) -> None:
 
     assert response.status_code == 200
     item = response.json()["data"]["items"][0]
-    dias_atraso = max((date.today() - date(2026, 4, 1)).days, 0)
+    dias_atraso = max((date.today() - date(2026, 4, 6)).days, 0)
     assert item["dias_atraso"] == dias_atraso
     assert item["mora_calculada"] == round(1000.00 * 0.001 * dias_atraso, 2)
     assert item["saldo_pendiente"] == 1000.00

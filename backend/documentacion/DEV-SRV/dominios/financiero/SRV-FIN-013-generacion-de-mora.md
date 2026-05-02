@@ -29,6 +29,7 @@ No cubre:
 - capitalizacion de mora
 - punitorios
 - politicas variables de tasa
+- politicas variables de dias de gracia
 - refinanciacion
 - reversion especifica de mora
 
@@ -52,7 +53,7 @@ La mora calculada no modifica:
 ## Pendientes explícitos
 
 - parametrizar `tasa_diaria_mora`
-- definir días de gracia
+- parametrizar `dias_gracia_mora`
 - definir política de mora por contrato, concepto o relación generadora
 - definir si habrá Mora V2 persistida
 - definir cuándo una mora calculada se liquida formalmente
@@ -119,10 +120,13 @@ mora_calculada = saldo_pendiente * tasa_diaria * dias_atraso
 Reglas:
 
 - tasa diaria fija inicial: `0.001`
-- `dias_atraso = fecha_actual - fecha_vencimiento` cuando la obligacion esta
-  vencida
+- dias de gracia fijos iniciales: `5`
+- `dias_atraso = max(0, fecha_corte - (fecha_vencimiento + dias_gracia_mora))`
 - si no hay atraso o el saldo es cero, `mora_calculada = 0`
 - redondeo a 2 decimales
+
+Los dias de gracia no se persisten ni modifican el estado `VENCIDA`. Solo
+desplazan el inicio del calculo dinamico de mora.
 
 ## Lecturas afectadas
 
@@ -149,7 +153,8 @@ confundirse:
   ese estado, y lo hace contra `date.today()` en el momento de ejecucion.
 
 - El **calculo de mora** (`dias_atraso`, `mora_calculada`) usa `fecha_corte`
-  cuando se provee en la consulta. Si se omite, usa `date.today()`.
+  cuando se provee en la consulta. Si se omite, usa `date.today()`. El calculo
+  aplica `dias_gracia_mora = 5` antes de empezar a acumular dias de atraso.
 
 Esta separacion es intencional: permite simular escenarios a una fecha pasada o
 futura sin alterar los estados persistidos en base de datos.
@@ -161,7 +166,7 @@ con `fecha_corte = 2026-04-10`, aunque `mora/generar` aun no haya corrido.
 ## Pendientes
 
 - tasa configurable por parametro formal
-- dias de gracia
+- dias de gracia configurable por parametro formal
 - politica por tipo de contrato/concepto
 - eventual generacion de cargos de mora si se define V2
 - punitorios

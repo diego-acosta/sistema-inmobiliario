@@ -208,6 +208,8 @@ Regla:
 - requiere `saldo_pendiente > 0`
 - requiere `estado_obligacion = 'EMITIDA'`
 - tasa diaria fija: `0.001`
+- dias de gracia fijos iniciales: `5`
+- `dias_atraso = max(0, fecha_corte - (fecha_vencimiento + dias_gracia_mora))`
 - importe dinamico: `saldo_pendiente * 0.001 * dias_atraso`
 - redondeo a 2 decimales
 - si no hay atraso o saldo, la mora calculada es `0`
@@ -223,7 +225,7 @@ Efecto:
 Limitacion:
 
 - tasa fija documentada hasta que exista politica parametrizable.
-- no hay dias de gracia.
+- dias de gracia fijo hasta que exista politica parametrizable.
 
 Nota: Mora V1 desacopla dos responsabilidades:
 
@@ -231,6 +233,7 @@ Nota: Mora V1 desacopla dos responsabilidades:
   del sistema en el momento de correr `mora/generar`
 - calculo financiero (`dias_atraso`, `mora_calculada`) → usa `fecha_corte` si
   se provee en la consulta, o `date.today()` si se omite
+- dias de gracia: el calculo aplica 5 dias antes de acumular mora
 
 Ver detalle en `SRV-FIN-013` seccion "Desacople entre estado persistido y
 calculo financiero".
@@ -298,6 +301,7 @@ Incluye:
 - `porcentaje_responsabilidad` por obligacion
 - `monto_responsabilidad = saldo_pendiente * porcentaje_responsabilidad / 100`
 - mora dinamica calculada (no persistida) cuando `fecha_vencimiento < fecha_corte`
+- dias de gracia fijos iniciales para mora: 5
 - `total_con_mora = (saldo_pendiente + mora_calculada) * porcentaje_responsabilidad / 100`
 - resumen: `saldo_pendiente_total`, `saldo_vencido`, `saldo_futuro`, `mora_calculada`, `total_con_mora`
 
@@ -305,7 +309,8 @@ Reglas:
 
 - excluye obligaciones con estado `ANULADA` o `REEMPLAZADA`
 - incluye `EMITIDA` y `VENCIDA` por defecto
-- mora solo si `saldo_pendiente > 0` y `fecha_vencimiento < fecha_corte`
+- mora solo si `saldo_pendiente > 0` y
+  `fecha_corte > fecha_vencimiento + 5 dias de gracia`
 - `fecha_corte = date.today()` — no configurable en V1
 - mora no se persiste
 
@@ -369,6 +374,7 @@ Reglas:
 - solo obligaciones con `saldo_pendiente > 0`
 - excluye `ANULADA` y `REEMPLAZADA`
 - mora dinamica calculada con `fecha_corte` (configurable, default `date.today()`)
+- el calculo de mora aplica 5 dias de gracia no persistidos
 - `fecha_corte` no modifica estados persistidos
 - filtro opcional por `tipo_origen`
 - respuesta sin paginacion (agrega todo en memoria)
@@ -387,6 +393,7 @@ Incluye:
 
 - ordenamiento: obligaciones vencidas primero, luego futuras; dentro de cada grupo por `fecha_vencimiento ASC`
 - mora dinámica incluida en `total_a_cubrir` por obligación
+- la mora dinamica respeta 5 dias de gracia no persistidos
 - aplicación secuencial del monto hasta agotarlo o cubrir toda la deuda
 - `remanente` si el monto supera la deuda total
 
@@ -412,6 +419,7 @@ Reglas:
 
 - orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras
 - mora dinámica incluida en `total_a_cubrir`; la porción de mora consume del monto pero no se persiste como componente
+- la mora dinamica respeta 5 dias de gracia no persistidos
 - la porción aplicada a saldo (`monto_a_saldo`) se registra en `aplicacion_financiera` y actualiza `saldo_pendiente` vía trigger
 - si saldo llega a 0 → `CANCELADA`; si reduce parcialmente → `PARCIALMENTE_CANCELADA`
 - operación transaccional: si alguna escritura falla, se hace rollback de todas
@@ -602,7 +610,8 @@ Reglas implementadas:
 - La prevencion de solapamientos depende de validaciones de condiciones
   economicas; debe mantenerse alineada con el dominio locativo.
 - La politica de moneda no esta normalizada.
-- La regla real de vencimiento y dias de gracia esta pendiente.
+- La regla real de vencimiento queda pendiente; dias de gracia para mora usa
+  valor fijo inicial de 5 hasta parametrizacion formal.
 
 ## Mora — Estado actual (V1)
 

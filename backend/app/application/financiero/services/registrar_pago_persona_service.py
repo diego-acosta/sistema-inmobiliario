@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Protocol
 from uuid import UUID, uuid4
@@ -11,6 +11,7 @@ from app.application.common.results import AppResult
 
 
 TASA_DIARIA_MORA = Decimal("0.001")
+DIAS_GRACIA_MORA = 5
 _Q = Decimal("0.01")
 
 # Prioridad de aplicación de pago contra composiciones (igual a imputacion existente)
@@ -30,9 +31,12 @@ _PRIORIDAD: dict[str, int] = {
 
 
 def _mora_dec(saldo: Decimal, fv: date | None, corte: date) -> Decimal:
-    if fv is None or fv >= corte or saldo <= 0:
+    if fv is None or saldo <= 0:
         return Decimal("0")
-    dias = (corte - fv).days
+    fecha_inicio_mora = fv + timedelta(days=DIAS_GRACIA_MORA)
+    dias = max(0, (corte - fecha_inicio_mora).days)
+    if dias == 0:
+        return Decimal("0")
     return (saldo * TASA_DIARIA_MORA * dias).quantize(_Q, rounding=ROUND_HALF_UP)
 
 

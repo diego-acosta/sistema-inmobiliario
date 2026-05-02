@@ -171,8 +171,8 @@ def test_pago_persona_sin_deuda_no_aplica(client, db_session) -> None:
 def test_pago_con_mora_consume_del_monto(client, db_session) -> None:
     """
     Obligación saldo=50000, vencimiento=2026-05-15, fecha_pago=2026-05-25.
-    mora = 50000*0.001*10 = 500 → total_a_cubrir = 50500.
-    Pagando 50500: el monto se consume íntegro (remanente=0).
+    mora = 50000*0.001*5 = 250 por gracia → total_a_cubrir = 50250.
+    Pagando 50250: el monto se consume íntegro (remanente=0).
     DB saldo reducido en 50000 (mora no persiste en DB). Estado CANCELADA.
     """
     id_persona, _ = _setup(
@@ -183,14 +183,54 @@ def test_pago_con_mora_consume_del_monto(client, db_session) -> None:
         dia_vencimiento_canon=15,
     )
 
-    data = _pagar(client, id_persona, monto=50500.00, fecha_pago="2026-05-25")
+    data = _pagar(client, id_persona, monto=50250.00, fecha_pago="2026-05-25")
 
-    # 50500 = 50000 (saldo) + 500 (mora consumida del monto)
-    assert data["monto_ingresado"] == pytest.approx(50500.00)
+    # 50250 = 50000 (saldo) + 250 (mora consumida del monto)
+    assert data["monto_ingresado"] == pytest.approx(50250.00)
     assert data["monto_aplicado"] == pytest.approx(50000.00)
     assert data["remanente"] == pytest.approx(0.0)
     ob = data["obligaciones_pagadas"][0]
     assert ob["estado_resultante"] == "CANCELADA"
+
+
+def test_pago_mora_respeta_dias_gracia(client, db_session) -> None:
+    id_persona_dentro, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-GRACIA-DENTRO-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    dentro = _pagar(client, id_persona_dentro, monto=10010.00, fecha_pago="2026-05-14")
+
+    id_persona_limite, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-GRACIA-LIMITE-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    limite = _pagar(client, id_persona_limite, monto=10010.00, fecha_pago="2026-05-15")
+
+    id_persona_fuera, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-GRACIA-FUERA-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    fuera = _pagar(client, id_persona_fuera, monto=10010.00, fecha_pago="2026-05-16")
+
+    assert dentro["remanente"] == pytest.approx(10.00)
+    assert limite["remanente"] == pytest.approx(10.00)
+    assert fuera["remanente"] == pytest.approx(0.00)
+    assert fuera["monto_aplicado"] == pytest.approx(10000.00)
 
 
 def test_pago_remanente_si_sobra_monto(client, db_session) -> None:
@@ -308,10 +348,10 @@ def test_pago_retry_mismo_op_id_con_mora_devuelve_resultado_original(client, db_
     headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440004"}
 
     data_1 = _pagar_con_headers(
-        client, id_persona, monto=50500.00, fecha_pago="2026-05-25", headers=headers
+        client, id_persona, monto=50250.00, fecha_pago="2026-05-25", headers=headers
     )
     data_2 = _pagar_con_headers(
-        client, id_persona, monto=50500.00, fecha_pago="2026-05-25", headers=headers
+        client, id_persona, monto=50250.00, fecha_pago="2026-05-25", headers=headers
     )
     saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
 

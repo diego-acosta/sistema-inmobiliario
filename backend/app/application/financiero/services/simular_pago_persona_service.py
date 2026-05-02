@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Protocol
 
@@ -8,13 +8,17 @@ from app.application.common.results import AppResult
 
 
 TASA_DIARIA_MORA = Decimal("0.001")
+DIAS_GRACIA_MORA = 5
 _Q = Decimal("0.01")
 
 
 def _mora(saldo: Decimal, fecha_vencimiento: date | None, fecha_corte: date) -> Decimal:
-    if fecha_vencimiento is None or fecha_vencimiento >= fecha_corte or saldo <= 0:
+    if fecha_vencimiento is None or saldo <= 0:
         return Decimal("0")
-    dias = (fecha_corte - fecha_vencimiento).days
+    fecha_inicio_mora = fecha_vencimiento + timedelta(days=DIAS_GRACIA_MORA)
+    dias = max(0, (fecha_corte - fecha_inicio_mora).days)
+    if dias == 0:
+        return Decimal("0")
     return (saldo * TASA_DIARIA_MORA * dias).quantize(_Q, rounding=ROUND_HALF_UP)
 
 

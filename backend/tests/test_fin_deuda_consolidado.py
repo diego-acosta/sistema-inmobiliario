@@ -94,7 +94,7 @@ def test_consolidado_separacion_vencida_futura(client, db_session) -> None:
 def test_consolidado_mora_calculada(client, db_session) -> None:
     """
     Obligación con vencimiento 2026-05-10, saldo 50000.
-    fecha_corte=2026-05-20 → 10 días → mora = 50000 * 0.001 * 10 = 500.
+    fecha_corte=2026-05-20 → 5 días de mora por gracia → 50000 * 0.001 * 5 = 250.
     """
     rg = _crear_rg(client, codigo="DC-MORA-001")
     id_rg = rg["id_relacion_generadora"]
@@ -109,8 +109,36 @@ def test_consolidado_mora_calculada(client, db_session) -> None:
         (r for r in data["relaciones"] if r["id_relacion_generadora"] == id_rg), None
     )
     assert match is not None
-    assert match["mora_calculada"] == pytest.approx(500.00)
-    assert match["total_con_mora"] == pytest.approx(50500.00)
+    assert match["mora_calculada"] == pytest.approx(250.00)
+    assert match["total_con_mora"] == pytest.approx(50250.00)
+
+
+def test_consolidado_mora_respeta_dias_gracia(client, db_session) -> None:
+    """Dentro de gracia y en el limite exacto no calcula mora; fuera de gracia si."""
+    rg = _crear_rg(client, codigo="DC-GRACIA-001")
+    id_rg = rg["id_relacion_generadora"]
+    _crear_ob(
+        client,
+        id_relacion_generadora=id_rg,
+        importe=10000.00,
+        fecha_vencimiento="2026-05-10",
+    )
+
+    resp_dentro = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-05-14"})
+    resp_limite = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-05-15"})
+    resp_fuera = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-05-16"})
+
+    assert resp_dentro.status_code == 200
+    assert resp_limite.status_code == 200
+    assert resp_fuera.status_code == 200
+
+    item_dentro = next(r for r in resp_dentro.json()["data"]["relaciones"] if r["id_relacion_generadora"] == id_rg)
+    item_limite = next(r for r in resp_limite.json()["data"]["relaciones"] if r["id_relacion_generadora"] == id_rg)
+    item_fuera = next(r for r in resp_fuera.json()["data"]["relaciones"] if r["id_relacion_generadora"] == id_rg)
+
+    assert item_dentro["mora_calculada"] == pytest.approx(0.00)
+    assert item_limite["mora_calculada"] == pytest.approx(0.00)
+    assert item_fuera["mora_calculada"] == pytest.approx(10.00)
 
 
 def test_consolidado_agrupacion_por_relacion(client, db_session) -> None:
