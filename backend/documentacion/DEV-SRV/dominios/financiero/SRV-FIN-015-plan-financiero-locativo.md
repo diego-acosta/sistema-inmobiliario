@@ -39,16 +39,33 @@ existe al menos una condicion economica aplicable.
 
 ---
 
-## Cronograma mensual generado V2 minimo
+## Cronograma mensual generado V2 con prorrateo
 
 - `concepto_financiero = CANON_LOCATIVO`
-- una `obligacion_financiera` por periodo mensual aplicable
+- una `obligacion_financiera` por **segmento** dentro del período mensual;
+  si no hay cambio de condición dentro del período, hay un solo segmento (igual que antes)
 - periodo inicial: desde `contrato_alquiler.fecha_inicio`
 - periodo final: hasta `contrato_alquiler.fecha_fin`
 - el ultimo periodo se corta en `fecha_fin` cuando no coincide con fin de mes
-- `importe_total = condicion_economica_alquiler.monto_base` vigente al inicio
-  del periodo
-- `fecha_emision = periodo_desde`
+
+### Sin cambio de condición (un segmento)
+
+- `importe_total = condicion_economica_alquiler.monto_base` (monto completo)
+
+### Con cambio de condición dentro del período (prorrateo)
+
+- un nuevo segmento comienza cuando `condicion.fecha_desde` cae estrictamente
+  dentro del período mensual (> `periodo_desde` y <= `periodo_hasta`)
+- `importe_total = monto_base * dias_segmento / dias_mes` (días reales del mes)
+- redondeo a 2 decimales con ROUND_HALF_UP
+- residuo: cuando todos los segmentos del período tienen el mismo `monto_base`,
+  el último segmento absorbe la diferencia de redondeo para garantizar suma exacta
+- `periodo_desde` y `periodo_hasta` del payload reflejan el segmento real,
+  no el mes completo
+- `fecha_emision` = inicio del mes (`periodo_desde_mes`) para todos los segmentos;
+  esto evita violación del constraint `fecha_vencimiento >= fecha_emision`
+
+- `fecha_emision = periodo_desde_mes` (inicio del mes, igual para todos los segmentos del mes)
 - `fecha_vencimiento` = día `contrato_alquiler.dia_vencimiento_canon` dentro del
   mes de `periodo_desde`; si ese día no existe en el mes, se usa el último día
   real del mes; si `dia_vencimiento_canon` es NULL, se usa `periodo_desde` como
@@ -58,22 +75,28 @@ existe al menos una condicion economica aplicable.
 - composicion unica por obligacion con `CANON_LOCATIVO`
 - `obligacion_obligado` para el locatario principal del contrato
 
-## Regla RN-LOC-FIN-001
+## Regla RN-LOC-FIN-001 (actualizada con prorrateo)
 
-La condicion economica aplicable a un periodo locativo es la vigente en
-`periodo_desde`, salvo que exista una regla explicita de prorrateo o division
-del periodo.
+La condicion economica aplicable a un periodo locativo se resuelve segmento a
+segmento cuando hay cambios dentro del período.
 
 Regla de condicion aplicable:
 
-- Para cada periodo mensual se evalua la condicion vigente usando
-  `periodo_desde`.
+- Para cada segmento se evalua la condicion vigente usando `seg_desde`.
 - Vigente significa:
-  - `fecha_desde <= periodo_desde`
-  - `fecha_hasta IS NULL` o `fecha_hasta >= periodo_desde`
-- Si mas de una condicion aplica al mismo `periodo_desde`, se utiliza la de
+  - `fecha_desde <= seg_desde`
+  - `fecha_hasta IS NULL` o `fecha_hasta >= seg_desde`
+- Si mas de una condicion aplica al mismo `seg_desde`, se utiliza la de
   `fecha_desde` mas reciente.
-- Si no hay condicion aplicable para un periodo, ese periodo se omite.
+- Si no hay condicion aplicable para un segmento, ese segmento se omite.
+- Si un período mensual no tiene ningún segmento con condición, el período completo se omite.
+
+Regla de prorrateo (RN-LOC-FIN-005):
+
+- Un cambio de condición dentro del período se detecta cuando `fecha_desde`
+  de una condición cae estrictamente después de `periodo_desde` y dentro del período.
+- Cada segmento generado usa el `monto_base` de su propia condición.
+- `importe = monto_base * dias_segmento / dias_mes` con días reales del mes.
 
 ---
 
@@ -157,8 +180,7 @@ Alcance actual:
 - No genera expensas, servicios, impuestos ni punitorios.
 - No usa periodicidad para dividir periodos; el cronograma implementado es
   mensual.
-- No prorratea cambios de condicion dentro del mes.
-- No divide un periodo mensual si una condicion cambia a mitad de mes.
+- Prorratea cambios de condición dentro del mes (RN-LOC-FIN-005 — implementado).
 - Si dos condiciones economicas aplican al mismo `periodo_desde`, gana la de
   `fecha_desde` mas reciente.
 - No normaliza politica de moneda; usa `condicion.moneda` o fallback `ARS`.

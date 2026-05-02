@@ -696,6 +696,209 @@ def test_cronograma_sin_dia_vencimiento_usa_periodo_desde(client, db_session) ->
         assert ob["fecha_vencimiento"] == ob["periodo_desde"]
 
 
+# ── unit tests: prorrateo ─────────────────────────────────────────────────────
+
+def test_get_segmentos_sin_cambio_devuelve_un_segmento() -> None:
+    """Sin cambio de condición dentro del período → un solo segmento."""
+    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+        get_segmentos_para_periodo,
+    )
+    condiciones = [{"fecha_desde": date(2026, 5, 1), "fecha_hasta": None, "monto_base": 10000}]
+    segs = get_segmentos_para_periodo(condiciones, date(2026, 5, 1), date(2026, 5, 31))
+    assert len(segs) == 1
+    assert segs[0][0] == date(2026, 5, 1)
+    assert segs[0][1] == date(2026, 5, 31)
+
+
+def test_get_segmentos_cambio_a_mitad_genera_dos() -> None:
+    """Condición B empieza el día 16 → dos segmentos (1-15) y (16-31)."""
+    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+        get_segmentos_para_periodo,
+    )
+    condiciones = [
+        {"fecha_desde": date(2026, 5, 1), "fecha_hasta": date(2026, 5, 15), "monto_base": 10000},
+        {"fecha_desde": date(2026, 5, 16), "fecha_hasta": None, "monto_base": 15000},
+    ]
+    segs = get_segmentos_para_periodo(condiciones, date(2026, 5, 1), date(2026, 5, 31))
+    assert len(segs) == 2
+    assert segs[0] == (date(2026, 5, 1), date(2026, 5, 15), condiciones[0])
+    assert segs[1] == (date(2026, 5, 16), date(2026, 5, 31), condiciones[1])
+
+
+def test_calcular_importes_un_segmento_devuelve_monto_completo() -> None:
+    """Con un solo segmento → monto_base completo, sin prorrateo."""
+    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+        calcular_importes_prorateados,
+    )
+    condicion = {"fecha_desde": date(2026, 5, 1), "fecha_hasta": None, "monto_base": 10000}
+    segs = [(date(2026, 5, 1), date(2026, 5, 31), condicion)]
+    importes = calcular_importes_prorateados(segs, date(2026, 5, 1))
+    assert len(importes) == 1
+    assert importes[0] == pytest.approx(10000.00)
+
+
+def test_calcular_importes_dos_segmentos_mismo_monto_suman_total() -> None:
+    """
+    Dos segmentos con igual monto_base, mismo mes (31 días).
+    Residuo asegura suma exacta = monto_base.
+    """
+    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+        calcular_importes_prorateados,
+    )
+    condicion = {"monto_base": 10000}
+    segs = [
+        (date(2026, 1, 1), date(2026, 1, 15), condicion),
+        (date(2026, 1, 16), date(2026, 1, 31), condicion),
+    ]
+    importes = calcular_importes_prorateados(segs, date(2026, 1, 1))
+    assert len(importes) == 2
+    assert round(sum(importes), 2) == pytest.approx(10000.00)
+    # 10000 * 15/31 = 4838.71, 10000 * 16/31 = 5161.29, suma = 10000.00
+    assert importes[0] == pytest.approx(10000 * 15 / 31, abs=0.01)
+
+
+def test_calcular_importes_tres_segmentos_mismo_monto_suman_total() -> None:
+    """Tres segmentos con igual monto_base → residuo al último, suma exacta."""
+    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+        calcular_importes_prorateados,
+    )
+    condicion = {"monto_base": 9999}  # impar para forzar residuo
+    # enero: 10+10+11 = 31 días
+    segs = [
+        (date(2026, 1, 1), date(2026, 1, 10), condicion),
+        (date(2026, 1, 11), date(2026, 1, 20), condicion),
+        (date(2026, 1, 21), date(2026, 1, 31), condicion),
+    ]
+    importes = calcular_importes_prorateados(segs, date(2026, 1, 1))
+    assert len(importes) == 3
+    assert round(sum(importes), 2) == pytest.approx(9999.00)
+
+
+def test_calcular_importes_distintos_montos_proporcionales() -> None:
+    """Con diferentes monto_base → cada segmento proporcional a su propio monto."""
+    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+        calcular_importes_prorateados,
+    )
+    cond_a = {"monto_base": 10000}
+    cond_b = {"monto_base": 15000}
+    # Mayo (31 días), 15 + 16
+    segs = [
+        (date(2026, 5, 1), date(2026, 5, 15), cond_a),
+        (date(2026, 5, 16), date(2026, 5, 31), cond_b),
+    ]
+    importes = calcular_importes_prorateados(segs, date(2026, 5, 1))
+    assert len(importes) == 2
+    assert importes[0] == pytest.approx(10000 * 15 / 31, abs=0.01)
+    assert importes[1] == pytest.approx(15000 * 16 / 31, abs=0.01)
+
+
+# ── integración: prorrateo en cronograma ─────────────────────────────────────
+
+def test_cronograma_prorrateo_cambio_a_mitad_de_mes(client, db_session) -> None:
+    """
+    Condición A desde Mayo 1, B desde Mayo 16.
+    Cronograma de Mayo debe generar 2 obligaciones prorateadas.
+    """
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-PROR-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+    )
+    # Condición A: mayo 1-15
+    _crear_condicion(
+        client, contrato["id_contrato_alquiler"], 10000.00, "2026-05-01",
+        fecha_hasta="2026-05-15",
+    )
+    # Condición B: mayo 16-31
+    _crear_condicion(
+        client, contrato["id_contrato_alquiler"], 15000.00, "2026-05-16",
+    )
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 2
+    assert obligaciones[0]["periodo_desde"] == date(2026, 5, 1)
+    assert obligaciones[0]["periodo_hasta"] == date(2026, 5, 15)
+    assert obligaciones[1]["periodo_desde"] == date(2026, 5, 16)
+    assert obligaciones[1]["periodo_hasta"] == date(2026, 5, 31)
+    # Importes proporcionales (31 días)
+    assert float(obligaciones[0]["importe_total"]) == pytest.approx(10000 * 15 / 31, abs=0.01)
+    assert float(obligaciones[1]["importe_total"]) == pytest.approx(15000 * 16 / 31, abs=0.01)
+
+
+def test_cronograma_prorrateo_multiples_cambios_genera_n_segmentos(client, db_session) -> None:
+    """Tres condiciones en un mes → 3 obligaciones."""
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-PROR-MULT-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+    )
+    _crear_condicion(
+        client, contrato["id_contrato_alquiler"], 9000.00, "2026-05-01", fecha_hasta="2026-05-10",
+    )
+    _crear_condicion(
+        client, contrato["id_contrato_alquiler"], 10000.00, "2026-05-11", fecha_hasta="2026-05-20",
+    )
+    _crear_condicion(
+        client, contrato["id_contrato_alquiler"], 12000.00, "2026-05-21",
+    )
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 3
+    assert obligaciones[0]["periodo_desde"] == date(2026, 5, 1)
+    assert obligaciones[1]["periodo_desde"] == date(2026, 5, 11)
+    assert obligaciones[2]["periodo_desde"] == date(2026, 5, 21)
+
+
+def test_cronograma_prorrateo_mismo_monto_suma_exacta(client, db_session) -> None:
+    """
+    Dos condiciones con igual monto (10000) en mayo (31d: 15+16).
+    Suma debe ser exactamente 10000 (residuo aplicado al último).
+    """
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-PROR-SUM-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+    )
+    _crear_condicion(
+        client, contrato["id_contrato_alquiler"], 10000.00, "2026-05-01", fecha_hasta="2026-05-15",
+    )
+    _crear_condicion(
+        client, contrato["id_contrato_alquiler"], 10000.00, "2026-05-16",
+    )
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 2
+    total = sum(float(ob["importe_total"]) for ob in obligaciones)
+    assert total == pytest.approx(10000.00)
+
+
+def test_cronograma_sin_cambio_condicion_comportamiento_original(client, db_session) -> None:
+    """Sin cambios de condición dentro del período → importe = monto_base completo."""
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-PROR-ORI-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-06-30",
+    )
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 20000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 2
+    for ob in obligaciones:
+        assert float(ob["importe_total"]) == pytest.approx(20000.00)
+
+
 def test_contrato_create_rechaza_dia_vencimiento_fuera_de_rango(client) -> None:
     """dia_vencimiento_canon=0 o >31 debe ser rechazado por validación Pydantic (422)."""
     id_inmueble = _crear_inmueble(client, codigo="INM-DVC-RANGE-001")

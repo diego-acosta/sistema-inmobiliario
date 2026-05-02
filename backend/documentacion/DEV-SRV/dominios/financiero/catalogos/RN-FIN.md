@@ -401,6 +401,12 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-015-plan-financiero-locativo
 - estado: IMPLEMENTADA.
 
+### RN-LOC-FIN-005 - Prorrateo de canon locativo por cambio de condición dentro del período
+- descripcion: Cuando `condicion_economica_alquiler.fecha_desde` cae estrictamente dentro de un período mensual (> `periodo_desde` y <= `periodo_hasta`), el período se divide en segmentos. Cada segmento genera una `obligacion_financiera` separada con `importe = monto_base * dias_segmento / dias_mes` (días reales del mes), redondeado a 2 decimales. Cuando todos los segmentos comparten el mismo `monto_base`, el último segmento absorbe el residuo de redondeo para garantizar suma exacta. Si no hay cambio de condición dentro del período, se genera una sola obligación con el monto_base completo.
+- aplica_a: condicion_economica_alquiler, obligacion_financiera, relacion_generadora
+- origen_principal: SRV-FIN-015-plan-financiero-locativo
+- estado: IMPLEMENTADA.
+
 ### RN-FIN-069 — Reduccion de saldo controlada
 - descripcion: Ninguna transicion puede reducir saldo sin `aplicacion_financiera`, anulacion formal o credito documentado.
 - aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera

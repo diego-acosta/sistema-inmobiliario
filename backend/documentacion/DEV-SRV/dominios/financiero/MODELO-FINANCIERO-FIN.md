@@ -603,8 +603,7 @@ Reglas implementadas:
 - No se generan expensas, servicios, impuestos ni punitorios.
 - No usa periodicidad para dividir periodos; el cronograma implementado es
   mensual.
-- No hay prorrateo si una condicion cambia dentro del mes.
-- No se divide un periodo mensual por cambios de condicion intermedios.
+- Prorratea cambios de condición dentro del mes (RN-LOC-FIN-005): genera una obligación por segmento con importe proporcional a días reales del mes.
 - Si dos condiciones aplican al mismo `periodo_desde`, gana la condicion con
   `fecha_desde` mas reciente.
 - La prevencion de solapamientos depende de validaciones de condiciones
