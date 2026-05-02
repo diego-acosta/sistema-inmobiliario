@@ -5,6 +5,11 @@ from typing import Any
 
 from pydantic import BaseModel, field_validator
 
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
+
+
+TASA_DIARIA_MORA_DEFAULT_FLOAT = float(TASA_DIARIA_MORA_DEFAULT)
+
 
 class RelacionGeneradoraCreateRequest(BaseModel):
     tipo_origen: str
@@ -224,7 +229,7 @@ class DeudaItem(BaseModel):
     saldo_pendiente: float
     dias_atraso: int = 0
     mora_calculada: float = 0.0
-    tasa_diaria_mora: float = 0.001
+    tasa_diaria_mora: float = TASA_DIARIA_MORA_DEFAULT_FLOAT
     composiciones: list[DeudaComposicionItem]
 
 
@@ -310,7 +315,7 @@ class EstadoCuentaObligacionItem(BaseModel):
     saldo_pendiente: float
     dias_atraso: int = 0
     mora_calculada: float = 0.0
-    tasa_diaria_mora: float = 0.001
+    tasa_diaria_mora: float = TASA_DIARIA_MORA_DEFAULT_FLOAT
     composiciones: list[EstadoCuentaComposicionItem]
     aplicaciones: list[EstadoCuentaAplicacionItem]
 
@@ -351,7 +356,7 @@ class EstadoCuentaPersonaObligacionItem(BaseModel):
     porcentaje_responsabilidad: float
     monto_responsabilidad: float
     dias_atraso: int = 0
-    tasa_diaria_mora: float = 0.001
+    tasa_diaria_mora: float = TASA_DIARIA_MORA_DEFAULT_FLOAT
     mora_calculada: float = 0.0
     total_con_mora: float = 0.0
 

@@ -8,8 +8,8 @@ from typing import Any
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 
-TASA_DIARIA_MORA = Decimal("0.001")
 DIAS_GRACIA_MORA = 5
 
 
@@ -22,7 +22,7 @@ def _calcular_mora_dinamica(
         return {
             "dias_atraso": 0,
             "mora_calculada": 0.0,
-            "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+            "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
         }
 
     saldo = Decimal(str(saldo_pendiente))
@@ -30,7 +30,7 @@ def _calcular_mora_dinamica(
         return {
             "dias_atraso": 0,
             "mora_calculada": 0.0,
-            "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+            "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
         }
 
     fecha_inicio_mora = fecha_vencimiento + timedelta(days=DIAS_GRACIA_MORA)
@@ -39,16 +39,16 @@ def _calcular_mora_dinamica(
         return {
             "dias_atraso": 0,
             "mora_calculada": 0.0,
-            "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+            "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
         }
 
-    mora = (saldo * TASA_DIARIA_MORA * Decimal(dias_atraso)).quantize(
+    mora = (saldo * TASA_DIARIA_MORA_DEFAULT * Decimal(dias_atraso)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
     return {
         "dias_atraso": dias_atraso,
         "mora_calculada": float(mora),
-        "tasa_diaria_mora": float(TASA_DIARIA_MORA),
+        "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
     }
 
 

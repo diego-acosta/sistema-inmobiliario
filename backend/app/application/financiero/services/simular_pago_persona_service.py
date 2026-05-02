@@ -5,9 +5,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Protocol
 
 from app.application.common.results import AppResult
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 
 
-TASA_DIARIA_MORA = Decimal("0.001")
 DIAS_GRACIA_MORA = 5
 _Q = Decimal("0.01")
 
@@ -19,7 +19,9 @@ def _mora(saldo: Decimal, fecha_vencimiento: date | None, fecha_corte: date) -> 
     dias = max(0, (fecha_corte - fecha_inicio_mora).days)
     if dias == 0:
         return Decimal("0")
-    return (saldo * TASA_DIARIA_MORA * dias).quantize(_Q, rounding=ROUND_HALF_UP)
+    return (saldo * TASA_DIARIA_MORA_DEFAULT * dias).quantize(
+        _Q, rounding=ROUND_HALF_UP
+    )
 
 
 class FinancieroRepository(Protocol):

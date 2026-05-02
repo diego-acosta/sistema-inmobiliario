@@ -5,6 +5,7 @@ La simulación no persiste cambios.
 import pytest
 from sqlalchemy import text
 
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_event_contrato_alquiler import (
     _activar,
@@ -14,6 +15,7 @@ from tests.test_fin_event_contrato_alquiler import (
 )
 
 URL = "/api/v1/financiero/personas/{id_persona}/simular-pago"
+TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -108,8 +110,8 @@ def test_simular_pago_persona_sin_deuda(client, db_session) -> None:
 def test_simular_pago_incluye_mora_dinamica(client, db_session) -> None:
     """
     Obligación con vencimiento 2026-05-15, saldo 50000.
-    fecha_corte=2026-05-25 → 5 días de mora por gracia → 50000 * 0.001 * 5 = 250.
-    total_a_cubrir = 50250.
+    fecha_corte=2026-05-25 → 5 días de mora por gracia.
+    total_a_cubrir = saldo + mora con tasa diaria centralizada.
     """
     id_persona, _ = _setup(
         client, db_session,
@@ -122,9 +124,10 @@ def test_simular_pago_incluye_mora_dinamica(client, db_session) -> None:
     data = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-25")
 
     ob = data["detalle"][0]
-    assert ob["mora_calculada"] == pytest.approx(250.00)
-    assert ob["total_a_cubrir"] == pytest.approx(50250.00)
-    assert data["total_deuda_considerada"] == pytest.approx(50250.00)
+    mora_esperada = 50000.00 * TASA_DIARIA_MORA * 5
+    assert ob["mora_calculada"] == pytest.approx(mora_esperada)
+    assert ob["total_a_cubrir"] == pytest.approx(50000.00 + mora_esperada)
+    assert data["total_deuda_considerada"] == pytest.approx(50000.00 + mora_esperada)
 
 
 def test_simular_pago_mora_respeta_dias_gracia(client, db_session) -> None:
@@ -144,7 +147,9 @@ def test_simular_pago_mora_respeta_dias_gracia(client, db_session) -> None:
 
     assert dentro["detalle"][0]["mora_calculada"] == pytest.approx(0.00)
     assert limite["detalle"][0]["mora_calculada"] == pytest.approx(0.00)
-    assert fuera["detalle"][0]["mora_calculada"] == pytest.approx(10.00)
+    assert fuera["detalle"][0]["mora_calculada"] == pytest.approx(
+        10000.00 * TASA_DIARIA_MORA
+    )
 
 
 def test_simular_pago_remanente_cuando_sobra_monto(client, db_session) -> None:

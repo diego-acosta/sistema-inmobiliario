@@ -207,10 +207,10 @@ Regla:
 - selecciona obligaciones con `fecha_vencimiento < fecha_proceso`
 - requiere `saldo_pendiente > 0`
 - requiere `estado_obligacion = 'EMITIDA'`
-- tasa diaria fija: `0.001`
+- tasa diaria default centralizada: `TASA_DIARIA_MORA_DEFAULT = Decimal("0.001")`
 - dias de gracia fijos iniciales: `5`
 - `dias_atraso = max(0, fecha_corte - (fecha_vencimiento + dias_gracia_mora))`
-- importe dinamico: `saldo_pendiente * 0.001 * dias_atraso`
+- importe dinamico: `saldo_pendiente * tasa_diaria_mora * dias_atraso`
 - redondeo a 2 decimales
 - si no hay atraso o saldo, la mora calculada es `0`
 
@@ -224,7 +224,7 @@ Efecto:
 
 Limitacion:
 
-- tasa fija documentada hasta que exista politica parametrizable.
+- tasa default centralizada hasta que exista parametro formal persistido/administrado.
 - dias de gracia fijo hasta que exista politica parametrizable.
 
 Nota: Mora V1 desacopla dos responsabilidades:

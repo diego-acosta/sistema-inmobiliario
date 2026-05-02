@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 from sqlalchemy import text
 
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_event_contrato_alquiler import (
     _activar,
@@ -15,6 +16,7 @@ from tests.test_fin_event_contrato_alquiler import (
 )
 
 URL = "/api/v1/financiero/personas/{id_persona}/estado-cuenta"
+TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -126,8 +128,10 @@ def test_estado_cuenta_persona_incluye_mora_dinamica(client, db_session) -> None
 
     dias_esperados = max((date.today() - date(2026, 4, 6)).days, 0)
     assert ob["dias_atraso"] == dias_esperados
-    assert ob["mora_calculada"] == pytest.approx(50000.00 * 0.001 * dias_esperados)
-    assert ob["tasa_diaria_mora"] == pytest.approx(0.001)
+    assert ob["mora_calculada"] == pytest.approx(
+        50000.00 * TASA_DIARIA_MORA * dias_esperados
+    )
+    assert ob["tasa_diaria_mora"] == pytest.approx(TASA_DIARIA_MORA)
     assert ob["total_con_mora"] == pytest.approx(50000.00 + ob["mora_calculada"])
     assert data["resumen"]["mora_calculada"] == pytest.approx(ob["mora_calculada"])
     assert data["resumen"]["total_con_mora"] == pytest.approx(ob["total_con_mora"])
@@ -356,7 +360,7 @@ def test_estado_cuenta_persona_sin_fecha_corte_usa_today(client, db_session) -> 
 def test_estado_cuenta_persona_fecha_corte_pasado_calcula_mora(client, db_session) -> None:
     """
     Obligación con vencimiento 2026-04-01.
-    fecha_corte=2026-04-11 → 5 días de mora por gracia → 50000 * 0.001 * 5 = 250.
+    fecha_corte=2026-04-11 → 5 días de mora por gracia.
     """
     id_persona, _ = _setup_contrato_con_obligaciones(
         client, db_session,
@@ -375,10 +379,11 @@ def test_estado_cuenta_persona_fecha_corte_pasado_calcula_mora(client, db_sessio
     data = resp.json()["data"]
     assert data["fecha_corte"] == "2026-04-11"
     ob = data["obligaciones"][0]
+    mora_esperada = 50000.00 * TASA_DIARIA_MORA * 5
     assert ob["dias_atraso"] == 5
-    assert ob["mora_calculada"] == pytest.approx(250.00)
-    assert ob["total_con_mora"] == pytest.approx(50250.00)
-    assert data["resumen"]["mora_calculada"] == pytest.approx(250.00)
+    assert ob["mora_calculada"] == pytest.approx(mora_esperada)
+    assert ob["total_con_mora"] == pytest.approx(50000.00 + mora_esperada)
+    assert data["resumen"]["mora_calculada"] == pytest.approx(mora_esperada)
 
 
 def test_estado_cuenta_persona_fecha_corte_antes_del_vencimiento_sin_mora(client, db_session) -> None:
@@ -414,7 +419,7 @@ def test_estado_cuenta_persona_mora_cambia_segun_fecha_corte(client, db_session)
     Misma obligación con vencimiento 2026-04-01, dos fechas_corte distintas.
     fecha_corte=2026-04-05 → dentro de gracia → mora = 0.
     fecha_corte=2026-04-06 → límite exacto de gracia → mora = 0.
-    fecha_corte=2026-04-21 → 15 días de mora → mora = 50000 * 0.001 * 15 = 750.
+    fecha_corte=2026-04-21 → 15 días de mora.
     """
     id_persona, _ = _setup_contrato_con_obligaciones(
         client, db_session,

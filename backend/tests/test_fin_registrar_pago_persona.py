@@ -4,6 +4,7 @@ Tests de integración para POST /api/v1/financiero/pagos.
 import pytest
 from sqlalchemy import text
 
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_event_contrato_alquiler import (
     _activar,
@@ -13,6 +14,7 @@ from tests.test_fin_event_contrato_alquiler import (
 )
 
 URL = "/api/v1/financiero/pagos"
+TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -171,8 +173,8 @@ def test_pago_persona_sin_deuda_no_aplica(client, db_session) -> None:
 def test_pago_con_mora_consume_del_monto(client, db_session) -> None:
     """
     Obligación saldo=50000, vencimiento=2026-05-15, fecha_pago=2026-05-25.
-    mora = 50000*0.001*5 = 250 por gracia → total_a_cubrir = 50250.
-    Pagando 50250: el monto se consume íntegro (remanente=0).
+    La mora usa la tasa diaria centralizada y 5 dias por gracia.
+    Pagando saldo + mora: el monto se consume integro (remanente=0).
     DB saldo reducido en 50000 (mora no persiste en DB). Estado CANCELADA.
     """
     id_persona, _ = _setup(
@@ -183,10 +185,11 @@ def test_pago_con_mora_consume_del_monto(client, db_session) -> None:
         dia_vencimiento_canon=15,
     )
 
-    data = _pagar(client, id_persona, monto=50250.00, fecha_pago="2026-05-25")
+    monto_con_mora = 50000.00 + (50000.00 * TASA_DIARIA_MORA * 5)
+    data = _pagar(client, id_persona, monto=monto_con_mora, fecha_pago="2026-05-25")
 
-    # 50250 = 50000 (saldo) + 250 (mora consumida del monto)
-    assert data["monto_ingresado"] == pytest.approx(50250.00)
+    # La mora consume del monto, pero no se aplica a saldo.
+    assert data["monto_ingresado"] == pytest.approx(monto_con_mora)
     assert data["monto_aplicado"] == pytest.approx(50000.00)
     assert data["remanente"] == pytest.approx(0.0)
     ob = data["obligaciones_pagadas"][0]
@@ -347,11 +350,12 @@ def test_pago_retry_mismo_op_id_con_mora_devuelve_resultado_original(client, db_
     )
     headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440004"}
 
+    monto_con_mora = 50000.00 + (50000.00 * TASA_DIARIA_MORA * 5)
     data_1 = _pagar_con_headers(
-        client, id_persona, monto=50250.00, fecha_pago="2026-05-25", headers=headers
+        client, id_persona, monto=monto_con_mora, fecha_pago="2026-05-25", headers=headers
     )
     data_2 = _pagar_con_headers(
-        client, id_persona, monto=50250.00, fecha_pago="2026-05-25", headers=headers
+        client, id_persona, monto=monto_con_mora, fecha_pago="2026-05-25", headers=headers
     )
     saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
 

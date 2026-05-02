@@ -6,6 +6,7 @@ from datetime import date
 
 from sqlalchemy import text
 
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_rel_gen_create import _crear_contrato, _crear_relacion_generadora
 
@@ -13,6 +14,7 @@ from tests.test_fin_rel_gen_create import _crear_contrato, _crear_relacion_gener
 URL = "/api/v1/financiero/mora/generar"
 URL_DEUDA = "/api/v1/financiero/deuda"
 URL_OBLIGACIONES = "/api/v1/financiero/obligaciones"
+TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
 
 
 def _crear_rg(client, *, codigo: str) -> dict:
@@ -133,6 +135,7 @@ def test_emitida_vencida_con_saldo_pasa_a_vencida(client, db_session) -> None:
     assert data["procesadas"] == 1
     assert data["marcadas"] == 1
     assert data["generadas"] == 0
+    assert data["tasa_diaria"] == str(TASA_DIARIA_MORA_DEFAULT)
     assert _estado_obligacion(db_session, ob["id_obligacion_financiera"]) == "VENCIDA"
     assert _count_moras_persistidas(db_session) == 0
 
@@ -191,7 +194,7 @@ def test_mora_calculada_en_deuda_consolidada(client, db_session) -> None:
     item = response.json()["data"]["items"][0]
     dias_atraso = max((date.today() - date(2026, 4, 6)).days, 0)
     assert item["dias_atraso"] == dias_atraso
-    assert item["mora_calculada"] == round(1000.00 * 0.001 * dias_atraso, 2)
+    assert item["mora_calculada"] == round(1000.00 * TASA_DIARIA_MORA * dias_atraso, 2)
     assert item["saldo_pendiente"] == 1000.00
 
 

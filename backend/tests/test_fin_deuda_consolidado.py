@@ -3,11 +3,13 @@ Tests de integración para GET /api/v1/financiero/deuda/consolidado.
 """
 import pytest
 
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_imputaciones_create import _crear_rg
 
 URL = "/api/v1/financiero/deuda/consolidado"
 URL_OBLIGACIONES = "/api/v1/financiero/obligaciones"
+TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -94,7 +96,7 @@ def test_consolidado_separacion_vencida_futura(client, db_session) -> None:
 def test_consolidado_mora_calculada(client, db_session) -> None:
     """
     Obligación con vencimiento 2026-05-10, saldo 50000.
-    fecha_corte=2026-05-20 → 5 días de mora por gracia → 50000 * 0.001 * 5 = 250.
+    fecha_corte=2026-05-20 → 5 días de mora por gracia.
     """
     rg = _crear_rg(client, codigo="DC-MORA-001")
     id_rg = rg["id_relacion_generadora"]
@@ -109,8 +111,9 @@ def test_consolidado_mora_calculada(client, db_session) -> None:
         (r for r in data["relaciones"] if r["id_relacion_generadora"] == id_rg), None
     )
     assert match is not None
-    assert match["mora_calculada"] == pytest.approx(250.00)
-    assert match["total_con_mora"] == pytest.approx(50250.00)
+    mora_esperada = 50000.00 * TASA_DIARIA_MORA * 5
+    assert match["mora_calculada"] == pytest.approx(mora_esperada)
+    assert match["total_con_mora"] == pytest.approx(50000.00 + mora_esperada)
 
 
 def test_consolidado_mora_respeta_dias_gracia(client, db_session) -> None:
@@ -138,7 +141,9 @@ def test_consolidado_mora_respeta_dias_gracia(client, db_session) -> None:
 
     assert item_dentro["mora_calculada"] == pytest.approx(0.00)
     assert item_limite["mora_calculada"] == pytest.approx(0.00)
-    assert item_fuera["mora_calculada"] == pytest.approx(10.00)
+    assert item_fuera["mora_calculada"] == pytest.approx(
+        10000.00 * TASA_DIARIA_MORA
+    )
 
 
 def test_consolidado_agrupacion_por_relacion(client, db_session) -> None:

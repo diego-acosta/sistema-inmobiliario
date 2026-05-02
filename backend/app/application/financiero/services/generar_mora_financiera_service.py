@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 from typing import Any, Protocol
 
 from app.application.common.results import AppResult
 from app.application.financiero.commands.generar_mora_financiera import (
     GenerarMoraFinancieraCommand,
 )
-
-
-TASA_DIARIA_MORA = Decimal("0.001")
+from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 
 
 class FinancieroRepository(Protocol):
@@ -41,6 +38,6 @@ class GenerarMoraFinancieraService:
                 "procesadas": len(obligaciones),
                 "marcadas": marcadas,
                 "generadas": 0,
-                "tasa_diaria": str(TASA_DIARIA_MORA),
+                "tasa_diaria": str(TASA_DIARIA_MORA_DEFAULT),
             }
         )

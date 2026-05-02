@@ -52,7 +52,7 @@ La mora calculada no modifica:
 
 ## Pendientes explícitos
 
-- parametrizar `tasa_diaria_mora`
+- persistir/administrar `tasa_diaria_mora` por parametro formal
 - parametrizar `dias_gracia_mora`
 - definir política de mora por contrato, concepto o relación generadora
 - definir si habrá Mora V2 persistida
@@ -120,6 +120,7 @@ mora_calculada = saldo_pendiente * tasa_diaria * dias_atraso
 Reglas:
 
 - tasa diaria fija inicial: `0.001`
+- fuente tecnica unica: `TASA_DIARIA_MORA_DEFAULT = Decimal("0.001")`
 - dias de gracia fijos iniciales: `5`
 - `dias_atraso = max(0, fecha_corte - (fecha_vencimiento + dias_gracia_mora))`
 - si no hay atraso o el saldo es cero, `mora_calculada = 0`
@@ -165,7 +166,7 @@ con `fecha_corte = 2026-04-10`, aunque `mora/generar` aun no haya corrido.
 
 ## Pendientes
 
-- tasa configurable por parametro formal
+- tasa persistida/administrada por parametro formal
 - dias de gracia configurable por parametro formal
 - politica por tipo de contrato/concepto
 - eventual generacion de cargos de mora si se define V2

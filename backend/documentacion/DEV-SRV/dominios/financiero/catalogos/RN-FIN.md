@@ -407,7 +407,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
 
 ### RN-FIN-070 - Calculo de mora diaria simple
-- descripcion: La mora V1 se calcula dinamicamente como `saldo_pendiente * 0.001 * dias_atraso`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente.
+- descripcion: La mora V1 se calcula dinamicamente como `saldo_pendiente * tasa_diaria_mora * dias_atraso`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente.
 - aplica_a: obligacion_financiera, estado_cuenta, deuda_consolidada
 - origen_principal: SRV-FIN-013-generacion-de-mora
 - estado: IMPLEMENTADA.
