@@ -8,10 +8,9 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from app.application.common.results import AppResult
-from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
+from app.domain.financiero.resolver_mora import ResolucionMora, resolver_mora_params
 
 
-DIAS_GRACIA_MORA = 5
 _Q = Decimal("0.01")
 
 # Prioridad de aplicación de pago contra composiciones (igual a imputacion existente)
@@ -30,16 +29,20 @@ _PRIORIDAD: dict[str, int] = {
 }
 
 
-def _mora_dec(saldo: Decimal, fv: date | None, corte: date) -> Decimal:
+def _mora_dec(
+    saldo: Decimal,
+    fv: date | None,
+    corte: date,
+    resolucion: ResolucionMora | None = None,
+) -> Decimal:
     if fv is None or saldo <= 0:
         return Decimal("0")
-    fecha_inicio_mora = fv + timedelta(days=DIAS_GRACIA_MORA)
+    r = resolucion if resolucion is not None else resolver_mora_params()
+    fecha_inicio_mora = fv + timedelta(days=r.dias_gracia)
     dias = max(0, (corte - fecha_inicio_mora).days)
     if dias == 0:
         return Decimal("0")
-    return (saldo * TASA_DIARIA_MORA_DEFAULT * dias).quantize(
-        _Q, rounding=ROUND_HALF_UP
-    )
+    return (saldo * r.tasa_diaria * dias).quantize(_Q, rounding=ROUND_HALF_UP)
 
 
 def _clave_orden(comp: dict[str, Any]) -> tuple[int, int]:

@@ -7,7 +7,7 @@ from app.application.common.results import AppResult
 from app.application.financiero.commands.generar_mora_financiera import (
     GenerarMoraFinancieraCommand,
 )
-from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
+from app.domain.financiero.resolver_mora import resolver_mora_params
 
 
 class FinancieroRepository(Protocol):
@@ -32,12 +32,13 @@ class GenerarMoraFinancieraService:
         )
         marcadas = self.repository.marcar_obligaciones_vencidas(fecha_proceso)
 
+        resolucion = resolver_mora_params()
         return AppResult.ok(
             {
                 "fecha_proceso": fecha_proceso,
                 "procesadas": len(obligaciones),
                 "marcadas": marcadas,
                 "generadas": 0,
-                "tasa_diaria": str(TASA_DIARIA_MORA_DEFAULT),
+                "tasa_diaria": str(resolucion.tasa_diaria),
             }
         )

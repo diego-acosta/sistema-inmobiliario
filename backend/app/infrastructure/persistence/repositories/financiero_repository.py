@@ -8,21 +8,23 @@ from typing import Any
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
-from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
-
-DIAS_GRACIA_MORA = 5
+from app.domain.financiero.resolver_mora import ResolucionMora, resolver_mora_params
 
 
 def _calcular_mora_dinamica(
     saldo_pendiente: Any,
     fecha_vencimiento: date | None,
     fecha_corte: date,
+    resolucion: ResolucionMora | None = None,
 ) -> dict[str, Any]:
+    if resolucion is None:
+        resolucion = resolver_mora_params()
+
     if fecha_vencimiento is None:
         return {
             "dias_atraso": 0,
             "mora_calculada": 0.0,
-            "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
+            "tasa_diaria_mora": float(resolucion.tasa_diaria),
         }
 
     saldo = Decimal(str(saldo_pendiente))
@@ -30,25 +32,25 @@ def _calcular_mora_dinamica(
         return {
             "dias_atraso": 0,
             "mora_calculada": 0.0,
-            "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
+            "tasa_diaria_mora": float(resolucion.tasa_diaria),
         }
 
-    fecha_inicio_mora = fecha_vencimiento + timedelta(days=DIAS_GRACIA_MORA)
+    fecha_inicio_mora = fecha_vencimiento + timedelta(days=resolucion.dias_gracia)
     dias_atraso = max(0, (fecha_corte - fecha_inicio_mora).days)
     if dias_atraso == 0:
         return {
             "dias_atraso": 0,
             "mora_calculada": 0.0,
-            "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
+            "tasa_diaria_mora": float(resolucion.tasa_diaria),
         }
 
-    mora = (saldo * TASA_DIARIA_MORA_DEFAULT * Decimal(dias_atraso)).quantize(
+    mora = (saldo * resolucion.tasa_diaria * Decimal(dias_atraso)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
     return {
         "dias_atraso": dias_atraso,
         "mora_calculada": float(mora),
-        "tasa_diaria_mora": float(TASA_DIARIA_MORA_DEFAULT),
+        "tasa_diaria_mora": float(resolucion.tasa_diaria),
     }
 
 
@@ -763,8 +765,12 @@ class FinancieroRepository:
                     "cantidad_obligaciones": 0,
                 }
 
+            resolucion = resolver_mora_params(
+                tipo_origen=str(row["tipo_origen"]).upper(),
+                id_origen=row["id_origen"],
+            )
             mora = _calcular_mora_dinamica(
-                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte
+                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte, resolucion
             )
             saldo = Decimal(str(row["saldo_pendiente"]))
             mora_dec = Decimal(str(mora["mora_calculada"]))
@@ -1794,8 +1800,12 @@ class FinancieroRepository:
             saldo = Decimal(str(row["saldo_pendiente"]))
             pct = Decimal(str(row["porcentaje_responsabilidad"]))
 
+            resolucion = resolver_mora_params(
+                tipo_origen=str(row["tipo_origen"]).upper(),
+                id_origen=row["id_origen"],
+            )
             mora = _calcular_mora_dinamica(
-                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte
+                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte, resolucion
             )
             mora_dec = Decimal(str(mora["mora_calculada"]))
 

@@ -119,12 +119,35 @@ mora_calculada = saldo_pendiente * tasa_diaria * dias_atraso
 
 Reglas:
 
-- tasa diaria fija inicial: `0.001`
-- fuente tecnica unica: `TASA_DIARIA_MORA_DEFAULT = Decimal("0.001")`
-- dias de gracia fijos iniciales: `5`
-- `dias_atraso = max(0, fecha_corte - (fecha_vencimiento + dias_gracia_mora))`
+- `dias_atraso = max(0, fecha_corte - (fecha_vencimiento + dias_gracia))`
 - si no hay atraso o el saldo es cero, `mora_calculada = 0`
 - redondeo a 2 decimales
+
+Los parámetros `tasa_diaria` y `dias_gracia` se resuelven mediante el
+`resolver_mora_params` (ver sección "Resolver de parámetros de mora").
+
+## Resolver de parámetros de mora
+
+Módulo: `app/domain/financiero/resolver_mora.py`
+
+Prioridad de resolución (mayor a menor):
+
+1. **Regla por origen** — clave `"<TIPO_ORIGEN>:<id_origen>"` (ej. `"CONTRATO_ALQUILER:42"`)
+2. **Regla por concepto** — clave `"<codigo_concepto>"` (ej. `"CANON_LOCATIVO"`)
+3. **Default global** — `TASA_DIARIA_MORA_DEFAULT = 0.001`, `DIAS_GRACIA_MORA_DEFAULT = 5`
+
+V1: no existen reglas en DB. El resolver siempre retorna el default global.
+
+La interfaz acepta `reglas: dict[str, ResolucionMora]` para inyectar overrides
+en tests o en futuras extensiones sin cambiar el contrato.
+
+Todos los endpoints de cálculo de mora usan el mismo resolver:
+- `GET /api/v1/financiero/deuda`
+- `GET /api/v1/financiero/deuda/consolidado`
+- `GET /api/v1/financiero/relaciones-generadoras/{id}/estado-cuenta`
+- `GET /api/v1/financiero/personas/{id}/estado-cuenta`
+- `POST /api/v1/financiero/personas/{id}/simular-pago`
+- `POST /api/v1/financiero/pagos`
 
 Los dias de gracia no se persisten ni modifican el estado `VENCIDA`. Solo
 desplazan el inicio del calculo dinamico de mora.
@@ -166,9 +189,8 @@ con `fecha_corte = 2026-04-10`, aunque `mora/generar` aun no haya corrido.
 
 ## Pendientes
 
-- tasa persistida/administrada por parametro formal
-- dias de gracia configurable por parametro formal
-- politica por tipo de contrato/concepto
+- tasa y dias_gracia configurables por DB (tabla de reglas de mora) → hoy en `parametros_mora.py`
+- cargar reglas del resolver desde DB cuando exista tabla persistida
 - eventual generacion de cargos de mora si se define V2
 - punitorios
 - reversion/anulacion especifica de mora

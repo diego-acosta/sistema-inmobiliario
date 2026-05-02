@@ -407,10 +407,16 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
 
 ### RN-FIN-070 - Calculo de mora diaria simple
-- descripcion: La mora V1 se calcula dinamicamente como `saldo_pendiente * tasa_diaria_mora * dias_atraso`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente.
+- descripcion: La mora V1 se calcula dinamicamente como `saldo_pendiente * tasa_diaria_mora * dias_atraso`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente. `tasa_diaria_mora` y `dias_gracia` se resuelven via `resolver_mora_params` con prioridad: origen > concepto > default global.
 - aplica_a: obligacion_financiera, estado_cuenta, deuda_consolidada
 - origen_principal: SRV-FIN-013-generacion-de-mora
 - estado: IMPLEMENTADA.
+
+### RN-LOC-FIN-004 - Resolver centralizado de parámetros de mora
+- descripcion: Los parametros de mora (`tasa_diaria`, `dias_gracia`) se resuelven con prioridad: (1) regla por origen `<tipo_origen>:<id_origen>`, (2) regla por `codigo_concepto`, (3) default global `TASA_DIARIA_MORA_DEFAULT=0.001` y `DIAS_GRACIA_MORA_DEFAULT=5`. V1: no existen reglas en DB; siempre retorna el default. Todos los endpoints de calculo de mora usan el mismo resolver.
+- aplica_a: obligacion_financiera, relacion_generadora, concepto_financiero
+- origen_principal: SRV-FIN-013-generacion-de-mora / resolver_mora.py
+- estado: IMPLEMENTADA (V1 default only; extensible via `reglas` dict).
 
 ### RN-FIN-071 - Mora no capitalizable
 - descripcion: La mora diaria no se persiste como obligacion financiera ni incrementa el saldo de la obligacion base; se expone como calculo de lectura.
