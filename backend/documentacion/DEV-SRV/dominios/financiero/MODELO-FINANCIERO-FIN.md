@@ -475,6 +475,60 @@ Caracteristicas:
 
 ---
 
+## 13. Reemplazo de obligaciones
+
+Cuando `RegenerarCronogramaLocativoService` regenera el cronograma locativo desde
+una `fecha_corte`, el ciclo de vida de las obligaciones sigue este patron:
+
+### Obligaciones reemplazadas
+
+- Las obligaciones elegibles (futuras sin pagos) cambian a `estado_obligacion = REEMPLAZADA`.
+- Se les asigna `deleted_at` con `CLOCK_TIMESTAMP()` (soft-delete).
+- El soft-delete libera el indice unico parcial
+  `(id_relacion_generadora, periodo_desde, periodo_hasta) WHERE deleted_at IS NULL`,
+  permitiendo insertar nuevas obligaciones para los mismos periodos.
+- Los registros no se eliminan fisicamente: quedan trazables en la tabla.
+
+### Obligaciones nuevas
+
+- Se crean con `estado_obligacion = EMITIDA`, igual que en la generacion inicial.
+- Aplican la misma logica: prorrateo, vencimiento real, obligado financiero.
+- Reutilizan la `relacion_generadora` existente del contrato.
+- La idempotencia se garantiza por `ON CONFLICT DO NOTHING` sobre el indice unico parcial.
+
+### Estados que protegen una obligacion del reemplazo
+
+| Estado | Motivo |
+|---|---|
+| `CANCELADA` | Saldo = 0; no hay nada que regenerar |
+| `PARCIALMENTE_CANCELADA` | Tiene pagos; no se puede reescribir |
+| Cualquier estado con `aplicacion_financiera` activa | Pago real aplicado; no modificable |
+| `ANULADA` | Ya fuera de ciclo activo |
+| `REEMPLAZADA` | Ya fue reemplazada por una corrida anterior |
+
+Estados reemplazables (sin pagos): `EMITIDA`, `VENCIDA`, `PENDIENTE_AJUSTE`.
+
+### Objetivo del mecanismo
+
+- **Trazabilidad historica**: las obligaciones reemplazadas permanecen en la base con `deleted_at` seteado y son consultables directamente en SQL.
+- **Consistencia contable**: los pagos ya realizados no quedan sin referencia; la obligacion sobre la que se imputaron permanece intacta.
+- **Idempotencia**: una nueva llamada a regenerar con la misma `fecha_corte` produce el mismo resultado final (exactamente 1 obligacion activa por periodo).
+
+### Pendientes de implementacion
+
+- Los campos `id_obligacion_reemplazada` e `id_obligacion_reemplazante` existen
+  en el esquema SQL de `obligacion_financiera` pero no se vinculan aun.
+  El vinculo bidireccional queda pendiente para una version futura que requiera
+  trazabilidad explicita de la cadena de reemplazo.
+- No existe endpoint de consulta historica de reemplazos (solo acceso directo via SQL).
+- No hay regeneracion automatica por cambios de condiciones economicas; requiere
+  llamada explicita al endpoint.
+- La logica de generacion nueva reutiliza internamente
+  `create_cronograma_obligaciones` del flujo de activacion (acoplamiento tecnico
+  entre regeneracion y evento `contrato_alquiler_activado`).
+
+---
+
 ## 9. Pendientes reales
 
 - transiciones de `relacion_generadora`

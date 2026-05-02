@@ -312,6 +312,52 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 
 ---
 
+## I. Reglas de regeneracion de cronograma locativo
+
+### RN-FIN-075 — Regeneracion no modifica obligaciones con pagos
+- descripcion: La regeneracion de cronograma locativo no debe borrar fisicamente obligaciones ni modificar pagos, movimientos financieros ni mora existentes.
+- aplica_a: obligacion_financiera, regeneracion_cronograma
+- origen_principal: DEV-SRV
+- estado: IMPLEMENTADO en `POST /api/v1/financiero/contratos-alquiler/{id}/regenerar-cronograma`
+- observaciones: Una obligacion con al menos una `aplicacion_financiera` activa es intocable ante regeneracion, independientemente de su estado. Los `movimiento_financiero` asociados a pagos no se alteran.
+
+### RN-FIN-076 — Obligaciones protegidas ante regeneracion
+- descripcion: No pueden ser reemplazadas por regeneracion las obligaciones en estado `CANCELADA` o `PARCIALMENTE_CANCELADA`, ni las que posean al menos una `aplicacion_financiera` activa.
+- aplica_a: obligacion_financiera, aplicacion_financiera, regeneracion_cronograma
+- origen_principal: DEV-SRV
+- estado: IMPLEMENTADO
+- observaciones: El mecanismo de reemplazo es logico: las obligaciones elegibles (EMITIDA, VENCIDA, PENDIENTE_AJUSTE sin pagos) pasan a `REEMPLAZADA` con `deleted_at` seteado. No existe borrado fisico ni modificacion de saldo.
+
+### RN-FIN-077 — Soft-delete de obligaciones reemplazadas y no duplicacion de periodos activos
+- descripcion: Las obligaciones reemplazadas quedan con `estado_obligacion = REEMPLAZADA` y `deleted_at` seteado para liberar el indice unico parcial, garantizando que no pueden coexistir dos obligaciones activas para el mismo periodo.
+- aplica_a: obligacion_financiera, regeneracion_cronograma
+- origen_principal: DEV-SRV
+- estado: IMPLEMENTADO
+- observaciones: El indice unico parcial `(id_relacion_generadora, periodo_desde, periodo_hasta) WHERE deleted_at IS NULL` impide duplicacion de periodos activos. El soft-delete libera esa restriccion sin perder la trazabilidad historica.
+
+### RN-FIN-078 — Regeneracion es idempotente
+- descripcion: La regeneracion aplica solo a obligaciones cuyo `periodo_desde >= fecha_corte`. Obligaciones anteriores a la fecha_corte no se tocan. Una segunda llamada con la misma `fecha_corte` produce el mismo resultado final.
+- aplica_a: obligacion_financiera, regeneracion_cronograma
+- origen_principal: DEV-SRV
+- estado: IMPLEMENTADO
+- observaciones: Una segunda llamada con la misma `fecha_corte` reemplaza las obligaciones EMITIDA creadas en la corrida anterior y genera nuevas equivalentes. El resultado final es siempre exactamente 1 obligacion activa por periodo cubierto.
+
+### RN-FIN-079 — Regeneracion requiere fecha_corte explicita
+- descripcion: Las obligaciones generadas por regeneracion aplican la misma logica que la generacion inicial y requieren `fecha_corte` explicita en el request; no existe regeneracion automatica por cambios de condiciones economicas.
+- aplica_a: obligacion_financiera, regeneracion_cronograma
+- origen_principal: DEV-SRV
+- estado: IMPLEMENTADO
+- observaciones: El endpoint no infiere ni calcula la fecha de corte; es responsabilidad del caller proveerla. Aplica prorrateo, vencimiento real, obligado financiero e idempotencia por indice unico parcial.
+
+### RN-FIN-080 — Pendientes de trazabilidad de reemplazo
+- descripcion: Los campos `id_obligacion_reemplazada` e `id_obligacion_reemplazante` existen en el esquema SQL pero no se vinculan aun en la regeneracion V1; la cadena de reemplazo solo es trazable por estado y `deleted_at`.
+- aplica_a: obligacion_financiera, regeneracion_cronograma
+- origen_principal: DEV-SRV
+- estado: PENDIENTE
+- observaciones: Pendiente tambien: endpoint de consulta historica de reemplazos y desacoplamiento tecnico de la logica de generacion entre activacion y regeneracion.
+
+---
+
 ### RN-FIN-057 — Saldo operativo por componente
 - descripcion: El saldo operativo real debe poder existir a nivel `composicion_obligacion`; `saldo_componente` representa el saldo vivo de ese concepto dentro de la obligacion.
 - aplica_a: composicion_obligacion

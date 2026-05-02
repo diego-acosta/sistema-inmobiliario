@@ -459,3 +459,21 @@ class SimularPagoPersonaResponse(BaseModel):
 class InboxEventRequest(BaseModel):
     event_type: str
     payload: dict[str, Any]
+
+
+# ── regeneración de cronograma locativo ──────────────────────────────────────
+
+class RegenerarCronogramaRequest(BaseModel):
+    fecha_corte: date
+
+
+class RegenerarCronogramaData(BaseModel):
+    reemplazadas: int
+    generadas: int
+    omitidas: int
+    razon: str | None = None
+
+
+class RegenerarCronogramaResponse(BaseModel):
+    ok: bool = True
+    data: RegenerarCronogramaData

@@ -1086,6 +1086,53 @@ class FinancieroRepository:
         ).mappings().all()
         return [dict(row) for row in rows]
 
+    def get_obligaciones_reemplazables(
+        self, id_relacion_generadora: int, fecha_corte: date
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                o.id_obligacion_financiera,
+                o.periodo_desde,
+                o.periodo_hasta,
+                o.estado_obligacion
+            FROM obligacion_financiera o
+            WHERE o.id_relacion_generadora = :id_rg
+              AND o.deleted_at IS NULL
+              AND o.periodo_desde >= :fecha_corte
+              AND o.estado_obligacion NOT IN (
+                  'CANCELADA', 'PARCIALMENTE_CANCELADA', 'ANULADA', 'REEMPLAZADA'
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM aplicacion_financiera a
+                  WHERE a.id_obligacion_financiera = o.id_obligacion_financiera
+                    AND a.deleted_at IS NULL
+              )
+            ORDER BY o.periodo_desde ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_rg": id_relacion_generadora, "fecha_corte": fecha_corte}
+        ).mappings().all()
+        return [dict(r) for r in rows]
+
+    def marcar_obligaciones_reemplazadas(self, ids: list[int]) -> int:
+        # CLOCK_TIMESTAMP() devuelve el tiempo real de ejecución (no el inicio
+        # de transacción) para garantizar que deleted_at >= created_at.
+        stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = 'REEMPLAZADA',
+                deleted_at = CLOCK_TIMESTAMP(),
+                updated_at = CLOCK_TIMESTAMP()
+            WHERE id_obligacion_financiera = ANY(:ids)
+              AND estado_obligacion NOT IN ('CANCELADA', 'PARCIALMENTE_CANCELADA')
+            """
+        )
+        result = self.db.execute(stmt, {"ids": ids})
+        self.db.commit()
+        return result.rowcount or 0
+
     def marcar_obligaciones_vencidas(self, fecha_proceso: date) -> int:
         stmt = text(
             """

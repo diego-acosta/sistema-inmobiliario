@@ -41,6 +41,9 @@ from app.api.schemas.financiero import (
     ImputacionData,
     ImputacionResponse,
     InboxEventRequest,
+    RegenerarCronogramaData,
+    RegenerarCronogramaRequest,
+    RegenerarCronogramaResponse,
     MoraGenerarData,
     MoraGenerarRequest,
     MoraGenerarResponse,
@@ -112,8 +115,14 @@ from app.application.financiero.services.inbox_event_dispatcher import (
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
 )
+from app.application.financiero.services.regenerar_cronograma_locativo_service import (
+    RegenerarCronogramaLocativoService,
+)
 from app.infrastructure.persistence.repositories.financiero_repository import (
     FinancieroRepository,
+)
+from app.infrastructure.persistence.repositories.locativo_repository import (
+    LocativoRepository,
 )
 
 
@@ -968,3 +977,81 @@ def financiero_inbox(
         event_type=request.event_type,
         payload=request.payload,
     )
+
+
+@router.post(
+    "/api/v1/financiero/contratos-alquiler/{id_contrato_alquiler}/regenerar-cronograma",
+    response_model=RegenerarCronogramaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def regenerar_cronograma_locativo(
+    id_contrato_alquiler: int,
+    request: RegenerarCronogramaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> RegenerarCronogramaResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+
+    fin_repo = FinancieroRepository(db)
+    loc_repo = LocativoRepository(db)
+    service = RegenerarCronogramaLocativoService(
+        locativo_repository=loc_repo,
+        financiero_repository=fin_repo,
+    )
+
+    try:
+        result = service.execute(
+            id_contrato_alquiler=id_contrato_alquiler,
+            fecha_corte=request.fecha_corte,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_CONTRATO" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="El contrato de alquiler indicado no existe.",
+                ).model_dump(),
+            )
+        if "NOT_FOUND_RELACION_GENERADORA" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="No existe cronograma generado para este contrato.",
+                ).model_dump(),
+            )
+        if "SIN_LOCATARIO_PRINCIPAL" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="SIN_LOCATARIO_PRINCIPAL",
+                    error_message="El contrato no tiene locatario principal vigente.",
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo regenerar el cronograma.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return RegenerarCronogramaResponse(data=RegenerarCronogramaData(**result.data))

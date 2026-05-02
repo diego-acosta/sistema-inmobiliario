@@ -150,8 +150,74 @@ Alcance actual:
 
 - El cronograma locativo genera obligaciones en `EMITIDA`.
 - No se implementa mora en este servicio.
-- No se implementa regeneracion ni reemplazo de cronograma.
-- `PENDIENTE_AJUSTE` queda reservado para ajustes futuros del cronograma.
+- `PENDIENTE_AJUSTE` queda reservado para ajustes manuales futuros.
+
+---
+
+## Regeneración controlada de cronograma V1
+
+Permite reemplazar obligaciones futuras sin pagos y generar nuevas
+a partir de una `fecha_corte`, sin tocar obligaciones pagadas ni con
+aplicaciones financieras.
+
+```text
+POST /api/v1/financiero/contratos-alquiler/{id}/regenerar-cronograma
+Body: { "fecha_corte": "YYYY-MM-DD" }
+→ RegenerarCronogramaLocativoService
+→ get_obligaciones_reemplazables(id_rg, fecha_corte)
+→ marcar_obligaciones_reemplazadas(ids)       -- estado=REEMPLAZADA, soft-delete
+→ create_cronograma_obligaciones(payloads)    -- lógica idéntica a generación inicial
+```
+
+### Reglas de reemplazo
+
+- Solo se reemplazan obligaciones con `periodo_desde >= fecha_corte`.
+- No se tocan estados: `CANCELADA`, `PARCIALMENTE_CANCELADA`, `ANULADA`, `REEMPLAZADA`.
+- No se tocan obligaciones con al menos una `aplicacion_financiera` activa.
+- Las obligaciones reemplazadas quedan con `estado_obligacion = REEMPLAZADA`
+  y `deleted_at` seteado (soft-delete para liberar el índice único parcial).
+
+Estados **reemplazables** (deben cumplir además la condición de no tener pagos):
+
+- `EMITIDA`
+- `VENCIDA`
+- `PENDIENTE_AJUSTE`
+
+### Lógica de generación nueva
+
+- Idéntica a `HandleContratoAlquilerActivadoEventService.execute()`.
+- Aplica prorrateo, vencimiento real y obligado financiero.
+- Usa `ON CONFLICT DO NOTHING` sobre el índice único parcial para idempotencia.
+- Genera desde `max(fecha_corte, contrato.fecha_inicio)`.
+
+### Restricciones V1
+
+- No regeneración automática; requiere llamada explícita.
+- No modifica pagos ni movimientos financieros.
+- No borra físicamente obligaciones (solo soft-delete).
+- No cambia mora sobre obligaciones existentes.
+- No regenera si `fecha_corte > contrato.fecha_fin` (retorna vacío sin error).
+- Requiere `relacion_generadora` preexistente (cronograma debe haberse generado antes).
+
+### Idempotencia
+
+Una segunda llamada con la misma `fecha_corte`:
+- Reemplaza las obligaciones EMITIDA generadas en la primera llamada.
+- Crea nuevas con los mismos períodos.
+- Garantiza exactamente 1 obligación activa por período tras cada llamada.
+
+### Pendientes V1 — Regeneración
+
+- No se vinculan aún los campos `id_obligacion_reemplazada` e
+  `id_obligacion_reemplazante`; la cadena de reemplazo no es trazable desde
+  el modelo de datos, solo desde el estado `REEMPLAZADA` + `deleted_at`.
+- No hay regeneración automática por cambios en `condicion_economica_alquiler`;
+  requiere llamada explícita al endpoint.
+- No existe endpoint de consulta histórica de obligaciones reemplazadas
+  (accesibles solo via SQL sin filtro `deleted_at IS NULL`).
+- La lógica de generación reutiliza internamente `create_cronograma_obligaciones`
+  del flujo de activación; cualquier cambio en esa función afecta también la
+  regeneración (acoplamiento técnico documentado).
 
 ---
 
@@ -202,6 +268,11 @@ Alcance actual:
 - Incorporar conceptos locativos adicionales solo cuando exista definicion
   funcional correspondiente: expensas, servicios, impuestos o punitorios.
 - Definicion de ejecucion operativa del worker interno.
+- Vincular `id_obligacion_reemplazada` e `id_obligacion_reemplazante` en el
+  modelo de datos para trazabilidad explicita de cadena de reemplazo.
+- Endpoint de consulta historica de obligaciones reemplazadas.
+- Desacoplar la logica de generacion de obligaciones del evento de activacion
+  para eliminar el acoplamiento tecnico con `RegenerarCronogramaLocativoService`.
 
 ---
 
