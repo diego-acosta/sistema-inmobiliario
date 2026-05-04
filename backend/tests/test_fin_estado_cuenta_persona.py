@@ -92,7 +92,9 @@ def test_estado_cuenta_persona_separa_vencida_futura(client, db_session) -> None
         dia_vencimiento_canon=1,
     )
 
-    resp = client.get(_url(id_persona), headers=HEADERS)
+    resp = client.get(
+        _url(id_persona), headers=HEADERS, params={"fecha_corte": "2026-05-01"}
+    )
 
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -328,14 +330,18 @@ def test_estado_cuenta_persona_filtra_por_vencidas(client, db_session) -> None:
         dia_vencimiento_canon=1,
     )
 
-    resp = client.get(_url(id_persona), headers=HEADERS, params={"vencidas": True})
+    resp = client.get(
+        _url(id_persona),
+        headers=HEADERS,
+        params={"vencidas": True, "fecha_corte": "2026-05-01"},
+    )
 
     assert resp.status_code == 200
     data = resp.json()["data"]
     # Solo Abril tiene vencimiento < hoy
     assert len(data["obligaciones"]) == 1
     ob = data["obligaciones"][0]
-    assert ob["fecha_vencimiento"] < str(date.today())
+    assert ob["fecha_vencimiento"] < "2026-05-01"
 
 
 # ── tests: fecha_corte ────────────────────────────────────────────────────────
