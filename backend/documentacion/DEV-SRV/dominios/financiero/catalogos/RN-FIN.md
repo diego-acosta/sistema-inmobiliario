@@ -362,13 +362,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: El saldo operativo real debe poder existir a nivel `composicion_obligacion`; `saldo_componente` representa el saldo vivo de ese concepto dentro de la obligacion.
 - aplica_a: composicion_obligacion
 - origen_principal: MODELO-FINANCIERO-FIN
-- estado: CONCEPTUAL / PENDIENTE SQL; SQL vigente no posee `saldo_componente`.
+- estado: IMPLEMENTADA. La DB recalcula `saldo_componente` por triggers sobre `composicion_obligacion` y `aplicacion_financiera`.
 
 ### RN-FIN-058 — Saldo consolidado de obligacion
 - descripcion: `obligacion_financiera.saldo_pendiente` representa el saldo total consolidado y debe ser igual a la suma de `saldo_componente` de composiciones activas, salvo transicion tecnica documentada.
 - aplica_a: obligacion_financiera, composicion_obligacion
 - origen_principal: MODELO-FINANCIERO-FIN
-- estado: CONCEPTUAL / PENDIENTE SQL para saldo por componente.
+- estado: IMPLEMENTADA. `importe_total` y `saldo_pendiente` derivan de composiciones activas y se refrescan por trigger de DB.
 
 ### RN-FIN-059 — Imputacion preferente por componente
 - descripcion: La imputacion financiera debe aplicarse contra componentes cuando exista desglose economico; si se registra a nivel obligacion, debe distribuirse hacia componentes por politica documentada.
@@ -490,7 +490,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - observaciones: La base de datos actualiza saldos por triggers; el backend actualiza el estado leyendo el saldo resultante.
 
 ### RN-FIN-074 - Backend no recalcula saldos como fuente primaria
-- descripcion: El saldo de obligacion y composicion se actualiza en la base de datos; los servicios backend no deben duplicar ese calculo como verdad primaria.
+- descripcion: El saldo de obligacion y composicion se actualiza en la base de datos; los servicios backend no deben duplicar ese calculo como verdad primaria. La obligacion deriva `importe_total` y `saldo_pendiente` de sus composiciones activas.
 - aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera
 - origen_principal: MODELO-FINANCIERO-FIN
 - estado: IMPLEMENTADA.

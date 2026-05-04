@@ -134,7 +134,14 @@ No implementado:
 
 Regla real implementada:
 
-- la base de datos actualiza `saldo_pendiente` y `saldo_componente` mediante triggers sobre `aplicacion_financiera`.
+- la base de datos actualiza `saldo_componente` mediante triggers sobre
+  `composicion_obligacion` y `aplicacion_financiera`.
+- `obligacion_financiera.importe_total` deriva de la suma de
+  `importe_componente` de sus composiciones activas.
+- `obligacion_financiera.saldo_pendiente` deriva de la suma de
+  `saldo_componente` de sus composiciones activas.
+- `obligacion_financiera.importe_cancelado_acumulado` deriva de las
+  aplicaciones financieras registradas contra la obligacion.
 - el backend no recalcula saldos como fuente primaria.
 - luego de registrar aplicaciones, el backend lee el saldo resultante y actualiza el estado de la obligacion.
 
