@@ -10,11 +10,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 
 from app.application.common.commands import CommandContext
-from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
-    HandleContratoAlquilerActivadoEventService,
+from app.application.financiero.services.cronograma_locativo_builder import (
     calcular_fecha_vencimiento_canon,
     generate_monthly_periods,
     get_condicion_vigente_para_periodo,
+)
+from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    HandleContratoAlquilerActivadoEventService,
 )
 from app.infrastructure.persistence.repositories.financiero_repository import (
     FinancieroRepository,
@@ -700,7 +702,7 @@ def test_cronograma_sin_dia_vencimiento_usa_periodo_desde(client, db_session) ->
 
 def test_get_segmentos_sin_cambio_devuelve_un_segmento() -> None:
     """Sin cambio de condición dentro del período → un solo segmento."""
-    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    from app.application.financiero.services.cronograma_locativo_builder import (
         get_segmentos_para_periodo,
     )
     condiciones = [{"fecha_desde": date(2026, 5, 1), "fecha_hasta": None, "monto_base": 10000}]
@@ -712,7 +714,7 @@ def test_get_segmentos_sin_cambio_devuelve_un_segmento() -> None:
 
 def test_get_segmentos_cambio_a_mitad_genera_dos() -> None:
     """Condición B empieza el día 16 → dos segmentos (1-15) y (16-31)."""
-    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    from app.application.financiero.services.cronograma_locativo_builder import (
         get_segmentos_para_periodo,
     )
     condiciones = [
@@ -727,7 +729,7 @@ def test_get_segmentos_cambio_a_mitad_genera_dos() -> None:
 
 def test_calcular_importes_un_segmento_devuelve_monto_completo() -> None:
     """Con un solo segmento → monto_base completo, sin prorrateo."""
-    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    from app.application.financiero.services.cronograma_locativo_builder import (
         calcular_importes_prorateados,
     )
     condicion = {"fecha_desde": date(2026, 5, 1), "fecha_hasta": None, "monto_base": 10000}
@@ -742,7 +744,7 @@ def test_calcular_importes_dos_segmentos_mismo_monto_suman_total() -> None:
     Dos segmentos con igual monto_base, mismo mes (31 días).
     Residuo asegura suma exacta = monto_base.
     """
-    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    from app.application.financiero.services.cronograma_locativo_builder import (
         calcular_importes_prorateados,
     )
     condicion = {"monto_base": 10000}
@@ -759,7 +761,7 @@ def test_calcular_importes_dos_segmentos_mismo_monto_suman_total() -> None:
 
 def test_calcular_importes_tres_segmentos_mismo_monto_suman_total() -> None:
     """Tres segmentos con igual monto_base → residuo al último, suma exacta."""
-    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    from app.application.financiero.services.cronograma_locativo_builder import (
         calcular_importes_prorateados,
     )
     condicion = {"monto_base": 9999}  # impar para forzar residuo
@@ -776,7 +778,7 @@ def test_calcular_importes_tres_segmentos_mismo_monto_suman_total() -> None:
 
 def test_calcular_importes_distintos_montos_proporcionales() -> None:
     """Con diferentes monto_base → cada segmento proporcional a su propio monto."""
-    from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+    from app.application.financiero.services.cronograma_locativo_builder import (
         calcular_importes_prorateados,
     )
     cond_a = {"monto_base": 10000}

@@ -5,7 +5,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from app.application.common.results import AppResult
-from app.application.financiero.services.handle_contrato_alquiler_activado_event_service import (
+from app.application.financiero.services.cronograma_locativo_builder import (
     PeriodoCronogramaPayload,
     ROL_OBLIGADO_LOCATARIO,
     calcular_fecha_vencimiento_canon,

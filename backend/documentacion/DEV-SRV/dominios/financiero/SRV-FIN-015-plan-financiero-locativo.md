@@ -24,6 +24,9 @@ El dominio locativo emite el evento. El dominio financiero materializa la
 relacion generadora y las obligaciones mensuales del canon locativo cuando
 existe al menos una condicion economica aplicable.
 
+Nota de implementacion: activacion y regeneracion comparten el generador comun
+de cronograma locativo, pero se mantienen como servicios distintos.
+
 ---
 
 ## Regla de activacion
