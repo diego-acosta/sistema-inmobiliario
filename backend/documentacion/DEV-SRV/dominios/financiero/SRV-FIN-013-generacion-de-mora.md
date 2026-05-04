@@ -126,6 +126,30 @@ Reglas:
 Los parámetros `tasa_diaria` y `dias_gracia` se resuelven mediante el
 `resolver_mora_params` (ver sección "Resolver de parámetros de mora").
 
+## Regla funcional para punitorio persistido por pago
+
+Estado: `PENDIENTE / NO IMPLEMENTADO`.
+
+Cuando se implemente liquidacion persistida de mora al registrar pagos, la mora
+liquidada debe representarse como `PUNITORIO`. En V1 no debe usarse un
+componente `INTERES_MORA` separado para este caso.
+
+Reglas de calculo:
+
+- si `fecha_pago <= fecha_vencimiento + dias_gracia`, `punitorio = 0`
+- si `fecha_pago > fecha_vencimiento + dias_gracia`, el punitorio se calcula
+  desde `fecha_vencimiento`, no desde `fecha_vencimiento + dias_gracia`
+- pagos realizados antes o en `fecha_vencimiento` no cortan el tramo de
+  punitorio
+- pagos posteriores al vencimiento si cortan el tramo: el siguiente punitorio
+  se calcula desde la ultima `fecha_pago` posterior al vencimiento
+- la base de calculo es el saldo morable pendiente; no incluye punitorio
+  pendiente ni otros accesorios
+- el punitorio liquidado debe persistirse como `composicion_obligacion`
+  `PUNITORIO` dentro de la obligacion base
+- si el pago no cubre el punitorio completo, queda `saldo_componente`
+  pendiente en la composicion `PUNITORIO`
+
 ## Resolver de parámetros de mora
 
 Módulo: `app/domain/financiero/resolver_mora.py`

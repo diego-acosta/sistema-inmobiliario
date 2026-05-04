@@ -102,6 +102,31 @@ Ejemplo: saldo=10000, mora=500, total_a_cubrir=10500. Pagando 10500:
 
 ---
 
+## Regla funcional pendiente: punitorio por pago
+
+Estado: `PENDIENTE / NO IMPLEMENTADO`.
+
+Cuando el pago liquide mora persistida, el cargo debe registrarse como
+`PUNITORIO` dentro de la obligacion base. No se debe crear un componente
+`INTERES_MORA` separado en V1.
+
+Reglas:
+
+- si `fecha_pago <= fecha_vencimiento + dias_gracia`, no se liquida punitorio
+- si `fecha_pago > fecha_vencimiento + dias_gracia`, el calculo corre desde
+  `fecha_vencimiento`
+- pagos anteriores o iguales a `fecha_vencimiento` no interrumpen el tramo
+  moratorio
+- pagos posteriores a `fecha_vencimiento` si interrumpen el tramo; el siguiente
+  calculo usa como inicio la ultima fecha de pago posterior al vencimiento
+- la base es el saldo morable pendiente de la obligacion, sin punitorios
+  pendientes ni accesorios
+- el punitorio liquidado se persiste como `composicion_obligacion` `PUNITORIO`
+  de la obligacion base
+- si el pago no cubre el total liquidado, queda `saldo_componente` pendiente
+
+---
+
 ## Diferencias vs POST /api/v1/financiero/imputaciones
 
 | | `imputaciones` | `pagos` |

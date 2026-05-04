@@ -678,6 +678,26 @@ Esto implica:
 - La mora se calcula dinámicamente en consultas (estado de cuenta, deuda).
 - El único efecto persistido es el cambio de estado EMITIDA → VENCIDA.
 
+## Punitorio por pago - Regla funcional pendiente
+
+Estado: `PENDIENTE / NO IMPLEMENTADO`.
+
+Cuando se implemente mora persistida al registrar pagos, el cargo por mora se
+modela como `PUNITORIO` dentro de la obligacion base. No se usa `INTERES_MORA`
+como componente separado en V1 para esta liquidacion.
+
+Reglas funcionales:
+
+- con `fecha_pago <= fecha_vencimiento + dias_gracia`, el punitorio es cero
+- con `fecha_pago > fecha_vencimiento + dias_gracia`, se calcula desde
+  `fecha_vencimiento`
+- pagos antes o en `fecha_vencimiento` no cortan el tramo de punitorio
+- pagos posteriores al vencimiento cortan el tramo; el siguiente calculo parte
+  desde la ultima fecha de pago posterior al vencimiento
+- la base es saldo morable pendiente, sin punitorio pendiente ni accesorios
+- el importe liquidado persiste como `composicion_obligacion` `PUNITORIO`
+- si no se paga completo, queda `saldo_componente` pendiente
+
 ## Evolución prevista
 
 En versiones futuras (Mora V2), se evaluará:
