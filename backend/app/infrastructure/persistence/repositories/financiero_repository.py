@@ -1720,6 +1720,7 @@ class FinancieroRepository:
         saldo = self.db.execute(
             stmt, {"id_obligacion_financiera": id_obligacion_financiera}
         ).scalar_one()
+        return Decimal(str(saldo))
 
     def list_pagos_agrupados_persona(self, *, id_persona: int) -> list[dict[str, Any]]:
         stmt = text(
@@ -1804,7 +1805,6 @@ class FinancieroRepository:
             "aplicaciones": [dict(r) for r in aplicaciones],
             "obligaciones_afectadas": sorted({r["id_obligacion_financiera"] for r in aplicaciones}),
         }
-        return Decimal(str(saldo))
 
     def liquidar_punitorio_obligacion(
         self,
