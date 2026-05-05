@@ -228,7 +228,7 @@ Una segunda llamada con la misma `fecha_corte`:
 - Crea nuevas con los mismos períodos.
 - Garantiza exactamente 1 obligación activa por período tras cada llamada.
 
-### Pendientes V1 — Regeneración
+### Limitaciones V1 — Regeneración
 
 - No se vinculan reemplazos directos 1 a N cuando la regeneracion divide o
   recorta periodos; quedan trazables por estado `REEMPLAZADA` + `deleted_at`.

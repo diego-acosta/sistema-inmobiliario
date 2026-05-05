@@ -116,8 +116,9 @@ válida puede registrar un nuevo pago.
 
 Si corresponde mora liquidable al momento del pago, se crea o incrementa una
 `composicion_obligacion` `PUNITORIO` dentro de la obligacion base antes de
-imputar. No se crea nueva `obligacion_financiera` ni composicion
-`INTERES_MORA` para esta liquidacion V1.
+imputar. `PUNITORIO` es la decision arquitectonica V1 para persistir el cargo
+por mora en esta implementacion. No se crea nueva `obligacion_financiera` ni
+composicion `INTERES_MORA` separada.
 
 La base morable se obtiene desde composiciones activas cuyo
 `concepto_financiero.aplica_punitorio = true`. `PUNITORIO` y accesorios no
@@ -129,9 +130,9 @@ marcados no integran esa base.
 
 Estado: `IMPLEMENTADO`.
 
-Cuando el pago liquide mora persistida, el cargo debe registrarse como
-`PUNITORIO` dentro de la obligacion base. No se debe crear un componente
-`INTERES_MORA` separado en V1.
+Cuando el pago liquida mora, el cargo se registra como `PUNITORIO` dentro de la
+obligacion base. Esta es la forma persistente implementada en V1; no se usa
+`INTERES_MORA` como componente separado.
 
 Reglas:
 
@@ -165,7 +166,8 @@ Reglas:
 
 ## Limitaciones V1
 
-- mora no se persiste como `INTERES_MORA`
+- el cargo por mora se persiste como `PUNITORIO`; `INTERES_MORA` no se usa como
+  componente separado en V1
 - no soporta distribución proporcional entre co-obligados
 - un único `movimiento_financiero` por obligación (no uno global por pago)
 
