@@ -54,7 +54,9 @@ def _get_todas_obligaciones(db_session, id_relacion_generadora: int) -> list:
                 periodo_hasta,
                 importe_total,
                 estado_obligacion,
-                deleted_at
+                deleted_at,
+                id_obligacion_reemplazada,
+                id_obligacion_reemplazante
             FROM obligacion_financiera
             WHERE id_relacion_generadora = :id
             ORDER BY periodo_desde ASC, id_obligacion_financiera ASC
@@ -63,6 +65,27 @@ def _get_todas_obligaciones(db_session, id_relacion_generadora: int) -> list:
         {"id": id_relacion_generadora},
     ).mappings().all()
     return [dict(r) for r in rows]
+
+
+def _get_obligacion(db_session, id_obligacion: int) -> dict:
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                periodo_desde,
+                periodo_hasta,
+                estado_obligacion,
+                deleted_at,
+                id_obligacion_reemplazada,
+                id_obligacion_reemplazante
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
+            """
+        ),
+        {"id": id_obligacion},
+    ).mappings().one()
+    return dict(row)
 
 
 def _registrar_aplicacion_directa(db_session, id_obligacion: int) -> None:
@@ -183,6 +206,13 @@ def test_regenerar_reemplaza_obligaciones_futuras_sin_pagos(client, db_session) 
     assert activas[1]["periodo_desde"] == date(2026, 6, 1)
     assert float(activas[2]["importe_total"]) == 70000.00
     assert activas[2]["periodo_desde"] == date(2026, 7, 1)
+
+    vieja = _get_obligacion(db_session, obligaciones_iniciales[1]["id_obligacion_financiera"])
+    nueva = _get_obligacion(db_session, activas[1]["id_obligacion_financiera"])
+    assert vieja["estado_obligacion"] == "REEMPLAZADA"
+    assert vieja["deleted_at"] is not None
+    assert vieja["id_obligacion_reemplazante"] == nueva["id_obligacion_financiera"]
+    assert nueva["id_obligacion_reemplazada"] == vieja["id_obligacion_financiera"]
 
 
 def test_regenerar_no_toca_obligacion_cancelada(client, db_session) -> None:
@@ -471,6 +501,12 @@ def test_regenerar_idempotente_no_duplica_activas(client, db_session) -> None:
     periodos_activos = [ob["periodo_desde"] for ob in activas]
     assert len(periodos_activos) == len(set(periodos_activos))
 
+    for activa in activas[1:]:
+        nueva = _get_obligacion(db_session, activa["id_obligacion_financiera"])
+        vieja = _get_obligacion(db_session, nueva["id_obligacion_reemplazada"])
+        assert vieja["estado_obligacion"] == "REEMPLAZADA"
+        assert vieja["id_obligacion_reemplazante"] == nueva["id_obligacion_financiera"]
+
 
 def test_regenerar_falla_si_no_existe_contrato(db_session) -> None:
     result = _regenerar_via_service(db_session, 999999, date(2026, 6, 1))
@@ -621,3 +657,13 @@ def test_regenerar_desde_mitad_de_mes_prorratea_periodo_recortado(client, db_ses
     assert junio["periodo_hasta"] == date(2026, 6, 30)
     assert float(junio["importe_total"]) == pytest.approx(30000 * 16 / 30, abs=0.01)
     assert float(julio["importe_total"]) == pytest.approx(30000.00)
+
+    junio_vieja = _get_obligacion(db_session, iniciales[1]["id_obligacion_financiera"])
+    julio_vieja = _get_obligacion(db_session, iniciales[2]["id_obligacion_financiera"])
+    junio_nueva = _get_obligacion(db_session, junio["id_obligacion_financiera"])
+    julio_nueva = _get_obligacion(db_session, julio["id_obligacion_financiera"])
+    assert junio_vieja["estado_obligacion"] == "REEMPLAZADA"
+    assert junio_vieja["id_obligacion_reemplazante"] is None
+    assert junio_nueva["id_obligacion_reemplazada"] is None
+    assert julio_vieja["id_obligacion_reemplazante"] == julio_nueva["id_obligacion_financiera"]
+    assert julio_nueva["id_obligacion_reemplazada"] == julio_vieja["id_obligacion_financiera"]

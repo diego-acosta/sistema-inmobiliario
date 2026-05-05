@@ -44,6 +44,14 @@ class FinancieroRepository(Protocol):
         self, periodos: list[PeriodoCronogramaPayload]
     ) -> int: ...
 
+    def get_obligaciones_activas_desde(
+        self, id_relacion_generadora: int, fecha_corte: date
+    ) -> list[dict[str, Any]]: ...
+
+    def vincular_obligaciones_reemplazo_1_a_1(
+        self, pares: list[tuple[int, int]]
+    ) -> int: ...
+
 
 class RegenerarCronogramaLocativoService:
     def __init__(
@@ -168,8 +176,44 @@ class RegenerarCronogramaLocativoService:
         ]
 
         generadas = self.financiero_repo.create_cronograma_obligaciones(payloads)
+        self._vincular_reemplazos_1_a_1(id_rg, fecha_corte, reemplazables)
         return AppResult.ok({
             "reemplazadas": reemplazadas,
             "generadas": generadas,
             "omitidas": omitidas,
         })
+
+    def _vincular_reemplazos_1_a_1(
+        self,
+        id_relacion_generadora: int,
+        fecha_corte: date,
+        reemplazables: list[dict[str, Any]],
+    ) -> None:
+        if not reemplazables:
+            return
+
+        nuevas = self.financiero_repo.get_obligaciones_activas_desde(
+            id_relacion_generadora, fecha_corte
+        )
+
+        viejas_por_periodo: dict[tuple[date, date], list[dict[str, Any]]] = {}
+        for ob in reemplazables:
+            key = (ob["periodo_desde"], ob["periodo_hasta"])
+            viejas_por_periodo.setdefault(key, []).append(ob)
+
+        nuevas_por_periodo: dict[tuple[date, date], list[dict[str, Any]]] = {}
+        for ob in nuevas:
+            key = (ob["periodo_desde"], ob["periodo_hasta"])
+            nuevas_por_periodo.setdefault(key, []).append(ob)
+
+        pares: list[tuple[int, int]] = []
+        for key, viejas in viejas_por_periodo.items():
+            nuevas_exactas = nuevas_por_periodo.get(key, [])
+            if len(viejas) == 1 and len(nuevas_exactas) == 1:
+                pares.append((
+                    viejas[0]["id_obligacion_financiera"],
+                    nuevas_exactas[0]["id_obligacion_financiera"],
+                ))
+
+        if pares:
+            self.financiero_repo.vincular_obligaciones_reemplazo_1_a_1(pares)

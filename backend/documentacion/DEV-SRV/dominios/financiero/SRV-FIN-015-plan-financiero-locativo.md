@@ -181,6 +181,7 @@ Body: { "fecha_corte": "YYYY-MM-DD" }
 → get_obligaciones_reemplazables(id_rg, fecha_corte)
 → marcar_obligaciones_reemplazadas(ids)       -- estado=REEMPLAZADA, soft-delete
 → create_cronograma_obligaciones(payloads)    -- lógica idéntica a generación inicial
+→ vincular reemplazos 1 a 1 por periodo exacto cuando corresponda
 ```
 
 ### Reglas de reemplazo
@@ -189,6 +190,12 @@ Body: { "fecha_corte": "YYYY-MM-DD" }
   (`periodo_hasta >= fecha_corte`).
 - No se tocan estados: `CANCELADA`, `PARCIALMENTE_CANCELADA`, `ANULADA`, `REEMPLAZADA`.
 - No se tocan obligaciones con al menos una `aplicacion_financiera` activa.
+- Si una obligacion reemplazada y una obligacion nueva coinciden exactamente en
+  `periodo_desde` y `periodo_hasta`, se completa el vinculo directo:
+  `vieja.id_obligacion_reemplazante = nueva.id_obligacion_financiera` y
+  `nueva.id_obligacion_reemplazada = vieja.id_obligacion_financiera`.
+- Si la regeneracion divide o recorta el periodo, no se fuerza vinculo directo
+  1 a N.
 - Las obligaciones reemplazadas quedan con `estado_obligacion = REEMPLAZADA`
   y `deleted_at` seteado (soft-delete para liberar el índice único parcial).
 
@@ -223,9 +230,8 @@ Una segunda llamada con la misma `fecha_corte`:
 
 ### Pendientes V1 — Regeneración
 
-- No se vinculan aún los campos `id_obligacion_reemplazada` e
-  `id_obligacion_reemplazante`; la cadena de reemplazo no es trazable desde
-  el modelo de datos, solo desde el estado `REEMPLAZADA` + `deleted_at`.
+- No se vinculan reemplazos directos 1 a N cuando la regeneracion divide o
+  recorta periodos; quedan trazables por estado `REEMPLAZADA` + `deleted_at`.
 - No hay regeneración automática por cambios en `condicion_economica_alquiler`;
   requiere llamada explícita al endpoint.
 - No existe endpoint de consulta histórica de obligaciones reemplazadas
@@ -283,8 +289,6 @@ Una segunda llamada con la misma `fecha_corte`:
 - Incorporar conceptos locativos adicionales solo cuando exista definicion
   funcional correspondiente: expensas, servicios, impuestos o punitorios.
 - Definicion de ejecucion operativa del worker interno.
-- Vincular `id_obligacion_reemplazada` e `id_obligacion_reemplazante` en el
-  modelo de datos para trazabilidad explicita de cadena de reemplazo.
 - Endpoint de consulta historica de obligaciones reemplazadas.
 - Desacoplar la logica de generacion de obligaciones del evento de activacion
   para eliminar el acoplamiento tecnico con `RegenerarCronogramaLocativoService`.

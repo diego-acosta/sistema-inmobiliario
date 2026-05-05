@@ -349,12 +349,12 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADO
 - observaciones: El endpoint no infiere ni calcula la fecha de corte; es responsabilidad del caller proveerla. Aplica prorrateo, vencimiento real, obligado financiero e idempotencia por indice unico parcial.
 
-### RN-FIN-080 — Pendientes de trazabilidad de reemplazo
-- descripcion: Los campos `id_obligacion_reemplazada` e `id_obligacion_reemplazante` existen en el esquema SQL pero no se vinculan aun en la regeneracion V1; la cadena de reemplazo solo es trazable por estado y `deleted_at`.
+### RN-FIN-080 — Trazabilidad directa de reemplazo 1 a 1
+- descripcion: Cuando una regeneracion reemplaza una obligacion y genera una nueva obligacion con el mismo `periodo_desde` y `periodo_hasta`, debe completarse el vinculo directo `vieja.id_obligacion_reemplazante` y `nueva.id_obligacion_reemplazada`. Si la regeneracion divide o recorta el periodo, no se fuerza vinculo directo 1 a N.
 - aplica_a: obligacion_financiera, regeneracion_cronograma
 - origen_principal: DEV-SRV
-- estado: PENDIENTE
-- observaciones: Pendiente tambien: endpoint de consulta historica de reemplazos y desacoplamiento tecnico de la logica de generacion entre activacion y regeneracion.
+- estado: IMPLEMENTADO
+- observaciones: Pendiente: endpoint de consulta historica de reemplazos y desacoplamiento tecnico de la logica de generacion entre activacion y regeneracion.
 
 ---
 

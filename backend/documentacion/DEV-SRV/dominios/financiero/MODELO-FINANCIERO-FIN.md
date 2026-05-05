@@ -507,6 +507,11 @@ una `fecha_corte`, el ciclo de vida de las obligaciones sigue este patron:
 - Aplican la misma logica: prorrateo, vencimiento real, obligado financiero.
 - Reutilizan la `relacion_generadora` existente del contrato.
 - La idempotencia se garantiza por `ON CONFLICT DO NOTHING` sobre el indice unico parcial.
+- Cuando una obligacion vieja y una nueva tienen exactamente el mismo
+  `periodo_desde` y `periodo_hasta`, se vinculan con
+  `id_obligacion_reemplazante` / `id_obligacion_reemplazada`.
+- Si la regeneracion recorta o divide un periodo, no se fuerza vinculo directo
+  1 a N.
 
 ### Estados que protegen una obligacion del reemplazo
 
@@ -528,10 +533,8 @@ Estados reemplazables (sin pagos): `EMITIDA`, `VENCIDA`, `PENDIENTE_AJUSTE`.
 
 ### Pendientes de implementacion
 
-- Los campos `id_obligacion_reemplazada` e `id_obligacion_reemplazante` existen
-  en el esquema SQL de `obligacion_financiera` pero no se vinculan aun.
-  El vinculo bidireccional queda pendiente para una version futura que requiera
-  trazabilidad explicita de la cadena de reemplazo.
+- No existe vinculo bidireccional directo para reemplazos 1 a N cuando la
+  regeneracion divide o recorta periodos.
 - No existe endpoint de consulta historica de reemplazos (solo acceso directo via SQL).
 - No hay regeneracion automatica por cambios de condiciones economicas; requiere
   llamada explicita al endpoint.

@@ -1133,6 +1133,68 @@ class FinancieroRepository:
         self.db.commit()
         return result.rowcount or 0
 
+    def get_obligaciones_activas_desde(
+        self, id_relacion_generadora: int, fecha_corte: date
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                o.id_obligacion_financiera,
+                o.periodo_desde,
+                o.periodo_hasta,
+                o.estado_obligacion
+            FROM obligacion_financiera o
+            WHERE o.id_relacion_generadora = :id_rg
+              AND o.deleted_at IS NULL
+              AND o.periodo_desde >= :fecha_corte
+            ORDER BY o.periodo_desde ASC, o.id_obligacion_financiera ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_rg": id_relacion_generadora, "fecha_corte": fecha_corte}
+        ).mappings().all()
+        return [dict(r) for r in rows]
+
+    def vincular_obligaciones_reemplazo_1_a_1(
+        self, pares: list[tuple[int, int]]
+    ) -> int:
+        if not pares:
+            return 0
+
+        stmt_vieja = text(
+            """
+            UPDATE obligacion_financiera vieja
+            SET id_obligacion_reemplazante = :id_nueva,
+                updated_at = CLOCK_TIMESTAMP()
+            WHERE vieja.id_obligacion_financiera = :id_vieja
+              AND vieja.estado_obligacion = 'REEMPLAZADA'
+              AND vieja.deleted_at IS NOT NULL
+            """
+        )
+        stmt_nueva = text(
+            """
+            UPDATE obligacion_financiera nueva
+            SET id_obligacion_reemplazada = :id_vieja,
+                updated_at = CLOCK_TIMESTAMP()
+            WHERE nueva.id_obligacion_financiera = :id_nueva
+              AND nueva.estado_obligacion = 'EMITIDA'
+              AND nueva.deleted_at IS NULL
+            """
+        )
+        try:
+            vinculadas = 0
+            for id_vieja, id_nueva in pares:
+                params = {"id_vieja": id_vieja, "id_nueva": id_nueva}
+                result_vieja = self.db.execute(stmt_vieja, params)
+                result_nueva = self.db.execute(stmt_nueva, params)
+                if (result_vieja.rowcount or 0) == 1 and (result_nueva.rowcount or 0) == 1:
+                    vinculadas += 1
+            self.db.commit()
+            return vinculadas
+        except Exception:
+            self.db.rollback()
+            raise
+
     def marcar_obligaciones_vencidas(self, fecha_proceso: date) -> int:
         stmt = text(
             """
