@@ -570,7 +570,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
 
 ### RN-FIN-086 - Bloqueo de reversion con operaciones posteriores
-- descripcion: Si existen movimientos `PAGO`, aplicaciones activas o `liquidacion_punitorio` `ACTIVA` posteriores sobre las obligaciones o composiciones afectadas por el grupo, la reversion debe bloquearse con `PAGO_TIENE_OPERACIONES_POSTERIORES`. La repeticion sobre un grupo ya revertido conserva comportamiento idempotente como `YA_ANULADO`.
+- descripcion: Si existen movimientos `PAGO`, aplicaciones activas, composiciones activas creadas/modificadas o `liquidacion_punitorio` `ACTIVA` posteriores sobre las obligaciones o composiciones afectadas por el grupo, la reversion debe bloquearse con `PAGO_TIENE_OPERACIONES_POSTERIORES`. El bloqueo incluye operaciones posteriores sin `codigo_pago_grupo`, como `BONIFICACION_INDEXACION`. La repeticion sobre un grupo ya revertido conserva comportamiento idempotente como `YA_ANULADO`.
 - aplica_a: movimiento_financiero, aplicacion_financiera, liquidacion_punitorio, composicion_obligacion
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.

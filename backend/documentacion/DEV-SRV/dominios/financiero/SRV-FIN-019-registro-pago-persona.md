@@ -279,8 +279,11 @@ Restriccion V1:
 
 - solo se permite revertir pagos sin operaciones posteriores activas sobre las
   obligaciones o composiciones afectadas por el grupo
-- se bloquea la reversion si existen movimientos `PAGO`, aplicaciones activas o
-  `liquidacion_punitorio` `ACTIVA` posteriores al pago agrupado
+- se bloquea la reversion si existen movimientos `PAGO`, aplicaciones activas,
+  composiciones activas creadas/modificadas o `liquidacion_punitorio` `ACTIVA`
+  posteriores al pago agrupado
+- el bloqueo incluye operaciones posteriores sin `codigo_pago_grupo`, por
+  ejemplo `BONIFICACION_INDEXACION`
 - el bloqueo devuelve `PAGO_TIENE_OPERACIONES_POSTERIORES` con HTTP 409
 - V1 no recomputa historia de punitorio ni recalcula tramos moratorios
 - si el pago ya fue revertido, la repeticion de la reversion conserva el

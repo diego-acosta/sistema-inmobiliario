@@ -2293,7 +2293,7 @@ class FinancieroRepository:
         contexto_stmt = text(
             """
             WITH grupo_mov AS (
-                SELECT id_movimiento_financiero, fecha_movimiento
+                SELECT id_movimiento_financiero, fecha_movimiento, created_at
                 FROM movimiento_financiero
                 WHERE codigo_pago_grupo = :codigo_pago_grupo
                   AND tipo_movimiento = 'PAGO'
@@ -2311,6 +2311,7 @@ class FinancieroRepository:
             SELECT
                 MAX(gm.fecha_movimiento) AS fecha_grupo,
                 MAX(gm.id_movimiento_financiero) AS max_movimiento_grupo,
+                MAX(gm.created_at) AS created_at_grupo,
                 COALESCE(MAX(lp.id_liquidacion_punitorio), 0) AS max_liquidacion_grupo,
                 ARRAY_AGG(DISTINCT ga.id_obligacion_financiera)
                     FILTER (WHERE ga.id_obligacion_financiera IS NOT NULL) AS obligaciones,
@@ -2348,6 +2349,7 @@ class FinancieroRepository:
             "codigo_pago_grupo": codigo_pago_grupo,
             "fecha_grupo": contexto["fecha_grupo"],
             "max_movimiento_grupo": contexto["max_movimiento_grupo"],
+            "created_at_grupo": contexto["created_at_grupo"],
             "max_liquidacion_grupo": contexto["max_liquidacion_grupo"],
             "obligaciones": obligaciones,
             "composiciones": composiciones,
@@ -2362,7 +2364,7 @@ class FinancieroRepository:
             WHERE m.tipo_movimiento = 'PAGO'
               AND m.estado_movimiento <> 'ANULADO'
               AND m.deleted_at IS NULL
-              AND m.codigo_pago_grupo <> :codigo_pago_grupo
+              AND m.codigo_pago_grupo IS DISTINCT FROM :codigo_pago_grupo
               AND a.id_obligacion_financiera IN :obligaciones
               AND (
                     m.fecha_movimiento > :fecha_grupo
@@ -2382,7 +2384,7 @@ class FinancieroRepository:
             WHERE a.deleted_at IS NULL
               AND m.deleted_at IS NULL
               AND m.estado_movimiento <> 'ANULADO'
-              AND m.codigo_pago_grupo <> :codigo_pago_grupo
+              AND m.codigo_pago_grupo IS DISTINCT FROM :codigo_pago_grupo
               AND a.id_obligacion_financiera IN :obligaciones
               AND (
                     a.id_composicion_obligacion IN :composiciones
@@ -2406,7 +2408,7 @@ class FinancieroRepository:
             FROM liquidacion_punitorio lp
             WHERE lp.estado_liquidacion = 'ACTIVA'
               AND lp.deleted_at IS NULL
-              AND lp.codigo_pago_grupo <> :codigo_pago_grupo
+              AND lp.codigo_pago_grupo IS DISTINCT FROM :codigo_pago_grupo
               AND lp.id_obligacion_financiera IN :obligaciones
               AND (
                     lp.id_composicion_obligacion IN :composiciones
@@ -2424,17 +2426,44 @@ class FinancieroRepository:
             bindparam("obligaciones", expanding=True),
             bindparam("composiciones", expanding=True),
         )
+        composiciones_stmt = text(
+            """
+            SELECT COUNT(DISTINCT co.id_composicion_obligacion)
+            FROM composicion_obligacion co
+            WHERE co.deleted_at IS NULL
+              AND co.estado_composicion_obligacion = 'ACTIVA'
+              AND co.id_obligacion_financiera IN :obligaciones
+              AND co.id_composicion_obligacion NOT IN :composiciones
+              AND (
+                    co.created_at > :created_at_grupo
+                    OR co.updated_at > :created_at_grupo
+                  )
+            """
+        ).bindparams(
+            bindparam("obligaciones", expanding=True),
+            bindparam("composiciones", expanding=True),
+        )
 
         movimientos = self.db.execute(movimientos_stmt, params).scalar_one()
         aplicaciones = self.db.execute(aplicaciones_stmt, params).scalar_one()
         liquidaciones = self.db.execute(liquidaciones_stmt, params).scalar_one()
+        composiciones_posteriores = self.db.execute(
+            composiciones_stmt, params
+        ).scalar_one()
         return {
             "tiene_operaciones_posteriores": any(
-                count > 0 for count in [movimientos, aplicaciones, liquidaciones]
+                count > 0
+                for count in [
+                    movimientos,
+                    aplicaciones,
+                    liquidaciones,
+                    composiciones_posteriores,
+                ]
             ),
             "movimientos_posteriores": movimientos,
             "aplicaciones_posteriores": aplicaciones,
             "liquidaciones_punitorio_posteriores": liquidaciones,
+            "composiciones_posteriores": composiciones_posteriores,
         }
 
     def _json_observaciones_reversion(self, observaciones: Any, *, motivo: str) -> str:

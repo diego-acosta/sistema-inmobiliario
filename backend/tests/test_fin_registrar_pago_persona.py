@@ -1986,6 +1986,70 @@ def test_revertir_pago_anterior_con_pago_posterior_devuelve_409(client, db_sessi
     ) == 1
 
 
+def test_revertir_pago_anterior_con_bonificacion_indexacion_posterior_sin_grupo_devuelve_409(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-BONIF-POST-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=3000.00, fecha_pago="2026-11-05")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    bonif = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=1000.00,
+        fecha_bonificacion="2026-11-06",
+    )
+    assert bonif.status_code == 201, bonif.text
+
+    resp = _revertir(client, pago["codigo_pago_grupo"])
+
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "PAGO_TIENE_OPERACIONES_POSTERIORES"
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(6000.00)
+    assert _count_aplicaciones_activas_por_codigo(
+        db_session, pago["codigo_pago_grupo"]
+    ) == 1
+
+
+def test_revertir_pago_anterior_con_ajuste_indexacion_posterior_devuelve_409(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-AJUSTE-POST-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=3000.00, fecha_pago="2026-11-05")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    ajuste = _ajustar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_ajuste=1000.00,
+        fecha_ajuste="2026-11-06",
+    )
+    assert ajuste.status_code == 201, ajuste.text
+
+    resp = _revertir(client, pago["codigo_pago_grupo"])
+
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "PAGO_TIENE_OPERACIONES_POSTERIORES"
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(8000.00)
+    assert _composicion(
+        db_session, ob["id_obligacion_financiera"], "AJUSTE_INDEXACION"
+    ) is not None
+
+
 def test_revertir_pago_anterior_con_liquidacion_punitorio_posterior_devuelve_409(
     client, db_session
 ) -> None:
