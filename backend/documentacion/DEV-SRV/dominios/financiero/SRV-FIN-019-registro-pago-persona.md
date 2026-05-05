@@ -76,6 +76,13 @@ Si el request incluye `X-Op-Id` y ya existe al menos un
 indicada, el servicio devuelve el resultado persistido de esa operación y no
 crea nuevos movimientos ni nuevas aplicaciones.
 
+Antes de devolver el resultado idempotente, el servicio valida que el payload
+minimo coincida con el registrado originalmente en
+`movimiento_financiero.observaciones`: `tipo = pago_persona`, `id_persona`,
+`monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva. Si el
+mismo `X-Op-Id` se reutiliza con otro `id_persona`, `monto` o `fecha_pago`,
+devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT` con HTTP 409.
+
 El comportamiento mantiene el modelo V1 de un `movimiento_financiero` por
 obligación cubierta. Por eso un mismo `op_id` puede agrupar múltiples
 movimientos de pago cuando un pago cubre más de una obligación.
@@ -145,8 +152,6 @@ Reglas:
 - mora no se persiste como `INTERES_MORA`
 - no soporta distribución proporcional entre co-obligados
 - un único `movimiento_financiero` por obligación (no uno global por pago)
-- no se valida consistencia de payload para el mismo `X-Op-Id`
-- si se reutiliza el mismo `X-Op-Id` con distinto `monto` o `fecha_pago`, el comportamiento no está definido
 
 ---
 

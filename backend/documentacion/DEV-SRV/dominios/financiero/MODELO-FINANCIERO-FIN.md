@@ -437,8 +437,11 @@ Reglas:
 - con `X-Op-Id`, si ya existen movimientos `PAGO` asociados al mismo `op_id_alta`
   para la persona, se devuelve el resultado persistido sin crear nuevos
   movimientos ni volver a reducir saldos
-- idempotencia V1 evita duplicados, pero no garantiza equivalencia del request;
-  V2 deberá validar hash o campos clave del payload
+- antes de devolver el resultado idempotente, valida `id_persona`,
+  `monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva contra
+  el resumen persistido en `observaciones`
+- si el mismo `X-Op-Id` se reutiliza con payload distinto, se devuelve
+  `IDEMPOTENCY_PAYLOAD_CONFLICT`
 - no crea `INTERES_MORA` ni modifica reglas de mora existentes
 - `fecha_pago` registrada en `movimiento_financiero`; también usada como `fecha_corte` para mora
 

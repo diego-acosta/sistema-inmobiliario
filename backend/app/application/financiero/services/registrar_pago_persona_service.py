@@ -51,6 +51,32 @@ def _clave_orden(comp: dict[str, Any]) -> tuple[int, int]:
     return (_PRIORIDAD.get(comp["codigo_concepto_financiero"], 999), comp["orden_composicion"])
 
 
+def _payload_idempotencia_equivalente(
+    payload: dict[str, Any] | None,
+    *,
+    id_persona: int,
+    monto: Decimal,
+    fecha_pago: date,
+) -> bool:
+    if payload is None or payload.get("tipo") != "pago_persona":
+        return False
+
+    try:
+        payload_fecha = date.fromisoformat(str(payload["fecha_pago"]))
+        payload_monto = Decimal(str(payload["monto_ingresado"])).quantize(
+            _Q, rounding=ROUND_HALF_UP
+        )
+        payload_persona = int(payload["id_persona"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    return (
+        payload_persona == id_persona
+        and payload_fecha == fecha_pago
+        and payload_monto == monto
+    )
+
+
 @dataclass(slots=True)
 class LineaPagoPayload:
     uid_global: str
@@ -91,7 +117,7 @@ class FinancieroRepository(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def get_pago_persona_by_op_id(
-        self, *, id_persona: int, op_id: UUID
+        self, *, op_id: UUID
     ) -> dict[str, Any] | None: ...
 
     def get_ultima_fecha_pago_posterior_vencimiento(
@@ -143,23 +169,35 @@ class RegistrarPagoPersonaService:
         monto_dec = Decimal(str(monto)).quantize(_Q, rounding=ROUND_HALF_UP)
         if op_id is not None:
             pago_existente = self.repository.get_pago_persona_by_op_id(
-                id_persona=id_persona, op_id=op_id
+                op_id=op_id
             )
             if pago_existente is not None:
+                payload_existente = pago_existente.get("payload_idempotencia")
+                if not _payload_idempotencia_equivalente(
+                    payload_existente,
+                    id_persona=id_persona,
+                    monto=monto_dec,
+                    fecha_pago=corte,
+                ):
+                    return AppResult.fail("IDEMPOTENCY_PAYLOAD_CONFLICT")
+
+                monto_ingresado = Decimal(str(pago_existente["monto_ingresado"])).quantize(
+                    _Q, rounding=ROUND_HALF_UP
+                )
                 monto_aplicado = Decimal(str(pago_existente["monto_aplicado"])).quantize(
                     _Q, rounding=ROUND_HALF_UP
                 )
                 monto_consumido = Decimal(str(pago_existente["monto_consumido"])).quantize(
                     _Q, rounding=ROUND_HALF_UP
                 )
-                remanente = max(monto_dec - monto_consumido, Decimal("0")).quantize(
+                remanente = max(monto_ingresado - monto_consumido, Decimal("0")).quantize(
                     _Q, rounding=ROUND_HALF_UP
                 )
                 return AppResult.ok(
                     {
-                        "id_persona": id_persona,
+                        "id_persona": pago_existente["id_persona"],
                         "fecha_pago": pago_existente["fecha_pago"],
-                        "monto_ingresado": float(monto_dec),
+                        "monto_ingresado": float(monto_ingresado),
                         "monto_aplicado": float(monto_aplicado),
                         "remanente": float(remanente),
                         "obligaciones_pagadas": pago_existente["obligaciones_pagadas"],

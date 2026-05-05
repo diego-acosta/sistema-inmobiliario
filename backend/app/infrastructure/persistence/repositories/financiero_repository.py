@@ -1568,7 +1568,7 @@ class FinancieroRepository:
     # ── registro de pago (multi-obligación) ─────────────────────────────────
 
     def get_pago_persona_by_op_id(
-        self, *, id_persona: int, op_id: Any
+        self, *, op_id: Any
     ) -> dict[str, Any] | None:
         stmt = text(
             """
@@ -1577,6 +1577,7 @@ class FinancieroRepository:
                 m.fecha_movimiento,
                 m.importe AS monto_consumido,
                 m.observaciones,
+                oo.id_persona,
                 a.id_obligacion_financiera,
                 COALESCE(SUM(a.importe_aplicado), 0) AS monto_aplicado,
                 o.estado_obligacion AS estado_resultante
@@ -1590,7 +1591,6 @@ class FinancieroRepository:
             JOIN obligacion_obligado oo
               ON oo.id_obligacion_financiera = o.id_obligacion_financiera
              AND oo.deleted_at IS NULL
-             AND oo.id_persona = :id_persona
             WHERE m.op_id_alta = :op_id
               AND m.tipo_movimiento = 'PAGO'
               AND m.deleted_at IS NULL
@@ -1599,13 +1599,14 @@ class FinancieroRepository:
                 m.fecha_movimiento,
                 m.importe,
                 m.observaciones,
+                oo.id_persona,
                 a.id_obligacion_financiera,
                 o.estado_obligacion
             ORDER BY m.id_movimiento_financiero ASC
             """
         )
         rows = (
-            self.db.execute(stmt, {"id_persona": id_persona, "op_id": op_id})
+            self.db.execute(stmt, {"op_id": op_id})
             .mappings()
             .all()
         )
@@ -1631,10 +1632,20 @@ class FinancieroRepository:
                 resumen = None
 
         return {
+            "id_persona": (
+                int(resumen["id_persona"])
+                if resumen is not None and "id_persona" in resumen
+                else rows[0]["id_persona"]
+            ),
             "fecha_pago": (
                 date.fromisoformat(resumen["fecha_pago"])
                 if resumen is not None
                 else rows[0]["fecha_movimiento"].date()
+            ),
+            "monto_ingresado": float(
+                resumen["monto_ingresado"]
+                if resumen is not None and "monto_ingresado" in resumen
+                else sum(row["monto_consumido"] for row in rows)
             ),
             "monto_aplicado": float(
                 resumen["monto_aplicado"]
@@ -1647,6 +1658,7 @@ class FinancieroRepository:
                 else sum(row["monto_consumido"] for row in rows)
             ),
             "obligaciones_pagadas": obligaciones_pagadas,
+            "payload_idempotencia": resumen,
         }
 
     def get_ultima_fecha_pago_posterior_vencimiento(

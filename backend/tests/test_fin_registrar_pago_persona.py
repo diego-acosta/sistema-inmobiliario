@@ -156,6 +156,20 @@ def _count_pagos_por_op_id(db_session, op_id: str) -> int:
     ).scalar()
 
 
+def _post_pago(
+    client,
+    *,
+    id_persona: int,
+    monto: float,
+    headers: dict,
+    fecha_pago: str | None = None,
+):
+    body: dict = {"monto": monto}
+    if fecha_pago is not None:
+        body["fecha_pago"] = fecha_pago
+    return client.post(URL, headers=headers, params={"id_persona": id_persona}, json=body)
+
+
 # ── tests ─────────────────────────────────────────────────────────────────────
 
 def test_pago_total_cancela_obligaciones(client, db_session) -> None:
@@ -710,6 +724,118 @@ def test_pago_retry_mismo_op_id_no_duplica_movimiento_ni_saldo(client, db_sessio
     assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
     assert float(saldo_1["saldo_pendiente"]) == pytest.approx(5000.00)
     assert float(saldo_2["saldo_pendiente"]) == pytest.approx(5000.00)
+
+
+def test_pago_retry_mismo_op_id_distinto_monto_devuelve_409(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client, db_session,
+        codigo="PAG-IDEM-CONFLICT-MONTO-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440201"}
+
+    data_1 = _pagar_con_headers(client, id_persona, monto=5000.00, headers=headers)
+    resp = _post_pago(client, id_persona=id_persona, monto=5000.01, headers=headers)
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    assert data_1["monto_aplicado"] == pytest.approx(5000.00)
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(5000.00)
+
+
+def test_pago_retry_mismo_op_id_distinta_fecha_pago_devuelve_409(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client, db_session,
+        codigo="PAG-IDEM-CONFLICT-FECHA-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440202"}
+
+    _pagar_con_headers(client, id_persona, monto=5000.00, fecha_pago="2026-05-20", headers=headers)
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=5000.00,
+        fecha_pago="2026-05-21",
+        headers=headers,
+    )
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(5190.00)
+
+
+def test_pago_retry_mismo_op_id_distinta_persona_devuelve_409(client, db_session) -> None:
+    id_persona_1, contrato_1 = _setup(
+        client, db_session,
+        codigo="PAG-IDEM-CONFLICT-PER-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    id_persona_2, contrato_2 = _setup(
+        client, db_session,
+        codigo="PAG-IDEM-CONFLICT-PER-002",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440203"}
+
+    _pagar_con_headers(client, id_persona_1, monto=5000.00, fecha_pago="2026-05-20", headers=headers)
+    resp = _post_pago(
+        client,
+        id_persona=id_persona_2,
+        monto=5000.00,
+        fecha_pago="2026-05-20",
+        headers=headers,
+    )
+    saldo_1 = _saldos_por_contrato(db_session, contrato_1["id_contrato_alquiler"])[0]
+    saldo_2 = _saldos_por_contrato(db_session, contrato_2["id_contrato_alquiler"])[0]
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
+    assert float(saldo_1["saldo_pendiente"]) == pytest.approx(5190.00)
+    assert float(saldo_2["saldo_pendiente"]) == pytest.approx(10000.00)
+
+
+def test_pago_conflicto_mismo_op_id_no_duplica_punitorio(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-IDEM-CONFLICT-PUNIT-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440204"}
+
+    _pagar_con_headers(client, id_persona, monto=50.00, fecha_pago="2026-05-20", headers=headers)
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=51.00,
+        fecha_pago="2026-05-20",
+        headers=headers,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    comps = [
+        c for c in _composiciones_por_obligacion(db_session, ob["id_obligacion_financiera"])
+        if c["codigo_concepto_financiero"] == "PUNITORIO"
+    ]
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
+    assert len(comps) == 1
+    assert float(comps[0]["importe_componente"]) == pytest.approx(100.00)
+    assert float(comps[0]["saldo_componente"]) == pytest.approx(50.00)
 
 
 def test_pago_retry_mismo_op_id_con_mora_devuelve_resultado_original(client, db_session) -> None:

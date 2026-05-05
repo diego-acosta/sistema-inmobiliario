@@ -896,6 +896,7 @@ def simular_pago_persona(
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
 )
@@ -942,6 +943,15 @@ def registrar_pago_persona(
                 content=ErrorResponse(
                     error_code="MONTO_INVALIDO",
                     error_message="El monto debe ser mayor que cero.",
+                ).model_dump(),
+            )
+        if "IDEMPOTENCY_PAYLOAD_CONFLICT" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="IDEMPOTENCY_PAYLOAD_CONFLICT",
+                    error_message="El X-Op-Id ya fue utilizado con un payload distinto.",
+                    details={"errors": result.errors},
                 ).model_dump(),
             )
         return JSONResponse(
