@@ -194,10 +194,14 @@ Body: { "fecha_corte": "YYYY-MM-DD" }
   el importe, no se reemplaza: se aplica un ajuste positivo con
   `AJUSTE_INDEXACION` sobre la obligacion existente mediante
   `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/ajuste-indexacion`.
+  Si no tiene aplicaciones financieras activas, el endpoint devuelve
+  `OBLIGACION_SIN_PAGOS_APLICADOS`.
 - Si una obligacion indexada ya tiene pagos y la correccion del indice reduce
   el importe, no se reemplaza y no se crea composicion negativa: se registra
   una bonificacion mediante
   `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/bonificacion-indexacion`.
+  Si no tiene aplicaciones financieras activas, el endpoint devuelve
+  `OBLIGACION_SIN_PAGOS_APLICADOS`.
 - La bonificacion V1 aplica con `movimiento_financiero` y
   `aplicacion_financiera` positivos sobre saldos aplicables; no genera saldo a
   favor persistido y no aplica contra `PUNITORIO`.

@@ -575,6 +575,8 @@ se agrega una composicion positiva dentro de la obligacion base:
 - no crea una obligacion nueva
 - no modifica pagos, aplicaciones, cronograma ni punitorios existentes
 - no implementa composiciones negativas
+- si la obligacion no tiene aplicaciones financieras activas, se rechaza con
+  `OBLIGACION_SIN_PAGOS_APLICADOS` y debe corregirse por regeneracion
 - si ya existe una composicion activa `AJUSTE_INDEXACION` en la obligacion, se
   rechaza como duplicado salvo regla futura explicita de recalculo
 
@@ -584,10 +586,8 @@ Endpoint operativo:
 
 Los triggers de `composicion_obligacion` recalculan `importe_total` y
 `saldo_pendiente`. Si una obligacion `CANCELADA` vuelve a tener saldo pendiente
-por el ajuste, su estado pasa a `VENCIDA` cuando
-`fecha_vencimiento < fecha_ajuste`, o a `EMITIDA` en caso contrario. Una
-obligacion `PARCIALMENTE_CANCELADA` conserva un estado compatible con saldo
-pendiente.
+por el ajuste y conserva aplicaciones activas, su estado pasa a
+`PARCIALMENTE_CANCELADA`.
 
 ### Bonificacion por indice corregido V1
 
@@ -606,6 +606,8 @@ existentes:
 - no modifica pagos existentes
 - no crea obligacion nueva
 - no modifica cronograma ni punitorios
+- si la obligacion no tiene aplicaciones financieras activas, se rechaza con
+  `OBLIGACION_SIN_PAGOS_APLICADOS` y debe corregirse por regeneracion
 - no genera saldo a favor persistido; si el importe supera el saldo aplicable,
   se aplica hasta el disponible y se devuelve `remanente_no_aplicado`
 - si no existe saldo aplicable, devuelve `SIN_SALDO_APLICABLE`

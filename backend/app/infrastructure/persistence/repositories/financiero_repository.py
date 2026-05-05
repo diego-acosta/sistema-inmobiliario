@@ -1460,6 +1460,21 @@ class FinancieroRepository:
         result["composiciones"] = [dict(c) for c in comp_rows]
         return result
 
+    def obligacion_tiene_aplicaciones_activas(
+        self, id_obligacion_financiera: int
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM aplicacion_financiera a
+                WHERE a.id_obligacion_financiera = :id
+                  AND a.deleted_at IS NULL
+            )
+            """
+        )
+        return bool(self.db.execute(stmt, {"id": id_obligacion_financiera}).scalar())
+
     def aplicar_ajuste_indexacion_obligacion(
         self,
         *,
@@ -1539,8 +1554,12 @@ class FinancieroRepository:
             UPDATE obligacion_financiera
             SET estado_obligacion = CASE
                     WHEN saldo_pendiente = 0 THEN 'CANCELADA'
-                    WHEN :estado_anterior = 'PARCIALMENTE_CANCELADA' THEN
-                        'PARCIALMENTE_CANCELADA'
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM aplicacion_financiera a
+                        WHERE a.id_obligacion_financiera = :id_obligacion_financiera
+                          AND a.deleted_at IS NULL
+                    ) THEN 'PARCIALMENTE_CANCELADA'
                     WHEN fecha_vencimiento IS NOT NULL
                          AND fecha_vencimiento < :fecha_ajuste THEN 'VENCIDA'
                     ELSE 'EMITIDA'
@@ -1602,7 +1621,6 @@ class FinancieroRepository:
                 estado_stmt,
                 {
                     "id_obligacion_financiera": id_obligacion_financiera,
-                    "estado_anterior": obligacion["estado_obligacion"],
                     "fecha_ajuste": fecha_ajuste,
                     "updated_at": now,
                     "id_instalacion": id_instalacion,

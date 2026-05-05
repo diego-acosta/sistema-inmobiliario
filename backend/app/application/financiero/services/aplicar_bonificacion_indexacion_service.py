@@ -12,6 +12,14 @@ _Q = Decimal("0.01")
 
 
 class FinancieroRepository(Protocol):
+    def get_obligacion_financiera(
+        self, id_obligacion_financiera: int
+    ) -> dict[str, Any] | None: ...
+
+    def obligacion_tiene_aplicaciones_activas(
+        self, id_obligacion_financiera: int
+    ) -> bool: ...
+
     def aplicar_bonificacion_indexacion_obligacion(
         self,
         *,
@@ -49,6 +57,18 @@ class AplicarBonificacionIndexacionService:
         motivo_normalizado = motivo.strip()
         if not motivo_normalizado:
             return AppResult.fail("MOTIVO_REQUERIDO")
+
+        obligacion = self.repository.get_obligacion_financiera(
+            id_obligacion_financiera
+        )
+        if obligacion is None or obligacion.get("deleted_at") is not None:
+            return AppResult.fail("NOT_FOUND_OBLIGACION")
+        if obligacion.get("estado_obligacion") in {"ANULADA", "REEMPLAZADA"}:
+            return AppResult.fail("ESTADO_NO_ACEPTA_BONIFICACION")
+        if not self.repository.obligacion_tiene_aplicaciones_activas(
+            id_obligacion_financiera
+        ):
+            return AppResult.fail("OBLIGACION_SIN_PAGOS_APLICADOS")
 
         try:
             data = self.repository.aplicar_bonificacion_indexacion_obligacion(

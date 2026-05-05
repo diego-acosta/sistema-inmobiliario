@@ -846,6 +846,17 @@ def aplicar_ajuste_indexacion(
                     details={"errors": result.errors},
                 ).model_dump(),
             )
+        if "OBLIGACION_SIN_PAGOS_APLICADOS" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="OBLIGACION_SIN_PAGOS_APLICADOS",
+                    error_message=(
+                        "La obligación no tiene pagos aplicados; debe corregirse por regeneración."
+                    ),
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
         if "ESTADO_NO_ACEPTA_AJUSTE" in result.errors:
             return JSONResponse(
                 status_code=400,
@@ -934,6 +945,17 @@ def aplicar_bonificacion_indexacion(
                 content=ErrorResponse(
                     error_code="BONIFICACION_OP_ID_CONFLICT",
                     error_message="El X-Op-Id ya fue utilizado en otra bonificación.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "OBLIGACION_SIN_PAGOS_APLICADOS" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="OBLIGACION_SIN_PAGOS_APLICADOS",
+                    error_message=(
+                        "La obligación no tiene pagos aplicados; debe corregirse por regeneración."
+                    ),
                     details={"errors": result.errors},
                 ).model_dump(),
             )
