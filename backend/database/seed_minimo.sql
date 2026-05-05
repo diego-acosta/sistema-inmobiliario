@@ -92,6 +92,37 @@ BEGIN
         estado_concepto_financiero = EXCLUDED.estado_concepto_financiero,
         observaciones = EXCLUDED.observaciones;
 
+    INSERT INTO public.parametro_punitorio (
+        id_instalacion_origen,
+        id_instalacion_ultima_modificacion,
+        op_id_alta,
+        op_id_ultima_modificacion,
+        alcance_tipo,
+        tasa_diaria,
+        dias_gracia,
+        fecha_desde,
+        estado_parametro
+    )
+    SELECT
+        1,
+        1,
+        v_op_id,
+        v_op_id,
+        'GLOBAL',
+        0.001000,
+        5,
+        DATE '1900-01-01',
+        'ACTIVO'
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.parametro_punitorio
+        WHERE alcance_tipo = 'GLOBAL'
+          AND id_relacion_generadora IS NULL
+          AND id_concepto_financiero IS NULL
+          AND fecha_desde = DATE '1900-01-01'
+          AND deleted_at IS NULL
+    );
+
     INSERT INTO public.desarrollo (
         id_instalacion_origen,
         id_instalacion_ultima_modificacion,

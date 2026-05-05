@@ -100,6 +100,29 @@ ON CONFLICT (codigo_concepto_financiero) DO UPDATE SET
     estado_concepto_financiero = EXCLUDED.estado_concepto_financiero,
     observaciones = EXCLUDED.observaciones;
 
+INSERT INTO public.parametro_punitorio (
+    alcance_tipo,
+    tasa_diaria,
+    dias_gracia,
+    fecha_desde,
+    estado_parametro
+)
+SELECT
+    'GLOBAL',
+    0.001000,
+    5,
+    DATE '1900-01-01',
+    'ACTIVO'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.parametro_punitorio
+    WHERE alcance_tipo = 'GLOBAL'
+      AND id_relacion_generadora IS NULL
+      AND id_concepto_financiero IS NULL
+      AND fecha_desde = DATE '1900-01-01'
+      AND deleted_at IS NULL
+);
+
 SELECT setval(
     'public.sucursal_id_sucursal_seq',
     GREATEST((SELECT COALESCE(MAX(id_sucursal), 1) FROM public.sucursal), 1),

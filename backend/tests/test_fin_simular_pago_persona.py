@@ -2,6 +2,8 @@
 Tests de integración para POST /api/v1/financiero/personas/{id_persona}/simular-pago.
 La simulación no persiste cambios.
 """
+from pathlib import Path
+
 import pytest
 from sqlalchemy import text
 
@@ -16,6 +18,11 @@ from tests.test_fin_event_contrato_alquiler import (
 
 URL = "/api/v1/financiero/personas/{id_persona}/simular-pago"
 TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
+PATCH_PARAMETRO_PUNITORIO_SQL = (
+    Path(__file__).resolve().parents[1]
+    / "database"
+    / "patch_parametro_punitorio_20260505.sql"
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -35,6 +42,11 @@ def _setup(client, db_session, *, codigo: str, fecha_inicio: str, fecha_fin: str
     id_persona = _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
     return id_persona, contrato
+
+
+def _install_patch_parametro_punitorio(db_session) -> None:
+    sql = PATCH_PARAMETRO_PUNITORIO_SQL.read_text(encoding="utf-8").replace("%", "%%")
+    db_session.connection().exec_driver_sql(sql)
 
 
 def _simular(client, id_persona: int, monto: float, fecha_corte: str | None = None) -> dict:
@@ -79,6 +91,91 @@ def _saldo_obligacion_por_contrato(db_session, id_contrato: int) -> dict:
         {"id": id_contrato},
     ).mappings().one()
     return dict(row)
+
+
+def _relacion_por_contrato(db_session, id_contrato: int) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT id_relacion_generadora
+            FROM relacion_generadora
+            WHERE tipo_origen = 'contrato_alquiler'
+              AND id_origen = :id
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {"id": id_contrato},
+    ).scalar_one()
+
+
+def _concepto_id(db_session, codigo: str) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT id_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = :codigo
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {"codigo": codigo},
+    ).scalar_one()
+
+
+def _reset_parametros_punitorio(db_session) -> None:
+    db_session.execute(text("DELETE FROM parametro_punitorio"))
+
+
+def _insert_parametro_punitorio(
+    db_session,
+    *,
+    alcance_tipo: str,
+    tasa_diaria: float,
+    dias_gracia: int = 5,
+    fecha_desde: str = "1900-01-01",
+    fecha_hasta: str | None = None,
+    estado_parametro: str = "ACTIVO",
+    id_relacion_generadora: int | None = None,
+    id_concepto_financiero: int | None = None,
+) -> None:
+    db_session.execute(
+        text(
+            """
+            INSERT INTO parametro_punitorio (
+                alcance_tipo,
+                id_relacion_generadora,
+                id_concepto_financiero,
+                tasa_diaria,
+                dias_gracia,
+                fecha_desde,
+                fecha_hasta,
+                estado_parametro
+            )
+            VALUES (
+                :alcance_tipo,
+                :id_relacion_generadora,
+                :id_concepto_financiero,
+                :tasa_diaria,
+                :dias_gracia,
+                :fecha_desde,
+                :fecha_hasta,
+                :estado_parametro
+            )
+            """
+        ),
+        {
+            "alcance_tipo": alcance_tipo,
+            "id_relacion_generadora": id_relacion_generadora,
+            "id_concepto_financiero": id_concepto_financiero,
+            "tasa_diaria": tasa_diaria,
+            "dias_gracia": dias_gracia,
+            "fecha_desde": fecha_desde,
+            "fecha_hasta": fecha_hasta,
+            "estado_parametro": estado_parametro,
+        },
+    )
 
 
 def _saldo_componente(db_session, id_obligacion: int, codigo: str) -> float | None:
@@ -206,6 +303,167 @@ def test_simular_pago_mora_respeta_dias_gracia(client, db_session) -> None:
     assert fuera["detalle"][0]["mora_calculada"] == pytest.approx(
         10000.00 * TASA_DIARIA_MORA * 6
     )
+
+
+def test_parametro_punitorio_sin_fila_usa_default_tecnico(client, db_session) -> None:
+    _install_patch_parametro_punitorio(db_session)
+    _reset_parametros_punitorio(db_session)
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="SIM-PARAM-DEFAULT-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    data = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-16")
+
+    assert data["detalle"][0]["mora_calculada"] == pytest.approx(
+        10000.00 * TASA_DIARIA_MORA * 6
+    )
+
+
+def test_parametro_punitorio_global_vigente_se_usa_en_simulacion_y_pago(
+    client, db_session
+) -> None:
+    _install_patch_parametro_punitorio(db_session)
+    _reset_parametros_punitorio(db_session)
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="GLOBAL",
+        tasa_diaria=0.002,
+        dias_gracia=5,
+    )
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="SIM-PARAM-GLOBAL-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    sim = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-16")
+    pago = _pagar(client, id_persona, monto=999999.00, fecha_pago="2026-05-16")
+
+    esperado = 10000.00 + (10000.00 * 0.002 * 6)
+    assert sim["detalle"][0]["mora_calculada"] == pytest.approx(120.00)
+    assert sim["total_deuda_considerada"] == pytest.approx(esperado)
+    assert pago["monto_aplicado"] == pytest.approx(esperado)
+
+
+def test_parametro_punitorio_concepto_overridea_global(client, db_session) -> None:
+    _install_patch_parametro_punitorio(db_session)
+    _reset_parametros_punitorio(db_session)
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="GLOBAL",
+        tasa_diaria=0.001,
+        dias_gracia=5,
+    )
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="CONCEPTO",
+        id_concepto_financiero=_concepto_id(db_session, "CANON_LOCATIVO"),
+        tasa_diaria=0.003,
+        dias_gracia=5,
+    )
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="SIM-PARAM-CONC-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    data = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-16")
+
+    assert data["detalle"][0]["mora_calculada"] == pytest.approx(10000.00 * 0.003 * 6)
+
+
+def test_parametro_punitorio_relacion_overridea_concepto(client, db_session) -> None:
+    _install_patch_parametro_punitorio(db_session)
+    _reset_parametros_punitorio(db_session)
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="SIM-PARAM-REL-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="GLOBAL",
+        tasa_diaria=0.001,
+        dias_gracia=5,
+    )
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="CONCEPTO",
+        id_concepto_financiero=_concepto_id(db_session, "CANON_LOCATIVO"),
+        tasa_diaria=0.003,
+        dias_gracia=5,
+    )
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="RELACION_GENERADORA",
+        id_relacion_generadora=_relacion_por_contrato(
+            db_session, contrato["id_contrato_alquiler"]
+        ),
+        tasa_diaria=0.004,
+        dias_gracia=5,
+    )
+
+    data = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-16")
+
+    assert data["detalle"][0]["mora_calculada"] == pytest.approx(10000.00 * 0.004 * 6)
+
+
+def test_parametro_punitorio_respeta_vigencia_e_inactivos(client, db_session) -> None:
+    _install_patch_parametro_punitorio(db_session)
+    _reset_parametros_punitorio(db_session)
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="GLOBAL",
+        tasa_diaria=0.009,
+        dias_gracia=5,
+        estado_parametro="INACTIVO",
+    )
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="GLOBAL",
+        tasa_diaria=0.008,
+        dias_gracia=5,
+        fecha_desde="2026-04-01",
+        fecha_hasta="2026-05-15",
+    )
+    _insert_parametro_punitorio(
+        db_session,
+        alcance_tipo="GLOBAL",
+        tasa_diaria=0.002,
+        dias_gracia=5,
+        fecha_desde="2026-05-16",
+    )
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="SIM-PARAM-VIG-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    data = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-16")
+
+    assert data["detalle"][0]["mora_calculada"] == pytest.approx(10000.00 * 0.002 * 6)
 
 
 def test_simular_pago_punitorio_existente_no_integra_base_morable(client, db_session) -> None:

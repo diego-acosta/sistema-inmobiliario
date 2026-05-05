@@ -1,15 +1,16 @@
 """
-Resolver centralizado de parámetros de mora.
+Resolver base de parametros de mora.
 
-Prioridad de resolución (de mayor a menor):
-  1. Regla por origen (tipo_origen + id_origen)    e.g. "CONTRATO_ALQUILER:42" → tasa específica de ese contrato
-  2. Regla por concepto financiero
-     e.g. "CANON_LOCATIVO" → tasa asociada al concepto
-  3. Default global (TASA_DIARIA_MORA_DEFAULT, DIAS_GRACIA_MORA_DEFAULT)
+El dominio mantiene los defaults tecnicos y una interfaz pura para calcular
+con overrides inyectados. La resolucion persistida V1 vive en el repository
+financiero (`parametro_punitorio`) y cae a este resolver cuando no hay tabla,
+parametro vigente o regla inyectada.
 
-V1: no existen tablas de reglas. El resolver siempre retorna el default.
-Las reglas se pueden inyectar vía el parámetro `reglas` (útil en tests y como
-punto de extensión futuro sin cambiar la interfaz pública).
+Prioridad persistida V1:
+  1. RELACION_GENERADORA
+  2. CONCEPTO
+  3. GLOBAL
+  4. defaults tecnicos
 """
 from __future__ import annotations
 

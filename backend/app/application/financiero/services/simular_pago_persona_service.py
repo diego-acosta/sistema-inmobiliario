@@ -48,6 +48,14 @@ class FinancieroRepository(Protocol):
         self, *, id_obligacion_financiera: int
     ) -> Decimal: ...
 
+    def resolve_parametro_punitorio(
+        self,
+        *,
+        fecha_referencia: date,
+        id_relacion_generadora: int | None = None,
+        id_concepto_financiero: int | None = None,
+    ) -> ResolucionMora: ...
+
 
 class SimularPagoPersonaService:
     def __init__(self, repository: FinancieroRepository) -> None:
@@ -92,7 +100,12 @@ class SimularPagoPersonaService:
                     id_obligacion_financiera=id_obligacion,
                     fecha_vencimiento=fv,
                 )
-            mora = _mora(base_morable, fv, corte, ultima_fecha)
+            resolucion_mora = self.repository.resolve_parametro_punitorio(
+                fecha_referencia=corte,
+                id_relacion_generadora=ob.get("id_relacion_generadora"),
+                id_concepto_financiero=ob.get("id_concepto_punitorio_base"),
+            )
+            mora = _mora(base_morable, fv, corte, ultima_fecha, resolucion_mora)
             total_a_cubrir = ((saldo + mora) * pct / 100).quantize(_Q, rounding=ROUND_HALF_UP)
             total_deuda += total_a_cubrir
 

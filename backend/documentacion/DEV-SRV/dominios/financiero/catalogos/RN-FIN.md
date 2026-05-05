@@ -459,16 +459,22 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: EST-FIN / MODELO-FINANCIERO-FIN
 
 ### RN-FIN-070 - Calculo de mora diaria simple
-- descripcion: La mora V1 se calcula dinamicamente como `saldo_pendiente * tasa_diaria_mora * dias_atraso`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente. `tasa_diaria_mora` y `dias_gracia` se resuelven via `resolver_mora_params` con prioridad: origen > concepto > default global.
+- descripcion: La mora V1 se calcula dinamicamente como `saldo_pendiente * tasa_diaria_mora * dias_atraso`, redondeada a 2 decimales, sobre obligaciones vencidas con saldo pendiente. `tasa_diaria_mora` y `dias_gracia` se resuelven desde `parametro_punitorio` con prioridad: `RELACION_GENERADORA` > `CONCEPTO` > `GLOBAL` > default tecnico.
 - aplica_a: obligacion_financiera, estado_cuenta, deuda_consolidada
 - origen_principal: SRV-FIN-013-generacion-de-mora
 - estado: IMPLEMENTADA.
 
-### RN-LOC-FIN-004 - Resolver centralizado de parámetros de mora
-- descripcion: Los parametros de mora (`tasa_diaria`, `dias_gracia`) se resuelven con prioridad: (1) regla por origen `<tipo_origen>:<id_origen>`, (2) regla por `codigo_concepto`, (3) default global `TASA_DIARIA_MORA_DEFAULT=0.001` y `DIAS_GRACIA_MORA_DEFAULT=5`. V1: no existen reglas en DB; siempre retorna el default. Todos los endpoints de calculo de mora usan el mismo resolver.
+### RN-LOC-FIN-004 - Resolver centralizado de parametros de mora
+- descripcion: Los parametros de mora/punitorio (`tasa_diaria`, `dias_gracia`) se resuelven desde `parametro_punitorio` con prioridad: (1) `RELACION_GENERADORA`, (2) `CONCEPTO`, (3) `GLOBAL`, (4) default tecnico `TASA_DIARIA_MORA_DEFAULT=0.001` y `DIAS_GRACIA_MORA_DEFAULT=5`. Solo aplican parametros `ACTIVO`, no eliminados y vigentes para la fecha de referencia. Todos los endpoints de calculo de mora, simulacion y pago usan la misma resolucion.
 - aplica_a: obligacion_financiera, relacion_generadora, concepto_financiero
-- origen_principal: SRV-FIN-013-generacion-de-mora / resolver_mora.py
-- estado: IMPLEMENTADA (V1 default only; extensible via `reglas` dict).
+- origen_principal: SRV-FIN-013-generacion-de-mora / parametro_punitorio
+- estado: IMPLEMENTADA.
+
+### RN-FIN-089 - Vigencia de parametro_punitorio
+- descripcion: `parametro_punitorio` puede definirse con alcance `GLOBAL`, `CONCEPTO` o `RELACION_GENERADORA`. Un parametro es vigente si `fecha_desde <= fecha_referencia` y `fecha_hasta IS NULL OR fecha_hasta >= fecha_referencia`. V1 debe evitar solapamientos activos por mismo alcance desde repository/service o proceso operativo; el SQL base no usa exclusion constraint.
+- aplica_a: parametro_punitorio
+- origen_principal: SRV-FIN-013-generacion-de-mora
+- estado: IMPLEMENTADA.
 
 ### RN-FIN-071 - Mora no capitalizable
 - descripcion: La mora diaria dinamica de lectura no se persiste como obligacion financiera ni incrementa el saldo de la obligacion base por el solo hecho de consultar deuda, estado de cuenta o simulacion; se expone como calculo de lectura. Esto es distinto del `PUNITORIO` liquidado al registrar un pago.

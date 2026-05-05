@@ -128,6 +128,10 @@ La base morable se obtiene desde composiciones activas cuyo
 `concepto_financiero.aplica_punitorio = true`. `PUNITORIO` y accesorios no
 marcados no integran esa base.
 
+La tasa diaria y los dias de gracia se resuelven desde `parametro_punitorio`
+con prioridad `RELACION_GENERADORA` > `CONCEPTO` > `GLOBAL` > default tecnico.
+Solo aplican parametros `ACTIVO`, no eliminados y vigentes para `fecha_pago`.
+
 ---
 
 ## Regla funcional: punitorio por pago

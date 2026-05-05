@@ -3230,9 +3230,24 @@ class FinancieroRepository:
             """
             SELECT
                 o.id_obligacion_financiera,
+                o.id_relacion_generadora,
                 o.fecha_vencimiento,
                 o.saldo_pendiente,
-                oo.porcentaje_responsabilidad
+                oo.porcentaje_responsabilidad,
+                (
+                    SELECT c.id_concepto_financiero
+                    FROM composicion_obligacion c
+                    JOIN concepto_financiero cf
+                      ON cf.id_concepto_financiero = c.id_concepto_financiero
+                    WHERE c.id_obligacion_financiera = o.id_obligacion_financiera
+                      AND c.estado_composicion_obligacion = 'ACTIVA'
+                      AND c.deleted_at IS NULL
+                      AND c.saldo_componente > 0
+                      AND cf.deleted_at IS NULL
+                      AND cf.aplica_punitorio = true
+                    ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
+                    LIMIT 1
+                ) AS id_concepto_punitorio_base
             FROM obligacion_obligado oo
             JOIN obligacion_financiera o
                 ON o.id_obligacion_financiera = oo.id_obligacion_financiera
@@ -3255,6 +3270,89 @@ class FinancieroRepository:
         return [dict(r) for r in rows]
 
     # ── estado de cuenta por persona ────────────────────────────────────────
+
+    def resolve_parametro_punitorio(
+        self,
+        *,
+        fecha_referencia: date,
+        id_relacion_generadora: int | None = None,
+        id_concepto_financiero: int | None = None,
+    ) -> ResolucionMora:
+        """
+        Resuelve parametros persistidos de punitorio por prioridad V1:
+        RELACION_GENERADORA > CONCEPTO > GLOBAL > defaults tecnicos.
+        """
+        table_exists = self.db.execute(
+            text("SELECT to_regclass('public.parametro_punitorio')")
+        ).scalar_one_or_none()
+        if table_exists is None:
+            return resolver_mora_params()
+
+        params: dict[str, Any] = {"fecha_referencia": fecha_referencia}
+        branches: list[str] = []
+
+        if id_relacion_generadora is not None:
+            branches.append(
+                """
+                SELECT tasa_diaria, dias_gracia, fecha_desde, 1 AS prioridad
+                FROM parametro_punitorio
+                WHERE alcance_tipo = 'RELACION_GENERADORA'
+                  AND id_relacion_generadora = :id_relacion_generadora
+                  AND deleted_at IS NULL
+                  AND estado_parametro = 'ACTIVO'
+                  AND fecha_desde <= :fecha_referencia
+                  AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha_referencia)
+                """
+            )
+            params["id_relacion_generadora"] = id_relacion_generadora
+
+        if id_concepto_financiero is not None:
+            branches.append(
+                """
+                SELECT tasa_diaria, dias_gracia, fecha_desde, 2 AS prioridad
+                FROM parametro_punitorio
+                WHERE alcance_tipo = 'CONCEPTO'
+                  AND id_concepto_financiero = :id_concepto_financiero
+                  AND deleted_at IS NULL
+                  AND estado_parametro = 'ACTIVO'
+                  AND fecha_desde <= :fecha_referencia
+                  AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha_referencia)
+                """
+            )
+            params["id_concepto_financiero"] = id_concepto_financiero
+
+        branches.append(
+            """
+            SELECT tasa_diaria, dias_gracia, fecha_desde, 3 AS prioridad
+            FROM parametro_punitorio
+            WHERE alcance_tipo = 'GLOBAL'
+              AND id_relacion_generadora IS NULL
+              AND id_concepto_financiero IS NULL
+              AND deleted_at IS NULL
+              AND estado_parametro = 'ACTIVO'
+              AND fecha_desde <= :fecha_referencia
+              AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha_referencia)
+            """
+        )
+
+        stmt = text(
+            f"""
+            SELECT tasa_diaria, dias_gracia
+            FROM (
+                {" UNION ALL ".join(branches)}
+            ) p
+            ORDER BY prioridad ASC, fecha_desde DESC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, params).mappings().one_or_none()
+        if row is None:
+            return resolver_mora_params()
+
+        return ResolucionMora(
+            tasa_diaria=Decimal(str(row["tasa_diaria"])),
+            dias_gracia=int(row["dias_gracia"]),
+        )
 
     def get_estado_cuenta_por_persona(
         self,

@@ -154,6 +154,29 @@ Campos funcionales principales:
 - importe trazado: `importe_liquidado`
 - estado inicial: `ACTIVA`
 
+### 2.7 parametro_punitorio
+
+`parametro_punitorio` formaliza los parametros de calculo de mora/punitorio
+V1. No crea deuda ni reemplaza `liquidacion_punitorio`; solo define
+`tasa_diaria` y `dias_gracia` vigentes para una fecha de referencia.
+
+Alcances V1:
+
+- `GLOBAL`: sin `id_relacion_generadora` ni `id_concepto_financiero`
+- `CONCEPTO`: con `id_concepto_financiero`
+- `RELACION_GENERADORA`: con `id_relacion_generadora`
+
+Resolucion:
+
+1. `RELACION_GENERADORA`
+2. `CONCEPTO`
+3. `GLOBAL`
+4. defaults tecnicos (`0.001`, `5`) si no hay tabla o parametro vigente
+
+Solo aplican parametros `ACTIVO`, no eliminados y vigentes por
+`fecha_desde`/`fecha_hasta`. V1 documenta el no solapamiento como regla de
+servicio/repository; el SQL base no usa exclusion constraint.
+
 ---
 
 ## 3. Saldos
@@ -239,8 +262,8 @@ Regla:
 - selecciona obligaciones con `fecha_vencimiento < fecha_proceso`
 - requiere `saldo_pendiente > 0`
 - requiere `estado_obligacion = 'EMITIDA'`
-- tasa diaria default centralizada: `TASA_DIARIA_MORA_DEFAULT = Decimal("0.001")`
-- dias de gracia fijos iniciales: `5`
+- tasa diaria y dias de gracia resueltos por `parametro_punitorio`
+  (`RELACION_GENERADORA` > `CONCEPTO` > `GLOBAL` > default tecnico)
 - `dias_atraso = max(0, fecha_corte - (fecha_vencimiento + dias_gracia_mora))`
 - importe dinamico: `saldo_pendiente * tasa_diaria_mora * dias_atraso`
 - redondeo a 2 decimales
@@ -254,10 +277,9 @@ Efecto:
 - no capitaliza sobre la obligacion base
 - expone `mora_calculada`, `dias_atraso` y `tasa_diaria_mora` en lecturas
 
-Limitacion:
-
-- tasa default centralizada hasta que exista parametro formal persistido/administrado.
-- dias de gracia fijo hasta que exista politica parametrizable.
+Limitacion: V1 no expone endpoint administrativo para crear o modificar
+`parametro_punitorio`; el seed crea un parametro `GLOBAL` equivalente al
+default tecnico.
 
 Nota: Mora V1 desacopla dos responsabilidades:
 
@@ -333,7 +355,7 @@ Incluye:
 - `porcentaje_responsabilidad` por obligacion
 - `monto_responsabilidad = saldo_pendiente * porcentaje_responsabilidad / 100`
 - mora dinamica calculada (no persistida) cuando `fecha_vencimiento < fecha_corte`
-- dias de gracia fijos iniciales para mora: 5
+- dias de gracia y tasa resueltos por `parametro_punitorio`
 - `total_con_mora = (saldo_pendiente + mora_calculada) * porcentaje_responsabilidad / 100`
 - resumen: `saldo_pendiente_total`, `saldo_vencido`, `saldo_futuro`, `mora_calculada`, `total_con_mora`
 
@@ -342,7 +364,7 @@ Reglas:
 - excluye obligaciones con estado `ANULADA` o `REEMPLAZADA`
 - incluye `EMITIDA` y `VENCIDA` por defecto
 - mora solo si `saldo_pendiente > 0` y
-  `fecha_corte > fecha_vencimiento + 5 dias de gracia`
+  `fecha_corte > fecha_vencimiento + dias_gracia` resueltos
 - `fecha_corte = date.today()` — no configurable en V1
 - la mora de lectura no se persiste; el cargo por mora liquidado al registrar
   pagos se persiste como `PUNITORIO`
@@ -407,7 +429,7 @@ Reglas:
 - solo obligaciones con `saldo_pendiente > 0`
 - excluye `ANULADA` y `REEMPLAZADA`
 - mora dinamica calculada con `fecha_corte` (configurable, default `date.today()`)
-- el calculo de mora aplica 5 dias de gracia no persistidos
+- el calculo de mora aplica los dias de gracia resueltos por `parametro_punitorio`
 - `fecha_corte` no modifica estados persistidos
 - filtro opcional por `tipo_origen`
 - respuesta sin paginacion (agrega todo en memoria)
@@ -426,7 +448,8 @@ Incluye:
 
 - ordenamiento: obligaciones vencidas primero, luego futuras; dentro de cada grupo por `fecha_vencimiento ASC`
 - mora dinámica incluida en `total_a_cubrir` por obligación
-- la mora dinamica respeta 5 dias de gracia no persistidos
+- la mora dinamica respeta la tasa y dias de gracia resueltos por
+  `parametro_punitorio`
 - aplicación secuencial del monto hasta agotarlo o cubrir toda la deuda
 - `remanente` si el monto supera la deuda total
 
@@ -459,7 +482,8 @@ Reglas:
 - orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras
 - mora dinámica incluida en `total_a_cubrir`; cuando corresponde liquidacion al
   registrar el pago, el cargo por mora se persiste como `PUNITORIO`
-- la mora dinamica respeta 5 dias de gracia no persistidos
+- la mora dinamica respeta la tasa y dias de gracia resueltos por
+  `parametro_punitorio`
 - la porción aplicada a saldo (`monto_a_saldo`) se registra en `aplicacion_financiera` y actualiza `saldo_pendiente` vía trigger
 - si saldo llega a 0 → `CANCELADA`; si reduce parcialmente → `PARCIALMENTE_CANCELADA`
 - operación transaccional: si alguna escritura falla, se hace rollback de todas

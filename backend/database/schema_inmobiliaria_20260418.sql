@@ -1544,6 +1544,56 @@ ALTER SEQUENCE public.liquidacion_punitorio_id_liquidacion_punitorio_seq OWNED B
 
 
 --
+-- Name: parametro_punitorio; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametro_punitorio (
+    id_parametro_punitorio bigint NOT NULL,
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
+    alcance_tipo character varying(50) NOT NULL,
+    id_relacion_generadora bigint,
+    id_concepto_financiero bigint,
+    tasa_diaria numeric(10,6) NOT NULL,
+    dias_gracia integer NOT NULL,
+    fecha_desde date NOT NULL,
+    fecha_hasta date,
+    estado_parametro character varying(30) DEFAULT 'ACTIVO'::character varying NOT NULL,
+    CONSTRAINT chk_parametro_punitorio_alcance CHECK (((alcance_tipo)::text = ANY ((ARRAY['GLOBAL'::character varying, 'CONCEPTO'::character varying, 'RELACION_GENERADORA'::character varying])::text[]))),
+    CONSTRAINT chk_parametro_punitorio_estado CHECK (((estado_parametro)::text = ANY ((ARRAY['ACTIVO'::character varying, 'INACTIVO'::character varying])::text[]))),
+    CONSTRAINT chk_parametro_punitorio_scope CHECK (((((alcance_tipo)::text = 'GLOBAL'::text) AND (id_relacion_generadora IS NULL) AND (id_concepto_financiero IS NULL)) OR (((alcance_tipo)::text = 'CONCEPTO'::text) AND (id_relacion_generadora IS NULL) AND (id_concepto_financiero IS NOT NULL)) OR (((alcance_tipo)::text = 'RELACION_GENERADORA'::text) AND (id_relacion_generadora IS NOT NULL) AND (id_concepto_financiero IS NULL)))),
+    CONSTRAINT chk_parametro_punitorio_valores CHECK (((tasa_diaria >= (0)::numeric) AND (dias_gracia >= 0))),
+    CONSTRAINT chk_parametro_punitorio_vigencia CHECK (((fecha_hasta IS NULL) OR (fecha_hasta >= fecha_desde)))
+);
+
+
+--
+-- Name: parametro_punitorio_id_parametro_punitorio_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.parametro_punitorio_id_parametro_punitorio_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: parametro_punitorio_id_parametro_punitorio_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.parametro_punitorio_id_parametro_punitorio_seq OWNED BY public.parametro_punitorio.id_parametro_punitorio;
+
+
+--
 -- Name: concepto_financiero; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5350,6 +5400,13 @@ ALTER TABLE ONLY public.liquidacion_punitorio ALTER COLUMN id_liquidacion_punito
 
 
 --
+-- Name: parametro_punitorio id_parametro_punitorio; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametro_punitorio ALTER COLUMN id_parametro_punitorio SET DEFAULT nextval('public.parametro_punitorio_id_parametro_punitorio_seq'::regclass);
+
+
+--
 -- Name: concepto_financiero id_concepto_financiero; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6044,6 +6101,14 @@ ALTER TABLE ONLY public.composicion_obligacion
 
 ALTER TABLE ONLY public.liquidacion_punitorio
     ADD CONSTRAINT liquidacion_punitorio_pkey PRIMARY KEY (id_liquidacion_punitorio);
+
+
+--
+-- Name: parametro_punitorio parametro_punitorio_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametro_punitorio
+    ADD CONSTRAINT parametro_punitorio_pkey PRIMARY KEY (id_parametro_punitorio);
 
 
 --
@@ -6788,6 +6853,14 @@ ALTER TABLE ONLY public.composicion_obligacion
 
 ALTER TABLE ONLY public.liquidacion_punitorio
     ADD CONSTRAINT uq_liquidacion_punitorio_uid_global UNIQUE (uid_global);
+
+
+--
+-- Name: parametro_punitorio uq_parametro_punitorio_uid_global; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametro_punitorio
+    ADD CONSTRAINT uq_parametro_punitorio_uid_global UNIQUE (uid_global);
 
 
 --
@@ -7776,6 +7849,20 @@ CREATE INDEX idx_liquidacion_punitorio_uid_pago_grupo ON public.liquidacion_puni
 --
 
 CREATE UNIQUE INDEX uq_liquidacion_punitorio_op_obligacion ON public.liquidacion_punitorio USING btree (op_id_alta, id_obligacion_financiera) WHERE ((op_id_alta IS NOT NULL) AND (deleted_at IS NULL));
+
+
+--
+-- Name: idx_parametro_punitorio_scope_vigencia; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_parametro_punitorio_scope_vigencia ON public.parametro_punitorio USING btree (alcance_tipo, id_relacion_generadora, id_concepto_financiero, fecha_desde, fecha_hasta) WHERE ((deleted_at IS NULL) AND ((estado_parametro)::text = 'ACTIVO'::text));
+
+
+--
+-- Name: idx_parametro_punitorio_uid_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_parametro_punitorio_uid_global ON public.parametro_punitorio USING btree (uid_global);
 
 
 --
@@ -9498,6 +9585,13 @@ CREATE TRIGGER trg_bi_liquidacion_punitorio_core_ef BEFORE INSERT ON public.liqu
 
 
 --
+-- Name: parametro_punitorio trg_bi_parametro_punitorio_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_parametro_punitorio_core_ef BEFORE INSERT ON public.parametro_punitorio FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
+
+--
 -- Name: concepto_financiero trg_bi_concepto_financiero_core_ef; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9859,6 +9953,13 @@ CREATE TRIGGER trg_bu_composicion_obligacion_core_ef BEFORE UPDATE ON public.com
 --
 
 CREATE TRIGGER trg_bu_liquidacion_punitorio_core_ef BEFORE UPDATE ON public.liquidacion_punitorio FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
+
+--
+-- Name: parametro_punitorio trg_bu_parametro_punitorio_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_parametro_punitorio_core_ef BEFORE UPDATE ON public.parametro_punitorio FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
 
 
 --
@@ -10227,6 +10328,22 @@ ALTER TABLE ONLY public.liquidacion_punitorio
 
 ALTER TABLE ONLY public.liquidacion_punitorio
     ADD CONSTRAINT fk_lp_obligacion FOREIGN KEY (id_obligacion_financiera) REFERENCES public.obligacion_financiera(id_obligacion_financiera) ON DELETE RESTRICT;
+
+
+--
+-- Name: parametro_punitorio fk_pp_concepto_financiero; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametro_punitorio
+    ADD CONSTRAINT fk_pp_concepto_financiero FOREIGN KEY (id_concepto_financiero) REFERENCES public.concepto_financiero(id_concepto_financiero) ON DELETE RESTRICT;
+
+
+--
+-- Name: parametro_punitorio fk_pp_relacion_generadora; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametro_punitorio
+    ADD CONSTRAINT fk_pp_relacion_generadora FOREIGN KEY (id_relacion_generadora) REFERENCES public.relacion_generadora(id_relacion_generadora) ON DELETE RESTRICT;
 
 
 --

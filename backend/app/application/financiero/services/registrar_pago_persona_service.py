@@ -130,6 +130,14 @@ class FinancieroRepository(Protocol):
         self, *, id_obligacion_financiera: int
     ) -> Decimal: ...
 
+    def resolve_parametro_punitorio(
+        self,
+        *,
+        fecha_referencia: date,
+        id_relacion_generadora: int | None = None,
+        id_concepto_financiero: int | None = None,
+    ) -> ResolucionMora: ...
+
     def liquidar_punitorio_obligacion(
         self,
         *,
@@ -257,7 +265,11 @@ class RegistrarPagoPersonaService:
                     id_obligacion_financiera=ob["id_obligacion_financiera"],
                     fecha_vencimiento=fv,
                 )
-                resolucion_mora = resolver_mora_params()
+                resolucion_mora = self.repository.resolve_parametro_punitorio(
+                    fecha_referencia=corte,
+                    id_relacion_generadora=ob.get("id_relacion_generadora"),
+                    id_concepto_financiero=ob.get("id_concepto_punitorio_base"),
+                )
                 fecha_inicio_calculo = ultima_fecha or fv
                 dias_calculados = max(0, (corte - fecha_inicio_calculo).days)
                 punitorio = _punitorio_dec(

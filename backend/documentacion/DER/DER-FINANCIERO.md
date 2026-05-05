@@ -223,6 +223,24 @@ El saldo sigue derivando de `composicion_obligacion` y
 
 ---
 
+### 4.4.3 parametro_punitorio
+
+#### Descripcion
+Parametro formal de calculo de mora/punitorio V1.
+
+#### Funcion
+- definir `tasa_diaria` y `dias_gracia` vigentes por fecha
+- soportar alcance `GLOBAL`, `CONCEPTO` y `RELACION_GENERADORA`
+- permitir prioridad de resolucion: relacion generadora, concepto, global,
+  default tecnico
+
+#### Nota
+No crea deuda, no registra liquidaciones y no modifica saldos. La liquidacion
+persistida sigue ocurriendo mediante `composicion_obligacion` `PUNITORIO` y su
+trazabilidad en `liquidacion_punitorio`.
+
+---
+
 ### 4.5 movimiento_financiero
 
 #### Descripción
@@ -316,6 +334,8 @@ Detalle de conciliación.
 - concepto_financiero 1 --- N composicion_obligacion
 - obligacion_financiera 1 --- N liquidacion_punitorio
 - composicion_obligacion 1 --- N liquidacion_punitorio
+- relacion_generadora 1 --- N parametro_punitorio
+- concepto_financiero 1 --- N parametro_punitorio
 
 ---
 
