@@ -157,6 +157,40 @@ class ObligacionFinancieraResponse(BaseModel):
 
 # ── imputacion_financiera ─────────────────────────────────────────────────────
 
+class AjusteIndexacionRequest(BaseModel):
+    importe_ajuste: float
+    motivo: str
+    fecha_ajuste: date
+
+    @field_validator("importe_ajuste")
+    @classmethod
+    def importe_ajuste_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("importe_ajuste debe ser mayor que cero.")
+        return v
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_required(cls, v: str) -> str:
+        motivo = v.strip()
+        if not motivo:
+            raise ValueError("motivo es obligatorio.")
+        return motivo
+
+
+class AjusteIndexacionData(BaseModel):
+    id_obligacion_financiera: int
+    id_composicion_obligacion: int
+    importe_ajuste: float
+    saldo_pendiente_actualizado: float
+    estado_obligacion: str
+
+
+class AjusteIndexacionResponse(BaseModel):
+    ok: bool = True
+    data: AjusteIndexacionData
+
+
 class ImputacionCreateRequest(BaseModel):
     id_obligacion_financiera: int
     monto: float

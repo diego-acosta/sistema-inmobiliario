@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.api.schemas.financiero import (
     AplicacionItemData,
+    AjusteIndexacionData,
+    AjusteIndexacionRequest,
+    AjusteIndexacionResponse,
     ComposicionCreateItem,
     ConceptoFinancieroData,
     ConceptoFinancieroListData,
@@ -89,6 +92,9 @@ from app.application.financiero.services.create_imputacion_financiera_service im
 )
 from app.application.financiero.services.create_obligacion_financiera_service import (
     CreateObligacionFinancieraService,
+)
+from app.application.financiero.services.aplicar_ajuste_indexacion_service import (
+    AplicarAjusteIndexacionService,
 )
 from app.application.financiero.services.get_obligacion_financiera_service import (
     GetObligacionFinancieraService,
@@ -762,6 +768,97 @@ def get_obligacion_financiera(
     return ObligacionFinancieraResponse(
         data=ObligacionFinancieraData(**result.data)
     )
+
+
+@router.post(
+    "/api/v1/financiero/obligaciones/{id_obligacion_financiera}/ajuste-indexacion",
+    status_code=201,
+    response_model=AjusteIndexacionResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def aplicar_ajuste_indexacion(
+    id_obligacion_financiera: int,
+    request: AjusteIndexacionRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> AjusteIndexacionResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = AplicarAjusteIndexacionService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_obligacion_financiera=id_obligacion_financiera,
+            importe_ajuste=request.importe_ajuste,
+            motivo=request.motivo,
+            fecha_ajuste=request.fecha_ajuste,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_OBLIGACION" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La obligación financiera indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "NOT_FOUND_CONCEPTO_AJUSTE_INDEXACION" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND_CONCEPTO",
+                    error_message="El concepto AJUSTE_INDEXACION no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "AJUSTE_INDEXACION_DUPLICADO" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="AJUSTE_INDEXACION_DUPLICADO",
+                    error_message=(
+                        "La obligación ya tiene un AJUSTE_INDEXACION activo."
+                    ),
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "ESTADO_NO_ACEPTA_AJUSTE" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="ESTADO_NO_ACEPTA_AJUSTE",
+                    error_message="La obligación no acepta ajuste de indexación.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo aplicar el ajuste de indexación.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return AjusteIndexacionResponse(data=AjusteIndexacionData(**result.data))
 
 
 @router.get(

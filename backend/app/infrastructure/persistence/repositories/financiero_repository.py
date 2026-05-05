@@ -1460,6 +1460,170 @@ class FinancieroRepository:
         result["composiciones"] = [dict(c) for c in comp_rows]
         return result
 
+    def aplicar_ajuste_indexacion_obligacion(
+        self,
+        *,
+        id_obligacion_financiera: int,
+        importe_ajuste: Decimal,
+        motivo: str,
+        fecha_ajuste: date,
+        uid_global: str,
+        id_instalacion: Any,
+        op_id: Any,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        ob_stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                estado_obligacion,
+                fecha_vencimiento,
+                deleted_at
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
+            FOR UPDATE
+            """
+        )
+        concepto_stmt = text(
+            """
+            SELECT id_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'AJUSTE_INDEXACION'
+              AND estado_concepto_financiero = 'ACTIVO'
+              AND deleted_at IS NULL
+            """
+        )
+        duplicado_stmt = text(
+            """
+            SELECT 1
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND c.estado_composicion_obligacion = 'ACTIVA'
+              AND c.deleted_at IS NULL
+              AND cf.codigo_concepto_financiero = 'AJUSTE_INDEXACION'
+              AND cf.deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+        insert_stmt = text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente,
+                detalle_calculo, observaciones
+            )
+            VALUES (
+                :uid_global, 1, :created_at, :updated_at,
+                :id_instalacion, :id_instalacion,
+                :op_id, :op_id,
+                :id_obligacion_financiera, :id_concepto_financiero,
+                COALESCE((
+                    SELECT MAX(c.orden_composicion) + 1
+                    FROM composicion_obligacion c
+                    WHERE c.id_obligacion_financiera = :id_obligacion_financiera
+                      AND c.deleted_at IS NULL
+                ), 1),
+                :importe_ajuste, :importe_ajuste,
+                :detalle_calculo, :observaciones
+            )
+            RETURNING id_composicion_obligacion
+            """
+        )
+        estado_stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = CASE
+                    WHEN saldo_pendiente = 0 THEN 'CANCELADA'
+                    WHEN :estado_anterior = 'PARCIALMENTE_CANCELADA' THEN
+                        'PARCIALMENTE_CANCELADA'
+                    WHEN fecha_vencimiento IS NOT NULL
+                         AND fecha_vencimiento < :fecha_ajuste THEN 'VENCIDA'
+                    ELSE 'EMITIDA'
+                END,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            RETURNING estado_obligacion, saldo_pendiente
+            """
+        )
+
+        try:
+            obligacion = self.db.execute(
+                ob_stmt, {"id": id_obligacion_financiera}
+            ).mappings().one_or_none()
+            if obligacion is None or obligacion["deleted_at"] is not None:
+                raise ValueError("NOT_FOUND_OBLIGACION")
+            if obligacion["estado_obligacion"] in {"ANULADA", "REEMPLAZADA"}:
+                raise ValueError("ESTADO_NO_ACEPTA_AJUSTE")
+
+            id_concepto = self.db.execute(concepto_stmt).scalar_one_or_none()
+            if id_concepto is None:
+                raise ValueError("NOT_FOUND_CONCEPTO_AJUSTE_INDEXACION")
+
+            duplicado = self.db.execute(
+                duplicado_stmt, {"id": id_obligacion_financiera}
+            ).scalar_one_or_none()
+            if duplicado is not None:
+                raise ValueError("AJUSTE_INDEXACION_DUPLICADO")
+
+            detalle = json.dumps(
+                {
+                    "tipo": "AJUSTE_INDEXACION",
+                    "fecha_ajuste": fecha_ajuste.isoformat(),
+                    "motivo": motivo,
+                    "importe_ajuste": float(importe_ajuste),
+                },
+                separators=(",", ":"),
+            )
+            composicion = self.db.execute(
+                insert_stmt,
+                {
+                    "uid_global": uid_global,
+                    "created_at": now,
+                    "updated_at": now,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "id_concepto_financiero": id_concepto,
+                    "importe_ajuste": importe_ajuste,
+                    "detalle_calculo": detalle,
+                    "observaciones": motivo,
+                },
+            ).mappings().one()
+
+            estado = self.db.execute(
+                estado_stmt,
+                {
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "estado_anterior": obligacion["estado_obligacion"],
+                    "fecha_ajuste": fecha_ajuste,
+                    "updated_at": now,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                },
+            ).mappings().one()
+
+            self.db.commit()
+            return {
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "id_composicion_obligacion": composicion[
+                    "id_composicion_obligacion"
+                ],
+                "importe_ajuste": float(importe_ajuste),
+                "saldo_pendiente_actualizado": float(estado["saldo_pendiente"]),
+                "estado_obligacion": estado["estado_obligacion"],
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
     def create_obligacion_financiera(
         self,
         obligacion: Any,

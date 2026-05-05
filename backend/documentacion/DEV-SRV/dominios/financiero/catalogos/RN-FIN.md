@@ -571,6 +571,15 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 
 ---
 
+### RN-FIN-087 - Ajuste positivo por indice corregido
+- descripcion: Si una obligacion indexada ya tiene pagos o aplicaciones activas y la correccion del indice aumenta el importe, no debe reemplazarse. Debe agregarse una composicion positiva `AJUSTE_INDEXACION` dentro de la obligacion base por la diferencia positiva.
+- aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
+- origen_principal: SRV-FIN-015-plan-financiero-locativo / MODELO-FINANCIERO-FIN
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/ajuste-indexacion`.
+- observaciones: V1 rechaza una segunda composicion activa `AJUSTE_INDEXACION` para la misma obligacion. No implementa bonificacion, composiciones negativas, reemplazo de obligacion con pagos ni modificacion de pagos existentes.
+
+---
+
 ## Reglas de normalización
 
 1. No duplicar reglas.

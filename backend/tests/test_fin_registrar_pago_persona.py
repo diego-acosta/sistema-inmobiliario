@@ -1094,6 +1094,25 @@ def _revertir(client, codigo_pago_grupo: str, motivo: str = "Reversion de prueba
     )
 
 
+def _ajustar_indexacion(
+    client,
+    id_obligacion: int,
+    *,
+    importe_ajuste: float,
+    fecha_ajuste: str = "2026-05-05",
+    motivo: str = "Correccion de indice",
+):
+    return client.post(
+        f"/api/v1/financiero/obligaciones/{id_obligacion}/ajuste-indexacion",
+        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        json={
+            "importe_ajuste": importe_ajuste,
+            "motivo": motivo,
+            "fecha_ajuste": fecha_ajuste,
+        },
+    )
+
+
 def _movimientos_por_codigo_pago(db_session, codigo_pago_grupo: str) -> list[dict]:
     rows = db_session.execute(
         text(
@@ -1150,8 +1169,150 @@ def _saldo_obligacion_y_suma_composiciones(db_session, id_obligacion: int) -> tu
     return float(row["saldo_pendiente"]), float(row["suma_componentes"])
 
 
+def _obligacion_importes(db_session, id_obligacion: int) -> dict:
+    return dict(
+        db_session.execute(
+            text(
+                """
+                SELECT importe_total, saldo_pendiente, estado_obligacion
+                FROM obligacion_financiera
+                WHERE id_obligacion_financiera = :id
+                """
+            ),
+            {"id": id_obligacion},
+        )
+        .mappings()
+        .one()
+    )
+
+
 def _count_table(db_session, table_name: str) -> int:
     return db_session.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar_one()
+
+
+def test_ajuste_indexacion_pago_parcial_aumenta_saldo(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-AJUSTE-PARCIAL-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    _pagar(client, id_persona, monto=3000.00, fecha_pago="2026-11-05")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    resp = _ajustar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_ajuste=1500.00,
+        fecha_ajuste="2026-11-06",
+        motivo="Correccion indice IPC noviembre 2026",
+    )
+
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    actual = _obligacion_importes(db_session, ob["id_obligacion_financiera"])
+    ajuste = _composicion(
+        db_session, ob["id_obligacion_financiera"], "AJUSTE_INDEXACION"
+    )
+    assert data["importe_ajuste"] == pytest.approx(1500.00)
+    assert data["saldo_pendiente_actualizado"] == pytest.approx(8500.00)
+    assert data["estado_obligacion"] == "PARCIALMENTE_CANCELADA"
+    assert ajuste is not None
+    assert float(ajuste["importe_componente"]) == pytest.approx(1500.00)
+    assert float(ajuste["saldo_componente"]) == pytest.approx(1500.00)
+    assert float(actual["importe_total"]) == pytest.approx(11500.00)
+    assert float(actual["saldo_pendiente"]) == pytest.approx(8500.00)
+
+
+def test_ajuste_indexacion_obligacion_cancelada_reabre_estado(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-AJUSTE-CANCELADA-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    _pagar(client, id_persona, monto=10000.00, fecha_pago="2026-11-05")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert ob["estado_obligacion"] == "CANCELADA"
+
+    resp = _ajustar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_ajuste=2000.00,
+        fecha_ajuste="2026-11-06",
+    )
+
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    actual = _obligacion_importes(db_session, ob["id_obligacion_financiera"])
+    assert data["saldo_pendiente_actualizado"] == pytest.approx(2000.00)
+    assert data["estado_obligacion"] == "VENCIDA"
+    assert float(actual["importe_total"]) == pytest.approx(12000.00)
+    assert float(actual["saldo_pendiente"]) == pytest.approx(2000.00)
+    assert actual["estado_obligacion"] == "VENCIDA"
+
+
+def test_ajuste_indexacion_duplicado_devuelve_409(client, db_session) -> None:
+    _, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-AJUSTE-DUP-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    resp_1 = _ajustar_indexacion(
+        client, ob["id_obligacion_financiera"], importe_ajuste=1000.00
+    )
+    resp_2 = _ajustar_indexacion(
+        client, ob["id_obligacion_financiera"], importe_ajuste=500.00
+    )
+
+    assert resp_1.status_code == 201, resp_1.text
+    assert resp_2.status_code == 409
+    assert resp_2.json()["error_code"] == "AJUSTE_INDEXACION_DUPLICADO"
+
+
+def test_estado_cuenta_muestra_ajuste_indexacion(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-AJUSTE-EC-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    resp_ajuste = _ajustar_indexacion(
+        client, ob["id_obligacion_financiera"], importe_ajuste=1250.00
+    )
+    assert resp_ajuste.status_code == 201, resp_ajuste.text
+
+    resp = client.get(
+        "/api/v1/financiero/estado-cuenta",
+        params={"id_relacion_generadora": _relacion_por_contrato(
+            db_session, contrato["id_contrato_alquiler"]
+        )},
+    )
+
+    assert resp.status_code == 200, resp.text
+    obligacion = resp.json()["data"]["obligaciones"][0]
+    conceptos = {
+        comp["codigo_concepto_financiero"]: comp
+        for comp in obligacion["composiciones"]
+    }
+    assert "AJUSTE_INDEXACION" in conceptos
+    assert conceptos["AJUSTE_INDEXACION"]["importe_componente"] == pytest.approx(
+        1250.00
+    )
+    assert conceptos["AJUSTE_INDEXACION"]["saldo_componente"] == pytest.approx(
+        1250.00
+    )
 
 
 def test_recibo_pago_agrupado_una_obligacion(client, db_session) -> None:

@@ -190,6 +190,12 @@ Body: { "fecha_corte": "YYYY-MM-DD" }
   (`periodo_hasta >= fecha_corte`).
 - No se tocan estados: `CANCELADA`, `PARCIALMENTE_CANCELADA`, `ANULADA`, `REEMPLAZADA`.
 - No se tocan obligaciones con al menos una `aplicacion_financiera` activa.
+- Si una obligacion indexada ya tiene pagos y la correccion del indice aumenta
+  el importe, no se reemplaza: se aplica un ajuste positivo con
+  `AJUSTE_INDEXACION` sobre la obligacion existente mediante
+  `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/ajuste-indexacion`.
+- V1 solo admite ajuste positivo; no implementa bonificacion ni composiciones
+  negativas para correcciones a la baja.
 - Si una obligacion reemplazada y una obligacion nueva coinciden exactamente en
   `periodo_desde` y `periodo_hasta`, se completa el vinculo directo:
   `vieja.id_obligacion_reemplazante = nueva.id_obligacion_financiera` y

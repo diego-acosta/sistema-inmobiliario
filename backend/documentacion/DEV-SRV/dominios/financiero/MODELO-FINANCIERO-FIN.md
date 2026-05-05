@@ -564,6 +564,31 @@ una `fecha_corte`, el ciclo de vida de las obligaciones sigue este patron:
 
 Estados reemplazables (sin pagos): `EMITIDA`, `VENCIDA`, `PENDIENTE_AJUSTE`.
 
+### Ajuste positivo por indice corregido V1
+
+Cuando una obligacion indexada ya tiene pagos o aplicaciones activas y una
+correccion del indice aumenta el importe, la obligacion no se reemplaza. En V1
+se agrega una composicion positiva dentro de la obligacion base:
+
+- concepto financiero existente: `AJUSTE_INDEXACION`
+- `importe_componente` y `saldo_componente` iguales a la diferencia positiva
+- no crea una obligacion nueva
+- no modifica pagos, aplicaciones, cronograma ni punitorios existentes
+- no implementa bonificacion ni composiciones negativas
+- si ya existe una composicion activa `AJUSTE_INDEXACION` en la obligacion, se
+  rechaza como duplicado salvo regla futura explicita de recalculo
+
+Endpoint operativo:
+
+`POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/ajuste-indexacion`
+
+Los triggers de `composicion_obligacion` recalculan `importe_total` y
+`saldo_pendiente`. Si una obligacion `CANCELADA` vuelve a tener saldo pendiente
+por el ajuste, su estado pasa a `VENCIDA` cuando
+`fecha_vencimiento < fecha_ajuste`, o a `EMITIDA` en caso contrario. Una
+obligacion `PARCIALMENTE_CANCELADA` conserva un estado compatible con saldo
+pendiente.
+
 ### Objetivo del mecanismo
 
 - **Trazabilidad historica**: las obligaciones reemplazadas permanecen en la base con `deleted_at` seteado y son consultables directamente en SQL.
