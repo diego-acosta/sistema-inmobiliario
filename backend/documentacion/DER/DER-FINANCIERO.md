@@ -218,6 +218,12 @@ Definidos en catálogo (EST-FIN / RN-FIN).
 
 ---
 
+#### Agrupacion de pagos por persona
+En `POST /api/v1/financiero/pagos`, cada obligacion afectada conserva su propio
+`movimiento_financiero`. Los campos opcionales `uid_pago_grupo` y
+`codigo_pago_grupo` agrupan los movimientos creados por la misma operacion de
+pago, sin modificar las relaciones con `aplicacion_financiera`.
+
 ### 4.6 aplicacion_financiera
 
 #### Descripción

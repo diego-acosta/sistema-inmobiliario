@@ -968,6 +968,8 @@ def registrar_pago_persona(
         data=RegistrarPagoPersonaData(
             id_persona=data["id_persona"],
             fecha_pago=data["fecha_pago"],
+            uid_pago_grupo=data.get("uid_pago_grupo"),
+            codigo_pago_grupo=data.get("codigo_pago_grupo"),
             monto_ingresado=data["monto_ingresado"],
             monto_aplicado=data["monto_aplicado"],
             remanente=data["remanente"],

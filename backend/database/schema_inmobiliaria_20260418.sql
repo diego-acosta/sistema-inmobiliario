@@ -3217,6 +3217,8 @@ CREATE TABLE public.movimiento_financiero (
     id_instalacion_ultima_modificacion bigint,
     op_id_alta uuid,
     op_id_ultima_modificacion uuid,
+    uid_pago_grupo uuid,
+    codigo_pago_grupo character varying(50),
     fecha_movimiento timestamp without time zone NOT NULL,
     tipo_movimiento character varying(50) NOT NULL,
     importe numeric(14,2) NOT NULL,
@@ -8855,6 +8857,13 @@ CREATE INDEX ix_lock_logico_op_id ON public.lock_logico USING btree (op_id);
 --
 
 CREATE INDEX ix_movimiento_financiero_fecha_estado ON public.movimiento_financiero USING btree (fecha_movimiento, estado_movimiento);
+
+
+--
+-- Name: ix_movimiento_financiero_pago_grupo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_movimiento_financiero_pago_grupo ON public.movimiento_financiero USING btree (uid_pago_grupo, codigo_pago_grupo);
 
 
 --

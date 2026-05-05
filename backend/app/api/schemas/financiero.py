@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
@@ -398,6 +399,8 @@ class RegistrarPagoPersonaRequest(BaseModel):
 class PagoObligacionResultado(BaseModel):
     id_obligacion_financiera: int
     id_movimiento_financiero: int
+    uid_pago_grupo: UUID | None = None
+    codigo_pago_grupo: str | None = None
     monto_aplicado: float
     estado_resultante: str | None
 
@@ -405,6 +408,8 @@ class PagoObligacionResultado(BaseModel):
 class RegistrarPagoPersonaData(BaseModel):
     id_persona: int
     fecha_pago: date
+    uid_pago_grupo: UUID | None = None
+    codigo_pago_grupo: str | None = None
     monto_ingresado: float
     monto_aplicado: float
     remanente: float

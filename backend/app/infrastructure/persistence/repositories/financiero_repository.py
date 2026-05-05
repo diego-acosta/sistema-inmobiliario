@@ -1577,6 +1577,8 @@ class FinancieroRepository:
                 m.fecha_movimiento,
                 m.importe AS monto_consumido,
                 m.observaciones,
+                m.uid_pago_grupo,
+                m.codigo_pago_grupo,
                 oo.id_persona,
                 a.id_obligacion_financiera,
                 COALESCE(SUM(a.importe_aplicado), 0) AS monto_aplicado,
@@ -1599,6 +1601,8 @@ class FinancieroRepository:
                 m.fecha_movimiento,
                 m.importe,
                 m.observaciones,
+                m.uid_pago_grupo,
+                m.codigo_pago_grupo,
                 oo.id_persona,
                 a.id_obligacion_financiera,
                 o.estado_obligacion
@@ -1617,6 +1621,8 @@ class FinancieroRepository:
             {
                 "id_obligacion_financiera": row["id_obligacion_financiera"],
                 "id_movimiento_financiero": row["id_movimiento_financiero"],
+                "uid_pago_grupo": row["uid_pago_grupo"],
+                "codigo_pago_grupo": row["codigo_pago_grupo"],
                 "monto_aplicado": float(row["monto_aplicado"]),
                 "estado_resultante": row["estado_resultante"],
             }
@@ -1646,6 +1652,16 @@ class FinancieroRepository:
                 resumen["monto_ingresado"]
                 if resumen is not None and "monto_ingresado" in resumen
                 else sum(row["monto_consumido"] for row in rows)
+            ),
+            "uid_pago_grupo": (
+                resumen["uid_pago_grupo"]
+                if resumen is not None and "uid_pago_grupo" in resumen
+                else rows[0]["uid_pago_grupo"]
+            ),
+            "codigo_pago_grupo": (
+                resumen["codigo_pago_grupo"]
+                if resumen is not None and "codigo_pago_grupo" in resumen
+                else rows[0]["codigo_pago_grupo"]
             ),
             "monto_aplicado": float(
                 resumen["monto_aplicado"]
@@ -1815,6 +1831,7 @@ class FinancieroRepository:
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
                 op_id_alta, op_id_ultima_modificacion,
+                uid_pago_grupo, codigo_pago_grupo,
                 fecha_movimiento, tipo_movimiento, importe, signo, estado_movimiento,
                 observaciones
             )
@@ -1822,10 +1839,11 @@ class FinancieroRepository:
                 :uid_global, :version_registro, :created_at, :updated_at,
                 :id_instalacion_origen, :id_instalacion_ultima_modificacion,
                 :op_id_alta, :op_id_ultima_modificacion,
+                :uid_pago_grupo, :codigo_pago_grupo,
                 :fecha_movimiento, :tipo_movimiento, :importe, :signo, :estado_movimiento,
                 :observaciones
             )
-            RETURNING id_movimiento_financiero
+            RETURNING id_movimiento_financiero, uid_pago_grupo, codigo_pago_grupo
             """
         )
 
@@ -1884,6 +1902,8 @@ class FinancieroRepository:
                         "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
                         "op_id_alta": pv["op_id_alta"],
                         "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
+                        "uid_pago_grupo": pv["uid_pago_grupo"],
+                        "codigo_pago_grupo": pv["codigo_pago_grupo"],
                         "fecha_movimiento": pv["fecha_movimiento"],
                         "tipo_movimiento": "PAGO",
                         "importe": pv["monto_a_aplicar"],
@@ -1930,6 +1950,8 @@ class FinancieroRepository:
                     {
                         "id_obligacion_financiera": pv["id_obligacion_financiera"],
                         "id_movimiento_financiero": id_movimiento,
+                        "uid_pago_grupo": mov_row["uid_pago_grupo"],
+                        "codigo_pago_grupo": mov_row["codigo_pago_grupo"],
                         "monto_aplicado": float(pv["monto_a_aplicar"]),
                         "estado_resultante": estado_row["estado_obligacion"] if estado_row else None,
                     }

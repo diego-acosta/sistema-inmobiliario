@@ -88,6 +88,8 @@ class LineaPagoPayload:
 class PagoObligacionPayload:
     id_obligacion_financiera: int
     monto_a_aplicar: float
+    uid_pago_grupo: str
+    codigo_pago_grupo: str
     uid_global_movimiento: str
     fecha_movimiento: datetime
     version_registro: int
@@ -197,12 +199,17 @@ class RegistrarPagoPersonaService:
                     {
                         "id_persona": pago_existente["id_persona"],
                         "fecha_pago": pago_existente["fecha_pago"],
+                        "uid_pago_grupo": pago_existente["uid_pago_grupo"],
+                        "codigo_pago_grupo": pago_existente["codigo_pago_grupo"],
                         "monto_ingresado": float(monto_ingresado),
                         "monto_aplicado": float(monto_aplicado),
                         "remanente": float(remanente),
                         "obligaciones_pagadas": pago_existente["obligaciones_pagadas"],
                     }
                 )
+
+        uid_pago_grupo = str(self.uuid_generator())
+        codigo_pago_grupo = f"PAGO-{corte:%Y%m%d}-{uid_pago_grupo[:8].upper()}"
 
         obligaciones = self.repository.get_obligaciones_para_simular_pago(
             id_persona=id_persona, fecha_corte=corte
@@ -289,6 +296,8 @@ class RegistrarPagoPersonaService:
                 PagoObligacionPayload(
                     id_obligacion_financiera=ob["id_obligacion_financiera"],
                     monto_a_aplicar=float(monto_a_saldo),
+                    uid_pago_grupo=uid_pago_grupo,
+                    codigo_pago_grupo=codigo_pago_grupo,
                     uid_global_movimiento=str(self.uuid_generator()),
                     fecha_movimiento=fecha_movimiento,
                     version_registro=1,
@@ -311,6 +320,8 @@ class RegistrarPagoPersonaService:
                 {
                     "id_persona": id_persona,
                     "fecha_pago": corte,
+                    "uid_pago_grupo": uid_pago_grupo,
+                    "codigo_pago_grupo": codigo_pago_grupo,
                     "monto_ingresado": float(monto_dec),
                     "monto_aplicado": 0.0,
                     "remanente": float(monto_dec),
@@ -323,6 +334,8 @@ class RegistrarPagoPersonaService:
                 "tipo": "pago_persona",
                 "id_persona": id_persona,
                 "fecha_pago": corte.isoformat(),
+                "uid_pago_grupo": uid_pago_grupo,
+                "codigo_pago_grupo": codigo_pago_grupo,
                 "monto_ingresado": float(monto_dec),
                 "monto_aplicado": float(total_aplicado),
                 "remanente": float(restante),
@@ -338,6 +351,8 @@ class RegistrarPagoPersonaService:
             {
                 "id_persona": id_persona,
                 "fecha_pago": corte,
+                "uid_pago_grupo": uid_pago_grupo,
+                "codigo_pago_grupo": codigo_pago_grupo,
                 "monto_ingresado": float(monto_dec),
                 "monto_aplicado": float(total_aplicado),
                 "remanente": float(restante),

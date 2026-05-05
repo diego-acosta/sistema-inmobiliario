@@ -156,6 +156,26 @@ def _count_pagos_por_op_id(db_session, op_id: str) -> int:
     ).scalar()
 
 
+def _movimientos_pago_por_op_id(db_session, op_id: str) -> list[dict]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT
+                id_movimiento_financiero,
+                uid_pago_grupo,
+                codigo_pago_grupo
+            FROM movimiento_financiero
+            WHERE op_id_alta = :op_id
+              AND tipo_movimiento = 'PAGO'
+              AND deleted_at IS NULL
+            ORDER BY id_movimiento_financiero ASC
+            """
+        ),
+        {"op_id": op_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 def _post_pago(
     client,
     *,
@@ -706,6 +726,48 @@ def test_pago_atomico_crea_movimiento_y_aplicacion(client, db_session) -> None:
     assert count_aplic >= 1
 
 
+def test_pago_multiobligacion_crea_movimientos_con_mismo_grupo(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client, db_session,
+        codigo="PAG-GRUPO-MULT-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-06-30",
+        monto=10000.00,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440301"}
+
+    data = _pagar_con_headers(client, id_persona, monto=20000.00, headers=headers)
+    movimientos = _movimientos_pago_por_op_id(db_session, headers["X-Op-Id"])
+
+    assert len(data["obligaciones_pagadas"]) == 2
+    assert len(movimientos) == 2
+    assert data["uid_pago_grupo"] is not None
+    assert data["codigo_pago_grupo"].startswith("PAGO-")
+    assert {str(m["uid_pago_grupo"]) for m in movimientos} == {data["uid_pago_grupo"]}
+    assert {m["codigo_pago_grupo"] for m in movimientos} == {data["codigo_pago_grupo"]}
+    assert {ob["uid_pago_grupo"] for ob in data["obligaciones_pagadas"]} == {data["uid_pago_grupo"]}
+    assert {ob["codigo_pago_grupo"] for ob in data["obligaciones_pagadas"]} == {data["codigo_pago_grupo"]}
+
+
+def test_pago_una_obligacion_tambien_tiene_grupo(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client, db_session,
+        codigo="PAG-GRUPO-UNO-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440302"}
+
+    data = _pagar_con_headers(client, id_persona, monto=5000.00, headers=headers)
+    movimientos = _movimientos_pago_por_op_id(db_session, headers["X-Op-Id"])
+
+    assert len(data["obligaciones_pagadas"]) == 1
+    assert len(movimientos) == 1
+    assert data["uid_pago_grupo"] is not None
+    assert data["codigo_pago_grupo"].startswith("PAGO-")
+    assert str(movimientos[0]["uid_pago_grupo"]) == data["uid_pago_grupo"]
+    assert movimientos[0]["codigo_pago_grupo"] == data["codigo_pago_grupo"]
+
+
 def test_pago_retry_mismo_op_id_no_duplica_movimiento_ni_saldo(client, db_session) -> None:
     id_persona, contrato = _setup(
         client, db_session,
@@ -721,6 +783,8 @@ def test_pago_retry_mismo_op_id_no_duplica_movimiento_ni_saldo(client, db_sessio
     saldo_2 = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
 
     assert data_2 == data_1
+    assert data_2["uid_pago_grupo"] == data_1["uid_pago_grupo"]
+    assert data_2["codigo_pago_grupo"] == data_1["codigo_pago_grupo"]
     assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
     assert float(saldo_1["saldo_pendiente"]) == pytest.approx(5000.00)
     assert float(saldo_2["saldo_pendiente"]) == pytest.approx(5000.00)
@@ -873,12 +937,14 @@ def test_pago_op_id_distinto_registra_nuevo_pago_si_queda_saldo(client, db_sessi
     headers_1 = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440002"}
     headers_2 = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440003"}
 
-    _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers_1)
-    _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers_2)
+    data_1 = _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers_1)
+    data_2 = _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers_2)
 
     saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
     assert _count_pagos_por_op_id(db_session, headers_1["X-Op-Id"]) == 1
     assert _count_pagos_por_op_id(db_session, headers_2["X-Op-Id"]) == 1
+    assert data_1["uid_pago_grupo"] != data_2["uid_pago_grupo"]
+    assert data_1["codigo_pago_grupo"] != data_2["codigo_pago_grupo"]
     assert float(saldo["saldo_pendiente"]) == pytest.approx(4000.00)
 
 

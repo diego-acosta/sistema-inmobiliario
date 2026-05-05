@@ -533,6 +533,12 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
+### RN-FIN-082 - Agrupador comun de pago por persona
+- descripcion: Cada `POST /api/v1/financiero/pagos` debe mantener un `movimiento_financiero` por obligacion afectada, pero todos los movimientos generados por esa misma operacion comparten `uid_pago_grupo` y `codigo_pago_grupo`. Esto aplica tambien si el pago afecta una sola obligacion. El agrupador no reemplaza movimientos ni aplicaciones, y un reintento idempotente debe devolver el mismo grupo.
+- aplica_a: movimiento_financiero, aplicacion_financiera
+- origen_principal: SRV-FIN-019-registro-pago-persona
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
+
 ---
 
 ## Reglas de normalización

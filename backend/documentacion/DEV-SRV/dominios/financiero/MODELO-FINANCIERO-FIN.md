@@ -116,6 +116,11 @@ Implementado:
 
 `aplicacion_financiera` vincula ese movimiento con obligacion y composicion.
 
+Para registro de pagos por persona, V1 mantiene un `movimiento_financiero` por
+obligacion afectada. Los movimientos generados por una misma operacion de pago
+comparten `uid_pago_grupo` y `codigo_pago_grupo`; esos campos son trazabilidad
+comun y no reemplazan las `aplicacion_financiera`.
+
 Implementado:
 
 - `POST /api/v1/financiero/imputaciones`
@@ -126,7 +131,7 @@ Implementado:
 
 No implementado:
 
-- endpoint autonomo de pagos
+- movimiento global unico por pago
 - reversion de imputaciones
 - estado persistido de aplicacion
 
@@ -434,6 +439,9 @@ Reglas:
 - la porción aplicada a saldo (`monto_a_saldo`) se registra en `aplicacion_financiera` y actualiza `saldo_pendiente` vía trigger
 - si saldo llega a 0 → `CANCELADA`; si reduce parcialmente → `PARCIALMENTE_CANCELADA`
 - operación transaccional: si alguna escritura falla, se hace rollback de todas
+- todos los movimientos creados por el mismo pago comparten
+  `uid_pago_grupo` y `codigo_pago_grupo`, incluso cuando el pago afecta una sola
+  obligacion
 - con `X-Op-Id`, si ya existen movimientos `PAGO` asociados al mismo `op_id_alta`
   para la persona, se devuelve el resultado persistido sin crear nuevos
   movimientos ni volver a reducir saldos
@@ -442,6 +450,8 @@ Reglas:
   el resumen persistido en `observaciones`
 - si el mismo `X-Op-Id` se reutiliza con payload distinto, se devuelve
   `IDEMPOTENCY_PAYLOAD_CONFLICT`
+- un reintento idempotente devuelve el mismo `uid_pago_grupo` y
+  `codigo_pago_grupo` de la operacion original
 - no crea `INTERES_MORA` ni modifica reglas de mora existentes
 - `fecha_pago` registrada en `movimiento_financiero`; también usada como `fecha_corte` para mora
 

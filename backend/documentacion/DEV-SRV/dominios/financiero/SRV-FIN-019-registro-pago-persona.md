@@ -36,6 +36,8 @@ Query param:
 {
   "id_persona": 1,
   "fecha_pago": "2026-05-20",
+  "uid_pago_grupo": "1b42c6a1-41a3-49f9-94d7-4a472f76922b",
+  "codigo_pago_grupo": "PAGO-20260520-1B42C6A1",
   "monto_ingresado": 50000.00,
   "monto_aplicado": 45000.00,
   "remanente": 5000.00,
@@ -43,6 +45,8 @@ Query param:
     {
       "id_obligacion_financiera": 10,
       "id_movimiento_financiero": 5,
+      "uid_pago_grupo": "1b42c6a1-41a3-49f9-94d7-4a472f76922b",
+      "codigo_pago_grupo": "PAGO-20260520-1B42C6A1",
       "monto_aplicado": 20000.00,
       "estado_resultante": "CANCELADA"
     }
@@ -53,6 +57,10 @@ Query param:
 - `monto_aplicado`: suma de importes efectivamente aplicados a `saldo_pendiente`
 - `remanente`: monto no consumido (incluyendo mora si el monto no alcanzó a cubrir saldo+mora)
 - `obligaciones_pagadas`: una entrada por obligación con saldo reducido
+
+El resultado incluye `uid_pago_grupo` y `codigo_pago_grupo` a nivel operaciÃ³n
+y en cada obligaciÃ³n pagada. Ambos identifican la operaciÃ³n de pago comÃºn que
+agrupa los movimientos generados.
 
 ---
 
@@ -68,6 +76,11 @@ Por cada obligación cubierta:
 Todo en una única transacción. Rollback total si alguna escritura falla.
 
 ---
+
+Todos los `movimiento_financiero` creados por el mismo request comparten
+`uid_pago_grupo` y `codigo_pago_grupo`. Esto aplica tambiÃ©n cuando el pago
+afecta una sola obligaciÃ³n. El agrupador no reemplaza al movimiento por
+obligaciÃ³n ni cambia las `aplicacion_financiera`.
 
 ## Idempotencia por op_id
 
@@ -86,6 +99,9 @@ devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT` con HTTP 409.
 El comportamiento mantiene el modelo V1 de un `movimiento_financiero` por
 obligación cubierta. Por eso un mismo `op_id` puede agrupar múltiples
 movimientos de pago cuando un pago cubre más de una obligación.
+
+Los movimientos de una misma operaciÃ³n comparten `uid_pago_grupo` y
+`codigo_pago_grupo`; un reintento idempotente devuelve esos mismos valores.
 
 Para reconstruir el resultado idempotente, `movimiento_financiero.observaciones`
 guarda un resumen técnico de la operación. No representa una imputación ni crea
@@ -154,6 +170,9 @@ Reglas:
 - un único `movimiento_financiero` por obligación (no uno global por pago)
 
 ---
+
+El agrupador comÃºn no constituye movimiento global; es trazabilidad comÃºn sobre
+los movimientos por obligaciÃ³n.
 
 ## Referencias
 
