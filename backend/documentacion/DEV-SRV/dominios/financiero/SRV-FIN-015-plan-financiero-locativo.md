@@ -280,6 +280,12 @@ Una segunda llamada con la misma `fecha_corte`:
 
 - Solo genera obligaciones por `CANON_LOCATIVO`.
 - No genera expensas, servicios, impuestos ni punitorios.
+- Las facturas externas de servicios de proveedor no forman parte del
+  cronograma locativo mensual. En V1, cuando se implemente, cada
+  `factura_servicio` usara una `relacion_generadora` propia con
+  `tipo_origen = FACTURA_SERVICIO` y generara una obligacion
+  `SERVICIO_TRASLADADO`.
+- Expensas e impuestos trasladados no se implementan en este bloque.
 - No usa periodicidad para dividir periodos; el cronograma implementado es
   mensual.
 - Prorratea periodos parciales por inicio, fin o regeneracion desde mitad de

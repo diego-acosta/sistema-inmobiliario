@@ -415,16 +415,18 @@ SRV-FIN-012
 
 ### Inmobiliario
 - `factura_servicio` registrada como origen operativo pendiente -> relacion_generadora
-- origen conceptual: `SERVICIO_TRASLADADO`
+- origen financiero V1: `relacion_generadora.tipo_origen = FACTURA_SERVICIO`
+- id origen V1: `relacion_generadora.id_origen = id_factura_servicio`
+- concepto de la obligacion derivada: `SERVICIO_TRASLADADO`
 - la factura la emite un proveedor externo; el sistema no factura servicios
 - la obligacion derivada se modela en financiero mediante relacion_generadora, obligacion_financiera y composicion_obligacion
-- requiere entidad intermedia `factura_servicio`; la tabla SQL estructural existe, pero no existe API/backend, evento ni consumer financiero
+- requiere `factura_servicio` como origen externo registrado; la tabla SQL estructural existe, pero no existe API/backend, evento ni consumer financiero
 - una `factura_servicio` no debe generar mas de una obligacion financiera activa
-- la generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`; queda PENDIENTE / NO IMPLEMENTADO a nivel funcional
-- decision conceptual recomendada para `SERVICIO_TRASLADADO`: 1 servicio asociado a inmueble o unidad funcional -> 1 `relacion_generadora`; cada `factura_servicio` registrada -> 1 `obligacion_financiera` dentro de esa relacion
-- ciclo de vida conceptual: para `SERVICIO_TRASLADADO`, la `relacion_generadora` puede existir antes de la primera `factura_servicio`; las facturas posteriores generan obligaciones dentro de esa misma relacion
-- esta decision queda PENDIENTE / NO IMPLEMENTADO hasta que exista contrato, API/backend, evento y consumer financiero
-- existe tabla SQL `factura_servicio`, pero no existe endpoint documentado vigente para ese origen en inmobiliario y no se genera `relacion_generadora` ni `obligacion_financiera`
+- la creacion de `relacion_generadora` `FACTURA_SERVICIO` es idempotente por `id_factura_servicio`
+- decision V1: cada `factura_servicio` registrada -> 1 `relacion_generadora` propia -> 1 obligacion `SERVICIO_TRASLADADO`
+- la relacion por servicio asociado a inmueble o unidad funcional queda como posible evolucion futura
+- la habilitacion estructural de `FACTURA_SERVICIO` en `relacion_generadora` esta implementada; la generacion de obligacion queda pendiente hasta que exista API/backend de factura, evento y consumer financiero
+- existe tabla SQL `factura_servicio`, pero no existe endpoint documentado vigente para ese origen en inmobiliario y no se genera `obligacion_financiera`
 
 ### Personas
 - obligacion_obligado → persona

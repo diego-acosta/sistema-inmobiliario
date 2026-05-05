@@ -113,7 +113,7 @@ Notas:
 
 ### 5.3 Factura de servicio trasladado
 
-Para `factura_servicio` bajo tipo_origen conceptual `SERVICIO_TRASLADADO`, la regla recomendada es:
+Para `factura_servicio` bajo `relacion_generadora.tipo_origen = FACTURA_SERVICIO`, la regla recomendada es:
 
 1. si existe contrato locativo vigente sobre el objeto y periodo:
    obligado = locatario
@@ -206,9 +206,9 @@ Flujo conceptual:
 
 ```text
 factura_servicio
-  -> SERVICIO_TRASLADADO
-  -> relacion_generadora
+  -> relacion_generadora FACTURA_SERVICIO
   -> obligacion_financiera
+  -> composicion SERVICIO_TRASLADADO
   -> obligacion_obligado
 ```
 
@@ -223,6 +223,12 @@ El obligado se resuelve cruzando:
 5. responsable operativo / propietario
 
 `factura_servicio` existe como tabla SQL estructural. La API/backend para operar ese registro, el evento conceptual `factura_servicio_registrada`, el consumer financiero y la generacion de `relacion_generadora` / `obligacion_financiera` quedan `PENDIENTE` / `NO IMPLEMENTADO`.
+
+Decision V1 de origen financiero: cada `factura_servicio` registrada tendra una
+`relacion_generadora` financiera propia con `tipo_origen = FACTURA_SERVICIO` e
+`id_origen = id_factura_servicio`. La obligacion derivada sera
+`SERVICIO_TRASLADADO`. La relacion por servicio asociado queda como posible
+evolucion futura; expensas e impuestos no se implementan en este bloque.
 
 ## 10. Responsabilidades por dominio
 

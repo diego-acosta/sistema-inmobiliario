@@ -76,12 +76,15 @@ Una `relacion_generadora` activa puede producir obligaciones de alquiler multipl
 La politica base es:
 
 - 1 `factura_servicio` -> 1 `obligacion_financiera`
+- 1 `factura_servicio` -> 1 `relacion_generadora` propia en V1
+- `relacion_generadora.tipo_origen = FACTURA_SERVICIO`
+- `relacion_generadora.id_origen = id_factura_servicio`
 
 `factura_servicio` actua como origen operativo externo registrado por `inmobiliario`. El sistema no emite esa factura.
 
 La obligacion derivada pertenece al dominio `financiero` y debe generarse desde una `relacion_generadora` valida. La generacion debe ser idempotente por `id_factura_servicio`, de modo que una factura no produzca mas de una obligacion financiera activa.
 
-Esta regla es compatible con la decision conceptual vigente para `SERVICIO_TRASLADADO`: una `relacion_generadora` puede agrupar el servicio asociado a un inmueble o unidad funcional, y cada `factura_servicio` posterior genera una obligacion dentro de esa relacion.
+Esta regla reemplaza para V1 la alternativa de agrupar por servicio asociado a inmueble o unidad funcional. Esa relacion por servicio asociado queda como evolucion futura. La decision V1 evita una entidad intermedia de servicio facturable y encaja con el modelo actual de `relacion_generadora(tipo_origen, id_origen)`.
 
 ---
 

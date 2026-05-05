@@ -56,14 +56,17 @@ No cubre directamente:
 - motivo u observación cuando aplique
 
 ### Origen por factura_servicio
-- estado: `PENDIENTE`
+- estado: `HABILITADO COMO ORIGEN ESTRUCTURAL`; generacion de obligacion `PENDIENTE`
 - dominio origen: `inmobiliario`
 - concepto origen: `factura_servicio`, factura de servicio emitida por proveedor externo
-- tipo_origen conceptual: `SERVICIO_TRASLADADO`
+- tipo_origen V1 decidido: `FACTURA_SERVICIO`
+- id_origen V1: `id_factura_servicio`
+- obligacion derivada: composicion `SERVICIO_TRASLADADO`
 - clasificacion: soporte transversal de origen; la obligacion derivada es nucleo de `financiero`
-- condicion: debe existir un registro de origen real en SQL/backend/API antes de habilitarlo como `tipo_origen`
+- condicion: debe existir un registro `factura_servicio` activo para crear la relacion generadora
 - restriccion: el sistema no emite la factura de servicio; solo recibe el origen externo y genera la estructura financiera correspondiente cuando el origen sea compatible
 - idempotencia pendiente: la clave conceptual recomendada para reintentos es `id_factura_servicio`
+- motivo de la decision V1: idempotencia directa por factura, trazabilidad simple factura -> obligacion, evita crear entidad intermedia de servicio facturable y encaja con el modelo fisico actual de `relacion_generadora`
 
 ## Resultado esperado
 - id_relacion_generadora

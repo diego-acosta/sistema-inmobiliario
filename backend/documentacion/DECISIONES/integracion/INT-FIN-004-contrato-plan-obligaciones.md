@@ -67,7 +67,7 @@ Ejemplo de `PlanGeneracionObligaciones`:
 
 Campos base:
 
-- `tipo_origen`: tipo de origen financiero, por ejemplo `VENTA`, `CONTRATO_ALQUILER` o `SERVICIO_TRASLADADO`.
+- `tipo_origen`: tipo de origen financiero, por ejemplo `VENTA`, `CONTRATO_ALQUILER` o `FACTURA_SERVICIO` para facturas externas de servicios trasladados V1.
 - `id_origen`: identificador del origen en su dominio.
 - `obligaciones`: lista de obligaciones a materializar.
 - `concepto`: concepto economico definido por el origen o por el catalogo financiero aplicable.

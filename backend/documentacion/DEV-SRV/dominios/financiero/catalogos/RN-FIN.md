@@ -237,9 +237,10 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: DEV-SRV
 
 ### RN-FIN-044 — factura_servicio como origen, no como emision propia
-- descripcion: `factura_servicio` puede actuar como origen de generacion financiera bajo tipo_origen conceptual `SERVICIO_TRASLADADO` solo cuando exista registro de origen compatible; el sistema no emite esa factura.
+- descripcion: `factura_servicio` puede actuar como origen de generacion financiera bajo `relacion_generadora.tipo_origen = FACTURA_SERVICIO` solo cuando exista registro de origen compatible; el sistema no emite esa factura, registra facturas externas emitidas por proveedores.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
+- estado: IMPLEMENTADA como origen estructural de `relacion_generadora`; generacion de obligacion pendiente.
 
 ### RN-FIN-045 — Obligacion derivada de factura_servicio
 - descripcion: La obligacion financiera derivada de `factura_servicio` debe generarse desde una relacion generadora valida y no puede quedar como deuda suelta ni ser calculada por el dominio inmobiliario.
@@ -253,10 +254,10 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: PENDIENTE / NO IMPLEMENTADO a nivel funcional; `factura_servicio` existe como tabla SQL estructural, pero no existe API/backend, evento ni consumer financiero.
 
 ### RN-FIN-047 — Relacion generadora para SERVICIO_TRASLADADO
-- descripcion: Para `SERVICIO_TRASLADADO`, la decision conceptual recomendada es que 1 servicio asociado a inmueble o unidad funcional use 1 `relacion_generadora`, que esa relacion pueda existir antes de la primera `factura_servicio`, y que cada factura posterior genere 1 `obligacion_financiera` dentro de esa misma relacion.
+- descripcion: Para V1, cada `factura_servicio` registrada usa una relacion generadora propia con `tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`. La obligacion derivada usa concepto `SERVICIO_TRASLADADO`. Esta decision prioriza idempotencia directa por factura y trazabilidad simple factura -> obligacion. La relacion por servicio asociado queda como posible evolucion futura.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: CONCEPTUAL / PENDIENTE / NO IMPLEMENTADO a nivel funcional; `factura_servicio` existe como tabla SQL estructural, pero no existe contrato, API/backend, evento ni consumer financiero.
+- estado: IMPLEMENTADA como origen estructural de `relacion_generadora`; no existe todavia API/backend de factura, evento, consumer financiero ni generacion de obligacion.
 
 ### RN-FIN-048 — Resolucion de obligado para SERVICIO_TRASLADADO
 - descripcion: Antes de generar la obligacion por `factura_servicio`, financiero debe resolver o solicitar la resolucion del obligado segun contrato locativo vigente si el objeto esta ocupado/alquilado, ocupacion vigente, o propietario/responsable operativo si no hay contrato locativo vigente.

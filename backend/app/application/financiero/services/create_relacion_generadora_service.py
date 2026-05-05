@@ -12,9 +12,7 @@ from app.application.financiero.commands.create_relacion_generadora import (
 )
 
 
-# SERVICIO_TRASLADADO excluido: el trigger SQL trg_biu_relacion_generadora_polimorfica
-# solo permite 'venta' y 'contrato_alquiler'. Habilitar cuando el trigger sea extendido.
-TIPOS_ORIGEN_VALIDOS = {"VENTA", "CONTRATO_ALQUILER"}
+TIPOS_ORIGEN_VALIDOS = {"VENTA", "CONTRATO_ALQUILER", "FACTURA_SERVICIO"}
 
 
 @dataclass(slots=True)
@@ -38,6 +36,8 @@ class FinancieroRepository(Protocol):
     def venta_exists(self, id_venta: int) -> bool: ...
 
     def contrato_alquiler_exists(self, id_contrato_alquiler: int) -> bool: ...
+
+    def factura_servicio_exists(self, id_factura_servicio: int) -> bool: ...
 
     def create_relacion_generadora(
         self, payload: RelacionGeneradoraCreatePayload
@@ -68,6 +68,9 @@ class CreateRelacionGeneradoraService:
                 return AppResult.fail("NOT_FOUND_ORIGEN")
         elif tipo == "CONTRATO_ALQUILER":
             if not self.repository.contrato_alquiler_exists(command.id_origen):
+                return AppResult.fail("NOT_FOUND_ORIGEN")
+        elif tipo == "FACTURA_SERVICIO":
+            if not self.repository.factura_servicio_exists(command.id_origen):
                 return AppResult.fail("NOT_FOUND_ORIGEN")
 
         now = datetime.now(UTC)

@@ -239,6 +239,36 @@ Prioridad implementada:
 
 ---
 
+## 4.1 Origen V1 Para Factura De Servicio Externa
+
+Para V1, cada `factura_servicio` registrada sera una `relacion_generadora`
+financiera propia:
+
+- `relacion_generadora.tipo_origen = FACTURA_SERVICIO`
+- `relacion_generadora.id_origen = id_factura_servicio`
+- la obligacion financiera derivada usara el concepto `SERVICIO_TRASLADADO`
+
+Estado implementado: `FACTURA_SERVICIO` esta habilitado como origen estructural
+de `relacion_generadora`, validando que exista `factura_servicio` activa. La
+materializacion de la obligacion `SERVICIO_TRASLADADO` queda pendiente.
+
+Esta decision aplica solo a facturas externas emitidas por proveedores. El
+sistema no factura servicios: registra el origen externo y el dominio
+`financiero` genera la deuda trasladada cuando exista el flujo implementado.
+
+Motivos:
+
+- idempotencia directa por factura
+- trazabilidad simple `factura_servicio` -> `relacion_generadora` -> obligacion
+- evita crear una entidad intermedia de servicio facturable
+- encaja con el modelo actual de `relacion_generadora(tipo_origen, id_origen)`
+
+La relacion por servicio asociado a inmueble o unidad funcional queda como
+posible evolucion futura. Expensas e impuestos trasladados no se implementan en
+este bloque.
+
+---
+
 ## 5. Estado de obligacion
 
 Regla implementada despues de imputar:

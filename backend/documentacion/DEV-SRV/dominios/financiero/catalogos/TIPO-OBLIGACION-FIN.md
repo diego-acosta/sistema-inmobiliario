@@ -75,7 +75,7 @@ Cada "tipo" legacy debe mapearse hacia:
 | cuota de venta | `VENTA` | `CAPITAL_VENTA`; `INTERES_FINANCIERO` si corresponde | Capital y/o interes ordinario de una obligacion originada por venta. |
 | anticipo | `VENTA` | `ANTICIPO_VENTA` | Anticipo exigible de venta. |
 | alquiler mensual | `CONTRATO_ALQUILER` | `CANON_LOCATIVO` | Canon locativo del periodo. |
-| servicio trasladado | `SERVICIO` / `CONTRATO_ALQUILER` segun contrato futuro | `SERVICIO_TRASLADADO` | Servicio trasladado al obligado financiero. |
+| servicio trasladado | `FACTURA_SERVICIO` en V1 | `SERVICIO_TRASLADADO` | Servicio trasladado al obligado financiero desde factura externa de proveedor. |
 | expensa trasladada | `CONTRATO_ALQUILER` | `EXPENSA_TRASLADADA` | Expensa trasladada al obligado financiero. |
 | impuesto trasladado | `CONTRATO_ALQUILER` o `INMUEBLE` segun origen documentado futuro | `IMPUESTO_TRASLADADO` | Impuesto o tasa trasladada. |
 | mora | Origen de la obligacion afectada | `PUNITORIO` en V1; `INTERES_MORA` solo compatibilidad heredada | Componentes de mora asociados a deuda vencida. |
@@ -122,5 +122,5 @@ Estado:
 - No usar estos codigos para decidir calculos, imputacion, mora, cancelacion ni reportes normativos.
 - No usar estos codigos como FK central ni como discriminador principal de comportamiento.
 - No inferir endpoints desde este documento.
-- No habilitar `SERVICIO_TRASLADADO` hasta que existan contrato, API/backend, evento y consumer financiero.
+- No habilitar generacion automatica de `SERVICIO_TRASLADADO` hasta que existan contrato, API/backend, evento y consumer financiero para `FACTURA_SERVICIO`.
 - Toda implementacion futura debe apoyarse en `concepto_financiero` y `composicion_obligacion`.

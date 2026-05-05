@@ -81,9 +81,13 @@ El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotent
 
 ### Relacion conceptual con financiero
 - `factura_servicio` actua como origen conceptual de `SERVICIO_TRASLADADO`.
-- decision recomendada: 1 servicio asociado a inmueble o unidad funcional -> 1 `relacion_generadora` en `financiero`.
-- decision recomendada: esa `relacion_generadora` puede existir antes de la primera `factura_servicio`.
-- decision recomendada: cada `factura_servicio` posterior -> 1 `obligacion_financiera` dentro de esa misma `relacion_generadora`.
+- decision V1: cada `factura_servicio` registrada -> 1 `relacion_generadora` financiera propia.
+- decision V1: `relacion_generadora.tipo_origen = FACTURA_SERVICIO`.
+- decision V1: `relacion_generadora.id_origen = id_factura_servicio`.
+- decision V1: la obligacion derivada usa el concepto financiero `SERVICIO_TRASLADADO`.
+- motivo: idempotencia directa por factura, trazabilidad simple factura -> obligacion, sin entidad intermedia de servicio facturable y alineado con el modelo actual de `relacion_generadora`.
+- la relacion por servicio asociado a inmueble o unidad funcional queda como posible evolucion futura.
+- expensas e impuestos no se implementan en este bloque.
 - esta decision queda `PENDIENTE` de implementacion funcional y no implica API/backend, eventos, consumers ni generacion financiera existentes.
 
 ## Modelo conceptual futuro

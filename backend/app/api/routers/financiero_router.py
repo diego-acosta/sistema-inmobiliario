@@ -251,7 +251,10 @@ def create_relacion_generadora(
                 status_code=400,
                 content=ErrorResponse(
                     error_code="APPLICATION_ERROR",
-                    error_message="tipo_origen debe ser VENTA o CONTRATO_ALQUILER.",
+                    error_message=(
+                        "tipo_origen debe ser VENTA, CONTRATO_ALQUILER "
+                        "o FACTURA_SERVICIO."
+                    ),
                     details={"errors": result.errors},
                 ).model_dump(),
             )
