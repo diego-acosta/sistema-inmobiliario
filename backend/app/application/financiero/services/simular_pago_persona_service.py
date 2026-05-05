@@ -12,20 +12,22 @@ _Q = Decimal("0.01")
 
 
 def _mora(
-    saldo: Decimal,
+    base_morable: Decimal,
     fecha_vencimiento: date | None,
     fecha_corte: date,
+    fecha_inicio: date | None = None,
     resolucion: ResolucionMora | None = None,
 ) -> Decimal:
-    if fecha_vencimiento is None or saldo <= 0:
+    if fecha_vencimiento is None or base_morable <= 0:
         return Decimal("0")
     r = resolucion if resolucion is not None else resolver_mora_params()
     if fecha_corte <= fecha_vencimiento + timedelta(days=r.dias_gracia):
         return Decimal("0")
-    dias = max(0, (fecha_corte - fecha_vencimiento).days)
+    inicio = fecha_inicio if fecha_inicio is not None else fecha_vencimiento
+    dias = max(0, (fecha_corte - inicio).days)
     if dias == 0:
         return Decimal("0")
-    return (saldo * r.tasa_diaria * dias).quantize(_Q, rounding=ROUND_HALF_UP)
+    return (base_morable * r.tasa_diaria * dias).quantize(_Q, rounding=ROUND_HALF_UP)
 
 
 class FinancieroRepository(Protocol):
@@ -37,6 +39,14 @@ class FinancieroRepository(Protocol):
         id_persona: int,
         fecha_corte: date,
     ) -> list[dict[str, Any]]: ...
+
+    def get_ultima_fecha_pago_posterior_vencimiento(
+        self, *, id_obligacion_financiera: int, fecha_vencimiento: date
+    ) -> date | None: ...
+
+    def get_saldo_morable_pendiente(
+        self, *, id_obligacion_financiera: int
+    ) -> Decimal: ...
 
 
 class SimularPagoPersonaService:
@@ -68,9 +78,21 @@ class SimularPagoPersonaService:
         detalle: list[dict[str, Any]] = []
 
         for ob in obligaciones:
+            id_obligacion = ob["id_obligacion_financiera"]
             saldo = Decimal(str(ob["saldo_pendiente"]))
             pct = Decimal(str(ob["porcentaje_responsabilidad"]))
-            mora = _mora(saldo, ob["fecha_vencimiento"], corte)
+            fv = ob["fecha_vencimiento"]
+            base_morable = Decimal("0")
+            ultima_fecha = None
+            if fv is not None:
+                base_morable = self.repository.get_saldo_morable_pendiente(
+                    id_obligacion_financiera=id_obligacion
+                ).quantize(_Q, rounding=ROUND_HALF_UP)
+                ultima_fecha = self.repository.get_ultima_fecha_pago_posterior_vencimiento(
+                    id_obligacion_financiera=id_obligacion,
+                    fecha_vencimiento=fv,
+                )
+            mora = _mora(base_morable, fv, corte, ultima_fecha)
             total_a_cubrir = ((saldo + mora) * pct / 100).quantize(_Q, rounding=ROUND_HALF_UP)
             total_deuda += total_a_cubrir
 
@@ -80,7 +102,7 @@ class SimularPagoPersonaService:
 
             detalle.append(
                 {
-                    "id_obligacion_financiera": ob["id_obligacion_financiera"],
+                    "id_obligacion_financiera": id_obligacion,
                     "saldo_pendiente": float(saldo),
                     "mora_calculada": float(mora),
                     "total_a_cubrir": float(total_a_cubrir),

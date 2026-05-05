@@ -46,6 +46,62 @@ def _simular(client, id_persona: int, monto: float, fecha_corte: str | None = No
     return resp.json()["data"]
 
 
+def _pagar(client, id_persona: int, monto: float, fecha_pago: str | None = None) -> dict:
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    body: dict = {"monto": monto}
+    if fecha_pago:
+        body["fecha_pago"] = fecha_pago
+    resp = client.post(
+        "/api/v1/financiero/pagos",
+        headers=headers,
+        params={"id_persona": id_persona},
+        json=body,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["data"]
+
+
+def _saldo_obligacion_por_contrato(db_session, id_contrato: int) -> dict:
+    row = db_session.execute(
+        text(
+            """
+            SELECT o.id_obligacion_financiera, o.saldo_pendiente, o.estado_obligacion
+            FROM obligacion_financiera o
+            WHERE o.id_relacion_generadora = (
+                SELECT id_relacion_generadora FROM relacion_generadora
+                WHERE tipo_origen = 'contrato_alquiler'
+                  AND id_origen = :id AND deleted_at IS NULL LIMIT 1
+            ) AND o.deleted_at IS NULL
+            ORDER BY o.id_obligacion_financiera ASC
+            LIMIT 1
+            """
+        ),
+        {"id": id_contrato},
+    ).mappings().one()
+    return dict(row)
+
+
+def _saldo_componente(db_session, id_obligacion: int, codigo: str) -> float | None:
+    row = db_session.execute(
+        text(
+            """
+            SELECT c.saldo_componente
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND cf.codigo_concepto_financiero = :codigo
+              AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
+            ORDER BY c.id_composicion_obligacion ASC
+            LIMIT 1
+            """
+        ),
+        {"id": id_obligacion, "codigo": codigo},
+    ).scalar_one_or_none()
+    return float(row) if row is not None else None
+
+
 # ── tests ─────────────────────────────────────────────────────────────────────
 
 def test_simular_pago_cubre_deuda_total(client, db_session) -> None:
@@ -149,6 +205,51 @@ def test_simular_pago_mora_respeta_dias_gracia(client, db_session) -> None:
     assert limite["detalle"][0]["mora_calculada"] == pytest.approx(0.00)
     assert fuera["detalle"][0]["mora_calculada"] == pytest.approx(
         10000.00 * TASA_DIARIA_MORA * 6
+    )
+
+
+def test_simular_pago_punitorio_existente_no_integra_base_morable(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="SIM-PUNIT-MORABLE-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+    ob_antes = _saldo_obligacion_por_contrato(
+        db_session, contrato["id_contrato_alquiler"]
+    )
+    assert float(ob_antes["saldo_pendiente"]) == pytest.approx(10050.00)
+    assert _saldo_componente(
+        db_session, ob_antes["id_obligacion_financiera"], "PUNITORIO"
+    ) == pytest.approx(50.00)
+
+    sim = _simular(client, id_persona, monto=10100.00, fecha_corte="2026-05-25")
+    detalle = sim["detalle"][0]
+
+    assert detalle["saldo_pendiente"] == pytest.approx(10050.00)
+    assert detalle["mora_calculada"] == pytest.approx(
+        10000.00 * TASA_DIARIA_MORA * 5
+    )
+    assert detalle["total_a_cubrir"] == pytest.approx(10100.00)
+    assert sim["monto_aplicado"] == pytest.approx(10100.00)
+    assert sim["remanente"] == pytest.approx(0.00)
+
+    ob_despues_sim = _saldo_obligacion_por_contrato(
+        db_session, contrato["id_contrato_alquiler"]
+    )
+    assert float(ob_despues_sim["saldo_pendiente"]) == pytest.approx(10050.00)
+
+    pago = _pagar(client, id_persona, monto=10100.00, fecha_pago="2026-05-25")
+
+    assert pago["monto_aplicado"] == pytest.approx(sim["monto_aplicado"])
+    assert pago["remanente"] == pytest.approx(sim["remanente"])
+    assert pago["obligaciones_pagadas"][0]["monto_aplicado"] == pytest.approx(
+        detalle["total_a_cubrir"]
     )
 
 

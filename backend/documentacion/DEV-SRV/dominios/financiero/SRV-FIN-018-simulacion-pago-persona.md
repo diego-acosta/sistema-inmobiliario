@@ -47,7 +47,7 @@ Calcular cómo se distribuiría un monto sobre la deuda de una persona sin regis
 
 - `id_obligacion_financiera`
 - `saldo_pendiente`: saldo real en DB
-- `mora_calculada`: mora dinámica al corte
+- `mora_calculada`: punitorio/mora dinámica al corte, calculada sobre saldo morable pendiente
 - `total_a_cubrir`: `(saldo_pendiente + mora_calculada) * porcentaje_responsabilidad / 100`
 - `monto_aplicado`: porción del monto que cubre esta obligación
 - `saldo_restante_simulado`: `total_a_cubrir - monto_aplicado`
@@ -66,6 +66,11 @@ Calcular cómo se distribuiría un monto sobre la deuda de una persona sin regis
 - solo incluye obligaciones con `saldo_pendiente > 0`
 - excluye `ANULADA` y `REEMPLAZADA`
 - mora dinámica incluida en `total_a_cubrir`; no persiste
+- la mora/punitorio se calcula con la misma regla funcional que el registro de pago:
+  - si `fecha_corte <= fecha_vencimiento + dias_gracia`, no calcula punitorio
+  - si supera la gracia, calcula desde `fecha_vencimiento` o desde la última fecha de pago posterior al vencimiento
+  - la base es el saldo morable pendiente de composiciones activas con `concepto_financiero.aplica_punitorio = true`
+  - no calcula sobre `PUNITORIO` pendiente ni accesorios no morables
 - el monto se aplica secuencialmente hasta agotarse
 - si el monto supera la deuda total: `remanente = monto - total_deuda`
 - no crea `movimiento_financiero`, `aplicacion_financiera` ni `INTERES_MORA`
