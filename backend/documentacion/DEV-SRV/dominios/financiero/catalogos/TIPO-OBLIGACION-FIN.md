@@ -122,5 +122,5 @@ Estado:
 - No usar estos codigos para decidir calculos, imputacion, mora, cancelacion ni reportes normativos.
 - No usar estos codigos como FK central ni como discriminador principal de comportamiento.
 - No inferir endpoints desde este documento.
-- No habilitar generacion automatica de `SERVICIO_TRASLADADO` hasta que existan contrato, API/backend, evento y consumer financiero para `FACTURA_SERVICIO`.
+- No habilitar generacion automatica de `SERVICIO_TRASLADADO` hasta que existan contrato de evento, consumer financiero y generacion financiera para `FACTURA_SERVICIO`; la API/backend inmobiliaria V1 de `factura_servicio` solo registra el origen externo.
 - Toda implementacion futura debe apoyarse en `concepto_financiero` y `composicion_obligacion`.

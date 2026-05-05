@@ -43,6 +43,7 @@ Catalogar los casos de uso del dominio con estado explicito respecto de SQL, bac
 | CU-INM-035 | Listado de unidades funcionales por servicio | IMPLEMENTADO | `GET /api/v1/servicios/{id_servicio}/unidades-funcionales` |
 | CU-INM-036 | Gestion de disponibilidad | IMPLEMENTADO | `POST /api/v1/disponibilidades`, `PUT /api/v1/disponibilidades/{id_disponibilidad}`, `PATCH /api/v1/disponibilidades/{id_disponibilidad}/cerrar`, `PUT /api/v1/disponibilidades/{id_disponibilidad}/baja`, `POST /api/v1/disponibilidades/reemplazar-vigente`, `GET /api/v1/inmuebles/{id_inmueble}/disponibilidades`, `GET /api/v1/unidades-funcionales/{id_unidad_funcional}/disponibilidades` |
 | CU-INM-037 | Gestion de ocupacion | IMPLEMENTADO | `POST /api/v1/ocupaciones`, `PUT /api/v1/ocupaciones/{id_ocupacion}`, `PATCH /api/v1/ocupaciones/{id_ocupacion}/cerrar`, `PUT /api/v1/ocupaciones/{id_ocupacion}/baja`, `POST /api/v1/ocupaciones/reemplazar-vigente`, `GET /api/v1/inmuebles/{id_inmueble}/ocupaciones`, `GET /api/v1/unidades-funcionales/{id_unidad_funcional}/ocupaciones` |
+| CU-INM-047 | Registro de factura de servicio externo | IMPLEMENTADO V1 | `POST /api/v1/facturas-servicio`, `GET /api/v1/facturas-servicio/{id_factura_servicio}`, `GET /api/v1/facturas-servicio`; registra factura externa de proveedor y no genera evento, relacion generadora ni obligacion financiera |
 
 ## Modelo parcial
 | ID | Caso de uso | Estado | Nota |
@@ -58,7 +59,6 @@ Catalogar los casos de uso del dominio con estado explicito respecto de SQL, bac
 | CU-INM-042 | Gestion de mejoras | CONCEPTUAL | No existe `inmueble_mejora` en la implementacion real |
 | CU-INM-043 | Relacion inmobiliaria vigente | CONCEPTUAL | No existe `relacion_inmobiliaria` hoy en SQL ni backend |
 | CU-INM-044 | Consulta integral de inmueble | CONCEPTUAL | El backend no expone esa vista consolidada |
-| CU-INM-047 | Registro de factura de servicio externo | SQL IMPLEMENTADO / API-BACKEND NO IMPLEMENTADOS | Actor: operador. Entrada: datos de factura del proveedor externo. Salida esperada futura: registro interno + evento conceptual pendiente `factura_servicio_registrada`. Existe tabla SQL estructural `factura_servicio`, pero no existe endpoint, schema, service, evento implementado ni consumer financiero; no genera obligacion financiera |
 | CU-INM-048 | Disparo de integracion financiera por `factura_servicio` | NO IMPLEMENTADO | La obligacion derivada pertenece a `financiero`; V1 decide una `relacion_generadora` propia por factura con `tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, generando obligacion `SERVICIO_TRASLADADO` |
 
 ## Fuera de alcance

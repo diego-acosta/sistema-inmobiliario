@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.api.schemas.servicios import (
     ErrorResponse,
+    FacturaServicioCreateRequest,
+    FacturaServicioCreateResponse,
+    FacturaServicioData,
+    FacturaServicioDetailResponse,
+    FacturaServicioListResponse,
     ServicioBajaData,
     ServicioBajaResponse,
     ServicioCreateData,
@@ -25,9 +30,15 @@ from app.api.schemas.servicios import (
     ServicioUpdateResponse,
 )
 from app.application.common.commands import CommandContext
+from app.application.servicios.commands.create_factura_servicio import (
+    CreateFacturaServicioCommand,
+)
 from app.application.servicios.commands.create_servicio import CreateServicioCommand
 from app.application.servicios.commands.delete_servicio import DeleteServicioCommand
 from app.application.servicios.commands.update_servicio import UpdateServicioCommand
+from app.application.servicios.services.create_factura_servicio_service import (
+    CreateFacturaServicioService,
+)
 from app.application.servicios.services.create_servicio_service import (
     CreateServicioService,
 )
@@ -36,6 +47,12 @@ from app.application.servicios.services.delete_servicio_service import (
 )
 from app.application.servicios.services.get_servicio_service import (
     GetServicioService,
+)
+from app.application.servicios.services.get_factura_servicio_service import (
+    GetFacturaServicioService,
+)
+from app.application.servicios.services.get_facturas_servicio_service import (
+    GetFacturasServicioService,
 )
 from app.application.servicios.services.get_servicio_inmuebles_service import (
     GetServicioInmueblesService,
@@ -72,23 +89,13 @@ class ServicioCommandContext(CommandContext):
         self.op_id = op_id
 
 
-@router.post(
-    "/api/v1/servicios",
-    status_code=201,
-    response_model=ServicioCreateResponse,
-    responses={
-        400: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    },
-)
-def create_servicio(
-    request: ServicioCreateRequest,
-    db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
-) -> ServicioCreateResponse | JSONResponse:
+def _build_servicio_context(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+) -> ServicioCommandContext:
     id_instalacion: int | None = None
     op_id: UUID | None = None
 
@@ -116,10 +123,35 @@ def create_servicio(
     if op_id is not None:
         context_kwargs["request_id"] = op_id
 
-    context = ServicioCommandContext(
+    return ServicioCommandContext(
         id_instalacion=id_instalacion,
         op_id=op_id,
         **context_kwargs,
+    )
+
+
+@router.post(
+    "/api/v1/servicios",
+    status_code=201,
+    response_model=ServicioCreateResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_servicio(
+    request: ServicioCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ServicioCreateResponse | JSONResponse:
+    context = _build_servicio_context(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
 
     command = CreateServicioCommand(
@@ -151,6 +183,164 @@ def create_servicio(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return ServicioCreateResponse(data=ServicioCreateData(**result.data))
+
+
+@router.post(
+    "/api/v1/facturas-servicio",
+    status_code=201,
+    response_model=FacturaServicioCreateResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_factura_servicio(
+    request: FacturaServicioCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> FacturaServicioCreateResponse | JSONResponse:
+    context = _build_servicio_context(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    command = CreateFacturaServicioCommand(
+        context=context,
+        id_servicio=request.id_servicio,
+        id_inmueble=request.id_inmueble,
+        id_unidad_funcional=request.id_unidad_funcional,
+        proveedor=request.proveedor,
+        numero_factura=request.numero_factura,
+        fecha_emision=request.fecha_emision,
+        fecha_vencimiento=request.fecha_vencimiento,
+        periodo_desde=request.periodo_desde,
+        periodo_hasta=request.periodo_hasta,
+        importe_total=request.importe_total,
+        observaciones=request.observaciones,
+    )
+
+    repository = ServicioRepository(db)
+    service = CreateFacturaServicioService(repository=repository)
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_SERVICIO" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND_SERVICIO",
+                error_message="El servicio indicado no existe o no esta activo.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        if "SERVICIO_NO_ASOCIADO" in result.errors:
+            error = ErrorResponse(
+                error_code="SERVICIO_NO_ASOCIADO",
+                error_message="El servicio no esta asociado al inmueble o unidad funcional indicada.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+
+        if "FACTURA_SERVICIO_DUPLICADA" in result.errors:
+            error = ErrorResponse(
+                error_code="FACTURA_SERVICIO_DUPLICADA",
+                error_message="Ya existe una factura activa para el proveedor y numero indicados.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo crear la factura de servicio.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return FacturaServicioCreateResponse(data=FacturaServicioData(**result.data))
+
+
+@router.get(
+    "/api/v1/facturas-servicio/{id_factura_servicio}",
+    response_model=FacturaServicioDetailResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_factura_servicio(
+    id_factura_servicio: int,
+    db: Session = Depends(get_db),
+) -> FacturaServicioDetailResponse | JSONResponse:
+    repository = ServicioRepository(db)
+    service = GetFacturaServicioService(repository=repository)
+
+    try:
+        result = service.execute(id_factura_servicio)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND_FACTURA_SERVICIO",
+            error_message="La factura de servicio indicada no existe.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return FacturaServicioDetailResponse(data=FacturaServicioData(**result.data))
+
+
+@router.get(
+    "/api/v1/facturas-servicio",
+    response_model=FacturaServicioListResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_facturas_servicio(
+    db: Session = Depends(get_db),
+) -> FacturaServicioListResponse | JSONResponse:
+    repository = ServicioRepository(db)
+    service = GetFacturasServicioService(repository=repository)
+
+    try:
+        result = service.execute()
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudieron obtener las facturas de servicio.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return FacturaServicioListResponse(
+        data=[FacturaServicioData(**item) for item in result.data]
+    )
 
 
 @router.get(

@@ -97,7 +97,7 @@ Solo consume información para consultas y reportes.
 
 ### 6.1 Flujo conceptual pendiente: factura_servicio
 
-Estado: `SQL IMPLEMENTADO` / `API-BACKEND-EVENTO-CONSUMER NO IMPLEMENTADOS`
+Estado: `API-BACKEND INMOBILIARIO V1 IMPLEMENTADO` / `EVENTO-CONSUMER-GENERACION FINANCIERA NO IMPLEMENTADOS`
 
 ```text
 INMOBILIARIO
@@ -113,7 +113,7 @@ FINANCIERO
   crea obligacion_financiera
 ```
 
-El dominio inmobiliario no crea obligaciones financieras. `factura_servicio` existe como tabla SQL estructural para registrar el origen, pero no existe API/backend para operarla y no publica eventos reales. El dominio financiero conserva ownership exclusivo sobre `relacion_generadora`, `obligacion_financiera` y calculo de deuda.
+El dominio inmobiliario no crea obligaciones financieras. `factura_servicio` existe como registro SQL y API/backend V1 para registrar el origen externo, pero no publica eventos reales. El dominio financiero conserva ownership exclusivo sobre `relacion_generadora`, `obligacion_financiera` y calculo de deuda.
 
 El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotente. La clave conceptual recomendada es `id_factura_servicio`; el consumidor financiero no debe crear obligaciones duplicadas ante reintentos. Este evento queda `NO IMPLEMENTADO`, no existe consumer financiero y no se genera `relacion_generadora` ni `obligacion_financiera` desde `factura_servicio`.
 

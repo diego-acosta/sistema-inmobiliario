@@ -14,6 +14,9 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | no puede haber dos asociaciones activas iguales en `inmueble_servicio` | IMPLEMENTADO | backend y DB |
 | no puede haber dos asociaciones activas iguales en `unidad_funcional_servicio` | PARCIAL | backend si, DB aun no |
 | writes de update y baja usan versionado optimista | IMPLEMENTADO | routers, services y tests |
+| registro de `factura_servicio` | IMPLEMENTADO V1 | API/backend registra y consulta facturas externas de proveedor sin generar relacion generadora ni obligacion financiera |
+| duplicidad de `factura_servicio` | IMPLEMENTADO V1 | se rechaza duplicado activo por proveedor + numero de factura |
+| asociacion de `factura_servicio` a objeto inmobiliario | IMPLEMENTADO V1 | toda factura debe asociarse por XOR a `id_inmueble` o `id_unidad_funcional`, con servicio activo asociado al objeto |
 
 ## Reglas parciales
 | Regla | Estado | Nota |
@@ -28,11 +31,8 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | atributos especializados del activo | NO IMPLEMENTADO | sin tablas ni backend |
 | identificacion catastral | NO IMPLEMENTADO | sin tablas ni backend |
 | mejoras como entidad separada | NO IMPLEMENTADO | sin soporte actual |
-| registro de `factura_servicio` | SQL IMPLEMENTADO / API-BACKEND NO IMPLEMENTADOS | tabla SQL estructural para registrar una factura externa emitida por proveedor; no existe API/backend vigente para operarla |
 | integracion de `factura_servicio` con financiero | NO IMPLEMENTADO | la obligacion derivada pertenece a `financiero`; para V1 cada factura usara `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; no existe evento implementado, consumer financiero ni generacion de `relacion_generadora` u `obligacion_financiera` |
 | importe de `factura_servicio` | CONCEPTUAL | el sistema no calcula importes de servicios; el importe proviene del proveedor externo y se registra como dato recibido |
-| duplicidad de `factura_servicio` | CONCEPTUAL | no se deben registrar facturas duplicadas para el mismo proveedor y numero de factura |
-| asociacion de `factura_servicio` a objeto inmobiliario | CONCEPTUAL | toda factura debe asociarse a un terreno/inmueble o a una unidad funcional, con regla XOR; el contrato backend vigente usa `inmueble` como nombre canonico |
 | resolucion de obligado por `factura_servicio` | CONCEPTUAL | el obligado financiero debe resolverse por contrato locativo vigente si el objeto esta ocupado/alquilado, por ocupacion vigente o por propietario/responsable operativo si no hay contrato locativo vigente; la formalizacion completa queda PENDIENTE |
 
 ## Fuera de alcance

@@ -129,7 +129,7 @@ Estado sugerido:
 
 1. `PENDIENTE_RESOLUCION_OBLIGADO`
 
-Esta regla queda `CONCEPTUAL` / `PENDIENTE` / `NO IMPLEMENTADO` a nivel funcional. `factura_servicio` existe como tabla SQL estructural, pero no existe API/backend, contrato de integracion, evento `factura_servicio_registrada`, consumer financiero ni reglas fisicas para propietario / responsable operativo.
+Esta regla queda `CONCEPTUAL` / `PENDIENTE` / `NO IMPLEMENTADO` a nivel funcional financiero. `factura_servicio` tiene API/backend inmobiliario V1, pero no existe contrato de integracion, evento `factura_servicio_registrada`, consumer financiero ni reglas fisicas para propietario / responsable operativo.
 
 ## 6. Resolucion por periodo
 
@@ -222,7 +222,7 @@ El obligado se resuelve cruzando:
 4. ocupacion
 5. responsable operativo / propietario
 
-`factura_servicio` existe como tabla SQL estructural. La API/backend para operar ese registro, el evento conceptual `factura_servicio_registrada`, el consumer financiero y la generacion de `relacion_generadora` / `obligacion_financiera` quedan `PENDIENTE` / `NO IMPLEMENTADO`.
+`factura_servicio` existe como tabla SQL estructural y API/backend inmobiliario V1. El evento conceptual `factura_servicio_registrada`, el consumer financiero y la generacion de `relacion_generadora` / `obligacion_financiera` quedan `PENDIENTE` / `NO IMPLEMENTADO`.
 
 Decision V1 de origen financiero: cada `factura_servicio` registrada tendra una
 `relacion_generadora` financiera propia con `tipo_origen = FACTURA_SERVICIO` e
@@ -238,7 +238,7 @@ evolucion futura; expensas e impuestos no se implementan en este bloque.
 
 1. objeto afectado
 2. servicio asociado
-3. factura registrada, cuando exista API/backend para operar `factura_servicio`
+3. factura registrada mediante API/backend inmobiliario V1 de `factura_servicio`
 4. disponibilidad
 5. ocupacion
 
@@ -312,10 +312,9 @@ Queda `PENDIENTE`:
 1. servicio formal de resolucion de obligado
 2. contrato de integracion
 3. endpoint o consumer
-4. API/backend para operar la tabla SQL `factura_servicio`
-5. evento `factura_servicio_registrada`
-6. reglas fisicas para propietario / responsable operativo
-7. catalogo o estado fisico para `PENDIENTE_RESOLUCION_OBLIGADO`
+4. evento `factura_servicio_registrada`
+5. reglas fisicas para propietario / responsable operativo
+6. catalogo o estado fisico para `PENDIENTE_RESOLUCION_OBLIGADO`
 8. politica de multiples obligados, solidaridad, porcentajes y prorrateo
 
 ## 13. Base documental
@@ -336,7 +335,7 @@ Esta decision se apoya en documentacion existente del workspace:
 
 ## 14. Contradicciones y limites
 
-1. `factura_servicio` existe como tabla SQL estructural, pero no existe API/backend para operarla.
+1. `factura_servicio` existe como tabla SQL estructural y API/backend inmobiliario V1.
 2. `factura_servicio_registrada` no existe como evento implementado ni existe consumer financiero.
 3. `factura_servicio` no genera `relacion_generadora` ni `obligacion_financiera`.
 4. `propietario` / `responsable operativo` para este circuito no tiene regla fisica final documentada.

@@ -250,7 +250,8 @@ financiera propia:
 
 Estado implementado: `FACTURA_SERVICIO` esta habilitado como origen estructural
 de `relacion_generadora`, validando que exista `factura_servicio` activa. La
-materializacion de la obligacion `SERVICIO_TRASLADADO` queda pendiente.
+API/backend inmobiliaria V1 permite registrar y consultar `factura_servicio`.
+La materializacion de la obligacion `SERVICIO_TRASLADADO` queda pendiente.
 
 Esta decision aplica solo a facturas externas emitidas por proveedores. El
 sistema no factura servicios: registra el origen externo y el dominio

@@ -251,13 +251,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Una `factura_servicio` no debe generar mas de una obligacion financiera activa. La generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: PENDIENTE / NO IMPLEMENTADO a nivel funcional; `factura_servicio` existe como tabla SQL estructural, pero no existe API/backend, evento ni consumer financiero.
+- estado: PENDIENTE / NO IMPLEMENTADO a nivel funcional financiero; `factura_servicio` tiene API/backend inmobiliario V1, pero no existe evento, consumer financiero ni generacion de obligacion.
 
 ### RN-FIN-047 — Relacion generadora para SERVICIO_TRASLADADO
 - descripcion: Para V1, cada `factura_servicio` registrada usa una relacion generadora propia con `tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`. La obligacion derivada usa concepto `SERVICIO_TRASLADADO`. Esta decision prioriza idempotencia directa por factura y trazabilidad simple factura -> obligacion. La relacion por servicio asociado queda como posible evolucion futura.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: IMPLEMENTADA como origen estructural de `relacion_generadora`; no existe todavia API/backend de factura, evento, consumer financiero ni generacion de obligacion.
+- estado: IMPLEMENTADA como origen estructural de `relacion_generadora`; API/backend inmobiliario V1 de factura implementado; no existe todavia evento, consumer financiero ni generacion de obligacion.
 
 ### RN-FIN-048 — Resolucion de obligado para SERVICIO_TRASLADADO
 - descripcion: Antes de generar la obligacion por `factura_servicio`, financiero debe resolver o solicitar la resolucion del obligado segun contrato locativo vigente si el objeto esta ocupado/alquilado, ocupacion vigente, o propietario/responsable operativo si no hay contrato locativo vigente.

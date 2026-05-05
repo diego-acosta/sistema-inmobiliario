@@ -339,7 +339,34 @@ Observaciones de implementacion real:
 - los tests vigentes confirman rechazo por duplicado activo con `APPLICATION_ERROR`
 - el naming vigente fue verificado contra `inmuebles_router.py` y `servicios_router.py`
 
-### 6.8 Disponibilidad
+### 6.8 Facturas de servicio externas
+
+#### `POST /api/v1/facturas-servicio`
+- estado: vigente
+- objetivo: registrar una factura externa emitida por proveedor de servicio
+- payload vigente: `id_servicio`, `id_inmueble`, `id_unidad_funcional`, `proveedor`, `numero_factura`, `fecha_emision`, `fecha_vencimiento`, `periodo_desde`, `periodo_hasta`, `importe_total`, `observaciones`
+
+#### `GET /api/v1/facturas-servicio/{id_factura_servicio}`
+- estado: vigente
+- objetivo: consultar una factura de servicio externa registrada
+
+#### `GET /api/v1/facturas-servicio`
+- estado: vigente
+- objetivo: listar facturas de servicio externas registradas
+
+Reglas vigentes:
+
+- debe informarse exactamente uno entre `id_inmueble` e `id_unidad_funcional`
+- el servicio debe existir, estar activo y estar asociado al inmueble o unidad funcional indicada
+- `proveedor` y `numero_factura` son obligatorios
+- `importe_total` no puede ser negativo
+- `fecha_vencimiento` debe ser mayor o igual a `fecha_emision`
+- `periodo_hasta` debe ser mayor o igual a `periodo_desde`
+- se rechaza duplicado activo por `proveedor` + `numero_factura`
+- el alta no crea `relacion_generadora`, `obligacion_financiera` ni evento
+- el sistema no emite facturas de servicio; solo registra facturas externas recibidas
+
+### 6.9 Disponibilidad
 
 #### `POST /api/v1/disponibilidades`
 - estado: vigente
@@ -436,7 +463,7 @@ Limites temporales vigentes:
 - por lo tanto, la nueva `fecha_desde` debe ser estrictamente mayor al cierre efectivo de la anterior
 - no se permiten limites coincidentes
 
-### 6.9 Ocupacion
+### 6.10 Ocupacion
 
 #### `POST /api/v1/ocupaciones`
 - estado: vigente
@@ -537,7 +564,7 @@ Reemplazo de ocupacion vigente:
 - requiere transaccion
 - implica cierre de registro vigente + creacion de nuevo registro
 
-### 6.10 Trazabilidad de integracion comercial por activo
+### 6.11 Trazabilidad de integracion comercial por activo
 
 #### `GET /api/v1/inmuebles/{id_inmueble}/trazabilidad-integracion`
 - estado: vigente
@@ -566,7 +593,7 @@ Observacion de limites:
 - este contrato no reemplaza el endpoint global pendiente `GET /api/v1/inmobiliario/trazabilidad`
 - la lectura no transfiere ownership comercial a `inmobiliario`; solo consume trazabilidad ya persistida en `venta`, `venta_objeto_inmobiliario` y `outbox_event`
 
-### 6.11 Consulta y reporte inmobiliario vigente
+### 6.12 Consulta y reporte inmobiliario vigente
 
 Dentro del dominio, la capacidad de consulta hoy vigente se limita a los endpoints GET ya listados en las secciones anteriores.
 
@@ -775,13 +802,11 @@ Estado actual:
 - estado: pendiente
 - observacion: no existe router vigente bajo `/api/v1/inmobiliario/...`
 
-### 8.7 factura_servicio
+### 8.7 Integracion financiera desde factura_servicio
 
 Estado actual:
 
-- `factura_servicio` existe como tabla SQL estructural para registrar facturas externas de servicios
-- no existe endpoint inmobiliario vigente, schema Pydantic, service ni repository para registrar `factura_servicio`
-- no existe payload documentado para factura emitida por proveedor externo
+- `factura_servicio` tiene API/backend V1 para registrar facturas externas de servicios
 - no existe evento publicado documentado ni implementado para disparar generacion de obligacion financiera desde ese origen
 - no existe consumer financiero para `factura_servicio_registrada`
 - `factura_servicio` no genera `relacion_generadora` ni `obligacion_financiera`
@@ -789,10 +814,9 @@ Estado actual:
 
 Clasificacion:
 
-- estado: SQL IMPLEMENTADO / API-BACKEND-EVENTO-CONSUMER NO IMPLEMENTADOS
-- ownership del registro origen: inmobiliario, vinculado a `servicio` y al activo alcanzado; operativo solo a nivel SQL estructural
+- estado: API-BACKEND V1 IMPLEMENTADO / EVENTO-CONSUMER-GENERACION FINANCIERA NO IMPLEMENTADOS
+- ownership del registro origen: inmobiliario, vinculado a `servicio` y al activo alcanzado
 - ownership de la obligacion derivada: `financiero`
-- contrato requerido: origen compatible para `relacion_generadora` antes de exponer API
 
 ## 9. Reglas visibles del contrato
 
@@ -806,7 +830,7 @@ Clasificacion:
 - las respuestas de error incluyen `ok: false`, `error_code`, `error_message` y `details`
 - `instalacion` no es entidad del dominio inmobiliario; solo aparece como metadata tecnica y como concepto propio del dominio `operativo`
 - `servicio` se implementa como catalogo reutilizable asociado a inmuebles y unidades funcionales
-- `factura_servicio` no tiene endpoint vigente y no debe confundirse con facturacion propia del sistema
+- `factura_servicio` tiene API/backend V1 para registrar y consultar facturas externas, sin generar eventos, `relacion_generadora` ni `obligacion_financiera`
 - las consultas del dominio no generan efectos persistentes
 - `disponibilidad` forma parte del contrato API implementado para alta, consulta, modificacion, cierre y baja logica
 - `ocupacion` forma parte del contrato API implementado para alta, consulta, modificacion, cierre y baja logica
@@ -882,6 +906,9 @@ La evidencia vigente confirma:
 | `POST` | `/api/v1/unidades-funcionales/{id_unidad_funcional}/servicios` | vigente | Asociacion servicio <-> unidad funcional |
 | `GET` | `/api/v1/unidades-funcionales/{id_unidad_funcional}/servicios` | vigente | Servicios asociados a unidad funcional |
 | `GET` | `/api/v1/servicios/{id_servicio}/unidades-funcionales` | vigente | Unidades funcionales asociadas a servicio |
+| `POST` | `/api/v1/facturas-servicio` | vigente | Registro de factura externa de servicio |
+| `GET` | `/api/v1/facturas-servicio/{id_factura_servicio}` | vigente | Detalle de factura externa de servicio |
+| `GET` | `/api/v1/facturas-servicio` | vigente | Listado de facturas externas de servicio |
 | `GET` | `/api/v1/inmuebles/{id_inmueble}/trazabilidad-integracion` | vigente | Trazabilidad de integracion comercial por inmueble |
 | `GET` | `/api/v1/unidades-funcionales/{id_unidad_funcional}/trazabilidad-integracion` | vigente | Trazabilidad de integracion comercial por unidad funcional |
 | `PUT` | `/api/v1/desarrollos/{id_desarrollo}/baja` | heredado | `DEV-SRV` historico; backend usa `PATCH` |
