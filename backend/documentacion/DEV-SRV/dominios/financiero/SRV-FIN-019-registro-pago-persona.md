@@ -58,8 +58,8 @@ Query param:
 - `remanente`: monto no consumido (incluyendo mora si el monto no alcanzó a cubrir saldo+mora)
 - `obligaciones_pagadas`: una entrada por obligación con saldo reducido
 
-El resultado incluye `uid_pago_grupo` y `codigo_pago_grupo` a nivel operaciÃ³n
-y en cada obligaciÃ³n pagada. Ambos identifican la operaciÃ³n de pago comÃºn que
+El resultado incluye `uid_pago_grupo` y `codigo_pago_grupo` a nivel operación
+y en cada obligación pagada. Ambos identifican la operación de pago común que
 agrupa los movimientos generados.
 
 ---
@@ -78,9 +78,9 @@ Todo en una única transacción. Rollback total si alguna escritura falla.
 ---
 
 Todos los `movimiento_financiero` creados por el mismo request comparten
-`uid_pago_grupo` y `codigo_pago_grupo`. Esto aplica tambiÃ©n cuando el pago
-afecta una sola obligaciÃ³n. El agrupador no reemplaza al movimiento por
-obligaciÃ³n ni cambia las `aplicacion_financiera`.
+`uid_pago_grupo` y `codigo_pago_grupo`. Esto aplica también cuando el pago
+afecta una sola obligación. El agrupador no reemplaza al movimiento por
+obligación ni cambia las `aplicacion_financiera`.
 
 ## Idempotencia por op_id
 
@@ -100,7 +100,7 @@ El comportamiento mantiene el modelo V1 de un `movimiento_financiero` por
 obligación cubierta. Por eso un mismo `op_id` puede agrupar múltiples
 movimientos de pago cuando un pago cubre más de una obligación.
 
-Los movimientos de una misma operaciÃ³n comparten `uid_pago_grupo` y
+Los movimientos de una misma operación comparten `uid_pago_grupo` y
 `codigo_pago_grupo`; un reintento idempotente devuelve esos mismos valores.
 
 Para reconstruir el resultado idempotente, `movimiento_financiero.observaciones`
@@ -171,8 +171,8 @@ Reglas:
 
 ---
 
-El agrupador comÃºn no constituye movimiento global; es trazabilidad comÃºn sobre
-los movimientos por obligaciÃ³n.
+El agrupador común no constituye movimiento global; es trazabilidad común sobre
+los movimientos por obligación.
 
 ## Referencias
 
