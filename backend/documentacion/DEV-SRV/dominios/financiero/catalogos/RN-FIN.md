@@ -471,7 +471,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA (V1 default only; extensible via `reglas` dict).
 
 ### RN-FIN-071 - Mora no capitalizable
-- descripcion: La mora diaria no se persiste como obligacion financiera ni incrementa el saldo de la obligacion base; se expone como calculo de lectura.
+- descripcion: La mora diaria dinamica de lectura no se persiste como obligacion financiera ni incrementa el saldo de la obligacion base por el solo hecho de consultar deuda, estado de cuenta o simulacion; se expone como calculo de lectura. Esto es distinto del `PUNITORIO` liquidado al registrar un pago.
 - aplica_a: obligacion_financiera, estado_cuenta, deuda_consolidada
 - origen_principal: SRV-FIN-013-generacion-de-mora
 - estado: IMPLEMENTADA.
@@ -498,7 +498,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 ---
 
 ### RN-FIN-075 - Punitorio como cargo de mora persistido
-- descripcion: Cuando la mora se liquide de forma persistida por pago, debe representarse con `PUNITORIO` dentro de la obligacion base. En V1 no debe usarse `INTERES_MORA` como componente separado para este cargo.
+- descripcion: Cuando la mora se liquide de forma persistida por pago, debe representarse con `PUNITORIO` dentro de la obligacion base. En V1 no debe usarse `INTERES_MORA` como componente separado para este cargo. Esta liquidacion si modifica el importe/saldo persistido mediante composicion y triggers.
 - aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
@@ -522,7 +522,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-079 - Persistencia y saldo de componente punitorio
-- descripcion: El punitorio liquidado debe persistirse como `composicion_obligacion` `PUNITORIO` dentro de la obligacion base. Si el pago no lo cubre completo, queda `saldo_componente` pendiente.
+- descripcion: El punitorio liquidado debe persistirse como `composicion_obligacion` `PUNITORIO` dentro de la obligacion base. Si el pago no lo cubre completo, queda `saldo_componente` pendiente. Puede revertirse solo bajo las reglas de Reversion V1 del pago agrupado que lo liquido.
 - aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.

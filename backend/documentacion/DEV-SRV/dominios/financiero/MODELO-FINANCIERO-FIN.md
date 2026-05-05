@@ -725,25 +725,35 @@ Reglas implementadas:
 - La regla real de vencimiento queda pendiente; dias de gracia para mora usa
   valor fijo inicial de 5 hasta parametrizacion formal.
 
-## Mora — Estado actual (V1)
+## Mora de lectura y punitorio liquidado (V1)
 
-La mora V1 es dinámica y de lectura. No representa aún deuda accesoria persistida.
+En V1 conviven dos conceptos distintos y no intercambiables:
 
-Esto implica:
+1. **Mora dinamica de lectura**: se calcula para deuda, estado de cuenta y
+   simulacion. No crea composiciones por si sola, no modifica saldos por el
+   solo hecho de consultar y no representa deuda accesoria persistida.
+2. **PUNITORIO liquidado por pago**: se calcula al registrar un pago cuando
+   corresponde. Si el importe es positivo, se persiste como
+   `composicion_obligacion` `PUNITORIO`, modifica el importe/saldo persistido
+   de la obligacion mediante composicion y triggers, y queda trazado en
+   `liquidacion_punitorio`.
 
-- No se generan obligaciones financieras de tipo INTERES_MORA.
-- No se modifica el saldo de la obligación base.
-- No se altera la composición de la obligación.
-- La mora se calcula dinámicamente en consultas (estado de cuenta, deuda).
-- El único efecto persistido es el cambio de estado EMITIDA → VENCIDA.
+La mora dinamica de lectura implica:
+
+- no se generan obligaciones financieras de tipo `INTERES_MORA`
+- no se modifica el saldo de la obligacion base por consultar deuda, estado de
+  cuenta o simulacion
+- no se altera la composicion de la obligacion por el solo calculo de lectura
+- el unico efecto persistido del proceso `mora/generar` es el cambio de estado
+  `EMITIDA -> VENCIDA`
 
 ## Punitorio por pago - Regla funcional implementada
 
 Estado: `IMPLEMENTADO` en `POST /api/v1/financiero/pagos`.
 
-Al registrar pagos, cuando corresponde mora persistida, el cargo por mora se
-modela como `PUNITORIO` dentro de la obligacion base. No se usa `INTERES_MORA`
-como componente separado en V1 para esta liquidacion.
+Al registrar pagos, cuando corresponde liquidar mora de forma persistida, el
+cargo se modela como `PUNITORIO` dentro de la obligacion base. No se usa
+`INTERES_MORA` como componente separado en V1 para esta liquidacion.
 
 Reglas funcionales:
 
@@ -758,7 +768,11 @@ Reglas funcionales:
 - no se calcula punitorio sobre `PUNITORIO` ni sobre accesorios no marcados
 - la base morable no depende de hardcodes por codigo de concepto
 - el importe liquidado persiste como `composicion_obligacion` `PUNITORIO`
+- la persistencia del `PUNITORIO` modifica `importe_total` y
+  `saldo_pendiente` mediante composicion y triggers
+- cada liquidacion positiva queda trazada en `liquidacion_punitorio`
 - si no se paga completo, queda `saldo_componente` pendiente
+- puede revertirse solo bajo las reglas de Reversion V1 de pago agrupado
 
 ## Evolución prevista
 

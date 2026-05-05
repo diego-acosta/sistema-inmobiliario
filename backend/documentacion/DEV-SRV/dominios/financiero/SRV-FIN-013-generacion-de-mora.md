@@ -33,9 +33,10 @@ No cubre:
 - refinanciacion
 - reversion especifica de mora
 
-## Decisión V1 — Mora dinámica no persistida
+## Decision V1 - Mora dinamica de lectura no persistida
 
-En la versión actual, la mora no genera obligaciones financieras accesorias ni composiciones `INTERES_MORA`.
+En la version actual, la mora dinamica de lectura no genera obligaciones
+financieras accesorias ni composiciones `INTERES_MORA`.
 
 El proceso de mora V1 solo realiza:
 
@@ -43,12 +44,16 @@ El proceso de mora V1 solo realiza:
 - cálculo dinámico de `mora_calculada` en consultas de deuda y estado de cuenta
 - exposición de `dias_atraso` y `tasa_diaria_mora`
 
-La mora calculada no modifica:
+La mora calculada por consultas o por `mora/generar` no modifica:
 
 - `importe_total`
 - `saldo_pendiente`
 - `composicion_obligacion`
 - `obligacion_obligado`
+
+Esto no contradice la liquidacion de `PUNITORIO` al registrar pagos:
+`PUNITORIO` es un cargo persistido distinto, creado solo por
+`POST /api/v1/financiero/pagos` cuando corresponde liquidar mora.
 
 ## Pendientes explícitos
 
@@ -135,6 +140,11 @@ Estado: `IMPLEMENTADO` en `POST /api/v1/financiero/pagos`.
 Al registrar pagos, cuando corresponde liquidacion persistida de mora, la mora
 liquidada se representa como `PUNITORIO`. En V1 no debe usarse un
 componente `INTERES_MORA` separado para este caso.
+
+El `PUNITORIO` liquidado por pago si modifica el estado persistido de la
+obligacion mediante `composicion_obligacion` y triggers de saldo, queda trazado
+en `liquidacion_punitorio` y puede revertirse solo bajo las reglas de reversion
+V1 de pago agrupado.
 
 Reglas de calculo:
 
