@@ -6,15 +6,20 @@ from sqlalchemy import text
 from tests.test_fin_imputaciones_create import _crear_obligacion, _crear_rg, _imputar
 
 
-PATCH_SQL = (
+PATCH_SQLS = [
     Path(__file__).resolve().parents[1]
     / "database"
-    / "patch_composicion_refresca_saldo_obligacion_20260504.sql"
-)
+    / "patch_composicion_refresca_saldo_obligacion_20260504.sql",
+    Path(__file__).resolve().parents[1]
+    / "database"
+    / "patch_aplicacion_validacion_ignora_soft_deleted_20260505.sql",
+]
 
 
 def _install_patch(db_session) -> None:
-    db_session.connection().exec_driver_sql(PATCH_SQL.read_text(encoding="utf-8"))
+    for patch_sql in PATCH_SQLS:
+        sql = patch_sql.read_text(encoding="utf-8").replace("%", "%%")
+        db_session.connection().exec_driver_sql(sql)
 
 
 def _concepto_id(db_session, codigo: str) -> int:

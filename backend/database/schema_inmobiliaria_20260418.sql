@@ -200,6 +200,7 @@ BEGIN
           INTO v_aplicado_composicion
           FROM aplicacion_financiera a
          WHERE a.id_composicion_obligacion = NEW.id_composicion_obligacion
+           AND a.deleted_at IS NULL
            AND (TG_OP <> 'UPDATE' OR a.id_aplicacion_financiera <> OLD.id_aplicacion_financiera);
 
         IF v_aplicado_composicion + NEW.importe_aplicado > v_importe_total_composicion THEN
@@ -223,6 +224,7 @@ BEGIN
       INTO v_aplicado_obligacion
       FROM aplicacion_financiera a
      WHERE a.id_obligacion_financiera = NEW.id_obligacion_financiera
+       AND a.deleted_at IS NULL
        AND (TG_OP <> 'UPDATE' OR a.id_aplicacion_financiera <> OLD.id_aplicacion_financiera);
 
     IF v_aplicado_obligacion + NEW.importe_aplicado > v_importe_total_obligacion THEN

@@ -1,6 +1,8 @@
 """
 Tests de integración para POST /api/v1/financiero/pagos.
 """
+from pathlib import Path
+
 import pytest
 from sqlalchemy import text
 
@@ -22,6 +24,11 @@ from tests.test_fin_imputaciones_create import (
 
 URL = "/api/v1/financiero/pagos"
 TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
+PATCH_VALIDACION_APLICACION_SQL = (
+    Path(__file__).resolve().parents[1]
+    / "database"
+    / "patch_aplicacion_validacion_ignora_soft_deleted_20260505.sql"
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -37,6 +44,11 @@ def _setup(client, db_session, *, codigo: str, fecha_inicio: str, fecha_fin: str
     id_persona = _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
     return id_persona, contrato
+
+
+def _install_patch_validacion_aplicacion(db_session) -> None:
+    sql = PATCH_VALIDACION_APLICACION_SQL.read_text(encoding="utf-8").replace("%", "%%")
+    db_session.connection().exec_driver_sql(sql)
 
 
 def _pagar(client, id_persona: int, monto: float, fecha_pago: str | None = None) -> dict:
@@ -1512,6 +1524,50 @@ def test_retry_op_id_original_despues_de_reversion_devuelve_conflicto(client, db
     assert resp.json()["error_code"] == "PAGO_YA_REVERTIDO"
     assert float(saldo["saldo_pendiente"]) == pytest.approx(10000.00)
     assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
+
+
+def test_pago_nuevo_despues_de_reversion_no_cuenta_aplicaciones_soft_deleted(
+    client, db_session
+) -> None:
+    _install_patch_validacion_aplicacion(db_session)
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-NUEVO-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    headers_1 = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655441101"}
+    headers_2 = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655441102"}
+    pago_1 = _pagar_con_headers(
+        client,
+        id_persona,
+        monto=10000.00,
+        fecha_pago="2026-11-05",
+        headers=headers_1,
+    )
+    rev = _revertir(client, pago_1["codigo_pago_grupo"])
+    assert rev.status_code == 200, rev.text
+
+    pago_2 = _pagar_con_headers(
+        client,
+        id_persona,
+        monto=10000.00,
+        fecha_pago="2026-11-06",
+        headers=headers_2,
+    )
+
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert pago_2["monto_aplicado"] == pytest.approx(10000.00)
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(0.00)
+    assert saldo["estado_obligacion"] == "CANCELADA"
+    assert _count_aplicaciones_activas_por_codigo(
+        db_session, pago_1["codigo_pago_grupo"]
+    ) == 0
+    assert _count_aplicaciones_activas_por_codigo(
+        db_session, pago_2["codigo_pago_grupo"]
+    ) == 1
 
 
 def test_recibo_pago_revertido_refleja_estado_anulado(client, db_session) -> None:
