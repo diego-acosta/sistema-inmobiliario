@@ -191,6 +191,42 @@ class AjusteIndexacionResponse(BaseModel):
     data: AjusteIndexacionData
 
 
+class BonificacionIndexacionRequest(BaseModel):
+    importe_bonificacion: float
+    motivo: str
+    fecha_bonificacion: date
+
+    @field_validator("importe_bonificacion")
+    @classmethod
+    def importe_bonificacion_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("importe_bonificacion debe ser mayor que cero.")
+        return v
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_bonificacion_required(cls, v: str) -> str:
+        motivo = v.strip()
+        if not motivo:
+            raise ValueError("motivo es obligatorio.")
+        return motivo
+
+
+class BonificacionIndexacionData(BaseModel):
+    id_obligacion_financiera: int
+    id_movimiento_financiero: int
+    importe_bonificacion: float
+    monto_aplicado: float
+    remanente_no_aplicado: float
+    saldo_pendiente_actualizado: float
+    estado_obligacion: str
+
+
+class BonificacionIndexacionResponse(BaseModel):
+    ok: bool = True
+    data: BonificacionIndexacionData
+
+
 class ImputacionCreateRequest(BaseModel):
     id_obligacion_financiera: int
     monto: float

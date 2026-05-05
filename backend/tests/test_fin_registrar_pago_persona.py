@@ -1113,6 +1113,26 @@ def _ajustar_indexacion(
     )
 
 
+def _bonificar_indexacion(
+    client,
+    id_obligacion: int,
+    *,
+    importe_bonificacion: float,
+    fecha_bonificacion: str = "2026-05-05",
+    motivo: str = "Correccion de indice",
+    headers: dict | None = None,
+):
+    return client.post(
+        f"/api/v1/financiero/obligaciones/{id_obligacion}/bonificacion-indexacion",
+        headers=headers or {k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        json={
+            "importe_bonificacion": importe_bonificacion,
+            "motivo": motivo,
+            "fecha_bonificacion": fecha_bonificacion,
+        },
+    )
+
+
 def _movimientos_por_codigo_pago(db_session, codigo_pago_grupo: str) -> list[dict]:
     rows = db_session.execute(
         text(
@@ -1184,6 +1204,31 @@ def _obligacion_importes(db_session, id_obligacion: int) -> dict:
         .mappings()
         .one()
     )
+
+
+def _aplicaciones_por_movimiento(db_session, id_movimiento: int) -> list[dict]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT
+                a.id_aplicacion_financiera,
+                a.id_composicion_obligacion,
+                a.importe_aplicado,
+                a.tipo_aplicacion,
+                cf.codigo_concepto_financiero
+            FROM aplicacion_financiera a
+            JOIN composicion_obligacion c
+              ON c.id_composicion_obligacion = a.id_composicion_obligacion
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE a.id_movimiento_financiero = :id
+              AND a.deleted_at IS NULL
+            ORDER BY a.orden_aplicacion ASC
+            """
+        ),
+        {"id": id_movimiento},
+    ).mappings().all()
+    return [dict(r) for r in rows]
 
 
 def _count_table(db_session, table_name: str) -> int:
@@ -1313,6 +1358,230 @@ def test_estado_cuenta_muestra_ajuste_indexacion(client, db_session) -> None:
     assert conceptos["AJUSTE_INDEXACION"]["saldo_componente"] == pytest.approx(
         1250.00
     )
+
+
+def test_bonificacion_indexacion_menor_al_saldo_reduce_saldo(client, db_session) -> None:
+    _, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-BONIF-MENOR-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    resp = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=2500.00,
+        fecha_bonificacion="2026-11-05",
+    )
+
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    actual = _obligacion_importes(db_session, ob["id_obligacion_financiera"])
+    canon = _composicion(db_session, ob["id_obligacion_financiera"], "CANON_LOCATIVO")
+    assert data["monto_aplicado"] == pytest.approx(2500.00)
+    assert data["remanente_no_aplicado"] == pytest.approx(0.00)
+    assert data["saldo_pendiente_actualizado"] == pytest.approx(7500.00)
+    assert data["estado_obligacion"] == "PARCIALMENTE_CANCELADA"
+    assert float(canon["saldo_componente"]) == pytest.approx(7500.00)
+    assert float(actual["saldo_pendiente"]) == pytest.approx(7500.00)
+
+
+def test_bonificacion_indexacion_igual_al_saldo_cancela_obligacion(
+    client, db_session
+) -> None:
+    _, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-BONIF-TOTAL-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    resp = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=10000.00,
+        fecha_bonificacion="2026-11-05",
+    )
+
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    actual = _obligacion_importes(db_session, ob["id_obligacion_financiera"])
+    assert data["monto_aplicado"] == pytest.approx(10000.00)
+    assert data["remanente_no_aplicado"] == pytest.approx(0.00)
+    assert data["saldo_pendiente_actualizado"] == pytest.approx(0.00)
+    assert data["estado_obligacion"] == "CANCELADA"
+    assert float(actual["saldo_pendiente"]) == pytest.approx(0.00)
+    assert actual["estado_obligacion"] == "CANCELADA"
+
+
+def test_bonificacion_indexacion_mayor_al_saldo_devuelve_remanente(
+    client, db_session
+) -> None:
+    _, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-BONIF-REM-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    resp = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=12000.00,
+        fecha_bonificacion="2026-11-05",
+    )
+
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    assert data["monto_aplicado"] == pytest.approx(10000.00)
+    assert data["remanente_no_aplicado"] == pytest.approx(2000.00)
+    assert data["saldo_pendiente_actualizado"] == pytest.approx(0.00)
+    assert data["estado_obligacion"] == "CANCELADA"
+
+
+def test_bonificacion_indexacion_no_aplica_contra_punitorio(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-BONIF-NO-PUNIT-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    _pagar(client, id_persona, monto=10.00, fecha_pago="2026-11-10")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio_antes = _composicion(
+        db_session, ob["id_obligacion_financiera"], "PUNITORIO"
+    )
+    assert punitorio_antes is not None
+    saldo_punitorio_antes = float(punitorio_antes["saldo_componente"])
+
+    resp = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=1000.00,
+        fecha_bonificacion="2026-11-11",
+    )
+
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    aplicaciones = _aplicaciones_por_movimiento(
+        db_session, data["id_movimiento_financiero"]
+    )
+    punitorio_despues = _composicion(
+        db_session, ob["id_obligacion_financiera"], "PUNITORIO"
+    )
+    assert all(a["codigo_concepto_financiero"] != "PUNITORIO" for a in aplicaciones)
+    assert float(punitorio_despues["saldo_componente"]) == pytest.approx(
+        saldo_punitorio_antes
+    )
+
+
+def test_bonificacion_indexacion_sin_saldo_aplicable_devuelve_409(
+    client, db_session
+) -> None:
+    rg = _crear_rg(client, codigo="BONIF-SIN-SALDO-001")
+    ob = _crear_obligacion(
+        client,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "PUNITORIO", "importe_componente": 500.00}
+        ],
+    )
+
+    resp = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=100.00,
+        fecha_bonificacion="2026-11-05",
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "SIN_SALDO_APLICABLE"
+
+
+def test_estado_cuenta_refleja_bonificacion_indexacion(client, db_session) -> None:
+    _, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-BONIF-EC-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    resp_bonif = _bonificar_indexacion(
+        client, ob["id_obligacion_financiera"], importe_bonificacion=3000.00
+    )
+    assert resp_bonif.status_code == 201, resp_bonif.text
+
+    resp = client.get(
+        "/api/v1/financiero/estado-cuenta",
+        params={
+            "id_relacion_generadora": _relacion_por_contrato(
+                db_session, contrato["id_contrato_alquiler"]
+            )
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    obligacion = resp.json()["data"]["obligaciones"][0]
+    saldo, suma_componentes = _saldo_obligacion_y_suma_composiciones(
+        db_session, ob["id_obligacion_financiera"]
+    )
+    assert obligacion["saldo_pendiente"] == pytest.approx(7000.00)
+    assert saldo == pytest.approx(suma_componentes)
+
+
+def test_bonificacion_indexacion_retry_x_op_id_no_duplica(
+    client, db_session
+) -> None:
+    _, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-BONIF-IDEMP-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    headers = {
+        **{k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        "X-Op-Id": "88888888-8888-4888-8888-888888888801",
+    }
+
+    resp_1 = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=1500.00,
+        headers=headers,
+    )
+    resp_2 = _bonificar_indexacion(
+        client,
+        ob["id_obligacion_financiera"],
+        importe_bonificacion=1500.00,
+        headers=headers,
+    )
+
+    assert resp_1.status_code == 201, resp_1.text
+    assert resp_2.status_code == 201, resp_2.text
+    assert resp_2.json()["data"]["id_movimiento_financiero"] == resp_1.json()[
+        "data"
+    ]["id_movimiento_financiero"]
+    actual = _obligacion_importes(db_session, ob["id_obligacion_financiera"])
+    assert float(actual["saldo_pendiente"]) == pytest.approx(8500.00)
 
 
 def test_recibo_pago_agrupado_una_obligacion(client, db_session) -> None:

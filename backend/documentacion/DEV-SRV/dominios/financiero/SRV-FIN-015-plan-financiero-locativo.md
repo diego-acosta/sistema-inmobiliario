@@ -194,8 +194,13 @@ Body: { "fecha_corte": "YYYY-MM-DD" }
   el importe, no se reemplaza: se aplica un ajuste positivo con
   `AJUSTE_INDEXACION` sobre la obligacion existente mediante
   `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/ajuste-indexacion`.
-- V1 solo admite ajuste positivo; no implementa bonificacion ni composiciones
-  negativas para correcciones a la baja.
+- Si una obligacion indexada ya tiene pagos y la correccion del indice reduce
+  el importe, no se reemplaza y no se crea composicion negativa: se registra
+  una bonificacion mediante
+  `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/bonificacion-indexacion`.
+- La bonificacion V1 aplica con `movimiento_financiero` y
+  `aplicacion_financiera` positivos sobre saldos aplicables; no genera saldo a
+  favor persistido y no aplica contra `PUNITORIO`.
 - Si una obligacion reemplazada y una obligacion nueva coinciden exactamente en
   `periodo_desde` y `periodo_hasta`, se completa el vinculo directo:
   `vieja.id_obligacion_reemplazante = nueva.id_obligacion_financiera` y

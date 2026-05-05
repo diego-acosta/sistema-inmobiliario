@@ -576,7 +576,14 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
 - origen_principal: SRV-FIN-015-plan-financiero-locativo / MODELO-FINANCIERO-FIN
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/ajuste-indexacion`.
-- observaciones: V1 rechaza una segunda composicion activa `AJUSTE_INDEXACION` para la misma obligacion. No implementa bonificacion, composiciones negativas, reemplazo de obligacion con pagos ni modificacion de pagos existentes.
+- observaciones: V1 rechaza una segunda composicion activa `AJUSTE_INDEXACION` para la misma obligacion. No implementa composiciones negativas, reemplazo de obligacion con pagos ni modificacion de pagos existentes.
+
+### RN-FIN-088 - Bonificacion por indice corregido
+- descripcion: Si una obligacion indexada ya tiene pagos o aplicaciones activas y la correccion del indice reduce el importe, no debe reemplazarse ni crear composicion negativa. Debe registrarse una bonificacion con movimiento financiero y aplicaciones positivas contra saldos aplicables.
+- aplica_a: movimiento_financiero, aplicacion_financiera, obligacion_financiera, composicion_obligacion
+- origen_principal: SRV-FIN-015-plan-financiero-locativo / MODELO-FINANCIERO-FIN
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/bonificacion-indexacion`.
+- observaciones: V1 aplica contra canon, conceptos morables o `AJUSTE_INDEXACION`, excluye `PUNITORIO`, no modifica pagos existentes y no crea saldo a favor persistido; si el importe supera el saldo aplicable, devuelve `remanente_no_aplicado`.
 
 ---
 

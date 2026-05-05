@@ -1624,6 +1624,279 @@ class FinancieroRepository:
             self.db.rollback()
             raise
 
+    def aplicar_bonificacion_indexacion_obligacion(
+        self,
+        *,
+        id_obligacion_financiera: int,
+        importe_bonificacion: Decimal,
+        motivo: str,
+        fecha_bonificacion: date,
+        uid_movimiento: str,
+        uuid_generator: Any,
+        id_instalacion: Any,
+        op_id: Any,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        fecha_movimiento = datetime.combine(fecha_bonificacion, datetime.min.time())
+        ob_stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                estado_obligacion,
+                fecha_vencimiento,
+                deleted_at
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
+            FOR UPDATE
+            """
+        )
+        idempotente_stmt = text(
+            """
+            SELECT
+                m.id_movimiento_financiero,
+                m.importe,
+                o.id_obligacion_financiera,
+                o.saldo_pendiente,
+                o.estado_obligacion,
+                COALESCE(SUM(a.importe_aplicado), 0) AS monto_aplicado
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = a.id_obligacion_financiera
+            WHERE m.op_id_alta = :op_id
+              AND m.tipo_movimiento = 'BONIFICACION'
+              AND m.deleted_at IS NULL
+            GROUP BY
+                m.id_movimiento_financiero,
+                m.importe,
+                o.id_obligacion_financiera,
+                o.saldo_pendiente,
+                o.estado_obligacion
+            """
+        )
+        comps_stmt = text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                c.saldo_componente,
+                c.orden_composicion,
+                cf.codigo_concepto_financiero
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND c.estado_composicion_obligacion = 'ACTIVA'
+              AND c.deleted_at IS NULL
+              AND c.saldo_componente > 0
+              AND cf.deleted_at IS NULL
+              AND cf.estado_concepto_financiero = 'ACTIVO'
+              AND cf.codigo_concepto_financiero <> 'PUNITORIO'
+              AND (
+                    cf.aplica_punitorio = true
+                    OR cf.codigo_concepto_financiero = 'AJUSTE_INDEXACION'
+                  )
+            ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
+            """
+        )
+        mov_stmt = text(
+            """
+            INSERT INTO movimiento_financiero (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                fecha_movimiento, tipo_movimiento, importe, signo,
+                estado_movimiento, observaciones
+            )
+            VALUES (
+                :uid_global, 1, :created_at, :updated_at,
+                :id_instalacion, :id_instalacion,
+                :op_id, :op_id,
+                :fecha_movimiento, 'BONIFICACION', :importe, 'CREDITO',
+                'APLICADO', :observaciones
+            )
+            RETURNING id_movimiento_financiero
+            """
+        )
+        aplic_stmt = text(
+            """
+            INSERT INTO aplicacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_movimiento_financiero, id_obligacion_financiera,
+                id_composicion_obligacion, fecha_aplicacion,
+                tipo_aplicacion, orden_aplicacion, importe_aplicado,
+                origen_automatico_o_manual, observaciones
+            )
+            VALUES (
+                :uid_global, 1, :created_at, :updated_at,
+                :id_instalacion, :id_instalacion,
+                :op_id, :op_id,
+                :id_movimiento_financiero, :id_obligacion_financiera,
+                :id_composicion_obligacion, :fecha_aplicacion,
+                'BONIFICACION_INDEXACION', :orden_aplicacion, :importe_aplicado,
+                'MANUAL', :observaciones
+            )
+            """
+        )
+        estado_stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = CASE
+                    WHEN saldo_pendiente = 0 THEN 'CANCELADA'
+                    WHEN saldo_pendiente < importe_total THEN
+                        'PARCIALMENTE_CANCELADA'
+                    WHEN fecha_vencimiento IS NOT NULL
+                         AND fecha_vencimiento < :fecha_bonificacion THEN 'VENCIDA'
+                    ELSE 'EMITIDA'
+                END,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            RETURNING estado_obligacion, saldo_pendiente
+            """
+        )
+
+        try:
+            if op_id is not None:
+                existente = (
+                    self.db.execute(idempotente_stmt, {"op_id": op_id})
+                    .mappings()
+                    .one_or_none()
+                )
+                if existente is not None:
+                    if (
+                        existente["id_obligacion_financiera"]
+                        != id_obligacion_financiera
+                    ):
+                        raise ValueError("BONIFICACION_OP_ID_CONFLICT")
+                    monto_aplicado = Decimal(str(existente["monto_aplicado"]))
+                    remanente = Decimal(str(existente["importe"])) - monto_aplicado
+                    return {
+                        "id_obligacion_financiera": id_obligacion_financiera,
+                        "id_movimiento_financiero": existente[
+                            "id_movimiento_financiero"
+                        ],
+                        "importe_bonificacion": float(existente["importe"]),
+                        "monto_aplicado": float(monto_aplicado),
+                        "remanente_no_aplicado": float(remanente),
+                        "saldo_pendiente_actualizado": float(
+                            existente["saldo_pendiente"]
+                        ),
+                        "estado_obligacion": existente["estado_obligacion"],
+                    }
+
+            obligacion = self.db.execute(
+                ob_stmt, {"id": id_obligacion_financiera}
+            ).mappings().one_or_none()
+            if obligacion is None or obligacion["deleted_at"] is not None:
+                raise ValueError("NOT_FOUND_OBLIGACION")
+            if obligacion["estado_obligacion"] in {"ANULADA", "REEMPLAZADA"}:
+                raise ValueError("ESTADO_NO_ACEPTA_BONIFICACION")
+
+            comps = (
+                self.db.execute(comps_stmt, {"id": id_obligacion_financiera})
+                .mappings()
+                .all()
+            )
+            if not comps:
+                raise ValueError("SIN_SALDO_APLICABLE")
+
+            restante = importe_bonificacion
+            lineas: list[dict[str, Any]] = []
+            for comp in comps:
+                if restante <= 0:
+                    break
+                saldo = Decimal(str(comp["saldo_componente"]))
+                aplicado = min(saldo, restante).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                if aplicado <= 0:
+                    continue
+                lineas.append(
+                    {
+                        "id_composicion_obligacion": comp[
+                            "id_composicion_obligacion"
+                        ],
+                        "importe_aplicado": aplicado,
+                    }
+                )
+                restante = (restante - aplicado).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+
+            monto_aplicado = (importe_bonificacion - restante).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            if monto_aplicado <= 0:
+                raise ValueError("SIN_SALDO_APLICABLE")
+
+            mov_row = self.db.execute(
+                mov_stmt,
+                {
+                    "uid_global": uid_movimiento,
+                    "created_at": now,
+                    "updated_at": now,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                    "fecha_movimiento": fecha_movimiento,
+                    "importe": importe_bonificacion,
+                    "observaciones": motivo,
+                },
+            ).mappings().one()
+
+            for i, linea in enumerate(lineas, start=1):
+                self.db.execute(
+                    aplic_stmt,
+                    {
+                        "uid_global": str(uuid_generator()),
+                        "created_at": now,
+                        "updated_at": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                        "id_movimiento_financiero": mov_row[
+                            "id_movimiento_financiero"
+                        ],
+                        "id_obligacion_financiera": id_obligacion_financiera,
+                        "id_composicion_obligacion": linea[
+                            "id_composicion_obligacion"
+                        ],
+                        "fecha_aplicacion": fecha_movimiento,
+                        "orden_aplicacion": i,
+                        "importe_aplicado": linea["importe_aplicado"],
+                        "observaciones": motivo,
+                    },
+                )
+
+            estado = self.db.execute(
+                estado_stmt,
+                {
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "fecha_bonificacion": fecha_bonificacion,
+                    "updated_at": now,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                },
+            ).mappings().one()
+
+            self.db.commit()
+            return {
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "id_movimiento_financiero": mov_row["id_movimiento_financiero"],
+                "importe_bonificacion": float(importe_bonificacion),
+                "monto_aplicado": float(monto_aplicado),
+                "remanente_no_aplicado": float(restante),
+                "saldo_pendiente_actualizado": float(estado["saldo_pendiente"]),
+                "estado_obligacion": estado["estado_obligacion"],
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
     def create_obligacion_financiera(
         self,
         obligacion: Any,

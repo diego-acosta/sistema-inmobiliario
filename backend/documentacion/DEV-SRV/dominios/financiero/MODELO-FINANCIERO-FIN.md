@@ -574,7 +574,7 @@ se agrega una composicion positiva dentro de la obligacion base:
 - `importe_componente` y `saldo_componente` iguales a la diferencia positiva
 - no crea una obligacion nueva
 - no modifica pagos, aplicaciones, cronograma ni punitorios existentes
-- no implementa bonificacion ni composiciones negativas
+- no implementa composiciones negativas
 - si ya existe una composicion activa `AJUSTE_INDEXACION` en la obligacion, se
   rechaza como duplicado salvo regla futura explicita de recalculo
 
@@ -588,6 +588,32 @@ por el ajuste, su estado pasa a `VENCIDA` cuando
 `fecha_vencimiento < fecha_ajuste`, o a `EMITIDA` en caso contrario. Una
 obligacion `PARCIALMENTE_CANCELADA` conserva un estado compatible con saldo
 pendiente.
+
+### Bonificacion por indice corregido V1
+
+Cuando una obligacion indexada ya tiene pagos o aplicaciones activas y una
+correccion del indice reduce el importe, la obligacion no se reemplaza y no se
+crea una composicion negativa. En V1 se registra una bonificacion como
+movimiento financiero de credito y aplicaciones positivas contra saldos
+existentes:
+
+- endpoint: `POST /api/v1/financiero/obligaciones/{id_obligacion_financiera}/bonificacion-indexacion`
+- crea `movimiento_financiero.tipo_movimiento = BONIFICACION`
+- crea `aplicacion_financiera.tipo_aplicacion = BONIFICACION_INDEXACION`
+- aplica solo sobre composiciones activas con saldo que correspondan a canon,
+  conceptos morables o `AJUSTE_INDEXACION`
+- excluye `PUNITORIO`
+- no modifica pagos existentes
+- no crea obligacion nueva
+- no modifica cronograma ni punitorios
+- no genera saldo a favor persistido; si el importe supera el saldo aplicable,
+  se aplica hasta el disponible y se devuelve `remanente_no_aplicado`
+- si no existe saldo aplicable, devuelve `SIN_SALDO_APLICABLE`
+
+Los triggers de `aplicacion_financiera` recalculan saldos de composiciones y
+obligacion. Luego se recalcula el estado de la obligacion segun saldo:
+`CANCELADA` si queda en cero, `PARCIALMENTE_CANCELADA` si queda saldo menor al
+importe total, `VENCIDA` si corresponde por fecha, o `EMITIDA`.
 
 ### Objetivo del mecanismo
 

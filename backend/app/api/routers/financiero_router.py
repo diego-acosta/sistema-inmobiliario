@@ -12,6 +12,9 @@ from app.api.schemas.financiero import (
     AjusteIndexacionData,
     AjusteIndexacionRequest,
     AjusteIndexacionResponse,
+    BonificacionIndexacionData,
+    BonificacionIndexacionRequest,
+    BonificacionIndexacionResponse,
     ComposicionCreateItem,
     ConceptoFinancieroData,
     ConceptoFinancieroListData,
@@ -95,6 +98,9 @@ from app.application.financiero.services.create_obligacion_financiera_service im
 )
 from app.application.financiero.services.aplicar_ajuste_indexacion_service import (
     AplicarAjusteIndexacionService,
+)
+from app.application.financiero.services.aplicar_bonificacion_indexacion_service import (
+    AplicarBonificacionIndexacionService,
 )
 from app.application.financiero.services.get_obligacion_financiera_service import (
     GetObligacionFinancieraService,
@@ -859,6 +865,99 @@ def aplicar_ajuste_indexacion(
         )
 
     return AjusteIndexacionResponse(data=AjusteIndexacionData(**result.data))
+
+
+@router.post(
+    "/api/v1/financiero/obligaciones/{id_obligacion_financiera}/bonificacion-indexacion",
+    status_code=201,
+    response_model=BonificacionIndexacionResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def aplicar_bonificacion_indexacion(
+    id_obligacion_financiera: int,
+    request: BonificacionIndexacionRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> BonificacionIndexacionResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = AplicarBonificacionIndexacionService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_obligacion_financiera=id_obligacion_financiera,
+            importe_bonificacion=request.importe_bonificacion,
+            motivo=request.motivo,
+            fecha_bonificacion=request.fecha_bonificacion,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_OBLIGACION" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La obligación financiera indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "SIN_SALDO_APLICABLE" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="SIN_SALDO_APLICABLE",
+                    error_message=(
+                        "La obligación no tiene saldo aplicable para bonificación."
+                    ),
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "BONIFICACION_OP_ID_CONFLICT" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="BONIFICACION_OP_ID_CONFLICT",
+                    error_message="El X-Op-Id ya fue utilizado en otra bonificación.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "ESTADO_NO_ACEPTA_BONIFICACION" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="ESTADO_NO_ACEPTA_BONIFICACION",
+                    error_message="La obligación no acepta bonificación de indexación.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo aplicar la bonificación de indexación.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return BonificacionIndexacionResponse(
+        data=BonificacionIndexacionData(**result.data)
+    )
 
 
 @router.get(
