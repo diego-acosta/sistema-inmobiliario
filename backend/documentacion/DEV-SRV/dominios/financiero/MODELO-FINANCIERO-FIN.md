@@ -5,8 +5,8 @@
 - estado: `IMPLEMENTADO PARCIAL / ALINEADO A BACKEND`
 - dominio: `financiero`
 - ultima revision: `2026-04-30`
-- alcance implementado: `relacion_generadora`, `obligacion_financiera`, `composicion_obligacion`, `concepto_financiero`, `movimiento_financiero`, `aplicacion_financiera`, consulta de deuda consolidada y generacion de mora diaria.
-- no modifica SQL
+- alcance implementado: `relacion_generadora`, `obligacion_financiera`, `composicion_obligacion`, `concepto_financiero`, `movimiento_financiero`, `aplicacion_financiera`, `liquidacion_punitorio`, consulta de deuda consolidada y generacion de mora diaria.
+- alineado a SQL vigente
 - no define funcionalidad fuera del backend vigente
 
 Este documento describe el modelo financiero real que hoy implementa el backend. El dominio financiero es el dueno semantico de deuda, saldos, imputaciones, estado financiero y mora.
@@ -134,6 +134,25 @@ No implementado:
 - movimiento global unico por pago
 - reversion de imputaciones
 - estado persistido de aplicacion
+
+### 2.6 liquidacion_punitorio
+
+`liquidacion_punitorio` registra cada liquidacion positiva de mora persistida
+como `PUNITORIO`.
+
+Es una tabla de trazabilidad: no crea deuda nueva, no reemplaza
+`composicion_obligacion`, no reemplaza `aplicacion_financiera` y no recalcula
+saldos. Cada fila referencia la `obligacion_financiera`, la composicion
+`PUNITORIO` afectada y el agrupador de pago `uid_pago_grupo` /
+`codigo_pago_grupo`.
+
+Campos funcionales principales:
+
+- periodo de calculo: `fecha_vencimiento`, `fecha_inicio_calculo`,
+  `fecha_fin_calculo`
+- parametros del calculo: `base_morable`, `tasa_diaria`, `dias_calculados`
+- importe trazado: `importe_liquidado`
+- estado inicial: `ACTIVA`
 
 ---
 
@@ -434,6 +453,9 @@ Reglas:
 - si corresponde punitorio por mora al momento del pago, se liquida antes de
   imputar como `composicion_obligacion` `PUNITORIO`; no se crea obligacion nueva
   ni composicion `INTERES_MORA` para esta liquidacion V1
+- cada liquidacion positiva de `PUNITORIO` registra una fila trazable en
+  `liquidacion_punitorio` vinculada a la obligacion, composicion y
+  `uid_pago_grupo`/`codigo_pago_grupo`
 - orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras
 - mora dinámica incluida en `total_a_cubrir`; cuando corresponde liquidacion al
   registrar el pago, el cargo por mora se persiste como `PUNITORIO`

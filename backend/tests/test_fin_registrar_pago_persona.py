@@ -127,6 +127,36 @@ def _composicion(db_session, id_obligacion: int, codigo: str) -> dict | None:
     return None
 
 
+def _liquidaciones_punitorio(db_session, id_obligacion: int) -> list[dict]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT
+                id_liquidacion_punitorio,
+                id_obligacion_financiera,
+                id_composicion_obligacion,
+                uid_pago_grupo,
+                codigo_pago_grupo,
+                fecha_vencimiento,
+                fecha_inicio_calculo,
+                fecha_fin_calculo,
+                base_morable,
+                tasa_diaria,
+                dias_calculados,
+                importe_liquidado,
+                estado_liquidacion,
+                op_id_alta
+            FROM liquidacion_punitorio
+            WHERE id_obligacion_financiera = :id
+              AND deleted_at IS NULL
+            ORDER BY id_liquidacion_punitorio ASC
+            """
+        ),
+        {"id": id_obligacion},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 def _set_aplica_punitorio(db_session, codigo: str, aplica: bool) -> None:
     db_session.execute(
         text(
@@ -306,13 +336,28 @@ def test_pago_posterior_a_gracia_crea_composicion_punitorio(client, db_session) 
         dia_vencimiento_canon=10,
     )
 
-    _pagar(client, id_persona, monto=10060.00, fecha_pago="2026-05-16")
+    data = _pagar(client, id_persona, monto=10060.00, fecha_pago="2026-05-16")
     ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
     punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+    liquidaciones = _liquidaciones_punitorio(
+        db_session, ob["id_obligacion_financiera"]
+    )
 
     assert punitorio is not None
     assert float(punitorio["importe_componente"]) == pytest.approx(60.00)
     assert float(punitorio["saldo_componente"]) == pytest.approx(0.00)
+    assert len(liquidaciones) == 1
+    assert liquidaciones[0]["id_composicion_obligacion"] == punitorio["id_composicion_obligacion"]
+    assert str(liquidaciones[0]["uid_pago_grupo"]) == data["uid_pago_grupo"]
+    assert liquidaciones[0]["codigo_pago_grupo"] == data["codigo_pago_grupo"]
+    assert liquidaciones[0]["fecha_vencimiento"].isoformat() == "2026-05-10"
+    assert liquidaciones[0]["fecha_inicio_calculo"].isoformat() == "2026-05-10"
+    assert liquidaciones[0]["fecha_fin_calculo"].isoformat() == "2026-05-16"
+    assert float(liquidaciones[0]["base_morable"]) == pytest.approx(10000.00)
+    assert float(liquidaciones[0]["tasa_diaria"]) == pytest.approx(TASA_DIARIA_MORA)
+    assert liquidaciones[0]["dias_calculados"] == 6
+    assert float(liquidaciones[0]["importe_liquidado"]) == pytest.approx(60.00)
+    assert liquidaciones[0]["estado_liquidacion"] == "ACTIVA"
 
 
 def test_pago_dentro_de_gracia_no_crea_punitorio(client, db_session) -> None:
@@ -330,6 +375,7 @@ def test_pago_dentro_de_gracia_no_crea_punitorio(client, db_session) -> None:
     ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
 
     assert _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO") is None
+    assert _liquidaciones_punitorio(db_session, ob["id_obligacion_financiera"]) == []
 
 
 def test_primer_pago_posterior_a_gracia_calcula_desde_vencimiento(client, db_session) -> None:
@@ -410,6 +456,16 @@ def test_segundo_pago_posterior_calcula_desde_ultimo_pago_posterior(client, db_s
     assert count_punitorio == 1
     assert float(punitorio_2["importe_componente"]) == pytest.approx(145.50)
     assert float(punitorio_2["saldo_componente"]) == pytest.approx(0.00)
+    liquidaciones = _liquidaciones_punitorio(
+        db_session, ob["id_obligacion_financiera"]
+    )
+    assert len(liquidaciones) == 2
+    assert liquidaciones[0]["id_liquidacion_punitorio"] != liquidaciones[1]["id_liquidacion_punitorio"]
+    assert float(liquidaciones[0]["importe_liquidado"]) == pytest.approx(100.00)
+    assert float(liquidaciones[1]["importe_liquidado"]) == pytest.approx(45.50)
+    assert liquidaciones[1]["fecha_inicio_calculo"].isoformat() == "2026-05-20"
+    assert liquidaciones[1]["fecha_fin_calculo"].isoformat() == "2026-05-25"
+    assert liquidaciones[1]["dias_calculados"] == 5
 
 
 def test_pago_parcial_solo_parte_punitorio_deja_saldo_pendiente(client, db_session) -> None:
@@ -460,6 +516,12 @@ def test_retry_mismo_op_id_no_duplica_punitorio(client, db_session) -> None:
     assert len(comps) == 1
     assert float(comps[0]["importe_componente"]) == pytest.approx(100.00)
     assert float(comps[0]["saldo_componente"]) == pytest.approx(50.00)
+    liquidaciones = _liquidaciones_punitorio(
+        db_session, ob["id_obligacion_financiera"]
+    )
+    assert len(liquidaciones) == 1
+    assert str(liquidaciones[0]["op_id_alta"]) == headers["X-Op-Id"]
+    assert float(liquidaciones[0]["importe_liquidado"]) == pytest.approx(100.00)
 
 
 def test_saldo_pendiente_obligacion_incluye_punitorio_pendiente(client, db_session) -> None:

@@ -142,6 +142,26 @@ class FinancieroRepository(Protocol):
         uid_global: str,
     ) -> dict[str, Any]: ...
 
+    def registrar_liquidacion_punitorio(
+        self,
+        *,
+        uid_global: str,
+        now: datetime,
+        id_instalacion: Any,
+        op_id: UUID | None,
+        id_obligacion_financiera: int,
+        id_composicion_obligacion: int,
+        uid_pago_grupo: str,
+        codigo_pago_grupo: str,
+        fecha_vencimiento: date,
+        fecha_inicio_calculo: date,
+        fecha_fin_calculo: date,
+        base_morable: Decimal,
+        tasa_diaria: Decimal,
+        dias_calculados: int,
+        importe_liquidado: Decimal,
+    ) -> dict[str, Any]: ...
+
 
 class RegistrarPagoPersonaService:
     def __init__(self, repository: FinancieroRepository, uuid_generator=None) -> None:
@@ -234,20 +254,29 @@ class RegistrarPagoPersonaService:
                     id_obligacion_financiera=ob["id_obligacion_financiera"],
                     fecha_vencimiento=fv,
                 )
-                punitorio = _punitorio_dec(base_morable, fv, corte, ultima_fecha)
+                resolucion_mora = resolver_mora_params()
+                fecha_inicio_calculo = ultima_fecha or fv
+                dias_calculados = max(0, (corte - fecha_inicio_calculo).days)
+                punitorio = _punitorio_dec(
+                    base_morable,
+                    fv,
+                    corte,
+                    ultima_fecha,
+                    resolucion_mora,
+                )
                 if punitorio > 0:
                     detalle = json.dumps(
                         {
                             "tipo": "PUNITORIO",
                             "fecha_pago": corte.isoformat(),
                             "fecha_vencimiento": fv.isoformat(),
-                            "fecha_inicio_calculo": (ultima_fecha or fv).isoformat(),
+                            "fecha_inicio_calculo": fecha_inicio_calculo.isoformat(),
                             "base_morable": float(base_morable),
                             "importe_liquidado": float(punitorio),
                         },
                         separators=(",", ":"),
                     )
-                    self.repository.liquidar_punitorio_obligacion(
+                    composicion_punitorio = self.repository.liquidar_punitorio_obligacion(
                         id_obligacion_financiera=ob["id_obligacion_financiera"],
                         importe_punitorio=punitorio,
                         detalle_calculo=detalle,
@@ -255,6 +284,25 @@ class RegistrarPagoPersonaService:
                         id_instalacion=id_instalacion,
                         op_id=op_id,
                         uid_global=str(self.uuid_generator()),
+                    )
+                    self.repository.registrar_liquidacion_punitorio(
+                        uid_global=str(self.uuid_generator()),
+                        now=now,
+                        id_instalacion=id_instalacion,
+                        op_id=op_id,
+                        id_obligacion_financiera=ob["id_obligacion_financiera"],
+                        id_composicion_obligacion=composicion_punitorio[
+                            "id_composicion_obligacion"
+                        ],
+                        uid_pago_grupo=uid_pago_grupo,
+                        codigo_pago_grupo=codigo_pago_grupo,
+                        fecha_vencimiento=fv,
+                        fecha_inicio_calculo=fecha_inicio_calculo,
+                        fecha_fin_calculo=corte,
+                        base_morable=base_morable,
+                        tasa_diaria=resolucion_mora.tasa_diaria,
+                        dias_calculados=dias_calculados,
+                        importe_liquidado=punitorio,
                     )
                     saldo = (saldo + punitorio).quantize(_Q, rounding=ROUND_HALF_UP)
 

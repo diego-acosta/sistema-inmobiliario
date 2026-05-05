@@ -2067,6 +2067,73 @@ class FinancieroRepository:
             raise ValueError("Concepto financiero PUNITORIO no encontrado")
         return dict(inserted)
 
+    def registrar_liquidacion_punitorio(
+        self,
+        *,
+        uid_global: str,
+        now: Any,
+        id_instalacion: Any,
+        op_id: Any,
+        id_obligacion_financiera: int,
+        id_composicion_obligacion: int,
+        uid_pago_grupo: str,
+        codigo_pago_grupo: str,
+        fecha_vencimiento: Any,
+        fecha_inicio_calculo: Any,
+        fecha_fin_calculo: Any,
+        base_morable: Decimal,
+        tasa_diaria: Decimal,
+        dias_calculados: int,
+        importe_liquidado: Decimal,
+    ) -> dict[str, Any]:
+        stmt = text(
+            """
+            INSERT INTO liquidacion_punitorio (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_composicion_obligacion,
+                uid_pago_grupo, codigo_pago_grupo,
+                fecha_vencimiento, fecha_inicio_calculo, fecha_fin_calculo,
+                base_morable, tasa_diaria, dias_calculados, importe_liquidado,
+                estado_liquidacion
+            )
+            VALUES (
+                :uid_global, 1, :created_at, :updated_at,
+                :id_instalacion, :id_instalacion,
+                :op_id, :op_id,
+                :id_obligacion_financiera, :id_composicion_obligacion,
+                :uid_pago_grupo, :codigo_pago_grupo,
+                :fecha_vencimiento, :fecha_inicio_calculo, :fecha_fin_calculo,
+                :base_morable, :tasa_diaria, :dias_calculados, :importe_liquidado,
+                'ACTIVA'
+            )
+            RETURNING id_liquidacion_punitorio
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "uid_global": uid_global,
+                "created_at": now,
+                "updated_at": now,
+                "id_instalacion": id_instalacion,
+                "op_id": op_id,
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "id_composicion_obligacion": id_composicion_obligacion,
+                "uid_pago_grupo": uid_pago_grupo,
+                "codigo_pago_grupo": codigo_pago_grupo,
+                "fecha_vencimiento": fecha_vencimiento,
+                "fecha_inicio_calculo": fecha_inicio_calculo,
+                "fecha_fin_calculo": fecha_fin_calculo,
+                "base_morable": base_morable,
+                "tasa_diaria": tasa_diaria,
+                "dias_calculados": dias_calculados,
+                "importe_liquidado": importe_liquidado,
+            },
+        ).mappings().one()
+        return dict(row)
+
     def registrar_pago_multipago(
         self,
         pagos: list[Any],

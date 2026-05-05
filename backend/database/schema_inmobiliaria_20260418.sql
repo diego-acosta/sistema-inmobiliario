@@ -1489,6 +1489,59 @@ ALTER SEQUENCE public.composicion_obligacion_id_composicion_obligacion_seq OWNED
 
 
 --
+-- Name: liquidacion_punitorio; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.liquidacion_punitorio (
+    id_liquidacion_punitorio bigint NOT NULL,
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
+    id_obligacion_financiera bigint NOT NULL,
+    id_composicion_obligacion bigint NOT NULL,
+    uid_pago_grupo uuid NOT NULL,
+    codigo_pago_grupo character varying(50) NOT NULL,
+    fecha_vencimiento date NOT NULL,
+    fecha_inicio_calculo date NOT NULL,
+    fecha_fin_calculo date NOT NULL,
+    base_morable numeric(14,2) NOT NULL,
+    tasa_diaria numeric(12,8) NOT NULL,
+    dias_calculados integer NOT NULL,
+    importe_liquidado numeric(14,2) NOT NULL,
+    estado_liquidacion character varying(30) DEFAULT 'ACTIVA'::character varying NOT NULL,
+    CONSTRAINT chk_liquidacion_punitorio_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at))),
+    CONSTRAINT chk_liquidacion_punitorio_estado CHECK (((estado_liquidacion)::text = ANY ((ARRAY['ACTIVA'::character varying, 'REVERSADA'::character varying, 'ANULADA'::character varying])::text[]))),
+    CONSTRAINT chk_liquidacion_punitorio_fechas CHECK ((fecha_inicio_calculo <= fecha_fin_calculo)),
+    CONSTRAINT chk_liquidacion_punitorio_importes CHECK (((base_morable >= (0)::numeric) AND (tasa_diaria >= (0)::numeric) AND (dias_calculados >= 0) AND (importe_liquidado > (0)::numeric)))
+);
+
+
+--
+-- Name: liquidacion_punitorio_id_liquidacion_punitorio_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.liquidacion_punitorio_id_liquidacion_punitorio_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: liquidacion_punitorio_id_liquidacion_punitorio_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.liquidacion_punitorio_id_liquidacion_punitorio_seq OWNED BY public.liquidacion_punitorio.id_liquidacion_punitorio;
+
+
+--
 -- Name: concepto_financiero; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5288,6 +5341,13 @@ ALTER TABLE ONLY public.composicion_obligacion ALTER COLUMN id_composicion_oblig
 
 
 --
+-- Name: liquidacion_punitorio id_liquidacion_punitorio; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.liquidacion_punitorio ALTER COLUMN id_liquidacion_punitorio SET DEFAULT nextval('public.liquidacion_punitorio_id_liquidacion_punitorio_seq'::regclass);
+
+
+--
 -- Name: concepto_financiero id_concepto_financiero; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5974,6 +6034,14 @@ ALTER TABLE ONLY public.cliente_comprador
 
 ALTER TABLE ONLY public.composicion_obligacion
     ADD CONSTRAINT composicion_obligacion_pkey PRIMARY KEY (id_composicion_obligacion);
+
+
+--
+-- Name: liquidacion_punitorio liquidacion_punitorio_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.liquidacion_punitorio
+    ADD CONSTRAINT liquidacion_punitorio_pkey PRIMARY KEY (id_liquidacion_punitorio);
 
 
 --
@@ -6710,6 +6778,14 @@ ALTER TABLE ONLY public.cliente_comprador
 
 ALTER TABLE ONLY public.composicion_obligacion
     ADD CONSTRAINT uq_composicion_obligacion_uid_global UNIQUE (uid_global);
+
+
+--
+-- Name: liquidacion_punitorio uq_liquidacion_punitorio_uid_global; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.liquidacion_punitorio
+    ADD CONSTRAINT uq_liquidacion_punitorio_uid_global UNIQUE (uid_global);
 
 
 --
@@ -7663,6 +7739,41 @@ CREATE INDEX idx_col_contrato ON public.contrato_objeto_locativo USING btree (id
 --
 
 CREATE INDEX idx_composicion_obligacion_uid_global ON public.composicion_obligacion USING btree (uid_global);
+
+
+--
+-- Name: idx_liquidacion_punitorio_codigo_pago_grupo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_liquidacion_punitorio_codigo_pago_grupo ON public.liquidacion_punitorio USING btree (codigo_pago_grupo);
+
+
+--
+-- Name: idx_liquidacion_punitorio_obligacion; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_liquidacion_punitorio_obligacion ON public.liquidacion_punitorio USING btree (id_obligacion_financiera);
+
+
+--
+-- Name: idx_liquidacion_punitorio_uid_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_liquidacion_punitorio_uid_global ON public.liquidacion_punitorio USING btree (uid_global);
+
+
+--
+-- Name: idx_liquidacion_punitorio_uid_pago_grupo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_liquidacion_punitorio_uid_pago_grupo ON public.liquidacion_punitorio USING btree (uid_pago_grupo);
+
+
+--
+-- Name: uq_liquidacion_punitorio_op_obligacion; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_liquidacion_punitorio_op_obligacion ON public.liquidacion_punitorio USING btree (op_id_alta, id_obligacion_financiera) WHERE ((op_id_alta IS NOT NULL) AND (deleted_at IS NULL));
 
 
 --
@@ -9378,6 +9489,13 @@ CREATE TRIGGER trg_aiud_composicion_obligacion_refrescar_saldo_obligacion AFTER 
 
 
 --
+-- Name: liquidacion_punitorio trg_bi_liquidacion_punitorio_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_liquidacion_punitorio_core_ef BEFORE INSERT ON public.liquidacion_punitorio FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
+
+--
 -- Name: concepto_financiero trg_bi_concepto_financiero_core_ef; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9735,6 +9853,13 @@ CREATE TRIGGER trg_bu_composicion_obligacion_core_ef BEFORE UPDATE ON public.com
 
 
 --
+-- Name: liquidacion_punitorio trg_bu_liquidacion_punitorio_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_liquidacion_punitorio_core_ef BEFORE UPDATE ON public.liquidacion_punitorio FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
+
+--
 -- Name: concepto_financiero trg_bu_concepto_financiero_core_ef; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -10084,6 +10209,22 @@ ALTER TABLE ONLY public.composicion_obligacion
 
 ALTER TABLE ONLY public.composicion_obligacion
     ADD CONSTRAINT fk_co_obl FOREIGN KEY (id_obligacion_financiera) REFERENCES public.obligacion_financiera(id_obligacion_financiera) ON DELETE RESTRICT;
+
+
+--
+-- Name: liquidacion_punitorio fk_lp_composicion; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.liquidacion_punitorio
+    ADD CONSTRAINT fk_lp_composicion FOREIGN KEY (id_composicion_obligacion) REFERENCES public.composicion_obligacion(id_composicion_obligacion) ON DELETE RESTRICT;
+
+
+--
+-- Name: liquidacion_punitorio fk_lp_obligacion; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.liquidacion_punitorio
+    ADD CONSTRAINT fk_lp_obligacion FOREIGN KEY (id_obligacion_financiera) REFERENCES public.obligacion_financiera(id_obligacion_financiera) ON DELETE RESTRICT;
 
 
 --

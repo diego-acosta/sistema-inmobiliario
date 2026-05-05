@@ -527,9 +527,15 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
+### RN-FIN-080 - Trazabilidad de liquidacion de punitorio
+- descripcion: Cada liquidacion positiva de `PUNITORIO` generada al registrar un pago debe persistir una fila `liquidacion_punitorio` vinculada a la obligacion, la composicion `PUNITORIO` afectada y el agrupador `uid_pago_grupo` / `codigo_pago_grupo`. La fila no modifica saldos ni reemplaza aplicaciones financieras.
+- aplica_a: liquidacion_punitorio, obligacion_financiera, composicion_obligacion, movimiento_financiero
+- origen_principal: SRV-FIN-019-registro-pago-persona
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
+
 ### RN-FIN-081 - Idempotencia de pago por payload minimo
 - descripcion: Si `POST /api/v1/financiero/pagos` recibe un `X-Op-Id` ya utilizado, debe comparar el payload minimo (`id_persona`, `monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva) contra el resumen persistido de la operacion original. Si coincide, devuelve el resultado existente sin duplicar pagos ni punitorios. Si difiere, devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`.
-- aplica_a: movimiento_financiero, aplicacion_financiera, composicion_obligacion
+- aplica_a: movimiento_financiero, aplicacion_financiera, composicion_obligacion, liquidacion_punitorio
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 

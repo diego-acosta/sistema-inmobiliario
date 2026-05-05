@@ -204,6 +204,25 @@ base.
 
 ---
 
+### 4.4.2 liquidacion_punitorio
+
+#### Descripcion
+Trazabilidad de cada liquidacion positiva de `PUNITORIO` generada al registrar
+un pago.
+
+#### Funcion
+- registrar el periodo y parametros usados para liquidar punitorio
+- vincular la liquidacion con `obligacion_financiera`
+- vincular la liquidacion con la `composicion_obligacion` `PUNITORIO`
+- vincular la liquidacion con `uid_pago_grupo` y `codigo_pago_grupo`
+
+#### Nota
+No crea deuda nueva, no reemplaza `aplicacion_financiera` y no modifica saldos.
+El saldo sigue derivando de `composicion_obligacion` y
+`aplicacion_financiera`.
+
+---
+
 ### 4.5 movimiento_financiero
 
 #### Descripción
@@ -295,6 +314,8 @@ Detalle de conciliación.
 - obligacion_financiera 1 --- N obligacion_obligado
 - obligacion_financiera 1 --- N composicion_obligacion
 - concepto_financiero 1 --- N composicion_obligacion
+- obligacion_financiera 1 --- N liquidacion_punitorio
+- composicion_obligacion 1 --- N liquidacion_punitorio
 
 ---
 

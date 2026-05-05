@@ -134,6 +134,12 @@ Cuando el pago liquida mora, el cargo se registra como `PUNITORIO` dentro de la
 obligacion base. Esta es la forma persistente implementada en V1; no se usa
 `INTERES_MORA` como componente separado.
 
+Cada liquidacion positiva de `PUNITORIO` registra ademas una fila en
+`liquidacion_punitorio`. Esta tabla es trazabilidad de la liquidacion, no una
+obligacion nueva ni una aplicacion. La fila queda vinculada a la obligacion, a
+la composicion `PUNITORIO` afectada y al agrupador de pago
+`uid_pago_grupo`/`codigo_pago_grupo`.
+
 Reglas:
 
 - si `fecha_pago <= fecha_vencimiento + dias_gracia`, no se liquida punitorio
@@ -149,6 +155,10 @@ Reglas:
 - no hay hardcode por codigo de concepto para determinar base morable
 - el punitorio liquidado se persiste como `composicion_obligacion` `PUNITORIO`
   de la obligacion base
+- la trazabilidad de cada liquidacion positiva se persiste en
+  `liquidacion_punitorio` con `estado_liquidacion = ACTIVA`
+- un reintento idempotente por `X-Op-Id` no duplica composiciones, movimientos,
+  aplicaciones ni liquidaciones de punitorio
 - si el pago no cubre el total liquidado, queda `saldo_componente` pendiente
 
 ---
