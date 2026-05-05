@@ -107,6 +107,8 @@ Implementado:
 - consulta por `GET /api/v1/financiero/conceptos-financieros`
 - busqueda interna por codigo para crear obligaciones e imputaciones
 - catalogo base con `INTERES_MORA` disponible en seeds actuales solo por compatibilidad heredada; V1 no lo usa como concepto activo de mora persistida
+- `aplica_punitorio`: indica si el saldo vivo de ese concepto integra la base
+  morable para liquidar `PUNITORIO`
 
 ### 2.5 movimiento_financiero y aplicacion_financiera
 
@@ -703,7 +705,10 @@ Reglas funcionales:
 - pagos antes o en `fecha_vencimiento` no cortan el tramo de punitorio
 - pagos posteriores al vencimiento cortan el tramo; el siguiente calculo parte
   desde la ultima fecha de pago posterior al vencimiento
-- la base es saldo morable pendiente, sin punitorio pendiente ni accesorios
+- la base es saldo morable pendiente, definida por
+  `concepto_financiero.aplica_punitorio = true`
+- no se calcula punitorio sobre `PUNITORIO` ni sobre accesorios no marcados
+- la base morable no depende de hardcodes por codigo de concepto
 - el importe liquidado persiste como `composicion_obligacion` `PUNITORIO`
 - si no se paga completo, queda `saldo_componente` pendiente
 

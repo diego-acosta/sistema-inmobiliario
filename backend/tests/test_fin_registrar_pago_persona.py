@@ -5,12 +5,19 @@ import pytest
 from sqlalchemy import text
 
 from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
+from app.infrastructure.persistence.repositories.financiero_repository import (
+    FinancieroRepository,
+)
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_event_contrato_alquiler import (
     _activar,
     _crear_condicion,
     _crear_contrato_borrador,
     _crear_locatario_principal,
+)
+from tests.test_fin_imputaciones_create import (
+    _crear_obligacion,
+    _crear_rg,
 )
 
 URL = "/api/v1/financiero/pagos"
@@ -118,6 +125,20 @@ def _composicion(db_session, id_obligacion: int, codigo: str) -> dict | None:
         if comp["codigo_concepto_financiero"] == codigo:
             return comp
     return None
+
+
+def _set_aplica_punitorio(db_session, codigo: str, aplica: bool) -> None:
+    db_session.execute(
+        text(
+            """
+            UPDATE concepto_financiero
+            SET aplica_punitorio = :aplica
+            WHERE codigo_concepto_financiero = :codigo
+              AND deleted_at IS NULL
+            """
+        ),
+        {"codigo": codigo, "aplica": aplica},
+    )
 
 
 def _count_pagos_por_op_id(db_session, op_id: str) -> int:
@@ -465,6 +486,86 @@ def test_pago_persona_no_crea_interes_mora_en_v1(client, db_session) -> None:
     ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
 
     assert _composicion(db_session, ob["id_obligacion_financiera"], "INTERES_MORA") is None
+
+
+def test_saldo_morable_usa_concepto_aplica_punitorio_para_canon(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-MORABLE-CANON-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    assert id_persona > 0
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    saldo_morable = FinancieroRepository(db_session).get_saldo_morable_pendiente(
+        id_obligacion_financiera=ob["id_obligacion_financiera"]
+    )
+
+    assert float(saldo_morable) == pytest.approx(10000.00)
+
+
+def test_punitorio_no_integra_base_morable(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-MORABLE-EXCLUYE-PUNIT-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+    assert punitorio is not None
+    assert float(punitorio["saldo_componente"]) == pytest.approx(50.00)
+
+    saldo_morable = FinancieroRepository(db_session).get_saldo_morable_pendiente(
+        id_obligacion_financiera=ob["id_obligacion_financiera"]
+    )
+
+    assert float(saldo_morable) == pytest.approx(10000.00)
+
+
+def test_otro_concepto_con_aplica_punitorio_integra_base_morable(client, db_session) -> None:
+    _set_aplica_punitorio(db_session, "CAPITAL_VENTA", True)
+    rg = _crear_rg(client, codigo="PAG-PUNIT-MORABLE-CAPITAL-001")
+    ob = _crear_obligacion(
+        client,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": 7000.00}
+        ],
+    )
+
+    saldo_morable = FinancieroRepository(db_session).get_saldo_morable_pendiente(
+        id_obligacion_financiera=ob["id_obligacion_financiera"]
+    )
+
+    assert float(saldo_morable) == pytest.approx(7000.00)
+
+
+def test_concepto_sin_aplica_punitorio_no_integra_base_morable(client, db_session) -> None:
+    _set_aplica_punitorio(db_session, "EXPENSA_TRASLADADA", False)
+    rg = _crear_rg(client, codigo="PAG-PUNIT-MORABLE-NO-APLICA-001")
+    ob = _crear_obligacion(
+        client,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "EXPENSA_TRASLADADA", "importe_componente": 3000.00}
+        ],
+    )
+
+    saldo_morable = FinancieroRepository(db_session).get_saldo_morable_pendiente(
+        id_obligacion_financiera=ob["id_obligacion_financiera"]
+    )
+
+    assert float(saldo_morable) == pytest.approx(0.00)
 
 
 def test_pago_mora_respeta_dias_gracia(client, db_session) -> None:

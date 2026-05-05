@@ -1624,7 +1624,7 @@ class FinancieroRepository:
             WHERE c.id_obligacion_financiera = :id_obligacion_financiera
               AND c.estado_composicion_obligacion = 'ACTIVA'
               AND c.deleted_at IS NULL
-              AND cf.codigo_concepto_financiero = 'CANON_LOCATIVO'
+              AND cf.aplica_punitorio = true
             """
         )
         saldo = self.db.execute(

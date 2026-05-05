@@ -516,8 +516,8 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-078 - Base morable para punitorio
-- descripcion: La base de calculo del punitorio es el saldo morable pendiente. No incluye punitorio pendiente ni otros accesorios.
-- aplica_a: obligacion_financiera, composicion_obligacion
+- descripcion: La base de calculo del punitorio es el saldo morable pendiente de composiciones cuyo `concepto_financiero.aplica_punitorio = true`. No incluye `PUNITORIO` pendiente ni accesorios no marcados, y no debe depender de hardcodes por codigo de concepto.
+- aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 

@@ -1511,6 +1511,7 @@ CREATE TABLE public.concepto_financiero (
     afecta_capital boolean DEFAULT false NOT NULL,
     afecta_interes boolean DEFAULT false NOT NULL,
     afecta_mora boolean DEFAULT false NOT NULL,
+    aplica_punitorio boolean DEFAULT false NOT NULL,
     afecta_impuesto boolean DEFAULT false NOT NULL,
     afecta_caja boolean DEFAULT true NOT NULL,
     es_imputable boolean DEFAULT true NOT NULL,

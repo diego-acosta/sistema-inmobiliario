@@ -184,14 +184,23 @@ Catalogo financiero que define el significado de cada componente economico de un
 - clasificar la naturaleza economica de una composicion
 - permitir que una obligacion combine varios conceptos
 - evitar que `obligacion_financiera` codifique tipos rigidos como venta, alquiler, servicio o expensa
+- definir con `aplica_punitorio` si el saldo del concepto integra la base
+  morable para liquidar `PUNITORIO`
 
 #### Ejemplos conceptuales
 - `CAPITAL_VENTA`
 - `ANTICIPO_VENTA`
 - `CANON_LOCATIVO`
 - `SERVICIO_TRASLADADO`
-- `INTERES_MORA`
+- `INTERES_MORA` (compatibilidad heredada; no activo para mora persistida V1)
 - `PUNITORIO`
+
+#### Base morable
+
+`aplica_punitorio` es booleano obligatorio con default `false`. Solo las
+composiciones cuyo concepto tenga `aplica_punitorio = true` integran la base de
+calculo de `PUNITORIO`. `PUNITORIO` y accesorios no marcados no integran esa
+base.
 
 ---
 

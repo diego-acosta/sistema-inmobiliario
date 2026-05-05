@@ -143,8 +143,11 @@ Reglas de calculo:
   punitorio
 - pagos posteriores al vencimiento si cortan el tramo: el siguiente punitorio
   se calcula desde la ultima `fecha_pago` posterior al vencimiento
-- la base de calculo es el saldo morable pendiente; no incluye punitorio
-  pendiente ni otros accesorios
+- la base de calculo es el saldo morable pendiente, compuesto por
+  composiciones cuyo `concepto_financiero.aplica_punitorio = true`
+- no incluye `PUNITORIO` pendiente ni accesorios no marcados
+- la condicion morable se define por atributo de catalogo, no por hardcodes de
+  codigo de concepto
 - el punitorio liquidado persiste como `composicion_obligacion`
   `PUNITORIO` dentro de la obligacion base
 - si el pago no cubre el punitorio completo, queda `saldo_componente`
