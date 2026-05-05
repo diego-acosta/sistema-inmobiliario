@@ -96,6 +96,10 @@ minimo coincida con el registrado originalmente en
 mismo `X-Op-Id` se reutiliza con otro `id_persona`, `monto` o `fecha_pago`,
 devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT` con HTTP 409.
 
+Si la operacion original asociada al `X-Op-Id` ya fue revertida, el reintento
+no recrea el pago ni vuelve a liquidar punitorios: devuelve `PAGO_YA_REVERTIDO`
+con HTTP 409.
+
 El comportamiento mantiene el modelo V1 de un `movimiento_financiero` por
 obligación cubierta. Por eso un mismo `op_id` puede agrupar múltiples
 movimientos de pago cuando un pago cubre más de una obligación.
@@ -201,6 +205,10 @@ Se agregan endpoints de solo lectura:
 
 Reglas: agrupan por `uid_pago_grupo` + `codigo_pago_grupo`, consideran solo movimientos `PAGO` no eliminados y detalle desde `aplicacion_financiera`.
 
+Cuando todos los movimientos `PAGO` del grupo estan `ANULADO`, la consulta
+`GET /api/v1/financiero/pagos/{codigo_pago_grupo}` informa
+`estado_pago_grupo = ANULADO`.
+
 ### Constancia interna de pago agrupado
 
 `GET /api/v1/financiero/pagos/{codigo_pago_grupo}/recibo` devuelve una vista de
@@ -262,6 +270,17 @@ Alcance:
 - recalcula `estado_obligacion` despues de restaurar saldos
 - registra el motivo de reversion en `observaciones` cuando hay campo
   disponible
+
+Restriccion V1:
+
+- solo se permite revertir pagos sin operaciones posteriores activas sobre las
+  obligaciones o composiciones afectadas por el grupo
+- se bloquea la reversion si existen movimientos `PAGO`, aplicaciones activas o
+  `liquidacion_punitorio` `ACTIVA` posteriores al pago agrupado
+- el bloqueo devuelve `PAGO_TIENE_OPERACIONES_POSTERIORES` con HTTP 409
+- V1 no recomputa historia de punitorio ni recalcula tramos moratorios
+- si el pago ya fue revertido, la repeticion de la reversion conserva el
+  comportamiento idempotente y devuelve estado `YA_ANULADO`
 
 Estados resultantes de obligacion:
 

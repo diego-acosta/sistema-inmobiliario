@@ -534,7 +534,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-081 - Idempotencia de pago por payload minimo
-- descripcion: Si `POST /api/v1/financiero/pagos` recibe un `X-Op-Id` ya utilizado, debe comparar el payload minimo (`id_persona`, `monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva) contra el resumen persistido de la operacion original. Si coincide, devuelve el resultado existente sin duplicar pagos ni punitorios. Si difiere, devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`.
+- descripcion: Si `POST /api/v1/financiero/pagos` recibe un `X-Op-Id` ya utilizado, debe comparar el payload minimo (`id_persona`, `monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva) contra el resumen persistido de la operacion original. Si coincide, devuelve el resultado existente sin duplicar pagos ni punitorios. Si difiere, devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`. Si la operacion original ya fue revertida, debe devolver `PAGO_YA_REVERTIDO` y no recrear el pago.
 - aplica_a: movimiento_financiero, aplicacion_financiera, composicion_obligacion, liquidacion_punitorio
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
@@ -546,13 +546,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-083 - Reversion completa de pago agrupado
-- descripcion: La reversion V1 de un pago debe operar siempre por `codigo_pago_grupo` completo. Debe marcar los movimientos `PAGO` como `ANULADO`, soft-deletear sus aplicaciones para excluirlas de saldos y registrar el motivo de reversion en campos de observaciones disponibles.
+- descripcion: La reversion V1 de un pago debe operar siempre por `codigo_pago_grupo` completo. Solo se permite si no existen operaciones posteriores activas sobre las obligaciones o composiciones afectadas. Debe marcar los movimientos `PAGO` como `ANULADO`, soft-deletear sus aplicaciones para excluirlas de saldos y registrar el motivo de reversion en campos de observaciones disponibles.
 - aplica_a: movimiento_financiero, aplicacion_financiera, obligacion_financiera
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
 
 ### RN-FIN-084 - Reversion de punitorio liquidado por pago agrupado
-- descripcion: Al revertir un pago agrupado, solo deben anularse las `liquidacion_punitorio` activas asociadas a ese `codigo_pago_grupo`. La composicion `PUNITORIO` se reduce por el `importe_liquidado` de esas filas, sin tocar liquidaciones ni punitorios de otros pagos.
+- descripcion: Al revertir un pago agrupado, solo deben anularse las `liquidacion_punitorio` activas asociadas a ese `codigo_pago_grupo`. La composicion `PUNITORIO` se reduce por el `importe_liquidado` de esas filas, sin tocar liquidaciones ni punitorios de otros pagos. V1 no recomputa historia de punitorio ni recalcula tramos moratorios.
 - aplica_a: liquidacion_punitorio, composicion_obligacion, obligacion_financiera
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
@@ -560,6 +560,12 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 ### RN-FIN-085 - Estado de obligacion luego de reversion
 - descripcion: Luego de una reversion de pago agrupado, la obligacion afectada debe recalcular su estado desde saldos: `CANCELADA` si `saldo_pendiente = 0`; `PARCIALMENTE_CANCELADA` si `saldo_pendiente > 0` e `importe_cancelado_acumulado > 0`; `VENCIDA` si no tiene cancelaciones activas y `fecha_vencimiento < CURRENT_DATE`; en otro caso `EMITIDA`.
 - aplica_a: obligacion_financiera
+- origen_principal: SRV-FIN-019-registro-pago-persona
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
+
+### RN-FIN-086 - Bloqueo de reversion con operaciones posteriores
+- descripcion: Si existen movimientos `PAGO`, aplicaciones activas o `liquidacion_punitorio` `ACTIVA` posteriores sobre las obligaciones o composiciones afectadas por el grupo, la reversion debe bloquearse con `PAGO_TIENE_OPERACIONES_POSTERIORES`. La repeticion sobre un grupo ya revertido conserva comportamiento idempotente como `YA_ANULADO`.
+- aplica_a: movimiento_financiero, aplicacion_financiera, liquidacion_punitorio, composicion_obligacion
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
 

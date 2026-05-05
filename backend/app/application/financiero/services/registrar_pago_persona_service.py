@@ -194,6 +194,9 @@ class RegistrarPagoPersonaService:
                 op_id=op_id
             )
             if pago_existente is not None:
+                if pago_existente.get("estado_pago_grupo") == "ANULADO":
+                    return AppResult.fail("PAGO_YA_REVERTIDO")
+
                 payload_existente = pago_existente.get("payload_idempotencia")
                 if not _payload_idempotencia_equivalente(
                     payload_existente,

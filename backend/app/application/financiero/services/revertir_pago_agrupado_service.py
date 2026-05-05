@@ -11,6 +11,10 @@ class FinancieroRepository(Protocol):
         self, *, codigo_pago_grupo: str
     ) -> dict[str, Any] | None: ...
 
+    def get_operaciones_posteriores_pago_agrupado(
+        self, *, codigo_pago_grupo: str
+    ) -> dict[str, Any]: ...
+
     def revertir_pago_agrupado(
         self,
         *,
@@ -41,6 +45,13 @@ class RevertirPagoAgrupadoService:
         )
         if pago is None:
             return AppResult.fail("NOT_FOUND_PAGO")
+
+        if pago.get("estado_pago_grupo") != "ANULADO":
+            posteriores = self.repository.get_operaciones_posteriores_pago_agrupado(
+                codigo_pago_grupo=codigo_pago_grupo
+            )
+            if posteriores["tiene_operaciones_posteriores"]:
+                return AppResult.fail("PAGO_TIENE_OPERACIONES_POSTERIORES")
 
         id_instalacion = getattr(context, "id_instalacion", None)
         op_id = getattr(context, "op_id", None)

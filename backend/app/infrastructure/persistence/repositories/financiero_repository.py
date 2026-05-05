@@ -1576,17 +1576,26 @@ class FinancieroRepository:
                 m.id_movimiento_financiero,
                 m.fecha_movimiento,
                 m.importe AS monto_consumido,
+                m.estado_movimiento,
                 m.observaciones,
                 m.uid_pago_grupo,
                 m.codigo_pago_grupo,
                 oo.id_persona,
                 a.id_obligacion_financiera,
-                COALESCE(SUM(a.importe_aplicado), 0) AS monto_aplicado,
-                o.estado_obligacion AS estado_resultante
+                COALESCE(SUM(
+                    CASE
+                        WHEN a.deleted_at IS NULL THEN a.importe_aplicado
+                        ELSE 0
+                    END
+                ), 0) AS monto_aplicado,
+                CASE
+                    WHEN m.estado_movimiento = 'ANULADO'
+                      OR BOOL_AND(a.deleted_at IS NOT NULL) THEN 'ANULADO'
+                    ELSE o.estado_obligacion
+                END AS estado_resultante
             FROM movimiento_financiero m
             JOIN aplicacion_financiera a
               ON a.id_movimiento_financiero = m.id_movimiento_financiero
-             AND a.deleted_at IS NULL
             JOIN obligacion_financiera o
               ON o.id_obligacion_financiera = a.id_obligacion_financiera
              AND o.deleted_at IS NULL
@@ -1600,6 +1609,7 @@ class FinancieroRepository:
                 m.id_movimiento_financiero,
                 m.fecha_movimiento,
                 m.importe,
+                m.estado_movimiento,
                 m.observaciones,
                 m.uid_pago_grupo,
                 m.codigo_pago_grupo,
@@ -1675,6 +1685,11 @@ class FinancieroRepository:
             ),
             "obligaciones_pagadas": obligaciones_pagadas,
             "payload_idempotencia": resumen,
+            "estado_pago_grupo": (
+                "ANULADO"
+                if all(row["estado_movimiento"] == "ANULADO" for row in rows)
+                else "APLICADO"
+            ),
         }
 
     def get_ultima_fecha_pago_posterior_vencimiento(
@@ -1783,27 +1798,188 @@ class FinancieroRepository:
                 a.id_obligacion_financiera,
                 a.id_composicion_obligacion,
                 a.importe_aplicado,
-                o.estado_obligacion AS estado_resultante,
+                CASE
+                    WHEN m.estado_movimiento = 'ANULADO'
+                      OR a.deleted_at IS NOT NULL THEN 'ANULADO'
+                    ELSE o.estado_obligacion
+                END AS estado_resultante,
                 cf.codigo_concepto_financiero
             FROM aplicacion_financiera a
+            JOIN movimiento_financiero m
+              ON m.id_movimiento_financiero = a.id_movimiento_financiero
             JOIN obligacion_financiera o ON o.id_obligacion_financiera = a.id_obligacion_financiera
             JOIN composicion_obligacion co ON co.id_composicion_obligacion = a.id_composicion_obligacion
             JOIN concepto_financiero cf ON cf.id_concepto_financiero = co.id_concepto_financiero
             WHERE a.id_movimiento_financiero IN :ids
-              AND a.deleted_at IS NULL
             ORDER BY a.id_aplicacion_financiera ASC
             """
         ).bindparams(bindparam("ids", expanding=True))
         aplicaciones = self.db.execute(app_stmt, {"ids": ids_mov}).mappings().all()
+        estado_pago_grupo = (
+            "ANULADO"
+            if all(r["estado_movimiento"] == "ANULADO" for r in movimientos)
+            else "APLICADO"
+        )
         return {
             "codigo_pago_grupo": movimientos[0]["codigo_pago_grupo"],
             "uid_pago_grupo": movimientos[0]["uid_pago_grupo"],
             "fecha_pago": movimientos[0]["fecha_pago"],
             "monto_total": float(sum(r["importe"] for r in movimientos)),
             "monto_aplicado": float(sum(r["importe_aplicado"] for r in aplicaciones)),
+            "estado_pago_grupo": estado_pago_grupo,
             "movimientos": [dict(r) for r in movimientos],
             "aplicaciones": [dict(r) for r in aplicaciones],
             "obligaciones_afectadas": sorted({r["id_obligacion_financiera"] for r in aplicaciones}),
+        }
+
+    def get_operaciones_posteriores_pago_agrupado(
+        self, *, codigo_pago_grupo: str
+    ) -> dict[str, Any]:
+        contexto_stmt = text(
+            """
+            WITH grupo_mov AS (
+                SELECT id_movimiento_financiero, fecha_movimiento
+                FROM movimiento_financiero
+                WHERE codigo_pago_grupo = :codigo_pago_grupo
+                  AND tipo_movimiento = 'PAGO'
+                  AND deleted_at IS NULL
+            ),
+            grupo_apps AS (
+                SELECT DISTINCT
+                    a.id_obligacion_financiera,
+                    a.id_composicion_obligacion
+                FROM aplicacion_financiera a
+                JOIN grupo_mov gm
+                  ON gm.id_movimiento_financiero = a.id_movimiento_financiero
+                WHERE a.deleted_at IS NULL
+            )
+            SELECT
+                MAX(gm.fecha_movimiento) AS fecha_grupo,
+                MAX(gm.id_movimiento_financiero) AS max_movimiento_grupo,
+                COALESCE(MAX(lp.id_liquidacion_punitorio), 0) AS max_liquidacion_grupo,
+                ARRAY_AGG(DISTINCT ga.id_obligacion_financiera)
+                    FILTER (WHERE ga.id_obligacion_financiera IS NOT NULL) AS obligaciones,
+                ARRAY_AGG(DISTINCT ga.id_composicion_obligacion)
+                    FILTER (WHERE ga.id_composicion_obligacion IS NOT NULL) AS composiciones
+            FROM grupo_mov gm
+            LEFT JOIN grupo_apps ga ON TRUE
+            LEFT JOIN liquidacion_punitorio lp
+              ON lp.codigo_pago_grupo = :codigo_pago_grupo
+             AND lp.deleted_at IS NULL
+            """
+        )
+        contexto = self.db.execute(
+            contexto_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
+        ).mappings().one()
+        if contexto["fecha_grupo"] is None:
+            return {
+                "tiene_operaciones_posteriores": False,
+                "movimientos_posteriores": 0,
+                "aplicaciones_posteriores": 0,
+                "liquidaciones_punitorio_posteriores": 0,
+            }
+
+        obligaciones = contexto["obligaciones"] or []
+        composiciones = contexto["composiciones"] or []
+        if not obligaciones:
+            return {
+                "tiene_operaciones_posteriores": False,
+                "movimientos_posteriores": 0,
+                "aplicaciones_posteriores": 0,
+                "liquidaciones_punitorio_posteriores": 0,
+            }
+
+        params = {
+            "codigo_pago_grupo": codigo_pago_grupo,
+            "fecha_grupo": contexto["fecha_grupo"],
+            "max_movimiento_grupo": contexto["max_movimiento_grupo"],
+            "max_liquidacion_grupo": contexto["max_liquidacion_grupo"],
+            "obligaciones": obligaciones,
+            "composiciones": composiciones,
+        }
+        movimientos_stmt = text(
+            """
+            SELECT COUNT(DISTINCT m.id_movimiento_financiero)
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            WHERE m.tipo_movimiento = 'PAGO'
+              AND m.estado_movimiento <> 'ANULADO'
+              AND m.deleted_at IS NULL
+              AND m.codigo_pago_grupo <> :codigo_pago_grupo
+              AND a.id_obligacion_financiera IN :obligaciones
+              AND (
+                    m.fecha_movimiento > :fecha_grupo
+                    OR (
+                        m.fecha_movimiento = :fecha_grupo
+                        AND m.id_movimiento_financiero > :max_movimiento_grupo
+                    )
+                  )
+            """
+        ).bindparams(bindparam("obligaciones", expanding=True))
+        aplicaciones_stmt = text(
+            """
+            SELECT COUNT(DISTINCT a.id_aplicacion_financiera)
+            FROM aplicacion_financiera a
+            JOIN movimiento_financiero m
+              ON m.id_movimiento_financiero = a.id_movimiento_financiero
+            WHERE a.deleted_at IS NULL
+              AND m.deleted_at IS NULL
+              AND m.estado_movimiento <> 'ANULADO'
+              AND m.codigo_pago_grupo <> :codigo_pago_grupo
+              AND a.id_obligacion_financiera IN :obligaciones
+              AND (
+                    a.id_composicion_obligacion IN :composiciones
+                    OR a.id_obligacion_financiera IN :obligaciones
+                  )
+              AND (
+                    a.fecha_aplicacion > :fecha_grupo
+                    OR (
+                        a.fecha_aplicacion = :fecha_grupo
+                        AND m.id_movimiento_financiero > :max_movimiento_grupo
+                    )
+                  )
+            """
+        ).bindparams(
+            bindparam("obligaciones", expanding=True),
+            bindparam("composiciones", expanding=True),
+        )
+        liquidaciones_stmt = text(
+            """
+            SELECT COUNT(DISTINCT lp.id_liquidacion_punitorio)
+            FROM liquidacion_punitorio lp
+            WHERE lp.estado_liquidacion = 'ACTIVA'
+              AND lp.deleted_at IS NULL
+              AND lp.codigo_pago_grupo <> :codigo_pago_grupo
+              AND lp.id_obligacion_financiera IN :obligaciones
+              AND (
+                    lp.id_composicion_obligacion IN :composiciones
+                    OR lp.id_obligacion_financiera IN :obligaciones
+                  )
+              AND (
+                    lp.fecha_fin_calculo > CAST(:fecha_grupo AS date)
+                    OR (
+                        lp.fecha_fin_calculo = CAST(:fecha_grupo AS date)
+                        AND lp.id_liquidacion_punitorio > :max_liquidacion_grupo
+                    )
+                  )
+            """
+        ).bindparams(
+            bindparam("obligaciones", expanding=True),
+            bindparam("composiciones", expanding=True),
+        )
+
+        movimientos = self.db.execute(movimientos_stmt, params).scalar_one()
+        aplicaciones = self.db.execute(aplicaciones_stmt, params).scalar_one()
+        liquidaciones = self.db.execute(liquidaciones_stmt, params).scalar_one()
+        return {
+            "tiene_operaciones_posteriores": any(
+                count > 0 for count in [movimientos, aplicaciones, liquidaciones]
+            ),
+            "movimientos_posteriores": movimientos,
+            "aplicaciones_posteriores": aplicaciones,
+            "liquidaciones_punitorio_posteriores": liquidaciones,
         }
 
     def _json_observaciones_reversion(self, observaciones: Any, *, motivo: str) -> str:
@@ -1851,6 +2027,7 @@ class FinancieroRepository:
                 a.observaciones
             FROM aplicacion_financiera a
             WHERE a.id_movimiento_financiero IN :ids
+              AND a.deleted_at IS NULL
             ORDER BY a.id_aplicacion_financiera ASC
             """
         ).bindparams(bindparam("ids", expanding=True))

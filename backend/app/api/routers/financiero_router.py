@@ -974,6 +974,15 @@ def registrar_pago_persona(
                     details={"errors": result.errors},
                 ).model_dump(),
             )
+        if "PAGO_YA_REVERTIDO" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="PAGO_YA_REVERTIDO",
+                    error_message="El X-Op-Id corresponde a un pago ya revertido.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(
@@ -1068,6 +1077,7 @@ def get_recibo_pago_agrupado(
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
 )
@@ -1129,6 +1139,18 @@ def revertir_pago_agrupado(
                 content=ErrorResponse(
                     error_code="MOTIVO_REQUERIDO",
                     error_message="El motivo de reversión es obligatorio.",
+                ).model_dump(),
+            )
+        if "PAGO_TIENE_OPERACIONES_POSTERIORES" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="PAGO_TIENE_OPERACIONES_POSTERIORES",
+                    error_message=(
+                        "El pago agrupado tiene operaciones posteriores activas "
+                        "sobre sus obligaciones o composiciones."
+                    ),
+                    details={"errors": result.errors},
                 ).model_dump(),
             )
         return JSONResponse(

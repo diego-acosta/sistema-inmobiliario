@@ -474,6 +474,8 @@ Reglas:
   el resumen persistido en `observaciones`
 - si el mismo `X-Op-Id` se reutiliza con payload distinto, se devuelve
   `IDEMPOTENCY_PAYLOAD_CONFLICT`
+- si la operacion original asociada al `X-Op-Id` ya fue revertida, el reintento
+  devuelve `PAGO_YA_REVERTIDO` y no recrea pagos ni punitorios
 - un reintento idempotente devuelve el mismo `uid_pago_grupo` y
   `codigo_pago_grupo` de la operacion original
 - no crea `INTERES_MORA` ni modifica reglas de mora existentes
@@ -787,6 +789,11 @@ La reversion V1 se realiza con
 `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`. La operacion:
 
 - actua siempre sobre el grupo completo
+- solo se permite si no existen operaciones posteriores activas sobre las
+  obligaciones o composiciones afectadas por el grupo
+- devuelve `PAGO_TIENE_OPERACIONES_POSTERIORES` con HTTP 409 si existen
+  movimientos `PAGO`, aplicaciones activas o `liquidacion_punitorio` `ACTIVA`
+  posteriores
 - marca movimientos `PAGO` como `ANULADO`
 - soft-deletea aplicaciones para excluirlas de saldos
 - anula las filas `liquidacion_punitorio` del grupo
@@ -794,9 +801,16 @@ La reversion V1 se realiza con
   liquidaciones
 - recalcula estados de obligaciones luego de los triggers de saldo
 - no genera comprobante fiscal ni modifica cronogramas
+- no recomputa historia de punitorio ni recalcula tramos moratorios
+- si el grupo ya fue revertido, la repeticion conserva comportamiento
+  idempotente como `YA_ANULADO`
 
 El modelo queda preparado para una futura entidad formal, por ejemplo
 `comprobante_pago` o `comprobante_financiero`, con numeracion, estado fiscal,
 anulacion, emision PDF e integracion fiscal si corresponde.
 
-El modelo financiero expone lectura de pagos agrupados por `uid_pago_grupo/codigo_pago_grupo` para consulta por persona y detalle por código, sin efectos en saldos ni cronograma.
+El modelo financiero expone lectura de pagos agrupados por
+`uid_pago_grupo/codigo_pago_grupo` para consulta por persona y detalle por
+codigo, sin efectos en saldos ni cronograma. El detalle por codigo informa
+`estado_pago_grupo = ANULADO` cuando todos los movimientos `PAGO` del grupo
+estan anulados.

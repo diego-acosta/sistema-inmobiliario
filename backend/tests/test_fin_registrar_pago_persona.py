@@ -1117,6 +1117,27 @@ def _count_aplicaciones_activas_por_codigo(db_session, codigo_pago_grupo: str) -
     ).scalar_one()
 
 
+def _saldo_obligacion_y_suma_composiciones(db_session, id_obligacion: int) -> tuple[float, float]:
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                o.saldo_pendiente,
+                COALESCE(SUM(c.saldo_componente), 0) AS suma_componentes
+            FROM obligacion_financiera o
+            LEFT JOIN composicion_obligacion c
+              ON c.id_obligacion_financiera = o.id_obligacion_financiera
+             AND c.estado_composicion_obligacion = 'ACTIVA'
+             AND c.deleted_at IS NULL
+            WHERE o.id_obligacion_financiera = :id
+            GROUP BY o.id_obligacion_financiera, o.saldo_pendiente
+            """
+        ),
+        {"id": id_obligacion},
+    ).mappings().one()
+    return float(row["saldo_pendiente"]), float(row["suma_componentes"])
+
+
 def _count_table(db_session, table_name: str) -> int:
     return db_session.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar_one()
 
@@ -1375,6 +1396,58 @@ def test_revertir_pago_no_afecta_punitorio_de_otros_pagos(client, db_session) ->
     assert liq_2_estado == "ANULADA"
 
 
+def test_revertir_pago_anterior_con_pago_posterior_devuelve_409(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-POST-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    pago_1 = _pagar(client, id_persona, monto=3000.00, fecha_pago="2026-11-05")
+    _pagar(client, id_persona, monto=1000.00, fecha_pago="2026-11-06")
+
+    resp = _revertir(client, pago_1["codigo_pago_grupo"])
+
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "PAGO_TIENE_OPERACIONES_POSTERIORES"
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(6000.00)
+    assert _count_aplicaciones_activas_por_codigo(
+        db_session, pago_1["codigo_pago_grupo"]
+    ) == 1
+
+
+def test_revertir_pago_anterior_con_liquidacion_punitorio_posterior_devuelve_409(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-PUNIT-POST-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    pago_1 = _pagar(client, id_persona, monto=1000.00, fecha_pago="2026-05-20")
+    _pagar(client, id_persona, monto=45.50, fecha_pago="2026-05-25")
+
+    resp = _revertir(client, pago_1["codigo_pago_grupo"])
+
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+    liquidaciones = _liquidaciones_punitorio(
+        db_session, ob["id_obligacion_financiera"]
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "PAGO_TIENE_OPERACIONES_POSTERIORES"
+    assert punitorio is not None
+    assert float(punitorio["importe_componente"]) == pytest.approx(145.50)
+    assert len(liquidaciones) == 2
+
+
 def test_revertir_pago_codigo_inexistente_devuelve_404(client) -> None:
     resp = _revertir(client, "PAGO-REV-NO-EXISTE")
 
@@ -1406,6 +1479,41 @@ def test_revertir_pago_repetido_es_idempotente(client, db_session) -> None:
     ) == 0
 
 
+def test_retry_op_id_original_despues_de_reversion_devuelve_conflicto(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-RETRY-OP-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655441001"}
+    pago = _pagar_con_headers(
+        client,
+        id_persona,
+        monto=3000.00,
+        fecha_pago="2026-11-05",
+        headers=headers,
+    )
+    rev = _revertir(client, pago["codigo_pago_grupo"])
+    assert rev.status_code == 200, rev.text
+
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=3000.00,
+        fecha_pago="2026-11-05",
+        headers=headers,
+    )
+
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "PAGO_YA_REVERTIDO"
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(10000.00)
+    assert _count_pagos_por_op_id(db_session, headers["X-Op-Id"]) == 1
+
+
 def test_recibo_pago_revertido_refleja_estado_anulado(client, db_session) -> None:
     id_persona, _ = _setup(
         client,
@@ -1428,3 +1536,46 @@ def test_recibo_pago_revertido_refleja_estado_anulado(client, db_session) -> Non
     assert data["totales_por_concepto"] == [
         {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_aplicado": 2000.0}
     ]
+
+
+def test_detalle_pago_agrupado_muestra_anulado_despues_de_reversion(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-DET-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=2000.00, fecha_pago="2026-11-05")
+    rev = _revertir(client, pago["codigo_pago_grupo"])
+    assert rev.status_code == 200, rev.text
+
+    resp = client.get(f"/api/v1/financiero/pagos/{pago['codigo_pago_grupo']}")
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["estado_pago_grupo"] == "ANULADO"
+    assert data["movimientos"][0]["estado_movimiento"] == "ANULADO"
+    assert data["aplicaciones"][0]["estado_resultante"] == "ANULADO"
+
+
+def test_saldo_pendiente_igual_suma_componentes_despues_de_reversion(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-INVARIANTE-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=3500.00, fecha_pago="2026-11-05")
+    rev = _revertir(client, pago["codigo_pago_grupo"])
+    assert rev.status_code == 200, rev.text
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    saldo, suma_componentes = _saldo_obligacion_y_suma_composiciones(
+        db_session, ob["id_obligacion_financiera"]
+    )
+
+    assert saldo == pytest.approx(suma_componentes)
