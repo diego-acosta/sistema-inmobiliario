@@ -181,3 +181,11 @@ los movimientos por obligación.
 - `MODELO-FINANCIERO-FIN` sección 12
 - `SRV-FIN-018-simulacion-pago-persona`
 - `SRV-FIN-013-generacion-de-mora`
+
+## Consulta de pagos agrupados
+
+Se agregan endpoints de solo lectura:
+- `GET /api/v1/financiero/personas/{id_persona}/pagos`
+- `GET /api/v1/financiero/pagos/{codigo_pago_grupo}`
+
+Reglas: agrupan por `uid_pago_grupo` + `codigo_pago_grupo`, consideran solo movimientos `PAGO` no eliminados y detalle desde `aplicacion_financiera`.

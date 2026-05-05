@@ -743,3 +743,7 @@ En versiones futuras (Mora V2), se evaluará:
 - generación de obligaciones accesorias de mora
 - liquidación formal de intereses
 - parametrización por contrato/concepto
+
+## Operaciones de pago agrupadas
+
+El modelo financiero expone lectura de pagos agrupados por `uid_pago_grupo/codigo_pago_grupo` para consulta por persona y detalle por código, sin efectos en saldos ni cronograma.

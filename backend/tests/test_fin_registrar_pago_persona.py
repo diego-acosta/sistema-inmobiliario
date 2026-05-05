@@ -975,3 +975,33 @@ def test_pago_sin_op_id_mantiene_comportamiento_no_idempotente(client, db_sessio
 
     assert count_mov == 2
     assert float(saldo["saldo_pendiente"]) == pytest.approx(4000.00)
+
+
+def test_lista_pagos_agrupados_persona_multiobligacion(client, db_session) -> None:
+    id_persona, _ = _setup(client, db_session, codigo="PAG-AGR-001", fecha_inicio="2026-07-01", fecha_fin="2026-08-31", monto=10000.00)
+    _pagar(client, id_persona, monto=15000.00)
+
+    resp = client.get(f"/api/v1/financiero/personas/{id_persona}/pagos")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert len(data) >= 1
+    assert data[0]["cantidad_obligaciones"] >= 1
+    assert data[0]["cantidad_movimientos"] >= 1
+
+
+def test_detalle_pago_agrupado_incluye_movs_y_aplicaciones(client, db_session) -> None:
+    id_persona, _ = _setup(client, db_session, codigo="PAG-AGR-002", fecha_inicio="2026-09-01", fecha_fin="2026-10-31", monto=11000.00)
+    pago = _pagar(client, id_persona, monto=12000.00)
+
+    resp = client.get(f"/api/v1/financiero/pagos/{pago['codigo_pago_grupo']}")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["codigo_pago_grupo"] == pago["codigo_pago_grupo"]
+    assert len(data["movimientos"]) >= 1
+    assert len(data["aplicaciones"]) >= 1
+    assert any(a.get("codigo_concepto_financiero") for a in data["aplicaciones"])
+
+
+def test_detalle_pago_agrupado_404_si_codigo_no_existe(client) -> None:
+    resp = client.get("/api/v1/financiero/pagos/PAGO-NO-EXISTE")
+    assert resp.status_code == 404

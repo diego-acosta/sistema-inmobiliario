@@ -30,6 +30,9 @@ from app.api.schemas.financiero import (
     EstadoCuentaPersonaResponse,
     EstadoCuentaResponse,
     PagoObligacionResultado,
+    PagoAgrupadoPersonaItem,
+    PagoAgrupadoPersonaListResponse,
+    PagoAgrupadoDetalleResponse,
     RegistrarPagoPersonaData,
     RegistrarPagoPersonaRequest,
     RegistrarPagoPersonaResponse,
@@ -105,6 +108,12 @@ from app.application.financiero.services.generar_mora_financiera_service import 
 )
 from app.application.financiero.services.list_conceptos_financieros_service import (
     ListConceptosFinancierosService,
+)
+from app.application.financiero.services.list_pagos_agrupados_persona_service import (
+    ListPagosAgrupadosPersonaService,
+)
+from app.application.financiero.services.get_pago_agrupado_por_codigo_service import (
+    GetPagoAgrupadoPorCodigoService,
 )
 from app.application.financiero.services.list_deuda_consolidada_service import (
     ListDeudaConsolidadaService,
@@ -978,6 +987,45 @@ def registrar_pago_persona(
             ],
         )
     )
+
+
+@router.get(
+    "/api/v1/financiero/personas/{id_persona}/pagos",
+    response_model=PagoAgrupadoPersonaListResponse,
+)
+def list_pagos_agrupados_persona(
+    id_persona: int,
+    db: Session = Depends(get_db),
+) -> PagoAgrupadoPersonaListResponse:
+    repository = FinancieroRepository(db)
+    service = ListPagosAgrupadosPersonaService(repository=repository)
+    result = service.execute(id_persona=id_persona)
+    return PagoAgrupadoPersonaListResponse(
+        data=[PagoAgrupadoPersonaItem(**r) for r in (result.data or [])]
+    )
+
+
+@router.get(
+    "/api/v1/financiero/pagos/{codigo_pago_grupo}",
+    response_model=PagoAgrupadoDetalleResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+def get_pago_agrupado_por_codigo(
+    codigo_pago_grupo: str,
+    db: Session = Depends(get_db),
+) -> PagoAgrupadoDetalleResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetPagoAgrupadoPorCodigoService(repository=repository)
+    result = service.execute(codigo_pago_grupo=codigo_pago_grupo)
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="No existe pago para el codigo_pago_grupo indicado.",
+            ).model_dump(),
+        )
+    return PagoAgrupadoDetalleResponse(data=result.data)
 
 
 @router.post("/api/v1/financiero/inbox", status_code=204)
