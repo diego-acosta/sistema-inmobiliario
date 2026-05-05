@@ -1806,6 +1806,172 @@ class FinancieroRepository:
             "obligaciones_afectadas": sorted({r["id_obligacion_financiera"] for r in aplicaciones}),
         }
 
+    def get_recibo_pago_agrupado(
+        self, *, codigo_pago_grupo: str
+    ) -> dict[str, Any] | None:
+        mov_stmt = text(
+            """
+            SELECT
+                m.id_movimiento_financiero,
+                m.uid_pago_grupo,
+                m.codigo_pago_grupo,
+                m.fecha_movimiento::date AS fecha_pago,
+                m.importe,
+                m.observaciones
+            FROM movimiento_financiero m
+            WHERE m.codigo_pago_grupo = :codigo_pago_grupo
+              AND m.tipo_movimiento = 'PAGO'
+              AND m.deleted_at IS NULL
+            ORDER BY m.id_movimiento_financiero ASC
+            """
+        )
+        movimientos = self.db.execute(
+            mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
+        ).mappings().all()
+        if not movimientos:
+            return None
+
+        ids_mov = [r["id_movimiento_financiero"] for r in movimientos]
+        detalle_stmt = text(
+            """
+            SELECT
+                a.id_movimiento_financiero,
+                a.id_obligacion_financiera,
+                o.periodo_desde,
+                o.periodo_hasta,
+                cf.codigo_concepto_financiero,
+                a.importe_aplicado,
+                o.estado_obligacion AS estado_resultante,
+                oo.id_persona,
+                p.nombre,
+                p.apellido,
+                p.razon_social
+            FROM aplicacion_financiera a
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = a.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            JOIN composicion_obligacion co
+              ON co.id_composicion_obligacion = a.id_composicion_obligacion
+             AND co.deleted_at IS NULL
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+             AND cf.deleted_at IS NULL
+            LEFT JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = a.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+            LEFT JOIN persona p
+              ON p.id_persona = oo.id_persona
+             AND p.deleted_at IS NULL
+            WHERE a.id_movimiento_financiero IN :ids
+              AND a.deleted_at IS NULL
+            ORDER BY
+                a.id_movimiento_financiero ASC,
+                a.orden_aplicacion ASC,
+                a.id_aplicacion_financiera ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        detalle_rows = self.db.execute(detalle_stmt, {"ids": ids_mov}).mappings().all()
+
+        resumen = None
+        for mov in movimientos:
+            if not mov["observaciones"]:
+                continue
+            try:
+                parsed = json.loads(mov["observaciones"])
+            except (TypeError, ValueError):
+                continue
+            if parsed.get("tipo") == "pago_persona":
+                resumen = parsed
+                break
+
+        id_persona = (
+            int(resumen["id_persona"])
+            if resumen is not None and "id_persona" in resumen
+            else (detalle_rows[0]["id_persona"] if detalle_rows else None)
+        )
+        persona_row = next(
+            (r for r in detalle_rows if id_persona is not None and r["id_persona"] == id_persona),
+            detalle_rows[0] if detalle_rows else None,
+        )
+        descripcion_persona = None
+        if persona_row is not None:
+            razon_social = persona_row["razon_social"]
+            nombre = persona_row["nombre"]
+            apellido = persona_row["apellido"]
+            descripcion_persona = (
+                razon_social
+                if razon_social
+                else " ".join(p for p in [nombre, apellido] if p).strip() or None
+            )
+
+        detalle = [
+            {
+                "id_movimiento_financiero": row["id_movimiento_financiero"],
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "periodo_desde": row["periodo_desde"],
+                "periodo_hasta": row["periodo_hasta"],
+                "codigo_concepto_financiero": row["codigo_concepto_financiero"],
+                "importe_aplicado": float(row["importe_aplicado"]),
+                "estado_resultante": row["estado_resultante"],
+            }
+            for row in detalle_rows
+        ]
+
+        totales_dec: dict[str, Decimal] = defaultdict(Decimal)
+        for row in detalle_rows:
+            totales_dec[row["codigo_concepto_financiero"]] += Decimal(
+                str(row["importe_aplicado"])
+            )
+        totales_por_concepto = [
+            {
+                "codigo_concepto_financiero": codigo,
+                "importe_aplicado": float(importe),
+            }
+            for codigo, importe in sorted(totales_dec.items())
+        ]
+
+        monto_total = (
+            Decimal(str(resumen["monto_ingresado"]))
+            if resumen is not None and "monto_ingresado" in resumen
+            else sum((Decimal(str(r["importe"])) for r in movimientos), Decimal("0"))
+        )
+        monto_aplicado = (
+            Decimal(str(resumen["monto_aplicado"]))
+            if resumen is not None and "monto_aplicado" in resumen
+            else sum(
+                (Decimal(str(r["importe_aplicado"])) for r in detalle_rows),
+                Decimal("0"),
+            )
+        )
+        remanente = (
+            Decimal(str(resumen["remanente"]))
+            if resumen is not None and "remanente" in resumen
+            else max(monto_total - monto_aplicado, Decimal("0"))
+        )
+
+        return {
+            "codigo_pago_grupo": movimientos[0]["codigo_pago_grupo"],
+            "uid_pago_grupo": movimientos[0]["uid_pago_grupo"],
+            "fecha_pago": (
+                date.fromisoformat(resumen["fecha_pago"])
+                if resumen is not None and "fecha_pago" in resumen
+                else movimientos[0]["fecha_pago"]
+            ),
+            "id_persona": id_persona,
+            "persona_nombre": descripcion_persona,
+            "descripcion_persona": descripcion_persona,
+            "monto_total": float(monto_total),
+            "monto_aplicado": float(monto_aplicado),
+            "remanente": float(remanente),
+            "detalle": detalle,
+            "totales_por_concepto": totales_por_concepto,
+            "estado_recibo": "BORRADOR/CONSULTA",
+            "leyenda": (
+                "Vista de consulta sin valor fiscal. No genera comprobante "
+                "persistido ni modifica saldos."
+            ),
+        }
+
     def liquidar_punitorio_obligacion(
         self,
         *,

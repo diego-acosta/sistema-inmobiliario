@@ -33,6 +33,8 @@ from app.api.schemas.financiero import (
     PagoAgrupadoPersonaItem,
     PagoAgrupadoPersonaListResponse,
     PagoAgrupadoDetalleResponse,
+    PagoReciboData,
+    PagoReciboResponse,
     RegistrarPagoPersonaData,
     RegistrarPagoPersonaRequest,
     RegistrarPagoPersonaResponse,
@@ -114,6 +116,9 @@ from app.application.financiero.services.list_pagos_agrupados_persona_service im
 )
 from app.application.financiero.services.get_pago_agrupado_por_codigo_service import (
     GetPagoAgrupadoPorCodigoService,
+)
+from app.application.financiero.services.get_recibo_pago_agrupado_service import (
+    GetReciboPagoAgrupadoService,
 )
 from app.application.financiero.services.list_deuda_consolidada_service import (
     ListDeudaConsolidadaService,
@@ -1026,6 +1031,29 @@ def get_pago_agrupado_por_codigo(
             ).model_dump(),
         )
     return PagoAgrupadoDetalleResponse(data=result.data)
+
+
+@router.get(
+    "/api/v1/financiero/pagos/{codigo_pago_grupo}/recibo",
+    response_model=PagoReciboResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+def get_recibo_pago_agrupado(
+    codigo_pago_grupo: str,
+    db: Session = Depends(get_db),
+) -> PagoReciboResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetReciboPagoAgrupadoService(repository=repository)
+    result = service.execute(codigo_pago_grupo=codigo_pago_grupo)
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="No existe pago para el codigo_pago_grupo indicado.",
+            ).model_dump(),
+        )
+    return PagoReciboResponse(data=PagoReciboData(**result.data))
 
 
 @router.post("/api/v1/financiero/inbox", status_code=204)

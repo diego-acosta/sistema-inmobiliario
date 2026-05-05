@@ -187,5 +187,29 @@ los movimientos por obligación.
 Se agregan endpoints de solo lectura:
 - `GET /api/v1/financiero/personas/{id_persona}/pagos`
 - `GET /api/v1/financiero/pagos/{codigo_pago_grupo}`
+- `GET /api/v1/financiero/pagos/{codigo_pago_grupo}/recibo`
 
 Reglas: agrupan por `uid_pago_grupo` + `codigo_pago_grupo`, consideran solo movimientos `PAGO` no eliminados y detalle desde `aplicacion_financiera`.
+
+### Vista de recibo de pago agrupado
+
+`GET /api/v1/financiero/pagos/{codigo_pago_grupo}/recibo` devuelve una vista de
+consulta para presentar el pago agrupado como recibo borrador.
+
+Alcance:
+
+- es read-only
+- no crea entidad de recibo
+- no genera numero fiscal ni comprobante persistido
+- no modifica pagos, saldos, movimientos ni aplicaciones
+- usa `codigo_pago_grupo` como identificador de consulta
+- devuelve `404` si no existen movimientos `PAGO` no eliminados para el codigo
+
+Contenido:
+
+- cabecera: `codigo_pago_grupo`, `uid_pago_grupo`, `fecha_pago`, persona,
+  `monto_total`, `monto_aplicado`, `remanente`
+- detalle desde `aplicacion_financiera`: movimiento, obligacion, periodo,
+  concepto financiero, importe aplicado y estado resultante
+- `totales_por_concepto`
+- `estado_recibo = BORRADOR/CONSULTA`

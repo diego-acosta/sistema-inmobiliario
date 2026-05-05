@@ -453,6 +453,42 @@ class PagoAgrupadoDetalleResponse(BaseModel):
 
 # ── simulación de pago por persona ───────────────────────────────────────────
 
+class PagoReciboDetalleItem(BaseModel):
+    id_movimiento_financiero: int
+    id_obligacion_financiera: int
+    periodo_desde: date | None = None
+    periodo_hasta: date | None = None
+    codigo_concepto_financiero: str
+    importe_aplicado: float
+    estado_resultante: str | None = None
+
+
+class PagoReciboTotalConceptoItem(BaseModel):
+    codigo_concepto_financiero: str
+    importe_aplicado: float
+
+
+class PagoReciboData(BaseModel):
+    codigo_pago_grupo: str
+    uid_pago_grupo: UUID
+    fecha_pago: date
+    id_persona: int | None = None
+    persona_nombre: str | None = None
+    descripcion_persona: str | None = None
+    monto_total: float
+    monto_aplicado: float
+    remanente: float
+    detalle: list[PagoReciboDetalleItem]
+    totales_por_concepto: list[PagoReciboTotalConceptoItem]
+    estado_recibo: str
+    leyenda: str | None = None
+
+
+class PagoReciboResponse(BaseModel):
+    ok: bool = True
+    data: PagoReciboData
+
+
 class SimularPagoPersonaRequest(BaseModel):
     monto: float
     fecha_corte: date | None = None

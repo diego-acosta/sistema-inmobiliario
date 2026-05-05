@@ -1005,3 +1005,126 @@ def test_detalle_pago_agrupado_incluye_movs_y_aplicaciones(client, db_session) -
 def test_detalle_pago_agrupado_404_si_codigo_no_existe(client) -> None:
     resp = client.get("/api/v1/financiero/pagos/PAGO-NO-EXISTE")
     assert resp.status_code == 404
+
+
+def _recibo(client, codigo_pago_grupo: str):
+    return client.get(f"/api/v1/financiero/pagos/{codigo_pago_grupo}/recibo")
+
+
+def _count_table(db_session, table_name: str) -> int:
+    return db_session.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar_one()
+
+
+def test_recibo_pago_agrupado_una_obligacion(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-REC-UNO-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-11-30",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=10000.00)
+
+    resp = _recibo(client, pago["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["codigo_pago_grupo"] == pago["codigo_pago_grupo"]
+    assert data["uid_pago_grupo"] == pago["uid_pago_grupo"]
+    assert data["id_persona"] == id_persona
+    assert data["monto_total"] == pytest.approx(10000.00)
+    assert data["monto_aplicado"] == pytest.approx(10000.00)
+    assert data["remanente"] == pytest.approx(0.00)
+    assert data["estado_recibo"] == "BORRADOR/CONSULTA"
+    assert len(data["detalle"]) == 1
+    assert data["detalle"][0]["codigo_concepto_financiero"] == "CANON_LOCATIVO"
+    assert data["totales_por_concepto"] == [
+        {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_aplicado": 10000.0}
+    ]
+
+
+def test_recibo_pago_agrupado_multiobligacion(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-REC-MULTI-001",
+        fecha_inicio="2026-12-01",
+        fecha_fin="2027-01-31",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=15000.00)
+
+    resp = _recibo(client, pago["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["monto_total"] == pytest.approx(15000.00)
+    assert data["monto_aplicado"] == pytest.approx(15000.00)
+    assert len({d["id_movimiento_financiero"] for d in data["detalle"]}) == 2
+    assert len({d["id_obligacion_financiera"] for d in data["detalle"]}) == 2
+    totales = {
+        t["codigo_concepto_financiero"]: t["importe_aplicado"]
+        for t in data["totales_por_concepto"]
+    }
+    assert totales["CANON_LOCATIVO"] == pytest.approx(15000.00)
+
+
+def test_recibo_pago_agrupado_incluye_punitorio_pagado(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-REC-PUNIT-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    pago = _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+
+    resp = _recibo(client, pago["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["monto_total"] == pytest.approx(50.00)
+    assert data["monto_aplicado"] == pytest.approx(50.00)
+    assert data["detalle"][0]["codigo_concepto_financiero"] == "PUNITORIO"
+    assert data["detalle"][0]["importe_aplicado"] == pytest.approx(50.00)
+    assert data["totales_por_concepto"] == [
+        {"codigo_concepto_financiero": "PUNITORIO", "importe_aplicado": 50.0}
+    ]
+
+
+def test_recibo_pago_agrupado_404_si_codigo_no_existe(client) -> None:
+    resp = _recibo(client, "PAGO-REC-NO-EXISTE")
+
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "NOT_FOUND"
+
+
+def test_recibo_pago_agrupado_no_modifica_saldos_ni_crea_registros(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REC-LECTURA-001",
+        fecha_inicio="2027-02-01",
+        fecha_fin="2027-02-28",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=4000.00)
+    saldo_antes = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    movs_antes = _count_table(db_session, "movimiento_financiero")
+    aplicaciones_antes = _count_table(db_session, "aplicacion_financiera")
+
+    resp = _recibo(client, pago["codigo_pago_grupo"])
+
+    saldo_despues = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    movs_despues = _count_table(db_session, "movimiento_financiero")
+    aplicaciones_despues = _count_table(db_session, "aplicacion_financiera")
+    assert resp.status_code == 200, resp.text
+    assert float(saldo_despues["saldo_pendiente"]) == pytest.approx(
+        float(saldo_antes["saldo_pendiente"])
+    )
+    assert saldo_despues["estado_obligacion"] == saldo_antes["estado_obligacion"]
+    assert movs_despues == movs_antes
+    assert aplicaciones_despues == aplicaciones_antes
