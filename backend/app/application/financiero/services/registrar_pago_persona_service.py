@@ -15,8 +15,7 @@ _Q = Decimal("0.01")
 
 # Prioridad de aplicación de pago contra composiciones (igual a imputacion existente)
 _PRIORIDAD: dict[str, int] = {
-    "INTERES_MORA": 0,
-    "PUNITORIO": 1,
+    "PUNITORIO": 0,
     "CARGO_ADMINISTRATIVO": 2,
     "INTERES_FINANCIERO": 3,
     "AJUSTE_INDEXACION": 4,
@@ -29,20 +28,23 @@ _PRIORIDAD: dict[str, int] = {
 }
 
 
-def _mora_dec(
-    saldo: Decimal,
+def _punitorio_dec(
+    base_morable: Decimal,
     fv: date | None,
     corte: date,
+    fecha_inicio: date | None = None,
     resolucion: ResolucionMora | None = None,
 ) -> Decimal:
-    if fv is None or saldo <= 0:
+    if fv is None or base_morable <= 0:
         return Decimal("0")
     r = resolucion if resolucion is not None else resolver_mora_params()
-    fecha_inicio_mora = fv + timedelta(days=r.dias_gracia)
-    dias = max(0, (corte - fecha_inicio_mora).days)
+    if corte <= fv + timedelta(days=r.dias_gracia):
+        return Decimal("0")
+    inicio = fecha_inicio if fecha_inicio is not None else fv
+    dias = max(0, (corte - inicio).days)
     if dias == 0:
         return Decimal("0")
-    return (saldo * r.tasa_diaria * dias).quantize(_Q, rounding=ROUND_HALF_UP)
+    return (base_morable * r.tasa_diaria * dias).quantize(_Q, rounding=ROUND_HALF_UP)
 
 
 def _clave_orden(comp: dict[str, Any]) -> tuple[int, int]:
@@ -92,6 +94,26 @@ class FinancieroRepository(Protocol):
         self, *, id_persona: int, op_id: UUID
     ) -> dict[str, Any] | None: ...
 
+    def get_ultima_fecha_pago_posterior_vencimiento(
+        self, *, id_obligacion_financiera: int, fecha_vencimiento: date
+    ) -> date | None: ...
+
+    def get_saldo_morable_pendiente(
+        self, *, id_obligacion_financiera: int
+    ) -> Decimal: ...
+
+    def liquidar_punitorio_obligacion(
+        self,
+        *,
+        id_obligacion_financiera: int,
+        importe_punitorio: Decimal,
+        detalle_calculo: str,
+        now: datetime,
+        id_instalacion: Any,
+        op_id: UUID | None,
+        uid_global: str,
+    ) -> dict[str, Any]: ...
+
 
 class RegistrarPagoPersonaService:
     def __init__(self, repository: FinancieroRepository, uuid_generator=None) -> None:
@@ -114,6 +136,7 @@ class RegistrarPagoPersonaService:
 
         corte = fecha_pago if fecha_pago is not None else date.today()
         now = datetime.now(UTC)
+        fecha_movimiento = datetime.combine(corte, datetime.min.time())
         id_instalacion = getattr(context, "id_instalacion", None)
         op_id = getattr(context, "op_id", None)
 
@@ -155,17 +178,44 @@ class RegistrarPagoPersonaService:
             if restante <= 0:
                 break
 
-            saldo = Decimal(str(ob["saldo_pendiente"]))
-            mora = _mora_dec(saldo, ob["fecha_vencimiento"], corte)
-            # total_a_cubrir incluye mora para consumo del monto
-            total_a_cubrir = (saldo + mora).quantize(_Q, rounding=ROUND_HALF_UP)
+            saldo = Decimal(str(ob["saldo_pendiente"])).quantize(_Q, rounding=ROUND_HALF_UP)
+            fv = ob["fecha_vencimiento"]
+            punitorio = Decimal("0")
+            if fv is not None:
+                base_morable = self.repository.get_saldo_morable_pendiente(
+                    id_obligacion_financiera=ob["id_obligacion_financiera"]
+                ).quantize(_Q, rounding=ROUND_HALF_UP)
+                ultima_fecha = self.repository.get_ultima_fecha_pago_posterior_vencimiento(
+                    id_obligacion_financiera=ob["id_obligacion_financiera"],
+                    fecha_vencimiento=fv,
+                )
+                punitorio = _punitorio_dec(base_morable, fv, corte, ultima_fecha)
+                if punitorio > 0:
+                    detalle = json.dumps(
+                        {
+                            "tipo": "PUNITORIO",
+                            "fecha_pago": corte.isoformat(),
+                            "fecha_vencimiento": fv.isoformat(),
+                            "fecha_inicio_calculo": (ultima_fecha or fv).isoformat(),
+                            "base_morable": float(base_morable),
+                            "importe_liquidado": float(punitorio),
+                        },
+                        separators=(",", ":"),
+                    )
+                    self.repository.liquidar_punitorio_obligacion(
+                        id_obligacion_financiera=ob["id_obligacion_financiera"],
+                        importe_punitorio=punitorio,
+                        detalle_calculo=detalle,
+                        now=now,
+                        id_instalacion=id_instalacion,
+                        op_id=op_id,
+                        uid_global=str(self.uuid_generator()),
+                    )
+                    saldo = (saldo + punitorio).quantize(_Q, rounding=ROUND_HALF_UP)
 
-            monto_para_ob = min(restante, total_a_cubrir)
-            # Solo aplicamos hasta el saldo real (mora no tiene composicion en DB)
-            monto_a_saldo = min(monto_para_ob, saldo).quantize(_Q, rounding=ROUND_HALF_UP)
+            monto_a_saldo = min(restante, saldo).quantize(_Q, rounding=ROUND_HALF_UP)
 
             if monto_a_saldo <= 0:
-                restante -= monto_para_ob
                 continue
 
             composiciones = self.repository.get_composiciones_para_imputar(
@@ -202,7 +252,7 @@ class RegistrarPagoPersonaService:
                     id_obligacion_financiera=ob["id_obligacion_financiera"],
                     monto_a_aplicar=float(monto_a_saldo),
                     uid_global_movimiento=str(self.uuid_generator()),
-                    fecha_movimiento=now,
+                    fecha_movimiento=fecha_movimiento,
                     version_registro=1,
                     created_at=now,
                     updated_at=now,
@@ -215,7 +265,7 @@ class RegistrarPagoPersonaService:
                 )
             )
 
-            restante -= monto_para_ob
+            restante -= monto_a_saldo
             total_aplicado += monto_a_saldo
 
         if not pagos:

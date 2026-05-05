@@ -124,7 +124,7 @@ def test_simular_pago_incluye_mora_dinamica(client, db_session) -> None:
     data = _simular(client, id_persona, monto=999999.00, fecha_corte="2026-05-25")
 
     ob = data["detalle"][0]
-    mora_esperada = 50000.00 * TASA_DIARIA_MORA * 5
+    mora_esperada = 50000.00 * TASA_DIARIA_MORA * 10
     assert ob["mora_calculada"] == pytest.approx(mora_esperada)
     assert ob["total_a_cubrir"] == pytest.approx(50000.00 + mora_esperada)
     assert data["total_deuda_considerada"] == pytest.approx(50000.00 + mora_esperada)
@@ -148,7 +148,7 @@ def test_simular_pago_mora_respeta_dias_gracia(client, db_session) -> None:
     assert dentro["detalle"][0]["mora_calculada"] == pytest.approx(0.00)
     assert limite["detalle"][0]["mora_calculada"] == pytest.approx(0.00)
     assert fuera["detalle"][0]["mora_calculada"] == pytest.approx(
-        10000.00 * TASA_DIARIA_MORA
+        10000.00 * TASA_DIARIA_MORA * 6
     )
 
 

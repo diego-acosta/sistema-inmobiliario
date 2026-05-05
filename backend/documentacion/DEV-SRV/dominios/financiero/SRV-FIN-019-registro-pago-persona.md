@@ -89,7 +89,7 @@ válida puede registrar un nuevo pago.
 
 ---
 
-## Mora
+## Mora / punitorio
 
 - Mora dinámica incluida en `total_a_cubrir` para determinar cuánto del monto se "consume" por obligación
 - La porción de mora consume del monto del pagante pero no genera `aplicacion_financiera` ni `INTERES_MORA`
@@ -100,11 +100,17 @@ Ejemplo: saldo=10000, mora=500, total_a_cubrir=10500. Pagando 10500:
 - `remanente = 0`
 - Obligación → CANCELADA
 
+Nota vigente: desde la implementacion de punitorio persistido, si corresponde
+mora liquidable al momento del pago, se crea o incrementa una
+`composicion_obligacion` `PUNITORIO` dentro de la obligacion base antes de
+imputar. No se crea nueva `obligacion_financiera` ni composicion
+`INTERES_MORA` para esta liquidacion V1.
+
 ---
 
-## Regla funcional pendiente: punitorio por pago
+## Regla funcional: punitorio por pago
 
-Estado: `PENDIENTE / NO IMPLEMENTADO`.
+Estado: `IMPLEMENTADO`.
 
 Cuando el pago liquide mora persistida, el cargo debe registrarse como
 `PUNITORIO` dentro de la obligacion base. No se debe crear un componente

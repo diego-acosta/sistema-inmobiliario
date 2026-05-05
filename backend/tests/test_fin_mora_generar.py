@@ -109,7 +109,7 @@ def _estado_obligacion(db_session, id_obligacion: int) -> str:
     ).scalar_one()
 
 
-def _count_moras_persistidas(db_session) -> int:
+def _count_punitorios_persistidos(db_session) -> int:
     return db_session.execute(
         text(
             """
@@ -119,7 +119,7 @@ def _count_moras_persistidas(db_session) -> int:
               ON c.id_obligacion_financiera = o.id_obligacion_financiera
             JOIN concepto_financiero cf
               ON cf.id_concepto_financiero = c.id_concepto_financiero
-            WHERE cf.codigo_concepto_financiero = 'INTERES_MORA'
+            WHERE cf.codigo_concepto_financiero = 'PUNITORIO'
               AND o.deleted_at IS NULL
               AND c.deleted_at IS NULL
             """
@@ -137,7 +137,7 @@ def test_emitida_vencida_con_saldo_pasa_a_vencida(client, db_session) -> None:
     assert data["generadas"] == 0
     assert data["tasa_diaria"] == str(TASA_DIARIA_MORA_DEFAULT)
     assert _estado_obligacion(db_session, ob["id_obligacion_financiera"]) == "VENCIDA"
-    assert _count_moras_persistidas(db_session) == 0
+    assert _count_punitorios_persistidos(db_session) == 0
 
 
 def test_emitida_no_vencida_no_cambia(client, db_session) -> None:
@@ -214,4 +214,4 @@ def test_mora_es_idempotente_y_no_crea_obligacion_financiera(client, db_session)
     assert segunda["procesadas"] == 0
     assert segunda["marcadas"] == 0
     assert after == before
-    assert _count_moras_persistidas(db_session) == 0
+    assert _count_punitorios_persistidos(db_session) == 0

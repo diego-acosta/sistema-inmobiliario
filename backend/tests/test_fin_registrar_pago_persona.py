@@ -33,7 +33,8 @@ def _setup(client, db_session, *, codigo: str, fecha_inicio: str, fecha_fin: str
 
 
 def _pagar(client, id_persona: int, monto: float, fecha_pago: str | None = None) -> dict:
-    return _pagar_con_headers(client, id_persona, monto, fecha_pago=fecha_pago, headers=HEADERS)
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    return _pagar_con_headers(client, id_persona, monto, fecha_pago=fecha_pago, headers=headers)
 
 
 def _pagar_con_headers(
@@ -72,6 +73,51 @@ def _saldos_por_contrato(db_session, id_contrato: int) -> list[dict]:
         {"id": id_contrato},
     ).mappings().all()
     return [dict(r) for r in rows]
+
+
+def _relacion_por_contrato(db_session, id_contrato: int) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT id_relacion_generadora
+            FROM relacion_generadora
+            WHERE tipo_origen = 'contrato_alquiler'
+              AND id_origen = :id
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {"id": id_contrato},
+    ).scalar_one()
+
+
+def _composiciones_por_obligacion(db_session, id_obligacion: int) -> list[dict]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                cf.codigo_concepto_financiero,
+                c.importe_componente,
+                c.saldo_componente
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND c.deleted_at IS NULL
+            ORDER BY c.orden_composicion ASC
+            """
+        ),
+        {"id": id_obligacion},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def _composicion(db_session, id_obligacion: int, codigo: str) -> dict | None:
+    for comp in _composiciones_por_obligacion(db_session, id_obligacion):
+        if comp["codigo_concepto_financiero"] == codigo:
+            return comp
+    return None
 
 
 def _count_pagos_por_op_id(db_session, op_id: str) -> int:
@@ -173,9 +219,8 @@ def test_pago_persona_sin_deuda_no_aplica(client, db_session) -> None:
 def test_pago_con_mora_consume_del_monto(client, db_session) -> None:
     """
     Obligación saldo=50000, vencimiento=2026-05-15, fecha_pago=2026-05-25.
-    La mora usa la tasa diaria centralizada y 5 dias por gracia.
-    Pagando saldo + mora: el monto se consume integro (remanente=0).
-    DB saldo reducido en 50000 (mora no persiste en DB). Estado CANCELADA.
+    El punitorio usa tasa diaria centralizada y gracia como umbral.
+    Fuera de gracia calcula desde vencimiento y persiste como PUNITORIO.
     """
     id_persona, _ = _setup(
         client, db_session,
@@ -185,15 +230,241 @@ def test_pago_con_mora_consume_del_monto(client, db_session) -> None:
         dia_vencimiento_canon=15,
     )
 
-    monto_con_mora = 50000.00 + (50000.00 * TASA_DIARIA_MORA * 5)
+    monto_con_mora = 50000.00 + (50000.00 * TASA_DIARIA_MORA * 10)
     data = _pagar(client, id_persona, monto=monto_con_mora, fecha_pago="2026-05-25")
 
-    # La mora consume del monto, pero no se aplica a saldo.
     assert data["monto_ingresado"] == pytest.approx(monto_con_mora)
-    assert data["monto_aplicado"] == pytest.approx(50000.00)
+    assert data["monto_aplicado"] == pytest.approx(monto_con_mora)
     assert data["remanente"] == pytest.approx(0.0)
     ob = data["obligaciones_pagadas"][0]
     assert ob["estado_resultante"] == "CANCELADA"
+
+
+def test_pago_posterior_a_gracia_crea_composicion_punitorio(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-CREA-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=10060.00, fecha_pago="2026-05-16")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+
+    assert punitorio is not None
+    assert float(punitorio["importe_componente"]) == pytest.approx(60.00)
+    assert float(punitorio["saldo_componente"]) == pytest.approx(0.00)
+
+
+def test_pago_dentro_de_gracia_no_crea_punitorio(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-GRACIA-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=500.00, fecha_pago="2026-05-15")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    assert _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO") is None
+
+
+def test_primer_pago_posterior_a_gracia_calcula_desde_vencimiento(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-DESDE-VTO-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=100.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+
+    assert punitorio is not None
+    assert float(punitorio["importe_componente"]) == pytest.approx(100.00)
+    assert float(punitorio["saldo_componente"]) == pytest.approx(0.00)
+
+
+def test_pago_anterior_al_vencimiento_no_corta_tramo(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-PREVIO-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=1000.00, fecha_pago="2026-05-05")
+    _pagar(client, id_persona, monto=90.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+
+    assert punitorio is not None
+    assert float(punitorio["importe_componente"]) == pytest.approx(90.00)
+
+
+def test_segundo_pago_posterior_calcula_desde_ultimo_pago_posterior(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-SEGUNDO-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=1000.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio_1 = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+    assert punitorio_1 is not None
+    assert float(punitorio_1["importe_componente"]) == pytest.approx(100.00)
+
+    _pagar(client, id_persona, monto=45.50, fecha_pago="2026-05-25")
+    punitorio_2 = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+    count_punitorio = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM composicion_obligacion co
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+            WHERE co.id_obligacion_financiera = :id
+              AND cf.codigo_concepto_financiero = 'PUNITORIO'
+              AND co.deleted_at IS NULL
+            """
+        ),
+        {"id": ob["id_obligacion_financiera"]},
+    ).scalar_one()
+
+    assert punitorio_2 is not None
+    assert count_punitorio == 1
+    assert float(punitorio_2["importe_componente"]) == pytest.approx(145.50)
+    assert float(punitorio_2["saldo_componente"]) == pytest.approx(0.00)
+
+
+def test_pago_parcial_solo_parte_punitorio_deja_saldo_pendiente(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-PARCIAL-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+    canon = _composicion(db_session, ob["id_obligacion_financiera"], "CANON_LOCATIVO")
+
+    assert punitorio is not None
+    assert float(punitorio["importe_componente"]) == pytest.approx(100.00)
+    assert float(punitorio["saldo_componente"]) == pytest.approx(50.00)
+    assert canon is not None
+    assert float(canon["saldo_componente"]) == pytest.approx(10000.00)
+    assert float(ob["saldo_pendiente"]) == pytest.approx(10050.00)
+
+
+def test_retry_mismo_op_id_no_duplica_punitorio(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-IDEM-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440101"}
+
+    data_1 = _pagar_con_headers(client, id_persona, monto=50.00, fecha_pago="2026-05-20", headers=headers)
+    data_2 = _pagar_con_headers(client, id_persona, monto=50.00, fecha_pago="2026-05-20", headers=headers)
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    comps = [
+        c for c in _composiciones_por_obligacion(db_session, ob["id_obligacion_financiera"])
+        if c["codigo_concepto_financiero"] == "PUNITORIO"
+    ]
+
+    assert data_2 == data_1
+    assert len(comps) == 1
+    assert float(comps[0]["importe_componente"]) == pytest.approx(100.00)
+    assert float(comps[0]["saldo_componente"]) == pytest.approx(50.00)
+
+
+def test_saldo_pendiente_obligacion_incluye_punitorio_pendiente(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-SALDO-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    assert float(ob["saldo_pendiente"]) == pytest.approx(10050.00)
+
+
+def test_estado_cuenta_muestra_composicion_punitorio_persistida(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-EC-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+    id_relacion = _relacion_por_contrato(db_session, contrato["id_contrato_alquiler"])
+    resp = client.get(
+        "/api/v1/financiero/estado-cuenta",
+        headers=HEADERS,
+        params={"id_relacion_generadora": id_relacion},
+    )
+
+    assert resp.status_code == 200
+    comps = resp.json()["data"]["obligaciones"][0]["composiciones"]
+    punitorios = [c for c in comps if c["codigo_concepto_financiero"] == "PUNITORIO"]
+    assert len(punitorios) == 1
+    assert punitorios[0]["saldo_componente"] == pytest.approx(50.00)
+
+
+def test_pago_persona_no_crea_interes_mora_en_v1(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-PUNIT-NO-INTERES-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+
+    _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    assert _composicion(db_session, ob["id_obligacion_financiera"], "INTERES_MORA") is None
 
 
 def test_pago_mora_respeta_dias_gracia(client, db_session) -> None:
@@ -233,7 +504,7 @@ def test_pago_mora_respeta_dias_gracia(client, db_session) -> None:
     assert dentro["remanente"] == pytest.approx(10.00)
     assert limite["remanente"] == pytest.approx(10.00)
     assert fuera["remanente"] == pytest.approx(0.00)
-    assert fuera["monto_aplicado"] == pytest.approx(10000.00)
+    assert fuera["monto_aplicado"] == pytest.approx(10010.00)
 
 
 def test_pago_remanente_si_sobra_monto(client, db_session) -> None:
@@ -350,7 +621,7 @@ def test_pago_retry_mismo_op_id_con_mora_devuelve_resultado_original(client, db_
     )
     headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440004"}
 
-    monto_con_mora = 50000.00 + (50000.00 * TASA_DIARIA_MORA * 5)
+    monto_con_mora = 50000.00 + (50000.00 * TASA_DIARIA_MORA * 10)
     data_1 = _pagar_con_headers(
         client, id_persona, monto=monto_con_mora, fecha_pago="2026-05-25", headers=headers
     )

@@ -106,7 +106,7 @@ Implementado:
 
 - consulta por `GET /api/v1/financiero/conceptos-financieros`
 - busqueda interna por codigo para crear obligaciones e imputaciones
-- catalogo base con `INTERES_MORA` disponible en seeds actuales
+- catalogo base con `INTERES_MORA` disponible en seeds actuales solo por compatibilidad heredada; V1 no lo usa como concepto activo de mora persistida
 
 ### 2.5 movimiento_financiero y aplicacion_financiera
 
@@ -176,18 +176,17 @@ Reglas:
 
 Prioridad implementada:
 
-1. `INTERES_MORA`
-2. `PUNITORIO`
-3. `CARGO_ADMINISTRATIVO`
-4. `INTERES_FINANCIERO`
-5. `AJUSTE_INDEXACION`
-6. `CAPITAL_VENTA`
-7. `ANTICIPO_VENTA`
-8. `CANON_LOCATIVO`
-9. `EXPENSA_TRASLADADA`
-10. `SERVICIO_TRASLADADO`
-11. `IMPUESTO_TRASLADADO`
-12. otros conceptos por `orden_composicion`
+1. `PUNITORIO`
+2. `CARGO_ADMINISTRATIVO`
+3. `INTERES_FINANCIERO`
+4. `AJUSTE_INDEXACION`
+5. `CAPITAL_VENTA`
+6. `ANTICIPO_VENTA`
+7. `CANON_LOCATIVO`
+8. `EXPENSA_TRASLADADA`
+9. `SERVICIO_TRASLADADO`
+10. `IMPUESTO_TRASLADADO`
+11. otros conceptos por `orden_composicion`
 
 ---
 
@@ -424,6 +423,9 @@ Aplica un pago contra la deuda de una persona, creando `movimiento_financiero` y
 
 Reglas:
 
+- si corresponde punitorio por mora al momento del pago, se liquida antes de
+  imputar como `composicion_obligacion` `PUNITORIO`; no se crea obligacion nueva
+  ni composicion `INTERES_MORA` para esta liquidacion V1
 - orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras
 - mora dinámica incluida en `total_a_cubrir`; la porción de mora consume del monto pero no se persiste como componente
 - la mora dinamica respeta 5 dias de gracia no persistidos
@@ -685,11 +687,11 @@ Esto implica:
 - La mora se calcula dinámicamente en consultas (estado de cuenta, deuda).
 - El único efecto persistido es el cambio de estado EMITIDA → VENCIDA.
 
-## Punitorio por pago - Regla funcional pendiente
+## Punitorio por pago - Regla funcional implementada
 
-Estado: `PENDIENTE / NO IMPLEMENTADO`.
+Estado: `IMPLEMENTADO` en `POST /api/v1/financiero/pagos`.
 
-Cuando se implemente mora persistida al registrar pagos, el cargo por mora se
+Al registrar pagos, cuando corresponde mora persistida, el cargo por mora se
 modela como `PUNITORIO` dentro de la obligacion base. No se usa `INTERES_MORA`
 como componente separado en V1 para esta liquidacion.
 

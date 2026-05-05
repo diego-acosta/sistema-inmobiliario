@@ -376,7 +376,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: MODELO-FINANCIERO-FIN
 
 ### RN-FIN-060 — Prioridad de distribucion de pago global
-- descripcion: Cuando un pago global deba distribuirse hacia componentes, la prioridad base es `INTERES_MORA`, `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre.
+- descripcion: Cuando un pago global deba distribuirse hacia componentes, la prioridad base V1 es `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre. `INTERES_MORA` queda solo como compatibilidad heredada y no se usa como concepto activo de mora persistida en V1.
 - aplica_a: aplicacion_financiera, composicion_obligacion, concepto_financiero
 - origen_principal: MODELO-FINANCIERO-FIN
 - estado: IMPLEMENTADA PARCIALMENTE en `POST /api/v1/financiero/imputaciones`.
@@ -501,31 +501,31 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Cuando la mora se liquide de forma persistida por pago, debe representarse con `PUNITORIO` dentro de la obligacion base. En V1 no debe usarse `INTERES_MORA` como componente separado para este cargo.
 - aplica_a: obligacion_financiera, composicion_obligacion, concepto_financiero
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
-- estado: PENDIENTE / NO IMPLEMENTADO.
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-076 - Dias de gracia de punitorio por pago
 - descripcion: Si `fecha_pago <= fecha_vencimiento + dias_gracia`, el punitorio es cero. Si `fecha_pago > fecha_vencimiento + dias_gracia`, el calculo se realiza desde `fecha_vencimiento`, no desde `fecha_vencimiento + dias_gracia`.
 - aplica_a: obligacion_financiera, composicion_obligacion
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
-- estado: PENDIENTE / NO IMPLEMENTADO.
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-077 - Tramos de punitorio por pagos parciales
 - descripcion: Los pagos realizados antes o en `fecha_vencimiento` no cortan el tramo de punitorio. Los pagos posteriores al vencimiento si lo cortan; el siguiente punitorio se calcula desde la ultima fecha de pago posterior al vencimiento.
 - aplica_a: obligacion_financiera, movimiento_financiero, composicion_obligacion
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
-- estado: PENDIENTE / NO IMPLEMENTADO.
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-078 - Base morable para punitorio
 - descripcion: La base de calculo del punitorio es el saldo morable pendiente. No incluye punitorio pendiente ni otros accesorios.
 - aplica_a: obligacion_financiera, composicion_obligacion
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
-- estado: PENDIENTE / NO IMPLEMENTADO.
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-079 - Persistencia y saldo de componente punitorio
 - descripcion: El punitorio liquidado debe persistirse como `composicion_obligacion` `PUNITORIO` dentro de la obligacion base. Si el pago no lo cubre completo, queda `saldo_componente` pendiente.
 - aplica_a: obligacion_financiera, composicion_obligacion, aplicacion_financiera
 - origen_principal: SRV-FIN-013-generacion-de-mora / SRV-FIN-019-registro-pago-persona
-- estado: PENDIENTE / NO IMPLEMENTADO.
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ---
 

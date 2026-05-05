@@ -78,7 +78,7 @@ Cada "tipo" legacy debe mapearse hacia:
 | servicio trasladado | `SERVICIO` / `CONTRATO_ALQUILER` segun contrato futuro | `SERVICIO_TRASLADADO` | Servicio trasladado al obligado financiero. |
 | expensa trasladada | `CONTRATO_ALQUILER` | `EXPENSA_TRASLADADA` | Expensa trasladada al obligado financiero. |
 | impuesto trasladado | `CONTRATO_ALQUILER` o `INMUEBLE` segun origen documentado futuro | `IMPUESTO_TRASLADADO` | Impuesto o tasa trasladada. |
-| mora | Origen de la obligacion afectada | `INTERES_MORA`; `PUNITORIO` si corresponde | Componentes de mora asociados a deuda vencida. |
+| mora | Origen de la obligacion afectada | `PUNITORIO` en V1; `INTERES_MORA` solo compatibilidad heredada | Componentes de mora asociados a deuda vencida. |
 | liquidacion final | Relacion generadora cerrada o en cierre | `LIQUIDACION_FINAL` y conceptos complementarios | Cierre economico de la relacion. |
 | refinanciacion | Refinanciacion o proceso financiero formal | `REFINANCIACION` y conceptos resultantes | Nueva composicion derivada de deuda refinanciada. |
 | cancelacion anticipada | Cancelacion anticipada o proceso formal equivalente | `CANCELACION_ANTICIPADA` y conceptos resultantes | Cargo, saldo o ajuste por cancelacion antes del vencimiento natural. |
@@ -97,8 +97,8 @@ El catalogo conceptual base de `concepto_financiero` queda definido en `MODELO-F
 - `SERVICIO_TRASLADADO`
 - `IMPUESTO_TRASLADADO`
 - `INTERES_FINANCIERO`
-- `INTERES_MORA`
 - `PUNITORIO`
+- `INTERES_MORA` (compatibilidad heredada; no se usa como concepto activo de mora persistida en V1)
 - `CARGO_ADMINISTRATIVO`
 - `LIQUIDACION_FINAL`
 - `REFINANCIACION`

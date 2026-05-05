@@ -128,10 +128,10 @@ Los parámetros `tasa_diaria` y `dias_gracia` se resuelven mediante el
 
 ## Regla funcional para punitorio persistido por pago
 
-Estado: `PENDIENTE / NO IMPLEMENTADO`.
+Estado: `IMPLEMENTADO` en `POST /api/v1/financiero/pagos`.
 
-Cuando se implemente liquidacion persistida de mora al registrar pagos, la mora
-liquidada debe representarse como `PUNITORIO`. En V1 no debe usarse un
+Al registrar pagos, cuando corresponde liquidacion persistida de mora, la mora
+liquidada se representa como `PUNITORIO`. En V1 no debe usarse un
 componente `INTERES_MORA` separado para este caso.
 
 Reglas de calculo:
@@ -145,7 +145,7 @@ Reglas de calculo:
   se calcula desde la ultima `fecha_pago` posterior al vencimiento
 - la base de calculo es el saldo morable pendiente; no incluye punitorio
   pendiente ni otros accesorios
-- el punitorio liquidado debe persistirse como `composicion_obligacion`
+- el punitorio liquidado persiste como `composicion_obligacion`
   `PUNITORIO` dentro de la obligacion base
 - si el pago no cubre el punitorio completo, queda `saldo_componente`
   pendiente en la composicion `PUNITORIO`

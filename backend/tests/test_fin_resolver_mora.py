@@ -178,8 +178,9 @@ def test_estado_cuenta_persona_usa_tasa_default(client, db_session) -> None:
 
 def test_simular_pago_usa_tasa_default(client, db_session) -> None:
     """
-    El endpoint simular-pago usa la tasa del resolver → mora consistente.
-    Misma condición que test anterior.
+    El endpoint simular-pago usa la tasa del resolver para punitorio simulado.
+    En pago/simulacion, dias_gracia es umbral: superada la gracia, calcula
+    desde fecha_vencimiento. Del 2026-05-15 al 2026-05-25 son 10 dias.
     """
     contrato = _crear_contrato_borrador(
         client, codigo="RESOL-SIM-001",
@@ -198,5 +199,5 @@ def test_simular_pago_usa_tasa_default(client, db_session) -> None:
 
     assert resp.status_code == 200
     ob = resp.json()["data"]["detalle"][0]
-    mora_esperada = 10000 * float(TASA_DIARIA_MORA_DEFAULT) * 5
+    mora_esperada = 10000 * float(TASA_DIARIA_MORA_DEFAULT) * 10
     assert ob["mora_calculada"] == pytest.approx(mora_esperada)

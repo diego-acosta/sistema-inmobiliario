@@ -114,23 +114,23 @@ def test_imputacion_distribuida_varias_composiciones(client, db_session) -> None
 
 def test_imputacion_respeta_orden_prioridad(client, db_session) -> None:
     rg = _crear_rg(client, codigo="IMP-ORD-001")
-    # CANON_LOCATIVO en orden 1, INTERES_MORA en orden 2 — pero mora tiene prioridad más alta
+    # CANON_LOCATIVO en orden 1, PUNITORIO en orden 2 — pero mora tiene prioridad más alta
     ob = _crear_obligacion(
         client,
         id_relacion_generadora=rg["id_relacion_generadora"],
         composiciones=[
             {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 1000.00},
-            {"codigo_concepto_financiero": "INTERES_MORA", "importe_componente": 1000.00},
+            {"codigo_concepto_financiero": "PUNITORIO", "importe_componente": 1000.00},
         ],
     )
 
     id_mora = next(
         c["id_composicion_obligacion"]
         for c in ob["composiciones"]
-        if c["codigo_concepto_financiero"] == "INTERES_MORA"
+        if c["codigo_concepto_financiero"] == "PUNITORIO"
     )
 
-    # Monto menor que cualquier composición: debería ir íntegro a INTERES_MORA (prioridad 0)
+    # Monto menor que cualquier composición: debería ir íntegro a PUNITORIO (prioridad 0)
     data = _imputar(client, id_obligacion_financiera=ob["id_obligacion_financiera"], monto=300.00)
 
     assert len(data["aplicaciones"]) == 1

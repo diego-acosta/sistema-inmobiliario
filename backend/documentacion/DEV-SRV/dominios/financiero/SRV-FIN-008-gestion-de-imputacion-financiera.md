@@ -73,18 +73,20 @@ La imputacion busca composiciones activas con saldo y las ordena por prioridad l
 
 Prioridad:
 
-1. `INTERES_MORA`
-2. `PUNITORIO`
-3. `CARGO_ADMINISTRATIVO`
-4. `INTERES_FINANCIERO`
-5. `AJUSTE_INDEXACION`
-6. `CAPITAL_VENTA`
-7. `ANTICIPO_VENTA`
-8. `CANON_LOCATIVO`
-9. `EXPENSA_TRASLADADA`
-10. `SERVICIO_TRASLADADO`
-11. `IMPUESTO_TRASLADADO`
-12. otros conceptos por `orden_composicion`
+1. `PUNITORIO`
+2. `CARGO_ADMINISTRATIVO`
+3. `INTERES_FINANCIERO`
+4. `AJUSTE_INDEXACION`
+5. `CAPITAL_VENTA`
+6. `ANTICIPO_VENTA`
+7. `CANON_LOCATIVO`
+8. `EXPENSA_TRASLADADA`
+9. `SERVICIO_TRASLADADO`
+10. `IMPUESTO_TRASLADADO`
+11. otros conceptos por `orden_composicion`
+
+`INTERES_MORA` puede existir en catalogos heredados, pero no se usa como
+concepto activo de mora persistida en V1.
 
 Si el monto alcanza a mas de una composicion, el backend crea multiples filas en `aplicacion_financiera`.
 

@@ -161,9 +161,9 @@ Response:
     "items": [
       {
         "id_concepto_financiero": 1,
-        "codigo_concepto_financiero": "INTERES_MORA",
-        "nombre_concepto_financiero": "Interes de mora",
-        "descripcion_concepto_financiero": "Interes generado por mora.",
+        "codigo_concepto_financiero": "PUNITORIO",
+        "nombre_concepto_financiero": "Punitorio",
+        "descripcion_concepto_financiero": "Cargo punitorio por incumplimiento.",
         "tipo_concepto_financiero": "MORA",
         "naturaleza_concepto": "DEBITO",
         "estado_concepto_financiero": "ACTIVO"
@@ -445,14 +445,10 @@ Reglas implementadas:
 - requiere `deleted_at IS NULL`
 - excluye estados `ANULADA`, `REEMPLAZADA`, `CANCELADA`
 - excluye obligaciones generadas por mora automatica
-- concepto obligatorio: `INTERES_MORA`
-- tasa fija: `0.001`
-- calculo: `saldo_pendiente * 0.001`
-- redondeo a 2 decimales
-- si `importe_mora <= 0`, no genera
-- no capitalizable: no modifica la obligacion base
-- crea una nueva obligacion con la misma `id_relacion_generadora`
-- no duplica mora por obligacion base y fecha de proceso usando control por `observaciones`
+- no crea `INTERES_MORA`
+- no crea nueva obligacion por mora
+- el punitorio persistido V1 se liquida solo al registrar pago y usa
+  `PUNITORIO` como `composicion_obligacion` de la obligacion base
 
 Limitacion:
 

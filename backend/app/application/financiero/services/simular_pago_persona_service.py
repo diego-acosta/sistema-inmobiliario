@@ -20,8 +20,9 @@ def _mora(
     if fecha_vencimiento is None or saldo <= 0:
         return Decimal("0")
     r = resolucion if resolucion is not None else resolver_mora_params()
-    fecha_inicio_mora = fecha_vencimiento + timedelta(days=r.dias_gracia)
-    dias = max(0, (fecha_corte - fecha_inicio_mora).days)
+    if fecha_corte <= fecha_vencimiento + timedelta(days=r.dias_gracia):
+        return Decimal("0")
+    dias = max(0, (fecha_corte - fecha_vencimiento).days)
     if dias == 0:
         return Decimal("0")
     return (saldo * r.tasa_diaria * dias).quantize(_Q, rounding=ROUND_HALF_UP)

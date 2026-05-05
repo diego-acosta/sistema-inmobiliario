@@ -20,8 +20,7 @@ ESTADOS_ACEPTAN_IMPUTACION = {
 
 # Menor índice = mayor prioridad. Conceptos no listados van al final ordenados por orden_composicion.
 _PRIORIDAD: dict[str, int] = {
-    "INTERES_MORA": 0,
-    "PUNITORIO": 1,
+    "PUNITORIO": 0,
     "CARGO_ADMINISTRATIVO": 2,
     "INTERES_FINANCIERO": 3,
     "AJUSTE_INDEXACION": 4,

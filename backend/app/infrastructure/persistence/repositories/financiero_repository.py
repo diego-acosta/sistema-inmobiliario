@@ -1587,6 +1587,146 @@ class FinancieroRepository:
             "obligaciones_pagadas": obligaciones_pagadas,
         }
 
+    def get_ultima_fecha_pago_posterior_vencimiento(
+        self, *, id_obligacion_financiera: int, fecha_vencimiento: date
+    ) -> date | None:
+        stmt = text(
+            """
+            SELECT MAX(m.fecha_movimiento::date) AS ultima_fecha
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            WHERE a.id_obligacion_financiera = :id_obligacion_financiera
+              AND m.tipo_movimiento = 'PAGO'
+              AND m.deleted_at IS NULL
+              AND m.fecha_movimiento::date > :fecha_vencimiento
+            """
+        )
+        return self.db.execute(
+            stmt,
+            {
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "fecha_vencimiento": fecha_vencimiento,
+            },
+        ).scalar_one_or_none()
+
+    def get_saldo_morable_pendiente(
+        self, *, id_obligacion_financiera: int
+    ) -> Decimal:
+        stmt = text(
+            """
+            SELECT COALESCE(SUM(c.saldo_componente), 0) AS saldo_morable
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+             AND cf.deleted_at IS NULL
+            WHERE c.id_obligacion_financiera = :id_obligacion_financiera
+              AND c.estado_composicion_obligacion = 'ACTIVA'
+              AND c.deleted_at IS NULL
+              AND cf.codigo_concepto_financiero = 'CANON_LOCATIVO'
+            """
+        )
+        saldo = self.db.execute(
+            stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+        ).scalar_one()
+        return Decimal(str(saldo))
+
+    def liquidar_punitorio_obligacion(
+        self,
+        *,
+        id_obligacion_financiera: int,
+        importe_punitorio: Decimal,
+        detalle_calculo: str,
+        now: Any,
+        id_instalacion: Any,
+        op_id: Any,
+        uid_global: str,
+    ) -> dict[str, Any]:
+        update_stmt = text(
+            """
+            UPDATE composicion_obligacion c
+            SET importe_componente = c.importe_componente + :importe_punitorio,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id,
+                detalle_calculo = :detalle_calculo
+            FROM concepto_financiero cf
+            WHERE c.id_concepto_financiero = cf.id_concepto_financiero
+              AND c.id_obligacion_financiera = :id_obligacion_financiera
+              AND c.estado_composicion_obligacion = 'ACTIVA'
+              AND c.deleted_at IS NULL
+              AND cf.codigo_concepto_financiero = 'PUNITORIO'
+              AND cf.deleted_at IS NULL
+            RETURNING
+                c.id_composicion_obligacion,
+                c.importe_componente,
+                c.saldo_componente
+            """
+        )
+        row = self.db.execute(
+            update_stmt,
+            {
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "importe_punitorio": importe_punitorio,
+                "updated_at": now,
+                "id_instalacion": id_instalacion,
+                "op_id": op_id,
+                "detalle_calculo": detalle_calculo,
+            },
+        ).mappings().one_or_none()
+        if row is not None:
+            return dict(row)
+
+        insert_stmt = text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente,
+                detalle_calculo, observaciones
+            )
+            SELECT
+                :uid_global, 1, :created_at, :updated_at,
+                :id_instalacion, :id_instalacion,
+                :op_id, :op_id,
+                :id_obligacion_financiera, cf.id_concepto_financiero,
+                COALESCE((
+                    SELECT MAX(c2.orden_composicion) + 1
+                    FROM composicion_obligacion c2
+                    WHERE c2.id_obligacion_financiera = :id_obligacion_financiera
+                      AND c2.deleted_at IS NULL
+                ), 1),
+                :importe_punitorio, :importe_punitorio,
+                :detalle_calculo, 'Punitorio liquidado al registrar pago'
+            FROM concepto_financiero cf
+            WHERE cf.codigo_concepto_financiero = 'PUNITORIO'
+              AND cf.deleted_at IS NULL
+            RETURNING
+                id_composicion_obligacion,
+                importe_componente,
+                saldo_componente
+            """
+        )
+        inserted = self.db.execute(
+            insert_stmt,
+            {
+                "uid_global": uid_global,
+                "created_at": now,
+                "updated_at": now,
+                "id_instalacion": id_instalacion,
+                "op_id": op_id,
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "importe_punitorio": importe_punitorio,
+                "detalle_calculo": detalle_calculo,
+            },
+        ).mappings().one_or_none()
+        if inserted is None:
+            raise ValueError("Concepto financiero PUNITORIO no encontrado")
+        return dict(inserted)
+
     def registrar_pago_multipago(
         self,
         pagos: list[Any],
