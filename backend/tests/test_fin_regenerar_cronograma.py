@@ -587,3 +587,37 @@ def test_regenerar_con_prorrateo_en_nuevas_obligaciones(client, db_session) -> N
     # Suma de importes proporcionales (30 días junio: 15 + 15)
     total_jun = sum(float(ob["importe_total"]) for ob in junio_segs)
     assert total_jun == pytest.approx(30000 * 15 / 30 + 40000 * 15 / 30, abs=0.05)
+
+
+def test_regenerar_desde_mitad_de_mes_prorratea_periodo_recortado(client, db_session) -> None:
+    """
+    Si fecha_corte cae dentro del mes, reemplaza la obligacion solapada sin pagos
+    y genera una obligacion parcial desde fecha_corte.
+    """
+    contrato = _crear_contrato_borrador(
+        client, codigo="REGEN-PARC-MID-001",
+        fecha_inicio="2026-05-01", fecha_fin="2026-07-31",
+    )
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 30000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    iniciales = _get_obligaciones_de_relacion(db_session, id_rg)
+    assert len(iniciales) == 3
+
+    result = _regenerar_via_service(
+        db_session, contrato["id_contrato_alquiler"], date(2026, 6, 15)
+    )
+
+    assert result.success
+    assert result.data["reemplazadas"] == 2
+    assert result.data["generadas"] == 2
+
+    activas = _get_obligaciones_de_relacion(db_session, id_rg)
+    assert len(activas) == 3
+    junio = next(ob for ob in activas if ob["periodo_desde"] == date(2026, 6, 15))
+    julio = next(ob for ob in activas if ob["periodo_desde"] == date(2026, 7, 1))
+    assert junio["periodo_hasta"] == date(2026, 6, 30)
+    assert float(junio["importe_total"]) == pytest.approx(30000 * 16 / 30, abs=0.01)
+    assert float(julio["importe_total"]) == pytest.approx(30000.00)

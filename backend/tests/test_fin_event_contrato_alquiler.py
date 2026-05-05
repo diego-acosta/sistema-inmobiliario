@@ -385,6 +385,25 @@ def test_cronograma_ultimo_periodo_cortado_en_fecha_fin(client, db_session) -> N
     # Segundo período: cortado en fecha_fin
     assert obligaciones[1]["periodo_desde"] == date(2026, 6, 1)
     assert obligaciones[1]["periodo_hasta"] == date(2026, 6, 15)
+    assert float(obligaciones[1]["importe_total"]) == pytest.approx(30000 * 15 / 30, abs=0.01)
+
+
+def test_cronograma_periodo_inicial_parcial_prorratea(client, db_session) -> None:
+    contrato = _crear_contrato_borrador(
+        client, codigo="CRON-PARC-INI-001",
+        fecha_inicio="2026-05-15", fecha_fin="2026-05-31",
+    )
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 100000.00, "2026-05-01")
+    _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+
+    id_rg = _get_relacion_for_contrato(db_session, contrato["id_contrato_alquiler"])
+    obligaciones = _get_obligaciones_de_relacion(db_session, id_rg)
+
+    assert len(obligaciones) == 1
+    assert obligaciones[0]["periodo_desde"] == date(2026, 5, 15)
+    assert obligaciones[0]["periodo_hasta"] == date(2026, 5, 31)
+    assert float(obligaciones[0]["importe_total"]) == pytest.approx(100000 * 17 / 31, abs=0.01)
 
 
 def test_cronograma_idempotencia_no_duplica(client, db_session) -> None:
@@ -727,7 +746,7 @@ def test_get_segmentos_cambio_a_mitad_genera_dos() -> None:
     assert segs[1] == (date(2026, 5, 16), date(2026, 5, 31), condiciones[1])
 
 
-def test_calcular_importes_un_segmento_devuelve_monto_completo() -> None:
+def test_calcular_importes_un_segmento_mes_completo_devuelve_monto_completo() -> None:
     """Con un solo segmento → monto_base completo, sin prorrateo."""
     from app.application.financiero.services.cronograma_locativo_builder import (
         calcular_importes_prorateados,
@@ -737,6 +756,30 @@ def test_calcular_importes_un_segmento_devuelve_monto_completo() -> None:
     importes = calcular_importes_prorateados(segs, date(2026, 5, 1))
     assert len(importes) == 1
     assert importes[0] == pytest.approx(10000.00)
+
+
+def test_calcular_importes_un_segmento_periodo_inicial_parcial_prorratea() -> None:
+    """Un segmento recortado al inicio se prorratea por dias reales del mes."""
+    from app.application.financiero.services.cronograma_locativo_builder import (
+        calcular_importes_prorateados,
+    )
+    condicion = {"fecha_desde": date(2026, 5, 1), "fecha_hasta": None, "monto_base": 100000}
+    segs = [(date(2026, 5, 15), date(2026, 5, 31), condicion)]
+    importes = calcular_importes_prorateados(segs, date(2026, 5, 15))
+    assert len(importes) == 1
+    assert importes[0] == pytest.approx(100000 * 17 / 31, abs=0.01)
+
+
+def test_calcular_importes_un_segmento_periodo_final_parcial_prorratea() -> None:
+    """Un segmento recortado al final se prorratea por dias reales del mes."""
+    from app.application.financiero.services.cronograma_locativo_builder import (
+        calcular_importes_prorateados,
+    )
+    condicion = {"fecha_desde": date(2026, 5, 1), "fecha_hasta": None, "monto_base": 100000}
+    segs = [(date(2026, 5, 1), date(2026, 5, 20), condicion)]
+    importes = calcular_importes_prorateados(segs, date(2026, 5, 1))
+    assert len(importes) == 1
+    assert importes[0] == pytest.approx(100000 * 20 / 31, abs=0.01)
 
 
 def test_calcular_importes_dos_segmentos_mismo_monto_suman_total() -> None:

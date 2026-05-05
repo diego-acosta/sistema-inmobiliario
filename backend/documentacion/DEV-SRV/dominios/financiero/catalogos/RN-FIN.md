@@ -336,7 +336,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - observaciones: El indice unico parcial `(id_relacion_generadora, periodo_desde, periodo_hasta) WHERE deleted_at IS NULL` impide duplicacion de periodos activos. El soft-delete libera esa restriccion sin perder la trazabilidad historica.
 
 ### RN-FIN-078 — Regeneracion es idempotente
-- descripcion: La regeneracion aplica solo a obligaciones cuyo `periodo_desde >= fecha_corte`. Obligaciones anteriores a la fecha_corte no se tocan. Una segunda llamada con la misma `fecha_corte` produce el mismo resultado final.
+- descripcion: La regeneracion aplica a obligaciones cuyo periodo se solapa con `fecha_corte` (`periodo_hasta >= fecha_corte`). Obligaciones totalmente anteriores a la fecha_corte no se tocan. Una segunda llamada con la misma `fecha_corte` produce el mismo resultado final.
 - aplica_a: obligacion_financiera, regeneracion_cronograma
 - origen_principal: DEV-SRV
 - estado: IMPLEMENTADO
@@ -430,10 +430,10 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: DECISION FISICA PENDIENTE.
 
 ### RN-LOC-FIN-001 - Condicion economica aplicable al periodo locativo
-- descripcion: La condicion economica aplicable a un periodo locativo es la vigente en `periodo_desde`, salvo regla explicita de prorrateo o division del periodo.
+- descripcion: La condicion economica aplicable a un periodo locativo se resuelve por segmento. Si no hay cambio de condicion dentro del periodo, existe un unico segmento con la condicion vigente en `periodo_desde`.
 - aplica_a: contrato_alquiler, condicion_economica_alquiler, obligacion_financiera
 - origen_principal: SRV-FIN-015-plan-financiero-locativo
-- estado: IMPLEMENTADA sin prorrateo.
+- estado: IMPLEMENTADA con prorrateo.
 
 ### RN-LOC-FIN-002 - Obligado principal del canon locativo
 - descripcion: El obligado financiero principal del canon locativo se resuelve desde el locatario principal del contrato. El garante no se incorpora automaticamente como obligado principal.
@@ -447,8 +447,8 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-015-plan-financiero-locativo
 - estado: IMPLEMENTADA.
 
-### RN-LOC-FIN-005 - Prorrateo de canon locativo por cambio de condición dentro del período
-- descripcion: Cuando `condicion_economica_alquiler.fecha_desde` cae estrictamente dentro de un período mensual (> `periodo_desde` y <= `periodo_hasta`), el período se divide en segmentos. Cada segmento genera una `obligacion_financiera` separada con `importe = monto_base * dias_segmento / dias_mes` (días reales del mes), redondeado a 2 decimales. Cuando todos los segmentos comparten el mismo `monto_base`, el último segmento absorbe el residuo de redondeo para garantizar suma exacta. Si no hay cambio de condición dentro del período, se genera una sola obligación con el monto_base completo.
+### RN-LOC-FIN-005 - Prorrateo de canon locativo por periodo parcial o cambio de condicion dentro del periodo
+- descripcion: El monto mensual completo solo aplica cuando el segmento cubre el mes real completo. Si `periodo_desde` o `periodo_hasta` recortan el mes, o si `condicion_economica_alquiler.fecha_desde` cae estrictamente dentro del periodo mensual (> `periodo_desde` y <= `periodo_hasta`), cada segmento genera una `obligacion_financiera` separada con `importe = monto_base * dias_segmento / dias_mes` (dias reales del mes), redondeado a 2 decimales con `ROUND_HALF_UP`. Cuando todos los segmentos comparten el mismo `monto_base`, el ultimo segmento absorbe el residuo de redondeo para garantizar suma exacta.
 - aplica_a: condicion_economica_alquiler, obligacion_financiera, relacion_generadora
 - origen_principal: SRV-FIN-015-plan-financiero-locativo
 - estado: IMPLEMENTADA.

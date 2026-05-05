@@ -1099,7 +1099,7 @@ class FinancieroRepository:
             FROM obligacion_financiera o
             WHERE o.id_relacion_generadora = :id_rg
               AND o.deleted_at IS NULL
-              AND o.periodo_desde >= :fecha_corte
+              AND o.periodo_hasta >= :fecha_corte
               AND o.estado_obligacion NOT IN (
                   'CANCELADA', 'PARCIALMENTE_CANCELADA', 'ANULADA', 'REEMPLAZADA'
               )

@@ -53,7 +53,12 @@ de cronograma locativo, pero se mantienen como servicios distintos.
 
 ### Sin cambio de condición (un segmento)
 
-- `importe_total = condicion_economica_alquiler.monto_base` (monto completo)
+- Si el segmento cubre el mes completo (`periodo_desde` primer dia del mes y
+  `periodo_hasta` ultimo dia real del mes), `importe_total =
+  condicion_economica_alquiler.monto_base`.
+- Si el segmento no cubre el mes completo porque `contrato_alquiler.fecha_inicio`,
+  `contrato_alquiler.fecha_fin` o `fecha_corte` recortan el periodo, se aplica
+  prorrateo por dias reales del mes.
 
 ### Con cambio de condición dentro del período (prorrateo)
 
@@ -95,6 +100,12 @@ Regla de condicion aplicable:
 - Si un período mensual no tiene ningún segmento con condición, el período completo se omite.
 
 Regla de prorrateo (RN-LOC-FIN-005):
+
+- La formula de prorrateo es `importe = monto_base * dias_segmento / dias_mes`
+  con dias reales del mes.
+- La misma formula aplica a un periodo parcial aunque exista un unico segmento
+  y no haya cambio de condicion.
+- El redondeo es a 2 decimales con `ROUND_HALF_UP`.
 
 - Un cambio de condición dentro del período se detecta cuando `fecha_desde`
   de una condición cae estrictamente después de `periodo_desde` y dentro del período.
@@ -159,9 +170,9 @@ Alcance actual:
 
 ## Regeneración controlada de cronograma V1
 
-Permite reemplazar obligaciones futuras sin pagos y generar nuevas
-a partir de una `fecha_corte`, sin tocar obligaciones pagadas ni con
-aplicaciones financieras.
+Permite reemplazar obligaciones sin pagos cuyo periodo se solapa con una
+`fecha_corte` y generar nuevas a partir de esa fecha, sin tocar obligaciones
+pagadas ni con aplicaciones financieras.
 
 ```text
 POST /api/v1/financiero/contratos-alquiler/{id}/regenerar-cronograma
@@ -174,7 +185,8 @@ Body: { "fecha_corte": "YYYY-MM-DD" }
 
 ### Reglas de reemplazo
 
-- Solo se reemplazan obligaciones con `periodo_desde >= fecha_corte`.
+- Solo se reemplazan obligaciones cuyo periodo se solapa con `fecha_corte`
+  (`periodo_hasta >= fecha_corte`).
 - No se tocan estados: `CANCELADA`, `PARCIALMENTE_CANCELADA`, `ANULADA`, `REEMPLAZADA`.
 - No se tocan obligaciones con al menos una `aplicacion_financiera` activa.
 - Las obligaciones reemplazadas quedan con `estado_obligacion = REEMPLAZADA`
@@ -249,6 +261,8 @@ Una segunda llamada con la misma `fecha_corte`:
 - No genera expensas, servicios, impuestos ni punitorios.
 - No usa periodicidad para dividir periodos; el cronograma implementado es
   mensual.
+- Prorratea periodos parciales por inicio, fin o regeneracion desde mitad de
+  mes, incluso si hay un unico segmento.
 - Prorratea cambios de condición dentro del mes (RN-LOC-FIN-005 — implementado).
 - Si dos condiciones economicas aplican al mismo `periodo_desde`, gana la de
   `fecha_desde` mas reciente.
@@ -261,8 +275,6 @@ Una segunda llamada con la misma `fecha_corte`:
 
 ## Pendientes recomendados
 
-- Prorrateo V2: dividir periodos o prorratear importes cuando una condicion
-  cambia dentro del mes.
 - Validar o prevenir solapamientos en `condicion_economica_alquiler`.
 - Normalizar politica de moneda.
 - `dia_vencimiento_canon` ya está implementado en `contrato_alquiler`.

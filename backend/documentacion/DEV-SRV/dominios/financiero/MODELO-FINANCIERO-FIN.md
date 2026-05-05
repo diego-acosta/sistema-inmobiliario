@@ -493,7 +493,8 @@ una `fecha_corte`, el ciclo de vida de las obligaciones sigue este patron:
 
 ### Obligaciones reemplazadas
 
-- Las obligaciones elegibles (futuras sin pagos) cambian a `estado_obligacion = REEMPLAZADA`.
+- Las obligaciones elegibles sin pagos cuyo periodo se solapa con `fecha_corte`
+  cambian a `estado_obligacion = REEMPLAZADA`.
 - Se les asigna `deleted_at` con `CLOCK_TIMESTAMP()` (soft-delete).
 - El soft-delete libera el indice unico parcial
   `(id_relacion_generadora, periodo_desde, periodo_hasta) WHERE deleted_at IS NULL`,
@@ -648,7 +649,10 @@ Reglas implementadas:
 - una `obligacion_financiera` por periodo mensual aplicable
 - cada obligacion tiene una composicion `CANON_LOCATIVO`
 - cada obligacion tiene un `obligacion_obligado` para el locatario principal
-- el monto surge de `condicion_economica_alquiler.monto_base`
+- el monto surge de `condicion_economica_alquiler.monto_base`; se cobra completo
+  solo cuando el segmento cubre el mes real completo
+- si el periodo se recorta por inicio, fin o regeneracion desde mitad de mes,
+  el importe se prorratea por dias reales del mes con `ROUND_HALF_UP`
 - la condicion aplicable se resuelve contra `periodo_desde`
 - si un periodo no tiene condicion aplicable, se omite
 - si ningun periodo tiene condicion aplicable, no se crea
@@ -668,7 +672,9 @@ Reglas implementadas:
 - No se generan expensas, servicios, impuestos ni punitorios.
 - No usa periodicidad para dividir periodos; el cronograma implementado es
   mensual.
-- Prorratea cambios de condición dentro del mes (RN-LOC-FIN-005): genera una obligación por segmento con importe proporcional a días reales del mes.
+- Prorratea cambios de condicion dentro del mes y periodos parciales
+  (RN-LOC-FIN-005): genera una obligacion por segmento con importe proporcional
+  a dias reales del mes.
 - Si dos condiciones aplican al mismo `periodo_desde`, gana la condicion con
   `fecha_desde` mas reciente.
 - La prevencion de solapamientos depende de validaciones de condiciones

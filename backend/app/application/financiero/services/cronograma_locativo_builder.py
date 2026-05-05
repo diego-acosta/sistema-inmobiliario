@@ -131,13 +131,22 @@ def calcular_importes_prorateados(
     Residuo:  cuando todos los segmentos comparten el mismo monto_base,
               el ultimo segmento absorbe la diferencia de redondeo para
               garantizar que la suma sea exactamente la del periodo completo.
-    Segmento unico: devuelve monto_base completo (sin prorrateo, igual que antes).
+    Segmento unico: devuelve monto_base completo solo si cubre el mes real completo.
     """
     if not segmentos:
         return []
 
+    def _cubre_mes_completo(seg_desde: date, seg_hasta: date) -> bool:
+        ultimo_dia = calendar.monthrange(seg_desde.year, seg_desde.month)[1]
+        return (
+            seg_desde.day == 1
+            and seg_hasta == date(seg_desde.year, seg_desde.month, ultimo_dia)
+        )
+
     if len(segmentos) == 1:
-        return [float(Decimal(str(segmentos[0][2]["monto_base"])))]
+        seg_desde, seg_hasta, condicion = segmentos[0]
+        if _cubre_mes_completo(seg_desde, seg_hasta):
+            return [float(Decimal(str(condicion["monto_base"])))]
 
     dias_mes = Decimal(calendar.monthrange(periodo_desde.year, periodo_desde.month)[1])
     importes: list[Decimal] = []
