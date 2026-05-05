@@ -191,16 +191,21 @@ Se agregan endpoints de solo lectura:
 
 Reglas: agrupan por `uid_pago_grupo` + `codigo_pago_grupo`, consideran solo movimientos `PAGO` no eliminados y detalle desde `aplicacion_financiera`.
 
-### Vista de recibo de pago agrupado
+### Constancia interna de pago agrupado
 
 `GET /api/v1/financiero/pagos/{codigo_pago_grupo}/recibo` devuelve una vista de
-consulta para presentar el pago agrupado como recibo borrador.
+consulta para presentar una constancia interna de pago agrupado. No es un
+recibo oficial ni un comprobante fiscal.
 
 Alcance:
 
 - es read-only
-- no crea entidad de recibo
-- no genera numero fiscal ni comprobante persistido
+- se basa en `movimiento_financiero`, `aplicacion_financiera`,
+  `codigo_pago_grupo` y `uid_pago_grupo`
+- no crea entidad persistida de recibo o comprobante
+- no genera comprobante oficial
+- no reserva numeracion fiscal
+- no tiene validez fiscal
 - no modifica pagos, saldos, movimientos ni aplicaciones
 - usa `codigo_pago_grupo` como identificador de consulta
 - devuelve `404` si no existen movimientos `PAGO` no eliminados para el codigo
@@ -213,3 +218,8 @@ Contenido:
   concepto financiero, importe aplicado y estado resultante
 - `totales_por_concepto`
 - `estado_recibo = BORRADOR/CONSULTA`
+
+El diseño queda preparado para incorporar en una version futura una entidad
+formal, por ejemplo `comprobante_pago` o `comprobante_financiero`, con
+numeracion, estado fiscal, anulacion, emision PDF e integracion fiscal si
+corresponde.

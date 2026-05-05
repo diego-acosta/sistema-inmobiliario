@@ -747,9 +747,21 @@ En versiones futuras (Mora V2), se evaluará:
 ## Operaciones de pago agrupadas
 
 La vista `GET /api/v1/financiero/pagos/{codigo_pago_grupo}/recibo` es una
-proyeccion read-only del pago agrupado. Usa movimientos `PAGO` no eliminados y
-`aplicacion_financiera` como fuente de distribucion por concepto. No recalcula
-saldos, no crea comprobante fiscal, no persiste entidad de recibo y expone el
-estado `BORRADOR/CONSULTA`.
+constancia interna de pago agrupado. Es una proyeccion read-only basada en
+`movimiento_financiero`, `aplicacion_financiera`, `codigo_pago_grupo` y
+`uid_pago_grupo`.
+
+La constancia actual:
+
+- no recalcula saldos
+- no crea entidad persistida de recibo o comprobante
+- no genera comprobante oficial
+- no reserva numeracion fiscal
+- no tiene validez fiscal
+- expone el estado `BORRADOR/CONSULTA`
+
+El modelo queda preparado para una futura entidad formal, por ejemplo
+`comprobante_pago` o `comprobante_financiero`, con numeracion, estado fiscal,
+anulacion, emision PDF e integracion fiscal si corresponde.
 
 El modelo financiero expone lectura de pagos agrupados por `uid_pago_grupo/codigo_pago_grupo` para consulta por persona y detalle por código, sin efectos en saldos ni cronograma.
