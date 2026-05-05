@@ -149,6 +149,7 @@ def _liquidaciones_punitorio(db_session, id_obligacion: int) -> list[dict]:
             FROM liquidacion_punitorio
             WHERE id_obligacion_financiera = :id
               AND deleted_at IS NULL
+              AND estado_liquidacion = 'ACTIVA'
             ORDER BY id_liquidacion_punitorio ASC
             """
         ),
@@ -1073,6 +1074,49 @@ def _recibo(client, codigo_pago_grupo: str):
     return client.get(f"/api/v1/financiero/pagos/{codigo_pago_grupo}/recibo")
 
 
+def _revertir(client, codigo_pago_grupo: str, motivo: str = "Reversion de prueba"):
+    return client.post(
+        f"/api/v1/financiero/pagos/{codigo_pago_grupo}/revertir",
+        headers=HEADERS,
+        json={"motivo": motivo},
+    )
+
+
+def _movimientos_por_codigo_pago(db_session, codigo_pago_grupo: str) -> list[dict]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT id_movimiento_financiero, estado_movimiento, observaciones
+            FROM movimiento_financiero
+            WHERE codigo_pago_grupo = :codigo
+              AND tipo_movimiento = 'PAGO'
+              AND deleted_at IS NULL
+            ORDER BY id_movimiento_financiero ASC
+            """
+        ),
+        {"codigo": codigo_pago_grupo},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def _count_aplicaciones_activas_por_codigo(db_session, codigo_pago_grupo: str) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM aplicacion_financiera a
+            JOIN movimiento_financiero m
+              ON m.id_movimiento_financiero = a.id_movimiento_financiero
+            WHERE m.codigo_pago_grupo = :codigo
+              AND m.tipo_movimiento = 'PAGO'
+              AND m.deleted_at IS NULL
+              AND a.deleted_at IS NULL
+            """
+        ),
+        {"codigo": codigo_pago_grupo},
+    ).scalar_one()
+
+
 def _count_table(db_session, table_name: str) -> int:
     return db_session.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar_one()
 
@@ -1190,3 +1234,197 @@ def test_recibo_pago_agrupado_no_modifica_saldos_ni_crea_registros(client, db_se
     assert saldo_despues["estado_obligacion"] == saldo_antes["estado_obligacion"]
     assert movs_despues == movs_antes
     assert aplicaciones_despues == aplicaciones_antes
+
+
+def test_revertir_pago_simple_restaurar_saldo(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-SIMPLE-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=4000.00, fecha_pago="2026-05-05")
+
+    resp = _revertir(client, pago["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    movimientos = _movimientos_por_codigo_pago(db_session, pago["codigo_pago_grupo"])
+    assert data["estado_reversion"] == "ANULADO"
+    assert data["movimientos_anulados"] == 1
+    assert data["aplicaciones_anuladas"] == 1
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(10000.00)
+    assert saldo["estado_obligacion"] in {"EMITIDA", "VENCIDA"}
+    assert {m["estado_movimiento"] for m in movimientos} == {"ANULADO"}
+    assert _count_aplicaciones_activas_por_codigo(
+        db_session, pago["codigo_pago_grupo"]
+    ) == 0
+
+
+def test_revertir_pago_multiobligacion_restaurar_saldos(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-MULTI-001",
+        fecha_inicio="2026-11-01",
+        fecha_fin="2026-12-31",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=15000.00, fecha_pago="2026-11-05")
+
+    resp = _revertir(client, pago["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    saldos = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])
+    assert [float(s["saldo_pendiente"]) for s in saldos] == pytest.approx(
+        [10000.00, 10000.00]
+    )
+    assert {s["estado_obligacion"] for s in saldos} == {"EMITIDA"}
+    assert resp.json()["data"]["movimientos_anulados"] == 2
+    assert _count_aplicaciones_activas_por_codigo(
+        db_session, pago["codigo_pago_grupo"]
+    ) == 0
+
+
+def test_revertir_pago_con_punitorio_revierte_aplicacion_y_liquidacion(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-PUNIT-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    pago = _pagar(client, id_persona, monto=50.00, fecha_pago="2026-05-20")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO") is not None
+
+    resp = _revertir(client, pago["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    ob_despues = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    punitorio = _composicion(
+        db_session, ob["id_obligacion_financiera"], "PUNITORIO"
+    )
+    liquidaciones = _liquidaciones_punitorio(
+        db_session, ob["id_obligacion_financiera"]
+    )
+    estados_liq = db_session.execute(
+        text(
+            """
+            SELECT estado_liquidacion, importe_liquidado
+            FROM liquidacion_punitorio
+            WHERE codigo_pago_grupo = :codigo
+            """
+        ),
+        {"codigo": pago["codigo_pago_grupo"]},
+    ).mappings().all()
+    assert data["liquidaciones_punitorio_anuladas"] == 1
+    assert data["importe_punitorio_revertido"] == pytest.approx(100.00)
+    assert punitorio is not None
+    assert float(punitorio["importe_componente"]) == pytest.approx(0.00)
+    assert float(punitorio["saldo_componente"]) == pytest.approx(0.00)
+    assert float(ob_despues["saldo_pendiente"]) == pytest.approx(10000.00)
+    assert liquidaciones == []
+    assert estados_liq[0]["estado_liquidacion"] == "ANULADA"
+    assert float(estados_liq[0]["importe_liquidado"]) == pytest.approx(100.00)
+
+
+def test_revertir_pago_no_afecta_punitorio_de_otros_pagos(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-PUNIT-OTRO-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=10,
+    )
+    pago_1 = _pagar(client, id_persona, monto=1000.00, fecha_pago="2026-05-20")
+    pago_2 = _pagar(client, id_persona, monto=45.50, fecha_pago="2026-05-25")
+    ob = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+
+    resp = _revertir(client, pago_2["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    punitorio = _composicion(db_session, ob["id_obligacion_financiera"], "PUNITORIO")
+    liquidaciones_activas = _liquidaciones_punitorio(
+        db_session, ob["id_obligacion_financiera"]
+    )
+    liq_2_estado = db_session.execute(
+        text(
+            """
+            SELECT estado_liquidacion
+            FROM liquidacion_punitorio
+            WHERE codigo_pago_grupo = :codigo
+            """
+        ),
+        {"codigo": pago_2["codigo_pago_grupo"]},
+    ).scalar_one()
+    assert punitorio is not None
+    assert float(punitorio["importe_componente"]) == pytest.approx(100.00)
+    assert float(punitorio["saldo_componente"]) == pytest.approx(0.00)
+    assert len(liquidaciones_activas) == 1
+    assert liquidaciones_activas[0]["codigo_pago_grupo"] == pago_1["codigo_pago_grupo"]
+    assert float(liquidaciones_activas[0]["importe_liquidado"]) == pytest.approx(100.00)
+    assert liq_2_estado == "ANULADA"
+
+
+def test_revertir_pago_codigo_inexistente_devuelve_404(client) -> None:
+    resp = _revertir(client, "PAGO-REV-NO-EXISTE")
+
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "NOT_FOUND"
+
+
+def test_revertir_pago_repetido_es_idempotente(client, db_session) -> None:
+    id_persona, contrato = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-IDEM-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=3000.00, fecha_pago="2026-05-05")
+
+    resp_1 = _revertir(client, pago["codigo_pago_grupo"])
+    resp_2 = _revertir(client, pago["codigo_pago_grupo"])
+
+    assert resp_1.status_code == 200, resp_1.text
+    assert resp_2.status_code == 200, resp_2.text
+    assert resp_2.json()["data"]["estado_reversion"] == "YA_ANULADO"
+    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
+    assert float(saldo["saldo_pendiente"]) == pytest.approx(10000.00)
+    assert _count_aplicaciones_activas_por_codigo(
+        db_session, pago["codigo_pago_grupo"]
+    ) == 0
+
+
+def test_recibo_pago_revertido_refleja_estado_anulado(client, db_session) -> None:
+    id_persona, _ = _setup(
+        client,
+        db_session,
+        codigo="PAG-REV-REC-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    pago = _pagar(client, id_persona, monto=2000.00, fecha_pago="2026-05-05")
+    rev = _revertir(client, pago["codigo_pago_grupo"])
+    assert rev.status_code == 200, rev.text
+
+    resp = _recibo(client, pago["codigo_pago_grupo"])
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["estado_recibo"] == "ANULADO"
+    assert data["detalle"][0]["estado_resultante"] == "ANULADO"
+    assert data["totales_por_concepto"] == [
+        {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_aplicado": 2000.0}
+    ]

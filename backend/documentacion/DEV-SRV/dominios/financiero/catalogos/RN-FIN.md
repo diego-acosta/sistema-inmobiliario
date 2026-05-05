@@ -545,6 +545,24 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
+### RN-FIN-083 - Reversion completa de pago agrupado
+- descripcion: La reversion V1 de un pago debe operar siempre por `codigo_pago_grupo` completo. Debe marcar los movimientos `PAGO` como `ANULADO`, soft-deletear sus aplicaciones para excluirlas de saldos y registrar el motivo de reversion en campos de observaciones disponibles.
+- aplica_a: movimiento_financiero, aplicacion_financiera, obligacion_financiera
+- origen_principal: SRV-FIN-019-registro-pago-persona
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
+
+### RN-FIN-084 - Reversion de punitorio liquidado por pago agrupado
+- descripcion: Al revertir un pago agrupado, solo deben anularse las `liquidacion_punitorio` activas asociadas a ese `codigo_pago_grupo`. La composicion `PUNITORIO` se reduce por el `importe_liquidado` de esas filas, sin tocar liquidaciones ni punitorios de otros pagos.
+- aplica_a: liquidacion_punitorio, composicion_obligacion, obligacion_financiera
+- origen_principal: SRV-FIN-019-registro-pago-persona
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
+
+### RN-FIN-085 - Estado de obligacion luego de reversion
+- descripcion: Luego de una reversion de pago agrupado, la obligacion afectada debe recalcular su estado desde saldos: `CANCELADA` si `saldo_pendiente = 0`; `PARCIALMENTE_CANCELADA` si `saldo_pendiente > 0` e `importe_cancelado_acumulado > 0`; `VENCIDA` si no tiene cancelaciones activas y `fecha_vencimiento < CURRENT_DATE`; en otro caso `EMITIDA`.
+- aplica_a: obligacion_financiera
+- origen_principal: SRV-FIN-019-registro-pago-persona
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
+
 ---
 
 ## Reglas de normalización

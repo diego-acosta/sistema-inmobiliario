@@ -233,3 +233,44 @@ El diseño queda preparado para incorporar en una version futura una entidad
 formal, por ejemplo `comprobante_pago` o `comprobante_financiero`, con
 numeracion, estado fiscal, anulacion, emision PDF e integracion fiscal si
 corresponde.
+
+## Reversion V1 de pago agrupado
+
+Endpoint: `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.
+
+Request:
+
+```json
+{
+  "motivo": "texto obligatorio"
+}
+```
+
+Alcance:
+
+- revierte siempre la operacion completa identificada por `codigo_pago_grupo`
+- no permite revertir aplicaciones sueltas
+- no borra fisicamente movimientos
+- marca los movimientos `PAGO` del grupo como `ANULADO`
+- soft-deletea las `aplicacion_financiera` del grupo para que dejen de contar
+  en saldos
+- anula las `liquidacion_punitorio` activas asociadas al grupo
+- reduce la composicion `PUNITORIO` solamente por el importe liquidado por esas
+  liquidaciones anuladas
+- no toca liquidaciones ni punitorios de otros pagos
+- recalcula saldos mediante los triggers vigentes de aplicacion/composicion
+- recalcula `estado_obligacion` despues de restaurar saldos
+- registra el motivo de reversion en `observaciones` cuando hay campo
+  disponible
+
+Estados resultantes de obligacion:
+
+- `saldo_pendiente = 0` -> `CANCELADA`
+- `saldo_pendiente > 0` e `importe_cancelado_acumulado > 0` ->
+  `PARCIALMENTE_CANCELADA`
+- `saldo_pendiente > 0` e `importe_cancelado_acumulado = 0` -> `VENCIDA` si
+  `fecha_vencimiento < CURRENT_DATE`, si no `EMITIDA`
+
+La reversion V1 es operativa/financiera interna. No genera comprobante fiscal,
+no reserva numeracion fiscal, no anula comprobantes oficiales y no modifica
+cronogramas ni generacion de obligaciones.

@@ -453,6 +453,40 @@ class PagoAgrupadoDetalleResponse(BaseModel):
 
 # ── simulación de pago por persona ───────────────────────────────────────────
 
+class RevertirPagoAgrupadoRequest(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_required(cls, v: str) -> str:
+        motivo = v.strip()
+        if not motivo:
+            raise ValueError("motivo es obligatorio.")
+        return motivo
+
+
+class RevertirPagoObligacionEstadoItem(BaseModel):
+    id_obligacion_financiera: int
+    estado_obligacion: str
+    saldo_pendiente: float
+
+
+class RevertirPagoAgrupadoData(BaseModel):
+    codigo_pago_grupo: str
+    estado_reversion: str
+    movimientos_anulados: int
+    aplicaciones_anuladas: int
+    liquidaciones_punitorio_anuladas: int
+    importe_punitorio_revertido: float
+    obligaciones_afectadas: list[int]
+    estados_obligaciones: list[RevertirPagoObligacionEstadoItem]
+
+
+class RevertirPagoAgrupadoResponse(BaseModel):
+    ok: bool = True
+    data: RevertirPagoAgrupadoData
+
+
 class PagoReciboDetalleItem(BaseModel):
     id_movimiento_financiero: int
     id_obligacion_financiera: int

@@ -132,7 +132,7 @@ Implementado:
 No implementado:
 
 - movimiento global unico por pago
-- reversion de imputaciones
+- reversion parcial de aplicaciones sueltas
 - estado persistido de aplicacion
 
 ### 2.6 liquidacion_punitorio
@@ -584,7 +584,7 @@ Estados reemplazables (sin pagos): `EMITIDA`, `VENCIDA`, `PENDIENTE_AJUSTE`.
 ## 9. Pendientes reales
 
 - transiciones de `relacion_generadora`
-- reversion de imputaciones
+- reversion parcial de aplicaciones sueltas
 - endpoint autonomo de pagos
 - endpoint autonomo de composiciones
 - fecha de referencia configurable para estado de cuenta
@@ -780,7 +780,20 @@ La constancia actual:
 - no genera comprobante oficial
 - no reserva numeracion fiscal
 - no tiene validez fiscal
-- expone el estado `BORRADOR/CONSULTA`
+- expone el estado `BORRADOR/CONSULTA` o `ANULADO` si el pago agrupado fue
+  revertido
+
+La reversion V1 se realiza con
+`POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`. La operacion:
+
+- actua siempre sobre el grupo completo
+- marca movimientos `PAGO` como `ANULADO`
+- soft-deletea aplicaciones para excluirlas de saldos
+- anula las filas `liquidacion_punitorio` del grupo
+- reduce la composicion `PUNITORIO` por el importe trazado en esas
+  liquidaciones
+- recalcula estados de obligaciones luego de los triggers de saldo
+- no genera comprobante fiscal ni modifica cronogramas
 
 El modelo queda preparado para una futura entidad formal, por ejemplo
 `comprobante_pago` o `comprobante_financiero`, con numeracion, estado fiscal,

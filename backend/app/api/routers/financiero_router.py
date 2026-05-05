@@ -38,6 +38,9 @@ from app.api.schemas.financiero import (
     RegistrarPagoPersonaData,
     RegistrarPagoPersonaRequest,
     RegistrarPagoPersonaResponse,
+    RevertirPagoAgrupadoData,
+    RevertirPagoAgrupadoRequest,
+    RevertirPagoAgrupadoResponse,
     SimularPagoObligacionItem,
     SimularPagoPersonaData,
     SimularPagoPersonaRequest,
@@ -119,6 +122,9 @@ from app.application.financiero.services.get_pago_agrupado_por_codigo_service im
 )
 from app.application.financiero.services.get_recibo_pago_agrupado_service import (
     GetReciboPagoAgrupadoService,
+)
+from app.application.financiero.services.revertir_pago_agrupado_service import (
+    RevertirPagoAgrupadoService,
 )
 from app.application.financiero.services.list_deuda_consolidada_service import (
     ListDeudaConsolidadaService,
@@ -1054,6 +1060,89 @@ def get_recibo_pago_agrupado(
             ).model_dump(),
         )
     return PagoReciboResponse(data=PagoReciboData(**result.data))
+
+
+@router.post(
+    "/api/v1/financiero/pagos/{codigo_pago_grupo}/revertir",
+    response_model=RevertirPagoAgrupadoResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def revertir_pago_agrupado(
+    codigo_pago_grupo: str,
+    request: RevertirPagoAgrupadoRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> RevertirPagoAgrupadoResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = RevertirPagoAgrupadoService(repository=repository)
+
+    try:
+        result = service.execute(
+            codigo_pago_grupo=codigo_pago_grupo,
+            motivo=request.motivo,
+            context=context,
+        )
+    except ValueError as exc:
+        if str(exc) == "NOT_FOUND_PAGO":
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="No existe pago para el codigo_pago_grupo indicado.",
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message=str(exc),
+            ).model_dump(),
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_PAGO" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="No existe pago para el codigo_pago_grupo indicado.",
+                ).model_dump(),
+            )
+        if "MOTIVO_REQUERIDO" in result.errors:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="MOTIVO_REQUERIDO",
+                    error_message="El motivo de reversión es obligatorio.",
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo revertir el pago.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return RevertirPagoAgrupadoResponse(
+        data=RevertirPagoAgrupadoData(**result.data)
+    )
 
 
 @router.post("/api/v1/financiero/inbox", status_code=204)

@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import asdict, is_dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import json
 from typing import Any
@@ -1806,6 +1806,296 @@ class FinancieroRepository:
             "obligaciones_afectadas": sorted({r["id_obligacion_financiera"] for r in aplicaciones}),
         }
 
+    def _json_observaciones_reversion(self, observaciones: Any, *, motivo: str) -> str:
+        payload: dict[str, Any]
+        if observaciones:
+            try:
+                parsed = json.loads(observaciones)
+                payload = parsed if isinstance(parsed, dict) else {"original": observaciones}
+            except (TypeError, ValueError):
+                payload = {"original": observaciones}
+        else:
+            payload = {}
+        payload["reversion"] = {"motivo": motivo}
+        return json.dumps(payload, separators=(",", ":"))
+
+    def revertir_pago_agrupado(
+        self,
+        *,
+        codigo_pago_grupo: str,
+        motivo: str,
+        id_instalacion: Any,
+        op_id: Any,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        mov_stmt = text(
+            """
+            SELECT
+                id_movimiento_financiero,
+                estado_movimiento,
+                observaciones
+            FROM movimiento_financiero
+            WHERE codigo_pago_grupo = :codigo_pago_grupo
+              AND tipo_movimiento = 'PAGO'
+              AND deleted_at IS NULL
+            ORDER BY id_movimiento_financiero ASC
+            FOR UPDATE
+            """
+        )
+        app_stmt = text(
+            """
+            SELECT DISTINCT
+                a.id_aplicacion_financiera,
+                a.id_obligacion_financiera,
+                a.id_composicion_obligacion,
+                a.observaciones
+            FROM aplicacion_financiera a
+            WHERE a.id_movimiento_financiero IN :ids
+            ORDER BY a.id_aplicacion_financiera ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        liquidaciones_stmt = text(
+            """
+            SELECT
+                id_liquidacion_punitorio,
+                id_obligacion_financiera,
+                id_composicion_obligacion,
+                importe_liquidado
+            FROM liquidacion_punitorio
+            WHERE codigo_pago_grupo = :codigo_pago_grupo
+              AND deleted_at IS NULL
+              AND estado_liquidacion = 'ACTIVA'
+            ORDER BY id_liquidacion_punitorio ASC
+            FOR UPDATE
+            """
+        )
+        update_app_stmt = text(
+            """
+            UPDATE aplicacion_financiera
+            SET deleted_at = :now,
+                updated_at = :now,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id,
+                observaciones = :observaciones
+            WHERE id_aplicacion_financiera = :id_aplicacion_financiera
+              AND deleted_at IS NULL
+            """
+        )
+        update_mov_stmt = text(
+            """
+            UPDATE movimiento_financiero
+            SET estado_movimiento = 'ANULADO',
+                updated_at = :now,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id,
+                observaciones = :observaciones
+            WHERE id_movimiento_financiero = :id_movimiento_financiero
+              AND deleted_at IS NULL
+            """
+        )
+        anular_liq_stmt = text(
+            """
+            UPDATE liquidacion_punitorio
+            SET estado_liquidacion = 'ANULADA',
+                updated_at = :now,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_liquidacion_punitorio = :id_liquidacion_punitorio
+              AND estado_liquidacion = 'ACTIVA'
+              AND deleted_at IS NULL
+            """
+        )
+        reducir_comp_stmt = text(
+            """
+            UPDATE composicion_obligacion
+            SET importe_componente = GREATEST(
+                    0,
+                    importe_componente - :importe_liquidado
+                ),
+                updated_at = :now,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_composicion_obligacion = :id_composicion_obligacion
+              AND deleted_at IS NULL
+            """
+        )
+        estado_stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = CASE
+                    WHEN saldo_pendiente = 0 THEN 'CANCELADA'
+                    WHEN importe_cancelado_acumulado > 0 THEN 'PARCIALMENTE_CANCELADA'
+                    WHEN fecha_vencimiento IS NOT NULL
+                         AND fecha_vencimiento < CURRENT_DATE THEN 'VENCIDA'
+                    ELSE 'EMITIDA'
+                END,
+                updated_at = :now,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            RETURNING id_obligacion_financiera, estado_obligacion, saldo_pendiente
+            """
+        )
+
+        try:
+            movimientos = self.db.execute(
+                mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
+            ).mappings().all()
+            if not movimientos:
+                raise ValueError("NOT_FOUND_PAGO")
+
+            ids_mov = [m["id_movimiento_financiero"] for m in movimientos]
+            if all(m["estado_movimiento"] == "ANULADO" for m in movimientos):
+                obligaciones_ids = sorted(
+                    {
+                        row["id_obligacion_financiera"]
+                        for row in self.db.execute(
+                            text(
+                                """
+                                SELECT DISTINCT id_obligacion_financiera
+                                FROM aplicacion_financiera
+                                WHERE id_movimiento_financiero IN :ids
+                                """
+                            ).bindparams(bindparam("ids", expanding=True)),
+                            {"ids": ids_mov},
+                        ).mappings()
+                    }
+                )
+                return {
+                    "codigo_pago_grupo": codigo_pago_grupo,
+                    "estado_reversion": "YA_ANULADO",
+                    "movimientos_anulados": 0,
+                    "aplicaciones_anuladas": 0,
+                    "liquidaciones_punitorio_anuladas": 0,
+                    "importe_punitorio_revertido": 0.0,
+                    "obligaciones_afectadas": obligaciones_ids,
+                    "estados_obligaciones": [],
+                }
+
+            aplicaciones = self.db.execute(app_stmt, {"ids": ids_mov}).mappings().all()
+            liquidaciones = self.db.execute(
+                liquidaciones_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
+            ).mappings().all()
+
+            if not aplicaciones and not liquidaciones:
+                obligaciones_ids = sorted(
+                    {
+                        row["id_obligacion_financiera"]
+                        for row in self.db.execute(
+                            text(
+                                """
+                                SELECT DISTINCT id_obligacion_financiera
+                                FROM aplicacion_financiera
+                                WHERE id_movimiento_financiero IN :ids
+                                """
+                            ).bindparams(bindparam("ids", expanding=True)),
+                            {"ids": ids_mov},
+                        ).mappings()
+                    }
+                )
+                return {
+                    "codigo_pago_grupo": codigo_pago_grupo,
+                    "estado_reversion": "YA_ANULADO",
+                    "movimientos_anulados": 0,
+                    "aplicaciones_anuladas": 0,
+                    "liquidaciones_punitorio_anuladas": 0,
+                    "importe_punitorio_revertido": 0.0,
+                    "obligaciones_afectadas": obligaciones_ids,
+                    "estados_obligaciones": [],
+                }
+
+            obligaciones_ids = {
+                a["id_obligacion_financiera"] for a in aplicaciones
+            } | {l["id_obligacion_financiera"] for l in liquidaciones}
+
+            for aplicacion in aplicaciones:
+                self.db.execute(
+                    update_app_stmt,
+                    {
+                        "id_aplicacion_financiera": aplicacion["id_aplicacion_financiera"],
+                        "now": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                        "observaciones": self._json_observaciones_reversion(
+                            aplicacion["observaciones"], motivo=motivo
+                        ),
+                    },
+                )
+
+            importe_punitorio_revertido = Decimal("0")
+            for liquidacion in liquidaciones:
+                importe = Decimal(str(liquidacion["importe_liquidado"]))
+                self.db.execute(
+                    anular_liq_stmt,
+                    {
+                        "id_liquidacion_punitorio": liquidacion[
+                            "id_liquidacion_punitorio"
+                        ],
+                        "now": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                self.db.execute(
+                    reducir_comp_stmt,
+                    {
+                        "id_composicion_obligacion": liquidacion[
+                            "id_composicion_obligacion"
+                        ],
+                        "importe_liquidado": importe,
+                        "now": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                importe_punitorio_revertido += importe
+
+            for movimiento in movimientos:
+                self.db.execute(
+                    update_mov_stmt,
+                    {
+                        "id_movimiento_financiero": movimiento[
+                            "id_movimiento_financiero"
+                        ],
+                        "now": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                        "observaciones": self._json_observaciones_reversion(
+                            movimiento["observaciones"], motivo=motivo
+                        ),
+                    },
+                )
+
+            estados = []
+            for id_obligacion in sorted(obligaciones_ids):
+                estado = self.db.execute(
+                    estado_stmt,
+                    {
+                        "id_obligacion_financiera": id_obligacion,
+                        "now": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                ).mappings().one_or_none()
+                if estado is not None:
+                    estados.append(dict(estado))
+
+            self.db.commit()
+            return {
+                "codigo_pago_grupo": codigo_pago_grupo,
+                "estado_reversion": "ANULADO",
+                "movimientos_anulados": len(movimientos),
+                "aplicaciones_anuladas": len(aplicaciones),
+                "liquidaciones_punitorio_anuladas": len(liquidaciones),
+                "importe_punitorio_revertido": float(importe_punitorio_revertido),
+                "obligaciones_afectadas": sorted(obligaciones_ids),
+                "estados_obligaciones": estados,
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
     def get_recibo_pago_agrupado(
         self, *, codigo_pago_grupo: str
     ) -> dict[str, Any] | None:
@@ -1817,6 +2107,7 @@ class FinancieroRepository:
                 m.codigo_pago_grupo,
                 m.fecha_movimiento::date AS fecha_pago,
                 m.importe,
+                m.estado_movimiento,
                 m.observaciones
             FROM movimiento_financiero m
             WHERE m.codigo_pago_grupo = :codigo_pago_grupo
@@ -1841,12 +2132,18 @@ class FinancieroRepository:
                 o.periodo_hasta,
                 cf.codigo_concepto_financiero,
                 a.importe_aplicado,
-                o.estado_obligacion AS estado_resultante,
+                CASE
+                    WHEN m.estado_movimiento = 'ANULADO'
+                      OR a.deleted_at IS NOT NULL THEN 'ANULADO'
+                    ELSE o.estado_obligacion
+                END AS estado_resultante,
                 oo.id_persona,
                 p.nombre,
                 p.apellido,
                 p.razon_social
             FROM aplicacion_financiera a
+            JOIN movimiento_financiero m
+              ON m.id_movimiento_financiero = a.id_movimiento_financiero
             JOIN obligacion_financiera o
               ON o.id_obligacion_financiera = a.id_obligacion_financiera
              AND o.deleted_at IS NULL
@@ -1863,7 +2160,6 @@ class FinancieroRepository:
               ON p.id_persona = oo.id_persona
              AND p.deleted_at IS NULL
             WHERE a.id_movimiento_financiero IN :ids
-              AND a.deleted_at IS NULL
             ORDER BY
                 a.id_movimiento_financiero ASC,
                 a.orden_aplicacion ASC,
@@ -1949,6 +2245,12 @@ class FinancieroRepository:
             else max(monto_total - monto_aplicado, Decimal("0"))
         )
 
+        estado_recibo = (
+            "ANULADO"
+            if all(m["estado_movimiento"] == "ANULADO" for m in movimientos)
+            else "BORRADOR/CONSULTA"
+        )
+
         return {
             "codigo_pago_grupo": movimientos[0]["codigo_pago_grupo"],
             "uid_pago_grupo": movimientos[0]["uid_pago_grupo"],
@@ -1965,7 +2267,7 @@ class FinancieroRepository:
             "remanente": float(remanente),
             "detalle": detalle,
             "totales_por_concepto": totales_por_concepto,
-            "estado_recibo": "BORRADOR/CONSULTA",
+            "estado_recibo": estado_recibo,
             "leyenda": (
                 "Vista de consulta sin valor fiscal. No genera comprobante "
                 "persistido ni modifica saldos."
