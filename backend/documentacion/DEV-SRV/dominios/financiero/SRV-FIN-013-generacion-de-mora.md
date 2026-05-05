@@ -109,7 +109,9 @@ modificarse por este proceso.
 
 ## Calculo dinamico
 
-La mora no se persiste como deuda ni como composicion.
+La mora calculada por este proceso no se persiste como deuda ni como
+composicion. La persistencia de cargo por mora en pagos pertenece a
+`POST /api/v1/financiero/pagos` y se modela como `PUNITORIO`.
 
 Formula:
 

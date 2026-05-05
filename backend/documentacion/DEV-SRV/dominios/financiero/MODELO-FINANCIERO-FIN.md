@@ -325,7 +325,8 @@ Reglas:
 - mora solo si `saldo_pendiente > 0` y
   `fecha_corte > fecha_vencimiento + 5 dias de gracia`
 - `fecha_corte = date.today()` — no configurable en V1
-- mora no se persiste
+- la mora de lectura no se persiste; el cargo por mora liquidado al registrar
+  pagos se persiste como `PUNITORIO`
 
 Filtros opcionales:
 
@@ -434,7 +435,8 @@ Reglas:
   imputar como `composicion_obligacion` `PUNITORIO`; no se crea obligacion nueva
   ni composicion `INTERES_MORA` para esta liquidacion V1
 - orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras
-- mora dinámica incluida en `total_a_cubrir`; la porción de mora consume del monto pero no se persiste como componente
+- mora dinámica incluida en `total_a_cubrir`; cuando corresponde liquidacion al
+  registrar el pago, el cargo por mora se persiste como `PUNITORIO`
 - la mora dinamica respeta 5 dias de gracia no persistidos
 - la porción aplicada a saldo (`monto_a_saldo`) se registra en `aplicacion_financiera` y actualiza `saldo_pendiente` vía trigger
 - si saldo llega a 0 → `CANCELADA`; si reduce parcialmente → `PARCIALMENTE_CANCELADA`
