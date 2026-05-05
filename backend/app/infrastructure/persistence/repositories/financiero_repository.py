@@ -1720,6 +1720,90 @@ class FinancieroRepository:
         saldo = self.db.execute(
             stmt, {"id_obligacion_financiera": id_obligacion_financiera}
         ).scalar_one()
+
+    def list_pagos_agrupados_persona(self, *, id_persona: int) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                m.codigo_pago_grupo,
+                m.uid_pago_grupo,
+                MIN(m.fecha_movimiento)::date AS fecha_pago,
+                SUM(m.importe) AS monto_total,
+                COALESCE(SUM(a.importe_aplicado), 0) AS monto_aplicado,
+                COUNT(DISTINCT m.id_movimiento_financiero) AS cantidad_movimientos,
+                COUNT(DISTINCT a.id_obligacion_financiera) AS cantidad_obligaciones
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = a.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+            WHERE oo.id_persona = :id_persona
+              AND m.tipo_movimiento = 'PAGO'
+              AND m.deleted_at IS NULL
+              AND m.uid_pago_grupo IS NOT NULL
+              AND m.codigo_pago_grupo IS NOT NULL
+            GROUP BY m.uid_pago_grupo, m.codigo_pago_grupo
+            ORDER BY fecha_pago DESC, m.codigo_pago_grupo DESC
+            """
+        )
+        rows = self.db.execute(stmt, {"id_persona": id_persona}).mappings().all()
+        return [dict(r) for r in rows]
+
+    def get_pago_agrupado_by_codigo(self, *, codigo_pago_grupo: str) -> dict[str, Any] | None:
+        mov_stmt = text(
+            """
+            SELECT
+                m.id_movimiento_financiero,
+                m.uid_pago_grupo,
+                m.codigo_pago_grupo,
+                m.fecha_movimiento::date AS fecha_pago,
+                m.importe,
+                m.estado_movimiento
+            FROM movimiento_financiero m
+            WHERE m.codigo_pago_grupo = :codigo_pago_grupo
+              AND m.tipo_movimiento = 'PAGO'
+              AND m.deleted_at IS NULL
+            ORDER BY m.id_movimiento_financiero ASC
+            """
+        )
+        movimientos = self.db.execute(
+            mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
+        ).mappings().all()
+        if not movimientos:
+            return None
+        ids_mov = [r["id_movimiento_financiero"] for r in movimientos]
+        app_stmt = text(
+            """
+            SELECT
+                a.id_aplicacion_financiera,
+                a.id_movimiento_financiero,
+                a.id_obligacion_financiera,
+                a.id_composicion_obligacion,
+                a.importe_aplicado,
+                o.estado_obligacion AS estado_resultante,
+                cf.codigo_concepto_financiero
+            FROM aplicacion_financiera a
+            JOIN obligacion_financiera o ON o.id_obligacion_financiera = a.id_obligacion_financiera
+            JOIN composicion_obligacion co ON co.id_composicion_obligacion = a.id_composicion_obligacion
+            JOIN concepto_financiero cf ON cf.id_concepto_financiero = co.id_concepto_financiero
+            WHERE a.id_movimiento_financiero IN :ids
+              AND a.deleted_at IS NULL
+            ORDER BY a.id_aplicacion_financiera ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        aplicaciones = self.db.execute(app_stmt, {"ids": ids_mov}).mappings().all()
+        return {
+            "codigo_pago_grupo": movimientos[0]["codigo_pago_grupo"],
+            "uid_pago_grupo": movimientos[0]["uid_pago_grupo"],
+            "fecha_pago": movimientos[0]["fecha_pago"],
+            "monto_total": float(sum(r["importe"] for r in movimientos)),
+            "monto_aplicado": float(sum(r["importe_aplicado"] for r in aplicaciones)),
+            "movimientos": [dict(r) for r in movimientos],
+            "aplicaciones": [dict(r) for r in aplicaciones],
+            "obligaciones_afectadas": sorted({r["id_obligacion_financiera"] for r in aplicaciones}),
+        }
         return Decimal(str(saldo))
 
     def liquidar_punitorio_obligacion(

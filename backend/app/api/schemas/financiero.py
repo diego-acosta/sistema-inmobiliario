@@ -421,6 +421,36 @@ class RegistrarPagoPersonaResponse(BaseModel):
     data: RegistrarPagoPersonaData
 
 
+class PagoAgrupadoPersonaItem(BaseModel):
+    codigo_pago_grupo: str
+    uid_pago_grupo: UUID
+    fecha_pago: date
+    monto_total: float
+    monto_aplicado: float
+    cantidad_movimientos: int
+    cantidad_obligaciones: int
+
+
+class PagoAgrupadoPersonaListResponse(BaseModel):
+    ok: bool = True
+    data: list[PagoAgrupadoPersonaItem]
+
+
+class PagoAgrupadoAplicacionItem(BaseModel):
+    id_aplicacion_financiera: int
+    id_movimiento_financiero: int
+    id_obligacion_financiera: int
+    id_composicion_obligacion: int
+    codigo_concepto_financiero: str
+    importe_aplicado: float
+    estado_resultante: str | None = None
+
+
+class PagoAgrupadoDetalleResponse(BaseModel):
+    ok: bool = True
+    data: dict[str, Any]
+
+
 # ── simulación de pago por persona ───────────────────────────────────────────
 
 class SimularPagoPersonaRequest(BaseModel):
