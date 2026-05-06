@@ -55,6 +55,10 @@ del proveedor. La materializacion financiera es una operacion explicita del
 dominio `financiero`; no es emision de factura ni logica financiera del dominio
 inmobiliario.
 
+La factura externa puede registrarse sin `periodo_desde` y/o `periodo_hasta`
+como dato operativo/documental recibido. Ese registro no implica que sea
+materializable financieramente.
+
 ### Regla de ownership
 El sistema no factura servicios. La factura es emitida por un proveedor externo.
 
@@ -84,11 +88,17 @@ El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotent
 - existe API/backend inmobiliario V1 para registrar y consultar facturas de servicio externas.
 - endpoints V1: `POST /api/v1/facturas-servicio`, `GET /api/v1/facturas-servicio/{id_factura_servicio}`, `GET /api/v1/facturas-servicio`.
 - la API valida XOR entre `id_inmueble` e `id_unidad_funcional`, servicio activo asociado al activo, fechas, importe no negativo y duplicado activo por proveedor + numero.
+- el registro operativo/documental permite `periodo_desde` y `periodo_hasta`
+  nulos.
 - no existe hoy evento implementado que represente el registro de factura externa; `factura_servicio_registrada` es solo un nombre conceptual pendiente de contrato/evento real.
 - no existe consumer financiero para `factura_servicio_registrada`.
 - la generacion automatica por evento/consumer sigue pendiente.
 - existe materializacion financiera explicita: `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar`.
 - la materializacion crea o reutiliza `relacion_generadora FACTURA_SERVICIO` y crea `obligacion_financiera SERVICIO_TRASLADADO` con composicion y obligados resueltos desde `asignacion_servicio_responsable`.
+- para materializar, financiero exige periodo completo en la factura
+  (`periodo_desde` y `periodo_hasta`). Si falta alguno, devuelve
+  `PERIODO_FACTURA_REQUERIDO` y no crea `relacion_generadora`,
+  `obligacion_financiera`, `composicion_obligacion` ni `obligacion_obligado`.
 
 ## Asignacion de responsables de servicios trasladados (IMPLEMENTADO V1)
 
@@ -117,6 +127,9 @@ Su funcion es definir quien responde por un servicio trasladado sobre un inmuebl
 - `porcentaje_responsabilidad` es obligatorio.
 - La suma de porcentajes activos aplicables al mismo servicio + objeto + tramo vigente debe ser 100%.
 - Si una `factura_servicio` no tiene responsable vigente aplicable, financiero debe devolver `OBLIGADO_NO_RESUELTO`.
+- Si una `factura_servicio` no tiene periodo completo, financiero debe devolver
+  `PERIODO_FACTURA_REQUERIDO` antes de resolver responsables y antes de crear
+  filas financieras.
 - Si existen responsables inconsistentes o porcentajes activos que no suman 100%, debe devolverse `RESPONSABLE_SERVICIO_AMBIGUO`.
 - Si la factura cruza un cambio de responsable, debe devolverse `FACTURA_CRUZA_CAMBIO_RESPONSABLE`.
 - V1 no prorratea por cambio de responsable dentro del periodo de factura.

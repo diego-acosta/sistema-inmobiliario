@@ -259,6 +259,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: DEV-SRV
 - estado: IMPLEMENTADA V1 como origen estructural y generacion explicita de obligacion; no existe todavia evento/consumer automatico.
 
+### RN-FIN-047B — Periodo requerido para SERVICIO_TRASLADADO
+- descripcion: `factura_servicio` puede registrarse como documento externo sin periodo, pero la materializacion financiera de `SERVICIO_TRASLADADO` requiere `periodo_desde` y `periodo_hasta` completos porque esos datos determinan la vigencia aplicable de `asignacion_servicio_responsable`.
+- aplica_a: factura_servicio, relacion_generadora, obligacion_financiera, composicion_obligacion, obligacion_obligado
+- origen_principal: DEV-SRV
+- estado: IMPLEMENTADA V1 en la materializacion explicita de `factura_servicio`.
+- observaciones: si falta `periodo_desde` o `periodo_hasta`, debe devolverse `PERIODO_FACTURA_REQUERIDO` antes de crear `relacion_generadora`, obligacion, composicion u obligado.
+
 ### RN-FIN-048 — Resolucion de obligado para SERVICIO_TRASLADADO
 - descripcion: Antes de generar la obligacion por `factura_servicio`, financiero debe resolver el obligado desde `asignacion_servicio_responsable`, entidad inmobiliaria especifica para responsables de servicios trasladados. No debe inferirlo rigidamente desde alquiler, venta u ocupacion ni usar `relacion_persona_rol` como solucion final.
 - aplica_a: relacion_generadora, obligacion_financiera, obligacion_obligado
@@ -273,7 +280,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - aplica_a: factura_servicio, asignacion_servicio_responsable, obligacion_financiera
 - origen_principal: DEV-SRV
 - estado: IMPLEMENTADA V1 en la materializacion explicita de `factura_servicio`.
-- observaciones: errores funcionales implementados: `OBLIGADO_NO_RESUELTO`, `RESPONSABLE_SERVICIO_AMBIGUO`, `FACTURA_CRUZA_CAMBIO_RESPONSABLE`. V1 no prorratea por cambio de responsable, no usa composiciones negativas ni saldos a favor en este bloque.
+- observaciones: errores funcionales implementados por responsable: `OBLIGADO_NO_RESUELTO`, `RESPONSABLE_SERVICIO_AMBIGUO`, `FACTURA_CRUZA_CAMBIO_RESPONSABLE`. La falta de periodo completo se informa antes como `PERIODO_FACTURA_REQUERIDO`. V1 no prorratea por cambio de responsable, no usa composiciones negativas ni saldos a favor en este bloque.
 
 ## G. Reglas estructurales de obligacion y conceptos
 

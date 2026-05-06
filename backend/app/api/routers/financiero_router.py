@@ -407,6 +407,7 @@ def materializar_factura_servicio(
             )
         conflict_errors = {
             "OBLIGADO_NO_RESUELTO",
+            "PERIODO_FACTURA_REQUERIDO",
             "RESPONSABLE_SERVICIO_AMBIGUO",
             "FACTURA_CRUZA_CAMBIO_RESPONSABLE",
         }

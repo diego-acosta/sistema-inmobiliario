@@ -259,6 +259,9 @@ implementada en:
 Esta decision aplica solo a facturas externas emitidas por proveedores. El
 sistema no factura servicios: registra el origen externo y el dominio
 `financiero` genera la deuda trasladada cuando exista el flujo implementado.
+El registro operativo/documental de la factura puede existir sin periodo; la
+materializacion financiera de `SERVICIO_TRASLADADO` exige periodo completo para
+resolver responsables.
 
 Motivos:
 
@@ -287,6 +290,13 @@ Modelo conceptual:
 Reglas de materializacion V1:
 
 - La factura debe existir, estar activa y no estar eliminada.
+- La factura puede estar registrada sin periodo como documento externo, pero
+  para materializar financieramente debe tener `periodo_desde` y
+  `periodo_hasta`.
+- Si falta `periodo_desde` o `periodo_hasta`, el endpoint devuelve
+  `PERIODO_FACTURA_REQUERIDO` y no crea `relacion_generadora`,
+  `obligacion_financiera`, `composicion_obligacion` ni
+  `obligacion_obligado`.
 - La operacion crea o reutiliza `relacion_generadora` con
   `tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`.
 - Si ya existe obligacion activa para esa relacion, el endpoint devuelve

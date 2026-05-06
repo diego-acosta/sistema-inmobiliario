@@ -14,7 +14,7 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | no puede haber dos asociaciones activas iguales en `inmueble_servicio` | IMPLEMENTADO | backend y DB |
 | no puede haber dos asociaciones activas iguales en `unidad_funcional_servicio` | PARCIAL | backend si, DB aun no |
 | writes de update y baja usan versionado optimista | IMPLEMENTADO | routers, services y tests |
-| registro de `factura_servicio` | IMPLEMENTADO V1 | API/backend registra y consulta facturas externas de proveedor sin generar relacion generadora ni obligacion financiera |
+| registro de `factura_servicio` | IMPLEMENTADO V1 | API/backend registra y consulta facturas externas de proveedor sin generar relacion generadora ni obligacion financiera; el periodo puede ser nulo como dato operativo/documental |
 | duplicidad de `factura_servicio` | IMPLEMENTADO V1 | se rechaza duplicado activo por proveedor + numero de factura |
 | asociacion de `factura_servicio` a objeto inmobiliario | IMPLEMENTADO V1 | toda factura debe asociarse por XOR a `id_inmueble` o `id_unidad_funcional`, con servicio activo asociado al objeto |
 | asignacion de responsable de servicio trasladado | IMPLEMENTADO V1 | `asignacion_servicio_responsable` define persona, servicio, inmueble/UF, vigencia y porcentaje para resolver futuros obligados de `SERVICIO_TRASLADADO`; no materializa obligaciones financieras |
@@ -32,7 +32,7 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | atributos especializados del activo | NO IMPLEMENTADO | sin tablas ni backend |
 | identificacion catastral | NO IMPLEMENTADO | sin tablas ni backend |
 | mejoras como entidad separada | NO IMPLEMENTADO | sin soporte actual |
-| integracion de `factura_servicio` con financiero | IMPLEMENTADO V1 | la obligacion derivada pertenece a `financiero`; cada factura usa `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; existe endpoint explicito de materializacion financiera, no evento/consumer automatico |
+| integracion de `factura_servicio` con financiero | IMPLEMENTADO V1 | la obligacion derivada pertenece a `financiero`; cada factura usa `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; existe endpoint explicito de materializacion financiera, no evento/consumer automatico; si falta periodo completo, financiero devuelve `PERIODO_FACTURA_REQUERIDO` sin crear filas financieras |
 | importe de `factura_servicio` | CONCEPTUAL | el sistema no calcula importes de servicios; el importe proviene del proveedor externo y se registra como dato recibido |
 | resolucion de obligado por `factura_servicio` | IMPLEMENTADO V1 | la fuente inmobiliaria `asignacion_servicio_responsable` esta implementada y la materializacion financiera crea `obligacion_obligado` con `RESPONSABLE_SERVICIO` |
 

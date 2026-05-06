@@ -261,6 +261,34 @@ def test_create_factura_servicio_no_crea_relacion_generadora_ni_obligacion(
     assert obligaciones_despues == obligaciones_antes
 
 
+def test_create_factura_servicio_permite_periodo_null(client, db_session) -> None:
+    id_inmueble = _crear_inmueble(db_session, codigo="FS-API-INM-009")
+    id_servicio = _crear_servicio(db_session, codigo="FS-API-SRV-009")
+    _asociar_inmueble_servicio(
+        db_session,
+        id_inmueble=id_inmueble,
+        id_servicio=id_servicio,
+    )
+    payload = _payload(
+        id_servicio=id_servicio,
+        id_inmueble=id_inmueble,
+        numero_factura="FS-API-FAC-009",
+    )
+    payload["periodo_desde"] = None
+    payload["periodo_hasta"] = None
+
+    response = client.post(
+        "/api/v1/facturas-servicio",
+        headers=HEADERS,
+        json=payload,
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["periodo_desde"] is None
+    assert data["periodo_hasta"] is None
+
+
 def _crear_factura_servicio_con_responsable(
     client,
     db_session,
@@ -489,6 +517,80 @@ def test_materializar_factura_servicio_sin_responsable_devuelve_obligado_no_resu
     assert response.status_code == 409
     assert response.json()["error_code"] == "OBLIGADO_NO_RESUELTO"
     assert db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one() == 0
+
+
+def test_materializar_factura_servicio_sin_periodo_devuelve_periodo_requerido_y_no_crea_financiero(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(db_session, codigo="FS-MAT-INM-009")
+    id_servicio = _crear_servicio(db_session, codigo="FS-MAT-SRV-009")
+    id_persona = _crear_persona(db_session, codigo="FS-MAT-PER-009")
+    _asociar_inmueble_servicio(
+        db_session,
+        id_inmueble=id_inmueble,
+        id_servicio=id_servicio,
+    )
+    asignacion = client.post(
+        "/api/v1/asignaciones-servicio-responsable",
+        headers=HEADERS,
+        json={
+            "id_servicio": id_servicio,
+            "id_inmueble": id_inmueble,
+            "id_unidad_funcional": None,
+            "id_persona": id_persona,
+            "porcentaje_responsabilidad": 100,
+            "fecha_desde": "2026-01-01",
+            "fecha_hasta": None,
+            "estado_asignacion": "ACTIVA",
+            "observaciones": "Responsable sin periodo factura",
+        },
+    )
+    assert asignacion.status_code == 201, asignacion.text
+    payload = _payload(
+        id_servicio=id_servicio,
+        id_inmueble=id_inmueble,
+        numero_factura="FS-MAT-FAC-009",
+    )
+    payload["periodo_desde"] = None
+    payload["periodo_hasta"] = None
+    factura = client.post(
+        "/api/v1/facturas-servicio",
+        headers=HEADERS,
+        json=payload,
+    )
+    assert factura.status_code == 201, factura.text
+    id_factura = factura.json()["data"]["id_factura_servicio"]
+
+    response = _materializar(client, id_factura)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "PERIODO_FACTURA_REQUERIDO"
+    counts = db_session.execute(
+        text(
+            """
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM relacion_generadora
+                    WHERE tipo_origen = 'factura_servicio'
+                      AND id_origen = :id_factura
+                      AND deleted_at IS NULL
+                ) AS relaciones,
+                (
+                    SELECT COUNT(*)
+                    FROM obligacion_financiera o
+                    JOIN relacion_generadora rg
+                      ON rg.id_relacion_generadora = o.id_relacion_generadora
+                    WHERE rg.tipo_origen = 'factura_servicio'
+                      AND rg.id_origen = :id_factura
+                      AND o.deleted_at IS NULL
+                ) AS obligaciones
+            """
+        ),
+        {"id_factura": id_factura},
+    ).mappings().one()
+    assert counts["relaciones"] == 0
+    assert counts["obligaciones"] == 0
 
 
 def test_materializar_factura_servicio_responsables_suma_distinta_100_devuelve_error(

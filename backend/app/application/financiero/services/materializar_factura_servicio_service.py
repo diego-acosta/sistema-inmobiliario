@@ -120,6 +120,11 @@ class MaterializarFacturaServicioService:
         if (factura.get("estado_factura_servicio") or "").strip().upper() != "REGISTRADA":
             return AppResult.fail("FACTURA_SERVICIO_NO_ACTIVA")
 
+        periodo_desde = factura["periodo_desde"]
+        periodo_hasta = factura["periodo_hasta"]
+        if periodo_desde is None or periodo_hasta is None:
+            return AppResult.fail("PERIODO_FACTURA_REQUERIDO")
+
         relacion_created = False
         relacion = self.repository.get_relacion_generadora_by_origen(
             TIPO_ORIGEN_FACTURA_SERVICIO,
@@ -155,11 +160,6 @@ class MaterializarFacturaServicioService:
             raise _RollbackAppResult(
                 AppResult.fail(f"NOT_FOUND_CONCEPTO:{CONCEPTO_SERVICIO_TRASLADADO}")
             )
-
-        periodo_desde = factura["periodo_desde"]
-        periodo_hasta = factura["periodo_hasta"]
-        if periodo_desde is None or periodo_hasta is None:
-            raise _RollbackAppResult(AppResult.fail("RESPONSABLE_SERVICIO_AMBIGUO"))
 
         responsables_result = self._resolver_responsables(factura)
         if not responsables_result.success:
