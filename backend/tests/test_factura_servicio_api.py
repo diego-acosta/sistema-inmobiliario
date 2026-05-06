@@ -33,6 +33,44 @@ def _payload(
     }
 
 
+def _headers_sin_op_id() -> dict:
+    return {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+
+
+def _crear_cuenta_financiera(
+    db_session,
+    *,
+    nombre: str = "Cuenta egreso proveedor",
+    estado: str = "ACTIVA",
+) -> int:
+    row = db_session.execute(
+        text(
+            """
+            INSERT INTO cuenta_financiera (
+                tipo_cuenta,
+                nombre_cuenta,
+                moneda,
+                id_sucursal_operativa,
+                estado,
+                observaciones
+            )
+            VALUES (
+                'BANCO',
+                :nombre,
+                'ARS',
+                1,
+                :estado,
+                'Cuenta test egreso proveedor'
+            )
+            RETURNING id_cuenta_financiera
+            """
+        ),
+        {"nombre": nombre, "estado": estado},
+    ).scalar_one()
+    db_session.flush()
+    return row
+
+
 def test_create_factura_servicio_asociada_a_inmueble_valido(
     client, db_session
 ) -> None:
@@ -858,6 +896,296 @@ def test_pago_externo_factura_servicio_mismo_op_id_payload_distinto_conflicto(
 
     assert response.status_code == 409
     assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+
+def test_egreso_proveedor_factura_servicio_total_crea_movimiento_y_puente(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-001"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 001")
+
+    response = client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 25000.00,
+            "medio_pago": "TRANSFERENCIA",
+            "referencia_comprobante": "TRX-001",
+            "observaciones": "Pago proveedor CALF",
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["id_factura_servicio"] == id_factura
+    assert data["id_movimiento_tesoreria"] > 0
+    assert data["importe_pagado"] == 25000.0
+    assert data["impacta_tesoreria"] is True
+    assert data["crea_movimiento_financiero"] is False
+    assert data["crea_obligacion_financiera"] is False
+
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                mt.tipo_movimiento_tesoreria,
+                mt.id_cuenta_financiera_origen,
+                mt.id_cuenta_financiera_destino,
+                mt.importe,
+                mt.estado,
+                mt.referencia_externa,
+                e.id_factura_servicio,
+                e.importe_pagado,
+                e.estado_egreso
+            FROM egreso_proveedor_factura_servicio e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+            WHERE e.id_egreso_proveedor_factura_servicio = :id
+            """
+        ),
+        {"id": data["id_egreso_proveedor_factura_servicio"]},
+    ).mappings().one()
+
+    assert row["tipo_movimiento_tesoreria"] == "EGRESO_PROVEEDOR_FACTURA_SERVICIO"
+    assert row["id_cuenta_financiera_origen"] == id_cuenta
+    assert row["id_cuenta_financiera_destino"] is None
+    assert float(row["importe"]) == 25000.0
+    assert row["estado"] == "REGISTRADO"
+    assert row["referencia_externa"] == f"FACTURA_SERVICIO:{id_factura}"
+    assert row["id_factura_servicio"] == id_factura
+    assert float(row["importe_pagado"]) == 25000.0
+    assert row["estado_egreso"] == "REGISTRADO"
+
+
+def test_egreso_proveedor_factura_servicio_parcial(client, db_session) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-002"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 002")
+
+    response = client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 10000.00,
+            "medio_pago": "TRANSFERENCIA",
+            "referencia_comprobante": "TRX-002",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["importe_pagado"] == 10000.0
+
+
+def test_egreso_proveedor_factura_servicio_multiples_parciales_hasta_total(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-003"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 003")
+    url = f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor"
+
+    first = client.post(
+        url,
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 10000.00,
+        },
+    )
+    second = client.post(
+        url,
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-21",
+            "importe_pagado": 15000.00,
+        },
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    total = db_session.execute(
+        text(
+            """
+            SELECT COALESCE(SUM(importe_pagado), 0)
+            FROM egreso_proveedor_factura_servicio
+            WHERE id_factura_servicio = :id
+              AND estado_egreso = 'REGISTRADO'
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id": id_factura},
+    ).scalar_one()
+    assert float(total) == 25000.0
+
+
+def test_egreso_proveedor_factura_servicio_rechaza_sobrepago(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-004"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 004")
+
+    response = client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 25000.01,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "EGRESO_SUPERA_IMPORTE_FACTURA"
+
+
+def test_egreso_proveedor_factura_servicio_retry_mismo_op_id_no_duplica(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-005"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 005")
+    headers = {**HEADERS, "X-Op-Id": "11111111-2222-3333-4444-555555555555"}
+    payload = {
+        "id_cuenta_financiera_origen": id_cuenta,
+        "fecha_pago": "2026-05-20",
+        "importe_pagado": 12000.00,
+        "medio_pago": "TRANSFERENCIA",
+        "referencia_comprobante": "TRX-005",
+    }
+    url = f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor"
+
+    first = client.post(url, headers=headers, json=payload)
+    second = client.post(url, headers=headers, json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json()["data"]["resultado"] == "YA_REGISTRADO"
+    assert second.json()["data"]["id_egreso_proveedor_factura_servicio"] == first.json()[
+        "data"
+    ]["id_egreso_proveedor_factura_servicio"]
+    count = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM egreso_proveedor_factura_servicio
+            WHERE id_factura_servicio = :id
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id": id_factura},
+    ).scalar_one()
+    assert count == 1
+
+
+def test_egreso_proveedor_factura_servicio_mismo_op_id_payload_distinto_conflicto(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-006"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 006")
+    headers = {**HEADERS, "X-Op-Id": "22222222-3333-4444-5555-666666666666"}
+    url = f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor"
+    payload = {
+        "id_cuenta_financiera_origen": id_cuenta,
+        "fecha_pago": "2026-05-20",
+        "importe_pagado": 12000.00,
+    }
+
+    first = client.post(url, headers=headers, json=payload)
+    second = client.post(
+        url,
+        headers=headers,
+        json={**payload, "importe_pagado": 13000.00},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+
+def test_egreso_proveedor_factura_servicio_no_crea_financiero_ni_obligacion(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-007"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 007")
+    mov_fin_before = db_session.execute(
+        text("SELECT COUNT(*) FROM movimiento_financiero")
+    ).scalar_one()
+    oblig_before = db_session.execute(
+        text("SELECT COUNT(*) FROM obligacion_financiera")
+    ).scalar_one()
+
+    response = client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 5000.00,
+        },
+    )
+
+    assert response.status_code == 201
+    assert (
+        db_session.execute(text("SELECT COUNT(*) FROM movimiento_financiero")).scalar_one()
+        == mov_fin_before
+    )
+    assert (
+        db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one()
+        == oblig_before
+    )
+
+
+def test_egreso_proveedor_factura_servicio_no_afecta_estado_cuenta(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-008"
+    )
+    mat = client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/materializar",
+        headers=HEADERS,
+    )
+    assert mat.status_code == 201
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR 008")
+    estado_before = client.get(
+        f"/api/v1/financiero/personas/{id_persona}/estado-cuenta",
+        headers=HEADERS,
+    ).json()["data"]
+
+    response = client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 25000.00,
+        },
+    )
+
+    assert response.status_code == 201
+    estado_after = client.get(
+        f"/api/v1/financiero/personas/{id_persona}/estado-cuenta",
+        headers=HEADERS,
+    ).json()["data"]
+    assert estado_after["resumen"] == estado_before["resumen"]
+    assert estado_after["grupos_deuda"] == estado_before["grupos_deuda"]
 
 
 def test_materializar_factura_servicio_sin_responsable_devuelve_obligado_no_resuelto(

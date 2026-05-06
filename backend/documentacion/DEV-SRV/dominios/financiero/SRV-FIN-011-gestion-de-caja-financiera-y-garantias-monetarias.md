@@ -51,9 +51,18 @@ Ese egreso es distinto de:
 - el recupero posterior, que genera deuda contra personas y luego se cobra por
   el flujo normal de pagos financieros.
 
-La implementacion concreta del egreso proveedor, su vinculacion con
-`factura_servicio` y su eventual reversion quedan pendientes del flujo
-`SRV-FIN-020-recupero-servicios-comunes`.
+La implementacion V1 minima registra el egreso proveedor desde
+`factura_servicio` mediante:
+
+- `movimiento_tesoreria` con
+  `tipo_movimiento_tesoreria = EGRESO_PROVEEDOR_FACTURA_SERVICIO`;
+- tabla puente `egreso_proveedor_factura_servicio`;
+- endpoint
+  `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
+
+Este registro no crea `movimiento_financiero`, no genera deuda de recupero y
+no emite recibo interno. La anulacion/reversion del egreso proveedor queda
+pendiente del flujo `SRV-FIN-020-recupero-servicios-comunes`.
 
 ### Gestión de garantías monetarias
 Registra depósitos en garantía, su afectación, liberación, devolución parcial o total y eventual ejecución conforme a la política funcional.

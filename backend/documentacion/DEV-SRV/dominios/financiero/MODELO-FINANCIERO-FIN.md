@@ -393,6 +393,10 @@ Decision:
 
 - la empresa/inmobiliaria paga al proveedor.
 - ese pago pertenece al circuito de egreso, caja y tesoreria de la empresa.
+- el egreso proveedor minimo se registra como `movimiento_tesoreria` vinculado
+  por `egreso_proveedor_factura_servicio`.
+- endpoint:
+  `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
 - luego se genera una obligacion de recupero a los responsables por la parte
   correspondiente.
 - la obligacion de recupero representa deuda con la empresa, no pago al
@@ -411,6 +415,9 @@ Decision:
   alternativa generica futura si se decide unificar recuperos heterogeneos.
 - en V1 la generacion de recupero es manual/controlada; la automatizacion desde
   una factura pagada queda pendiente.
+- el egreso proveedor no crea `movimiento_financiero`, no crea
+  `obligacion_financiera`, no crea `SERVICIO_RECUPERADO`, no registra
+  `PAGO_EXTERNO_INFORMADO` y no genera recibo interno.
 
 Expensas e impuestos trasladados no se implementan en este bloque.
 El diseno de este circuito queda documentado en

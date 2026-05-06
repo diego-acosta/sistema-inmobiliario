@@ -1,8 +1,8 @@
 # SRV-FIN-020 - Recupero de servicios comunes
 
 ## Estado
-- estado: `DISENO V1`
-- implementacion: `NO IMPLEMENTADO`
+- estado: `PARCIAL V1`
+- implementacion: egreso proveedor minimo implementado; recupero financiero no implementado
 - dominio owner: `financiero`
 - origen operativo: `factura_servicio` del dominio `inmobiliario`
 - clasificacion: nucleo financiero para recuperos contra personas
@@ -44,7 +44,8 @@ No incluye:
 2. El pago al proveedor representa egreso real de la empresa y debe pertenecer
    al circuito de caja/tesoreria.
 3. El recupero posterior genera `obligacion_financiera` contra personas.
-4. En V1, el recupero sera manual/controlado, no automatico.
+4. En V1, el egreso proveedor se registra explicitamente y el recupero sera
+   manual/controlado, no automatico.
 5. No se mezcla con `SERVICIO_TRASLADADO DIRECTO_RESPONSABLE`.
 6. Expensas, impuestos y servicios comunes pueden usar este circuito como
    patron, pero no se implementan todos juntos.
@@ -113,6 +114,17 @@ Decision recomendada V1:
 - La obligacion de recupero representa deuda con la empresa, no deuda con el
   proveedor.
 - La generacion de recupero debe ser explicita e idempotente.
+- El egreso proveedor minimo se registra con
+  `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
+- El egreso proveedor crea `movimiento_tesoreria` y
+  `egreso_proveedor_factura_servicio`.
+- El egreso proveedor no crea `movimiento_financiero`,
+  `obligacion_financiera`, composiciones, `SERVICIO_RECUPERADO`,
+  `PAGO_EXTERNO_INFORMADO` ni recibo interno.
+- Se permiten multiples egresos parciales hasta cubrir el importe total de la
+  factura.
+- No se permite que la suma de egresos activos supere
+  `factura_servicio.importe_total`.
 - El recupero debe crear `obligacion_obligado` para los responsables
   determinados por la regla de reparto vigente.
 - Si no hay regla de reparto valida, debe bloquearse con error funcional.
@@ -121,7 +133,6 @@ Decision recomendada V1:
 
 ## Pendientes de definicion
 
-- entidad de egreso proveedor o integracion exacta con `movimiento_tesoreria`;
 - entidad `liquidacion_recupero` o `liquidacion_expensa`;
 - reglas de reparto por inmueble, unidad funcional, servicio, consumo o
   porcentaje;
@@ -134,7 +145,7 @@ Decision recomendada V1:
 
 ## Implementacion futura sugerida
 
-1. Definir y persistir egreso proveedor.
+1. Consultar y eventualmente anular egresos proveedor.
 2. Crear entidad de liquidacion de recupero para agrupar una o mas facturas.
 3. Definir reglas de reparto y validacion de suma.
 4. Materializar obligaciones de recupero con obligados usando

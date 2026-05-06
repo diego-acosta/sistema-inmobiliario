@@ -309,6 +309,24 @@ Impacto en cuentas financieras.
 #### Relación
 Deriva de movimiento_financiero.
 
+Para egreso proveedor minimo de `EMPRESA_PAGA_Y_RECUPERA`, V1 permite
+`movimiento_tesoreria` sin `movimiento_financiero`, vinculado a
+`factura_servicio` por `egreso_proveedor_factura_servicio`. Esta excepcion
+representa egreso real de empresa y no deuda logica.
+
+### 4.9.1 egreso_proveedor_factura_servicio
+
+#### Descripcion
+Tabla puente entre `factura_servicio` y `movimiento_tesoreria` para registrar
+pagos de proveedor realizados por la empresa.
+
+#### Funcion
+- vincular el egreso real con la factura externa;
+- soportar pagos parciales y multiples egresos;
+- proveer idempotencia por `op_id_alta`;
+- mantener separado el egreso proveedor de `PAGO_EXTERNO_INFORMADO` y de la
+  futura obligacion de recupero.
+
 ---
 
 ### 4.10 conciliacion_bancaria
@@ -437,6 +455,9 @@ SRV-FIN-012
 - `EMPRESA_PAGA_Y_RECUPERA` no usa `PAGO_EXTERNO_INFORMADO`: la empresa paga
   al proveedor por caja/tesoreria y luego genera una obligacion de recupero
   contra personas
+- el egreso proveedor minimo de `EMPRESA_PAGA_Y_RECUPERA` crea
+  `movimiento_tesoreria` y `egreso_proveedor_factura_servicio`; no crea
+  `movimiento_financiero`, `obligacion_financiera` ni recibo interno
 - para V1 de servicios comunes recuperados se recomienda el concepto
   `SERVICIO_RECUPERADO`, disponible en `concepto_financiero` con naturaleza
   `DEBITO`, `es_imputable = true`, `permite_saldo = true` y
