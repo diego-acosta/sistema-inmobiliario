@@ -484,6 +484,12 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-013-generacion-de-mora
 - estado: IMPLEMENTADA.
 
+### RN-FIN-090 - Estado de cuenta por persona agrupado por origen funcional
+- descripcion: El estado de cuenta por persona debe exponer la deuda en grupos funcionales (`LOCATIVO`, `VENTA`, `TRASLADADOS`, `OTROS`) y, dentro de cada grupo, separar cada `relacion_generadora` como bloque independiente. La vista conserva el arreglo plano de obligaciones por compatibilidad, pero la lectura funcional principal es `grupos_deuda`.
+- aplica_a: estado_cuenta_persona, relacion_generadora, obligacion_financiera, composicion_obligacion
+- origen_principal: SRV-FIN-016-estado-cuenta-por-persona
+- estado: IMPLEMENTADA.
+
 ### RN-FIN-071 - Mora no capitalizable
 - descripcion: La mora diaria dinamica de lectura no se persiste como obligacion financiera ni incrementa el saldo de la obligacion base por el solo hecho de consultar deuda, estado de cuenta o simulacion; se expone como calculo de lectura. Esto es distinto del `PUNITORIO` liquidado al registrar un pago.
 - aplica_a: obligacion_financiera, estado_cuenta, deuda_consolidada

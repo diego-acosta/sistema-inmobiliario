@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 
@@ -433,6 +433,7 @@ class EstadoCuentaPersonaObligacionItem(BaseModel):
     id_relacion_generadora: int
     tipo_origen: str
     id_origen: int
+    fecha_emision: date
     periodo_desde: date | None
     periodo_hasta: date | None
     fecha_vencimiento: date | None
@@ -445,20 +446,66 @@ class EstadoCuentaPersonaObligacionItem(BaseModel):
     tasa_diaria_mora: float = TASA_DIARIA_MORA_DEFAULT_FLOAT
     mora_calculada: float = 0.0
     total_con_mora: float = 0.0
+    composiciones: list["EstadoCuentaPersonaComposicionItem"] = Field(
+        default_factory=list
+    )
 
 
 class EstadoCuentaPersonaResumen(BaseModel):
+    saldo_total: float = 0.0
     saldo_pendiente_total: float
     saldo_vencido: float
     saldo_futuro: float
     mora_calculada: float
     total_con_mora: float
+    saldo_locativo: float = 0.0
+    saldo_venta: float = 0.0
+    saldo_trasladados: float = 0.0
+    saldo_otros: float = 0.0
+
+
+class EstadoCuentaPersonaComposicionItem(BaseModel):
+    id_composicion_obligacion: int
+    codigo_concepto_financiero: str
+    importe_componente: float
+    saldo_componente: float
+    estado_composicion_obligacion: str
+
+
+class EstadoCuentaPersonaObligacionGrupoItem(BaseModel):
+    id_obligacion_financiera: int
+    estado_obligacion: str
+    fecha_emision: date
+    fecha_vencimiento: date | None
+    periodo_desde: date | None
+    periodo_hasta: date | None
+    saldo_pendiente: float
+    composiciones: list[EstadoCuentaPersonaComposicionItem]
+
+
+class EstadoCuentaPersonaRelacionGrupoItem(BaseModel):
+    id_relacion_generadora: int
+    tipo_origen: str
+    id_origen: int
+    descripcion_origen: str | None = None
+    saldo_total: float
+    cantidad_obligaciones: int
+    obligaciones: list[EstadoCuentaPersonaObligacionGrupoItem]
+
+
+class EstadoCuentaPersonaGrupoDeudaItem(BaseModel):
+    grupo_origen_deuda: str
+    saldo_total: float
+    relaciones: list[EstadoCuentaPersonaRelacionGrupoItem]
 
 
 class EstadoCuentaPersonaData(BaseModel):
     id_persona: int
     fecha_corte: date
     resumen: EstadoCuentaPersonaResumen
+    grupos_deuda: list[EstadoCuentaPersonaGrupoDeudaItem] = Field(
+        default_factory=list
+    )
     obligaciones: list[EstadoCuentaPersonaObligacionItem]
 
 

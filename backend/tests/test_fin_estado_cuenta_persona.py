@@ -2,6 +2,7 @@
 Tests de integración para GET /api/v1/financiero/personas/{id_persona}/estado-cuenta.
 """
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
@@ -13,6 +14,14 @@ from tests.test_fin_event_contrato_alquiler import (
     _crear_condicion,
     _crear_contrato_borrador,
     _crear_locatario_principal,
+)
+from tests.test_factura_servicio_api import (
+    _crear_factura_servicio_con_responsable,
+    _materializar,
+)
+from tests.test_reservas_venta_create import _crear_inmueble
+from tests.test_ventas_definir_condiciones_comerciales import (
+    _insertar_venta_para_condiciones,
 )
 
 URL = "/api/v1/financiero/personas/{id_persona}/estado-cuenta"
@@ -47,6 +56,154 @@ def _setup_contrato_con_obligaciones(
     id_persona = _crear_locatario_principal(client, db_session, contrato["id_contrato_alquiler"])
     _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
     return id_persona, contrato
+
+
+def _crear_persona(client, *, nombre: str, apellido: str) -> int:
+    response = client.post(
+        "/api/v1/personas",
+        headers=HEADERS,
+        json={
+            "tipo_persona": "FISICA",
+            "nombre": nombre,
+            "apellido": apellido,
+            "razon_social": None,
+            "estado_persona": "ACTIVA",
+            "observaciones": None,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["data"]["id_persona"]
+
+
+def _crear_deuda_venta_para_persona(
+    client,
+    db_session,
+    *,
+    id_persona: int,
+    codigo: str,
+    monto: Decimal,
+) -> dict[str, int]:
+    id_inmueble = _crear_inmueble(client, codigo=f"INM-{codigo}")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta=codigo,
+        estado_venta="confirmada",
+        monto_total=monto,
+        objetos=[
+            {
+                "id_inmueble": id_inmueble,
+                "id_unidad_funcional": None,
+                "precio_asignado": monto,
+                "observaciones": "Venta para estado de cuenta por persona",
+            }
+        ],
+    )
+    id_concepto = db_session.execute(
+        text(
+            """
+            SELECT id_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'CAPITAL_VENTA'
+              AND deleted_at IS NULL
+            """
+        )
+    ).scalar_one()
+    id_rg = db_session.execute(
+        text(
+            """
+            INSERT INTO relacion_generadora (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                tipo_origen, id_origen, descripcion
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                'venta', :id_venta, :descripcion
+            )
+            RETURNING id_relacion_generadora
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_venta": venta["id_venta"],
+            "descripcion": f"Venta {codigo}",
+        },
+    ).scalar_one()
+    id_ob = db_session.execute(
+        text(
+            """
+            INSERT INTO obligacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_relacion_generadora, fecha_emision, fecha_vencimiento,
+                importe_total, saldo_pendiente, estado_obligacion
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                :id_rg, DATE '2026-05-01', DATE '2026-05-31',
+                :monto, :monto, 'EMITIDA'
+            )
+            RETURNING id_obligacion_financiera
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "id_rg": id_rg, "monto": monto},
+    ).scalar_one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                :id_ob, :id_concepto, 1, :monto, :monto
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_ob": id_ob,
+            "id_concepto": id_concepto,
+            "monto": monto,
+        },
+    )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO obligacion_obligado (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_persona,
+                rol_obligado, porcentaje_responsabilidad
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                :id_ob, :id_persona, 'COMPRADOR', 100.00
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_ob": id_ob,
+            "id_persona": id_persona,
+        },
+    )
+    return {
+        "id_relacion_generadora": id_rg,
+        "id_obligacion_financiera": id_ob,
+        "id_venta": venta["id_venta"],
+    }
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
@@ -714,3 +871,210 @@ def test_filtro_rango_invertido_devuelve_vacio_sin_error(client, db_session) -> 
 
     assert resp.status_code == 200
     assert resp.json()["data"]["obligaciones"] == []
+
+
+def test_estado_cuenta_persona_agrupa_contrato_locativo_por_relacion(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup_contrato_con_obligaciones(
+        client,
+        db_session,
+        codigo="ECP-GRP-LOC-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-06-30",
+        monto=12000.00,
+    )
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    grupos = {g["grupo_origen_deuda"]: g for g in data["grupos_deuda"]}
+    locativo = grupos["LOCATIVO"]
+    assert locativo["saldo_total"] == pytest.approx(24000.00)
+    assert data["resumen"]["saldo_locativo"] == pytest.approx(24000.00)
+    assert len(locativo["relaciones"]) == 1
+    relacion = locativo["relaciones"][0]
+    assert relacion["tipo_origen"] == "CONTRATO_ALQUILER"
+    assert relacion["id_origen"] == contrato["id_contrato_alquiler"]
+    assert relacion["cantidad_obligaciones"] == 2
+    assert relacion["saldo_total"] == pytest.approx(24000.00)
+    assert all(
+        ob["composiciones"][0]["codigo_concepto_financiero"] == "CANON_LOCATIVO"
+        for ob in relacion["obligaciones"]
+    )
+
+
+def test_estado_cuenta_persona_agrupa_dos_ventas_en_bloques_separados(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(client, nombre="Venta", apellido="Agrupada")
+    venta_1 = _crear_deuda_venta_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        codigo="ECP-GRP-VTA-001",
+        monto=Decimal("100000.00"),
+    )
+    venta_2 = _crear_deuda_venta_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        codigo="ECP-GRP-VTA-002",
+        monto=Decimal("50000.00"),
+    )
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    venta = next(g for g in data["grupos_deuda"] if g["grupo_origen_deuda"] == "VENTA")
+    assert data["resumen"]["saldo_venta"] == pytest.approx(150000.00)
+    assert venta["saldo_total"] == pytest.approx(150000.00)
+    assert len(venta["relaciones"]) == 2
+    relaciones = {r["id_relacion_generadora"]: r for r in venta["relaciones"]}
+    assert set(relaciones) == {
+        venta_1["id_relacion_generadora"],
+        venta_2["id_relacion_generadora"],
+    }
+    assert sorted(r["saldo_total"] for r in relaciones.values()) == [
+        50000.0,
+        100000.0,
+    ]
+    assert all(
+        r["obligaciones"][0]["composiciones"][0]["codigo_concepto_financiero"]
+        == "CAPITAL_VENTA"
+        for r in relaciones.values()
+    )
+
+
+def test_estado_cuenta_persona_agrupa_factura_servicio_materializada_en_trasladados(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="ECP-GRP-SRV-001"
+    )
+    materializada = _materializar(client, id_factura)
+    assert materializada.status_code == 201
+    id_rg = materializada.json()["data"]["id_relacion_generadora"]
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    trasladados = next(
+        g for g in data["grupos_deuda"] if g["grupo_origen_deuda"] == "TRASLADADOS"
+    )
+    assert data["resumen"]["saldo_trasladados"] == pytest.approx(25000.00)
+    assert trasladados["saldo_total"] == pytest.approx(25000.00)
+    assert len(trasladados["relaciones"]) == 1
+    relacion = trasladados["relaciones"][0]
+    assert relacion["id_relacion_generadora"] == id_rg
+    assert relacion["tipo_origen"] == "FACTURA_SERVICIO"
+    assert relacion["obligaciones"][0]["composiciones"][0][
+        "codigo_concepto_financiero"
+    ] == "SERVICIO_TRASLADADO"
+
+
+def test_estado_cuenta_persona_punitorio_alquiler_queda_en_bloque_locativo(
+    client, db_session
+) -> None:
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client,
+        db_session,
+        codigo="ECP-GRP-PUNIT-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+        dia_vencimiento_canon=1,
+    )
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers=HEADERS,
+        params={"id_persona": id_persona},
+        json={"monto": 50.00, "fecha_pago": "2026-05-20"},
+    )
+    assert pago.status_code == 201
+
+    resp = client.get(
+        _url(id_persona),
+        headers=HEADERS,
+        params={"fecha_corte": "2026-05-20"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    locativo = next(
+        g for g in data["grupos_deuda"] if g["grupo_origen_deuda"] == "LOCATIVO"
+    )
+    composiciones = locativo["relaciones"][0]["obligaciones"][0]["composiciones"]
+    assert {c["codigo_concepto_financiero"] for c in composiciones} >= {
+        "CANON_LOCATIVO",
+        "PUNITORIO",
+    }
+
+
+def test_estado_cuenta_persona_saldos_jerarquicos_suman(client, db_session) -> None:
+    id_persona, _ = _setup_contrato_con_obligaciones(
+        client,
+        db_session,
+        codigo="ECP-GRP-SUM-LOC",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=10000.00,
+    )
+    _crear_deuda_venta_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        codigo="ECP-GRP-SUM-VTA",
+        monto=Decimal("20000.00"),
+    )
+    id_factura, id_inmueble, id_servicio, _ = _crear_factura_servicio_con_responsable(
+        client,
+        db_session,
+        codigo="ECP-GRP-SUM-SRV",
+    )
+    db_session.execute(
+        text(
+            """
+            UPDATE asignacion_servicio_responsable
+            SET id_persona = :id_persona
+            WHERE id_servicio = :id_servicio
+              AND id_inmueble = :id_inmueble
+              AND deleted_at IS NULL
+            """
+        ),
+        {
+            "id_persona": id_persona,
+            "id_servicio": id_servicio,
+            "id_inmueble": id_inmueble,
+        },
+    )
+    materializada = _materializar(client, id_factura)
+    assert materializada.status_code == 201
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    resumen = data["resumen"]
+    grupos = data["grupos_deuda"]
+    assert resumen["saldo_total"] == pytest.approx(
+        resumen["saldo_locativo"]
+        + resumen["saldo_venta"]
+        + resumen["saldo_trasladados"]
+        + resumen["saldo_otros"]
+    )
+    assert resumen["saldo_total"] == pytest.approx(
+        sum(g["saldo_total"] for g in grupos)
+    )
+    for grupo in grupos:
+        assert grupo["saldo_total"] == pytest.approx(
+            sum(r["saldo_total"] for r in grupo["relaciones"])
+        )
+        for relacion in grupo["relaciones"]:
+            assert relacion["saldo_total"] == pytest.approx(
+                sum(o["saldo_pendiente"] for o in relacion["obligaciones"])
+            )
+            assert all(o["composiciones"] for o in relacion["obligaciones"])

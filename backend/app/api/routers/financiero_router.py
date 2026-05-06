@@ -1150,6 +1150,7 @@ def get_estado_cuenta_persona(
             id_persona=data["id_persona"],
             fecha_corte=data["fecha_corte"],
             resumen=EstadoCuentaPersonaResumen(**data["resumen"]),
+            grupos_deuda=data["grupos_deuda"],
             obligaciones=[
                 EstadoCuentaPersonaObligacionItem(**ob)
                 for ob in data["obligaciones"]

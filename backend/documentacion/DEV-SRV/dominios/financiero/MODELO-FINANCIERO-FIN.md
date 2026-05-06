@@ -442,6 +442,9 @@ Incluye:
 - dias de gracia y tasa resueltos por `parametro_punitorio`
 - `total_con_mora = (saldo_pendiente + mora_calculada) * porcentaje_responsabilidad / 100`
 - resumen: `saldo_pendiente_total`, `saldo_vencido`, `saldo_futuro`, `mora_calculada`, `total_con_mora`
+- resumen funcional: `saldo_total`, `saldo_locativo`, `saldo_venta`, `saldo_trasladados`, `saldo_otros`
+- `grupos_deuda`: lectura jerarquica por grupo funcional, relacion generadora,
+  obligaciones y composiciones
 
 Reglas:
 
@@ -449,9 +452,10 @@ Reglas:
 - incluye `EMITIDA` y `VENCIDA` por defecto
 - mora solo si `saldo_pendiente > 0` y
   `fecha_corte > fecha_vencimiento + dias_gracia` resueltos
-- `fecha_corte = date.today()` — no configurable en V1
+- `fecha_corte = date.today()` si no se informa; puede configurarse por query param
 - la mora de lectura no se persiste; el cargo por mora liquidado al registrar
   pagos se persiste como `PUNITORIO`
+- cada `relacion_generadora` se muestra como bloque separado dentro de su grupo
 
 Filtros opcionales:
 
@@ -466,6 +470,18 @@ Devuelve 404 si la persona no existe.
 Devuelve resumen en cero y lista vacia si existe pero no tiene obligaciones.
 
 Nota: la pertenencia de una obligacion a una persona se determina exclusivamente por `obligacion_obligado`. No se infiere desde el contrato de alquiler ni desde la venta. Si `obligacion_obligado` no tiene una fila para esa persona, la obligacion no aparece en esta vista.
+
+Clasificacion funcional V1:
+
+- `contrato_alquiler` -> `LOCATIVO`
+- `venta`, `reserva_venta`, `plan_venta` -> `VENTA`
+- `factura_servicio` -> `TRASLADADOS`
+- conceptos `SERVICIO_TRASLADADO`, `EXPENSA_TRASLADADA` o
+  `IMPUESTO_TRASLADADO` como fallback -> `TRASLADADOS`
+- resto -> `OTROS`
+
+La respuesta conserva el arreglo plano `obligaciones` por compatibilidad, pero
+la lectura funcional recomendada es `grupos_deuda`.
 
 Referencia: `SRV-FIN-016-estado-cuenta-por-persona`
 

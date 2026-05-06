@@ -3640,6 +3640,20 @@ class FinancieroRepository:
         fecha_vencimiento_hasta: date | None,
         fecha_corte: date,
     ) -> dict[str, Any]:
+        def _grupo_por_origen(tipo_origen: str, codigos: set[str]) -> str:
+            tipo = tipo_origen.upper()
+            if tipo == "CONTRATO_ALQUILER":
+                return "LOCATIVO"
+            if tipo in {"VENTA", "RESERVA_VENTA", "PLAN_VENTA"}:
+                return "VENTA"
+            if tipo == "FACTURA_SERVICIO":
+                return "TRASLADADOS"
+            if codigos.intersection(
+                {"SERVICIO_TRASLADADO", "EXPENSA_TRASLADADA", "IMPUESTO_TRASLADADO"}
+            ):
+                return "TRASLADADOS"
+            return "OTROS"
+
         filters = [
             "oo.id_persona = :id_persona",
             "oo.deleted_at IS NULL",
@@ -3677,6 +3691,8 @@ class FinancieroRepository:
                 o.id_relacion_generadora,
                 rg.tipo_origen,
                 rg.id_origen,
+                rg.descripcion,
+                o.fecha_emision,
                 o.periodo_desde,
                 o.periodo_hasta,
                 o.fecha_vencimiento,
@@ -3695,16 +3711,67 @@ class FinancieroRepository:
         )
 
         rows = self.db.execute(ob_stmt, params).mappings().all()
+        ids = [row["id_obligacion_financiera"] for row in rows]
+        comps_by_ob: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        if ids:
+            comp_stmt = text(
+                """
+                SELECT
+                    c.id_composicion_obligacion,
+                    c.id_obligacion_financiera,
+                    cf.codigo_concepto_financiero,
+                    c.importe_componente,
+                    c.saldo_componente,
+                    c.estado_composicion_obligacion
+                FROM composicion_obligacion c
+                JOIN concepto_financiero cf
+                    ON cf.id_concepto_financiero = c.id_concepto_financiero
+                WHERE c.id_obligacion_financiera IN :ids
+                  AND c.deleted_at IS NULL
+                  AND cf.deleted_at IS NULL
+                ORDER BY c.id_obligacion_financiera, c.orden_composicion ASC
+                """
+            ).bindparams(bindparam("ids", expanding=True))
+            comp_rows = self.db.execute(comp_stmt, {"ids": ids}).mappings().all()
+            for comp in comp_rows:
+                comps_by_ob[comp["id_obligacion_financiera"]].append(
+                    {
+                        "id_composicion_obligacion": comp[
+                            "id_composicion_obligacion"
+                        ],
+                        "codigo_concepto_financiero": comp[
+                            "codigo_concepto_financiero"
+                        ],
+                        "importe_componente": float(comp["importe_componente"]),
+                        "saldo_componente": float(comp["saldo_componente"]),
+                        "estado_composicion_obligacion": comp[
+                            "estado_composicion_obligacion"
+                        ],
+                    }
+                )
 
         obligaciones = []
         saldo_total = Decimal("0")
         saldo_vencido = Decimal("0")
         saldo_futuro = Decimal("0")
         mora_total = Decimal("0")
+        grupos_map: dict[str, dict[str, Any]] = {}
+        grupo_saldos = {
+            "LOCATIVO": Decimal("0"),
+            "VENTA": Decimal("0"),
+            "TRASLADADOS": Decimal("0"),
+            "OTROS": Decimal("0"),
+        }
 
         for row in rows:
             saldo = Decimal(str(row["saldo_pendiente"]))
             pct = Decimal(str(row["porcentaje_responsabilidad"]))
+            composiciones = comps_by_ob[row["id_obligacion_financiera"]]
+            codigos = {
+                str(comp["codigo_concepto_financiero"]).upper()
+                for comp in composiciones
+            }
+            grupo = _grupo_por_origen(str(row["tipo_origen"]), codigos)
 
             resolucion = resolver_mora_params(
                 tipo_origen=str(row["tipo_origen"]).upper(),
@@ -3730,39 +3797,99 @@ class FinancieroRepository:
             else:
                 saldo_futuro += saldo
 
-            obligaciones.append(
+            obligacion_item = {
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "id_relacion_generadora": row["id_relacion_generadora"],
+                "tipo_origen": str(row["tipo_origen"]).upper(),
+                "id_origen": row["id_origen"],
+                "fecha_emision": row["fecha_emision"],
+                "periodo_desde": row["periodo_desde"],
+                "periodo_hasta": row["periodo_hasta"],
+                "fecha_vencimiento": fv,
+                "estado_obligacion": row["estado_obligacion"],
+                "importe_total": float(row["importe_total"]),
+                "saldo_pendiente": float(saldo),
+                "porcentaje_responsabilidad": float(pct),
+                "monto_responsabilidad": float(monto_resp),
+                **mora,
+                "total_con_mora": float(total_con_mora_ob),
+                "composiciones": composiciones,
+            }
+            obligaciones.append(obligacion_item)
+
+            grupo_saldos[grupo] += saldo
+            grupo_data = grupos_map.setdefault(
+                grupo,
+                {"grupo_origen_deuda": grupo, "saldo_total": Decimal("0"), "relaciones": {}},
+            )
+            grupo_data["saldo_total"] += saldo
+            relaciones = grupo_data["relaciones"]
+            relacion_data = relaciones.setdefault(
+                row["id_relacion_generadora"],
                 {
-                    "id_obligacion_financiera": row["id_obligacion_financiera"],
                     "id_relacion_generadora": row["id_relacion_generadora"],
                     "tipo_origen": str(row["tipo_origen"]).upper(),
                     "id_origen": row["id_origen"],
+                    "descripcion_origen": row["descripcion"],
+                    "saldo_total": Decimal("0"),
+                    "obligaciones": [],
+                },
+            )
+            relacion_data["saldo_total"] += saldo
+            relacion_data["obligaciones"].append(
+                {
+                    "id_obligacion_financiera": row["id_obligacion_financiera"],
+                    "estado_obligacion": row["estado_obligacion"],
+                    "fecha_emision": row["fecha_emision"],
+                    "fecha_vencimiento": fv,
                     "periodo_desde": row["periodo_desde"],
                     "periodo_hasta": row["periodo_hasta"],
-                    "fecha_vencimiento": fv,
-                    "estado_obligacion": row["estado_obligacion"],
-                    "importe_total": float(row["importe_total"]),
                     "saldo_pendiente": float(saldo),
-                    "porcentaje_responsabilidad": float(pct),
-                    "monto_responsabilidad": float(monto_resp),
-                    **mora,
-                    "total_con_mora": float(total_con_mora_ob),
+                    "composiciones": composiciones,
                 }
             )
 
         total_con_mora_res = (saldo_total + mora_total).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
+        grupos_deuda = []
+        for grupo in ("LOCATIVO", "VENTA", "TRASLADADOS", "OTROS"):
+            if grupo not in grupos_map:
+                continue
+            grupo_data = grupos_map[grupo]
+            relaciones = []
+            for relacion in grupo_data["relaciones"].values():
+                relaciones.append(
+                    {
+                        **relacion,
+                        "saldo_total": float(relacion["saldo_total"]),
+                        "cantidad_obligaciones": len(relacion["obligaciones"]),
+                    }
+                )
+            grupos_deuda.append(
+                {
+                    "grupo_origen_deuda": grupo,
+                    "saldo_total": float(grupo_data["saldo_total"]),
+                    "relaciones": relaciones,
+                }
+            )
 
         return {
             "id_persona": id_persona,
             "fecha_corte": fecha_corte,
             "resumen": {
+                "saldo_total": float(saldo_total),
                 "saldo_pendiente_total": float(saldo_total),
                 "saldo_vencido": float(saldo_vencido),
                 "saldo_futuro": float(saldo_futuro),
                 "mora_calculada": float(mora_total),
                 "total_con_mora": float(total_con_mora_res),
+                "saldo_locativo": float(grupo_saldos["LOCATIVO"]),
+                "saldo_venta": float(grupo_saldos["VENTA"]),
+                "saldo_trasladados": float(grupo_saldos["TRASLADADOS"]),
+                "saldo_otros": float(grupo_saldos["OTROS"]),
             },
+            "grupos_deuda": grupos_deuda,
             "obligaciones": obligaciones,
         }
 
