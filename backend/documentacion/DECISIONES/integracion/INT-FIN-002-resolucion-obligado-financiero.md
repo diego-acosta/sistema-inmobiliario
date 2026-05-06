@@ -113,23 +113,24 @@ Notas:
 
 ### 5.3 Factura de servicio trasladado
 
-Para `factura_servicio` bajo `relacion_generadora.tipo_origen = FACTURA_SERVICIO`, la regla recomendada es:
+Para `factura_servicio` bajo `relacion_generadora.tipo_origen = FACTURA_SERVICIO`, la decision V1 es resolver responsables desde la entidad inmobiliaria especifica `asignacion_servicio_responsable`.
 
-1. si existe contrato locativo vigente sobre el objeto y periodo:
-   obligado = locatario
-2. si no existe contrato locativo vigente pero existe ocupacion vigente:
-   obligado = ocupante responsable
-3. si no existe ocupacion vigente:
-   obligado = propietario / responsable operativo definido
-4. si no puede resolverse:
-   no generar obligacion exigible automaticamente
-   dejar estado pendiente de resolucion
+No se debe resolver rigidamente por alquiler, venta u ocupacion. Tampoco debe usarse `relacion_persona_rol` como solucion final para este caso, porque modela participacion general y no una regla especifica de traslado de servicios.
+
+Regla V1:
+
+1. buscar asignaciones activas por `id_servicio` + `id_inmueble` o `id_unidad_funcional`
+2. exigir vigencia aplicable al periodo completo de la factura
+3. exigir que la suma de `porcentaje_responsabilidad` sea 100%
+4. si no hay responsable vigente: `OBLIGADO_NO_RESUELTO`
+5. si hay responsables inconsistentes: `RESPONSABLE_SERVICIO_AMBIGUO`
+6. si la factura cruza cambio de responsable: `FACTURA_CRUZA_CAMBIO_RESPONSABLE`
 
 Estado sugerido:
 
 1. `PENDIENTE_RESOLUCION_OBLIGADO`
 
-Esta regla queda `CONCEPTUAL` / `PENDIENTE` / `NO IMPLEMENTADO` a nivel funcional financiero. `factura_servicio` tiene API/backend inmobiliario V1, pero no existe contrato de integracion, evento `factura_servicio_registrada`, consumer financiero ni reglas fisicas para propietario / responsable operativo.
+Esta regla queda `PARCIAL V1`: `factura_servicio` y `asignacion_servicio_responsable` tienen API/backend inmobiliario V1, pero no existe todavia evento `factura_servicio_registrada`, consumer financiero ni generacion de obligacion.
 
 ## 6. Resolucion por periodo
 
@@ -144,11 +145,11 @@ No alcanza con mirar solo el estado actual del inmueble o unidad funcional.
 
 La resolucion debe evaluar el sujeto responsable durante el periodo alcanzado por la obligacion.
 
-Si el periodo cruza cambios de contrato, ocupacion o responsable, la politica de prorrateo o seleccion de obligado queda `PENDIENTE`.
+Para `factura_servicio`, si el periodo cruza cambios de `asignacion_servicio_responsable`, V1 bloquea la generacion con `FACTURA_CRUZA_CAMBIO_RESPONSABLE`; no prorratea por cambio de responsable.
 
 ## 7. Prioridad de resolucion
 
-Orden recomendado:
+Orden conceptual general:
 
 1. contrato vigente
 2. ocupacion vigente
@@ -157,6 +158,8 @@ Orden recomendado:
 5. pendiente de resolucion
 
 Este orden es conceptual y debe validarse contra contratos reales, SQL y reglas de dominio antes de implementarse.
+
+Excepcion V1: para `factura_servicio`, la fuente fisica documentada sera `asignacion_servicio_responsable`, no este orden generico.
 
 ## 8. Casos especiales
 
@@ -196,7 +199,7 @@ Este estado queda `CONCEPTUAL` / `NO IMPLEMENTADO`.
 
 ### 8.6 Inmueble libre
 
-Si el inmueble o unidad funcional esta libre y no existe contrato locativo ni ocupacion vigente, la resolucion debe intentar propietario / responsable operativo definido.
+Para `factura_servicio`, el inmueble libre no cambia la regla V1: debe existir `asignacion_servicio_responsable` aplicable.
 
 Si esa fuente no esta formalizada, la obligacion debe quedar pendiente de resolucion y no exigible automaticamente.
 
@@ -214,15 +217,15 @@ factura_servicio
 
 La factura no define por si sola quien paga.
 
-El obligado se resuelve cruzando:
+El obligado se resuelve desde `asignacion_servicio_responsable`, cruzando:
 
 1. objeto afectado
 2. periodo
-3. contrato
-4. ocupacion
-5. responsable operativo / propietario
+3. servicio
+4. persona responsable
+5. porcentaje de responsabilidad
 
-`factura_servicio` existe como tabla SQL estructural y API/backend inmobiliario V1. El evento conceptual `factura_servicio_registrada`, el consumer financiero y la generacion de `relacion_generadora` / `obligacion_financiera` quedan `PENDIENTE` / `NO IMPLEMENTADO`.
+`factura_servicio` y `asignacion_servicio_responsable` existen como tablas SQL estructurales y API/backend inmobiliario V1. El evento conceptual `factura_servicio_registrada`, el consumer financiero y la generacion de `relacion_generadora` / `obligacion_financiera` quedan `PENDIENTE` / `NO IMPLEMENTADO`.
 
 Decision V1 de origen financiero: cada `factura_servicio` registrada tendra una
 `relacion_generadora` financiera propia con `tipo_origen = FACTURA_SERVICIO` e
@@ -313,9 +316,9 @@ Queda `PENDIENTE`:
 2. contrato de integracion
 3. endpoint o consumer
 4. evento `factura_servicio_registrada`
-5. reglas fisicas para propietario / responsable operativo
+5. consumer financiero que use `asignacion_servicio_responsable`
 6. catalogo o estado fisico para `PENDIENTE_RESOLUCION_OBLIGADO`
-8. politica de multiples obligados, solidaridad, porcentajes y prorrateo
+8. politica futura de prorrateo por cambio de responsable
 
 ## 13. Base documental
 
@@ -338,6 +341,6 @@ Esta decision se apoya en documentacion existente del workspace:
 1. `factura_servicio` existe como tabla SQL estructural y API/backend inmobiliario V1.
 2. `factura_servicio_registrada` no existe como evento implementado ni existe consumer financiero.
 3. `factura_servicio` no genera `relacion_generadora` ni `obligacion_financiera`.
-4. `propietario` / `responsable operativo` para este circuito no tiene regla fisica final documentada.
+4. `asignacion_servicio_responsable` esta implementada en SQL/API/backend inmobiliario V1.
 5. `PENDIENTE_RESOLUCION_OBLIGADO` es un estado sugerido conceptual, no un estado implementado.
 6. Este documento no modifica ownership de ningun dominio.

@@ -85,6 +85,51 @@ El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotent
 - no se genera `relacion_generadora` ni `obligacion_financiera` desde `factura_servicio`.
 - la integracion con `financiero` queda pendiente hasta implementar evento/consumer/generacion financiera.
 
+## Asignacion de responsables de servicios trasladados (IMPLEMENTADO V1)
+
+### Decision
+Para V1, la resolucion del responsable de un servicio trasladado no se infiere rigidamente desde alquiler, venta u ocupacion, ni usa `relacion_persona_rol` como solucion final. Se define una entidad especifica del dominio inmobiliario:
+
+`asignacion_servicio_responsable`
+
+Su funcion es definir quien responde por un servicio trasladado sobre un inmueble o unidad funcional en una vigencia determinada.
+
+### Modelo conceptual
+
+`servicio`
+-> `inmueble_servicio` / `unidad_funcional_servicio`
+-> `asignacion_servicio_responsable`
+-> `factura_servicio`
+-> `relacion_generadora FACTURA_SERVICIO`
+-> `obligacion_financiera SERVICIO_TRASLADADO`
+-> `obligacion_obligado`
+
+### Reglas V1
+- La asignacion se vincula directamente por `id_servicio` + `id_inmueble` o `id_unidad_funcional`.
+- No se vincula por FK directa a `inmueble_servicio` ni a `unidad_funcional_servicio`.
+- Debe distinguir por XOR si aplica a inmueble o unidad funcional.
+- `id_persona` es obligatorio.
+- `porcentaje_responsabilidad` es obligatorio.
+- La suma de porcentajes activos aplicables al mismo servicio + objeto + tramo vigente debe ser 100%.
+- Si una `factura_servicio` no tiene responsable vigente aplicable, financiero debe devolver `OBLIGADO_NO_RESUELTO`.
+- Si existen responsables inconsistentes o porcentajes activos que no suman 100%, debe devolverse `RESPONSABLE_SERVICIO_AMBIGUO`.
+- Si la factura cruza un cambio de responsable, debe devolverse `FACTURA_CRUZA_CAMBIO_RESPONSABLE`.
+- V1 no prorratea por cambio de responsable dentro del periodo de factura.
+- V1 no usa composiciones negativas ni saldos a favor para resolver cambios de responsable.
+- Expensas e impuestos siguen fuera de alcance de este bloque.
+
+### Endpoints V1
+- `POST /api/v1/asignaciones-servicio-responsable`
+- `GET /api/v1/asignaciones-servicio-responsable/{id_asignacion_servicio_responsable}`
+- `GET /api/v1/asignaciones-servicio-responsable`
+- `PUT /api/v1/asignaciones-servicio-responsable/{id_asignacion_servicio_responsable}`
+- `PATCH /api/v1/asignaciones-servicio-responsable/{id_asignacion_servicio_responsable}/baja`
+
+### Estado
+- Implementado como SQL/API/backend V1.
+- No genera por si misma `relacion_generadora`, `obligacion_financiera` ni `obligacion_obligado`.
+- La materializacion financiera queda en el dominio `financiero`.
+
 ### Relacion conceptual con financiero
 - `factura_servicio` actua como origen conceptual de `SERVICIO_TRASLADADO`.
 - decision V1: cada `factura_servicio` registrada -> 1 `relacion_generadora` financiera propia.
@@ -92,7 +137,7 @@ El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotent
 - decision V1: `relacion_generadora.id_origen = id_factura_servicio`.
 - decision V1: la obligacion derivada usa el concepto financiero `SERVICIO_TRASLADADO`.
 - motivo: idempotencia directa por factura, trazabilidad simple factura -> obligacion, sin entidad intermedia de servicio facturable y alineado con el modelo actual de `relacion_generadora`.
-- la relacion por servicio asociado a inmueble o unidad funcional queda como posible evolucion futura.
+- la resolucion de responsables para V1 se apoya en la entidad especifica `asignacion_servicio_responsable`.
 - expensas e impuestos no se implementan en este bloque.
 - esta decision esta habilitada estructuralmente en `relacion_generadora`; la generacion financiera desde la factura queda pendiente.
 

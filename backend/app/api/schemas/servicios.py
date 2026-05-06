@@ -178,6 +178,64 @@ class FacturaServicioListResponse(BaseModel):
     data: list[FacturaServicioData]
 
 
+class AsignacionServicioResponsableRequest(BaseModel):
+    id_servicio: int
+    id_inmueble: int | None = None
+    id_unidad_funcional: int | None = None
+    id_persona: int
+    porcentaje_responsabilidad: Decimal = Field(gt=0, le=100)
+    fecha_desde: date
+    fecha_hasta: date | None = None
+    estado_asignacion: str = "ACTIVA"
+    observaciones: str | None = None
+
+    @model_validator(mode="after")
+    def validar_asignacion(self) -> "AsignacionServicioResponsableRequest":
+        if (self.id_inmueble is not None) == (self.id_unidad_funcional is not None):
+            raise ValueError("Debe informar id_inmueble o id_unidad_funcional, no ambos.")
+        if self.fecha_hasta is not None and self.fecha_hasta < self.fecha_desde:
+            raise ValueError("fecha_hasta debe ser mayor o igual a fecha_desde.")
+        if self.estado_asignacion.strip().upper() not in {"ACTIVA", "INACTIVA"}:
+            raise ValueError("estado_asignacion debe ser ACTIVA o INACTIVA.")
+        return self
+
+
+class AsignacionServicioResponsableData(BaseModel):
+    id_asignacion_servicio_responsable: int
+    uid_global: str | None = None
+    version_registro: int
+    id_servicio: int
+    id_inmueble: int | None
+    id_unidad_funcional: int | None
+    id_persona: int
+    porcentaje_responsabilidad: float
+    fecha_desde: str
+    fecha_hasta: str | None
+    estado_asignacion: str
+    observaciones: str | None
+
+
+class AsignacionServicioResponsableResponse(BaseModel):
+    ok: Literal[True] = True
+    data: AsignacionServicioResponsableData
+
+
+class AsignacionServicioResponsableListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[AsignacionServicioResponsableData]
+
+
+class AsignacionServicioResponsableBajaData(BaseModel):
+    id_asignacion_servicio_responsable: int
+    version_registro: int
+    deleted: Literal[True] = True
+
+
+class AsignacionServicioResponsableBajaResponse(BaseModel):
+    ok: Literal[True] = True
+    data: AsignacionServicioResponsableBajaData
+
+
 class ErrorResponse(BaseModel):
     ok: Literal[False] = False
     error_code: str

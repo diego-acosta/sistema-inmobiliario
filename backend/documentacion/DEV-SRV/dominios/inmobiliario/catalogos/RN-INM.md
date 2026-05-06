@@ -17,6 +17,7 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | registro de `factura_servicio` | IMPLEMENTADO V1 | API/backend registra y consulta facturas externas de proveedor sin generar relacion generadora ni obligacion financiera |
 | duplicidad de `factura_servicio` | IMPLEMENTADO V1 | se rechaza duplicado activo por proveedor + numero de factura |
 | asociacion de `factura_servicio` a objeto inmobiliario | IMPLEMENTADO V1 | toda factura debe asociarse por XOR a `id_inmueble` o `id_unidad_funcional`, con servicio activo asociado al objeto |
+| asignacion de responsable de servicio trasladado | IMPLEMENTADO V1 | `asignacion_servicio_responsable` define persona, servicio, inmueble/UF, vigencia y porcentaje para resolver futuros obligados de `SERVICIO_TRASLADADO`; no materializa obligaciones financieras |
 
 ## Reglas parciales
 | Regla | Estado | Nota |
@@ -33,14 +34,14 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | mejoras como entidad separada | NO IMPLEMENTADO | sin soporte actual |
 | integracion de `factura_servicio` con financiero | NO IMPLEMENTADO | la obligacion derivada pertenece a `financiero`; para V1 cada factura usara `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; no existe evento implementado, consumer financiero ni generacion de `relacion_generadora` u `obligacion_financiera` |
 | importe de `factura_servicio` | CONCEPTUAL | el sistema no calcula importes de servicios; el importe proviene del proveedor externo y se registra como dato recibido |
-| resolucion de obligado por `factura_servicio` | CONCEPTUAL | el obligado financiero debe resolverse por contrato locativo vigente si el objeto esta ocupado/alquilado, por ocupacion vigente o por propietario/responsable operativo si no hay contrato locativo vigente; la formalizacion completa queda PENDIENTE |
+| resolucion de obligado por `factura_servicio` | PARCIAL V1 | la fuente inmobiliaria `asignacion_servicio_responsable` esta implementada; la materializacion financiera del obligado sigue pendiente |
 
 ## Fuera de alcance
 - cliente, propietario, contrato, pago, deuda, caja, instalacion
 - cualquier semantica de otro dominio absorbida como nucleo inmobiliario
 - emision de facturas de servicio por el sistema
 - calculo o persistencia primaria de obligaciones financieras derivadas de facturas externas
-- decision de deuda u obligado financiero definitivo para `factura_servicio`
+- materializacion financiera de `SERVICIO_TRASLADADO` desde `asignacion_servicio_responsable`
 
 ## Notas
 - La documentacion futura debe tomar estas reglas implementadas como base y no como simple intencion conceptual.

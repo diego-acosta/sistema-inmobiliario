@@ -424,7 +424,12 @@ SRV-FIN-012
 - una `factura_servicio` no debe generar mas de una obligacion financiera activa
 - la creacion de `relacion_generadora` `FACTURA_SERVICIO` es idempotente por `id_factura_servicio`
 - decision V1: cada `factura_servicio` registrada -> 1 `relacion_generadora` propia -> 1 obligacion `SERVICIO_TRASLADADO`
-- la relacion por servicio asociado a inmueble o unidad funcional queda como posible evolucion futura
+- decision V1: el responsable se resuelve desde `asignacion_servicio_responsable`, entidad inmobiliaria especifica vinculada por `id_servicio` + `id_inmueble` o `id_unidad_funcional`
+- `asignacion_servicio_responsable` define `id_persona`, vigencia y `porcentaje_responsabilidad`; los porcentajes aplicables deben sumar 100%
+- si no hay responsable vigente: `OBLIGADO_NO_RESUELTO`
+- si hay responsables inconsistentes: `RESPONSABLE_SERVICIO_AMBIGUO`
+- si la factura cruza cambio de responsable: `FACTURA_CRUZA_CAMBIO_RESPONSABLE`
+- V1 no prorratea por cambio de responsable, no usa composiciones negativas ni saldos a favor en este bloque
 - la habilitacion estructural de `FACTURA_SERVICIO` en `relacion_generadora` esta implementada; la generacion de obligacion queda pendiente hasta que exista evento y consumer financiero
 - existe API/backend inmobiliaria V1 para `factura_servicio`, pero no se genera `obligacion_financiera`
 

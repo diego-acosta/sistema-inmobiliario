@@ -6,6 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.schemas.servicios import (
+    AsignacionServicioResponsableBajaData,
+    AsignacionServicioResponsableBajaResponse,
+    AsignacionServicioResponsableData,
+    AsignacionServicioResponsableListResponse,
+    AsignacionServicioResponsableRequest,
+    AsignacionServicioResponsableResponse,
     ErrorResponse,
     FacturaServicioCreateRequest,
     FacturaServicioCreateResponse,
@@ -30,6 +36,11 @@ from app.api.schemas.servicios import (
     ServicioUpdateResponse,
 )
 from app.application.common.commands import CommandContext
+from app.application.servicios.commands.asignacion_servicio_responsable import (
+    CreateAsignacionServicioResponsableCommand,
+    DeleteAsignacionServicioResponsableCommand,
+    UpdateAsignacionServicioResponsableCommand,
+)
 from app.application.servicios.commands.create_factura_servicio import (
     CreateFacturaServicioCommand,
 )
@@ -38,6 +49,13 @@ from app.application.servicios.commands.delete_servicio import DeleteServicioCom
 from app.application.servicios.commands.update_servicio import UpdateServicioCommand
 from app.application.servicios.services.create_factura_servicio_service import (
     CreateFacturaServicioService,
+)
+from app.application.servicios.services.asignacion_servicio_responsable_service import (
+    CreateAsignacionServicioResponsableService,
+    DeleteAsignacionServicioResponsableService,
+    GetAsignacionServicioResponsableService,
+    GetAsignacionesServicioResponsableService,
+    UpdateAsignacionServicioResponsableService,
 )
 from app.application.servicios.services.create_servicio_service import (
     CreateServicioService,
@@ -340,6 +358,221 @@ def get_facturas_servicio(
 
     return FacturaServicioListResponse(
         data=[FacturaServicioData(**item) for item in result.data]
+    )
+
+
+def _asignacion_error_response(result_errors: list[str]) -> JSONResponse:
+    if any(error in result_errors for error in ("NOT_FOUND_SERVICIO", "NOT_FOUND_PERSONA")):
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="El servicio o la persona indicada no existe o no esta activa.",
+            details={"errors": result_errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    if "NOT_FOUND_ASIGNACION_SERVICIO_RESPONSABLE" in result_errors:
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="La asignacion indicada no existe.",
+            details={"errors": result_errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    if "CONCURRENCY_ERROR" in result_errors:
+        error = ErrorResponse(
+            error_code="CONCURRENCY_ERROR",
+            error_message="If-Match-Version es requerido y debe coincidir con version_registro.",
+            details={"errors": result_errors},
+        )
+        return JSONResponse(status_code=409, content=error.model_dump())
+
+    if any(error in result_errors for error in ("SERVICIO_NO_ASOCIADO", "RESPONSABLE_SERVICIO_AMBIGUO")):
+        error = ErrorResponse(
+            error_code=result_errors[0],
+            error_message="La asignacion de responsable de servicio es inconsistente.",
+            details={"errors": result_errors},
+        )
+        return JSONResponse(status_code=409, content=error.model_dump())
+
+    error = ErrorResponse(
+        error_code="APPLICATION_ERROR",
+        error_message="No se pudo procesar la asignacion de responsable de servicio.",
+        details={"errors": result_errors},
+    )
+    return JSONResponse(status_code=400, content=error.model_dump())
+
+
+@router.post(
+    "/api/v1/asignaciones-servicio-responsable",
+    status_code=201,
+    response_model=AsignacionServicioResponsableResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def create_asignacion_servicio_responsable(
+    request: AsignacionServicioResponsableRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> AsignacionServicioResponsableResponse | JSONResponse:
+    context = _build_servicio_context(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    command = CreateAsignacionServicioResponsableCommand(
+        context=context,
+        id_servicio=request.id_servicio,
+        id_inmueble=request.id_inmueble,
+        id_unidad_funcional=request.id_unidad_funcional,
+        id_persona=request.id_persona,
+        porcentaje_responsabilidad=request.porcentaje_responsabilidad,
+        fecha_desde=request.fecha_desde,
+        fecha_hasta=request.fecha_hasta,
+        estado_asignacion=request.estado_asignacion,
+        observaciones=request.observaciones,
+    )
+    service = CreateAsignacionServicioResponsableService(repository=ServicioRepository(db))
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+    if not result.success or result.data is None:
+        return _asignacion_error_response(result.errors)
+    return AsignacionServicioResponsableResponse(data=AsignacionServicioResponsableData(**result.data))
+
+
+@router.get(
+    "/api/v1/asignaciones-servicio-responsable/{id_asignacion_servicio_responsable}",
+    response_model=AsignacionServicioResponsableResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_asignacion_servicio_responsable(
+    id_asignacion_servicio_responsable: int,
+    db: Session = Depends(get_db),
+) -> AsignacionServicioResponsableResponse | JSONResponse:
+    service = GetAsignacionServicioResponsableService(repository=ServicioRepository(db))
+    try:
+        result = service.execute(id_asignacion_servicio_responsable)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+    if not result.success or result.data is None:
+        return _asignacion_error_response(result.errors)
+    return AsignacionServicioResponsableResponse(data=AsignacionServicioResponsableData(**result.data))
+
+
+@router.get(
+    "/api/v1/asignaciones-servicio-responsable",
+    response_model=AsignacionServicioResponsableListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def get_asignaciones_servicio_responsable(
+    db: Session = Depends(get_db),
+) -> AsignacionServicioResponsableListResponse | JSONResponse:
+    service = GetAsignacionesServicioResponsableService(repository=ServicioRepository(db))
+    try:
+        result = service.execute()
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+    return AsignacionServicioResponsableListResponse(
+        data=[AsignacionServicioResponsableData(**item) for item in (result.data or [])]
+    )
+
+
+@router.put(
+    "/api/v1/asignaciones-servicio-responsable/{id_asignacion_servicio_responsable}",
+    response_model=AsignacionServicioResponsableResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def update_asignacion_servicio_responsable(
+    id_asignacion_servicio_responsable: int,
+    request: AsignacionServicioResponsableRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> AsignacionServicioResponsableResponse | JSONResponse:
+    try:
+        parsed_version = int(if_match_version) if if_match_version is not None else None
+    except ValueError:
+        parsed_version = None
+    context = _build_servicio_context(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    command = UpdateAsignacionServicioResponsableCommand(
+        context=context,
+        id_asignacion_servicio_responsable=id_asignacion_servicio_responsable,
+        if_match_version=parsed_version,
+        id_servicio=request.id_servicio,
+        id_inmueble=request.id_inmueble,
+        id_unidad_funcional=request.id_unidad_funcional,
+        id_persona=request.id_persona,
+        porcentaje_responsabilidad=request.porcentaje_responsabilidad,
+        fecha_desde=request.fecha_desde,
+        fecha_hasta=request.fecha_hasta,
+        estado_asignacion=request.estado_asignacion,
+        observaciones=request.observaciones,
+    )
+    service = UpdateAsignacionServicioResponsableService(repository=ServicioRepository(db))
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+    if not result.success or result.data is None:
+        return _asignacion_error_response(result.errors)
+    return AsignacionServicioResponsableResponse(data=AsignacionServicioResponsableData(**result.data))
+
+
+@router.patch(
+    "/api/v1/asignaciones-servicio-responsable/{id_asignacion_servicio_responsable}/baja",
+    response_model=AsignacionServicioResponsableBajaResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def delete_asignacion_servicio_responsable(
+    id_asignacion_servicio_responsable: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> AsignacionServicioResponsableBajaResponse | JSONResponse:
+    try:
+        parsed_version = int(if_match_version) if if_match_version is not None else None
+    except ValueError:
+        parsed_version = None
+    context = _build_servicio_context(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    command = DeleteAsignacionServicioResponsableCommand(
+        context=context,
+        id_asignacion_servicio_responsable=id_asignacion_servicio_responsable,
+        if_match_version=parsed_version,
+    )
+    service = DeleteAsignacionServicioResponsableService(repository=ServicioRepository(db))
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+    if not result.success or result.data is None:
+        return _asignacion_error_response(result.errors)
+    return AsignacionServicioResponsableBajaResponse(
+        data=AsignacionServicioResponsableBajaData(**result.data)
     )
 
 

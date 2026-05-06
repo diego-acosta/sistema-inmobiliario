@@ -264,9 +264,50 @@ Motivos:
 - evita crear una entidad intermedia de servicio facturable
 - encaja con el modelo actual de `relacion_generadora(tipo_origen, id_origen)`
 
-La relacion por servicio asociado a inmueble o unidad funcional queda como
-posible evolucion futura. Expensas e impuestos trasladados no se implementan en
-este bloque.
+### Responsables De Servicios Trasladados
+
+Decision V1 implementada en inmobiliario: el responsable de `SERVICIO_TRASLADADO` no se
+resuelve rigidamente desde alquiler, venta u ocupacion, ni mediante
+`relacion_persona_rol` como solucion final. La fuente de resolucion sera la
+entidad inmobiliaria especifica `asignacion_servicio_responsable`.
+
+Modelo conceptual:
+
+`servicio`
+-> `inmueble_servicio` / `unidad_funcional_servicio`
+-> `asignacion_servicio_responsable`
+-> `factura_servicio`
+-> `relacion_generadora FACTURA_SERVICIO`
+-> `obligacion_financiera SERVICIO_TRASLADADO`
+-> `obligacion_obligado`
+
+Reglas de materializacion V1:
+
+- `asignacion_servicio_responsable` se vincula por `id_servicio` + `id_inmueble`
+  o `id_unidad_funcional`.
+- No se vincula por FK directa a `inmueble_servicio` ni a
+  `unidad_funcional_servicio`.
+- `id_persona` y `porcentaje_responsabilidad` son obligatorios.
+- Para el servicio + objeto + periodo de la factura, los porcentajes activos
+  aplicables deben sumar 100%.
+- Si no hay responsable vigente, la generacion financiera debe devolver
+  `OBLIGADO_NO_RESUELTO`.
+- Si existen responsables inconsistentes, debe devolver
+  `RESPONSABLE_SERVICIO_AMBIGUO`.
+- Si la factura cruza un cambio de responsable, debe devolver
+  `FACTURA_CRUZA_CAMBIO_RESPONSABLE`.
+- V1 no prorratea por cambio de responsable dentro del periodo de factura.
+- V1 no usa composiciones negativas ni saldos a favor en este bloque.
+
+Al crear la obligacion, financiero materializara una fila en
+`obligacion_obligado` por responsable aplicable, copiando `id_persona` y
+`porcentaje_responsabilidad` desde `asignacion_servicio_responsable`.
+
+Estado V1: `asignacion_servicio_responsable` tiene SQL/API/backend inmobiliario.
+La generacion financiera de `SERVICIO_TRASLADADO` desde una `factura_servicio`
+sigue pendiente.
+
+Expensas e impuestos trasladados no se implementan en este bloque.
 
 ---
 
