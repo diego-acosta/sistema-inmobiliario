@@ -431,6 +431,14 @@ SRV-FIN-012
 - si la factura cruza cambio de responsable: `FACTURA_CRUZA_CAMBIO_RESPONSABLE`
 - V1 no prorratea por cambio de responsable, no usa composiciones negativas ni saldos a favor en este bloque
 - la habilitacion estructural de `FACTURA_SERVICIO` en `relacion_generadora` esta implementada; la generacion explicita de obligacion esta implementada en `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar`
+- `DIRECTO_RESPONSABLE` usa `SERVICIO_TRASLADADO` y puede registrar
+  `PAGO_EXTERNO_INFORMADO` solo si existe un responsable unico 100%
+- `EMPRESA_PAGA_Y_RECUPERA` no usa `PAGO_EXTERNO_INFORMADO`: la empresa paga
+  al proveedor por caja/tesoreria y luego genera una obligacion de recupero
+  contra personas
+- para V1 de servicios comunes recuperados se recomienda el concepto
+  `SERVICIO_RECUPERADO`; `EXPENSA_TRASLADADA` queda reservado para expensas
+  formales e `IMPUESTO_TRASLADADO` para impuestos
 - no existe evento ni consumer automatico para `factura_servicio_registrada`
 
 ### Personas

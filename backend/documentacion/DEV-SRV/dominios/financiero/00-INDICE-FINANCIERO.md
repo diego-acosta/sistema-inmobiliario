@@ -33,6 +33,8 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
 - [[SRV-FIN-014-plan-financiero-venta]]
 - [[SRV-FIN-015-plan-financiero-locativo]]
   - Cronograma mensual implementado para `CANON_LOCATIVO`
+- [[SRV-FIN-020-recupero-servicios-comunes]]
+  - Diseno V1 de `EMPRESA_PAGA_Y_RECUPERA`
 
 ## Notas
 - Este dominio se está refactorizando desde el DEV-SRV-001 legado hacia una estructura modular.

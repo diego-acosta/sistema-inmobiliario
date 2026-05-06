@@ -115,8 +115,10 @@ Resultado:
 - tabla para vínculo 1:N de reemplazos si se requiere
 - servicios comunes o compartidos bajo decision `EMPRESA_PAGA_Y_RECUPERA`:
   quedan fuera del cierre locativo V1 y requieren diseno propio de egreso al
-  proveedor, recupero a responsables y concepto financiero definitivo
-  (`EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro)
+  proveedor, recupero a responsables y concepto financiero de recupero. El
+  diseno V1 posterior recomienda `SERVICIO_RECUPERADO` para servicios comunes,
+  reserva `EXPENSA_TRASLADADA` para expensas formales y `IMPUESTO_TRASLADADO`
+  para impuestos.
 
 ---
 
@@ -130,5 +132,6 @@ Resultado:
 - `PAGO_EXTERNO_INFORMADO` de `factura_servicio` no forma parte del cobro
   locativo normal y solo corresponde al escenario `DIRECTO_RESPONSABLE`
   documentado para servicios trasladados. Facturas repartidas o comunes quedan
-  bajo `EMPRESA_PAGA_Y_RECUPERA`, pendiente de diseno/automatizacion.
+  bajo `EMPRESA_PAGA_Y_RECUPERA`, con diseno V1 documentado y automatizacion
+  pendiente.
 

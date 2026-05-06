@@ -39,6 +39,22 @@ Administra el alta, actualización, activación, desactivación y consulta de cu
 ### Movimiento de tesorería
 Registra ingresos, egresos, ajustes, depósitos, devoluciones y reversiones sobre dinero real administrado por cuentas financieras.
 
+### Egreso proveedor por recupero de servicios comunes
+En el diseno V1 de `EMPRESA_PAGA_Y_RECUPERA`, cuando la empresa/inmobiliaria
+paga una factura externa al proveedor, ese hecho representa un egreso real y
+pertenece al circuito de caja/tesoreria.
+
+Ese egreso es distinto de:
+
+- `PAGO_EXTERNO_INFORMADO`, que solo informa que un responsable 100% pago
+  directamente al proveedor y no impacta caja/tesoreria de la empresa;
+- el recupero posterior, que genera deuda contra personas y luego se cobra por
+  el flujo normal de pagos financieros.
+
+La implementacion concreta del egreso proveedor, su vinculacion con
+`factura_servicio` y su eventual reversion quedan pendientes del flujo
+`SRV-FIN-020-recupero-servicios-comunes`.
+
 ### Gestión de garantías monetarias
 Registra depósitos en garantía, su afectación, liberación, devolución parcial o total y eventual ejecución conforme a la política funcional.
 
@@ -190,6 +206,7 @@ Permite visualizar cuentas, movimientos, saldos, garantías y conciliaciones con
 - [[SRV-FIN-007-simulacion-y-registro-de-pago]]
 - [[SRV-FIN-008-gestion-de-imputacion-financiera]]
 - [[SRV-FIN-009-gestion-de-mora-creditos-y-debitos]]
+- [[SRV-FIN-020-recupero-servicios-comunes]]
 - [[RN-FIN]]
 - [[ERR-FIN]]
 - DER financiero

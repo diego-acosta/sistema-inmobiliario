@@ -135,7 +135,10 @@ Resultado:
 - Evento automático `factura_servicio_registrada`.
 - Consumer financiero automático para `factura_servicio`.
 - Recibos/reportes específicos de pagos externos.
-- Definir concepto futuro de recupero (`EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro).
+- Implementar recupero `EMPRESA_PAGA_Y_RECUPERA`; el diseno V1 posterior
+  recomienda `SERVICIO_RECUPERADO` para servicios comunes recuperados,
+  reservando `EXPENSA_TRASLADADA` para expensas formales e
+  `IMPUESTO_TRASLADADO` para impuestos.
 
 ## Decisión De Cierre
 

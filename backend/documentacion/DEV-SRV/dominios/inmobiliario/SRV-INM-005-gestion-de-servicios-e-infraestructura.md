@@ -39,9 +39,9 @@
 - evento `factura_servicio_registrada`: `NO IMPLEMENTADO`
 - consumer/evento automatico para generar obligacion derivada de una factura de servicio externa: `NO IMPLEMENTADO`
 - flujo `EMPRESA_PAGA_Y_RECUPERA` para facturas comunes, compartidas,
-  porcentuales o repartidas: `PENDIENTE`. Requiere diseno propio de recupero
-  financiero/operativo; la automatizacion desde una factura pagada por la
-  empresa no esta implementada.
+  porcentuales o repartidas: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`.
+  Requiere egreso proveedor, liquidacion de recupero, reglas de reparto y
+  generacion financiera de recupero; ver `SRV-FIN-020`.
 
 ## Registro de facturas externas de servicios (V1 IMPLEMENTADO)
 
@@ -84,8 +84,10 @@ V1 distingue dos escenarios:
   correspondiente.
 - la obligacion de recupero representa deuda con la empresa, no pago al
   proveedor.
-- el concepto financiero de recupero queda pendiente de decision
-  (`EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro).
+- el concepto financiero recomendado para V1 es `SERVICIO_RECUPERADO`.
+- `EXPENSA_TRASLADADA` queda reservado para expensas formalmente liquidadas,
+  `IMPUESTO_TRASLADADO` para impuestos y `CARGO_RECUPERO` como posible
+  alternativa generica futura.
 - en V1 la generacion de recupero es manual/controlada; la automatizacion desde
   una factura pagada queda pendiente.
 
@@ -213,7 +215,9 @@ Su funcion es definir quien responde por un servicio trasladado sobre un inmuebl
 - si la factura es comun, compartida, porcentual o repartida, no corresponde
   usar `PAGO_EXTERNO_INFORMADO` por persona. La decision operativa es
   `EMPRESA_PAGA_Y_RECUPERA`: la empresa paga al proveedor y luego genera una
-  obligacion de recupero por la parte correspondiente.
+  obligacion de recupero por la parte correspondiente. El diseno financiero V1
+  recomienda `SERVICIO_RECUPERADO` como concepto para servicios comunes
+  recuperados, sin implementarlo todavia.
 - expensas e impuestos no se implementan en este bloque.
 - esta decision esta implementada mediante endpoint financiero explicito; la generacion automatica por evento/consumer sigue pendiente.
 

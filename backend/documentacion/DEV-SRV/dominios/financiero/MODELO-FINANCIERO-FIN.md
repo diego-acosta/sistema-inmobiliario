@@ -399,12 +399,17 @@ Decision:
   interpretarse como porcentaje que cada persona paga directamente al proveedor.
 - si una factura requiere reparto, no corresponde registrar
   `PAGO_EXTERNO_INFORMADO` por cada persona.
-- el concepto financiero de recupero queda pendiente de decision:
-  `EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro.
+- el concepto financiero recomendado para V1 de servicios comunes es
+  `SERVICIO_RECUPERADO`.
+- `EXPENSA_TRASLADADA` queda reservado para una futura liquidacion formal de
+  expensas; `IMPUESTO_TRASLADADO` para impuestos; `CARGO_RECUPERO` queda como
+  alternativa generica futura si se decide unificar recuperos heterogeneos.
 - en V1 la generacion de recupero es manual/controlada; la automatizacion desde
   una factura pagada queda pendiente.
 
 Expensas e impuestos trasladados no se implementan en este bloque.
+El diseno de este circuito queda documentado en
+`SRV-FIN-020-recupero-servicios-comunes`.
 
 ---
 
