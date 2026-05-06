@@ -572,6 +572,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
+### RN-FIN-082B - Pago externo informado de factura_servicio
+- descripcion: Cuando el responsable paga una factura de servicio directamente al proveedor, financiero puede registrar un pago externo informado contra la obligacion `SERVICIO_TRASLADADO` materializada. Reduce saldos mediante `aplicacion_financiera`, pero no representa ingreso ni egreso de caja de la inmobiliaria.
+- aplica_a: factura_servicio, relacion_generadora, obligacion_financiera, composicion_obligacion, movimiento_financiero, aplicacion_financiera
+- origen_principal: MODELO-FINANCIERO-FIN / SRV-INM-005
+- estado: IMPLEMENTADA V1 en `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/pago-externo`.
+- observaciones: usa `PAGO_EXTERNO_INFORMADO` como `tipo_movimiento` y `tipo_aplicacion`; no crea `movimiento_tesoreria`, movimiento de caja, `codigo_pago_grupo` ni recibo/constancia interna de cobro. Si no hay saldo de `SERVICIO_TRASLADADO`, devuelve `SIN_SALDO_APLICABLE`. La idempotencia por `X-Op-Id` compara payload y devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT` si difiere.
+
 ### RN-FIN-083 - Reversion completa de pago agrupado
 - descripcion: La reversion V1 de un pago debe operar siempre por `codigo_pago_grupo` completo. Solo se permite si no existen operaciones posteriores activas sobre las obligaciones o composiciones afectadas. Debe marcar los movimientos `PAGO` como `ANULADO`, soft-deletear sus aplicaciones para excluirlas de saldos y registrar el motivo de reversion en campos de observaciones disponibles.
 - aplica_a: movimiento_financiero, aplicacion_financiera, obligacion_financiera

@@ -345,6 +345,28 @@ def _materializar(client, id_factura: int):
     )
 
 
+def _pago_externo(
+    client,
+    id_factura: int,
+    *,
+    importe: float = 25000.00,
+    headers: dict | None = None,
+    referencia: str = "Comprobante proveedor 123456",
+    observaciones: str = "Pagado directamente por el responsable al proveedor",
+):
+    return client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/pago-externo",
+        headers=headers or HEADERS,
+        json={
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": importe,
+            "referencia_pago": referencia,
+            "medio_pago_externo": "PAGO_DIRECTO_PROVEEDOR",
+            "observaciones": observaciones,
+        },
+    )
+
+
 def test_materializar_factura_servicio_responsable_100_crea_relacion_obligacion_composicion_y_obligado(
     client, db_session
 ) -> None:
@@ -493,6 +515,237 @@ def test_materializar_factura_servicio_retry_no_duplica_relacion_ni_obligacion(
     ).mappings().one()
     assert counts["relaciones"] == 1
     assert counts["obligaciones"] == 1
+
+
+def test_pago_externo_factura_servicio_total_cancela_obligacion(client, db_session) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="010"
+    )
+    mat = _materializar(client, id_factura)
+    assert mat.status_code == 201, mat.text
+
+    response = _pago_externo(client, id_factura)
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["id_factura_servicio"] == id_factura
+    assert data["id_relacion_generadora"] == mat.json()["data"]["id_relacion_generadora"]
+    assert data["id_obligacion_financiera"] == mat.json()["data"]["id_obligacion_financiera"]
+    assert data["monto_ingresado"] == 25000.0
+    assert data["monto_aplicado"] == 25000.0
+    assert data["remanente_no_aplicado"] == 0.0
+    assert data["estado_obligacion_resultante"] == "CANCELADA"
+    assert data["impacta_caja"] is False
+    assert data["genera_recibo_interno"] is False
+
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                o.estado_obligacion,
+                o.saldo_pendiente,
+                co.saldo_componente,
+                m.tipo_movimiento,
+                m.codigo_pago_grupo,
+                a.tipo_aplicacion
+            FROM obligacion_financiera o
+            JOIN composicion_obligacion co ON co.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN aplicacion_financiera a ON a.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN movimiento_financiero m ON m.id_movimiento_financiero = a.id_movimiento_financiero
+            WHERE o.id_obligacion_financiera = :id
+            """
+        ),
+        {"id": data["id_obligacion_financiera"]},
+    ).mappings().one()
+    assert row["estado_obligacion"] == "CANCELADA"
+    assert float(row["saldo_pendiente"]) == 0.0
+    assert float(row["saldo_componente"]) == 0.0
+    assert row["tipo_movimiento"] == "PAGO_EXTERNO_INFORMADO"
+    assert row["tipo_aplicacion"] == "PAGO_EXTERNO_INFORMADO"
+    assert row["codigo_pago_grupo"] is None
+
+    estado = client.get(f"/api/v1/financiero/personas/{id_persona}/estado-cuenta")
+    assert estado.status_code == 200, estado.text
+    assert estado.json()["data"]["resumen"]["saldo_total"] == 0.0
+
+
+def test_pago_externo_factura_servicio_parcial_reduce_saldo_y_estado_cuenta(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="011"
+    )
+    mat = _materializar(client, id_factura)
+    assert mat.status_code == 201, mat.text
+
+    response = _pago_externo(client, id_factura, importe=10000.00)
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["monto_aplicado"] == 10000.0
+    assert data["remanente_no_aplicado"] == 0.0
+    assert data["estado_obligacion_resultante"] == "PARCIALMENTE_CANCELADA"
+    saldo = db_session.execute(
+        text(
+            """
+            SELECT saldo_pendiente
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
+            """
+        ),
+        {"id": data["id_obligacion_financiera"]},
+    ).scalar_one()
+    assert float(saldo) == 15000.0
+
+    estado = client.get(f"/api/v1/financiero/personas/{id_persona}/estado-cuenta")
+    assert estado.status_code == 200, estado.text
+    resumen = estado.json()["data"]["resumen"]
+    assert resumen["saldo_total"] == 15000.0
+    assert resumen["saldo_trasladados"] == 15000.0
+
+
+def test_pago_externo_factura_servicio_excedente_devuelve_remanente(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="012"
+    )
+    mat = _materializar(client, id_factura)
+    assert mat.status_code == 201, mat.text
+
+    response = _pago_externo(client, id_factura, importe=30000.00)
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["monto_ingresado"] == 30000.0
+    assert data["monto_aplicado"] == 25000.0
+    assert data["remanente_no_aplicado"] == 5000.0
+    assert data["estado_obligacion_resultante"] == "CANCELADA"
+
+
+def test_pago_externo_factura_servicio_no_materializada_devuelve_error(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="013"
+    )
+
+    response = _pago_externo(client, id_factura)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "FACTURA_SERVICIO_NO_MATERIALIZADA"
+
+
+def test_pago_externo_factura_servicio_sin_saldo_aplicable_devuelve_error(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="014"
+    )
+    assert _materializar(client, id_factura).status_code == 201
+    first = _pago_externo(client, id_factura)
+    assert first.status_code == 201, first.text
+
+    response = _pago_externo(
+        client,
+        id_factura,
+        headers={
+            **HEADERS,
+            "X-Op-Id": "77777777-7777-4777-8777-777777777714",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "SIN_SALDO_APLICABLE"
+
+
+def test_pago_externo_factura_servicio_no_crea_tesoreria_ni_recibo_interno(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="015"
+    )
+    assert _materializar(client, id_factura).status_code == 201
+    tesoreria_antes = db_session.execute(
+        text("SELECT COUNT(*) FROM movimiento_tesoreria")
+    ).scalar_one()
+
+    response = _pago_externo(client, id_factura)
+
+    assert response.status_code == 201, response.text
+    tesoreria_despues = db_session.execute(
+        text("SELECT COUNT(*) FROM movimiento_tesoreria")
+    ).scalar_one()
+    assert tesoreria_despues == tesoreria_antes
+    movimiento = db_session.execute(
+        text(
+            """
+            SELECT codigo_pago_grupo
+            FROM movimiento_financiero
+            WHERE id_movimiento_financiero = :id
+            """
+        ),
+        {"id": response.json()["data"]["id_movimiento_financiero"]},
+    ).mappings().one()
+    assert movimiento["codigo_pago_grupo"] is None
+    pagos = client.get(f"/api/v1/financiero/personas/{id_persona}/pagos")
+    assert pagos.status_code == 200, pagos.text
+    assert pagos.json()["data"] == []
+
+
+def test_pago_externo_factura_servicio_retry_mismo_op_id_no_duplica(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="016"
+    )
+    assert _materializar(client, id_factura).status_code == 201
+    headers = {
+        **HEADERS,
+        "X-Op-Id": "77777777-7777-4777-8777-777777777716",
+    }
+
+    first = _pago_externo(client, id_factura, importe=10000.00, headers=headers)
+    second = _pago_externo(client, id_factura, importe=10000.00, headers=headers)
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["data"]["id_movimiento_financiero"] == first.json()["data"][
+        "id_movimiento_financiero"
+    ]
+    count = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM movimiento_financiero
+            WHERE tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+              AND op_id_alta = CAST(:op_id AS uuid)
+              AND deleted_at IS NULL
+            """
+        ),
+        {"op_id": headers["X-Op-Id"]},
+    ).scalar_one()
+    assert count == 1
+
+
+def test_pago_externo_factura_servicio_mismo_op_id_payload_distinto_conflicto(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="017"
+    )
+    assert _materializar(client, id_factura).status_code == 201
+    headers = {
+        **HEADERS,
+        "X-Op-Id": "77777777-7777-4777-8777-777777777717",
+    }
+    first = _pago_externo(client, id_factura, importe=10000.00, headers=headers)
+    assert first.status_code == 201, first.text
+
+    response = _pago_externo(client, id_factura, importe=12000.00, headers=headers)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
 
 
 def test_materializar_factura_servicio_sin_responsable_devuelve_obligado_no_resuelto(

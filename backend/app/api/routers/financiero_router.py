@@ -36,6 +36,9 @@ from app.api.schemas.financiero import (
     EstadoCuentaPersonaResponse,
     EstadoCuentaResponse,
     PagoObligacionResultado,
+    PagoExternoFacturaServicioData,
+    PagoExternoFacturaServicioRequest,
+    PagoExternoFacturaServicioResponse,
     PagoAgrupadoPersonaItem,
     PagoAgrupadoPersonaListResponse,
     PagoAgrupadoDetalleResponse,
@@ -151,6 +154,9 @@ from app.application.financiero.services.list_relaciones_generadoras_service imp
 )
 from app.application.financiero.services.materializar_factura_servicio_service import (
     MaterializarFacturaServicioService,
+)
+from app.application.financiero.services.registrar_pago_externo_factura_servicio_service import (
+    RegistrarPagoExternoFacturaServicioService,
 )
 from app.application.financiero.services.regenerar_cronograma_locativo_service import (
     RegenerarCronogramaLocativoService,
@@ -444,6 +450,91 @@ def materializar_factura_servicio(
         data=MaterializarFacturaServicioData(**result.data)
     )
     if result.data["resultado"] == "YA_MATERIALIZADA":
+        return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+    return response
+
+
+@router.post(
+    "/api/v1/financiero/facturas-servicio/{id_factura_servicio}/pago-externo",
+    status_code=201,
+    response_model=PagoExternoFacturaServicioResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def registrar_pago_externo_factura_servicio(
+    id_factura_servicio: int,
+    request: PagoExternoFacturaServicioRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> PagoExternoFacturaServicioResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = RegistrarPagoExternoFacturaServicioService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_factura_servicio=id_factura_servicio,
+            fecha_pago=request.fecha_pago,
+            importe_pagado=request.importe_pagado,
+            referencia_pago=request.referencia_pago,
+            medio_pago_externo=request.medio_pago_externo,
+            observaciones=request.observaciones,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_FACTURA_SERVICIO" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La factura de servicio indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        conflict_errors = {
+            "FACTURA_SERVICIO_NO_ACTIVA",
+            "FACTURA_SERVICIO_NO_MATERIALIZADA",
+            "IDEMPOTENCY_PAYLOAD_CONFLICT",
+            "SIN_SALDO_APLICABLE",
+        }
+        for code in conflict_errors:
+            if code in result.errors:
+                return JSONResponse(
+                    status_code=409,
+                    content=ErrorResponse(
+                        error_code=code,
+                        error_message="No se pudo registrar el pago externo informado.",
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudo registrar el pago externo informado.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    response = PagoExternoFacturaServicioResponse(
+        data=PagoExternoFacturaServicioData(**result.data)
+    )
+    if result.data.get("resultado") == "YA_REGISTRADO":
         return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
     return response
 

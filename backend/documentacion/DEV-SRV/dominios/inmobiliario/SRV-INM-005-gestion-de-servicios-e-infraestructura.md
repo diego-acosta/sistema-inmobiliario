@@ -99,6 +99,11 @@ El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotent
   (`periodo_desde` y `periodo_hasta`). Si falta alguno, devuelve
   `PERIODO_FACTURA_REQUERIDO` y no crea `relacion_generadora`,
   `obligacion_financiera`, `composicion_obligacion` ni `obligacion_obligado`.
+- existe registro financiero de pago externo informado:
+  `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/pago-externo`.
+  Este flujo informa que el responsable pago directamente al proveedor y reduce
+  o cancela `SERVICIO_TRASLADADO`; no es cobro de la inmobiliaria, no genera
+  caja, tesoreria ni constancia interna de cobro.
 
 ## Asignacion de responsables de servicios trasladados (IMPLEMENTADO V1)
 
@@ -156,6 +161,9 @@ Su funcion es definir quien responde por un servicio trasladado sobre un inmuebl
 - decision V1: la obligacion derivada usa el concepto financiero `SERVICIO_TRASLADADO`.
 - motivo: idempotencia directa por factura, trazabilidad simple factura -> obligacion, sin entidad intermedia de servicio facturable y alineado con el modelo actual de `relacion_generadora`.
 - la resolucion de responsables para V1 se apoya en la entidad especifica `asignacion_servicio_responsable`.
+- si el responsable paga directamente al proveedor, financiero puede registrar
+  `PAGO_EXTERNO_INFORMADO` contra la obligacion materializada; inmobiliario no
+  registra pagos, caja ni recibos.
 - expensas e impuestos no se implementan en este bloque.
 - esta decision esta implementada mediante endpoint financiero explicito; la generacion automatica por evento/consumer sigue pendiente.
 

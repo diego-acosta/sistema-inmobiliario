@@ -1351,6 +1351,34 @@ class FinancieroRepository:
         )
         return [dict(r) for r in rows]
 
+    def get_composicion_servicio_trasladado_con_saldo(
+        self, id_obligacion_financiera: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                c.id_obligacion_financiera,
+                c.orden_composicion,
+                c.importe_componente,
+                c.saldo_componente,
+                cf.codigo_concepto_financiero
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND c.estado_composicion_obligacion = 'ACTIVA'
+              AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
+              AND cf.codigo_concepto_financiero = 'SERVICIO_TRASLADADO'
+              AND c.saldo_componente > 0
+            ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_obligacion_financiera}).mappings().one_or_none()
+        return dict(row) if row else None
+
     def create_imputacion(self, payload: Any) -> dict[str, Any]:
         mov = payload.movimiento
         mov_values = self._values(mov)
@@ -2390,6 +2418,203 @@ class FinancieroRepository:
                 if all(row["estado_movimiento"] == "ANULADO" for row in rows)
                 else "APLICADO"
             ),
+        }
+
+    def get_pago_externo_factura_servicio_by_op_id(
+        self, *, op_id: Any
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                m.id_movimiento_financiero,
+                m.fecha_movimiento,
+                m.importe AS monto_aplicado,
+                m.observaciones,
+                a.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                o.estado_obligacion AS estado_obligacion_resultante
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = a.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            WHERE m.op_id_alta = :op_id
+              AND m.tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+              AND m.deleted_at IS NULL
+            ORDER BY m.id_movimiento_financiero ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
+        if row is None:
+            return None
+
+        payload = None
+        if row["observaciones"]:
+            try:
+                parsed = json.loads(row["observaciones"])
+                if parsed.get("tipo") == "pago_externo_factura_servicio":
+                    payload = parsed
+            except (TypeError, ValueError):
+                payload = None
+
+        id_factura_servicio = (
+            int(payload["id_factura_servicio"])
+            if payload is not None and "id_factura_servicio" in payload
+            else None
+        )
+        monto_ingresado = (
+            payload["importe_pagado"]
+            if payload is not None and "importe_pagado" in payload
+            else row["monto_aplicado"]
+        )
+        remanente = (
+            payload["remanente_no_aplicado"]
+            if payload is not None and "remanente_no_aplicado" in payload
+            else 0
+        )
+        return {
+            "id_factura_servicio": id_factura_servicio,
+            "id_relacion_generadora": row["id_relacion_generadora"],
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "id_movimiento_financiero": row["id_movimiento_financiero"],
+            "monto_ingresado": float(monto_ingresado),
+            "monto_aplicado": float(row["monto_aplicado"]),
+            "remanente_no_aplicado": float(remanente),
+            "estado_obligacion_resultante": row["estado_obligacion_resultante"],
+            "impacta_caja": False,
+            "genera_recibo_interno": False,
+            "payload_idempotencia": payload,
+        }
+
+    def registrar_pago_externo_factura_servicio(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        mov_stmt = text(
+            """
+            INSERT INTO movimiento_financiero (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                fecha_movimiento, tipo_movimiento, importe, signo, estado_movimiento,
+                observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :fecha_movimiento, :tipo_movimiento, :importe, :signo,
+                :estado_movimiento, :observaciones
+            )
+            RETURNING id_movimiento_financiero
+            """
+        )
+        aplic_stmt = text(
+            """
+            INSERT INTO aplicacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_movimiento_financiero, id_obligacion_financiera,
+                id_composicion_obligacion, fecha_aplicacion,
+                tipo_aplicacion, orden_aplicacion, importe_aplicado,
+                origen_automatico_o_manual, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_movimiento_financiero, :id_obligacion_financiera,
+                :id_composicion_obligacion, :fecha_aplicacion,
+                :tipo_aplicacion, :orden_aplicacion, :importe_aplicado,
+                :origen_automatico_o_manual, :observaciones
+            )
+            RETURNING id_aplicacion_financiera
+            """
+        )
+        estado_stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = CASE
+                    WHEN saldo_pendiente = 0             THEN 'CANCELADA'
+                    WHEN saldo_pendiente < importe_total THEN 'PARCIALMENTE_CANCELADA'
+                    ELSE estado_obligacion
+                END
+            WHERE id_obligacion_financiera = :id
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            RETURNING estado_obligacion, saldo_pendiente
+            """
+        )
+
+        mov_row = self.db.execute(
+            mov_stmt,
+            {
+                "uid_global": values["uid_global_movimiento"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "fecha_movimiento": datetime.combine(
+                    values["fecha_pago"], datetime.min.time()
+                ),
+                "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
+                "importe": values["monto_aplicado"],
+                "signo": "CREDITO",
+                "estado_movimiento": "APLICADO",
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+        id_movimiento = mov_row["id_movimiento_financiero"]
+
+        self.db.execute(
+            aplic_stmt,
+            {
+                "uid_global": values["uid_global_aplicacion"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_movimiento_financiero": id_movimiento,
+                "id_obligacion_financiera": values["id_obligacion_financiera"],
+                "id_composicion_obligacion": values["id_composicion_obligacion"],
+                "fecha_aplicacion": datetime.combine(
+                    values["fecha_pago"], datetime.min.time()
+                ),
+                "tipo_aplicacion": "PAGO_EXTERNO_INFORMADO",
+                "orden_aplicacion": 1,
+                "importe_aplicado": values["monto_aplicado"],
+                "origen_automatico_o_manual": "MANUAL",
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+
+        estado_row = self.db.execute(
+            estado_stmt,
+            {"id": values["id_obligacion_financiera"]},
+        ).mappings().one()
+
+        return {
+            "id_factura_servicio": values["id_factura_servicio"],
+            "id_relacion_generadora": values["id_relacion_generadora"],
+            "id_obligacion_financiera": values["id_obligacion_financiera"],
+            "id_movimiento_financiero": id_movimiento,
+            "monto_ingresado": float(values["monto_ingresado"]),
+            "monto_aplicado": float(values["monto_aplicado"]),
+            "remanente_no_aplicado": float(values["remanente_no_aplicado"]),
+            "estado_obligacion_resultante": estado_row["estado_obligacion"],
+            "impacta_caja": False,
+            "genera_recibo_interno": False,
         }
 
     def get_ultima_fecha_pago_posterior_vencimiento(

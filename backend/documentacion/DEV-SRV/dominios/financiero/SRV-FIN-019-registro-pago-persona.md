@@ -246,6 +246,23 @@ formal, por ejemplo `comprobante_pago` o `comprobante_financiero`, con
 numeracion, estado fiscal, anulacion, emision PDF e integracion fiscal si
 corresponde.
 
+## Diferencia Con Pago Externo Informado De Factura Servicio
+
+`POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/pago-externo`
+no es un cobro de la inmobiliaria. Registra que el responsable pago una factura
+de servicio directamente al proveedor externo.
+
+Diferencias principales:
+
+- usa `movimiento_financiero.tipo_movimiento = PAGO_EXTERNO_INFORMADO`
+- usa `aplicacion_financiera.tipo_aplicacion = PAGO_EXTERNO_INFORMADO`
+- aplica solo contra composicion `SERVICIO_TRASLADADO` con saldo
+- no liquida punitorio
+- no crea `movimiento_tesoreria` ni movimiento de caja
+- no asigna `uid_pago_grupo` ni `codigo_pago_grupo`
+- no aparece en `GET /api/v1/financiero/personas/{id_persona}/pagos`
+- no genera la vista de recibo/constancia interna de cobro
+
 ## Reversion V1 de pago agrupado
 
 Endpoint: `POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir`.

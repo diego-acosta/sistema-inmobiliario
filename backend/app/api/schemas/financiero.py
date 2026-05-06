@@ -172,6 +172,48 @@ class MaterializarFacturaServicioResponse(BaseModel):
     data: MaterializarFacturaServicioData
 
 
+class PagoExternoFacturaServicioRequest(BaseModel):
+    fecha_pago: date
+    importe_pagado: float
+    referencia_pago: str | None = None
+    medio_pago_externo: str
+    observaciones: str | None = None
+
+    @field_validator("importe_pagado")
+    @classmethod
+    def importe_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("importe_pagado debe ser mayor que cero.")
+        return v
+
+    @field_validator("medio_pago_externo")
+    @classmethod
+    def medio_not_blank(cls, v: str) -> str:
+        medio = v.strip()
+        if not medio:
+            raise ValueError("medio_pago_externo es obligatorio.")
+        return medio
+
+
+class PagoExternoFacturaServicioData(BaseModel):
+    resultado: str | None = None
+    id_factura_servicio: int
+    id_relacion_generadora: int
+    id_obligacion_financiera: int
+    id_movimiento_financiero: int
+    monto_ingresado: float
+    monto_aplicado: float
+    remanente_no_aplicado: float
+    estado_obligacion_resultante: str | None
+    impacta_caja: bool = False
+    genera_recibo_interno: bool = False
+
+
+class PagoExternoFacturaServicioResponse(BaseModel):
+    ok: bool = True
+    data: PagoExternoFacturaServicioData
+
+
 class AjusteIndexacionRequest(BaseModel):
     importe_ajuste: float
     motivo: str

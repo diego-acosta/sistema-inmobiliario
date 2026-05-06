@@ -121,6 +121,13 @@ obligacion afectada. Los movimientos generados por una misma operacion de pago
 comparten `uid_pago_grupo` y `codigo_pago_grupo`; esos campos son trazabilidad
 comun y no reemplazan las `aplicacion_financiera`.
 
+Para pago externo informado de `factura_servicio`, V1 usa
+`movimiento_financiero.tipo_movimiento = PAGO_EXTERNO_INFORMADO` y
+`aplicacion_financiera.tipo_aplicacion = PAGO_EXTERNO_INFORMADO`. Ese registro
+reduce o cancela `SERVICIO_TRASLADADO`, pero no representa cobro de la
+inmobiliaria: no crea movimiento de caja, no crea `movimiento_tesoreria`, no
+usa `codigo_pago_grupo` y no genera constancia interna de cobro.
+
 Implementado:
 
 - `POST /api/v1/financiero/imputaciones`
@@ -328,6 +335,34 @@ Al crear la obligacion, financiero materializara una fila en
 Estado V1: `asignacion_servicio_responsable` tiene SQL/API/backend inmobiliario.
 La generacion financiera de `SERVICIO_TRASLADADO` desde una `factura_servicio`
 esta implementada como endpoint financiero explicito y transaccional.
+
+### Pago Externo Informado De Factura De Servicio
+
+Endpoint implementado:
+
+`POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/pago-externo`
+
+Registra que el responsable pago la factura directamente al proveedor externo.
+No es ingreso ni egreso de caja de la inmobiliaria.
+
+Reglas V1:
+
+- La `factura_servicio` debe existir, estar activa y estar materializada.
+- Debe existir `relacion_generadora.tipo_origen = FACTURA_SERVICIO` para esa
+  factura.
+- Debe existir una `obligacion_financiera` activa asociada a la relacion.
+- Debe existir una composicion activa `SERVICIO_TRASLADADO` con saldo.
+- `importe_pagado` debe ser mayor a cero.
+- El pago se aplica hasta el saldo disponible de `SERVICIO_TRASLADADO`.
+- Si `importe_pagado` excede el saldo, se informa `remanente_no_aplicado`.
+- Si no hay saldo aplicable, devuelve `SIN_SALDO_APLICABLE`.
+- Crea `movimiento_financiero` y `aplicacion_financiera` con tipo
+  `PAGO_EXTERNO_INFORMADO`.
+- No crea `movimiento_tesoreria`, movimiento de caja ni recibo/constancia
+  interna de cobro.
+- No liquida punitorio, no revierte pagos, no toca cronograma ni indexacion.
+- Con `X-Op-Id`, un reintento con el mismo payload devuelve el resultado
+  existente; con payload distinto devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`.
 
 Expensas e impuestos trasladados no se implementan en este bloque.
 
