@@ -414,13 +414,13 @@ SRV-FIN-012
 - venta → relacion_generadora
 
 ### Inmobiliario
-- `factura_servicio` registrada como origen operativo pendiente -> relacion_generadora
+- `factura_servicio` registrada como origen operativo -> relacion_generadora
 - origen financiero V1: `relacion_generadora.tipo_origen = FACTURA_SERVICIO`
 - id origen V1: `relacion_generadora.id_origen = id_factura_servicio`
 - concepto de la obligacion derivada: `SERVICIO_TRASLADADO`
 - la factura la emite un proveedor externo; el sistema no factura servicios
 - la obligacion derivada se modela en financiero mediante relacion_generadora, obligacion_financiera y composicion_obligacion
-- requiere `factura_servicio` como origen externo registrado; la API/backend inmobiliaria V1 registra la factura externa, pero no existe evento ni consumer financiero
+- requiere `factura_servicio` como origen externo registrado; la API/backend inmobiliaria V1 registra la factura externa y financiero expone materializacion explicita
 - una `factura_servicio` no debe generar mas de una obligacion financiera activa
 - la creacion de `relacion_generadora` `FACTURA_SERVICIO` es idempotente por `id_factura_servicio`
 - decision V1: cada `factura_servicio` registrada -> 1 `relacion_generadora` propia -> 1 obligacion `SERVICIO_TRASLADADO`
@@ -430,8 +430,8 @@ SRV-FIN-012
 - si hay responsables inconsistentes: `RESPONSABLE_SERVICIO_AMBIGUO`
 - si la factura cruza cambio de responsable: `FACTURA_CRUZA_CAMBIO_RESPONSABLE`
 - V1 no prorratea por cambio de responsable, no usa composiciones negativas ni saldos a favor en este bloque
-- la habilitacion estructural de `FACTURA_SERVICIO` en `relacion_generadora` esta implementada; la generacion de obligacion queda pendiente hasta que exista evento y consumer financiero
-- existe API/backend inmobiliaria V1 para `factura_servicio`, pero no se genera `obligacion_financiera`
+- la habilitacion estructural de `FACTURA_SERVICIO` en `relacion_generadora` esta implementada; la generacion explicita de obligacion esta implementada en `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar`
+- no existe evento ni consumer automatico para `factura_servicio_registrada`
 
 ### Personas
 - obligacion_obligado → persona

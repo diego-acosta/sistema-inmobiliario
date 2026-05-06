@@ -55,6 +55,8 @@ from app.api.schemas.financiero import (
     ImputacionData,
     ImputacionResponse,
     InboxEventRequest,
+    MaterializarFacturaServicioData,
+    MaterializarFacturaServicioResponse,
     RegenerarCronogramaData,
     RegenerarCronogramaRequest,
     RegenerarCronogramaResponse,
@@ -146,6 +148,9 @@ from app.application.financiero.services.inbox_event_dispatcher import (
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
+)
+from app.application.financiero.services.materializar_factura_servicio_service import (
+    MaterializarFacturaServicioService,
 )
 from app.application.financiero.services.regenerar_cronograma_locativo_service import (
     RegenerarCronogramaLocativoService,
@@ -346,6 +351,100 @@ def list_relaciones_generadoras(
             total=result.data["total"],
         )
     )
+
+
+@router.post(
+    "/api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar",
+    status_code=201,
+    response_model=MaterializarFacturaServicioResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def materializar_factura_servicio(
+    id_factura_servicio: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> MaterializarFacturaServicioResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = MaterializarFacturaServicioService(repository=repository)
+
+    try:
+        result = service.execute(id_factura_servicio, context)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_FACTURA_SERVICIO" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="NOT_FOUND",
+                    error_message="La factura de servicio indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "FACTURA_SERVICIO_NO_ACTIVA" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="FACTURA_SERVICIO_NO_ACTIVA",
+                    error_message="La factura de servicio no esta activa.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        conflict_errors = {
+            "OBLIGADO_NO_RESUELTO",
+            "RESPONSABLE_SERVICIO_AMBIGUO",
+            "FACTURA_CRUZA_CAMBIO_RESPONSABLE",
+        }
+        for code in conflict_errors:
+            if code in result.errors:
+                return JSONResponse(
+                    status_code=409,
+                    content=ErrorResponse(
+                        error_code=code,
+                        error_message="No se pudo resolver el responsable del servicio trasladado.",
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
+        for error in result.errors:
+            if error.startswith("NOT_FOUND_CONCEPTO:"):
+                return JSONResponse(
+                    status_code=409,
+                    content=ErrorResponse(
+                        error_code="NOT_FOUND_CONCEPTO",
+                        error_message="No existe el concepto financiero requerido.",
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No se pudo materializar la factura de servicio.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    response = MaterializarFacturaServicioResponse(
+        data=MaterializarFacturaServicioData(**result.data)
+    )
+    if result.data["resultado"] == "YA_MATERIALIZADA":
+        return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+    return response
 
 
 @router.get(

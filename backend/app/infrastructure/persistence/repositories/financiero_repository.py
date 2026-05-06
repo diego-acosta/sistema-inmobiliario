@@ -84,6 +84,30 @@ class FinancieroRepository:
         )
         return self.db.execute(stmt, {"id": id_factura_servicio}).scalar_one_or_none() is not None
 
+    def get_factura_servicio_para_materializar(
+        self, id_factura_servicio: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_factura_servicio,
+                id_servicio,
+                id_inmueble,
+                id_unidad_funcional,
+                fecha_emision,
+                fecha_vencimiento,
+                periodo_desde,
+                periodo_hasta,
+                importe_total,
+                estado_factura_servicio
+            FROM factura_servicio
+            WHERE id_factura_servicio = :id
+              AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_factura_servicio}).mappings().one_or_none()
+        return dict(row) if row else None
+
     def relacion_generadora_exists(self, id_relacion_generadora: int) -> bool:
         stmt = text(
             "SELECT 1 FROM relacion_generadora WHERE id_relacion_generadora = :id AND deleted_at IS NULL"
@@ -137,6 +161,69 @@ class FinancieroRepository:
             self.db.execute(stmt, {"id": id_relacion_generadora}).scalar_one_or_none()
             is not None
         )
+
+    def get_obligacion_activa_by_relacion_generadora(
+        self, id_relacion_generadora: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                id_relacion_generadora,
+                estado_obligacion
+            FROM obligacion_financiera
+            WHERE id_relacion_generadora = :id
+              AND deleted_at IS NULL
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            ORDER BY id_obligacion_financiera ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_relacion_generadora}).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def get_asignaciones_responsables_para_factura(
+        self,
+        *,
+        id_servicio: int,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        periodo_desde: date,
+        periodo_hasta: date,
+    ) -> list[dict[str, Any]]:
+        objeto_filter = (
+            "id_inmueble = :id_objeto"
+            if id_inmueble is not None
+            else "id_unidad_funcional = :id_objeto"
+        )
+        stmt = text(
+            f"""
+            SELECT
+                id_asignacion_servicio_responsable,
+                id_persona,
+                porcentaje_responsabilidad,
+                fecha_desde,
+                fecha_hasta
+            FROM asignacion_servicio_responsable
+            WHERE id_servicio = :id_servicio
+              AND {objeto_filter}
+              AND estado_asignacion = 'ACTIVA'
+              AND deleted_at IS NULL
+              AND fecha_desde <= :periodo_hasta
+              AND COALESCE(fecha_hasta, DATE '9999-12-31') >= :periodo_desde
+            ORDER BY fecha_desde ASC, id_asignacion_servicio_responsable ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt,
+            {
+                "id_servicio": id_servicio,
+                "id_objeto": id_inmueble if id_inmueble is not None else id_unidad_funcional,
+                "periodo_desde": periodo_desde,
+                "periodo_hasta": periodo_hasta,
+            },
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
     def create_cronograma_obligaciones(self, periodos: list[Any]) -> int:
         ob_stmt = text(
@@ -276,7 +363,9 @@ class FinancieroRepository:
             """
             SELECT id_concepto_financiero, codigo_concepto_financiero
             FROM concepto_financiero
-            WHERE codigo_concepto_financiero = :codigo AND deleted_at IS NULL
+            WHERE codigo_concepto_financiero = :codigo
+              AND estado_concepto_financiero = 'ACTIVO'
+              AND deleted_at IS NULL
             """
         )
         row = self.db.execute(stmt, {"codigo": codigo}).mappings().one_or_none()
@@ -2018,6 +2107,162 @@ class FinancieroRepository:
         result = dict(ob_row)
         result["uid_global"] = str(result["uid_global"])
         result["composiciones"] = comp_results
+        return result
+
+    def create_obligacion_servicio_trasladado(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+
+        ob_stmt = text(
+            """
+            INSERT INTO obligacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_relacion_generadora, fecha_emision, fecha_vencimiento,
+                periodo_desde, periodo_hasta,
+                importe_total, saldo_pendiente, moneda, estado_obligacion
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_relacion_generadora, :fecha_emision, :fecha_vencimiento,
+                :periodo_desde, :periodo_hasta,
+                :importe_total, :importe_total, :moneda, :estado_obligacion
+            )
+            ON CONFLICT (id_relacion_generadora, periodo_desde, periodo_hasta)
+            WHERE (deleted_at IS NULL)
+            DO NOTHING
+            RETURNING
+                id_obligacion_financiera,
+                uid_global,
+                version_registro,
+                id_relacion_generadora,
+                fecha_emision,
+                fecha_vencimiento,
+                periodo_desde,
+                periodo_hasta,
+                importe_total,
+                saldo_pendiente,
+                moneda,
+                estado_obligacion
+            """
+        )
+        comp_stmt = text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_concepto_financiero,
+                1, :importe_componente, :importe_componente
+            )
+            RETURNING id_composicion_obligacion
+            """
+        )
+        obligado_stmt = text(
+            """
+            INSERT INTO obligacion_obligado (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_persona,
+                rol_obligado, porcentaje_responsabilidad
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_persona,
+                :rol_obligado, :porcentaje_responsabilidad
+            )
+            RETURNING id_obligacion_obligado
+            """
+        )
+
+        ob_row = self.db.execute(
+            ob_stmt,
+            {
+                "uid_global": values["uid_global_obligacion"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_relacion_generadora": values["id_relacion_generadora"],
+                "fecha_emision": values["fecha_emision"],
+                "fecha_vencimiento": values["fecha_vencimiento"],
+                "periodo_desde": values["periodo_desde"],
+                "periodo_hasta": values["periodo_hasta"],
+                "importe_total": values["importe_total"],
+                "moneda": values["moneda"],
+                "estado_obligacion": values["estado_obligacion"],
+            },
+        ).mappings().one_or_none()
+
+        if ob_row is None:
+            existing = self.get_obligacion_activa_by_relacion_generadora(
+                values["id_relacion_generadora"]
+            )
+            if existing is None:
+                raise RuntimeError("OBLIGACION_SERVICIO_TRASLADADO_CONFLICT")
+            return existing
+
+        self.db.execute(
+            comp_stmt,
+            {
+                "uid_global": values["uid_global_composicion"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
+                "id_concepto_financiero": values["id_concepto_financiero"],
+                "importe_componente": values["importe_total"],
+            },
+        ).mappings().one()
+
+        for obligado in values["obligados"]:
+            ov = self._values(obligado)
+            self.db.execute(
+                obligado_stmt,
+                {
+                    "uid_global": ov["uid_global"],
+                    "version_registro": ov["version_registro"],
+                    "created_at": ov["created_at"],
+                    "updated_at": ov["updated_at"],
+                    "id_instalacion_origen": ov["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": ov[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": ov["op_id_alta"],
+                    "op_id_ultima_modificacion": ov["op_id_ultima_modificacion"],
+                    "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
+                    "id_persona": ov["id_persona"],
+                    "rol_obligado": ov["rol_obligado"],
+                    "porcentaje_responsabilidad": ov["porcentaje_responsabilidad"],
+                },
+            ).mappings().one()
+
+        result = dict(ob_row)
+        result["uid_global"] = str(result["uid_global"])
+        result["codigo_concepto_financiero"] = values["codigo_concepto_financiero"]
         return result
 
     # ── registro de pago (multi-obligación) ─────────────────────────────────

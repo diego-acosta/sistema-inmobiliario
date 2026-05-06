@@ -251,7 +251,10 @@ financiera propia:
 Estado implementado: `FACTURA_SERVICIO` esta habilitado como origen estructural
 de `relacion_generadora`, validando que exista `factura_servicio` activa. La
 API/backend inmobiliaria V1 permite registrar y consultar `factura_servicio`.
-La materializacion de la obligacion `SERVICIO_TRASLADADO` queda pendiente.
+La materializacion explicita de la obligacion `SERVICIO_TRASLADADO` esta
+implementada en:
+
+`POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar`
 
 Esta decision aplica solo a facturas externas emitidas por proveedores. El
 sistema no factura servicios: registra el origen externo y el dominio
@@ -283,6 +286,15 @@ Modelo conceptual:
 
 Reglas de materializacion V1:
 
+- La factura debe existir, estar activa y no estar eliminada.
+- La operacion crea o reutiliza `relacion_generadora` con
+  `tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`.
+- Si ya existe obligacion activa para esa relacion, el endpoint devuelve
+  resultado idempotente `YA_MATERIALIZADA` sin duplicar relacion ni obligacion.
+- Debe existir el concepto financiero `SERVICIO_TRASLADADO`; si falta, no se
+  crea obligacion.
+- La obligacion se crea en estado `EMITIDA`, copiando fechas, periodo e importe
+  desde `factura_servicio`; la moneda usa `ARS` como fallback V1.
 - `asignacion_servicio_responsable` se vincula por `id_servicio` + `id_inmueble`
   o `id_unidad_funcional`.
 - No se vincula por FK directa a `inmueble_servicio` ni a
@@ -305,7 +317,7 @@ Al crear la obligacion, financiero materializara una fila en
 
 Estado V1: `asignacion_servicio_responsable` tiene SQL/API/backend inmobiliario.
 La generacion financiera de `SERVICIO_TRASLADADO` desde una `factura_servicio`
-sigue pendiente.
+esta implementada como endpoint financiero explicito y transaccional.
 
 Expensas e impuestos trasladados no se implementan en este bloque.
 

@@ -157,6 +157,21 @@ class ObligacionFinancieraResponse(BaseModel):
 
 # ── imputacion_financiera ─────────────────────────────────────────────────────
 
+class MaterializarFacturaServicioData(BaseModel):
+    resultado: str
+    id_factura_servicio: int
+    id_relacion_generadora: int
+    id_obligacion_financiera: int
+    relacion_generadora_created: bool
+    obligacion_created: bool
+    obligados_creados: int
+
+
+class MaterializarFacturaServicioResponse(BaseModel):
+    ok: bool = True
+    data: MaterializarFacturaServicioData
+
+
 class AjusteIndexacionRequest(BaseModel):
     importe_ajuste: float
     motivo: str

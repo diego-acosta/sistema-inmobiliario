@@ -240,7 +240,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: `factura_servicio` puede actuar como origen de generacion financiera bajo `relacion_generadora.tipo_origen = FACTURA_SERVICIO` solo cuando exista registro de origen compatible; el sistema no emite esa factura, registra facturas externas emitidas por proveedores.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: IMPLEMENTADA como origen estructural de `relacion_generadora`; generacion de obligacion pendiente.
+- estado: IMPLEMENTADA como origen estructural de `relacion_generadora` y como materializacion explicita de obligacion `SERVICIO_TRASLADADO`.
 
 ### RN-FIN-045 — Obligacion derivada de factura_servicio
 - descripcion: La obligacion financiera derivada de `factura_servicio` debe generarse desde una relacion generadora valida y no puede quedar como deuda suelta ni ser calculada por el dominio inmobiliario.
@@ -251,20 +251,20 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Una `factura_servicio` no debe generar mas de una obligacion financiera activa. La generacion financiera desde `factura_servicio` debe ser idempotente con clave conceptual `id_factura_servicio`.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: PENDIENTE / NO IMPLEMENTADO a nivel funcional financiero; `factura_servicio` tiene API/backend inmobiliario V1, pero no existe evento, consumer financiero ni generacion de obligacion.
+- estado: IMPLEMENTADA V1 mediante `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar`; no existe evento/consumer automatico.
 
 ### RN-FIN-047 — Relacion generadora para SERVICIO_TRASLADADO
 - descripcion: Para V1, cada `factura_servicio` registrada usa una relacion generadora propia con `tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`. La obligacion derivada usa concepto `SERVICIO_TRASLADADO`. Esta decision prioriza idempotencia directa por factura y trazabilidad simple factura -> obligacion. La resolucion de responsables se apoya en `asignacion_servicio_responsable`.
 - aplica_a: relacion_generadora, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: IMPLEMENTADA como origen estructural de `relacion_generadora`; API/backend inmobiliario V1 de factura implementado; no existe todavia evento, consumer financiero ni generacion de obligacion.
+- estado: IMPLEMENTADA V1 como origen estructural y generacion explicita de obligacion; no existe todavia evento/consumer automatico.
 
 ### RN-FIN-048 — Resolucion de obligado para SERVICIO_TRASLADADO
 - descripcion: Antes de generar la obligacion por `factura_servicio`, financiero debe resolver el obligado desde `asignacion_servicio_responsable`, entidad inmobiliaria especifica para responsables de servicios trasladados. No debe inferirlo rigidamente desde alquiler, venta u ocupacion ni usar `relacion_persona_rol` como solucion final.
 - aplica_a: relacion_generadora, obligacion_financiera, obligacion_obligado
 - origen_principal: DEV-SRV
-- estado: PARCIAL V1. `asignacion_servicio_responsable` esta implementada en SQL/API/backend inmobiliario; la generacion financiera de `SERVICIO_TRASLADADO` sigue pendiente.
-- observaciones: inmobiliario no decide deuda ni crea obligaciones; financiero conserva ownership sobre la generacion y la composicion de la deuda. Pendiente de formalización en INT-FIN-002 — Resolución de obligado financiero.
+- estado: IMPLEMENTADA V1. `asignacion_servicio_responsable` esta implementada en SQL/API/backend inmobiliario y financiero la consume para crear `obligacion_obligado`.
+- observaciones: inmobiliario no decide deuda ni crea obligaciones; financiero conserva ownership sobre la generacion y la composicion de la deuda.
 
 ---
 
@@ -272,8 +272,8 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: La generacion de `SERVICIO_TRASLADADO` debe bloquearse si no existe una asignacion responsable valida para el periodo completo de la factura.
 - aplica_a: factura_servicio, asignacion_servicio_responsable, obligacion_financiera
 - origen_principal: DEV-SRV
-- estado: PARCIAL V1. La fuente de responsables existe en inmobiliario; la validacion dentro del flujo de generacion financiera sigue NO IMPLEMENTADA.
-- observaciones: errores funcionales previstos: `OBLIGADO_NO_RESUELTO`, `RESPONSABLE_SERVICIO_AMBIGUO`, `FACTURA_CRUZA_CAMBIO_RESPONSABLE`. V1 no prorratea por cambio de responsable, no usa composiciones negativas ni saldos a favor en este bloque.
+- estado: IMPLEMENTADA V1 en la materializacion explicita de `factura_servicio`.
+- observaciones: errores funcionales implementados: `OBLIGADO_NO_RESUELTO`, `RESPONSABLE_SERVICIO_AMBIGUO`, `FACTURA_CRUZA_CAMBIO_RESPONSABLE`. V1 no prorratea por cambio de responsable, no usa composiciones negativas ni saldos a favor en este bloque.
 
 ## G. Reglas estructurales de obligacion y conceptos
 

@@ -2,7 +2,7 @@
 
 ## Estado del servicio
 - clasificacion: `PARCIAL`
-- fuente de verdad implementada: SQL `servicio`, `inmueble_servicio`, `unidad_funcional_servicio`, `factura_servicio`, `servicios_router.py`, `inmuebles_router.py`, tests de servicios, asociaciones y facturas de servicio
+- fuente de verdad implementada: SQL `servicio`, `inmueble_servicio`, `unidad_funcional_servicio`, `factura_servicio`, `asignacion_servicio_responsable`, `servicios_router.py`, `inmuebles_router.py`, `financiero_router.py`, tests de servicios, asociaciones, facturas de servicio y materializacion financiera
 - nota: el termino `infraestructura` se conserva solo para referencia historica del documento
 
 ## Modelo implementado
@@ -31,12 +31,13 @@
 - asociacion de servicios a inmuebles y unidades funcionales
 - control de duplicados activos en aplicacion y, para `inmueble_servicio`, tambien en DB
 - registro y consulta V1 de `factura_servicio` como factura externa de proveedor asociada a inmueble o unidad funcional
+- materializacion financiera V1 explicita desde `factura_servicio` hacia `SERVICIO_TRASLADADO` en el dominio `financiero`
 
 ## Funcionalidad pendiente
 - modelar `infraestructura` como entidad propia: `NO IMPLEMENTADO`
 - catalogos especializados de cobertura o capacidad del servicio: `CONCEPTUAL`
 - evento `factura_servicio_registrada`: `NO IMPLEMENTADO`
-- disparar integracion con `financiero` para generar obligacion derivada de una factura de servicio externa: `NO IMPLEMENTADO`
+- consumer/evento automatico para generar obligacion derivada de una factura de servicio externa: `NO IMPLEMENTADO`
 
 ## Registro de facturas externas de servicios (V1 IMPLEMENTADO)
 
@@ -49,7 +50,10 @@
 ### Definicion del concepto
 `factura_servicio` representa el registro interno de una factura emitida por un proveedor externo de servicios como agua, luz, gas u otros servicios asociados a un objeto inmobiliario.
 
-El sistema no factura servicios. La API V1 registra el origen operativo recibido del proveedor, pero no crea todavia relacion generadora financiera, obligacion financiera, evento ni consumer.
+El sistema no factura servicios. La API V1 registra el origen operativo recibido
+del proveedor. La materializacion financiera es una operacion explicita del
+dominio `financiero`; no es emision de factura ni logica financiera del dominio
+inmobiliario.
 
 ### Regla de ownership
 El sistema no factura servicios. La factura es emitida por un proveedor externo.
@@ -64,12 +68,12 @@ El dominio `operativo` no adquiere ownership sobre esta factura. Su alcance vige
 1. un proveedor externo emite una factura por un servicio asociado a un inmueble o unidad funcional.
 2. el sistema registra la factura externa como origen operativo pendiente del dominio inmobiliario, vinculandola al `servicio` y al activo alcanzado.
 3. V1 no publica evento.
-4. `financiero` valida el origen, crea o reutiliza la `relacion_generadora` que corresponda y genera la obligacion financiera derivada.
+4. `financiero`, mediante endpoint explicito, valida el origen, crea o reutiliza la `relacion_generadora` que corresponda y genera la obligacion financiera derivada.
 5. pagos, imputaciones, mora, ajustes, saldos y reportes financieros quedan fuera del dominio inmobiliario.
 
 Representacion resumida:
 
-`factura externa` -> `POST /api/v1/facturas-servicio` -> `factura_servicio` registrada -> `factura_servicio_registrada` (evento NO IMPLEMENTADO) -> `financiero genera obligacion` (NO IMPLEMENTADO)
+`factura externa` -> `POST /api/v1/facturas-servicio` -> `factura_servicio` registrada -> `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar` -> `relacion_generadora FACTURA_SERVICIO` -> `obligacion_financiera SERVICIO_TRASLADADO`
 
 La integracion debe ser event-driven a nivel conceptual futuro: `inmobiliario` publicaria el hecho de registro y `financiero` reaccionaria sin que `inmobiliario` cree obligaciones ni ejecute logica financiera.
 
@@ -82,8 +86,9 @@ El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotent
 - la API valida XOR entre `id_inmueble` e `id_unidad_funcional`, servicio activo asociado al activo, fechas, importe no negativo y duplicado activo por proveedor + numero.
 - no existe hoy evento implementado que represente el registro de factura externa; `factura_servicio_registrada` es solo un nombre conceptual pendiente de contrato/evento real.
 - no existe consumer financiero para `factura_servicio_registrada`.
-- no se genera `relacion_generadora` ni `obligacion_financiera` desde `factura_servicio`.
-- la integracion con `financiero` queda pendiente hasta implementar evento/consumer/generacion financiera.
+- la generacion automatica por evento/consumer sigue pendiente.
+- existe materializacion financiera explicita: `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/materializar`.
+- la materializacion crea o reutiliza `relacion_generadora FACTURA_SERVICIO` y crea `obligacion_financiera SERVICIO_TRASLADADO` con composicion y obligados resueltos desde `asignacion_servicio_responsable`.
 
 ## Asignacion de responsables de servicios trasladados (IMPLEMENTADO V1)
 
@@ -139,7 +144,7 @@ Su funcion es definir quien responde por un servicio trasladado sobre un inmuebl
 - motivo: idempotencia directa por factura, trazabilidad simple factura -> obligacion, sin entidad intermedia de servicio facturable y alineado con el modelo actual de `relacion_generadora`.
 - la resolucion de responsables para V1 se apoya en la entidad especifica `asignacion_servicio_responsable`.
 - expensas e impuestos no se implementan en este bloque.
-- esta decision esta habilitada estructuralmente en `relacion_generadora`; la generacion financiera desde la factura queda pendiente.
+- esta decision esta implementada mediante endpoint financiero explicito; la generacion automatica por evento/consumer sigue pendiente.
 
 ## Modelo conceptual futuro
 - si el negocio necesita distinguir infraestructura fisica de servicio, debe aparecer como modelo nuevo y no como alias de `servicio`

@@ -32,16 +32,16 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | atributos especializados del activo | NO IMPLEMENTADO | sin tablas ni backend |
 | identificacion catastral | NO IMPLEMENTADO | sin tablas ni backend |
 | mejoras como entidad separada | NO IMPLEMENTADO | sin soporte actual |
-| integracion de `factura_servicio` con financiero | NO IMPLEMENTADO | la obligacion derivada pertenece a `financiero`; para V1 cada factura usara `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; no existe evento implementado, consumer financiero ni generacion de `relacion_generadora` u `obligacion_financiera` |
+| integracion de `factura_servicio` con financiero | IMPLEMENTADO V1 | la obligacion derivada pertenece a `financiero`; cada factura usa `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; existe endpoint explicito de materializacion financiera, no evento/consumer automatico |
 | importe de `factura_servicio` | CONCEPTUAL | el sistema no calcula importes de servicios; el importe proviene del proveedor externo y se registra como dato recibido |
-| resolucion de obligado por `factura_servicio` | PARCIAL V1 | la fuente inmobiliaria `asignacion_servicio_responsable` esta implementada; la materializacion financiera del obligado sigue pendiente |
+| resolucion de obligado por `factura_servicio` | IMPLEMENTADO V1 | la fuente inmobiliaria `asignacion_servicio_responsable` esta implementada y la materializacion financiera crea `obligacion_obligado` con `RESPONSABLE_SERVICIO` |
 
 ## Fuera de alcance
 - cliente, propietario, contrato, pago, deuda, caja, instalacion
 - cualquier semantica de otro dominio absorbida como nucleo inmobiliario
 - emision de facturas de servicio por el sistema
-- calculo o persistencia primaria de obligaciones financieras derivadas de facturas externas
-- materializacion financiera de `SERVICIO_TRASLADADO` desde `asignacion_servicio_responsable`
+- calculo, saldo, pago, imputacion, mora, ajuste o reversion financiera
+- emision automatica/event-driven de obligaciones por `factura_servicio`
 
 ## Notas
 - La documentacion futura debe tomar estas reglas implementadas como base y no como simple intencion conceptual.
