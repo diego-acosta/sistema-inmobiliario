@@ -252,6 +252,16 @@ corresponde.
 no es un cobro de la inmobiliaria. Registra que el responsable pago una factura
 de servicio directamente al proveedor externo.
 
+Alcance vigente: `DIRECTO_RESPONSABLE`. En V1 esto significa una factura de
+servicio asociada a una persona responsable al 100%. No debe usarse para
+facturas comunes, compartidas, porcentuales o repartidas, ni para registrar un
+`PAGO_EXTERNO_INFORMADO` por cada persona.
+
+El endpoint valida que la obligacion materializada tenga exactamente un
+`obligacion_obligado` activo y que ese unico obligado tenga
+`porcentaje_responsabilidad = 100`. Si no se cumple, devuelve
+`PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO`.
+
 Diferencias principales:
 
 - usa `movimiento_financiero.tipo_movimiento = PAGO_EXTERNO_INFORMADO`
@@ -262,6 +272,20 @@ Diferencias principales:
 - no asigna `uid_pago_grupo` ni `codigo_pago_grupo`
 - no aparece en `GET /api/v1/financiero/personas/{id_persona}/pagos`
 - no genera la vista de recibo/constancia interna de cobro
+
+Si la factura de proveedor debe dividirse entre empresa e inquilino/comprador,
+o entre varias personas, la decision operativa es `EMPRESA_PAGA_Y_RECUPERA`:
+la empresa/inmobiliaria paga al proveedor por el circuito de egreso,
+caja/tesoreria y luego se genera una obligacion de recupero por la parte
+correspondiente. Esa obligacion futura representa deuda con la empresa, no pago
+al proveedor.
+
+`porcentaje_responsabilidad` de `asignacion_servicio_responsable` no debe
+interpretarse como porcentaje que cada persona paga directamente al proveedor.
+El concepto de recupero queda pendiente de decision
+(`EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro) y en V1 su
+generacion queda manual/controlada; la automatizacion desde factura pagada es
+pendiente.
 
 ## Reversion V1 de pago agrupado
 

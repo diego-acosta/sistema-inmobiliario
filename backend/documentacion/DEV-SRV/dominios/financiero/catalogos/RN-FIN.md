@@ -573,11 +573,18 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-082B - Pago externo informado de factura_servicio
-- descripcion: Cuando el responsable paga una factura de servicio directamente al proveedor, financiero puede registrar un pago externo informado contra la obligacion `SERVICIO_TRASLADADO` materializada. Reduce saldos mediante `aplicacion_financiera`, pero no representa ingreso ni egreso de caja de la inmobiliaria.
+- descripcion: Cuando una factura de servicio corresponde al escenario `DIRECTO_RESPONSABLE`, financiero puede registrar un pago externo informado contra la obligacion `SERVICIO_TRASLADADO` materializada. En V1 `DIRECTO_RESPONSABLE` significa responsabilidad 100% de una persona que paga directamente al proveedor. Reduce saldos mediante `aplicacion_financiera`, pero no representa ingreso ni egreso de caja de la inmobiliaria.
 - aplica_a: factura_servicio, relacion_generadora, obligacion_financiera, composicion_obligacion, movimiento_financiero, aplicacion_financiera
 - origen_principal: MODELO-FINANCIERO-FIN / SRV-INM-005
 - estado: IMPLEMENTADA V1 en `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/pago-externo`.
-- observaciones: usa `PAGO_EXTERNO_INFORMADO` como `tipo_movimiento` y `tipo_aplicacion`; no crea `movimiento_tesoreria`, movimiento de caja, `codigo_pago_grupo` ni recibo/constancia interna de cobro. Si no hay saldo de `SERVICIO_TRASLADADO`, devuelve `SIN_SALDO_APLICABLE`. La idempotencia por `X-Op-Id` compara payload y devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT` si difiere.
+- observaciones: usa `PAGO_EXTERNO_INFORMADO` como `tipo_movimiento` y `tipo_aplicacion`; no crea `movimiento_tesoreria`, movimiento de caja, `codigo_pago_grupo` ni recibo/constancia interna de cobro. Si no hay saldo de `SERVICIO_TRASLADADO`, devuelve `SIN_SALDO_APLICABLE`. La idempotencia por `X-Op-Id` compara payload y devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT` si difiere. Debe existir exactamente un `obligacion_obligado` activo con `porcentaje_responsabilidad = 100`; si no, devuelve `PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO`. No debe usarse para registrar un pago directo proporcional al proveedor por cada responsable.
+
+### RN-FIN-082C - Empresa paga y recupera factura_servicio compartida
+- descripcion: Si una factura de proveedor debe dividirse entre empresa e inquilino/comprador, o entre varias personas, el pago al proveedor no se divide operativamente. La empresa/inmobiliaria paga al proveedor y luego genera una obligacion de recupero por la parte correspondiente.
+- aplica_a: factura_servicio, movimiento_tesoreria, movimiento_financiero, obligacion_financiera, composicion_obligacion
+- origen_principal: MODELO-FINANCIERO-FIN / SRV-INM-005
+- estado: PENDIENTE DISENO / NO IMPLEMENTADA como automatizacion desde factura pagada.
+- observaciones: el pago al proveedor corresponde a egreso/caja/tesoreria de la empresa. La obligacion de recupero futura representa deuda con la empresa, no pago al proveedor. El concepto de recupero queda pendiente (`EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro). En V1 la generacion de recupero es manual/controlada. `porcentaje_responsabilidad` de `asignacion_servicio_responsable` no debe interpretarse como porcentaje que cada persona paga directamente al proveedor.
 
 ### RN-FIN-083 - Reversion completa de pago agrupado
 - descripcion: La reversion V1 de un pago debe operar siempre por `codigo_pago_grupo` completo. Solo se permite si no existen operaciones posteriores activas sobre las obligaciones o composiciones afectadas. Debe marcar los movimientos `PAGO` como `ANULADO`, soft-deletear sus aplicaciones para excluirlas de saldos y registrar el motivo de reversion en campos de observaciones disponibles.

@@ -38,6 +38,10 @@
 - catalogos especializados de cobertura o capacidad del servicio: `CONCEPTUAL`
 - evento `factura_servicio_registrada`: `NO IMPLEMENTADO`
 - consumer/evento automatico para generar obligacion derivada de una factura de servicio externa: `NO IMPLEMENTADO`
+- flujo `EMPRESA_PAGA_Y_RECUPERA` para facturas comunes, compartidas,
+  porcentuales o repartidas: `PENDIENTE`. Requiere diseno propio de recupero
+  financiero/operativo; la automatizacion desde una factura pagada por la
+  empresa no esta implementada.
 
 ## Registro de facturas externas de servicios (V1 IMPLEMENTADO)
 
@@ -58,6 +62,37 @@ inmobiliario.
 La factura externa puede registrarse sin `periodo_desde` y/o `periodo_hasta`
 como dato operativo/documental recibido. Ese registro no implica que sea
 materializable financieramente.
+
+### Decision operativa sobre pago directo y recupero
+
+V1 distingue dos escenarios:
+
+1. `DIRECTO_RESPONSABLE`
+- aplica solo cuando la factura corresponde directamente a una persona
+  responsable.
+- en V1 debe interpretarse como responsabilidad 100% de una persona.
+- el responsable puede pagar directamente al proveedor.
+- financiero puede registrar `PAGO_EXTERNO_INFORMADO`.
+- no impacta caja/tesoreria ni genera recibo interno.
+
+2. `EMPRESA_PAGA_Y_RECUPERA`
+- aplica cuando la factura es comun, compartida, porcentual o debe repartirse
+  entre empresa e inquilino/comprador, o entre varias personas.
+- la empresa/inmobiliaria paga al proveedor; ese pago pertenece al circuito de
+  egreso, caja y tesoreria de la empresa.
+- luego se genera una obligacion de recupero a los responsables por la parte
+  correspondiente.
+- la obligacion de recupero representa deuda con la empresa, no pago al
+  proveedor.
+- el concepto financiero de recupero queda pendiente de decision
+  (`EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro).
+- en V1 la generacion de recupero es manual/controlada; la automatizacion desde
+  una factura pagada queda pendiente.
+
+`porcentaje_responsabilidad` de `asignacion_servicio_responsable` no debe
+interpretarse como porcentaje que cada persona paga directamente al proveedor.
+Si una factura requiere reparto, no corresponde registrar
+`PAGO_EXTERNO_INFORMADO` por cada persona.
 
 ### Regla de ownership
 El sistema no factura servicios. La factura es emitida por un proveedor externo.
@@ -101,9 +136,17 @@ El evento conceptual pendiente `factura_servicio_registrada` debe ser idempotent
   `obligacion_financiera`, `composicion_obligacion` ni `obligacion_obligado`.
 - existe registro financiero de pago externo informado:
   `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/pago-externo`.
-  Este flujo informa que el responsable pago directamente al proveedor y reduce
-  o cancela `SERVICIO_TRASLADADO`; no es cobro de la inmobiliaria, no genera
+  Este flujo corresponde solo al escenario `DIRECTO_RESPONSABLE`: una persona
+  responsable al 100% paga directamente al proveedor y se informa para reducir
+  o cancelar `SERVICIO_TRASLADADO`; no es cobro de la inmobiliaria, no genera
   caja, tesoreria ni constancia interna de cobro.
+- el endpoint de pago externo valida que la obligacion materializada tenga
+  exactamente un `obligacion_obligado` activo y que su
+  `porcentaje_responsabilidad` sea 100. Si no se cumple, devuelve
+  `PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO`.
+- no se permite `PAGO_EXTERNO_INFORMADO` cuando la factura sea comun,
+  compartida, porcentual o tenga reparto entre varias personas. Esos casos
+  corresponden a `EMPRESA_PAGA_Y_RECUPERA`.
 
 ## Asignacion de responsables de servicios trasladados (IMPLEMENTADO V1)
 
@@ -131,6 +174,8 @@ Su funcion es definir quien responde por un servicio trasladado sobre un inmuebl
 - `id_persona` es obligatorio.
 - `porcentaje_responsabilidad` es obligatorio.
 - La suma de porcentajes activos aplicables al mismo servicio + objeto + tramo vigente debe ser 100%.
+- La suma 100% resuelve obligados para materializacion financiera, pero no
+  significa que cada persona deba pagar directamente su porcentaje al proveedor.
 - Si una `factura_servicio` no tiene responsable vigente aplicable, financiero debe devolver `OBLIGADO_NO_RESUELTO`.
 - Si una `factura_servicio` no tiene periodo completo, financiero debe devolver
   `PERIODO_FACTURA_REQUERIDO` antes de resolver responsables y antes de crear
@@ -161,9 +206,14 @@ Su funcion es definir quien responde por un servicio trasladado sobre un inmuebl
 - decision V1: la obligacion derivada usa el concepto financiero `SERVICIO_TRASLADADO`.
 - motivo: idempotencia directa por factura, trazabilidad simple factura -> obligacion, sin entidad intermedia de servicio facturable y alineado con el modelo actual de `relacion_generadora`.
 - la resolucion de responsables para V1 se apoya en la entidad especifica `asignacion_servicio_responsable`.
-- si el responsable paga directamente al proveedor, financiero puede registrar
+- si una persona responsable al 100% paga directamente al proveedor
+  (`DIRECTO_RESPONSABLE`), financiero puede registrar
   `PAGO_EXTERNO_INFORMADO` contra la obligacion materializada; inmobiliario no
   registra pagos, caja ni recibos.
+- si la factura es comun, compartida, porcentual o repartida, no corresponde
+  usar `PAGO_EXTERNO_INFORMADO` por persona. La decision operativa es
+  `EMPRESA_PAGA_Y_RECUPERA`: la empresa paga al proveedor y luego genera una
+  obligacion de recupero por la parte correspondiente.
 - expensas e impuestos no se implementan en este bloque.
 - esta decision esta implementada mediante endpoint financiero explicito; la generacion automatica por evento/consumer sigue pendiente.
 

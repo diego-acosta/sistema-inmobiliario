@@ -113,6 +113,10 @@ Resultado:
 - comprobante oficial/fiscal
 - reversión histórica con recomputación
 - tabla para vínculo 1:N de reemplazos si se requiere
+- servicios comunes o compartidos bajo decision `EMPRESA_PAGA_Y_RECUPERA`:
+  quedan fuera del cierre locativo V1 y requieren diseno propio de egreso al
+  proveedor, recupero a responsables y concepto financiero definitivo
+  (`EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro)
 
 ---
 
@@ -123,4 +127,8 @@ Resultado:
 - No se implementa reversión parcial.
 - No se implementa recomputación histórica.
 - No se usa `INTERES_MORA` como concepto activo en V1.
+- `PAGO_EXTERNO_INFORMADO` de `factura_servicio` no forma parte del cobro
+  locativo normal y solo corresponde al escenario `DIRECTO_RESPONSABLE`
+  documentado para servicios trasladados. Facturas repartidas o comunes quedan
+  bajo `EMPRESA_PAGA_Y_RECUPERA`, pendiente de diseno/automatizacion.
 

@@ -35,7 +35,8 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | integracion de `factura_servicio` con financiero | IMPLEMENTADO V1 | la obligacion derivada pertenece a `financiero`; cada factura usa `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; existe endpoint explicito de materializacion financiera, no evento/consumer automatico; si falta periodo completo, financiero devuelve `PERIODO_FACTURA_REQUERIDO` sin crear filas financieras |
 | importe de `factura_servicio` | CONCEPTUAL | el sistema no calcula importes de servicios; el importe proviene del proveedor externo y se registra como dato recibido |
 | resolucion de obligado por `factura_servicio` | IMPLEMENTADO V1 | la fuente inmobiliaria `asignacion_servicio_responsable` esta implementada y la materializacion financiera crea `obligacion_obligado` con `RESPONSABLE_SERVICIO` |
-| pago externo informado de `factura_servicio` | IMPLEMENTADO V1 | pertenece a `financiero`; registra `PAGO_EXTERNO_INFORMADO` contra `SERVICIO_TRASLADADO` materializado cuando el responsable paga directamente al proveedor; no crea caja, tesoreria ni recibo interno |
+| pago externo informado de `factura_servicio` | IMPLEMENTADO V1 | pertenece a `financiero`; registra `PAGO_EXTERNO_INFORMADO` contra `SERVICIO_TRASLADADO` materializado solo en escenario `DIRECTO_RESPONSABLE`, entendido en V1 como responsabilidad 100% de una persona que paga directamente al proveedor; no crea caja, tesoreria ni recibo interno. Si la obligacion no tiene exactamente un obligado activo al 100%, financiero devuelve `PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO` |
+| recupero de `factura_servicio` compartida o porcentual | PENDIENTE DISENO | en escenario `EMPRESA_PAGA_Y_RECUPERA`, la empresa/inmobiliaria paga al proveedor y luego se genera una obligacion de recupero a los responsables por su parte. No debe interpretarse `porcentaje_responsabilidad` como pago directo proporcional al proveedor, ni registrarse `PAGO_EXTERNO_INFORMADO` por cada persona |
 
 ## Fuera de alcance
 - cliente, propietario, contrato, pago, deuda, caja, instalacion
@@ -43,6 +44,8 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 - emision de facturas de servicio por el sistema
 - calculo, saldo, pago, imputacion, mora, ajuste o reversion financiera
 - emision automatica/event-driven de obligaciones por `factura_servicio`
+- automatizacion del recupero `EMPRESA_PAGA_Y_RECUPERA` desde una factura de
+  servicio pagada por la empresa
 
 ## Notas
 - La documentacion futura debe tomar estas reglas implementadas como base y no como simple intencion conceptual.

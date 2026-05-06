@@ -510,6 +510,7 @@ def registrar_pago_externo_factura_servicio(
             "FACTURA_SERVICIO_NO_ACTIVA",
             "FACTURA_SERVICIO_NO_MATERIALIZADA",
             "IDEMPOTENCY_PAYLOAD_CONFLICT",
+            "PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO",
             "SIN_SALDO_APLICABLE",
         }
         for code in conflict_errors:

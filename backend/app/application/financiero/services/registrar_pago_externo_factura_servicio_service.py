@@ -63,6 +63,10 @@ class FinancieroRepository(Protocol):
         self, id_obligacion_financiera: int
     ) -> dict[str, Any] | None: ...
 
+    def get_obligados_activos_by_obligacion(
+        self, id_obligacion_financiera: int
+    ) -> list[dict[str, Any]]: ...
+
     def get_pago_externo_factura_servicio_by_op_id(
         self, *, op_id: UUID
     ) -> dict[str, Any] | None: ...
@@ -161,6 +165,15 @@ class RegistrarPagoExternoFacturaServicioService:
             return AppResult.fail("FACTURA_SERVICIO_NO_MATERIALIZADA")
 
         id_obligacion = obligacion["id_obligacion_financiera"]
+        obligados = self.repository.get_obligados_activos_by_obligacion(id_obligacion)
+        if len(obligados) != 1:
+            return AppResult.fail("PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO")
+        porcentaje = Decimal(str(obligados[0]["porcentaje_responsabilidad"])).quantize(
+            _Q, rounding=ROUND_HALF_UP
+        )
+        if porcentaje != Decimal("100.00"):
+            return AppResult.fail("PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO")
+
         composicion = self.repository.get_composicion_servicio_trasladado_con_saldo(
             id_obligacion
         )

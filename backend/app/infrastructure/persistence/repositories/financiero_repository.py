@@ -2489,6 +2489,27 @@ class FinancieroRepository:
             "payload_idempotencia": payload,
         }
 
+    def get_obligados_activos_by_obligacion(
+        self, id_obligacion_financiera: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                id_obligacion_obligado,
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND deleted_at IS NULL
+            ORDER BY id_obligacion_obligado ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
     def registrar_pago_externo_factura_servicio(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
         mov_stmt = text(

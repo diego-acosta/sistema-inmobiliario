@@ -338,6 +338,57 @@ def _crear_factura_servicio_con_responsable(
     )
 
 
+def _crear_factura_servicio_con_responsables_50_50(
+    client,
+    db_session,
+    *,
+    codigo: str,
+) -> tuple[int, int, int, int, int]:
+    id_inmueble = _crear_inmueble(db_session, codigo=f"FS-MAT-INM-{codigo}")
+    id_servicio = _crear_servicio(db_session, codigo=f"FS-MAT-SRV-{codigo}")
+    id_persona_1 = _crear_persona(db_session, codigo=f"FS-MAT-PER-{codigo}-A")
+    id_persona_2 = _crear_persona(db_session, codigo=f"FS-MAT-PER-{codigo}-B")
+    _asociar_inmueble_servicio(
+        db_session,
+        id_inmueble=id_inmueble,
+        id_servicio=id_servicio,
+    )
+    for id_persona in (id_persona_1, id_persona_2):
+        asignacion = client.post(
+            "/api/v1/asignaciones-servicio-responsable",
+            headers=HEADERS,
+            json={
+                "id_servicio": id_servicio,
+                "id_inmueble": id_inmueble,
+                "id_unidad_funcional": None,
+                "id_persona": id_persona,
+                "porcentaje_responsabilidad": 50,
+                "fecha_desde": "2026-01-01",
+                "fecha_hasta": None,
+                "estado_asignacion": "ACTIVA",
+                "observaciones": "Responsable materializacion 50/50",
+            },
+        )
+        assert asignacion.status_code == 201, asignacion.text
+    factura = client.post(
+        "/api/v1/facturas-servicio",
+        headers=HEADERS,
+        json=_payload(
+            id_servicio=id_servicio,
+            id_inmueble=id_inmueble,
+            numero_factura=f"FS-MAT-FAC-{codigo}",
+        ),
+    )
+    assert factura.status_code == 201, factura.text
+    return (
+        factura.json()["data"]["id_factura_servicio"],
+        id_inmueble,
+        id_servicio,
+        id_persona_1,
+        id_persona_2,
+    )
+
+
 def _materializar(client, id_factura: int):
     return client.post(
         f"/api/v1/financiero/facturas-servicio/{id_factura}/materializar",
@@ -634,6 +685,67 @@ def test_pago_externo_factura_servicio_no_materializada_devuelve_error(
 
     assert response.status_code == 409
     assert response.json()["error_code"] == "FACTURA_SERVICIO_NO_MATERIALIZADA"
+
+
+def test_pago_externo_factura_servicio_50_50_bloquea_responsable_no_unico(
+    client, db_session
+) -> None:
+    id_factura, _, _, _, _ = _crear_factura_servicio_con_responsables_50_50(
+        client, db_session, codigo="018"
+    )
+    assert _materializar(client, id_factura).status_code == 201
+    movimientos_antes = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM movimiento_financiero
+            WHERE tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+              AND deleted_at IS NULL
+            """
+        )
+    ).scalar_one()
+
+    response = _pago_externo(client, id_factura)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO"
+    movimientos_despues = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM movimiento_financiero
+            WHERE tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+              AND deleted_at IS NULL
+            """
+        )
+    ).scalar_one()
+    assert movimientos_despues == movimientos_antes
+
+
+def test_pago_externo_factura_servicio_unico_responsable_menor_100_bloquea(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="019"
+    )
+    mat = _materializar(client, id_factura)
+    assert mat.status_code == 201, mat.text
+    db_session.execute(
+        text(
+            """
+            UPDATE obligacion_obligado
+            SET porcentaje_responsabilidad = 75
+            WHERE id_obligacion_financiera = :id_obligacion
+            """
+        ),
+        {"id_obligacion": mat.json()["data"]["id_obligacion_financiera"]},
+    )
+    db_session.flush()
+
+    response = _pago_externo(client, id_factura)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO"
 
 
 def test_pago_externo_factura_servicio_sin_saldo_aplicable_devuelve_error(

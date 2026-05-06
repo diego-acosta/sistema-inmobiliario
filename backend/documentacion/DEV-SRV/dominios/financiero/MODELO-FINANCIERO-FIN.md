@@ -121,12 +121,17 @@ obligacion afectada. Los movimientos generados por una misma operacion de pago
 comparten `uid_pago_grupo` y `codigo_pago_grupo`; esos campos son trazabilidad
 comun y no reemplazan las `aplicacion_financiera`.
 
-Para pago externo informado de `factura_servicio`, V1 usa
+Para pago externo informado de `factura_servicio` en escenario
+`DIRECTO_RESPONSABLE`, V1 usa
 `movimiento_financiero.tipo_movimiento = PAGO_EXTERNO_INFORMADO` y
 `aplicacion_financiera.tipo_aplicacion = PAGO_EXTERNO_INFORMADO`. Ese registro
 reduce o cancela `SERVICIO_TRASLADADO`, pero no representa cobro de la
 inmobiliaria: no crea movimiento de caja, no crea `movimiento_tesoreria`, no
 usa `codigo_pago_grupo` y no genera constancia interna de cobro.
+
+`DIRECTO_RESPONSABLE` debe entenderse en V1 como una factura/servicio de
+responsabilidad 100% de una persona que paga directamente al proveedor. No
+aplica a facturas comunes, compartidas, porcentuales ni repartidas.
 
 Implementado:
 
@@ -345,12 +350,21 @@ Endpoint implementado:
 Registra que el responsable pago la factura directamente al proveedor externo.
 No es ingreso ni egreso de caja de la inmobiliaria.
 
+Alcance vigente: `DIRECTO_RESPONSABLE`. En V1 solo corresponde cuando la
+factura/servicio pertenece directamente a una persona responsable al 100%.
+No debe usarse para repartir una factura comun entre varias personas ni para
+representar que cada responsable paga su porcentaje al proveedor.
+
 Reglas V1:
 
 - La `factura_servicio` debe existir, estar activa y estar materializada.
 - Debe existir `relacion_generadora.tipo_origen = FACTURA_SERVICIO` para esa
   factura.
 - Debe existir una `obligacion_financiera` activa asociada a la relacion.
+- La obligacion debe tener exactamente un `obligacion_obligado` activo.
+- Ese unico obligado debe tener `porcentaje_responsabilidad = 100`.
+- Si existen multiples obligados, o el unico obligado no es 100%, devuelve
+  `PAGO_EXTERNO_REQUIERE_RESPONSABLE_UNICO`.
 - Debe existir una composicion activa `SERVICIO_TRASLADADO` con saldo.
 - `importe_pagado` debe ser mayor a cero.
 - El pago se aplica hasta el saldo disponible de `SERVICIO_TRASLADADO`.
@@ -363,6 +377,32 @@ Reglas V1:
 - No liquida punitorio, no revierte pagos, no toca cronograma ni indexacion.
 - Con `X-Op-Id`, un reintento con el mismo payload devuelve el resultado
   existente; con payload distinto devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`.
+- El endpoint bloquea facturas comunes, compartidas, porcentuales o repartidas
+  mediante la validacion de responsable unico al 100%, porque esos casos
+  pertenecen a `EMPRESA_PAGA_Y_RECUPERA`.
+
+### Empresa Paga Y Recupera
+
+Cuando una factura de proveedor debe dividirse entre empresa e
+inquilino/comprador, o entre varias personas, el pago al proveedor no se divide
+operativamente.
+
+Decision:
+
+- la empresa/inmobiliaria paga al proveedor.
+- ese pago pertenece al circuito de egreso, caja y tesoreria de la empresa.
+- luego se genera una obligacion de recupero a los responsables por la parte
+  correspondiente.
+- la obligacion de recupero representa deuda con la empresa, no pago al
+  proveedor.
+- `porcentaje_responsabilidad` de `asignacion_servicio_responsable` no debe
+  interpretarse como porcentaje que cada persona paga directamente al proveedor.
+- si una factura requiere reparto, no corresponde registrar
+  `PAGO_EXTERNO_INFORMADO` por cada persona.
+- el concepto financiero de recupero queda pendiente de decision:
+  `EXPENSA_TRASLADADA`, `SERVICIO_RECUPERADO`, `CARGO_COMUN` u otro.
+- en V1 la generacion de recupero es manual/controlada; la automatizacion desde
+  una factura pagada queda pendiente.
 
 Expensas e impuestos trasladados no se implementan en este bloque.
 
