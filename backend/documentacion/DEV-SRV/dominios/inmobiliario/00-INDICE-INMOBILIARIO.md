@@ -36,6 +36,7 @@ Alinear la documentacion del dominio inmobiliario con la implementacion real de 
 - `infraestructura`, `relacion_inmobiliaria` e `inmueble_mejora` se preservan solo como conceptos futuros; no son nombres tecnicos vigentes
 
 ## Servicios DEV-SRV
+- [[CIERRE-SERVICIO-TRASLADADO-V1]]: cierre funcional V1 de servicios trasladados
 - [[SRV-INM-001-gestion-de-desarrollos-inmobiliarios]]: `IMPLEMENTADO`
 - [[SRV-INM-002-gestion-de-inmuebles]]: `IMPLEMENTADO`
 - [[SRV-INM-003-gestion-de-unidades-funcionales]]: `IMPLEMENTADO`

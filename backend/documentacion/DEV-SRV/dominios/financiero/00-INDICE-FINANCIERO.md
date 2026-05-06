@@ -13,6 +13,7 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
   - Procesamiento de eventos (Inbox)
   - Procesamiento automatico de eventos (Outbox -> Inbox)
 - [[CIERRE-MODULO-FINANCIERO-LOCATIVO]]
+- [[../inmobiliario/CIERRE-SERVICIO-TRASLADADO-V1]]
 - [[TIPO-OBLIGACION-FIN]]
 
 ## Servicios del dominio
