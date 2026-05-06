@@ -116,6 +116,8 @@ Decision recomendada V1:
 - La generacion de recupero debe ser explicita e idempotente.
 - El egreso proveedor minimo se registra con
   `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
+- Los egresos proveedor registrados se consultan con
+  `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
 - El egreso proveedor crea `movimiento_tesoreria` y
   `egreso_proveedor_factura_servicio`.
 - El egreso proveedor no crea `movimiento_financiero`,
@@ -125,6 +127,11 @@ Decision recomendada V1:
   factura.
 - No se permite que la suma de egresos activos supere
   `factura_servicio.importe_total`.
+- El estado de pago proveedor es derivado en lectura; no se persiste en
+  `factura_servicio`.
+- Para totales de pago proveedor solo cuentan egresos no eliminados con
+  `estado_egreso = REGISTRADO`.
+- Estados derivados: `SIN_PAGO`, `PAGO_PARCIAL`, `PAGADA`, `SOBREPAGADA`.
 - El recupero debe crear `obligacion_obligado` para los responsables
   determinados por la regla de reparto vigente.
 - Si no hay regla de reparto valida, debe bloquearse con error funcional.
@@ -145,7 +152,7 @@ Decision recomendada V1:
 
 ## Implementacion futura sugerida
 
-1. Consultar y eventualmente anular egresos proveedor.
+1. Anular egresos proveedor.
 2. Crear entidad de liquidacion de recupero para agrupar una o mas facturas.
 3. Definir reglas de reparto y validacion de suma.
 4. Materializar obligaciones de recupero con obligados usando

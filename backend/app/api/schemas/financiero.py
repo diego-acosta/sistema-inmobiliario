@@ -258,6 +258,31 @@ class EgresoProveedorFacturaServicioResponse(BaseModel):
     data: EgresoProveedorFacturaServicioData
 
 
+class EgresoProveedorFacturaServicioItem(BaseModel):
+    id_egreso_proveedor_factura_servicio: int
+    id_movimiento_tesoreria: int
+    fecha_pago: date
+    importe_pagado: float
+    medio_pago: str | None = None
+    referencia_comprobante: str | None = None
+    estado_egreso: str
+    observaciones: str | None = None
+
+
+class EgresosProveedorFacturaServicioData(BaseModel):
+    id_factura_servicio: int
+    importe_total_factura: float
+    total_egresado: float
+    saldo_pendiente_pago_proveedor: float
+    estado_pago_proveedor: str
+    egresos: list[EgresoProveedorFacturaServicioItem]
+
+
+class EgresosProveedorFacturaServicioResponse(BaseModel):
+    ok: bool = True
+    data: EgresosProveedorFacturaServicioData
+
+
 class AjusteIndexacionRequest(BaseModel):
     importe_ajuste: float
     motivo: str

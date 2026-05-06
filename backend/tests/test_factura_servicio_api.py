@@ -1188,6 +1188,219 @@ def test_egreso_proveedor_factura_servicio_no_afecta_estado_cuenta(
     assert estado_after["grupos_deuda"] == estado_before["grupos_deuda"]
 
 
+def test_get_egresos_proveedor_factura_sin_egresos_devuelve_sin_pago(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-GET-001"
+    )
+
+    response = client.get(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["id_factura_servicio"] == id_factura
+    assert data["importe_total_factura"] == 25000.0
+    assert data["total_egresado"] == 0.0
+    assert data["saldo_pendiente_pago_proveedor"] == 25000.0
+    assert data["estado_pago_proveedor"] == "SIN_PAGO"
+    assert data["egresos"] == []
+
+
+def test_get_egresos_proveedor_factura_con_egreso_parcial_devuelve_pago_parcial(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-GET-002"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR GET 002")
+    client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 10000.00,
+            "medio_pago": "TRANSFERENCIA",
+            "referencia_comprobante": "TRX-GET-002",
+            "observaciones": "Parcial proveedor",
+        },
+    )
+
+    response = client.get(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_egresado"] == 10000.0
+    assert data["saldo_pendiente_pago_proveedor"] == 15000.0
+    assert data["estado_pago_proveedor"] == "PAGO_PARCIAL"
+    assert len(data["egresos"]) == 1
+    assert data["egresos"][0]["importe_pagado"] == 10000.0
+    assert data["egresos"][0]["observaciones"] == "Parcial proveedor"
+
+
+def test_get_egresos_proveedor_factura_con_egreso_total_devuelve_pagada(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-GET-003"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR GET 003")
+    client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 25000.00,
+        },
+    )
+
+    response = client.get(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_egresado"] == 25000.0
+    assert data["saldo_pendiente_pago_proveedor"] == 0.0
+    assert data["estado_pago_proveedor"] == "PAGADA"
+
+
+def test_get_egresos_proveedor_factura_lista_multiples_egresos(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-GET-004"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR GET 004")
+    url = f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor"
+    client.post(
+        url,
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-21",
+            "importe_pagado": 15000.00,
+            "referencia_comprobante": "TRX-GET-004-B",
+        },
+    )
+    client.post(
+        url,
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 10000.00,
+            "referencia_comprobante": "TRX-GET-004-A",
+        },
+    )
+
+    response = client.get(url, headers=HEADERS)
+
+    assert response.status_code == 200
+    egresos = response.json()["data"]["egresos"]
+    assert [e["referencia_comprobante"] for e in egresos] == [
+        "TRX-GET-004-A",
+        "TRX-GET-004-B",
+    ]
+
+
+def test_get_egresos_proveedor_factura_inexistente_devuelve_404(client) -> None:
+    response = client.get(
+        "/api/v1/financiero/facturas-servicio/999999999/egresos-proveedor",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "FACTURA_SERVICIO_NOT_FOUND"
+
+
+def test_get_egresos_proveedor_factura_anulados_y_deleted_no_cuentan(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="EGR-GET-005"
+    )
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta EGR GET 005")
+    url = f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor"
+    registrado = client.post(
+        url,
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 10000.00,
+            "referencia_comprobante": "TRX-REG",
+        },
+    ).json()["data"]
+    anulado = client.post(
+        url,
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-21",
+            "importe_pagado": 5000.00,
+            "referencia_comprobante": "TRX-ANU",
+        },
+    ).json()["data"]
+    deleted = client.post(
+        url,
+        headers=_headers_sin_op_id(),
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-22",
+            "importe_pagado": 2000.00,
+            "referencia_comprobante": "TRX-DEL",
+        },
+    ).json()["data"]
+    db_session.execute(
+        text(
+            """
+            UPDATE egreso_proveedor_factura_servicio
+            SET estado_egreso = 'ANULADO'
+            WHERE id_egreso_proveedor_factura_servicio = :id
+            """
+        ),
+        {"id": anulado["id_egreso_proveedor_factura_servicio"]},
+    )
+    db_session.execute(
+        text(
+            """
+            UPDATE egreso_proveedor_factura_servicio
+            SET deleted_at = CURRENT_TIMESTAMP
+            WHERE id_egreso_proveedor_factura_servicio = :id
+            """
+        ),
+        {"id": deleted["id_egreso_proveedor_factura_servicio"]},
+    )
+    db_session.flush()
+
+    response = client.get(url, headers=HEADERS)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_egresado"] == 10000.0
+    assert data["estado_pago_proveedor"] == "PAGO_PARCIAL"
+    assert {e["referencia_comprobante"] for e in data["egresos"]} == {
+        "TRX-REG",
+        "TRX-ANU",
+    }
+    assert all(e["referencia_comprobante"] != "TRX-DEL" for e in data["egresos"])
+    assert any(
+        e["id_egreso_proveedor_factura_servicio"]
+        == registrado["id_egreso_proveedor_factura_servicio"]
+        for e in data["egresos"]
+    )
+
+
 def test_materializar_factura_servicio_sin_responsable_devuelve_obligado_no_resuelto(
     client, db_session
 ) -> None:

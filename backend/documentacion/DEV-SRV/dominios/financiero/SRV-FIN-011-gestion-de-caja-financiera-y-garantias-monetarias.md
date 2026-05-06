@@ -59,6 +59,10 @@ La implementacion V1 minima registra el egreso proveedor desde
 - tabla puente `egreso_proveedor_factura_servicio`;
 - endpoint
   `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
+- consulta read-only
+  `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`,
+  que deriva total egresado, saldo pendiente y estado de pago proveedor sin
+  persistirlos en `factura_servicio`.
 
 Este registro no crea `movimiento_financiero`, no genera deuda de recupero y
 no emite recibo interno. La anulacion/reversion del egreso proveedor queda

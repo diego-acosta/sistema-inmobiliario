@@ -397,6 +397,12 @@ Decision:
   por `egreso_proveedor_factura_servicio`.
 - endpoint:
   `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
+- consulta:
+  `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
+- la consulta deriva `total_egresado`, `saldo_pendiente_pago_proveedor` y
+  `estado_pago_proveedor` sin persistir estado en `factura_servicio`.
+- estados derivados de pago proveedor: `SIN_PAGO`, `PAGO_PARCIAL`, `PAGADA`,
+  `SOBREPAGADA`.
 - luego se genera una obligacion de recupero a los responsables por la parte
   correspondiente.
 - la obligacion de recupero representa deuda con la empresa, no pago al

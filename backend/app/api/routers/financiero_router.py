@@ -29,6 +29,8 @@ from app.api.schemas.financiero import (
     DeudaListData,
     DeudaListResponse,
     EgresoProveedorFacturaServicioData,
+    EgresosProveedorFacturaServicioData,
+    EgresosProveedorFacturaServicioResponse,
     EgresoProveedorFacturaServicioRequest,
     EgresoProveedorFacturaServicioResponse,
     ErrorResponse,
@@ -163,6 +165,9 @@ from app.application.financiero.services.registrar_pago_externo_factura_servicio
 )
 from app.application.financiero.services.registrar_egreso_proveedor_factura_servicio_service import (
     RegistrarEgresoProveedorFacturaServicioService,
+)
+from app.application.financiero.services.consultar_egresos_proveedor_factura_servicio_service import (
+    ConsultarEgresosProveedorFacturaServicioService,
 )
 from app.application.financiero.services.regenerar_cronograma_locativo_service import (
     RegenerarCronogramaLocativoService,
@@ -634,6 +639,55 @@ def registrar_egreso_proveedor_factura_servicio(
     if result.data.get("resultado") == "YA_REGISTRADO":
         return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
     return response
+
+
+@router.get(
+    "/api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor",
+    response_model=EgresosProveedorFacturaServicioResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_egresos_proveedor_factura_servicio(
+    id_factura_servicio: int,
+    db: Session = Depends(get_db),
+) -> EgresosProveedorFacturaServicioResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = ConsultarEgresosProveedorFacturaServicioService(repository=repository)
+
+    try:
+        result = service.execute(id_factura_servicio=id_factura_servicio)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "FACTURA_SERVICIO_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="FACTURA_SERVICIO_NOT_FOUND",
+                    error_message="La factura de servicio indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudieron consultar los egresos proveedor.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return EgresosProveedorFacturaServicioResponse(
+        data=EgresosProveedorFacturaServicioData(**result.data)
+    )
 
 
 @router.get(

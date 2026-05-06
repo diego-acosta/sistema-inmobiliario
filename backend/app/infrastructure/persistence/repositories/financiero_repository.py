@@ -2584,6 +2584,58 @@ class FinancieroRepository:
             "payload_idempotencia": payload,
         }
 
+    def list_egresos_proveedor_factura_servicio(
+        self, id_factura_servicio: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                e.id_egreso_proveedor_factura_servicio,
+                e.id_movimiento_tesoreria,
+                e.fecha_pago,
+                e.importe_pagado,
+                e.medio_pago,
+                e.referencia_comprobante,
+                e.estado_egreso,
+                e.observaciones
+            FROM egreso_proveedor_factura_servicio e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+             AND mt.deleted_at IS NULL
+            WHERE e.id_factura_servicio = :id_factura_servicio
+              AND e.deleted_at IS NULL
+            ORDER BY e.fecha_pago ASC, e.id_egreso_proveedor_factura_servicio ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_factura_servicio": id_factura_servicio}
+        ).mappings().all()
+        egresos: list[dict[str, Any]] = []
+        for row in rows:
+            observaciones = row["observaciones"]
+            if observaciones:
+                try:
+                    parsed = json.loads(observaciones)
+                    if isinstance(parsed, dict) and parsed.get("observaciones") is not None:
+                        observaciones = parsed.get("observaciones")
+                except (TypeError, ValueError):
+                    pass
+            egresos.append(
+                {
+                    "id_egreso_proveedor_factura_servicio": row[
+                        "id_egreso_proveedor_factura_servicio"
+                    ],
+                    "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+                    "fecha_pago": row["fecha_pago"],
+                    "importe_pagado": float(row["importe_pagado"]),
+                    "medio_pago": row["medio_pago"],
+                    "referencia_comprobante": row["referencia_comprobante"],
+                    "estado_egreso": row["estado_egreso"],
+                    "observaciones": observaciones,
+                }
+            )
+        return egresos
+
     def get_obligados_activos_by_obligacion(
         self, id_obligacion_financiera: int
     ) -> list[dict[str, Any]]:
