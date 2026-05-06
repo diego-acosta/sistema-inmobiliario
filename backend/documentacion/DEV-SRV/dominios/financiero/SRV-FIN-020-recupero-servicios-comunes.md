@@ -77,8 +77,8 @@ Alternativas evaluadas:
      `SERVICIO_TRASLADADO DIRECTO_RESPONSABLE`;
    - evita reutilizar `EXPENSA_TRASLADADA` cuando aun no existe liquidacion
      formal de expensas;
-   - requiere incorporacion futura como `concepto_financiero` antes de
-     implementar el flujo.
+   - incorporado al catalogo `concepto_financiero` como base para la futura
+     implementacion del flujo.
 
 2. `EXPENSA_TRASLADADA`
    - reservar para una futura `liquidacion_expensa` o circuito formal de
@@ -94,6 +94,11 @@ Decision recomendada V1:
 
 - usar `SERVICIO_RECUPERADO` para recupero manual/controlado de servicios
   comunes pagados por la empresa;
+- naturaleza: `DEBITO`;
+- `es_imputable = true`;
+- `permite_saldo = true`;
+- `aplica_punitorio = true`, porque el recupero sera deuda exigible con la
+  empresa y se cobrara por el flujo normal de pagos financieros;
 - mantener `EXPENSA_TRASLADADA` para expensas formalmente liquidadas;
 - mantener `IMPUESTO_TRASLADADO` para un flujo especifico futuro de impuestos;
 - dejar `CARGO_RECUPERO` como opcion futura si se crea una liquidacion
@@ -132,10 +137,10 @@ Decision recomendada V1:
 1. Definir y persistir egreso proveedor.
 2. Crear entidad de liquidacion de recupero para agrupar una o mas facturas.
 3. Definir reglas de reparto y validacion de suma.
-4. Agregar concepto `SERVICIO_RECUPERADO`.
-5. Materializar obligaciones de recupero con obligados.
-6. Cobrar por el flujo normal de pagos financieros.
-7. Agregar reversion controlada.
+4. Materializar obligaciones de recupero con obligados usando
+   `SERVICIO_RECUPERADO`.
+5. Cobrar por el flujo normal de pagos financieros.
+6. Agregar reversion controlada.
 
 ## Referencias
 

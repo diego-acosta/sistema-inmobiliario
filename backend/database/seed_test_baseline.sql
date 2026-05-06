@@ -73,6 +73,7 @@ VALUES
     ('CANON_LOCATIVO', 'Canon locativo', 'Canon periodico de contrato locativo.', 'CAPITAL', 'DEBITO', true, false, false, true, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
     ('EXPENSA_TRASLADADA', 'Expensa trasladada', 'Expensa trasladada al obligado financiero.', 'TRASLADO', 'DEBITO', false, false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
     ('SERVICIO_TRASLADADO', 'Servicio trasladado', 'Servicio trasladado al obligado financiero.', 'TRASLADO', 'DEBITO', false, false, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
+    ('SERVICIO_RECUPERADO', 'Servicio recuperado', 'Recupero de servicio comun pagado por la empresa.', 'TRASLADO', 'DEBITO', false, false, false, true, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
     ('IMPUESTO_TRASLADADO', 'Impuesto trasladado', 'Impuesto trasladado al obligado financiero.', 'TRASLADO', 'DEBITO', false, false, false, false, true, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
     ('INTERES_FINANCIERO', 'Interes financiero', 'Interes financiero ordinario.', 'INTERES', 'DEBITO', false, true, false, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),
     ('INTERES_MORA', 'Interes de mora', 'Interes generado por mora.', 'MORA', 'DEBITO', false, true, true, false, false, true, true, true, 'ACTIVO', 'Catalogo financiero base'),

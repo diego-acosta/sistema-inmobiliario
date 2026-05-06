@@ -107,6 +107,8 @@ Implementado:
 - consulta por `GET /api/v1/financiero/conceptos-financieros`
 - busqueda interna por codigo para crear obligaciones e imputaciones
 - catalogo base con `INTERES_MORA` disponible en seeds actuales solo por compatibilidad heredada; V1 no lo usa como concepto activo de mora persistida
+- catalogo base con `SERVICIO_RECUPERADO` para futuro recupero
+  manual/controlado de servicios comunes pagados por la empresa
 - `aplica_punitorio`: indica si el saldo vivo de ese concepto integra la base
   morable para liquidar `PUNITORIO`
 
@@ -400,7 +402,10 @@ Decision:
 - si una factura requiere reparto, no corresponde registrar
   `PAGO_EXTERNO_INFORMADO` por cada persona.
 - el concepto financiero recomendado para V1 de servicios comunes es
-  `SERVICIO_RECUPERADO`.
+  `SERVICIO_RECUPERADO`, con naturaleza `DEBITO`, `es_imputable = true`,
+  `permite_saldo = true` y `aplica_punitorio = true`.
+- `aplica_punitorio = true` se adopta porque el recupero representa deuda
+  exigible con la empresa y se cobrara por el flujo normal de pagos.
 - `EXPENSA_TRASLADADA` queda reservado para una futura liquidacion formal de
   expensas; `IMPUESTO_TRASLADADO` para impuestos; `CARGO_RECUPERO` queda como
   alternativa generica futura si se decide unificar recuperos heterogeneos.

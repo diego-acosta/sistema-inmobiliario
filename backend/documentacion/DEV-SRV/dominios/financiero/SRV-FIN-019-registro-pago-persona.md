@@ -282,11 +282,11 @@ al proveedor.
 
 `porcentaje_responsabilidad` de `asignacion_servicio_responsable` no debe
 interpretarse como porcentaje que cada persona paga directamente al proveedor.
-El concepto recomendado para V1 de recupero de servicios comunes es
-`SERVICIO_RECUPERADO`; `EXPENSA_TRASLADADA` queda reservado para expensas
-formales, `IMPUESTO_TRASLADADO` para impuestos y `CARGO_RECUPERO` como
-alternativa generica futura. En V1 su generacion queda manual/controlada; la
-automatizacion desde factura pagada es pendiente y se documenta en
+El concepto V1 de recupero de servicios comunes es `SERVICIO_RECUPERADO`;
+`EXPENSA_TRASLADADA` queda reservado para expensas formales,
+`IMPUESTO_TRASLADADO` para impuestos y `CARGO_RECUPERO` como alternativa
+generica futura. En V1 su generacion queda manual/controlada; la automatizacion
+desde factura pagada es pendiente y se documenta en
 `SRV-FIN-020-recupero-servicios-comunes`.
 
 ## Reversion V1 de pago agrupado

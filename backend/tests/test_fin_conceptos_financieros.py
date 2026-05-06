@@ -1,7 +1,9 @@
 """
 Tests de integración para GET /api/v1/financiero/conceptos-financieros.
-Requiere que seed_test_baseline.sql haya sido aplicado (17 conceptos).
+Requiere que seed_test_baseline.sql haya sido aplicado.
 """
+from sqlalchemy import text
+
 from tests.test_disponibilidades_create import HEADERS
 
 
@@ -40,6 +42,42 @@ def test_list_conceptos_contiene_canon_locativo(client) -> None:
     assert response.status_code == 200
     codigos = [i["codigo_concepto_financiero"] for i in response.json()["data"]["items"]]
     assert "CANON_LOCATIVO" in codigos
+
+
+def test_seed_contiene_servicio_recuperado_con_flags_v1(db_session) -> None:
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                codigo_concepto_financiero,
+                tipo_concepto_financiero,
+                naturaleza_concepto,
+                aplica_punitorio,
+                es_imputable,
+                permite_saldo,
+                estado_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'SERVICIO_RECUPERADO'
+              AND deleted_at IS NULL
+            """
+        )
+    ).mappings().one()
+
+    assert row["codigo_concepto_financiero"] == "SERVICIO_RECUPERADO"
+    assert row["tipo_concepto_financiero"] == "TRASLADO"
+    assert row["naturaleza_concepto"] == "DEBITO"
+    assert row["aplica_punitorio"] is True
+    assert row["es_imputable"] is True
+    assert row["permite_saldo"] is True
+    assert row["estado_concepto_financiero"] == "ACTIVO"
+
+
+def test_list_conceptos_contiene_servicio_recuperado(client) -> None:
+    response = client.get(URL, params={"limit": 200}, headers=HEADERS)
+
+    assert response.status_code == 200
+    codigos = [i["codigo_concepto_financiero"] for i in response.json()["data"]["items"]]
+    assert "SERVICIO_RECUPERADO" in codigos
 
 
 def test_list_conceptos_filtra_por_estado_activo(client) -> None:

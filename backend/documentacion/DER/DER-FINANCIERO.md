@@ -192,6 +192,7 @@ Catalogo financiero que define el significado de cada componente economico de un
 - `ANTICIPO_VENTA`
 - `CANON_LOCATIVO`
 - `SERVICIO_TRASLADADO`
+- `SERVICIO_RECUPERADO`
 - `INTERES_MORA` (compatibilidad heredada; no activo para mora persistida V1)
 - `PUNITORIO`
 
@@ -437,8 +438,10 @@ SRV-FIN-012
   al proveedor por caja/tesoreria y luego genera una obligacion de recupero
   contra personas
 - para V1 de servicios comunes recuperados se recomienda el concepto
-  `SERVICIO_RECUPERADO`; `EXPENSA_TRASLADADA` queda reservado para expensas
-  formales e `IMPUESTO_TRASLADADO` para impuestos
+  `SERVICIO_RECUPERADO`, disponible en `concepto_financiero` con naturaleza
+  `DEBITO`, `es_imputable = true`, `permite_saldo = true` y
+  `aplica_punitorio = true`; `EXPENSA_TRASLADADA` queda reservado para
+  expensas formales e `IMPUESTO_TRASLADADO` para impuestos
 - no existe evento ni consumer automatico para `factura_servicio_registrada`
 
 ### Personas
