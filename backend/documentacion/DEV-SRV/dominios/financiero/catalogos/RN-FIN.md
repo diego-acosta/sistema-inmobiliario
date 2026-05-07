@@ -590,14 +590,14 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Los impuestos, tasas o contribuciones trasladadas deben registrarse desde una entidad propia `comprobante_impuesto`. No deben modelarse como `factura_servicio`, porque ese origen pertenece al circuito de servicios externos y sus obligaciones usan `SERVICIO_TRASLADADO` o `SERVICIO_RECUPERADO`.
 - aplica_a: comprobante_impuesto, relacion_generadora, obligacion_financiera, composicion_obligacion
 - origen_principal: SRV-FIN-021
-- estado: DISENO V1 DOCUMENTADO / NO IMPLEMENTADO.
-- observaciones: `comprobante_impuesto` no genera deuda automaticamente. La modalidad financiera define si se registra solo egreso, deuda directa, pago externo informado o recupero posterior.
+- estado: IMPLEMENTADO PARCIAL V1 para registro y consulta de `comprobante_impuesto`.
+- observaciones: `comprobante_impuesto` no genera deuda automaticamente. La modalidad financiera define si se registra solo egreso, deuda directa, pago externo informado o recupero posterior. En el backend actual solo estan implementadas alta y consultas del comprobante; no se crean tesoreria, relacion generadora, obligacion ni composicion.
 
 ### RN-FIN-082E - Modalidades V1 de IMPUESTO_TRASLADADO
 - descripcion: V1 distingue tres modalidades para impuestos trasladados: `EMPRESA_ASUME`, `DIRECTO_RESPONSABLE` y `EMPRESA_PAGA_Y_RECUPERA`.
 - aplica_a: comprobante_impuesto, movimiento_tesoreria, relacion_generadora, obligacion_financiera, composicion_obligacion, aplicacion_financiera
 - origen_principal: SRV-FIN-021
-- estado: DISENO V1 DOCUMENTADO / NO IMPLEMENTADO.
+- estado: IMPLEMENTADO PARCIAL V1 para validacion de modalidad en `comprobante_impuesto`.
 - observaciones: `EMPRESA_ASUME` registra egreso de tesoreria y no genera obligacion. `DIRECTO_RESPONSABLE` puede generar obligacion `IMPUESTO_TRASLADADO` y admitir pago externo informado solo con unico responsable 100%, sin caja ni tesoreria. `EMPRESA_PAGA_Y_RECUPERA` registra egreso de tesoreria y luego liquida obligacion `IMPUESTO_TRASLADADO`; el cobro posterior usa pago normal por persona.
 
 ### RN-FIN-082F - Concepto financiero para impuestos trasladados

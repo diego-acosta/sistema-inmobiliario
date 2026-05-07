@@ -40,6 +40,12 @@ Este documento describe los endpoints financieros actualmente implementados en b
 
 - `GET /api/v1/financiero/estado-cuenta`
 
+### Comprobantes de impuesto
+
+- `POST /api/v1/comprobantes-impuesto`
+- `GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}`
+- `GET /api/v1/comprobantes-impuesto`
+
 ### EMPRESA_PAGA_Y_RECUPERA
 
 - `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`
@@ -419,7 +425,72 @@ Notas:
 
 ---
 
-## 9. EMPRESA_PAGA_Y_RECUPERA
+## 9. Comprobantes de impuesto
+
+Registro documental de impuestos, tasas o contribuciones. No usa
+`factura_servicio` y no genera efectos financieros por si mismo.
+
+### POST /api/v1/comprobantes-impuesto
+
+Objetivo: registrar un `comprobante_impuesto`.
+
+Request resumido:
+
+```json
+{
+  "id_inmueble": 1,
+  "id_unidad_funcional": null,
+  "organismo": "Municipalidad de Neuquen",
+  "tipo_impuesto": "TASA_MUNICIPAL",
+  "partida_nomenclatura": "NC-123",
+  "numero_comprobante": "MUN-2026-0001",
+  "periodo_desde": "2026-05-01",
+  "periodo_hasta": "2026-05-31",
+  "fecha_emision": "2026-05-01",
+  "fecha_vencimiento": "2026-05-20",
+  "importe_total": 15000.00,
+  "modalidad_gestion_impuesto": "EMPRESA_PAGA_Y_RECUPERA",
+  "observaciones": "Comprobante fiscal externo"
+}
+```
+
+Respuesta: datos del comprobante creado, con
+`estado_comprobante_impuesto = REGISTRADO`.
+
+Errores principales:
+
+- `422`: validaciones de contrato, XOR, fechas o importe
+- `NOT_FOUND_OBJETO_INMOBILIARIO`
+- `COMPROBANTE_IMPUESTO_DUPLICADO`
+- `COMPROBANTE_IMPUESTO_INVALIDO`
+
+Side effects:
+
+- crea solo `comprobante_impuesto`;
+- no crea `movimiento_tesoreria`;
+- no crea `relacion_generadora`;
+- no crea `obligacion_financiera`;
+- no crea `composicion_obligacion`.
+
+### GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}
+
+Objetivo: consultar un comprobante activo por id.
+
+Errores principales:
+
+- `NOT_FOUND_COMPROBANTE_IMPUESTO`
+
+Side effects: ninguno.
+
+### GET /api/v1/comprobantes-impuesto
+
+Objetivo: listar comprobantes activos.
+
+Side effects: ninguno.
+
+---
+
+## 10. EMPRESA_PAGA_Y_RECUPERA
 
 Circuito para facturas de servicio donde la empresa paga al proveedor y luego
 recupera total o parcialmente el importe contra personas responsables. No usa
@@ -789,7 +860,7 @@ Reglas:
 
 ---
 
-## 10. Mora
+## 11. Mora
 
 ### POST /api/v1/financiero/mora/generar
 
@@ -837,7 +908,7 @@ Limitacion:
 
 ---
 
-## 11. Inbox de eventos
+## 12. Inbox de eventos
 
 ### POST /api/v1/financiero/inbox
 
@@ -875,7 +946,7 @@ Notas:
 
 ---
 
-## 12. Funcionalidad no implementada
+## 13. Funcionalidad no implementada
 
 Sigue pendiente:
 
@@ -890,14 +961,14 @@ Sigue pendiente:
 
 ### IMPUESTO_TRASLADADO V1
 
-Estado: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`.
+Estado: `IMPLEMENTADO PARCIAL V1`.
 
 El diseno V1 queda documentado en
 `backend/documentacion/DEV-SRV/dominios/financiero/SRV-FIN-021-impuestos-trasladados.md`.
 
-Reglas de contrato futuro:
+Reglas implementadas para `comprobante_impuesto`:
 
-- crear entidad propia `comprobante_impuesto`;
+- entidad propia `comprobante_impuesto`;
 - no usar `factura_servicio` para impuestos;
 - no crear `IMPUESTO_RECUPERADO` en V1;
 - usar `IMPUESTO_TRASLADADO` para deuda fiscal trasladada;
@@ -919,9 +990,6 @@ Modalidades futuras:
 
 Endpoints futuros a definir, no implementados:
 
-- `POST /api/v1/financiero/comprobantes-impuesto`
-- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}`
-- `GET /api/v1/financiero/comprobantes-impuesto`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/materializar`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/pago-externo`

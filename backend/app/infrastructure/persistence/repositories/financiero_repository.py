@@ -101,6 +101,220 @@ class FinancieroRepository:
         )
         return self.db.execute(stmt, {"id": id_factura_servicio}).scalar_one_or_none() is not None
 
+    def inmueble_exists(self, id_inmueble: int) -> bool:
+        stmt = text(
+            "SELECT 1 FROM inmueble WHERE id_inmueble = :id AND deleted_at IS NULL"
+        )
+        return self.db.execute(stmt, {"id": id_inmueble}).scalar_one_or_none() is not None
+
+    def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool:
+        stmt = text(
+            "SELECT 1 FROM unidad_funcional WHERE id_unidad_funcional = :id AND deleted_at IS NULL"
+        )
+        return (
+            self.db.execute(stmt, {"id": id_unidad_funcional}).scalar_one_or_none()
+            is not None
+        )
+
+    def comprobante_impuesto_activo_exists(
+        self, organismo: str, numero_comprobante: str
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM comprobante_impuesto
+            WHERE organismo = :organismo
+              AND numero_comprobante = :numero_comprobante
+              AND deleted_at IS NULL
+            """
+        )
+        return (
+            self.db.execute(
+                stmt,
+                {"organismo": organismo, "numero_comprobante": numero_comprobante},
+            ).scalar_one_or_none()
+            is not None
+        )
+
+    def _comprobante_impuesto_row_to_dict(self, row: Any) -> dict[str, Any]:
+        return {
+            "id_comprobante_impuesto": row["id_comprobante_impuesto"],
+            "uid_global": str(row["uid_global"]),
+            "version_registro": row["version_registro"],
+            "id_inmueble": row["id_inmueble"],
+            "id_unidad_funcional": row["id_unidad_funcional"],
+            "organismo": row["organismo"],
+            "tipo_impuesto": row["tipo_impuesto"],
+            "partida_nomenclatura": row["partida_nomenclatura"],
+            "numero_comprobante": row["numero_comprobante"],
+            "periodo_desde": (
+                row["periodo_desde"].isoformat()
+                if row["periodo_desde"] is not None
+                else None
+            ),
+            "periodo_hasta": (
+                row["periodo_hasta"].isoformat()
+                if row["periodo_hasta"] is not None
+                else None
+            ),
+            "fecha_emision": (
+                row["fecha_emision"].isoformat()
+                if row["fecha_emision"] is not None
+                else None
+            ),
+            "fecha_vencimiento": row["fecha_vencimiento"].isoformat(),
+            "importe_total": float(row["importe_total"]),
+            "modalidad_gestion_impuesto": row["modalidad_gestion_impuesto"],
+            "estado_comprobante_impuesto": row["estado_comprobante_impuesto"],
+            "observaciones": row["observaciones"],
+        }
+
+    def create_comprobante_impuesto(self, payload: Any) -> dict[str, Any]:
+        if isinstance(payload, dict):
+            values = payload
+        elif is_dataclass(payload):
+            values = asdict(payload)
+        else:
+            values = vars(payload)
+
+        stmt = text(
+            """
+            INSERT INTO comprobante_impuesto (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_inmueble,
+                id_unidad_funcional,
+                organismo,
+                tipo_impuesto,
+                partida_nomenclatura,
+                numero_comprobante,
+                periodo_desde,
+                periodo_hasta,
+                fecha_emision,
+                fecha_vencimiento,
+                importe_total,
+                modalidad_gestion_impuesto,
+                observaciones
+            )
+            VALUES (
+                :uid_global,
+                :version_registro,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_inmueble,
+                :id_unidad_funcional,
+                :organismo,
+                :tipo_impuesto,
+                :partida_nomenclatura,
+                :numero_comprobante,
+                :periodo_desde,
+                :periodo_hasta,
+                :fecha_emision,
+                :fecha_vencimiento,
+                :importe_total,
+                :modalidad_gestion_impuesto,
+                :observaciones
+            )
+            RETURNING
+                id_comprobante_impuesto,
+                uid_global,
+                version_registro,
+                id_inmueble,
+                id_unidad_funcional,
+                organismo,
+                tipo_impuesto,
+                partida_nomenclatura,
+                numero_comprobante,
+                periodo_desde,
+                periodo_hasta,
+                fecha_emision,
+                fecha_vencimiento,
+                importe_total,
+                modalidad_gestion_impuesto,
+                estado_comprobante_impuesto,
+                observaciones
+            """
+        )
+        try:
+            row = self.db.execute(stmt, values).mappings().one()
+            self.db.commit()
+            return self._comprobante_impuesto_row_to_dict(row)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def get_comprobante_impuesto(
+        self, id_comprobante_impuesto: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_comprobante_impuesto,
+                uid_global,
+                version_registro,
+                id_inmueble,
+                id_unidad_funcional,
+                organismo,
+                tipo_impuesto,
+                partida_nomenclatura,
+                numero_comprobante,
+                periodo_desde,
+                periodo_hasta,
+                fecha_emision,
+                fecha_vencimiento,
+                importe_total,
+                modalidad_gestion_impuesto,
+                estado_comprobante_impuesto,
+                observaciones
+            FROM comprobante_impuesto
+            WHERE id_comprobante_impuesto = :id
+              AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_comprobante_impuesto}).mappings().one_or_none()
+        if row is None:
+            return None
+        return self._comprobante_impuesto_row_to_dict(row)
+
+    def list_comprobantes_impuesto(self) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                id_comprobante_impuesto,
+                uid_global,
+                version_registro,
+                id_inmueble,
+                id_unidad_funcional,
+                organismo,
+                tipo_impuesto,
+                partida_nomenclatura,
+                numero_comprobante,
+                periodo_desde,
+                periodo_hasta,
+                fecha_emision,
+                fecha_vencimiento,
+                importe_total,
+                modalidad_gestion_impuesto,
+                estado_comprobante_impuesto,
+                observaciones
+            FROM comprobante_impuesto
+            WHERE deleted_at IS NULL
+            ORDER BY id_comprobante_impuesto
+            """
+        )
+        rows = self.db.execute(stmt).mappings().all()
+        return [self._comprobante_impuesto_row_to_dict(row) for row in rows]
+
     def liquidacion_recupero_exists(self, id_liquidacion_recupero: int) -> bool:
         stmt = text(
             """

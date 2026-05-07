@@ -489,14 +489,16 @@ SRV-FIN-012
 
 ### Impuestos trasladados
 
-- estado: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`
+- estado: `IMPLEMENTADO PARCIAL V1`
 - los impuestos, tasas o contribuciones no deben modelarse como
   `factura_servicio`
-- V1 propone entidad propia `comprobante_impuesto` como origen documental
+- V1 implementa entidad propia `comprobante_impuesto` como origen documental
 - datos minimos de `comprobante_impuesto`: organismo, tipo de impuesto,
   partida o nomenclatura como snapshot, numero de comprobante, periodo,
   vencimiento, importe e inmueble/UF
 - `comprobante_impuesto` no genera deuda automaticamente
+- alta y consulta de `comprobante_impuesto` estan implementadas; no crean
+  tesoreria, relacion generadora, obligacion ni composicion
 - la modalidad define el tratamiento financiero:
   - `EMPRESA_ASUME`: la empresa paga, se registra tesoreria y no se genera
     obligacion al responsable

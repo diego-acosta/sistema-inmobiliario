@@ -1,9 +1,10 @@
 # SRV-FIN-021 - Impuestos trasladados
 
 ## Estado
-- estado: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`
+- estado: `IMPLEMENTADO PARCIAL V1`
+- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso, materializacion, pago externo y liquidacion aun no implementados
 - dominio owner: `financiero`
-- origen operativo propuesto: `comprobante_impuesto`
+- origen operativo: `comprobante_impuesto`
 - clasificacion: nucleo financiero para traslado de impuestos, tasas o contribuciones a responsables
 
 ## Objetivo
@@ -16,7 +17,7 @@ El flujo no usa `factura_servicio`, no usa `SERVICIO_TRASLADADO`, no usa
 
 ## Entidad origen
 
-V1 debe crear entidad propia `comprobante_impuesto`.
+V1 crea entidad propia `comprobante_impuesto`.
 
 Datos minimos:
 
@@ -35,6 +36,25 @@ Datos minimos:
 
 `comprobante_impuesto` registra el origen documental. No genera deuda
 automaticamente. La modalidad financiera define que operaciones se habilitan.
+
+Endpoints implementados:
+
+- `POST /api/v1/comprobantes-impuesto`
+- `GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}`
+- `GET /api/v1/comprobantes-impuesto`
+
+Reglas implementadas:
+
+- XOR entre `id_inmueble` e `id_unidad_funcional`;
+- organismo, tipo de impuesto y numero de comprobante obligatorios;
+- importe no negativo;
+- periodo valido si se informa completo;
+- vencimiento no anterior a emision si se informa `fecha_emision`;
+- modalidad en `EMPRESA_ASUME`, `DIRECTO_RESPONSABLE` o
+  `EMPRESA_PAGA_Y_RECUPERA`;
+- duplicado activo por organismo + numero de comprobante bloqueado;
+- no crea `movimiento_tesoreria`, `relacion_generadora`,
+  `obligacion_financiera` ni `composicion_obligacion`.
 
 ## Concepto financiero
 
@@ -133,6 +153,10 @@ aparecer en estado de cuenta del responsable.
 ## Fuera de alcance V1
 
 - usar `factura_servicio` para impuestos;
+- egreso de impuesto por empresa, pendiente posterior;
+- materializacion de obligacion `IMPUESTO_TRASLADADO`, pendiente posterior;
+- pago externo informado de impuesto, pendiente posterior;
+- liquidacion de recupero de impuesto, pendiente posterior;
 - expensas formales;
 - crear `IMPUESTO_RECUPERADO`;
 - maestro catastral completo;

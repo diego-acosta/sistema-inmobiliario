@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -21,6 +22,10 @@ from app.api.schemas.financiero import (
     BonificacionIndexacionData,
     BonificacionIndexacionRequest,
     BonificacionIndexacionResponse,
+    ComprobanteImpuestoCreateRequest,
+    ComprobanteImpuestoData,
+    ComprobanteImpuestoListResponse,
+    ComprobanteImpuestoResponse,
     ComposicionCreateItem,
     ConceptoFinancieroData,
     ConceptoFinancieroListData,
@@ -98,11 +103,23 @@ from app.application.common.commands import CommandContext
 from app.application.financiero.commands.create_relacion_generadora import (
     CreateRelacionGeneradoraCommand,
 )
+from app.application.financiero.commands.create_comprobante_impuesto import (
+    CreateComprobanteImpuestoCommand,
+)
 from app.application.financiero.commands.generar_mora_financiera import (
     GenerarMoraFinancieraCommand,
 )
 from app.application.financiero.services.create_relacion_generadora_service import (
     CreateRelacionGeneradoraService,
+)
+from app.application.financiero.services.create_comprobante_impuesto_service import (
+    CreateComprobanteImpuestoService,
+)
+from app.application.financiero.services.get_comprobante_impuesto_service import (
+    GetComprobanteImpuestoService,
+)
+from app.application.financiero.services.list_comprobantes_impuesto_service import (
+    ListComprobantesImpuestoService,
 )
 from app.application.financiero.services.get_relacion_generadora_service import (
     GetRelacionGeneradoraService,
@@ -253,6 +270,135 @@ def _build_context(
         id_instalacion=id_instalacion,
         op_id=op_id,
         **context_kwargs,
+    )
+
+
+@router.post(
+    "/api/v1/comprobantes-impuesto",
+    status_code=201,
+    response_model=ComprobanteImpuestoResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_comprobante_impuesto(
+    request: ComprobanteImpuestoCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ComprobanteImpuestoResponse | JSONResponse:
+    context = _build_context(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    command = CreateComprobanteImpuestoCommand(
+        context=context,
+        id_inmueble=request.id_inmueble,
+        id_unidad_funcional=request.id_unidad_funcional,
+        organismo=request.organismo,
+        tipo_impuesto=request.tipo_impuesto,
+        partida_nomenclatura=request.partida_nomenclatura,
+        numero_comprobante=request.numero_comprobante,
+        periodo_desde=request.periodo_desde,
+        periodo_hasta=request.periodo_hasta,
+        fecha_emision=request.fecha_emision,
+        fecha_vencimiento=request.fecha_vencimiento,
+        importe_total=Decimal(str(request.importe_total)),
+        modalidad_gestion_impuesto=request.modalidad_gestion_impuesto,
+        observaciones=request.observaciones,
+    )
+    service = CreateComprobanteImpuestoService(FinancieroRepository(db))
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if any(error in result.errors for error in ("NOT_FOUND_INMUEBLE", "NOT_FOUND_UNIDAD_FUNCIONAL")):
+            error = ErrorResponse(
+                error_code="NOT_FOUND_OBJETO_INMOBILIARIO",
+                error_message="El inmueble o la unidad funcional indicada no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+        if "COMPROBANTE_IMPUESTO_DUPLICADO" in result.errors:
+            error = ErrorResponse(
+                error_code="COMPROBANTE_IMPUESTO_DUPLICADO",
+                error_message="Ya existe un comprobante activo para el organismo y numero indicados.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+        error = ErrorResponse(
+            error_code="COMPROBANTE_IMPUESTO_INVALIDO",
+            error_message="No se pudo crear el comprobante de impuesto.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ComprobanteImpuestoResponse(data=ComprobanteImpuestoData(**result.data))
+
+
+@router.get(
+    "/api/v1/comprobantes-impuesto/{id_comprobante_impuesto}",
+    response_model=ComprobanteImpuestoResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_comprobante_impuesto(
+    id_comprobante_impuesto: int,
+    db: Session = Depends(get_db),
+) -> ComprobanteImpuestoResponse | JSONResponse:
+    service = GetComprobanteImpuestoService(FinancieroRepository(db))
+    try:
+        result = service.execute(id_comprobante_impuesto)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND_COMPROBANTE_IMPUESTO",
+            error_message="El comprobante de impuesto indicado no existe.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return ComprobanteImpuestoResponse(data=ComprobanteImpuestoData(**result.data))
+
+
+@router.get(
+    "/api/v1/comprobantes-impuesto",
+    response_model=ComprobanteImpuestoListResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def list_comprobantes_impuesto(
+    db: Session = Depends(get_db),
+) -> ComprobanteImpuestoListResponse | JSONResponse:
+    service = ListComprobantesImpuestoService(FinancieroRepository(db))
+    try:
+        result = service.execute()
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudieron obtener los comprobantes de impuesto.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ComprobanteImpuestoListResponse(
+        data=[ComprobanteImpuestoData(**item) for item in result.data]
     )
 
 

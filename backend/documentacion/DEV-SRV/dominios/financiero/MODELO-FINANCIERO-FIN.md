@@ -468,10 +468,10 @@ El diseno de este circuito queda documentado en
 
 ## 4.2 Diseno V1 Para Impuestos Trasladados
 
-Estado: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`.
+Estado: `IMPLEMENTADO PARCIAL V1`.
 
-Los impuestos, tasas o contribuciones trasladadas deben modelarse con entidad
-propia `comprobante_impuesto`. No deben registrarse como `factura_servicio`.
+Los impuestos, tasas o contribuciones trasladadas se modelan con entidad propia
+`comprobante_impuesto`. No deben registrarse como `factura_servicio`.
 
 Motivos:
 
@@ -484,7 +484,9 @@ Motivos:
 - expensas siguen fuera de alcance.
 
 `comprobante_impuesto` no genera deuda automaticamente. La modalidad define que
-operaciones se habilitan.
+operaciones se habilitan. V1 implementado cubre alta y consulta del comprobante
+sin efectos financieros; egresos, materializacion, pago externo y liquidacion
+quedan pendientes.
 
 Modalidades V1:
 

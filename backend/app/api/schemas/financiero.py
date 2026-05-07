@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 
@@ -63,6 +63,77 @@ class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
     details: dict[str, Any] | None = None
+
+
+class ComprobanteImpuestoCreateRequest(BaseModel):
+    id_inmueble: int | None = None
+    id_unidad_funcional: int | None = None
+    organismo: str
+    tipo_impuesto: str
+    partida_nomenclatura: str | None = None
+    numero_comprobante: str
+    periodo_desde: date | None = None
+    periodo_hasta: date | None = None
+    fecha_emision: date | None = None
+    fecha_vencimiento: date
+    importe_total: float
+    modalidad_gestion_impuesto: str
+    observaciones: str | None = None
+
+    @model_validator(mode="after")
+    def validar_comprobante_impuesto(self) -> "ComprobanteImpuestoCreateRequest":
+        if (self.id_inmueble is not None) == (self.id_unidad_funcional is not None):
+            raise ValueError("Debe informar id_inmueble o id_unidad_funcional, no ambos.")
+        if not self.organismo.strip():
+            raise ValueError("organismo es obligatorio.")
+        if not self.tipo_impuesto.strip():
+            raise ValueError("tipo_impuesto es obligatorio.")
+        if not self.numero_comprobante.strip():
+            raise ValueError("numero_comprobante es obligatorio.")
+        if self.importe_total < 0:
+            raise ValueError("importe_total debe ser mayor o igual a cero.")
+        if (
+            self.periodo_desde is not None
+            and self.periodo_hasta is not None
+            and self.periodo_hasta < self.periodo_desde
+        ):
+            raise ValueError("periodo_hasta debe ser mayor o igual a periodo_desde.")
+        if (
+            self.fecha_emision is not None
+            and self.fecha_vencimiento < self.fecha_emision
+        ):
+            raise ValueError("fecha_vencimiento debe ser mayor o igual a fecha_emision.")
+        return self
+
+
+class ComprobanteImpuestoData(BaseModel):
+    id_comprobante_impuesto: int
+    uid_global: str
+    version_registro: int
+    id_inmueble: int | None
+    id_unidad_funcional: int | None
+    organismo: str
+    tipo_impuesto: str
+    partida_nomenclatura: str | None
+    numero_comprobante: str
+    periodo_desde: str | None
+    periodo_hasta: str | None
+    fecha_emision: str | None
+    fecha_vencimiento: str
+    importe_total: float
+    modalidad_gestion_impuesto: str
+    estado_comprobante_impuesto: str
+    observaciones: str | None
+
+
+class ComprobanteImpuestoResponse(BaseModel):
+    ok: bool = True
+    data: ComprobanteImpuestoData
+
+
+class ComprobanteImpuestoListResponse(BaseModel):
+    ok: bool = True
+    data: list[ComprobanteImpuestoData]
 
 
 # ── concepto_financiero ───────────────────────────────────────────────────────
