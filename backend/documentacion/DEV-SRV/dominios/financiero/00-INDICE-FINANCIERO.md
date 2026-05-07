@@ -37,6 +37,9 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
 - [[SRV-FIN-020-recupero-servicios-comunes]]
   - Diseno V1 de `EMPRESA_PAGA_Y_RECUPERA`
   - Cierre V1 en [[CIERRE-EMPRESA-PAGA-Y-RECUPERA-V1]]
+- [[SRV-FIN-021-impuestos-trasladados]]
+  - Diseno V1 documentado de `IMPUESTO_TRASLADADO`
+  - No implementado
 
 ## Notas
 - Este dominio se está refactorizando desde el DEV-SRV-001 legado hacia una estructura modular.

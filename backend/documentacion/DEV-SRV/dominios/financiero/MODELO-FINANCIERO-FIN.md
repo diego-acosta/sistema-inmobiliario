@@ -466,6 +466,67 @@ El diseno de este circuito queda documentado en
 
 ---
 
+## 4.2 Diseno V1 Para Impuestos Trasladados
+
+Estado: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`.
+
+Los impuestos, tasas o contribuciones trasladadas deben modelarse con entidad
+propia `comprobante_impuesto`. No deben registrarse como `factura_servicio`.
+
+Motivos:
+
+- `factura_servicio` pertenece al circuito de servicios externos;
+- `factura_servicio` materializa `SERVICIO_TRASLADADO` o recupera
+  `SERVICIO_RECUPERADO`;
+- un impuesto requiere datos fiscales propios: organismo, tipo de impuesto,
+  partida o nomenclatura, numero de comprobante, periodo, vencimiento, importe
+  y objeto inmobiliario;
+- expensas siguen fuera de alcance.
+
+`comprobante_impuesto` no genera deuda automaticamente. La modalidad define que
+operaciones se habilitan.
+
+Modalidades V1:
+
+1. `EMPRESA_ASUME`
+   - la empresa paga el impuesto;
+   - se registra egreso de tesoreria;
+   - no genera obligacion al responsable;
+   - no genera `IMPUESTO_TRASLADADO`.
+
+2. `DIRECTO_RESPONSABLE`
+   - el responsable debe pagar directamente al organismo;
+   - puede materializar obligacion `IMPUESTO_TRASLADADO`;
+   - requiere unico responsable 100%;
+   - el pago informado es externo;
+   - no impacta caja, tesoreria ni recibo interno.
+
+3. `EMPRESA_PAGA_Y_RECUPERA`
+   - la empresa paga al organismo;
+   - se registra egreso de tesoreria;
+   - luego se liquida recupero como obligacion `IMPUESTO_TRASLADADO`;
+   - el responsable paga a la empresa por el flujo normal de pago por persona.
+
+Decision de concepto V1:
+
+- usar `IMPUESTO_TRASLADADO` para toda deuda fiscal trasladada;
+- no crear `IMPUESTO_RECUPERADO`;
+- mantener `IMPUESTO_TRASLADADO.aplica_punitorio = false` salvo decision
+  posterior;
+- no usar `SERVICIO_RECUPERADO`;
+- no usar `EXPENSA_TRASLADADA`.
+
+`liquidacion_recupero` no debe reutilizarse directamente para impuestos porque
+esta acoplada a `factura_servicio`, `egreso_proveedor_factura_servicio` y
+`SERVICIO_RECUPERADO`. Para impuestos corresponde una entidad propia, por
+ejemplo `liquidacion_impuesto_trasladado`, reutilizando solo el patron de
+liquidacion, vinculos, responsables, relacion generadora, obligacion y anulacion
+conservadora.
+
+Referencia: `SRV-FIN-021-impuestos-trasladados`.
+
+---
+
 ## 5. Estado de obligacion
 
 Regla implementada despues de imputar:

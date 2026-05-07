@@ -586,6 +586,27 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA V1.
 - observaciones: el pago al proveedor corresponde a egreso/caja/tesoreria de la empresa y se registra con `movimiento_tesoreria` + `egreso_proveedor_factura_servicio` desde `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`. Se consulta con `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`, derivando `SIN_PAGO`, `PAGO_PARCIAL`, `PAGADA` o `SOBREPAGADA` sin persistir estado en `factura_servicio`; solo egresos `REGISTRADO` no eliminados suman al total egresado. La anulacion V1 usa `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`, marca egreso y movimiento de tesoreria como `ANULADO`, preserva motivo y es idempotente si ya estaba anulado; si el egreso fue usado por una `liquidacion_recupero` activa mediante un vinculo `liquidacion_recupero_egreso` `ACTIVO` y no eliminado, la anulacion se bloquea. El recupero se liquida explicitamente con `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`: crea `liquidacion_recupero`, vinculo `liquidacion_recupero_egreso` `ACTIVO`, `relacion_generadora` `LIQUIDACION_RECUPERO`, obligacion `EMITIDA`, composicion `SERVICIO_RECUPERADO` y `obligacion_obligado` por responsables explicitos con porcentajes que suman 100. La consulta formal se expone con `GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}` y `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`; ambas son solo lectura y no crean movimientos ni modifican saldos. La anulacion conservadora se expone con `PATCH /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular`: solo procede sin aplicaciones financieras activas, movimientos financieros activos asociados, punitorios activos ni composiciones posteriores activas; marca liquidacion `ANULADA`, relacion `CANCELADA`, obligacion/composiciones `ANULADA` y libera egresos anulando logicamente `liquidacion_recupero_egreso`. No toca `movimiento_tesoreria`, `egreso_proveedor_factura_servicio`, `factura_servicio` ni pagos normales. No usa `PAGO_EXTERNO_INFORMADO`, no crea `movimiento_tesoreria` nuevo al liquidar y el cobro posterior usa el flujo normal de pago por persona.
 
+### RN-FIN-082D - Impuestos trasladados no usan factura_servicio
+- descripcion: Los impuestos, tasas o contribuciones trasladadas deben registrarse desde una entidad propia `comprobante_impuesto`. No deben modelarse como `factura_servicio`, porque ese origen pertenece al circuito de servicios externos y sus obligaciones usan `SERVICIO_TRASLADADO` o `SERVICIO_RECUPERADO`.
+- aplica_a: comprobante_impuesto, relacion_generadora, obligacion_financiera, composicion_obligacion
+- origen_principal: SRV-FIN-021
+- estado: DISENO V1 DOCUMENTADO / NO IMPLEMENTADO.
+- observaciones: `comprobante_impuesto` no genera deuda automaticamente. La modalidad financiera define si se registra solo egreso, deuda directa, pago externo informado o recupero posterior.
+
+### RN-FIN-082E - Modalidades V1 de IMPUESTO_TRASLADADO
+- descripcion: V1 distingue tres modalidades para impuestos trasladados: `EMPRESA_ASUME`, `DIRECTO_RESPONSABLE` y `EMPRESA_PAGA_Y_RECUPERA`.
+- aplica_a: comprobante_impuesto, movimiento_tesoreria, relacion_generadora, obligacion_financiera, composicion_obligacion, aplicacion_financiera
+- origen_principal: SRV-FIN-021
+- estado: DISENO V1 DOCUMENTADO / NO IMPLEMENTADO.
+- observaciones: `EMPRESA_ASUME` registra egreso de tesoreria y no genera obligacion. `DIRECTO_RESPONSABLE` puede generar obligacion `IMPUESTO_TRASLADADO` y admitir pago externo informado solo con unico responsable 100%, sin caja ni tesoreria. `EMPRESA_PAGA_Y_RECUPERA` registra egreso de tesoreria y luego liquida obligacion `IMPUESTO_TRASLADADO`; el cobro posterior usa pago normal por persona.
+
+### RN-FIN-082F - Concepto financiero para impuestos trasladados
+- descripcion: La deuda fiscal trasladada en V1 debe usar `IMPUESTO_TRASLADADO`. No se crea `IMPUESTO_RECUPERADO` en V1.
+- aplica_a: concepto_financiero, composicion_obligacion
+- origen_principal: SRV-FIN-021 / MODELO-FINANCIERO-FIN
+- estado: DISENO V1 DOCUMENTADO / NO IMPLEMENTADO.
+- observaciones: `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision posterior documentada y migrada. `EXPENSA_TRASLADADA` queda reservada para expensas formales y `SERVICIO_RECUPERADO` para servicios comunes pagados por la empresa.
+
 ### RN-FIN-083 - Reversion completa de pago agrupado
 - descripcion: La reversion V1 de un pago debe operar siempre por `codigo_pago_grupo` completo. Solo se permite si no existen operaciones posteriores activas sobre las obligaciones o composiciones afectadas. Debe marcar los movimientos `PAGO` como `ANULADO`, soft-deletear sus aplicaciones para excluirlas de saldos y registrar el motivo de reversion en campos de observaciones disponibles.
 - aplica_a: movimiento_financiero, aplicacion_financiera, obligacion_financiera

@@ -887,3 +887,43 @@ Sigue pendiente:
   implementados
 - outbox financiero en estos writes
 - idempotencia completa por `X-Op-Id` en todos los writes del dominio
+
+### IMPUESTO_TRASLADADO V1
+
+Estado: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`.
+
+El diseno V1 queda documentado en
+`backend/documentacion/DEV-SRV/dominios/financiero/SRV-FIN-021-impuestos-trasladados.md`.
+
+Reglas de contrato futuro:
+
+- crear entidad propia `comprobante_impuesto`;
+- no usar `factura_servicio` para impuestos;
+- no crear `IMPUESTO_RECUPERADO` en V1;
+- usar `IMPUESTO_TRASLADADO` para deuda fiscal trasladada;
+- mantener `IMPUESTO_TRASLADADO.aplica_punitorio = false` salvo decision
+  posterior;
+- `comprobante_impuesto` no genera deuda automaticamente;
+- la modalidad define el flujo habilitado.
+
+Modalidades futuras:
+
+- `EMPRESA_ASUME`: registra egreso de tesoreria y no genera obligacion al
+  responsable.
+- `DIRECTO_RESPONSABLE`: puede materializar obligacion `IMPUESTO_TRASLADADO`;
+  el pago informado es externo, no caja/tesoreria, y requiere unico responsable
+  100%.
+- `EMPRESA_PAGA_Y_RECUPERA`: registra egreso de tesoreria, luego liquida
+  recupero como obligacion `IMPUESTO_TRASLADADO` y el responsable paga a la
+  empresa por flujo normal.
+
+Endpoints futuros a definir, no implementados:
+
+- `POST /api/v1/financiero/comprobantes-impuesto`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}`
+- `GET /api/v1/financiero/comprobantes-impuesto`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/materializar`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/pago-externo`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}/anular`

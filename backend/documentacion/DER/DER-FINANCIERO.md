@@ -487,6 +487,33 @@ SRV-FIN-012
   expensas formales e `IMPUESTO_TRASLADADO` para impuestos
 - no existe evento ni consumer automatico para `factura_servicio_registrada`
 
+### Impuestos trasladados
+
+- estado: `DISENO V1 DOCUMENTADO / NO IMPLEMENTADO`
+- los impuestos, tasas o contribuciones no deben modelarse como
+  `factura_servicio`
+- V1 propone entidad propia `comprobante_impuesto` como origen documental
+- datos minimos de `comprobante_impuesto`: organismo, tipo de impuesto,
+  partida o nomenclatura como snapshot, numero de comprobante, periodo,
+  vencimiento, importe e inmueble/UF
+- `comprobante_impuesto` no genera deuda automaticamente
+- la modalidad define el tratamiento financiero:
+  - `EMPRESA_ASUME`: la empresa paga, se registra tesoreria y no se genera
+    obligacion al responsable
+  - `DIRECTO_RESPONSABLE`: puede generar obligacion `IMPUESTO_TRASLADADO`,
+    requiere unico responsable 100% y el pago informado es externo, sin caja ni
+    tesoreria
+  - `EMPRESA_PAGA_Y_RECUPERA`: la empresa paga al organismo con tesoreria y
+    luego liquida recupero como obligacion `IMPUESTO_TRASLADADO`; el cobro
+    posterior usa pago normal por persona
+- no se crea `IMPUESTO_RECUPERADO` en V1
+- `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision
+  posterior
+- `liquidacion_recupero` no se reutiliza directamente porque pertenece a
+  servicios comunes y `SERVICIO_RECUPERADO`; para impuestos corresponde entidad
+  propia, por ejemplo `liquidacion_impuesto_trasladado`
+- `EXPENSA_TRASLADADA` queda reservada para expensas formales
+
 ### Personas
 - obligacion_obligado → persona
 

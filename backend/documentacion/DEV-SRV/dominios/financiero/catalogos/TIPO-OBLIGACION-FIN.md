@@ -78,7 +78,7 @@ Cada "tipo" legacy debe mapearse hacia:
 | servicio trasladado | `FACTURA_SERVICIO` en V1 | `SERVICIO_TRASLADADO` | Servicio trasladado al obligado financiero desde factura externa de proveedor. |
 | recupero de servicio comun | `LIQUIDACION_RECUPERO` | `SERVICIO_RECUPERADO` | Recupero contra personas por factura de servicio comun pagada previamente por la empresa. V1 se liquida explicitamente desde egresos proveedor registrados. |
 | expensa trasladada | `CONTRATO_ALQUILER` | `EXPENSA_TRASLADADA` | Expensa trasladada al obligado financiero. |
-| impuesto trasladado | `CONTRATO_ALQUILER` o `INMUEBLE` segun origen documentado futuro | `IMPUESTO_TRASLADADO` | Impuesto o tasa trasladada. |
+| impuesto trasladado | `COMPROBANTE_IMPUESTO` o `LIQUIDACION_IMPUESTO_TRASLADADO` en diseno V1 futuro | `IMPUESTO_TRASLADADO` | Impuesto, tasa o contribucion trasladada. No usa `factura_servicio`, no crea `IMPUESTO_RECUPERADO` en V1. |
 | mora | Origen de la obligacion afectada | `PUNITORIO` en V1; `INTERES_MORA` solo compatibilidad heredada | Componentes de mora asociados a deuda vencida. |
 | liquidacion final | Relacion generadora cerrada o en cierre | `LIQUIDACION_FINAL` y conceptos complementarios | Cierre economico de la relacion. |
 | refinanciacion | Refinanciacion o proceso financiero formal | `REFINANCIACION` y conceptos resultantes | Nueva composicion derivada de deuda refinanciada. |
