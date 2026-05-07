@@ -54,6 +54,23 @@ def _calcular_mora_dinamica(
     }
 
 
+def _append_motivo_anulacion(observaciones: str | None, motivo: str) -> str:
+    payload: dict[str, Any]
+    if observaciones:
+        try:
+            parsed = json.loads(observaciones)
+            payload = parsed if isinstance(parsed, dict) else {"observaciones": observaciones}
+        except (TypeError, ValueError):
+            payload = {"observaciones": observaciones}
+    else:
+        payload = {}
+    payload["anulacion"] = {
+        "motivo": motivo,
+        "fecha_anulacion": datetime.now(UTC).isoformat(),
+    }
+    return json.dumps(payload, separators=(",", ":"))
+
+
 class FinancieroRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -2635,6 +2652,115 @@ class FinancieroRepository:
                 }
             )
         return egresos
+
+    def get_egreso_proveedor_factura_servicio_by_id(
+        self, id_egreso: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                e.id_egreso_proveedor_factura_servicio,
+                e.id_factura_servicio,
+                e.id_movimiento_tesoreria,
+                e.estado_egreso,
+                e.observaciones,
+                mt.estado AS estado_movimiento_tesoreria
+            FROM egreso_proveedor_factura_servicio e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+             AND mt.deleted_at IS NULL
+            WHERE e.id_egreso_proveedor_factura_servicio = :id_egreso
+              AND e.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"id_egreso": id_egreso}).mappings().one_or_none()
+        if row is None:
+            return None
+        motivo_anulacion = None
+        if row["observaciones"]:
+            try:
+                parsed = json.loads(row["observaciones"])
+                anulacion = parsed.get("anulacion") if isinstance(parsed, dict) else None
+                if isinstance(anulacion, dict):
+                    motivo_anulacion = anulacion.get("motivo")
+            except (TypeError, ValueError):
+                motivo_anulacion = None
+        return {
+            "id_egreso_proveedor_factura_servicio": row[
+                "id_egreso_proveedor_factura_servicio"
+            ],
+            "id_factura_servicio": row["id_factura_servicio"],
+            "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+            "estado_egreso": row["estado_egreso"],
+            "estado_movimiento_tesoreria": row["estado_movimiento_tesoreria"],
+            "motivo_anulacion": motivo_anulacion,
+        }
+
+    def anular_egreso_proveedor_factura_servicio(
+        self, *, id_egreso: int, motivo: str, context: Any
+    ) -> dict[str, Any]:
+        row_stmt = text(
+            """
+            SELECT
+                e.id_egreso_proveedor_factura_servicio,
+                e.id_factura_servicio,
+                e.id_movimiento_tesoreria,
+                e.observaciones
+            FROM egreso_proveedor_factura_servicio e
+            WHERE e.id_egreso_proveedor_factura_servicio = :id_egreso
+              AND e.deleted_at IS NULL
+            FOR UPDATE
+            """
+        )
+        row = self.db.execute(row_stmt, {"id_egreso": id_egreso}).mappings().one()
+        observaciones = _append_motivo_anulacion(row["observaciones"], motivo)
+        op_id = getattr(context, "op_id", None)
+        update_egreso_stmt = text(
+            """
+            UPDATE egreso_proveedor_factura_servicio
+            SET estado_egreso = 'ANULADO',
+                observaciones = :observaciones,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_egreso_proveedor_factura_servicio = :id_egreso
+            RETURNING estado_egreso
+            """
+        )
+        update_mt_stmt = text(
+            """
+            UPDATE movimiento_tesoreria
+            SET estado = 'ANULADO',
+                observaciones = :observaciones,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_movimiento_tesoreria = :id_movimiento_tesoreria
+            RETURNING estado
+            """
+        )
+        egreso_row = self.db.execute(
+            update_egreso_stmt,
+            {
+                "id_egreso": id_egreso,
+                "observaciones": observaciones,
+                "op_id": op_id,
+            },
+        ).mappings().one()
+        mt_row = self.db.execute(
+            update_mt_stmt,
+            {
+                "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+                "observaciones": observaciones,
+                "op_id": op_id,
+            },
+        ).mappings().one()
+
+        return {
+            "id_egreso_proveedor_factura_servicio": row[
+                "id_egreso_proveedor_factura_servicio"
+            ],
+            "id_factura_servicio": row["id_factura_servicio"],
+            "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+            "estado_egreso": egreso_row["estado_egreso"],
+            "estado_movimiento_tesoreria": mt_row["estado"],
+        }
 
     def get_obligados_activos_by_obligacion(
         self, id_obligacion_financiera: int

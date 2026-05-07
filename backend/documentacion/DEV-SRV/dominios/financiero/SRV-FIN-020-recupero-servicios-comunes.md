@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `PARCIAL V1`
-- implementacion: egreso proveedor minimo implementado; recupero financiero no implementado
+- implementacion: egreso proveedor minimo y anulacion V1 implementados; recupero financiero no implementado
 - dominio owner: `financiero`
 - origen operativo: `factura_servicio` del dominio `inmobiliario`
 - clasificacion: nucleo financiero para recuperos contra personas
@@ -118,6 +118,8 @@ Decision recomendada V1:
   `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
 - Los egresos proveedor registrados se consultan con
   `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
+- Los egresos proveedor registrados por error se anulan con
+  `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`.
 - El egreso proveedor crea `movimiento_tesoreria` y
   `egreso_proveedor_factura_servicio`.
 - El egreso proveedor no crea `movimiento_financiero`,
@@ -132,6 +134,10 @@ Decision recomendada V1:
 - Para totales de pago proveedor solo cuentan egresos no eliminados con
   `estado_egreso = REGISTRADO`.
 - Estados derivados: `SIN_PAGO`, `PAGO_PARCIAL`, `PAGADA`, `SOBREPAGADA`.
+- La anulacion V1 no borra fisicamente: cambia
+  `egreso_proveedor_factura_servicio.estado_egreso = ANULADO` y
+  `movimiento_tesoreria.estado = ANULADO`, preservando observaciones y motivo.
+- La anulacion repetida devuelve resultado idempotente `YA_ANULADO`.
 - El recupero debe crear `obligacion_obligado` para los responsables
   determinados por la regla de reparto vigente.
 - Si no hay regla de reparto valida, debe bloquearse con error funcional.
@@ -145,15 +151,14 @@ Decision recomendada V1:
   porcentaje;
 - idempotencia funcional de generacion de recupero;
 - generacion de `obligacion_financiera` y `composicion_obligacion`;
-- anulacion/reversion del egreso proveedor;
+- bloqueo de anulacion si en el futuro existe `liquidacion_recupero` asociada;
 - anulacion/reversion de recuperos ya cobrados;
 - tratamiento de impuestos trasladados;
 - tratamiento de expensas formales.
 
 ## Implementacion futura sugerida
 
-1. Anular egresos proveedor.
-2. Crear entidad de liquidacion de recupero para agrupar una o mas facturas.
+1. Crear entidad de liquidacion de recupero para agrupar una o mas facturas.
 3. Definir reglas de reparto y validacion de suma.
 4. Materializar obligaciones de recupero con obligados usando
    `SERVICIO_RECUPERADO`.

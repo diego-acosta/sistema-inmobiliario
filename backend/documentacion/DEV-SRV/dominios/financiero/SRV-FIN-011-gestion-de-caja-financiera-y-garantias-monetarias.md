@@ -63,10 +63,14 @@ La implementacion V1 minima registra el egreso proveedor desde
   `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`,
   que deriva total egresado, saldo pendiente y estado de pago proveedor sin
   persistirlos en `factura_servicio`.
+- anulacion V1
+  `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`,
+  que marca `egreso_proveedor_factura_servicio` y `movimiento_tesoreria` como
+  `ANULADO` sin borrado fisico ni contramovimiento.
 
 Este registro no crea `movimiento_financiero`, no genera deuda de recupero y
-no emite recibo interno. La anulacion/reversion del egreso proveedor queda
-pendiente del flujo `SRV-FIN-020-recupero-servicios-comunes`.
+no emite recibo interno. El bloqueo de anulacion contra futuras liquidaciones
+de recupero queda pendiente del flujo `SRV-FIN-020-recupero-servicios-comunes`.
 
 ### Gestión de garantías monetarias
 Registra depósitos en garantía, su afectación, liberación, devolución parcial o total y eventual ejecución conforme a la política funcional.

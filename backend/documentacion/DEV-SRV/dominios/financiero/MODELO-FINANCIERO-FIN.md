@@ -403,6 +403,11 @@ Decision:
   `estado_pago_proveedor` sin persistir estado en `factura_servicio`.
 - estados derivados de pago proveedor: `SIN_PAGO`, `PAGO_PARCIAL`, `PAGADA`,
   `SOBREPAGADA`.
+- anulacion:
+  `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`.
+- la anulacion V1 marca el egreso y su `movimiento_tesoreria` como `ANULADO`,
+  preserva observaciones y motivo, y no crea movimientos financieros ni
+  obligaciones.
 - luego se genera una obligacion de recupero a los responsables por la parte
   correspondiente.
 - la obligacion de recupero representa deuda con la empresa, no pago al

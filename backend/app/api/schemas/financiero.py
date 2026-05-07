@@ -283,6 +283,34 @@ class EgresosProveedorFacturaServicioResponse(BaseModel):
     data: EgresosProveedorFacturaServicioData
 
 
+class AnularEgresoProveedorFacturaServicioRequest(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_not_blank(cls, v: str) -> str:
+        motivo = v.strip()
+        if not motivo:
+            raise ValueError("motivo es obligatorio.")
+        return motivo
+
+
+class AnularEgresoProveedorFacturaServicioData(BaseModel):
+    resultado: str | None = None
+    id_egreso_proveedor_factura_servicio: int
+    id_factura_servicio: int
+    id_movimiento_tesoreria: int
+    estado_egreso: str
+    estado_movimiento_tesoreria: str
+    motivo: str
+    ya_anulado: bool
+
+
+class AnularEgresoProveedorFacturaServicioResponse(BaseModel):
+    ok: bool = True
+    data: AnularEgresoProveedorFacturaServicioData
+
+
 class AjusteIndexacionRequest(BaseModel):
     importe_ajuste: float
     motivo: str
