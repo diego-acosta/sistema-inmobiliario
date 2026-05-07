@@ -46,6 +46,8 @@ Este documento describe los endpoints financieros actualmente implementados en b
 - `GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}`
 - `GET /api/v1/comprobantes-impuesto`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
+- `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular`
 
 ### EMPRESA_PAGA_Y_RECUPERA
 
@@ -540,6 +542,65 @@ Side effects:
 - no usa `PAGO_EXTERNO_INFORMADO`;
 - no impacta estado de cuenta.
 
+### GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos
+
+Objetivo: consultar egresos de empresa registrados para un
+`comprobante_impuesto`.
+
+Respuesta resumida:
+
+```json
+{
+  "id_comprobante_impuesto": 1,
+  "importe_total_comprobante": 15000.00,
+  "total_egresado": 10000.00,
+  "saldo_pendiente_pago_impuesto": 5000.00,
+  "estado_pago_impuesto": "PAGO_PARCIAL",
+  "egresos": []
+}
+```
+
+Reglas:
+
+- suma solo egresos `REGISTRADO` y no eliminados;
+- lista egresos no eliminados, incluyendo anulados;
+- deriva `SIN_PAGO`, `PAGO_PARCIAL`, `PAGADO` o `SOBREPAGADO`;
+- no persiste estado de pago en `comprobante_impuesto`;
+- no modifica tesoreria, deuda ni estado de cuenta.
+
+Errores principales:
+
+- `COMPROBANTE_IMPUESTO_NOT_FOUND`
+
+### PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular
+
+Objetivo: anular logicamente un egreso de impuesto empresa.
+
+Request:
+
+```json
+{
+  "motivo": "Carga duplicada / error de comprobante"
+}
+```
+
+Reglas:
+
+- si esta `REGISTRADO`, marca `egreso_impuesto_empresa` y
+  `movimiento_tesoreria` como `ANULADO`;
+- si ya estaba `ANULADO`, devuelve `YA_ANULADO`;
+- no borra fisicamente;
+- no toca `comprobante_impuesto`;
+- no crea ni modifica `movimiento_financiero`, `relacion_generadora` ni
+  `obligacion_financiera`;
+- no impacta estado de cuenta;
+- pendiente futuro: bloquear si una futura `liquidacion_impuesto_trasladado`
+  activa usa el egreso.
+
+Errores principales:
+
+- `EGRESO_IMPUESTO_NOT_FOUND`
+
 ---
 
 ## 10. EMPRESA_PAGA_Y_RECUPERA
@@ -1031,7 +1092,8 @@ Reglas implementadas para `comprobante_impuesto` y egreso empresa:
 - `egreso_impuesto_empresa` registra tesoreria para `EMPRESA_ASUME` y
   `EMPRESA_PAGA_Y_RECUPERA`;
 - el egreso empresa bloquea `DIRECTO_RESPONSABLE`;
-- el egreso empresa no genera deuda ni estado de cuenta.
+- el egreso empresa no genera deuda ni estado de cuenta;
+- consulta y anulacion logica de egreso empresa estan implementadas.
 
 Modalidades V1:
 

@@ -679,3 +679,327 @@ def test_registrar_egreso_impuesto_no_afecta_estado_cuenta(
     assert after.status_code == 200
     assert after.json()["data"]["resumen"] == before.json()["data"]["resumen"]
     assert after.json()["data"]["obligaciones"] == before.json()["data"]["obligaciones"]
+
+
+def test_get_egresos_impuesto_sin_egresos_devuelve_sin_pago(
+    client, db_session
+) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-GET-SIN",
+        importe_total=15000,
+    ).json()["data"]
+
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}/egresos"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["id_comprobante_impuesto"] == comprobante["id_comprobante_impuesto"]
+    assert data["importe_total_comprobante"] == 15000.0
+    assert data["total_egresado"] == 0.0
+    assert data["saldo_pendiente_pago_impuesto"] == 15000.0
+    assert data["estado_pago_impuesto"] == "SIN_PAGO"
+    assert data["egresos"] == []
+
+
+def test_get_egresos_impuesto_con_parcial_devuelve_pago_parcial(
+    client, db_session
+) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-GET-PARCIAL",
+        importe_total=15000,
+    ).json()["data"]
+    _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        importe_pagado=10000,
+        op_id="00000000-0000-0000-0000-00000000e201",
+    )
+
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}/egresos"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_egresado"] == 10000.0
+    assert data["saldo_pendiente_pago_impuesto"] == 5000.0
+    assert data["estado_pago_impuesto"] == "PAGO_PARCIAL"
+    assert len(data["egresos"]) == 1
+    assert data["egresos"][0]["estado_egreso"] == "REGISTRADO"
+
+
+def test_get_egresos_impuesto_con_total_devuelve_pagado(client, db_session) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-GET-TOTAL",
+        importe_total=15000,
+    ).json()["data"]
+    _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        importe_pagado=15000,
+        op_id="00000000-0000-0000-0000-00000000e202",
+    )
+
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}/egresos"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_egresado"] == 15000.0
+    assert data["saldo_pendiente_pago_impuesto"] == 0.0
+    assert data["estado_pago_impuesto"] == "PAGADO"
+
+
+def test_get_egresos_impuesto_lista_multiples_egresos(client, db_session) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-GET-MULTI",
+        importe_total=15000,
+    ).json()["data"]
+    cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta impuesto get multi")
+    _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_cuenta_financiera_origen=cuenta,
+        importe_pagado=6000,
+        op_id="00000000-0000-0000-0000-00000000e203",
+    )
+    _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_cuenta_financiera_origen=cuenta,
+        importe_pagado=9000,
+        referencia_comprobante="TRX-MUN-456",
+        observaciones="Segundo pago municipal",
+        op_id="00000000-0000-0000-0000-00000000e204",
+    )
+
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}/egresos"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["estado_pago_impuesto"] == "PAGADO"
+    assert [item["importe_pagado"] for item in data["egresos"]] == [6000.0, 9000.0]
+    assert data["egresos"][1]["observaciones"] == "Segundo pago municipal"
+
+
+def test_get_egresos_impuesto_comprobante_inexistente_devuelve_404(client) -> None:
+    response = client.get(
+        "/api/v1/financiero/comprobantes-impuesto/999999999/egresos",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "COMPROBANTE_IMPUESTO_NOT_FOUND"
+
+
+def test_anular_egreso_impuesto_registrado_anula_egreso_y_tesoreria(
+    client, db_session
+) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-ANULAR",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000e205",
+    ).json()["data"]
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/egresos-impuesto-empresa/"
+            f"{egreso['id_egreso_impuesto_empresa']}/anular"
+        ),
+        json={"motivo": "Carga duplicada"},
+        headers=_headers_op("00000000-0000-0000-0000-00000000e206"),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["resultado"] == "ANULADO"
+    assert data["estado_egreso"] == "ANULADO"
+    assert data["estado_movimiento_tesoreria"] == "ANULADO"
+    assert data["ya_anulado"] is False
+    row = db_session.execute(
+        text(
+            """
+            SELECT e.estado_egreso, mt.estado AS estado_mt
+            FROM egreso_impuesto_empresa e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+            WHERE e.id_egreso_impuesto_empresa = :id
+            """
+        ),
+        {"id": egreso["id_egreso_impuesto_empresa"]},
+    ).mappings().one()
+    assert row["estado_egreso"] == "ANULADO"
+    assert row["estado_mt"] == "ANULADO"
+
+
+def test_get_egresos_impuesto_no_suma_egreso_anulado(client, db_session) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-ANULADO-NO-SUMA",
+        importe_total=15000,
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        importe_pagado=10000,
+        op_id="00000000-0000-0000-0000-00000000e207",
+    ).json()["data"]
+    client.patch(
+        (
+            "/api/v1/financiero/egresos-impuesto-empresa/"
+            f"{egreso['id_egreso_impuesto_empresa']}/anular"
+        ),
+        json={"motivo": "Error de carga"},
+        headers=_headers_op("00000000-0000-0000-0000-00000000e208"),
+    )
+
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}/egresos"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_egresado"] == 0.0
+    assert data["estado_pago_impuesto"] == "SIN_PAGO"
+    assert data["egresos"][0]["estado_egreso"] == "ANULADO"
+
+
+def test_anular_egreso_impuesto_repetido_devuelve_ya_anulado(
+    client, db_session
+) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-ANULAR-IDEMP",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000e209",
+    ).json()["data"]
+    url = (
+        "/api/v1/financiero/egresos-impuesto-empresa/"
+        f"{egreso['id_egreso_impuesto_empresa']}/anular"
+    )
+
+    first = client.patch(
+        url,
+        json={"motivo": "Carga duplicada"},
+        headers=_headers_op("00000000-0000-0000-0000-00000000e210"),
+    )
+    second = client.patch(
+        url,
+        json={"motivo": "Otro intento"},
+        headers=_headers_op("00000000-0000-0000-0000-00000000e211"),
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["data"]["resultado"] == "YA_ANULADO"
+    assert second.json()["data"]["ya_anulado"] is True
+    assert second.json()["data"]["motivo"] == "Carga duplicada"
+
+
+def test_anular_egreso_impuesto_inexistente_devuelve_404(client) -> None:
+    response = client.patch(
+        "/api/v1/financiero/egresos-impuesto-empresa/999999999/anular",
+        json={"motivo": "No existe"},
+        headers=_headers_op("00000000-0000-0000-0000-00000000e212"),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "EGRESO_IMPUESTO_NOT_FOUND"
+
+
+def test_anular_egreso_impuesto_no_crea_efectos_financieros(
+    client, db_session
+) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-ANULAR-SIN-EFECTOS",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000e213",
+    ).json()["data"]
+    before = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_financiero) AS financieros,
+                (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones
+            """
+        )
+    ).mappings().one()
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/egresos-impuesto-empresa/"
+            f"{egreso['id_egreso_impuesto_empresa']}/anular"
+        ),
+        json={"motivo": "Error de carga"},
+        headers=_headers_op("00000000-0000-0000-0000-00000000e214"),
+    )
+
+    after = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_financiero) AS financieros,
+                (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones
+            """
+        )
+    ).mappings().one()
+
+    assert response.status_code == 200
+    assert after["financieros"] == before["financieros"]
+    assert after["obligaciones"] == before["obligaciones"]

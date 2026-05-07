@@ -2847,6 +2847,56 @@ class FinancieroRepository:
             "payload_idempotencia": payload,
         }
 
+    def list_egresos_impuesto_empresa(
+        self, id_comprobante_impuesto: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                e.id_egreso_impuesto_empresa,
+                e.id_movimiento_tesoreria,
+                e.fecha_pago,
+                e.importe_pagado,
+                e.medio_pago,
+                e.referencia_comprobante,
+                e.estado_egreso,
+                e.observaciones
+            FROM egreso_impuesto_empresa e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+             AND mt.deleted_at IS NULL
+            WHERE e.id_comprobante_impuesto = :id_comprobante_impuesto
+              AND e.deleted_at IS NULL
+            ORDER BY e.fecha_pago ASC, e.id_egreso_impuesto_empresa ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
+        ).mappings().all()
+        egresos: list[dict[str, Any]] = []
+        for row in rows:
+            observaciones = row["observaciones"]
+            if observaciones:
+                try:
+                    parsed = json.loads(observaciones)
+                    if isinstance(parsed, dict) and parsed.get("observaciones") is not None:
+                        observaciones = parsed.get("observaciones")
+                except (TypeError, ValueError):
+                    pass
+            egresos.append(
+                {
+                    "id_egreso_impuesto_empresa": row["id_egreso_impuesto_empresa"],
+                    "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+                    "fecha_pago": row["fecha_pago"],
+                    "importe_pagado": float(row["importe_pagado"]),
+                    "medio_pago": row["medio_pago"],
+                    "referencia_comprobante": row["referencia_comprobante"],
+                    "estado_egreso": row["estado_egreso"],
+                    "observaciones": observaciones,
+                }
+            )
+        return egresos
+
     def get_egreso_proveedor_factura_servicio_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
@@ -3988,6 +4038,47 @@ class FinancieroRepository:
             "motivo_anulacion": motivo_anulacion,
         }
 
+    def get_egreso_impuesto_empresa_by_id(
+        self, id_egreso: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                e.id_egreso_impuesto_empresa,
+                e.id_comprobante_impuesto,
+                e.id_movimiento_tesoreria,
+                e.estado_egreso,
+                e.observaciones,
+                mt.estado AS estado_movimiento_tesoreria
+            FROM egreso_impuesto_empresa e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+             AND mt.deleted_at IS NULL
+            WHERE e.id_egreso_impuesto_empresa = :id_egreso
+              AND e.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"id_egreso": id_egreso}).mappings().one_or_none()
+        if row is None:
+            return None
+        motivo_anulacion = None
+        if row["observaciones"]:
+            try:
+                parsed = json.loads(row["observaciones"])
+                anulacion = parsed.get("anulacion") if isinstance(parsed, dict) else None
+                if isinstance(anulacion, dict):
+                    motivo_anulacion = anulacion.get("motivo")
+            except (TypeError, ValueError):
+                motivo_anulacion = None
+        return {
+            "id_egreso_impuesto_empresa": row["id_egreso_impuesto_empresa"],
+            "id_comprobante_impuesto": row["id_comprobante_impuesto"],
+            "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+            "estado_egreso": row["estado_egreso"],
+            "estado_movimiento_tesoreria": row["estado_movimiento_tesoreria"],
+            "motivo_anulacion": motivo_anulacion,
+        }
+
     def egreso_proveedor_usado_en_liquidacion_recupero(self, id_egreso: int) -> bool:
         stmt = text(
             """
@@ -4066,6 +4157,70 @@ class FinancieroRepository:
                 "id_egreso_proveedor_factura_servicio"
             ],
             "id_factura_servicio": row["id_factura_servicio"],
+            "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+            "estado_egreso": egreso_row["estado_egreso"],
+            "estado_movimiento_tesoreria": mt_row["estado"],
+        }
+
+    def anular_egreso_impuesto_empresa(
+        self, *, id_egreso: int, motivo: str, context: Any
+    ) -> dict[str, Any]:
+        row_stmt = text(
+            """
+            SELECT
+                e.id_egreso_impuesto_empresa,
+                e.id_comprobante_impuesto,
+                e.id_movimiento_tesoreria,
+                e.observaciones
+            FROM egreso_impuesto_empresa e
+            WHERE e.id_egreso_impuesto_empresa = :id_egreso
+              AND e.deleted_at IS NULL
+            FOR UPDATE
+            """
+        )
+        row = self.db.execute(row_stmt, {"id_egreso": id_egreso}).mappings().one()
+        observaciones = _append_motivo_anulacion(row["observaciones"], motivo)
+        op_id = getattr(context, "op_id", None)
+        update_egreso_stmt = text(
+            """
+            UPDATE egreso_impuesto_empresa
+            SET estado_egreso = 'ANULADO',
+                observaciones = :observaciones,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_egreso_impuesto_empresa = :id_egreso
+            RETURNING estado_egreso
+            """
+        )
+        update_mt_stmt = text(
+            """
+            UPDATE movimiento_tesoreria
+            SET estado = 'ANULADO',
+                observaciones = :observaciones,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_movimiento_tesoreria = :id_movimiento_tesoreria
+            RETURNING estado
+            """
+        )
+        egreso_row = self.db.execute(
+            update_egreso_stmt,
+            {
+                "id_egreso": id_egreso,
+                "observaciones": observaciones,
+                "op_id": op_id,
+            },
+        ).mappings().one()
+        mt_row = self.db.execute(
+            update_mt_stmt,
+            {
+                "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+                "observaciones": observaciones,
+                "op_id": op_id,
+            },
+        ).mappings().one()
+
+        return {
+            "id_egreso_impuesto_empresa": row["id_egreso_impuesto_empresa"],
+            "id_comprobante_impuesto": row["id_comprobante_impuesto"],
             "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
             "estado_egreso": egreso_row["estado_egreso"],
             "estado_movimiento_tesoreria": mt_row["estado"],

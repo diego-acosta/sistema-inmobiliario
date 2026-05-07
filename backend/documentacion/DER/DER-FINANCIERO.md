@@ -502,6 +502,11 @@ SRV-FIN-012
 - `egreso_impuesto_empresa` esta implementado como vinculo entre
   `comprobante_impuesto` y `movimiento_tesoreria` para pagos de la empresa al
   organismo
+- la consulta de egresos de impuesto deriva `SIN_PAGO`, `PAGO_PARCIAL`,
+  `PAGADO` o `SOBREPAGADO` sin persistir estado en `comprobante_impuesto`
+- la anulacion V1 de `egreso_impuesto_empresa` marca el egreso y el
+  `movimiento_tesoreria` asociado como `ANULADO`, preserva motivo y no toca el
+  `comprobante_impuesto`
 - la modalidad define el tratamiento financiero:
   - `EMPRESA_ASUME`: la empresa paga, se registra tesoreria con
     `egreso_impuesto_empresa` y no se genera obligacion al responsable
@@ -514,6 +519,8 @@ SRV-FIN-012
 - el egreso empresa se bloquea para modalidad `DIRECTO_RESPONSABLE`
 - `egreso_impuesto_empresa` no crea `movimiento_financiero`,
   `relacion_generadora`, `obligacion_financiera` ni estado de cuenta
+- pendiente futuro: si una `liquidacion_impuesto_trasladado` activa usa el
+  egreso, la anulacion debera bloquearse
 - no se crea `IMPUESTO_RECUPERADO` en V1
 - `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision
   posterior

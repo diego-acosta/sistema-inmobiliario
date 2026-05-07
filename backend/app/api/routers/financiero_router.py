@@ -13,6 +13,9 @@ from app.api.schemas.financiero import (
     AjusteIndexacionData,
     AjusteIndexacionRequest,
     AjusteIndexacionResponse,
+    AnularEgresoImpuestoEmpresaData,
+    AnularEgresoImpuestoEmpresaRequest,
+    AnularEgresoImpuestoEmpresaResponse,
     AnularEgresoProveedorFacturaServicioData,
     AnularEgresoProveedorFacturaServicioRequest,
     AnularEgresoProveedorFacturaServicioResponse,
@@ -45,6 +48,8 @@ from app.api.schemas.financiero import (
     EgresoProveedorFacturaServicioRequest,
     EgresoProveedorFacturaServicioResponse,
     EgresoImpuestoEmpresaData,
+    EgresosImpuestoEmpresaData,
+    EgresosImpuestoEmpresaResponse,
     EgresoImpuestoEmpresaRequest,
     EgresoImpuestoEmpresaResponse,
     ErrorResponse,
@@ -202,6 +207,12 @@ from app.application.financiero.services.registrar_egreso_proveedor_factura_serv
 )
 from app.application.financiero.services.registrar_egreso_impuesto_empresa_service import (
     RegistrarEgresoImpuestoEmpresaService,
+)
+from app.application.financiero.services.consultar_egresos_impuesto_empresa_service import (
+    ConsultarEgresosImpuestoEmpresaService,
+)
+from app.application.financiero.services.anular_egreso_impuesto_empresa_service import (
+    AnularEgresoImpuestoEmpresaService,
 )
 from app.application.financiero.services.consultar_egresos_proveedor_factura_servicio_service import (
     ConsultarEgresosProveedorFacturaServicioService,
@@ -499,6 +510,115 @@ def registrar_egreso_impuesto_empresa(
     if result.data.get("resultado") == "YA_REGISTRADO":
         return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
     return response
+
+
+@router.get(
+    "/api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos",
+    response_model=EgresosImpuestoEmpresaResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_egresos_impuesto_empresa(
+    id_comprobante_impuesto: int,
+    db: Session = Depends(get_db),
+) -> EgresosImpuestoEmpresaResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = ConsultarEgresosImpuestoEmpresaService(repository=repository)
+
+    try:
+        result = service.execute(id_comprobante_impuesto=id_comprobante_impuesto)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "COMPROBANTE_IMPUESTO_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="COMPROBANTE_IMPUESTO_NOT_FOUND",
+                    error_message="El comprobante de impuesto indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudieron consultar los egresos de impuesto.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return EgresosImpuestoEmpresaResponse(
+        data=EgresosImpuestoEmpresaData(**result.data)
+    )
+
+
+@router.patch(
+    "/api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular",
+    response_model=AnularEgresoImpuestoEmpresaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def anular_egreso_impuesto_empresa(
+    id_egreso_impuesto_empresa: int,
+    request: AnularEgresoImpuestoEmpresaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> AnularEgresoImpuestoEmpresaResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = AnularEgresoImpuestoEmpresaService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_egreso=id_egreso_impuesto_empresa,
+            motivo=request.motivo,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "EGRESO_IMPUESTO_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="EGRESO_IMPUESTO_NOT_FOUND",
+                    error_message="El egreso de impuesto indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudo anular el egreso de impuesto.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return AnularEgresoImpuestoEmpresaResponse(
+        data=AnularEgresoImpuestoEmpresaData(**result.data)
+    )
 
 
 @router.post(

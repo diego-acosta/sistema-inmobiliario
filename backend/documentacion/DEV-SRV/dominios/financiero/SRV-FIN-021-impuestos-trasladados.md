@@ -43,6 +43,8 @@ Endpoints implementados:
 - `GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}`
 - `GET /api/v1/comprobantes-impuesto`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
+- `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular`
 
 Reglas implementadas:
 
@@ -141,6 +143,28 @@ Reglas implementadas:
   `obligacion_financiera` ni `IMPUESTO_TRASLADADO`;
 - no impacta estado de cuenta;
 - no usa `PAGO_EXTERNO_INFORMADO`.
+
+Consulta implementada:
+
+- deriva `total_egresado`, `saldo_pendiente_pago_impuesto` y
+  `estado_pago_impuesto`;
+- suma solo egresos `REGISTRADO` y no eliminados;
+- lista egresos no eliminados, incluyendo anulados;
+- no persiste estado de pago en `comprobante_impuesto`;
+- no modifica deuda, saldos ni estado de cuenta.
+
+Anulacion implementada:
+
+- `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id}/anular`;
+- si el egreso esta `REGISTRADO`, marca `egreso_impuesto_empresa.estado_egreso`
+  y `movimiento_tesoreria.estado` como `ANULADO`;
+- preserva observaciones y agrega motivo de anulacion;
+- es idempotente si ya estaba `ANULADO`;
+- no toca `comprobante_impuesto`;
+- no crea ni modifica `movimiento_financiero`, `relacion_generadora`,
+  `obligacion_financiera` ni estado de cuenta;
+- pendiente futuro: bloquear anulacion si una futura
+  `liquidacion_impuesto_trasladado` activa usa el egreso.
 
 ## Relacion con liquidacion_recupero
 

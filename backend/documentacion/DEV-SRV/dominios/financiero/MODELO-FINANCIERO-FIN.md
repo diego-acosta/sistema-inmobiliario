@@ -486,8 +486,8 @@ Motivos:
 `comprobante_impuesto` no genera deuda automaticamente. La modalidad define que
 operaciones se habilitan. V1 implementado cubre alta y consulta del comprobante
 sin efectos financieros, y egreso empresa para `EMPRESA_ASUME` y
-`EMPRESA_PAGA_Y_RECUPERA`. Materializacion, pago externo y liquidacion quedan
-pendientes.
+`EMPRESA_PAGA_Y_RECUPERA`, incluyendo consulta y anulacion logica del egreso.
+Materializacion, pago externo y liquidacion quedan pendientes.
 
 Modalidades V1:
 
@@ -495,6 +495,7 @@ Modalidades V1:
    - la empresa paga el impuesto;
    - se registra egreso de tesoreria mediante `egreso_impuesto_empresa` y
      `movimiento_tesoreria`;
+   - la anulacion del egreso anula tambien el movimiento de tesoreria;
    - no genera obligacion al responsable;
    - no genera `IMPUESTO_TRASLADADO`.
 
@@ -509,6 +510,8 @@ Modalidades V1:
    - la empresa paga al organismo;
    - se registra egreso de tesoreria mediante `egreso_impuesto_empresa` y
      `movimiento_tesoreria`;
+   - la anulacion del egreso anula tambien el movimiento de tesoreria y queda
+     pendiente bloquearla si una futura liquidacion fiscal usa el egreso;
    - luego se liquida recupero como obligacion `IMPUESTO_TRASLADADO`;
    - el responsable paga a la empresa por el flujo normal de pago por persona.
 

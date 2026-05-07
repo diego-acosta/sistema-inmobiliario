@@ -183,6 +183,59 @@ class EgresoImpuestoEmpresaResponse(BaseModel):
 
 # ── concepto_financiero ───────────────────────────────────────────────────────
 
+class EgresoImpuestoEmpresaItem(BaseModel):
+    id_egreso_impuesto_empresa: int
+    id_movimiento_tesoreria: int
+    fecha_pago: date
+    importe_pagado: float
+    medio_pago: str | None = None
+    referencia_comprobante: str | None = None
+    estado_egreso: str
+    observaciones: str | None = None
+
+
+class EgresosImpuestoEmpresaData(BaseModel):
+    id_comprobante_impuesto: int
+    importe_total_comprobante: float
+    total_egresado: float
+    saldo_pendiente_pago_impuesto: float
+    estado_pago_impuesto: str
+    egresos: list[EgresoImpuestoEmpresaItem]
+
+
+class EgresosImpuestoEmpresaResponse(BaseModel):
+    ok: bool = True
+    data: EgresosImpuestoEmpresaData
+
+
+class AnularEgresoImpuestoEmpresaRequest(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_not_blank(cls, v: str) -> str:
+        motivo = v.strip()
+        if not motivo:
+            raise ValueError("motivo es obligatorio.")
+        return motivo
+
+
+class AnularEgresoImpuestoEmpresaData(BaseModel):
+    resultado: str | None = None
+    id_egreso_impuesto_empresa: int
+    id_comprobante_impuesto: int
+    id_movimiento_tesoreria: int
+    estado_egreso: str
+    estado_movimiento_tesoreria: str
+    motivo: str
+    ya_anulado: bool
+
+
+class AnularEgresoImpuestoEmpresaResponse(BaseModel):
+    ok: bool = True
+    data: AnularEgresoImpuestoEmpresaData
+
+
 class ConceptoFinancieroData(BaseModel):
     id_concepto_financiero: int
     codigo_concepto_financiero: str
