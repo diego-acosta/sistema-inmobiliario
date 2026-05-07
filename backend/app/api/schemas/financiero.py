@@ -477,6 +477,36 @@ class LiquidacionesRecuperoFacturaServicioListResponse(BaseModel):
     data: LiquidacionesRecuperoFacturaServicioListData
 
 
+class AnularLiquidacionRecuperoRequest(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_not_blank(cls, v: str) -> str:
+        motivo = v.strip()
+        if not motivo:
+            raise ValueError("motivo es obligatorio.")
+        return motivo
+
+
+class AnularLiquidacionRecuperoData(BaseModel):
+    resultado: str | None = None
+    id_liquidacion_recupero: int
+    estado_liquidacion: str
+    id_relacion_generadora: int | None = None
+    estado_relacion_generadora: str | None = None
+    id_obligacion_financiera: int | None = None
+    estado_obligacion: str | None = None
+    egresos_liberados: int
+    ya_anulada: bool
+    motivo: str
+
+
+class AnularLiquidacionRecuperoResponse(BaseModel):
+    ok: bool = True
+    data: AnularLiquidacionRecuperoData
+
+
 class AjusteIndexacionRequest(BaseModel):
     importe_ajuste: float
     motivo: str

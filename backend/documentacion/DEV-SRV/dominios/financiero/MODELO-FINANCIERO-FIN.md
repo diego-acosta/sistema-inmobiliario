@@ -419,6 +419,8 @@ Decision:
 - consultas:
   `GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}` y
   `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`.
+- anulacion conservadora:
+  `PATCH /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular`.
 - `liquidacion_recupero` V1 parte de una sola `factura_servicio`, requiere
   egreso proveedor `REGISTRADO` y recupera hasta el total egresado disponible.
 - la liquidacion crea una relacion generadora propia:
@@ -450,6 +452,13 @@ Decision:
 - las consultas de `liquidacion_recupero` son read-only y exponen facturas,
   egresos, responsables, relacion generadora y obligacion derivada sin crear
   movimientos ni modificar saldos.
+- la anulacion V1 de `liquidacion_recupero` no revierte pagos ya aplicados:
+  se bloquea si hay aplicaciones financieras activas, movimientos financieros
+  activos asociados, punitorios activos o composiciones activas posteriores.
+- si no hay operaciones activas, marca la liquidacion como `ANULADA`, la
+  relacion generadora como `CANCELADA`, la obligacion y composiciones como
+  `ANULADA`, y libera egresos anulando logicamente
+  `liquidacion_recupero_egreso`; no toca tesoreria ni el egreso proveedor.
 
 Expensas e impuestos trasladados no se implementan en este bloque.
 El diseno de este circuito queda documentado en

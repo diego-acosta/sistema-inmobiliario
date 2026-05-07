@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `IMPLEMENTADA V1`
-- implementacion: egreso proveedor, anulacion, liquidacion y consulta formal V1 implementados
+- implementacion: egreso proveedor, anulacion, liquidacion, consulta formal y anulacion conservadora de recupero V1 implementados
 - dominio owner: `financiero`
 - origen operativo: `factura_servicio` del dominio `inmobiliario`
 - clasificacion: nucleo financiero para recuperos contra personas
@@ -161,9 +161,23 @@ Decision recomendada V1:
 - Las consultas de `liquidacion_recupero` son solo lectura: no modifican saldos,
   no crean movimientos de tesoreria, no crean movimientos financieros y no
   generan obligaciones.
-- La estructura queda preparada para una futura anulacion conservadora de
-  `liquidacion_recupero` que libere egresos anulando logicamente el vinculo,
-  sin tocar el `movimiento_tesoreria` del egreso proveedor.
+- La anulacion conservadora de `liquidacion_recupero` se ejecuta con
+  `PATCH /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular`.
+- La anulacion de `liquidacion_recupero` solo se permite si la obligacion
+  asociada no tiene `aplicacion_financiera` activa, movimientos financieros
+  activos asociados a esas aplicaciones, `liquidacion_punitorio` `ACTIVA` ni
+  composiciones activas posteriores.
+- Si existen operaciones activas, se bloquea con
+  `LIQUIDACION_RECUPERO_TIENE_OPERACIONES`.
+- Si ya estaba anulada, la repeticion devuelve `YA_ANULADA`.
+- Al anular, se marca `liquidacion_recupero.estado_liquidacion = ANULADA`,
+  `obligacion_financiera.estado_obligacion = ANULADA`,
+  `composicion_obligacion.estado_composicion_obligacion = ANULADA`,
+  `relacion_generadora.estado_relacion_generadora = CANCELADA` y el vinculo
+  `liquidacion_recupero_egreso` queda `ANULADO` con `deleted_at`.
+- La anulacion de `liquidacion_recupero` libera egresos para nueva liquidacion
+  y no toca `movimiento_tesoreria`, `egreso_proveedor_factura_servicio`,
+  `factura_servicio` ni pagos normales.
 - El pago posterior del responsable se realiza por el flujo normal de pago por
   persona.
 
@@ -171,7 +185,7 @@ Decision recomendada V1:
 
 - reglas de reparto por inmueble, unidad funcional, servicio, consumo o
   porcentaje para automatizar responsables;
-- anulacion/reversion de recuperos ya cobrados;
+- reversion historica de recuperos ya cobrados;
 - tratamiento de impuestos trasladados;
 - tratamiento de expensas formales.
 
@@ -183,8 +197,9 @@ Decision recomendada V1:
 4. Materializar obligacion de recupero con obligados usando
    `SERVICIO_RECUPERADO`.
 5. Consultar el detalle de la liquidacion o listar liquidaciones por factura.
-6. Cobrar por el flujo normal de pagos financieros.
-7. La reversion/anulacion historica de recuperos cobrados queda pendiente.
+6. Anular la liquidacion solo si no tiene operaciones financieras activas.
+7. Cobrar por el flujo normal de pagos financieros.
+8. La reversion historica de recuperos cobrados queda pendiente.
 
 ## Referencias
 

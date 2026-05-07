@@ -501,6 +501,20 @@ def _liquidar_recupero(
     )
 
 
+def _anular_liquidacion_recupero(
+    client,
+    id_liquidacion: int,
+    *,
+    motivo: str = "Liquidacion cargada por error",
+    headers: dict | None = None,
+):
+    return client.patch(
+        f"/api/v1/financiero/liquidaciones-recupero/{id_liquidacion}/anular",
+        headers=headers or _headers_sin_op_id(),
+        json={"motivo": motivo},
+    )
+
+
 def test_materializar_factura_servicio_responsable_100_crea_relacion_obligacion_composicion_y_obligado(
     client, db_session
 ) -> None:
@@ -2317,6 +2331,341 @@ def test_anular_egreso_proveedor_usado_en_liquidacion_recupero_bloquea(
 
     assert response.status_code == 409
     assert response.json()["error_code"] == "EGRESO_PROVEEDOR_CON_LIQUIDACION_RECUPERO"
+
+
+def test_anular_liquidacion_recupero_sin_pagos_anula_y_libera_egreso(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-001"
+    )
+    egreso = _registrar_egreso_proveedor(client, db_session, id_factura)
+    assert egreso.status_code == 201, egreso.text
+    egreso_data = egreso.json()["data"]
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    creada = liquidacion.json()["data"]
+
+    before = db_session.execute(
+        text(
+            """
+            SELECT
+                e.estado_egreso,
+                e.id_movimiento_tesoreria,
+                mt.estado AS estado_tesoreria,
+                mt.importe AS importe_tesoreria
+            FROM egreso_proveedor_factura_servicio e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+            WHERE e.id_egreso_proveedor_factura_servicio = :id_egreso
+            """
+        ),
+        {"id_egreso": egreso_data["id_egreso_proveedor_factura_servicio"]},
+    ).mappings().one()
+
+    response = _anular_liquidacion_recupero(
+        client, creada["id_liquidacion_recupero"]
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["resultado"] == "ANULADA"
+    assert data["estado_liquidacion"] == "ANULADA"
+    assert data["estado_relacion_generadora"] == "CANCELADA"
+    assert data["estado_obligacion"] == "ANULADA"
+    assert data["egresos_liberados"] == 1
+    assert data["ya_anulada"] is False
+    assert data["motivo"] == "Liquidacion cargada por error"
+
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                lr.estado_liquidacion,
+                rg.estado_relacion_generadora,
+                o.estado_obligacion,
+                co.estado_composicion_obligacion,
+                lre.estado_liquidacion_recupero_egreso,
+                lre.deleted_at
+            FROM liquidacion_recupero lr
+            JOIN relacion_generadora rg
+              ON rg.id_relacion_generadora = lr.id_relacion_generadora
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = lr.id_obligacion_financiera
+            JOIN composicion_obligacion co
+              ON co.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN liquidacion_recupero_egreso lre
+              ON lre.id_liquidacion_recupero = lr.id_liquidacion_recupero
+            WHERE lr.id_liquidacion_recupero = :id_liquidacion
+            """
+        ),
+        {"id_liquidacion": creada["id_liquidacion_recupero"]},
+    ).mappings().one()
+    assert row["estado_liquidacion"] == "ANULADA"
+    assert row["estado_relacion_generadora"] == "CANCELADA"
+    assert row["estado_obligacion"] == "ANULADA"
+    assert row["estado_composicion_obligacion"] == "ANULADA"
+    assert row["estado_liquidacion_recupero_egreso"] == "ANULADO"
+    assert row["deleted_at"] is not None
+
+    after = db_session.execute(
+        text(
+            """
+            SELECT
+                e.estado_egreso,
+                e.id_movimiento_tesoreria,
+                mt.estado AS estado_tesoreria,
+                mt.importe AS importe_tesoreria
+            FROM egreso_proveedor_factura_servicio e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+            WHERE e.id_egreso_proveedor_factura_servicio = :id_egreso
+            """
+        ),
+        {"id_egreso": egreso_data["id_egreso_proveedor_factura_servicio"]},
+    ).mappings().one()
+    assert dict(after) == dict(before)
+
+
+def test_anular_liquidacion_recupero_estado_cuenta_y_deuda_no_muestran_servicio_recuperado(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-002"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    creada = liquidacion.json()["data"]
+
+    anular = _anular_liquidacion_recupero(client, creada["id_liquidacion_recupero"])
+    assert anular.status_code == 200, anular.text
+
+    estado = client.get(f"/api/v1/financiero/personas/{id_persona}/estado-cuenta")
+    deuda = client.get(
+        f"/api/v1/financiero/deuda?id_relacion_generadora={creada['id_relacion_generadora']}"
+    )
+
+    assert estado.status_code == 200, estado.text
+    assert not any(
+        item["id_relacion_generadora"] == creada["id_relacion_generadora"]
+        for item in estado.json()["data"]["obligaciones"]
+    )
+    assert deuda.status_code == 200, deuda.text
+    assert deuda.json()["data"]["items"] == []
+
+
+def test_anular_liquidacion_recupero_libera_egreso_para_nueva_liquidacion(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-003"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    responsables = [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}]
+    first = _liquidar_recupero(client, id_factura, responsables)
+    assert first.status_code == 201, first.text
+
+    anular = _anular_liquidacion_recupero(
+        client, first.json()["data"]["id_liquidacion_recupero"]
+    )
+    assert anular.status_code == 200, anular.text
+
+    second = _liquidar_recupero(
+        client,
+        id_factura,
+        responsables,
+        headers={**HEADERS, "X-Op-Id": "88888888-8888-8888-8888-888888888888"},
+    )
+
+    assert second.status_code == 201, second.text
+    assert (
+        second.json()["data"]["id_liquidacion_recupero"]
+        != first.json()["data"]["id_liquidacion_recupero"]
+    )
+
+
+def test_anular_liquidacion_recupero_repetida_devuelve_ya_anulada(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-004"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    id_liquidacion = liquidacion.json()["data"]["id_liquidacion_recupero"]
+
+    first = _anular_liquidacion_recupero(client, id_liquidacion)
+    second = _anular_liquidacion_recupero(
+        client,
+        id_liquidacion,
+        headers={**HEADERS, "X-Op-Id": "99999999-9999-9999-9999-999999999999"},
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["data"]["resultado"] == "YA_ANULADA"
+    assert second.json()["data"]["ya_anulada"] is True
+    assert second.json()["data"]["egresos_liberados"] == 0
+
+
+def test_anular_liquidacion_recupero_bloquea_si_tiene_pago_normal(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-005"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers=_headers_sin_op_id(),
+        params={"id_persona": id_persona},
+        json={"monto": 25000.00, "fecha_pago": "2026-05-30"},
+    )
+    assert pago.status_code == 201, pago.text
+
+    response = _anular_liquidacion_recupero(
+        client, liquidacion.json()["data"]["id_liquidacion_recupero"]
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "LIQUIDACION_RECUPERO_TIENE_OPERACIONES"
+
+
+def test_anular_liquidacion_recupero_bloquea_si_tiene_punitorio_activo(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-006"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    creada = liquidacion.json()["data"]
+    comp_id = db_session.execute(
+        text(
+            """
+            SELECT id_composicion_obligacion
+            FROM composicion_obligacion
+            WHERE id_obligacion_financiera = :id_obligacion
+            ORDER BY id_composicion_obligacion ASC
+            LIMIT 1
+            """
+        ),
+        {"id_obligacion": creada["id_obligacion_financiera"]},
+    ).scalar_one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO liquidacion_punitorio (
+                uid_global, version_registro, created_at, updated_at,
+                id_obligacion_financiera, id_composicion_obligacion,
+                uid_pago_grupo, codigo_pago_grupo,
+                fecha_vencimiento, fecha_inicio_calculo, fecha_fin_calculo,
+                base_morable, tasa_diaria, dias_calculados, importe_liquidado,
+                estado_liquidacion
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                :id_obligacion, :id_composicion,
+                gen_random_uuid(), 'PUNITORIO-BLOCK-ANU-REC',
+                '2026-06-10', '2026-06-16', '2026-06-20',
+                25000.00, 0.00100000, 4, 100.00,
+                'ACTIVA'
+            )
+            """
+        ),
+        {
+            "id_obligacion": creada["id_obligacion_financiera"],
+            "id_composicion": comp_id,
+        },
+    )
+    db_session.flush()
+
+    response = _anular_liquidacion_recupero(client, creada["id_liquidacion_recupero"])
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "LIQUIDACION_RECUPERO_TIENE_OPERACIONES"
+
+
+def test_get_liquidacion_recupero_detalle_muestra_anulada(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-007"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    creada = liquidacion.json()["data"]
+    assert _anular_liquidacion_recupero(
+        client, creada["id_liquidacion_recupero"]
+    ).status_code == 200
+
+    response = client.get(
+        f"/api/v1/financiero/liquidaciones-recupero/{creada['id_liquidacion_recupero']}"
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["estado_liquidacion"] == "ANULADA"
+    assert data["obligacion"]["estado_obligacion"] == "ANULADA"
+
+
+def test_list_liquidaciones_recupero_por_factura_muestra_anulada(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-ANU-008"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    creada = liquidacion.json()["data"]
+    assert _anular_liquidacion_recupero(
+        client, creada["id_liquidacion_recupero"]
+    ).status_code == 200
+
+    response = client.get(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/liquidaciones-recupero"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["items"][0]["estado_liquidacion"] == "ANULADA"
+
+
+def test_anular_liquidacion_recupero_inexistente_devuelve_404(client) -> None:
+    response = _anular_liquidacion_recupero(client, 999999999)
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "LIQUIDACION_RECUPERO_NOT_FOUND"
 
 
 def test_materializar_factura_servicio_sin_responsable_devuelve_obligado_no_resuelto(

@@ -15,6 +15,9 @@ from app.api.schemas.financiero import (
     AnularEgresoProveedorFacturaServicioData,
     AnularEgresoProveedorFacturaServicioRequest,
     AnularEgresoProveedorFacturaServicioResponse,
+    AnularLiquidacionRecuperoData,
+    AnularLiquidacionRecuperoRequest,
+    AnularLiquidacionRecuperoResponse,
     BonificacionIndexacionData,
     BonificacionIndexacionRequest,
     BonificacionIndexacionResponse,
@@ -182,6 +185,9 @@ from app.application.financiero.services.consultar_egresos_proveedor_factura_ser
 )
 from app.application.financiero.services.anular_egreso_proveedor_factura_servicio_service import (
     AnularEgresoProveedorFacturaServicioService,
+)
+from app.application.financiero.services.anular_liquidacion_recupero_service import (
+    AnularLiquidacionRecuperoService,
 )
 from app.application.financiero.services.liquidar_recupero_factura_servicio_service import (
     LiquidarRecuperoFacturaServicioService,
@@ -892,6 +898,78 @@ def liquidar_recupero_factura_servicio(
     if result.data.get("resultado") == "YA_EMITIDA":
         return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
     return response
+
+
+@router.patch(
+    "/api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular",
+    response_model=AnularLiquidacionRecuperoResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def anular_liquidacion_recupero(
+    id_liquidacion_recupero: int,
+    request: AnularLiquidacionRecuperoRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> AnularLiquidacionRecuperoResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = AnularLiquidacionRecuperoService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_liquidacion_recupero=id_liquidacion_recupero,
+            motivo=request.motivo,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "LIQUIDACION_RECUPERO_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="LIQUIDACION_RECUPERO_NOT_FOUND",
+                    error_message="La liquidacion de recupero indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "LIQUIDACION_RECUPERO_TIENE_OPERACIONES" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="LIQUIDACION_RECUPERO_TIENE_OPERACIONES",
+                    error_message=(
+                        "La liquidacion de recupero tiene operaciones financieras activas."
+                    ),
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudo anular la liquidacion de recupero.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return AnularLiquidacionRecuperoResponse(
+        data=AnularLiquidacionRecuperoData(**result.data)
+    )
 
 
 @router.patch(

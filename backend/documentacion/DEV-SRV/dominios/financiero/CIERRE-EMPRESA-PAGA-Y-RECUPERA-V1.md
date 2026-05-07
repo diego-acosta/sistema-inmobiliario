@@ -10,6 +10,7 @@ Queda cerrado el circuito V1 de `EMPRESA_PAGA_Y_RECUPERA` para recupero financie
 - Anulacion de egreso proveedor.
 - `liquidacion_recupero`.
 - Consulta formal de `liquidacion_recupero`.
+- Anulacion conservadora de `liquidacion_recupero` sin pagos/aplicaciones.
 - `relacion_generadora` de tipo `LIQUIDACION_RECUPERO`.
 - `obligacion_financiera` con composicion `SERVICIO_RECUPERADO`.
 - `obligacion_obligado` para responsables de la liquidacion.
@@ -34,6 +35,7 @@ factura_servicio
 - `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`
 - `GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}`
 - `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`
+- `PATCH /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular`
 
 ## 4. Reglas principales
 
@@ -48,16 +50,26 @@ factura_servicio
   `ACTIVO`/`ANULADO`; solo vinculos activos bloquean reutilizacion del egreso.
 - Las consultas de `liquidacion_recupero` son solo lectura y no modifican
   saldos ni crean movimientos u obligaciones.
+- La anulacion V1 de `liquidacion_recupero` solo se permite si la obligacion
+  `SERVICIO_RECUPERADO` no tiene aplicaciones activas, movimientos financieros
+  asociados, punitorios activos ni composiciones posteriores activas.
+- La anulacion V1 marca `liquidacion_recupero = ANULADA`,
+  `obligacion_financiera = ANULADA`, composiciones `ANULADA`,
+  `relacion_generadora = CANCELADA` y libera egresos anulando logicamente
+  `liquidacion_recupero_egreso`.
+- La anulacion de `liquidacion_recupero` no toca `movimiento_tesoreria`,
+  `egreso_proveedor_factura_servicio`, `factura_servicio` ni pagos normales.
+- La anulacion repetida devuelve `YA_ANULADA`.
 - El cobro posterior usa pago por persona.
 
 ## 5. Tests de cierre
 
 - `reset_db.bat` reconstruye correctamente.
-- `python -m pytest -q` -> `997 passed`.
+- `python -m pytest -q` -> `1006 passed`.
 
 ## 6. Pendientes futuros no bloqueantes
 
-- Anulacion/reversion de `liquidacion_recupero`.
+- Reversion historica de `liquidacion_recupero` ya cobrada.
 - Agrupacion de varias facturas en una liquidacion.
 - Recuperacion automatica desde egreso proveedor.
 - Expensas formales.
