@@ -1740,6 +1740,126 @@ def test_liquidacion_recupero_total_crea_financiero_servicio_recuperado(
     assert float(row["porcentaje_responsabilidad"]) == 100.0
 
 
+def test_liquidacion_recupero_crea_vinculo_egreso_activo(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-LRE-ACT"
+    )
+    egreso = _registrar_egreso_proveedor(client, db_session, id_factura)
+    assert egreso.status_code == 201, egreso.text
+
+    response = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                deleted_at,
+                estado_liquidacion_recupero_egreso
+            FROM liquidacion_recupero_egreso
+            WHERE id_liquidacion_recupero = :id_liquidacion
+              AND id_egreso_proveedor_factura_servicio = :id_egreso
+            """
+        ),
+        {
+            "id_liquidacion": data["id_liquidacion_recupero"],
+            "id_egreso": egreso.json()["data"][
+                "id_egreso_proveedor_factura_servicio"
+            ],
+        },
+    ).mappings().one()
+    assert row["uid_global"] is not None
+    assert row["version_registro"] == 1
+    assert row["created_at"] is not None
+    assert row["updated_at"] is not None
+    assert row["deleted_at"] is None
+    assert row["estado_liquidacion_recupero_egreso"] == "ACTIVO"
+
+
+def test_liquidacion_recupero_no_reutiliza_egreso_con_vinculo_activo(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-LRE-BLOCK"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    responsables = [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}]
+    first = _liquidar_recupero(client, id_factura, responsables)
+    assert first.status_code == 201, first.text
+
+    second = _liquidar_recupero(
+        client,
+        id_factura,
+        responsables,
+        headers={
+            **HEADERS,
+            "X-Op-Id": "66666666-6666-6666-6666-666666666666",
+        },
+    )
+
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "SIN_MONTO_EGRESADO_DISPONIBLE"
+
+
+def test_liquidacion_recupero_egreso_anulado_logicamente_vuelve_a_estar_disponible(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-LRE-FREE"
+    )
+    egreso = _registrar_egreso_proveedor(client, db_session, id_factura)
+    assert egreso.status_code == 201, egreso.text
+    responsables = [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}]
+    first = _liquidar_recupero(client, id_factura, responsables)
+    assert first.status_code == 201, first.text
+
+    db_session.execute(
+        text(
+            """
+            UPDATE liquidacion_recupero_egreso
+            SET estado_liquidacion_recupero_egreso = 'ANULADO',
+                deleted_at = CURRENT_TIMESTAMP
+            WHERE id_liquidacion_recupero = :id_liquidacion
+              AND id_egreso_proveedor_factura_servicio = :id_egreso
+            """
+        ),
+        {
+            "id_liquidacion": first.json()["data"]["id_liquidacion_recupero"],
+            "id_egreso": egreso.json()["data"][
+                "id_egreso_proveedor_factura_servicio"
+            ],
+        },
+    )
+    db_session.flush()
+
+    second = _liquidar_recupero(
+        client,
+        id_factura,
+        responsables,
+        headers={
+            **HEADERS,
+            "X-Op-Id": "77777777-7777-7777-7777-777777777777",
+        },
+    )
+
+    assert second.status_code == 201, second.text
+    assert (
+        second.json()["data"]["id_liquidacion_recupero"]
+        != first.json()["data"]["id_liquidacion_recupero"]
+    )
+
+
 def test_get_liquidacion_recupero_detalle_emitida(
     client, db_session
 ) -> None:

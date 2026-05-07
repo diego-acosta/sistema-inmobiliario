@@ -147,6 +147,9 @@ Decision recomendada V1:
   su anulacion se bloquea.
 - `liquidacion_recupero` V1 parte de una sola `factura_servicio`, usa egresos
   proveedor `REGISTRADO` no eliminados y no usados por liquidaciones activas.
+- El vinculo `liquidacion_recupero_egreso` tiene estado propio
+  `ACTIVO`/`ANULADO` y soft-delete; solo los vinculos `ACTIVO` sin
+  `deleted_at` bloquean reutilizacion del egreso.
 - La liquidacion permite recuperar hasta el total egresado disponible.
 - La parte no recuperada queda como `importe_absorbido_empresa` y no genera
   obligacion.
@@ -158,6 +161,9 @@ Decision recomendada V1:
 - Las consultas de `liquidacion_recupero` son solo lectura: no modifican saldos,
   no crean movimientos de tesoreria, no crean movimientos financieros y no
   generan obligaciones.
+- La estructura queda preparada para una futura anulacion conservadora de
+  `liquidacion_recupero` que libere egresos anulando logicamente el vinculo,
+  sin tocar el `movimiento_tesoreria` del egreso proveedor.
 - El pago posterior del responsable se realiza por el flujo normal de pago por
   persona.
 

@@ -2693,6 +2693,8 @@ class FinancieroRepository:
                    AND lr.estado_liquidacion = 'EMITIDA'
                   WHERE lre.id_egreso_proveedor_factura_servicio =
                         e.id_egreso_proveedor_factura_servicio
+                    AND lre.deleted_at IS NULL
+                    AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
               )
             ORDER BY e.fecha_pago ASC, e.id_egreso_proveedor_factura_servicio ASC
             """
@@ -2784,6 +2786,8 @@ class FinancieroRepository:
                 lre.importe_imputado_base
             FROM liquidacion_recupero_egreso lre
             WHERE lre.id_liquidacion_recupero = :id
+              AND lre.deleted_at IS NULL
+              AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
             ORDER BY lre.id_liquidacion_recupero_egreso ASC
             """
         )
@@ -2902,6 +2906,8 @@ class FinancieroRepository:
                  lre.id_egreso_proveedor_factura_servicio
              AND e.deleted_at IS NULL
             WHERE lre.id_liquidacion_recupero = :id
+              AND lre.deleted_at IS NULL
+              AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
             ORDER BY lre.id_liquidacion_recupero_egreso ASC
             """
         )
@@ -3436,6 +3442,8 @@ class FinancieroRepository:
              AND lr.deleted_at IS NULL
              AND lr.estado_liquidacion = 'EMITIDA'
             WHERE lre.id_egreso_proveedor_factura_servicio = :id_egreso
+              AND lre.deleted_at IS NULL
+              AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
             LIMIT 1
             """
         )

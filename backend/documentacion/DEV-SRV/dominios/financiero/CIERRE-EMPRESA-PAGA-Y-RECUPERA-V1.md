@@ -44,6 +44,8 @@ factura_servicio
 - No crea pago externo informado al liquidar recupero.
 - Requiere egreso proveedor registrado.
 - Bloquea egreso usado en liquidacion activa.
+- El vinculo `liquidacion_recupero_egreso` soporta soft-delete y estado
+  `ACTIVO`/`ANULADO`; solo vinculos activos bloquean reutilizacion del egreso.
 - Las consultas de `liquidacion_recupero` son solo lectura y no modifican
   saldos ni crean movimientos u obligaciones.
 - El cobro posterior usa pago por persona.
@@ -51,7 +53,7 @@ factura_servicio
 ## 5. Tests de cierre
 
 - `reset_db.bat` reconstruye correctamente.
-- `python -m pytest -q` -> `994 passed`.
+- `python -m pytest -q` -> `997 passed`.
 
 ## 6. Pendientes futuros no bloqueantes
 
@@ -60,9 +62,8 @@ factura_servicio
 - Recuperacion automatica desde egreso proveedor.
 - Expensas formales.
 - Impuestos trasladados.
-- Test de segunda liquidacion con otro `X-Op-Id` para confirmar que no puede reutilizar el mismo egreso.
 - Test de conteo antes/despues para confirmar que liquidar recupero no crea `movimiento_tesoreria` ni `PAGO_EXTERNO_INFORMADO`.
-- Asserts directos sobre `liquidacion_recupero_factura`, `liquidacion_recupero_egreso` y `liquidacion_recupero_responsable`.
+- Asserts directos sobre `liquidacion_recupero_factura` y `liquidacion_recupero_responsable`.
 
 ## 7. Decisiones explicitas
 

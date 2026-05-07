@@ -465,8 +465,9 @@ SRV-FIN-012
 - la obligacion derivada usa composicion `SERVICIO_RECUPERADO`
 - `liquidacion_recupero_factura` vincula la liquidacion con la
   `factura_servicio`; `liquidacion_recupero_egreso` guarda los egresos usados
-  y bloquea su reutilizacion/anulacion; `liquidacion_recupero_responsable`
-  guarda el snapshot de responsables y porcentajes
+  con columnas CORE-EF, `deleted_at` y estado `ACTIVO`/`ANULADO`; solo los
+  vinculos activos/no eliminados bloquean su reutilizacion/anulacion;
+  `liquidacion_recupero_responsable` guarda el snapshot de responsables y porcentajes
 - para V1 de servicios comunes recuperados se recomienda el concepto
   `SERVICIO_RECUPERADO`, disponible en `concepto_financiero` con naturaleza
   `DEBITO`, `es_imputable = true`, `permite_saldo = true` y
