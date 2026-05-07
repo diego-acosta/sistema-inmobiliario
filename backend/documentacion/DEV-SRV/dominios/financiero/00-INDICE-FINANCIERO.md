@@ -13,6 +13,7 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
   - Procesamiento de eventos (Inbox)
   - Procesamiento automatico de eventos (Outbox -> Inbox)
 - [[CIERRE-MODULO-FINANCIERO-LOCATIVO]]
+- [[CIERRE-EMPRESA-PAGA-Y-RECUPERA-V1]]
 - [[../inmobiliario/CIERRE-SERVICIO-TRASLADADO-V1]]
 - [[TIPO-OBLIGACION-FIN]]
 
@@ -35,6 +36,7 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
   - Cronograma mensual implementado para `CANON_LOCATIVO`
 - [[SRV-FIN-020-recupero-servicios-comunes]]
   - Diseno V1 de `EMPRESA_PAGA_Y_RECUPERA`
+  - Cierre V1 en [[CIERRE-EMPRESA-PAGA-Y-RECUPERA-V1]]
 
 ## Notas
 - Este dominio se está refactorizando desde el DEV-SRV-001 legado hacia una estructura modular.
