@@ -488,8 +488,9 @@ operaciones se habilitan. V1 implementado cubre alta y consulta del comprobante
 sin efectos financieros, y egreso empresa para `EMPRESA_ASUME` y
 `EMPRESA_PAGA_Y_RECUPERA`, incluyendo consulta y anulacion logica del egreso.
 La liquidacion `IMPUESTO_TRASLADADO` fase 1 esta implementada mediante entidad
-propia `liquidacion_impuesto_trasladado`; consulta formal, anulacion de la
-liquidacion y pago externo quedan pendientes.
+propia `liquidacion_impuesto_trasladado`, con consultas read-only de detalle y
+listado por comprobante; anulacion de la liquidacion y pago externo quedan
+pendientes.
 
 Modalidades V1:
 
@@ -538,8 +539,9 @@ esta acoplada a `factura_servicio`, `egreso_proveedor_factura_servicio` y
 vinculos, responsables, relacion generadora, obligacion y anulacion
 conservadora. Fase 1 crea cabecera, snapshots, `relacion_generadora`
 `liquidacion_impuesto_trasladado`, obligacion `EMITIDA`, composicion
-`IMPUESTO_TRASLADADO` y `obligacion_obligado`; no implementa consulta formal ni
-anulacion de liquidacion.
+`IMPUESTO_TRASLADADO` y `obligacion_obligado`. Las consultas read-only permiten
+ver detalle de la liquidacion y listar liquidaciones por comprobante sin crear
+movimientos ni modificar saldos; no implementa anulacion de liquidacion.
 
 Referencia: `SRV-FIN-021-impuestos-trasladados`.
 

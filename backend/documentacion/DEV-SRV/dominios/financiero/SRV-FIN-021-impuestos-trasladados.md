@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `IMPLEMENTADO PARCIAL V1`
-- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; liquidacion `IMPUESTO_TRASLADADO` fase 1 implementada; consulta formal, anulacion de liquidacion y pago externo aun no implementados
+- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; liquidacion `IMPUESTO_TRASLADADO` fase 1 implementada con consultas read-only; anulacion de liquidacion y pago externo aun no implementados
 - dominio owner: `financiero`
 - origen operativo: `comprobante_impuesto`
 - clasificacion: nucleo financiero para traslado de impuestos, tasas o contribuciones a responsables
@@ -46,6 +46,8 @@ Endpoints implementados:
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 
 Reglas implementadas:
 
@@ -206,6 +208,8 @@ reutilizar `liquidacion_recupero`.
 Endpoint implementado:
 
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 
 Estructura persistida:
 
@@ -240,6 +244,15 @@ Reglas implementadas:
 - no crea `PAGO_EXTERNO_INFORMADO`;
 - no toca `comprobante_impuesto` ni `egreso_impuesto_empresa`.
 
+Consultas read-only implementadas:
+
+- detalle por id, con comprobantes, egresos si corresponden, responsables,
+  relacion generadora, obligacion, composiciones y obligados;
+- listado por `comprobante_impuesto`, incluyendo liquidaciones no eliminadas
+  aunque en el futuro esten anuladas;
+- para `DIRECTO_RESPONSABLE`, el detalle devuelve lista de egresos vacia;
+- no crean movimientos, obligaciones ni modifican saldos.
+
 ## Estado de cuenta
 
 Las obligaciones activas con composicion `IMPUESTO_TRASLADADO` deben verse en
@@ -251,7 +264,6 @@ aparecer en estado de cuenta del responsable.
 ## Fuera de alcance V1
 
 - usar `factura_servicio` para impuestos;
-- consulta formal de `liquidacion_impuesto_trasladado`, pendiente posterior;
 - anulacion/reversion de `liquidacion_impuesto_trasladado`, pendiente posterior;
 - pago externo informado de impuesto, pendiente posterior;
 - expensas formales;

@@ -1429,3 +1429,242 @@ def test_liquidacion_impuesto_pago_normal_reduce_saldo(client, db_session) -> No
         {"id": liquidacion["id_obligacion_financiera"]},
     ).scalar_one()
     assert float(saldo) == 0.0
+
+
+def test_get_liquidacion_impuesto_directo_responsable_sin_egresos(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-GET-DIRECTO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-GET-DIRECTO",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f201",
+    ).json()["data"]
+
+    response = client.get(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["modalidad_gestion_impuesto"] == "DIRECTO_RESPONSABLE"
+    assert data["egresos"] == []
+    assert data["comprobantes"][0]["id_comprobante_impuesto"] == comprobante[
+        "id_comprobante_impuesto"
+    ]
+    assert data["responsables"][0]["id_persona"] == id_persona
+    assert data["id_relacion_generadora"] == liquidacion["id_relacion_generadora"]
+    assert data["obligacion"]["id_obligacion_financiera"] == liquidacion[
+        "id_obligacion_financiera"
+    ]
+    assert data["obligacion"]["composiciones"][0][
+        "codigo_concepto_financiero"
+    ] == "IMPUESTO_TRASLADADO"
+    assert data["obligacion"]["obligados"][0]["rol_obligado"] == (
+        "RESPONSABLE_IMPUESTO_TRASLADADO"
+    )
+
+
+def test_get_liquidacion_impuesto_empresa_paga_y_recupera_con_egreso(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-GET-RECUPERA")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-GET-RECUPERA",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000f202",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f203",
+    ).json()["data"]
+
+    response = client.get(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["modalidad_gestion_impuesto"] == "EMPRESA_PAGA_Y_RECUPERA"
+    assert data["comprobantes"][0]["numero_comprobante"] == (
+        "MUN-2026-LIT-GET-RECUPERA"
+    )
+    assert data["egresos"][0]["id_egreso_impuesto_empresa"] == egreso[
+        "id_egreso_impuesto_empresa"
+    ]
+    assert data["egresos"][0]["id_movimiento_tesoreria"] == egreso[
+        "id_movimiento_tesoreria"
+    ]
+    assert data["egresos"][0]["estado_egreso"] == "REGISTRADO"
+    assert data["responsables"][0]["importe_responsable"] == 15000.0
+
+
+def test_list_liquidaciones_impuesto_por_comprobante_devuelve_liquidacion(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-LIST")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-LIST",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f204",
+    ).json()["data"]
+
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}"
+            "/liquidaciones-impuesto-trasladado"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["id_comprobante_impuesto"] == comprobante["id_comprobante_impuesto"]
+    assert data["total"] == 1
+    item = data["items"][0]
+    assert item["id_liquidacion_impuesto_trasladado"] == liquidacion[
+        "id_liquidacion_impuesto_trasladado"
+    ]
+    assert item["modalidad_gestion_impuesto"] == "DIRECTO_RESPONSABLE"
+    assert item["id_obligacion_financiera"] == liquidacion["id_obligacion_financiera"]
+    assert item["saldo_pendiente"] == 15000.0
+    assert item["cantidad_responsables"] == 1
+
+
+def test_list_liquidaciones_impuesto_comprobante_sin_liquidaciones_devuelve_vacio(
+    client, db_session
+) -> None:
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-LIST-VACIO",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}"
+            "/liquidaciones-impuesto-trasladado"
+        ),
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["items"] == []
+    assert response.json()["data"]["total"] == 0
+
+
+def test_get_liquidacion_impuesto_inexistente_devuelve_404(client) -> None:
+    response = client.get(
+        "/api/v1/financiero/liquidaciones-impuesto-trasladado/999999",
+        headers=HEADERS,
+    )
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND"
+
+
+def test_list_liquidaciones_impuesto_comprobante_inexistente_devuelve_404(
+    client,
+) -> None:
+    response = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/999999/"
+            "liquidaciones-impuesto-trasladado"
+        ),
+        headers=HEADERS,
+    )
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "COMPROBANTE_IMPUESTO_NOT_FOUND"
+
+
+def test_consulta_liquidacion_impuesto_no_crea_movimientos_ni_obligaciones(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-GET-SIN-EFECTOS")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-GET-SIN-EFECTOS",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f205",
+    ).json()["data"]
+    before = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_tesoreria) AS tesoreria,
+                (SELECT COUNT(*) FROM movimiento_financiero) AS financieros,
+                (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones
+            """
+        )
+    ).mappings().one()
+
+    detail = client.get(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}"
+        ),
+        headers=HEADERS,
+    )
+    listing = client.get(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{comprobante['id_comprobante_impuesto']}"
+            "/liquidaciones-impuesto-trasladado"
+        ),
+        headers=HEADERS,
+    )
+    after = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_tesoreria) AS tesoreria,
+                (SELECT COUNT(*) FROM movimiento_financiero) AS financieros,
+                (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones
+            """
+        )
+    ).mappings().one()
+
+    assert detail.status_code == 200
+    assert listing.status_code == 200
+    assert after["tesoreria"] == before["tesoreria"]
+    assert after["financieros"] == before["financieros"]
+    assert after["obligaciones"] == before["obligaciones"]

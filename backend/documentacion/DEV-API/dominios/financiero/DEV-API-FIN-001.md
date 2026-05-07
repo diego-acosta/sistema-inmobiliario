@@ -49,6 +49,8 @@ Este documento describe los endpoints financieros actualmente implementados en b
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 
 ### EMPRESA_PAGA_Y_RECUPERA
 
@@ -667,6 +669,41 @@ Errores principales:
 - `CONCEPTO_IMPUESTO_TRASLADADO_NO_EXISTE`
 - `IDEMPOTENCY_PAYLOAD_CONFLICT`
 
+### GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}
+
+Objetivo: consultar detalle read-only de una
+`liquidacion_impuesto_trasladado`.
+
+Respuesta resumida: cabecera de liquidacion, comprobantes, egresos usados si
+corresponden, responsables, ids de relacion/obligacion, composiciones
+`IMPUESTO_TRASLADADO` y obligados.
+
+Reglas:
+
+- si la liquidacion no existe, devuelve
+  `LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND`;
+- para `DIRECTO_RESPONSABLE`, `egresos` puede estar vacio;
+- no crea movimientos de tesoreria;
+- no crea movimientos financieros;
+- no crea obligaciones;
+- no modifica saldos ni estado de cuenta.
+
+### GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado
+
+Objetivo: listar liquidaciones de impuesto trasladado asociadas a un
+`comprobante_impuesto`.
+
+Respuesta resumida: items con id/codigo, estado, modalidad, fechas, importe
+trasladado, importe absorbido, obligacion asociada, saldo pendiente y cantidad
+de responsables.
+
+Reglas:
+
+- si el comprobante no existe, devuelve `COMPROBANTE_IMPUESTO_NOT_FOUND`;
+- devuelve lista vacia para comprobantes sin liquidaciones;
+- incluye liquidaciones no eliminadas, activas o anuladas futuras;
+- no modifica saldos ni estado de cuenta.
+
 ---
 
 ## 10. EMPRESA_PAGA_Y_RECUPERA
@@ -1164,6 +1201,7 @@ liquidacion fiscal fase 1:
 - `liquidacion_impuesto_trasladado` crea `relacion_generadora`,
   `obligacion_financiera`, `composicion_obligacion` `IMPUESTO_TRASLADADO` y
   `obligacion_obligado`;
+- consultas read-only de detalle y listado por comprobante estan implementadas;
 - la liquidacion no crea `movimiento_tesoreria` ni
   `PAGO_EXTERNO_INFORMADO`.
 
@@ -1180,11 +1218,11 @@ Modalidades V1:
 Endpoint de liquidacion implementado:
 
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 
 Endpoints futuros a definir, no implementados:
 
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/materializar`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/pago-externo`
-- `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}`
-- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}/anular`

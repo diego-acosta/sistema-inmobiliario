@@ -534,10 +534,14 @@ SRV-FIN-012
 - la liquidacion no crea `movimiento_tesoreria` ni
   `PAGO_EXTERNO_INFORMADO`, no toca `comprobante_impuesto` ni
   `egreso_impuesto_empresa`
+- la consulta read-only de `liquidacion_impuesto_trasladado` expone detalle con
+  comprobantes, egresos si corresponden, responsables, relacion generadora,
+  obligacion, composiciones y obligados
+- el listado por `comprobante_impuesto` incluye liquidaciones no eliminadas,
+  activas o anuladas futuras, y no modifica saldos
 - pendiente futuro: la anulacion de `egreso_impuesto_empresa` debe bloquearse
   si una `liquidacion_impuesto_trasladado` activa usa el egreso
-- pendiente futuro: consulta formal y anulacion/reversion de
-  `liquidacion_impuesto_trasladado`
+- pendiente futuro: anulacion/reversion de `liquidacion_impuesto_trasladado`
 - no se crea `IMPUESTO_RECUPERADO` en V1
 - `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision
   posterior

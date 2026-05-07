@@ -293,6 +293,104 @@ class LiquidacionImpuestoTrasladadoResponse(BaseModel):
     data: LiquidacionImpuestoTrasladadoData
 
 
+class LiquidacionImpuestoTrasladadoDetalleComprobanteItem(BaseModel):
+    id_comprobante_impuesto: int
+    organismo: str
+    tipo_impuesto: str
+    partida_nomenclatura: str | None = None
+    numero_comprobante: str
+    periodo_desde: date | None = None
+    periodo_hasta: date | None = None
+    fecha_vencimiento: date
+    importe_comprobante: float
+    importe_base: float
+    importe_trasladar: float
+
+
+class LiquidacionImpuestoTrasladadoDetalleEgresoItem(BaseModel):
+    id_egreso_impuesto_empresa: int
+    id_movimiento_tesoreria: int
+    fecha_pago: date
+    importe_pagado: float
+    importe_imputado_base: float
+    estado_egreso: str
+
+
+class LiquidacionImpuestoTrasladadoResponsableData(BaseModel):
+    id_persona: int
+    porcentaje_responsabilidad: float
+    importe_responsable: float
+    origen_responsable: str
+
+
+class LiquidacionImpuestoTrasladadoObligacionComposicionItem(BaseModel):
+    codigo_concepto_financiero: str
+    importe_componente: float
+    saldo_componente: float
+
+
+class LiquidacionImpuestoTrasladadoObligacionObligadoItem(BaseModel):
+    id_persona: int
+    rol_obligado: str | None = None
+    porcentaje_responsabilidad: float | None = None
+
+
+class LiquidacionImpuestoTrasladadoObligacionData(BaseModel):
+    id_obligacion_financiera: int
+    estado_obligacion: str
+    saldo_pendiente: float
+    composiciones: list[LiquidacionImpuestoTrasladadoObligacionComposicionItem]
+    obligados: list[LiquidacionImpuestoTrasladadoObligacionObligadoItem]
+
+
+class LiquidacionImpuestoTrasladadoDetalleData(BaseModel):
+    id_liquidacion_impuesto_trasladado: int
+    codigo_liquidacion_impuesto_trasladado: str | None = None
+    estado_liquidacion: str
+    modalidad_gestion_impuesto: str
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    importe_total_base: float
+    importe_total_trasladar: float
+    importe_absorbido_empresa: float
+    id_relacion_generadora: int | None = None
+    id_obligacion_financiera: int | None = None
+    comprobantes: list[LiquidacionImpuestoTrasladadoDetalleComprobanteItem]
+    egresos: list[LiquidacionImpuestoTrasladadoDetalleEgresoItem]
+    responsables: list[LiquidacionImpuestoTrasladadoResponsableData]
+    obligacion: LiquidacionImpuestoTrasladadoObligacionData | None = None
+
+
+class LiquidacionImpuestoTrasladadoDetalleResponse(BaseModel):
+    ok: bool = True
+    data: LiquidacionImpuestoTrasladadoDetalleData
+
+
+class LiquidacionImpuestoTrasladadoComprobanteListItem(BaseModel):
+    id_liquidacion_impuesto_trasladado: int
+    codigo_liquidacion_impuesto_trasladado: str | None = None
+    estado_liquidacion: str
+    modalidad_gestion_impuesto: str
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    importe_total_trasladar: float
+    importe_absorbido_empresa: float
+    id_obligacion_financiera: int | None = None
+    saldo_pendiente: float | None = None
+    cantidad_responsables: int
+
+
+class LiquidacionesImpuestoTrasladadoComprobanteListData(BaseModel):
+    id_comprobante_impuesto: int
+    items: list[LiquidacionImpuestoTrasladadoComprobanteListItem]
+    total: int
+
+
+class LiquidacionesImpuestoTrasladadoComprobanteListResponse(BaseModel):
+    ok: bool = True
+    data: LiquidacionesImpuestoTrasladadoComprobanteListData
+
+
 class ConceptoFinancieroData(BaseModel):
     id_concepto_financiero: int
     codigo_concepto_financiero: str

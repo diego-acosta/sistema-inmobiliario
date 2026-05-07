@@ -3608,6 +3608,301 @@ class FinancieroRepository:
             "payload_idempotencia": payload,
         }
 
+    def get_liquidacion_impuesto_trasladado_detalle(
+        self, id_liquidacion_impuesto_trasladado: int
+    ) -> dict[str, Any] | None:
+        base_stmt = text(
+            """
+            SELECT
+                lit.id_liquidacion_impuesto_trasladado,
+                lit.codigo_liquidacion_impuesto_trasladado,
+                lit.estado_liquidacion,
+                lit.modalidad_gestion_impuesto,
+                lit.fecha_liquidacion,
+                lit.fecha_vencimiento,
+                lit.importe_total_base,
+                lit.importe_total_trasladar,
+                lit.importe_absorbido_empresa,
+                lit.id_relacion_generadora,
+                lit.id_obligacion_financiera
+            FROM liquidacion_impuesto_trasladado lit
+            WHERE lit.id_liquidacion_impuesto_trasladado = :id
+              AND lit.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            base_stmt, {"id": id_liquidacion_impuesto_trasladado}
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+
+        comprobantes_stmt = text(
+            """
+            SELECT
+                id_comprobante_impuesto,
+                organismo,
+                tipo_impuesto,
+                partida_nomenclatura,
+                numero_comprobante,
+                periodo_desde,
+                periodo_hasta,
+                fecha_vencimiento,
+                importe_comprobante,
+                importe_base,
+                importe_trasladar
+            FROM liquidacion_impuesto_trasladado_comprobante
+            WHERE id_liquidacion_impuesto_trasladado = :id
+            ORDER BY id_liquidacion_impuesto_trasladado_comprobante ASC
+            """
+        )
+        egresos_stmt = text(
+            """
+            SELECT
+                lite.id_egreso_impuesto_empresa,
+                eie.id_movimiento_tesoreria,
+                eie.fecha_pago,
+                eie.importe_pagado,
+                lite.importe_imputado_base,
+                eie.estado_egreso
+            FROM liquidacion_impuesto_trasladado_egreso lite
+            JOIN egreso_impuesto_empresa eie
+              ON eie.id_egreso_impuesto_empresa = lite.id_egreso_impuesto_empresa
+             AND eie.deleted_at IS NULL
+            WHERE lite.id_liquidacion_impuesto_trasladado = :id
+              AND lite.deleted_at IS NULL
+            ORDER BY lite.id_liquidacion_impuesto_trasladado_egreso ASC
+            """
+        )
+        responsables_stmt = text(
+            """
+            SELECT
+                id_liquidacion_impuesto_trasladado_responsable,
+                id_persona,
+                porcentaje_responsabilidad,
+                importe_responsable,
+                origen_responsable
+            FROM liquidacion_impuesto_trasladado_responsable
+            WHERE id_liquidacion_impuesto_trasladado = :id
+            ORDER BY id_liquidacion_impuesto_trasladado_responsable ASC
+            """
+        )
+        obligacion_stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                estado_obligacion,
+                saldo_pendiente
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id_obligacion
+              AND deleted_at IS NULL
+            """
+        )
+        composiciones_stmt = text(
+            """
+            SELECT
+                cf.codigo_concepto_financiero,
+                c.importe_componente,
+                c.saldo_componente
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+             AND cf.deleted_at IS NULL
+            WHERE c.id_obligacion_financiera = :id_obligacion
+              AND c.deleted_at IS NULL
+            ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
+            """
+        )
+        obligados_stmt = text(
+            """
+            SELECT
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion
+              AND deleted_at IS NULL
+            ORDER BY id_obligacion_obligado ASC
+            """
+        )
+
+        params = {"id": id_liquidacion_impuesto_trasladado}
+        comprobantes = [
+            {
+                "id_comprobante_impuesto": c["id_comprobante_impuesto"],
+                "organismo": c["organismo"],
+                "tipo_impuesto": c["tipo_impuesto"],
+                "partida_nomenclatura": c["partida_nomenclatura"],
+                "numero_comprobante": c["numero_comprobante"],
+                "periodo_desde": c["periodo_desde"],
+                "periodo_hasta": c["periodo_hasta"],
+                "fecha_vencimiento": c["fecha_vencimiento"],
+                "importe_comprobante": float(c["importe_comprobante"]),
+                "importe_base": float(c["importe_base"]),
+                "importe_trasladar": float(c["importe_trasladar"]),
+            }
+            for c in self.db.execute(comprobantes_stmt, params).mappings().all()
+        ]
+        egresos = [
+            {
+                "id_egreso_impuesto_empresa": e["id_egreso_impuesto_empresa"],
+                "id_movimiento_tesoreria": e["id_movimiento_tesoreria"],
+                "fecha_pago": e["fecha_pago"],
+                "importe_pagado": float(e["importe_pagado"]),
+                "importe_imputado_base": float(e["importe_imputado_base"]),
+                "estado_egreso": e["estado_egreso"],
+            }
+            for e in self.db.execute(egresos_stmt, params).mappings().all()
+        ]
+        responsables = [
+            {
+                "id_liquidacion_impuesto_trasladado_responsable": r[
+                    "id_liquidacion_impuesto_trasladado_responsable"
+                ],
+                "id_persona": r["id_persona"],
+                "porcentaje_responsabilidad": float(r["porcentaje_responsabilidad"]),
+                "importe_responsable": float(r["importe_responsable"]),
+                "origen_responsable": r["origen_responsable"],
+            }
+            for r in self.db.execute(responsables_stmt, params).mappings().all()
+        ]
+
+        obligacion = None
+        id_obligacion = row["id_obligacion_financiera"]
+        if id_obligacion is not None:
+            ob_params = {"id_obligacion": id_obligacion}
+            ob_row = self.db.execute(
+                obligacion_stmt, ob_params
+            ).mappings().one_or_none()
+            if ob_row is not None:
+                obligacion = {
+                    "id_obligacion_financiera": ob_row[
+                        "id_obligacion_financiera"
+                    ],
+                    "estado_obligacion": ob_row["estado_obligacion"],
+                    "saldo_pendiente": float(ob_row["saldo_pendiente"]),
+                    "composiciones": [
+                        {
+                            "codigo_concepto_financiero": c[
+                                "codigo_concepto_financiero"
+                            ],
+                            "importe_componente": float(c["importe_componente"]),
+                            "saldo_componente": float(c["saldo_componente"]),
+                        }
+                        for c in self.db.execute(
+                            composiciones_stmt, ob_params
+                        ).mappings().all()
+                    ],
+                    "obligados": [
+                        {
+                            "id_persona": o["id_persona"],
+                            "rol_obligado": o["rol_obligado"],
+                            "porcentaje_responsabilidad": (
+                                float(o["porcentaje_responsabilidad"])
+                                if o["porcentaje_responsabilidad"] is not None
+                                else None
+                            ),
+                        }
+                        for o in self.db.execute(
+                            obligados_stmt, ob_params
+                        ).mappings().all()
+                    ],
+                }
+
+        return {
+            "id_liquidacion_impuesto_trasladado": row[
+                "id_liquidacion_impuesto_trasladado"
+            ],
+            "codigo_liquidacion_impuesto_trasladado": row[
+                "codigo_liquidacion_impuesto_trasladado"
+            ],
+            "estado_liquidacion": row["estado_liquidacion"],
+            "modalidad_gestion_impuesto": row["modalidad_gestion_impuesto"],
+            "fecha_liquidacion": row["fecha_liquidacion"],
+            "fecha_vencimiento": row["fecha_vencimiento"],
+            "importe_total_base": float(row["importe_total_base"]),
+            "importe_total_trasladar": float(row["importe_total_trasladar"]),
+            "importe_absorbido_empresa": float(row["importe_absorbido_empresa"]),
+            "id_relacion_generadora": row["id_relacion_generadora"],
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "comprobantes": comprobantes,
+            "egresos": egresos,
+            "responsables": responsables,
+            "obligacion": obligacion,
+        }
+
+    def list_liquidaciones_impuesto_trasladado_by_comprobante(
+        self, id_comprobante_impuesto: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                lit.id_liquidacion_impuesto_trasladado,
+                lit.codigo_liquidacion_impuesto_trasladado,
+                lit.estado_liquidacion,
+                lit.modalidad_gestion_impuesto,
+                lit.fecha_liquidacion,
+                lit.fecha_vencimiento,
+                lit.importe_total_trasladar,
+                lit.importe_absorbido_empresa,
+                lit.id_obligacion_financiera,
+                o.saldo_pendiente,
+                COUNT(litr.id_liquidacion_impuesto_trasladado_responsable)
+                    AS cantidad_responsables
+            FROM liquidacion_impuesto_trasladado lit
+            JOIN liquidacion_impuesto_trasladado_comprobante litc
+              ON litc.id_liquidacion_impuesto_trasladado =
+                 lit.id_liquidacion_impuesto_trasladado
+            LEFT JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = lit.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            LEFT JOIN liquidacion_impuesto_trasladado_responsable litr
+              ON litr.id_liquidacion_impuesto_trasladado =
+                 lit.id_liquidacion_impuesto_trasladado
+            WHERE litc.id_comprobante_impuesto = :id_comprobante_impuesto
+              AND lit.deleted_at IS NULL
+            GROUP BY
+                lit.id_liquidacion_impuesto_trasladado,
+                lit.codigo_liquidacion_impuesto_trasladado,
+                lit.estado_liquidacion,
+                lit.modalidad_gestion_impuesto,
+                lit.fecha_liquidacion,
+                lit.fecha_vencimiento,
+                lit.importe_total_trasladar,
+                lit.importe_absorbido_empresa,
+                lit.id_obligacion_financiera,
+                o.saldo_pendiente
+            ORDER BY lit.fecha_liquidacion ASC,
+                     lit.id_liquidacion_impuesto_trasladado ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
+        ).mappings().all()
+        return [
+            {
+                "id_liquidacion_impuesto_trasladado": row[
+                    "id_liquidacion_impuesto_trasladado"
+                ],
+                "codigo_liquidacion_impuesto_trasladado": row[
+                    "codigo_liquidacion_impuesto_trasladado"
+                ],
+                "estado_liquidacion": row["estado_liquidacion"],
+                "modalidad_gestion_impuesto": row["modalidad_gestion_impuesto"],
+                "fecha_liquidacion": row["fecha_liquidacion"],
+                "fecha_vencimiento": row["fecha_vencimiento"],
+                "importe_total_trasladar": float(row["importe_total_trasladar"]),
+                "importe_absorbido_empresa": float(row["importe_absorbido_empresa"]),
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "saldo_pendiente": (
+                    float(row["saldo_pendiente"])
+                    if row["saldo_pendiente"] is not None
+                    else None
+                ),
+                "cantidad_responsables": int(row["cantidad_responsables"]),
+            }
+            for row in rows
+        ]
+
     def get_liquidacion_recupero_para_anular(
         self, id_liquidacion_recupero: int
     ) -> dict[str, Any] | None:

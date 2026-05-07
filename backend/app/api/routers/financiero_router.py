@@ -88,8 +88,13 @@ from app.api.schemas.financiero import (
     LiquidacionRecuperoFacturaServicioRequest,
     LiquidacionRecuperoFacturaServicioResponse,
     LiquidacionImpuestoTrasladadoData,
+    LiquidacionImpuestoTrasladadoDetalleData,
+    LiquidacionImpuestoTrasladadoDetalleResponse,
     LiquidacionImpuestoTrasladadoRequest,
     LiquidacionImpuestoTrasladadoResponse,
+    LiquidacionImpuestoTrasladadoComprobanteListItem,
+    LiquidacionesImpuestoTrasladadoComprobanteListData,
+    LiquidacionesImpuestoTrasladadoComprobanteListResponse,
     LiquidacionesRecuperoFacturaServicioListData,
     LiquidacionesRecuperoFacturaServicioListResponse,
     LiquidacionRecuperoFacturaServicioListItem,
@@ -237,6 +242,12 @@ from app.application.financiero.services.list_liquidaciones_recupero_factura_ser
 )
 from app.application.financiero.services.liquidar_impuesto_trasladado_service import (
     LiquidarImpuestoTrasladadoService,
+)
+from app.application.financiero.services.get_liquidacion_impuesto_trasladado_service import (
+    GetLiquidacionImpuestoTrasladadoService,
+)
+from app.application.financiero.services.list_liquidaciones_impuesto_trasladado_comprobante_service import (
+    ListLiquidacionesImpuestoTrasladadoComprobanteService,
 )
 from app.application.financiero.services.regenerar_cronograma_locativo_service import (
     RegenerarCronogramaLocativoService,
@@ -726,6 +737,96 @@ def liquidar_impuesto_trasladado(
     if result.data.get("resultado") == "YA_EMITIDA":
         return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
     return response
+
+
+@router.get(
+    "/api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}",
+    response_model=LiquidacionImpuestoTrasladadoDetalleResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_liquidacion_impuesto_trasladado(
+    id_liquidacion_impuesto_trasladado: int,
+    db: Session = Depends(get_db),
+) -> LiquidacionImpuestoTrasladadoDetalleResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetLiquidacionImpuestoTrasladadoService(repository=repository)
+
+    try:
+        result = service.execute(id_liquidacion_impuesto_trasladado)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND",
+                error_message="La liquidacion de impuesto trasladado indicada no existe.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return LiquidacionImpuestoTrasladadoDetalleResponse(
+        data=LiquidacionImpuestoTrasladadoDetalleData(**result.data)
+    )
+
+
+@router.get(
+    "/api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado",
+    response_model=LiquidacionesImpuestoTrasladadoComprobanteListResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_liquidaciones_impuesto_trasladado_comprobante(
+    id_comprobante_impuesto: int,
+    db: Session = Depends(get_db),
+) -> LiquidacionesImpuestoTrasladadoComprobanteListResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = ListLiquidacionesImpuestoTrasladadoComprobanteService(
+        repository=repository
+    )
+
+    try:
+        result = service.execute(id_comprobante_impuesto)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="COMPROBANTE_IMPUESTO_NOT_FOUND",
+                error_message="El comprobante de impuesto indicado no existe.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    items = [
+        LiquidacionImpuestoTrasladadoComprobanteListItem(**item)
+        for item in result.data
+    ]
+    return LiquidacionesImpuestoTrasladadoComprobanteListResponse(
+        data=LiquidacionesImpuestoTrasladadoComprobanteListData(
+            id_comprobante_impuesto=id_comprobante_impuesto,
+            items=items,
+            total=len(items),
+        )
+    )
 
 
 @router.post(
