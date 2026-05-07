@@ -499,15 +499,21 @@ SRV-FIN-012
 - `comprobante_impuesto` no genera deuda automaticamente
 - alta y consulta de `comprobante_impuesto` estan implementadas; no crean
   tesoreria, relacion generadora, obligacion ni composicion
+- `egreso_impuesto_empresa` esta implementado como vinculo entre
+  `comprobante_impuesto` y `movimiento_tesoreria` para pagos de la empresa al
+  organismo
 - la modalidad define el tratamiento financiero:
-  - `EMPRESA_ASUME`: la empresa paga, se registra tesoreria y no se genera
-    obligacion al responsable
+  - `EMPRESA_ASUME`: la empresa paga, se registra tesoreria con
+    `egreso_impuesto_empresa` y no se genera obligacion al responsable
   - `DIRECTO_RESPONSABLE`: puede generar obligacion `IMPUESTO_TRASLADADO`,
     requiere unico responsable 100% y el pago informado es externo, sin caja ni
     tesoreria
   - `EMPRESA_PAGA_Y_RECUPERA`: la empresa paga al organismo con tesoreria y
-    luego liquida recupero como obligacion `IMPUESTO_TRASLADADO`; el cobro
-    posterior usa pago normal por persona
+    `egreso_impuesto_empresa`; luego liquida recupero como obligacion
+    `IMPUESTO_TRASLADADO`; el cobro posterior usa pago normal por persona
+- el egreso empresa se bloquea para modalidad `DIRECTO_RESPONSABLE`
+- `egreso_impuesto_empresa` no crea `movimiento_financiero`,
+  `relacion_generadora`, `obligacion_financiera` ni estado de cuenta
 - no se crea `IMPUESTO_RECUPERADO` en V1
 - `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision
   posterior

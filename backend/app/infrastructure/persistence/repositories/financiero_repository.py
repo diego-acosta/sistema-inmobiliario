@@ -2774,6 +2774,79 @@ class FinancieroRepository:
         ).scalar_one()
         return Decimal(str(total or 0))
 
+    def get_total_egresos_impuesto_empresa(
+        self, id_comprobante_impuesto: int
+    ) -> Decimal:
+        stmt = text(
+            """
+            SELECT COALESCE(SUM(importe_pagado), 0) AS total
+            FROM egreso_impuesto_empresa
+            WHERE id_comprobante_impuesto = :id_comprobante_impuesto
+              AND estado_egreso = 'REGISTRADO'
+              AND deleted_at IS NULL
+            """
+        )
+        total = self.db.execute(
+            stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
+        ).scalar_one()
+        return Decimal(str(total or 0))
+
+    def get_egreso_impuesto_empresa_by_op_id(
+        self, *, op_id: Any
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                e.id_egreso_impuesto_empresa,
+                e.id_comprobante_impuesto,
+                e.id_movimiento_tesoreria,
+                e.fecha_pago,
+                e.importe_pagado,
+                e.medio_pago,
+                e.referencia_comprobante,
+                e.estado_egreso,
+                e.observaciones,
+                mt.id_cuenta_financiera_origen
+            FROM egreso_impuesto_empresa e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+             AND mt.deleted_at IS NULL
+            WHERE e.op_id_alta = :op_id
+              AND e.deleted_at IS NULL
+            ORDER BY e.id_egreso_impuesto_empresa ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
+        if row is None:
+            return None
+
+        payload = None
+        if row["observaciones"]:
+            try:
+                parsed = json.loads(row["observaciones"])
+                if parsed.get("tipo") == "egreso_impuesto_empresa":
+                    payload = parsed
+            except (TypeError, ValueError):
+                payload = None
+
+        return {
+            "id_egreso_impuesto_empresa": row["id_egreso_impuesto_empresa"],
+            "id_comprobante_impuesto": row["id_comprobante_impuesto"],
+            "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+            "id_cuenta_financiera_origen": row["id_cuenta_financiera_origen"],
+            "fecha_pago": row["fecha_pago"],
+            "importe_pagado": float(row["importe_pagado"]),
+            "medio_pago": row["medio_pago"],
+            "referencia_comprobante": row["referencia_comprobante"],
+            "estado_egreso": row["estado_egreso"],
+            "impacta_tesoreria": True,
+            "crea_movimiento_financiero": False,
+            "crea_relacion_generadora": False,
+            "crea_obligacion_financiera": False,
+            "payload_idempotencia": payload,
+        }
+
     def get_egreso_proveedor_factura_servicio_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
@@ -4275,6 +4348,136 @@ class FinancieroRepository:
             "estado_egreso": "REGISTRADO",
             "impacta_tesoreria": True,
             "crea_movimiento_financiero": False,
+            "crea_obligacion_financiera": False,
+        }
+
+    def registrar_egreso_impuesto_empresa(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        fecha_movimiento = datetime.combine(values["fecha_pago"], datetime.min.time())
+        movimiento_stmt = text(
+            """
+            INSERT INTO movimiento_tesoreria (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_movimiento_financiero,
+                id_cuenta_financiera_origen,
+                id_cuenta_financiera_destino,
+                tipo_movimiento_tesoreria,
+                fecha_movimiento,
+                importe,
+                estado,
+                referencia_externa,
+                observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                NULL,
+                :id_cuenta_financiera_origen,
+                NULL,
+                'EGRESO_IMPUESTO_EMPRESA',
+                :fecha_movimiento,
+                :importe,
+                'REGISTRADO',
+                :referencia_externa,
+                :observaciones
+            )
+            RETURNING id_movimiento_tesoreria
+            """
+        )
+        egreso_stmt = text(
+            """
+            INSERT INTO egreso_impuesto_empresa (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_comprobante_impuesto,
+                id_movimiento_tesoreria,
+                fecha_pago,
+                importe_pagado,
+                medio_pago,
+                referencia_comprobante,
+                estado_egreso,
+                observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_comprobante_impuesto,
+                :id_movimiento_tesoreria,
+                :fecha_pago,
+                :importe_pagado,
+                :medio_pago,
+                :referencia_comprobante,
+                'REGISTRADO',
+                :observaciones
+            )
+            RETURNING id_egreso_impuesto_empresa
+            """
+        )
+        mov_row = self.db.execute(
+            movimiento_stmt,
+            {
+                "uid_global": values["uid_global_movimiento_tesoreria"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_cuenta_financiera_origen": values["id_cuenta_financiera_origen"],
+                "fecha_movimiento": fecha_movimiento,
+                "importe": values["importe_pagado"],
+                "referencia_externa": (
+                    f"COMPROBANTE_IMPUESTO:{values['id_comprobante_impuesto']}"
+                ),
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+        id_movimiento = mov_row["id_movimiento_tesoreria"]
+
+        egreso_row = self.db.execute(
+            egreso_stmt,
+            {
+                "uid_global": values["uid_global_egreso"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_comprobante_impuesto": values["id_comprobante_impuesto"],
+                "id_movimiento_tesoreria": id_movimiento,
+                "fecha_pago": values["fecha_pago"],
+                "importe_pagado": values["importe_pagado"],
+                "medio_pago": values["medio_pago"],
+                "referencia_comprobante": values["referencia_comprobante"],
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+
+        return {
+            "id_egreso_impuesto_empresa": egreso_row["id_egreso_impuesto_empresa"],
+            "id_comprobante_impuesto": values["id_comprobante_impuesto"],
+            "id_movimiento_tesoreria": id_movimiento,
+            "id_cuenta_financiera_origen": values["id_cuenta_financiera_origen"],
+            "fecha_pago": values["fecha_pago"],
+            "importe_pagado": float(values["importe_pagado"]),
+            "medio_pago": values["medio_pago"],
+            "referencia_comprobante": values["referencia_comprobante"],
+            "estado_egreso": "REGISTRADO",
+            "impacta_tesoreria": True,
+            "crea_movimiento_financiero": False,
+            "crea_relacion_generadora": False,
             "crea_obligacion_financiera": False,
         }
 

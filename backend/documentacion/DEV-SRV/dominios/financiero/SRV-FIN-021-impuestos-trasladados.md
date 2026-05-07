@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `IMPLEMENTADO PARCIAL V1`
-- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso, materializacion, pago externo y liquidacion aun no implementados
+- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; materializacion, pago externo y liquidacion aun no implementados
 - dominio owner: `financiero`
 - origen operativo: `comprobante_impuesto`
 - clasificacion: nucleo financiero para traslado de impuestos, tasas o contribuciones a responsables
@@ -42,6 +42,7 @@ Endpoints implementados:
 - `POST /api/v1/comprobantes-impuesto`
 - `GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}`
 - `GET /api/v1/comprobantes-impuesto`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 
 Reglas implementadas:
 
@@ -115,11 +116,31 @@ Reglas:
 
 El pago real del impuesto por la empresa debe entrar por `movimiento_tesoreria`.
 
-V1 debe separar:
+V1 separa:
 
 - egreso por impuesto asumido por la empresa;
 - egreso por impuesto que luego se recupera;
 - pago externo informado por responsable, que no impacta tesoreria.
+
+### Egreso empresa implementado
+
+`egreso_impuesto_empresa` registra pagos parciales o totales de la empresa al
+organismo fiscal.
+
+Reglas implementadas:
+
+- requiere `comprobante_impuesto` existente y `REGISTRADO`;
+- aplica solo a modalidades `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`;
+- bloquea `DIRECTO_RESPONSABLE`;
+- requiere `cuenta_financiera` origen activa;
+- permite multiples parciales sin superar `importe_total`;
+- crea `movimiento_tesoreria` con
+  `tipo_movimiento_tesoreria = EGRESO_IMPUESTO_EMPRESA`;
+- crea vinculo `egreso_impuesto_empresa`;
+- no crea `movimiento_financiero`, `relacion_generadora`,
+  `obligacion_financiera` ni `IMPUESTO_TRASLADADO`;
+- no impacta estado de cuenta;
+- no usa `PAGO_EXTERNO_INFORMADO`.
 
 ## Relacion con liquidacion_recupero
 
@@ -153,7 +174,6 @@ aparecer en estado de cuenta del responsable.
 ## Fuera de alcance V1
 
 - usar `factura_servicio` para impuestos;
-- egreso de impuesto por empresa, pendiente posterior;
 - materializacion de obligacion `IMPUESTO_TRASLADADO`, pendiente posterior;
 - pago externo informado de impuesto, pendiente posterior;
 - liquidacion de recupero de impuesto, pendiente posterior;

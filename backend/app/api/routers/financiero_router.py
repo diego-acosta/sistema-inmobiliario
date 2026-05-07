@@ -44,6 +44,9 @@ from app.api.schemas.financiero import (
     EgresosProveedorFacturaServicioResponse,
     EgresoProveedorFacturaServicioRequest,
     EgresoProveedorFacturaServicioResponse,
+    EgresoImpuestoEmpresaData,
+    EgresoImpuestoEmpresaRequest,
+    EgresoImpuestoEmpresaResponse,
     ErrorResponse,
     EstadoCuentaData,
     EstadoCuentaPersonaData,
@@ -196,6 +199,9 @@ from app.application.financiero.services.registrar_pago_externo_factura_servicio
 )
 from app.application.financiero.services.registrar_egreso_proveedor_factura_servicio_service import (
     RegistrarEgresoProveedorFacturaServicioService,
+)
+from app.application.financiero.services.registrar_egreso_impuesto_empresa_service import (
+    RegistrarEgresoImpuestoEmpresaService,
 )
 from app.application.financiero.services.consultar_egresos_proveedor_factura_servicio_service import (
     ConsultarEgresosProveedorFacturaServicioService,
@@ -400,6 +406,99 @@ def list_comprobantes_impuesto(
     return ComprobanteImpuestoListResponse(
         data=[ComprobanteImpuestoData(**item) for item in result.data]
     )
+
+
+@router.post(
+    "/api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos",
+    status_code=201,
+    response_model=EgresoImpuestoEmpresaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def registrar_egreso_impuesto_empresa(
+    id_comprobante_impuesto: int,
+    request: EgresoImpuestoEmpresaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> EgresoImpuestoEmpresaResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    service = RegistrarEgresoImpuestoEmpresaService(FinancieroRepository(db))
+
+    try:
+        result = service.execute(
+            id_comprobante_impuesto=id_comprobante_impuesto,
+            id_cuenta_financiera_origen=request.id_cuenta_financiera_origen,
+            fecha_pago=request.fecha_pago,
+            importe_pagado=request.importe_pagado,
+            medio_pago=request.medio_pago,
+            referencia_comprobante=request.referencia_comprobante,
+            observaciones=request.observaciones,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        not_found_errors = {
+            "COMPROBANTE_IMPUESTO_NOT_FOUND",
+            "CUENTA_FINANCIERA_NOT_FOUND",
+        }
+        for code in not_found_errors:
+            if code in result.errors:
+                return JSONResponse(
+                    status_code=404,
+                    content=ErrorResponse(
+                        error_code=code,
+                        error_message="No se pudo registrar el egreso de impuesto.",
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
+
+        conflict_errors = {
+            "COMPROBANTE_IMPUESTO_ANULADO",
+            "EGRESO_IMPUESTO_NO_APLICA_MODALIDAD",
+            "CUENTA_FINANCIERA_INACTIVA",
+            "EGRESO_SUPERA_IMPORTE_COMPROBANTE",
+            "IDEMPOTENCY_PAYLOAD_CONFLICT",
+        }
+        for code in conflict_errors:
+            if code in result.errors:
+                return JSONResponse(
+                    status_code=409,
+                    content=ErrorResponse(
+                        error_code=code,
+                        error_message="No se pudo registrar el egreso de impuesto.",
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
+
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudo registrar el egreso de impuesto.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    response = EgresoImpuestoEmpresaResponse(
+        data=EgresoImpuestoEmpresaData(**result.data)
+    )
+    if result.data.get("resultado") == "YA_REGISTRADO":
+        return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+    return response
 
 
 @router.post(

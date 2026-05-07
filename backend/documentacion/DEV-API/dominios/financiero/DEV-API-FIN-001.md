@@ -45,6 +45,7 @@ Este documento describe los endpoints financieros actualmente implementados en b
 - `POST /api/v1/comprobantes-impuesto`
 - `GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}`
 - `GET /api/v1/comprobantes-impuesto`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 
 ### EMPRESA_PAGA_Y_RECUPERA
 
@@ -487,6 +488,57 @@ Side effects: ninguno.
 Objetivo: listar comprobantes activos.
 
 Side effects: ninguno.
+
+### POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos
+
+Objetivo: registrar el pago real de la empresa al organismo fiscal para un
+`comprobante_impuesto`.
+
+Aplica solo para modalidades `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`.
+
+Request resumido:
+
+```json
+{
+  "id_cuenta_financiera_origen": 1,
+  "fecha_pago": "2026-05-20",
+  "importe_pagado": 15000.00,
+  "medio_pago": "TRANSFERENCIA",
+  "referencia_comprobante": "TRX-MUN-123",
+  "observaciones": "Pago tasa municipal"
+}
+```
+
+Respuesta resumida: datos de `egreso_impuesto_empresa`, id de
+`movimiento_tesoreria`, importe y flags:
+
+- `impacta_tesoreria = true`;
+- `crea_movimiento_financiero = false`;
+- `crea_relacion_generadora = false`;
+- `crea_obligacion_financiera = false`.
+
+Errores principales:
+
+- `COMPROBANTE_IMPUESTO_NOT_FOUND`
+- `COMPROBANTE_IMPUESTO_ANULADO`
+- `EGRESO_IMPUESTO_NO_APLICA_MODALIDAD`
+- `CUENTA_FINANCIERA_NOT_FOUND`
+- `CUENTA_FINANCIERA_INACTIVA`
+- `IMPORTE_INVALIDO`
+- `EGRESO_SUPERA_IMPORTE_COMPROBANTE`
+- `IDEMPOTENCY_PAYLOAD_CONFLICT`
+
+Side effects:
+
+- crea `movimiento_tesoreria` con
+  `tipo_movimiento_tesoreria = EGRESO_IMPUESTO_EMPRESA`;
+- crea `egreso_impuesto_empresa`;
+- no crea `movimiento_financiero`;
+- no crea `relacion_generadora`;
+- no crea `obligacion_financiera`;
+- no crea `IMPUESTO_TRASLADADO`;
+- no usa `PAGO_EXTERNO_INFORMADO`;
+- no impacta estado de cuenta.
 
 ---
 
@@ -966,7 +1018,7 @@ Estado: `IMPLEMENTADO PARCIAL V1`.
 El diseno V1 queda documentado en
 `backend/documentacion/DEV-SRV/dominios/financiero/SRV-FIN-021-impuestos-trasladados.md`.
 
-Reglas implementadas para `comprobante_impuesto`:
+Reglas implementadas para `comprobante_impuesto` y egreso empresa:
 
 - entidad propia `comprobante_impuesto`;
 - no usar `factura_servicio` para impuestos;
@@ -975,9 +1027,13 @@ Reglas implementadas para `comprobante_impuesto`:
 - mantener `IMPUESTO_TRASLADADO.aplica_punitorio = false` salvo decision
   posterior;
 - `comprobante_impuesto` no genera deuda automaticamente;
-- la modalidad define el flujo habilitado.
+- la modalidad define el flujo habilitado;
+- `egreso_impuesto_empresa` registra tesoreria para `EMPRESA_ASUME` y
+  `EMPRESA_PAGA_Y_RECUPERA`;
+- el egreso empresa bloquea `DIRECTO_RESPONSABLE`;
+- el egreso empresa no genera deuda ni estado de cuenta.
 
-Modalidades futuras:
+Modalidades V1:
 
 - `EMPRESA_ASUME`: registra egreso de tesoreria y no genera obligacion al
   responsable.
@@ -990,7 +1046,6 @@ Modalidades futuras:
 
 Endpoints futuros a definir, no implementados:
 
-- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/materializar`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/pago-externo`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`

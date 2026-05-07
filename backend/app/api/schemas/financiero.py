@@ -136,6 +136,51 @@ class ComprobanteImpuestoListResponse(BaseModel):
     data: list[ComprobanteImpuestoData]
 
 
+class EgresoImpuestoEmpresaRequest(BaseModel):
+    id_cuenta_financiera_origen: int
+    fecha_pago: date
+    importe_pagado: float
+    medio_pago: str | None = None
+    referencia_comprobante: str | None = None
+    observaciones: str | None = None
+
+    @field_validator("id_cuenta_financiera_origen")
+    @classmethod
+    def cuenta_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("id_cuenta_financiera_origen debe ser mayor que cero.")
+        return v
+
+    @field_validator("importe_pagado")
+    @classmethod
+    def importe_pagado_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("importe_pagado debe ser mayor que cero.")
+        return v
+
+
+class EgresoImpuestoEmpresaData(BaseModel):
+    resultado: str | None = None
+    id_egreso_impuesto_empresa: int
+    id_comprobante_impuesto: int
+    id_movimiento_tesoreria: int
+    id_cuenta_financiera_origen: int
+    fecha_pago: date
+    importe_pagado: float
+    medio_pago: str | None = None
+    referencia_comprobante: str | None = None
+    estado_egreso: str
+    impacta_tesoreria: bool = True
+    crea_movimiento_financiero: bool = False
+    crea_relacion_generadora: bool = False
+    crea_obligacion_financiera: bool = False
+
+
+class EgresoImpuestoEmpresaResponse(BaseModel):
+    ok: bool = True
+    data: EgresoImpuestoEmpresaData
+
+
 # ── concepto_financiero ───────────────────────────────────────────────────────
 
 class ConceptoFinancieroData(BaseModel):
