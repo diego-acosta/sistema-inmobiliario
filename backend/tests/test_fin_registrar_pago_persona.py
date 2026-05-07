@@ -244,7 +244,7 @@ def test_pago_total_cancela_obligaciones(client, db_session) -> None:
         monto=10000.00,
     )
 
-    data = _pagar(client, id_persona, monto=20000.00)
+    data = _pagar(client, id_persona, monto=20000.00, fecha_pago="2026-05-05")
 
     assert data["monto_aplicado"] == pytest.approx(20000.00)
     assert data["remanente"] == pytest.approx(0.0)
@@ -267,7 +267,7 @@ def test_pago_parcial_reduce_saldo(client, db_session) -> None:
         monto=10000.00,
     )
 
-    data = _pagar(client, id_persona, monto=15000.00)
+    data = _pagar(client, id_persona, monto=15000.00, fecha_pago="2026-05-05")
 
     assert data["monto_aplicado"] == pytest.approx(15000.00)
     assert data["remanente"] == pytest.approx(0.0)
@@ -726,7 +726,7 @@ def test_pago_remanente_si_sobra_monto(client, db_session) -> None:
         monto=10000.00,
     )
 
-    data = _pagar(client, id_persona, monto=50000.00)
+    data = _pagar(client, id_persona, monto=50000.00, fecha_pago="2026-05-05")
 
     assert data["remanente"] == pytest.approx(40000.00)
     assert data["monto_aplicado"] == pytest.approx(10000.00)
@@ -741,7 +741,7 @@ def test_pago_no_duplica_saldo_en_llamada_simple(client, db_session) -> None:
         monto=10000.00,
     )
 
-    _pagar(client, id_persona, monto=5000.00)
+    _pagar(client, id_persona, monto=5000.00, fecha_pago="2026-05-05")
 
     saldos = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])
     assert float(saldos[0]["saldo_pendiente"]) == pytest.approx(5000.00)
@@ -852,9 +852,13 @@ def test_pago_retry_mismo_op_id_no_duplica_movimiento_ni_saldo(client, db_sessio
     )
     headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440001"}
 
-    data_1 = _pagar_con_headers(client, id_persona, monto=5000.00, headers=headers)
+    data_1 = _pagar_con_headers(
+        client, id_persona, monto=5000.00, headers=headers, fecha_pago="2026-05-05"
+    )
     saldo_1 = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
-    data_2 = _pagar_con_headers(client, id_persona, monto=5000.00, headers=headers)
+    data_2 = _pagar_con_headers(
+        client, id_persona, monto=5000.00, headers=headers, fecha_pago="2026-05-05"
+    )
     saldo_2 = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
 
     assert data_2 == data_1
@@ -874,8 +878,16 @@ def test_pago_retry_mismo_op_id_distinto_monto_devuelve_409(client, db_session) 
     )
     headers = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440201"}
 
-    data_1 = _pagar_con_headers(client, id_persona, monto=5000.00, headers=headers)
-    resp = _post_pago(client, id_persona=id_persona, monto=5000.01, headers=headers)
+    data_1 = _pagar_con_headers(
+        client, id_persona, monto=5000.00, headers=headers, fecha_pago="2026-05-05"
+    )
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=5000.01,
+        headers=headers,
+        fecha_pago="2026-05-05",
+    )
     saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
 
     assert data_1["monto_aplicado"] == pytest.approx(5000.00)
@@ -1012,8 +1024,12 @@ def test_pago_op_id_distinto_registra_nuevo_pago_si_queda_saldo(client, db_sessi
     headers_1 = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440002"}
     headers_2 = {**HEADERS, "X-Op-Id": "650e8400-e29b-41d4-a716-446655440003"}
 
-    data_1 = _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers_1)
-    data_2 = _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers_2)
+    data_1 = _pagar_con_headers(
+        client, id_persona, monto=3000.00, headers=headers_1, fecha_pago="2026-05-05"
+    )
+    data_2 = _pagar_con_headers(
+        client, id_persona, monto=3000.00, headers=headers_2, fecha_pago="2026-05-05"
+    )
 
     saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
     assert _count_pagos_por_op_id(db_session, headers_1["X-Op-Id"]) == 1
@@ -1032,8 +1048,12 @@ def test_pago_sin_op_id_mantiene_comportamiento_no_idempotente(client, db_sessio
     )
     headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
 
-    _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers)
-    _pagar_con_headers(client, id_persona, monto=3000.00, headers=headers)
+    _pagar_con_headers(
+        client, id_persona, monto=3000.00, headers=headers, fecha_pago="2026-05-05"
+    )
+    _pagar_con_headers(
+        client, id_persona, monto=3000.00, headers=headers, fecha_pago="2026-05-05"
+    )
 
     saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
     count_mov = db_session.execute(

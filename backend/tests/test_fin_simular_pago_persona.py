@@ -210,7 +210,7 @@ def test_simular_pago_cubre_deuda_total(client, db_session) -> None:
         monto=10000.00,
     )
     # 2 períodos × 10000 = deuda total 20000
-    data = _simular(client, id_persona, monto=25000.00)
+    data = _simular(client, id_persona, monto=25000.00, fecha_corte="2026-05-05")
 
     assert data["monto_ingresado"] == pytest.approx(25000.00)
     assert data["monto_aplicado"] == pytest.approx(20000.00)
@@ -231,7 +231,7 @@ def test_simular_pago_parcial(client, db_session) -> None:
         monto=10000.00,
     )
     # primera cubre totalmente, segunda queda sin cubrir
-    data = _simular(client, id_persona, monto=10000.00)
+    data = _simular(client, id_persona, monto=10000.00, fecha_corte="2026-05-05")
 
     assert data["monto_aplicado"] == pytest.approx(10000.00)
     assert data["remanente"] == pytest.approx(0.0)
@@ -520,7 +520,7 @@ def test_simular_pago_remanente_cuando_sobra_monto(client, db_session) -> None:
         monto=10000.00,
     )
 
-    data = _simular(client, id_persona, monto=50000.00)
+    data = _simular(client, id_persona, monto=50000.00, fecha_corte="2026-05-05")
 
     assert data["remanente"] == pytest.approx(40000.00)
     assert data["monto_aplicado"] == pytest.approx(10000.00)
