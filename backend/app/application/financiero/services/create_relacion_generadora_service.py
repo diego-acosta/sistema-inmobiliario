@@ -12,7 +12,12 @@ from app.application.financiero.commands.create_relacion_generadora import (
 )
 
 
-TIPOS_ORIGEN_VALIDOS = {"VENTA", "CONTRATO_ALQUILER", "FACTURA_SERVICIO"}
+TIPOS_ORIGEN_VALIDOS = {
+    "VENTA",
+    "CONTRATO_ALQUILER",
+    "FACTURA_SERVICIO",
+    "LIQUIDACION_RECUPERO",
+}
 
 
 @dataclass(slots=True)
@@ -38,6 +43,8 @@ class FinancieroRepository(Protocol):
     def contrato_alquiler_exists(self, id_contrato_alquiler: int) -> bool: ...
 
     def factura_servicio_exists(self, id_factura_servicio: int) -> bool: ...
+
+    def liquidacion_recupero_exists(self, id_liquidacion_recupero: int) -> bool: ...
 
     def create_relacion_generadora(
         self, payload: RelacionGeneradoraCreatePayload
@@ -71,6 +78,9 @@ class CreateRelacionGeneradoraService:
                 return AppResult.fail("NOT_FOUND_ORIGEN")
         elif tipo == "FACTURA_SERVICIO":
             if not self.repository.factura_servicio_exists(command.id_origen):
+                return AppResult.fail("NOT_FOUND_ORIGEN")
+        elif tipo == "LIQUIDACION_RECUPERO":
+            if not self.repository.liquidacion_recupero_exists(command.id_origen):
                 return AppResult.fail("NOT_FOUND_ORIGEN")
 
         now = datetime.now(UTC)

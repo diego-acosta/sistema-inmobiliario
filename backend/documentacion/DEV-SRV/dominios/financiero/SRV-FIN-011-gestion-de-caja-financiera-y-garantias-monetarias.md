@@ -69,8 +69,10 @@ La implementacion V1 minima registra el egreso proveedor desde
   `ANULADO` sin borrado fisico ni contramovimiento.
 
 Este registro no crea `movimiento_financiero`, no genera deuda de recupero y
-no emite recibo interno. El bloqueo de anulacion contra futuras liquidaciones
-de recupero queda pendiente del flujo `SRV-FIN-020-recupero-servicios-comunes`.
+no emite recibo interno. La deuda de recupero se genera despues mediante
+`liquidacion_recupero` (`SRV-FIN-020`), que no crea un nuevo movimiento de
+tesoreria. Si un egreso proveedor ya fue usado por una liquidacion de recupero
+activa, su anulacion queda bloqueada.
 
 ### Gestión de garantías monetarias
 Registra depósitos en garantía, su afectación, liberación, devolución parcial o total y eventual ejecución conforme a la política funcional.

@@ -412,6 +412,21 @@ Decision:
   correspondiente.
 - la obligacion de recupero representa deuda con la empresa, no pago al
   proveedor.
+- el recupero V1 se liquida con entidad financiera propia
+  `liquidacion_recupero`.
+- endpoint:
+  `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`.
+- `liquidacion_recupero` V1 parte de una sola `factura_servicio`, requiere
+  egreso proveedor `REGISTRADO` y recupera hasta el total egresado disponible.
+- la liquidacion crea una relacion generadora propia:
+  `relacion_generadora.tipo_origen = LIQUIDACION_RECUPERO`.
+- la obligacion derivada queda `EMITIDA` con composicion
+  `SERVICIO_RECUPERADO` y `obligacion_obligado` segun responsables explicitos
+  de la liquidacion.
+- si parte del egreso no se recupera, se registra como
+  `importe_absorbido_empresa` y no genera obligacion.
+- si un egreso proveedor fue usado por una liquidacion de recupero activa, su
+  anulacion queda bloqueada en V1.
 - `porcentaje_responsabilidad` de `asignacion_servicio_responsable` no debe
   interpretarse como porcentaje que cada persona paga directamente al proveedor.
 - si una factura requiere reparto, no corresponde registrar

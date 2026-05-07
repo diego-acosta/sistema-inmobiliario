@@ -76,7 +76,7 @@ Cada "tipo" legacy debe mapearse hacia:
 | anticipo | `VENTA` | `ANTICIPO_VENTA` | Anticipo exigible de venta. |
 | alquiler mensual | `CONTRATO_ALQUILER` | `CANON_LOCATIVO` | Canon locativo del periodo. |
 | servicio trasladado | `FACTURA_SERVICIO` en V1 | `SERVICIO_TRASLADADO` | Servicio trasladado al obligado financiero desde factura externa de proveedor. |
-| recupero de servicio comun | `FACTURA_SERVICIO` o futura `liquidacion_recupero` | `SERVICIO_RECUPERADO` | Recupero contra personas por factura de servicio comun pagada previamente por la empresa. Concepto disponible; flujo de recupero no implementado. |
+| recupero de servicio comun | `LIQUIDACION_RECUPERO` | `SERVICIO_RECUPERADO` | Recupero contra personas por factura de servicio comun pagada previamente por la empresa. V1 se liquida explicitamente desde egresos proveedor registrados. |
 | expensa trasladada | `CONTRATO_ALQUILER` | `EXPENSA_TRASLADADA` | Expensa trasladada al obligado financiero. |
 | impuesto trasladado | `CONTRATO_ALQUILER` o `INMUEBLE` segun origen documentado futuro | `IMPUESTO_TRASLADADO` | Impuesto o tasa trasladada. |
 | mora | Origen de la obligacion afectada | `PUNITORIO` en V1; `INTERES_MORA` solo compatibilidad heredada | Componentes de mora asociados a deuda vencida. |
@@ -96,7 +96,7 @@ El catalogo conceptual base de `concepto_financiero` queda definido en `MODELO-F
 - `CANON_LOCATIVO`
 - `EXPENSA_TRASLADADA`
 - `SERVICIO_TRASLADADO`
-- `SERVICIO_RECUPERADO` (recupero V1 futuro de servicios comunes; concepto disponible en seeds y patch, flujo no implementado)
+- `SERVICIO_RECUPERADO` (recupero V1 de servicios comunes pagados por la empresa; se materializa desde `liquidacion_recupero`)
 - `IMPUESTO_TRASLADADO`
 - `INTERES_FINANCIERO`
 - `PUNITORIO`

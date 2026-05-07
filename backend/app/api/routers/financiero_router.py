@@ -66,6 +66,9 @@ from app.api.schemas.financiero import (
     ImputacionData,
     ImputacionResponse,
     InboxEventRequest,
+    LiquidacionRecuperoFacturaServicioData,
+    LiquidacionRecuperoFacturaServicioRequest,
+    LiquidacionRecuperoFacturaServicioResponse,
     MaterializarFacturaServicioData,
     MaterializarFacturaServicioResponse,
     RegenerarCronogramaData,
@@ -175,6 +178,9 @@ from app.application.financiero.services.consultar_egresos_proveedor_factura_ser
 from app.application.financiero.services.anular_egreso_proveedor_factura_servicio_service import (
     AnularEgresoProveedorFacturaServicioService,
 )
+from app.application.financiero.services.liquidar_recupero_factura_servicio_service import (
+    LiquidarRecuperoFacturaServicioService,
+)
 from app.application.financiero.services.regenerar_cronograma_locativo_service import (
     RegenerarCronogramaLocativoService,
 )
@@ -281,7 +287,7 @@ def create_relacion_generadora(
                     error_code="APPLICATION_ERROR",
                     error_message=(
                         "tipo_origen debe ser VENTA, CONTRATO_ALQUILER "
-                        "o FACTURA_SERVICIO."
+                        "FACTURA_SERVICIO o LIQUIDACION_RECUPERO."
                     ),
                     details={"errors": result.errors},
                 ).model_dump(),
@@ -696,6 +702,102 @@ def get_egresos_proveedor_factura_servicio(
     )
 
 
+@router.post(
+    "/api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero",
+    status_code=201,
+    response_model=LiquidacionRecuperoFacturaServicioResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def liquidar_recupero_factura_servicio(
+    id_factura_servicio: int,
+    request: LiquidacionRecuperoFacturaServicioRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> LiquidacionRecuperoFacturaServicioResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = LiquidarRecuperoFacturaServicioService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_factura_servicio=id_factura_servicio,
+            fecha_liquidacion=request.fecha_liquidacion,
+            fecha_vencimiento=request.fecha_vencimiento,
+            importe_total_recuperar=request.importe_total_recuperar,
+            responsables=[r.model_dump() for r in request.responsables],
+            observaciones=request.observaciones,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "FACTURA_SERVICIO_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="FACTURA_SERVICIO_NOT_FOUND",
+                    error_message="La factura de servicio indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "RESPONSABLE_PERSONA_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="RESPONSABLE_PERSONA_NOT_FOUND",
+                    error_message="Una persona responsable indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        conflict_errors = {
+            "FACTURA_SERVICIO_ANULADA",
+            "EGRESO_PROVEEDOR_REQUERIDO",
+            "SIN_MONTO_EGRESADO_DISPONIBLE",
+            "IMPORTE_RECUPERO_SUPERA_EGRESADO",
+            "CONCEPTO_SERVICIO_RECUPERADO_NO_EXISTE",
+            "IDEMPOTENCY_PAYLOAD_CONFLICT",
+        }
+        for code in conflict_errors:
+            if code in result.errors:
+                return JSONResponse(
+                    status_code=409,
+                    content=ErrorResponse(
+                        error_code=code,
+                        error_message="No se pudo liquidar el recupero de servicio.",
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudo liquidar el recupero de servicio.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    response = LiquidacionRecuperoFacturaServicioResponse(
+        data=LiquidacionRecuperoFacturaServicioData(**result.data)
+    )
+    if result.data.get("resultado") == "YA_EMITIDA":
+        return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+    return response
+
+
 @router.patch(
     "/api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular",
     response_model=AnularEgresoProveedorFacturaServicioResponse,
@@ -739,6 +841,17 @@ def anular_egreso_proveedor_factura_servicio(
                 content=ErrorResponse(
                     error_code="EGRESO_PROVEEDOR_NOT_FOUND",
                     error_message="El egreso proveedor indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "EGRESO_PROVEEDOR_CON_LIQUIDACION_RECUPERO" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="EGRESO_PROVEEDOR_CON_LIQUIDACION_RECUPERO",
+                    error_message=(
+                        "El egreso proveedor ya fue usado por una liquidacion de recupero activa."
+                    ),
                     details={"errors": result.errors},
                 ).model_dump(),
             )

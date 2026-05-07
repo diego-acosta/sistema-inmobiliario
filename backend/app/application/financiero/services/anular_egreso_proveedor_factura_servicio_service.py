@@ -13,6 +13,8 @@ class FinancieroRepository(Protocol):
         self, id_egreso: int
     ) -> dict[str, Any] | None: ...
 
+    def egreso_proveedor_usado_en_liquidacion_recupero(self, id_egreso: int) -> bool: ...
+
     def anular_egreso_proveedor_factura_servicio(
         self, *, id_egreso: int, motivo: str, context: Any
     ) -> dict[str, Any]: ...
@@ -52,6 +54,9 @@ class AnularEgresoProveedorFacturaServicioService:
             egreso["motivo"] = egreso.get("motivo_anulacion") or motivo
             egreso["ya_anulado"] = True
             return AppResult.ok(_response(egreso))
+
+        if self.repository.egreso_proveedor_usado_en_liquidacion_recupero(id_egreso):
+            return AppResult.fail("EGRESO_PROVEEDOR_CON_LIQUIDACION_RECUPERO")
 
         anulado = self.repository.anular_egreso_proveedor_factura_servicio(
             id_egreso=id_egreso,

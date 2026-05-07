@@ -311,6 +311,88 @@ class AnularEgresoProveedorFacturaServicioResponse(BaseModel):
     data: AnularEgresoProveedorFacturaServicioData
 
 
+class LiquidacionRecuperoResponsableRequest(BaseModel):
+    id_persona: int
+    porcentaje_responsabilidad: float
+
+    @field_validator("id_persona")
+    @classmethod
+    def id_persona_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("id_persona debe ser mayor que cero.")
+        return v
+
+    @field_validator("porcentaje_responsabilidad")
+    @classmethod
+    def porcentaje_valid(cls, v: float) -> float:
+        if v <= 0 or v > 100:
+            raise ValueError("porcentaje_responsabilidad debe ser mayor que cero y hasta 100.")
+        return v
+
+
+class LiquidacionRecuperoFacturaServicioRequest(BaseModel):
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    importe_total_recuperar: float
+    responsables: list[LiquidacionRecuperoResponsableRequest]
+    observaciones: str | None = None
+
+    @field_validator("importe_total_recuperar")
+    @classmethod
+    def importe_recuperar_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("importe_total_recuperar debe ser mayor que cero.")
+        return v
+
+    @field_validator("responsables")
+    @classmethod
+    def responsables_not_empty(
+        cls, v: list[LiquidacionRecuperoResponsableRequest]
+    ) -> list[LiquidacionRecuperoResponsableRequest]:
+        if not v:
+            raise ValueError("Debe incluir al menos un responsable.")
+        return v
+
+
+class LiquidacionRecuperoResponsableData(BaseModel):
+    id_liquidacion_recupero_responsable: int | None = None
+    id_persona: int
+    porcentaje_responsabilidad: float
+    importe_responsable: float
+    origen_responsable: str = "MANUAL"
+    id_asignacion_servicio_responsable: int | None = None
+
+
+class LiquidacionRecuperoEgresoData(BaseModel):
+    id_liquidacion_recupero_egreso: int | None = None
+    id_egreso_proveedor_factura_servicio: int
+    importe_imputado_base: float
+
+
+class LiquidacionRecuperoFacturaServicioData(BaseModel):
+    resultado: str | None = None
+    id_liquidacion_recupero: int
+    codigo_liquidacion_recupero: str | None = None
+    id_factura_servicio: int
+    id_relacion_generadora: int
+    id_obligacion_financiera: int
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    estado_liquidacion: str
+    importe_total_egresado_base: float
+    importe_total_recuperar: float
+    importe_absorbido_empresa: float
+    responsables: list[LiquidacionRecuperoResponsableData]
+    egresos: list[LiquidacionRecuperoEgresoData]
+    crea_movimiento_tesoreria: bool = False
+    crea_pago_externo_informado: bool = False
+
+
+class LiquidacionRecuperoFacturaServicioResponse(BaseModel):
+    ok: bool = True
+    data: LiquidacionRecuperoFacturaServicioData
+
+
 class AjusteIndexacionRequest(BaseModel):
     importe_ajuste: float
     motivo: str

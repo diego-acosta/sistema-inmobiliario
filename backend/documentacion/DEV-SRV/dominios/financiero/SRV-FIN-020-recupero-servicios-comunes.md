@@ -120,6 +120,8 @@ Decision recomendada V1:
   `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`.
 - Los egresos proveedor registrados por error se anulan con
   `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`.
+- El recupero financiero se liquida explicitamente con
+  `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`.
 - El egreso proveedor crea `movimiento_tesoreria` y
   `egreso_proveedor_factura_servicio`.
 - El egreso proveedor no crea `movimiento_financiero`,
@@ -138,32 +140,38 @@ Decision recomendada V1:
   `egreso_proveedor_factura_servicio.estado_egreso = ANULADO` y
   `movimiento_tesoreria.estado = ANULADO`, preservando observaciones y motivo.
 - La anulacion repetida devuelve resultado idempotente `YA_ANULADO`.
-- El recupero debe crear `obligacion_obligado` para los responsables
-  determinados por la regla de reparto vigente.
-- Si no hay regla de reparto valida, debe bloquearse con error funcional.
-- Si la factura cruza cambios de responsable o reglas incompatibles, V1 debe
-  bloquear antes de prorratear.
+- Si un egreso proveedor ya fue usado por una `liquidacion_recupero` activa,
+  su anulacion se bloquea.
+- `liquidacion_recupero` V1 parte de una sola `factura_servicio`, usa egresos
+  proveedor `REGISTRADO` no eliminados y no usados por liquidaciones activas.
+- La liquidacion permite recuperar hasta el total egresado disponible.
+- La parte no recuperada queda como `importe_absorbido_empresa` y no genera
+  obligacion.
+- La liquidacion crea `relacion_generadora.tipo_origen = LIQUIDACION_RECUPERO`,
+  `obligacion_financiera` `EMITIDA`, composicion `SERVICIO_RECUPERADO` y
+  `obligacion_obligado` desde responsables explicitos del request.
+- Los responsables de la liquidacion son snapshot explicito; V1 exige
+  porcentajes mayores a cero y suma 100.
+- El pago posterior del responsable se realiza por el flujo normal de pago por
+  persona.
 
 ## Pendientes de definicion
 
-- entidad `liquidacion_recupero` o `liquidacion_expensa`;
 - reglas de reparto por inmueble, unidad funcional, servicio, consumo o
-  porcentaje;
-- idempotencia funcional de generacion de recupero;
-- generacion de `obligacion_financiera` y `composicion_obligacion`;
-- bloqueo de anulacion si en el futuro existe `liquidacion_recupero` asociada;
+  porcentaje para automatizar responsables;
 - anulacion/reversion de recuperos ya cobrados;
 - tratamiento de impuestos trasladados;
 - tratamiento de expensas formales.
 
-## Implementacion futura sugerida
+## Implementacion V1
 
-1. Crear entidad de liquidacion de recupero para agrupar una o mas facturas.
-3. Definir reglas de reparto y validacion de suma.
-4. Materializar obligaciones de recupero con obligados usando
+1. Registrar factura externa de servicio.
+2. Registrar uno o mas egresos proveedor.
+3. Liquidar recupero manual/controlado con responsables explicitos.
+4. Materializar obligacion de recupero con obligados usando
    `SERVICIO_RECUPERADO`.
 5. Cobrar por el flujo normal de pagos financieros.
-6. Agregar reversion controlada.
+6. La reversion/anulacion historica de recuperos cobrados queda pendiente.
 
 ## Referencias
 
