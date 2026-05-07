@@ -9,6 +9,7 @@ Queda cerrado el circuito V1 de `EMPRESA_PAGA_Y_RECUPERA` para recupero financie
 - Consulta de egresos proveedor por `factura_servicio`.
 - Anulacion de egreso proveedor.
 - `liquidacion_recupero`.
+- Consulta formal de `liquidacion_recupero`.
 - `relacion_generadora` de tipo `LIQUIDACION_RECUPERO`.
 - `obligacion_financiera` con composicion `SERVICIO_RECUPERADO`.
 - `obligacion_obligado` para responsables de la liquidacion.
@@ -31,6 +32,8 @@ factura_servicio
 - `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`
 - `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`
 - `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`
+- `GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}`
+- `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`
 
 ## 4. Reglas principales
 
@@ -41,16 +44,17 @@ factura_servicio
 - No crea pago externo informado al liquidar recupero.
 - Requiere egreso proveedor registrado.
 - Bloquea egreso usado en liquidacion activa.
+- Las consultas de `liquidacion_recupero` son solo lectura y no modifican
+  saldos ni crean movimientos u obligaciones.
 - El cobro posterior usa pago por persona.
 
 ## 5. Tests de cierre
 
 - `reset_db.bat` reconstruye correctamente.
-- `python -m pytest -q` -> `988 passed`.
+- `python -m pytest -q` -> `994 passed`.
 
 ## 6. Pendientes futuros no bloqueantes
 
-- Consulta formal de `liquidacion_recupero`.
 - Anulacion/reversion de `liquidacion_recupero`.
 - Agrupacion de varias facturas en una liquidacion.
 - Recuperacion automatica desde egreso proveedor.

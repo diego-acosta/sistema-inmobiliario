@@ -67,8 +67,13 @@ from app.api.schemas.financiero import (
     ImputacionResponse,
     InboxEventRequest,
     LiquidacionRecuperoFacturaServicioData,
+    LiquidacionRecuperoDetalleData,
+    LiquidacionRecuperoDetalleResponse,
     LiquidacionRecuperoFacturaServicioRequest,
     LiquidacionRecuperoFacturaServicioResponse,
+    LiquidacionesRecuperoFacturaServicioListData,
+    LiquidacionesRecuperoFacturaServicioListResponse,
+    LiquidacionRecuperoFacturaServicioListItem,
     MaterializarFacturaServicioData,
     MaterializarFacturaServicioResponse,
     RegenerarCronogramaData,
@@ -180,6 +185,12 @@ from app.application.financiero.services.anular_egreso_proveedor_factura_servici
 )
 from app.application.financiero.services.liquidar_recupero_factura_servicio_service import (
     LiquidarRecuperoFacturaServicioService,
+)
+from app.application.financiero.services.get_liquidacion_recupero_service import (
+    GetLiquidacionRecuperoService,
+)
+from app.application.financiero.services.list_liquidaciones_recupero_factura_servicio_service import (
+    ListLiquidacionesRecuperoFacturaServicioService,
 )
 from app.application.financiero.services.regenerar_cronograma_locativo_service import (
     RegenerarCronogramaLocativoService,
@@ -699,6 +710,91 @@ def get_egresos_proveedor_factura_servicio(
 
     return EgresosProveedorFacturaServicioResponse(
         data=EgresosProveedorFacturaServicioData(**result.data)
+    )
+
+
+@router.get(
+    "/api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}",
+    response_model=LiquidacionRecuperoDetalleResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_liquidacion_recupero(
+    id_liquidacion_recupero: int,
+    db: Session = Depends(get_db),
+) -> LiquidacionRecuperoDetalleResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = GetLiquidacionRecuperoService(repository=repository)
+
+    try:
+        result = service.execute(id_liquidacion_recupero)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="LIQUIDACION_RECUPERO_NOT_FOUND",
+                error_message="La liquidacion de recupero indicada no existe.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return LiquidacionRecuperoDetalleResponse(
+        data=LiquidacionRecuperoDetalleData(**result.data)
+    )
+
+
+@router.get(
+    "/api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero",
+    response_model=LiquidacionesRecuperoFacturaServicioListResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_liquidaciones_recupero_factura_servicio(
+    id_factura_servicio: int,
+    db: Session = Depends(get_db),
+) -> LiquidacionesRecuperoFacturaServicioListResponse | JSONResponse:
+    repository = FinancieroRepository(db)
+    service = ListLiquidacionesRecuperoFacturaServicioService(repository=repository)
+
+    try:
+        result = service.execute(id_factura_servicio)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error_code="FACTURA_SERVICIO_NOT_FOUND",
+                error_message="La factura de servicio indicada no existe.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    items = [LiquidacionRecuperoFacturaServicioListItem(**item) for item in result.data]
+    return LiquidacionesRecuperoFacturaServicioListResponse(
+        data=LiquidacionesRecuperoFacturaServicioListData(
+            id_factura_servicio=id_factura_servicio,
+            items=items,
+            total=len(items),
+        )
     )
 
 

@@ -393,6 +393,90 @@ class LiquidacionRecuperoFacturaServicioResponse(BaseModel):
     data: LiquidacionRecuperoFacturaServicioData
 
 
+class LiquidacionRecuperoDetalleFacturaItem(BaseModel):
+    id_factura_servicio: int
+    proveedor: str
+    numero_factura: str
+    importe_total: float
+    importe_egresado_base: float
+    importe_recuperar: float
+
+
+class LiquidacionRecuperoDetalleEgresoItem(BaseModel):
+    id_egreso_proveedor_factura_servicio: int
+    id_movimiento_tesoreria: int
+    fecha_pago: date
+    importe_pagado: float
+    importe_imputado_base: float
+    estado_egreso: str
+
+
+class LiquidacionRecuperoObligacionComposicionItem(BaseModel):
+    codigo_concepto_financiero: str
+    importe_componente: float
+    saldo_componente: float
+
+
+class LiquidacionRecuperoObligacionObligadoItem(BaseModel):
+    id_persona: int
+    rol_obligado: str | None = None
+    porcentaje_responsabilidad: float | None = None
+
+
+class LiquidacionRecuperoObligacionData(BaseModel):
+    id_obligacion_financiera: int
+    estado_obligacion: str
+    saldo_pendiente: float
+    composiciones: list[LiquidacionRecuperoObligacionComposicionItem]
+    obligados: list[LiquidacionRecuperoObligacionObligadoItem]
+
+
+class LiquidacionRecuperoDetalleData(BaseModel):
+    id_liquidacion_recupero: int
+    codigo_liquidacion_recupero: str | None = None
+    estado_liquidacion: str
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    importe_total_egresado_base: float
+    importe_total_recuperar: float
+    importe_absorbido_empresa: float
+    id_relacion_generadora: int | None = None
+    id_obligacion_financiera: int | None = None
+    facturas: list[LiquidacionRecuperoDetalleFacturaItem]
+    egresos: list[LiquidacionRecuperoDetalleEgresoItem]
+    responsables: list[LiquidacionRecuperoResponsableData]
+    obligacion: LiquidacionRecuperoObligacionData | None = None
+
+
+class LiquidacionRecuperoDetalleResponse(BaseModel):
+    ok: bool = True
+    data: LiquidacionRecuperoDetalleData
+
+
+class LiquidacionRecuperoFacturaServicioListItem(BaseModel):
+    id_liquidacion_recupero: int
+    codigo_liquidacion_recupero: str | None = None
+    estado_liquidacion: str
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    importe_total_recuperar: float
+    importe_absorbido_empresa: float
+    id_obligacion_financiera: int | None = None
+    saldo_pendiente: float | None = None
+    cantidad_responsables: int
+
+
+class LiquidacionesRecuperoFacturaServicioListData(BaseModel):
+    id_factura_servicio: int
+    items: list[LiquidacionRecuperoFacturaServicioListItem]
+    total: int
+
+
+class LiquidacionesRecuperoFacturaServicioListResponse(BaseModel):
+    ok: bool = True
+    data: LiquidacionesRecuperoFacturaServicioListData
+
+
 class AjusteIndexacionRequest(BaseModel):
     importe_ajuste: float
     motivo: str

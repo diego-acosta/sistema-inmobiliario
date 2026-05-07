@@ -1,8 +1,8 @@
 # SRV-FIN-020 - Recupero de servicios comunes
 
 ## Estado
-- estado: `PARCIAL V1`
-- implementacion: egreso proveedor minimo y anulacion V1 implementados; recupero financiero no implementado
+- estado: `IMPLEMENTADA V1`
+- implementacion: egreso proveedor, anulacion, liquidacion y consulta formal V1 implementados
 - dominio owner: `financiero`
 - origen operativo: `factura_servicio` del dominio `inmobiliario`
 - clasificacion: nucleo financiero para recuperos contra personas
@@ -78,8 +78,7 @@ Alternativas evaluadas:
      `SERVICIO_TRASLADADO DIRECTO_RESPONSABLE`;
    - evita reutilizar `EXPENSA_TRASLADADA` cuando aun no existe liquidacion
      formal de expensas;
-   - incorporado al catalogo `concepto_financiero` como base para la futura
-     implementacion del flujo.
+   - incorporado al catalogo `concepto_financiero` como base del flujo V1.
 
 2. `EXPENSA_TRASLADADA`
    - reservar para una futura `liquidacion_expensa` o circuito formal de
@@ -122,6 +121,10 @@ Decision recomendada V1:
   `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`.
 - El recupero financiero se liquida explicitamente con
   `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`.
+- La liquidacion se consulta con
+  `GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}`.
+- Las liquidaciones de una factura se listan con
+  `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`.
 - El egreso proveedor crea `movimiento_tesoreria` y
   `egreso_proveedor_factura_servicio`.
 - El egreso proveedor no crea `movimiento_financiero`,
@@ -152,6 +155,9 @@ Decision recomendada V1:
   `obligacion_obligado` desde responsables explicitos del request.
 - Los responsables de la liquidacion son snapshot explicito; V1 exige
   porcentajes mayores a cero y suma 100.
+- Las consultas de `liquidacion_recupero` son solo lectura: no modifican saldos,
+  no crean movimientos de tesoreria, no crean movimientos financieros y no
+  generan obligaciones.
 - El pago posterior del responsable se realiza por el flujo normal de pago por
   persona.
 
@@ -170,8 +176,9 @@ Decision recomendada V1:
 3. Liquidar recupero manual/controlado con responsables explicitos.
 4. Materializar obligacion de recupero con obligados usando
    `SERVICIO_RECUPERADO`.
-5. Cobrar por el flujo normal de pagos financieros.
-6. La reversion/anulacion historica de recuperos cobrados queda pendiente.
+5. Consultar el detalle de la liquidacion o listar liquidaciones por factura.
+6. Cobrar por el flujo normal de pagos financieros.
+7. La reversion/anulacion historica de recuperos cobrados queda pendiente.
 
 ## Referencias
 

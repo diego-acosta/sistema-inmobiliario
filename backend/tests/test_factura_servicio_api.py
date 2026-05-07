@@ -1740,6 +1740,214 @@ def test_liquidacion_recupero_total_crea_financiero_servicio_recuperado(
     assert float(row["porcentaje_responsabilidad"]) == 100.0
 
 
+def test_get_liquidacion_recupero_detalle_emitida(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-DET-001"
+    )
+    egreso = _registrar_egreso_proveedor(client, db_session, id_factura)
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+        importe=20000.00,
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    creada = liquidacion.json()["data"]
+
+    response = client.get(
+        f"/api/v1/financiero/liquidaciones-recupero/{creada['id_liquidacion_recupero']}"
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["id_liquidacion_recupero"] == creada["id_liquidacion_recupero"]
+    assert data["estado_liquidacion"] == "EMITIDA"
+    assert data["fecha_liquidacion"] == "2026-05-25"
+    assert data["fecha_vencimiento"] == "2026-06-10"
+    assert data["importe_total_egresado_base"] == 25000.0
+    assert data["importe_total_recuperar"] == 20000.0
+    assert data["importe_absorbido_empresa"] == 5000.0
+    assert data["id_relacion_generadora"] == creada["id_relacion_generadora"]
+    assert data["id_obligacion_financiera"] == creada["id_obligacion_financiera"]
+
+    assert data["facturas"] == [
+        {
+            "id_factura_servicio": id_factura,
+            "proveedor": "CALF",
+            "numero_factura": "FS-MAT-FAC-REC-DET-001",
+            "importe_total": 25000.0,
+            "importe_egresado_base": 25000.0,
+            "importe_recuperar": 20000.0,
+        }
+    ]
+    assert data["egresos"][0]["id_egreso_proveedor_factura_servicio"] == egreso.json()[
+        "data"
+    ]["id_egreso_proveedor_factura_servicio"]
+    assert data["egresos"][0]["id_movimiento_tesoreria"] == egreso.json()["data"][
+        "id_movimiento_tesoreria"
+    ]
+    assert data["egresos"][0]["fecha_pago"] == "2026-05-20"
+    assert data["egresos"][0]["importe_pagado"] == 25000.0
+    assert data["egresos"][0]["importe_imputado_base"] == 25000.0
+    assert data["egresos"][0]["estado_egreso"] == "REGISTRADO"
+
+    assert data["responsables"] == [
+        {
+            "id_liquidacion_recupero_responsable": data["responsables"][0][
+                "id_liquidacion_recupero_responsable"
+            ],
+            "id_persona": id_persona,
+            "porcentaje_responsabilidad": 100.0,
+            "importe_responsable": 20000.0,
+            "origen_responsable": "MANUAL",
+            "id_asignacion_servicio_responsable": None,
+        }
+    ]
+    assert data["obligacion"]["id_obligacion_financiera"] == creada[
+        "id_obligacion_financiera"
+    ]
+    assert data["obligacion"]["estado_obligacion"] == "EMITIDA"
+    assert data["obligacion"]["saldo_pendiente"] == 20000.0
+    assert data["obligacion"]["composiciones"] == [
+        {
+            "codigo_concepto_financiero": "SERVICIO_RECUPERADO",
+            "importe_componente": 20000.0,
+            "saldo_componente": 20000.0,
+        }
+    ]
+    assert data["obligacion"]["obligados"] == [
+        {
+            "id_persona": id_persona,
+            "rol_obligado": "RESPONSABLE_RECUPERO",
+            "porcentaje_responsabilidad": 100.0,
+        }
+    ]
+
+
+def test_list_liquidaciones_recupero_por_factura_devuelve_liquidacion(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-LIST-001"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+        importe=20000.00,
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    creada = liquidacion.json()["data"]
+
+    response = client.get(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/liquidaciones-recupero"
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["id_factura_servicio"] == id_factura
+    assert data["total"] == 1
+    assert data["items"] == [
+        {
+            "id_liquidacion_recupero": creada["id_liquidacion_recupero"],
+            "codigo_liquidacion_recupero": creada["codigo_liquidacion_recupero"],
+            "estado_liquidacion": "EMITIDA",
+            "fecha_liquidacion": "2026-05-25",
+            "fecha_vencimiento": "2026-06-10",
+            "importe_total_recuperar": 20000.0,
+            "importe_absorbido_empresa": 5000.0,
+            "id_obligacion_financiera": creada["id_obligacion_financiera"],
+            "saldo_pendiente": 20000.0,
+            "cantidad_responsables": 1,
+        }
+    ]
+
+
+def test_list_liquidaciones_recupero_factura_sin_liquidaciones_devuelve_lista_vacia(
+    client, db_session
+) -> None:
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-LIST-EMPTY"
+    )
+
+    response = client.get(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/liquidaciones-recupero"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {
+        "id_factura_servicio": id_factura,
+        "items": [],
+        "total": 0,
+    }
+
+
+def test_get_liquidacion_recupero_inexistente_devuelve_404(client) -> None:
+    response = client.get("/api/v1/financiero/liquidaciones-recupero/999999999")
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "LIQUIDACION_RECUPERO_NOT_FOUND"
+
+
+def test_list_liquidaciones_recupero_factura_inexistente_devuelve_404(client) -> None:
+    response = client.get(
+        "/api/v1/financiero/facturas-servicio/999999999/liquidaciones-recupero"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "FACTURA_SERVICIO_NOT_FOUND"
+
+
+def test_consultar_liquidacion_recupero_no_crea_movimientos_ni_obligaciones(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-READONLY"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    id_liquidacion = liquidacion.json()["data"]["id_liquidacion_recupero"]
+
+    before = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_tesoreria) AS tesoreria,
+                (SELECT COUNT(*) FROM movimiento_financiero) AS financiero,
+                (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones
+            """
+        )
+    ).mappings().one()
+
+    detail = client.get(f"/api/v1/financiero/liquidaciones-recupero/{id_liquidacion}")
+    listing = client.get(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/liquidaciones-recupero"
+    )
+
+    assert detail.status_code == 200, detail.text
+    assert listing.status_code == 200, listing.text
+    after = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_tesoreria) AS tesoreria,
+                (SELECT COUNT(*) FROM movimiento_financiero) AS financiero,
+                (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones
+            """
+        )
+    ).mappings().one()
+    assert dict(after) == dict(before)
+
+
 def test_liquidacion_recupero_parcial_registra_absorbido_empresa(
     client, db_session
 ) -> None:

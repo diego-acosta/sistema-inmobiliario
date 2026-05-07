@@ -2843,6 +2843,283 @@ class FinancieroRepository:
             "payload_idempotencia": payload,
         }
 
+    def get_liquidacion_recupero_detalle(
+        self, id_liquidacion_recupero: int
+    ) -> dict[str, Any] | None:
+        base_stmt = text(
+            """
+            SELECT
+                lr.id_liquidacion_recupero,
+                lr.codigo_liquidacion_recupero,
+                lr.fecha_liquidacion,
+                lr.fecha_vencimiento,
+                lr.estado_liquidacion,
+                lr.importe_total_egresado_base,
+                lr.importe_total_recuperar,
+                lr.importe_absorbido_empresa,
+                lr.id_relacion_generadora,
+                lr.id_obligacion_financiera
+            FROM liquidacion_recupero lr
+            WHERE lr.id_liquidacion_recupero = :id
+              AND lr.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            base_stmt, {"id": id_liquidacion_recupero}
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+
+        facturas_stmt = text(
+            """
+            SELECT
+                lrf.id_factura_servicio,
+                fs.proveedor,
+                fs.numero_factura,
+                fs.importe_total,
+                lrf.importe_egresado_base,
+                lrf.importe_recuperar
+            FROM liquidacion_recupero_factura lrf
+            JOIN factura_servicio fs
+              ON fs.id_factura_servicio = lrf.id_factura_servicio
+             AND fs.deleted_at IS NULL
+            WHERE lrf.id_liquidacion_recupero = :id
+            ORDER BY lrf.id_liquidacion_recupero_factura ASC
+            """
+        )
+        egresos_stmt = text(
+            """
+            SELECT
+                lre.id_egreso_proveedor_factura_servicio,
+                e.id_movimiento_tesoreria,
+                e.fecha_pago,
+                e.importe_pagado,
+                lre.importe_imputado_base,
+                e.estado_egreso
+            FROM liquidacion_recupero_egreso lre
+            JOIN egreso_proveedor_factura_servicio e
+              ON e.id_egreso_proveedor_factura_servicio =
+                 lre.id_egreso_proveedor_factura_servicio
+             AND e.deleted_at IS NULL
+            WHERE lre.id_liquidacion_recupero = :id
+            ORDER BY lre.id_liquidacion_recupero_egreso ASC
+            """
+        )
+        responsables_stmt = text(
+            """
+            SELECT
+                id_liquidacion_recupero_responsable,
+                id_persona,
+                porcentaje_responsabilidad,
+                importe_responsable,
+                origen_responsable,
+                id_asignacion_servicio_responsable
+            FROM liquidacion_recupero_responsable
+            WHERE id_liquidacion_recupero = :id
+            ORDER BY id_liquidacion_recupero_responsable ASC
+            """
+        )
+        composiciones_stmt = text(
+            """
+            SELECT
+                cf.codigo_concepto_financiero,
+                c.importe_componente,
+                c.saldo_componente
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+             AND cf.deleted_at IS NULL
+            WHERE c.id_obligacion_financiera = :id_obligacion
+              AND c.deleted_at IS NULL
+            ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
+            """
+        )
+        obligados_stmt = text(
+            """
+            SELECT
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion
+              AND deleted_at IS NULL
+            ORDER BY id_obligacion_obligado ASC
+            """
+        )
+        obligacion_stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                estado_obligacion,
+                saldo_pendiente
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id_obligacion
+              AND deleted_at IS NULL
+            """
+        )
+
+        params = {"id": id_liquidacion_recupero}
+        facturas = [
+            {
+                "id_factura_servicio": f["id_factura_servicio"],
+                "proveedor": f["proveedor"],
+                "numero_factura": f["numero_factura"],
+                "importe_total": float(f["importe_total"]),
+                "importe_egresado_base": float(f["importe_egresado_base"]),
+                "importe_recuperar": float(f["importe_recuperar"]),
+            }
+            for f in self.db.execute(facturas_stmt, params).mappings().all()
+        ]
+        egresos = [
+            {
+                "id_egreso_proveedor_factura_servicio": e[
+                    "id_egreso_proveedor_factura_servicio"
+                ],
+                "id_movimiento_tesoreria": e["id_movimiento_tesoreria"],
+                "fecha_pago": e["fecha_pago"],
+                "importe_pagado": float(e["importe_pagado"]),
+                "importe_imputado_base": float(e["importe_imputado_base"]),
+                "estado_egreso": e["estado_egreso"],
+            }
+            for e in self.db.execute(egresos_stmt, params).mappings().all()
+        ]
+        responsables = [
+            {
+                "id_liquidacion_recupero_responsable": r[
+                    "id_liquidacion_recupero_responsable"
+                ],
+                "id_persona": r["id_persona"],
+                "porcentaje_responsabilidad": float(r["porcentaje_responsabilidad"]),
+                "importe_responsable": float(r["importe_responsable"]),
+                "origen_responsable": r["origen_responsable"],
+                "id_asignacion_servicio_responsable": r[
+                    "id_asignacion_servicio_responsable"
+                ],
+            }
+            for r in self.db.execute(responsables_stmt, params).mappings().all()
+        ]
+
+        obligacion = None
+        id_obligacion = row["id_obligacion_financiera"]
+        if id_obligacion is not None:
+            ob_params = {"id_obligacion": id_obligacion}
+            ob_row = self.db.execute(
+                obligacion_stmt, ob_params
+            ).mappings().one_or_none()
+            if ob_row is not None:
+                obligacion = {
+                    "id_obligacion_financiera": ob_row[
+                        "id_obligacion_financiera"
+                    ],
+                    "estado_obligacion": ob_row["estado_obligacion"],
+                    "saldo_pendiente": float(ob_row["saldo_pendiente"]),
+                    "composiciones": [
+                        {
+                            "codigo_concepto_financiero": c[
+                                "codigo_concepto_financiero"
+                            ],
+                            "importe_componente": float(c["importe_componente"]),
+                            "saldo_componente": float(c["saldo_componente"]),
+                        }
+                        for c in self.db.execute(
+                            composiciones_stmt, ob_params
+                        ).mappings().all()
+                    ],
+                    "obligados": [
+                        {
+                            "id_persona": o["id_persona"],
+                            "rol_obligado": o["rol_obligado"],
+                            "porcentaje_responsabilidad": (
+                                float(o["porcentaje_responsabilidad"])
+                                if o["porcentaje_responsabilidad"] is not None
+                                else None
+                            ),
+                        }
+                        for o in self.db.execute(
+                            obligados_stmt, ob_params
+                        ).mappings().all()
+                    ],
+                }
+
+        return {
+            "id_liquidacion_recupero": row["id_liquidacion_recupero"],
+            "codigo_liquidacion_recupero": row["codigo_liquidacion_recupero"],
+            "estado_liquidacion": row["estado_liquidacion"],
+            "fecha_liquidacion": row["fecha_liquidacion"],
+            "fecha_vencimiento": row["fecha_vencimiento"],
+            "importe_total_egresado_base": float(row["importe_total_egresado_base"]),
+            "importe_total_recuperar": float(row["importe_total_recuperar"]),
+            "importe_absorbido_empresa": float(row["importe_absorbido_empresa"]),
+            "id_relacion_generadora": row["id_relacion_generadora"],
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "facturas": facturas,
+            "egresos": egresos,
+            "responsables": responsables,
+            "obligacion": obligacion,
+        }
+
+    def list_liquidaciones_recupero_by_factura_servicio(
+        self, id_factura_servicio: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                lr.id_liquidacion_recupero,
+                lr.codigo_liquidacion_recupero,
+                lr.estado_liquidacion,
+                lr.fecha_liquidacion,
+                lr.fecha_vencimiento,
+                lr.importe_total_recuperar,
+                lr.importe_absorbido_empresa,
+                lr.id_obligacion_financiera,
+                o.saldo_pendiente,
+                COUNT(lrr.id_liquidacion_recupero_responsable) AS cantidad_responsables
+            FROM liquidacion_recupero lr
+            JOIN liquidacion_recupero_factura lrf
+              ON lrf.id_liquidacion_recupero = lr.id_liquidacion_recupero
+            LEFT JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = lr.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            LEFT JOIN liquidacion_recupero_responsable lrr
+              ON lrr.id_liquidacion_recupero = lr.id_liquidacion_recupero
+            WHERE lrf.id_factura_servicio = :id_factura_servicio
+              AND lr.deleted_at IS NULL
+            GROUP BY
+                lr.id_liquidacion_recupero,
+                lr.codigo_liquidacion_recupero,
+                lr.estado_liquidacion,
+                lr.fecha_liquidacion,
+                lr.fecha_vencimiento,
+                lr.importe_total_recuperar,
+                lr.importe_absorbido_empresa,
+                lr.id_obligacion_financiera,
+                o.saldo_pendiente
+            ORDER BY lr.fecha_liquidacion ASC, lr.id_liquidacion_recupero ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_factura_servicio": id_factura_servicio}
+        ).mappings().all()
+        return [
+            {
+                "id_liquidacion_recupero": row["id_liquidacion_recupero"],
+                "codigo_liquidacion_recupero": row["codigo_liquidacion_recupero"],
+                "estado_liquidacion": row["estado_liquidacion"],
+                "fecha_liquidacion": row["fecha_liquidacion"],
+                "fecha_vencimiento": row["fecha_vencimiento"],
+                "importe_total_recuperar": float(row["importe_total_recuperar"]),
+                "importe_absorbido_empresa": float(row["importe_absorbido_empresa"]),
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "saldo_pendiente": (
+                    float(row["saldo_pendiente"])
+                    if row["saldo_pendiente"] is not None
+                    else None
+                ),
+                "cantidad_responsables": int(row["cantidad_responsables"]),
+            }
+            for row in rows
+        ]
+
     def crear_liquidacion_recupero(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
         stmt = text(
