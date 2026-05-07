@@ -329,6 +329,24 @@ class FinancieroRepository:
             is not None
         )
 
+    def liquidacion_impuesto_trasladado_exists(
+        self, id_liquidacion_impuesto_trasladado: int
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM liquidacion_impuesto_trasladado
+            WHERE id_liquidacion_impuesto_trasladado = :id
+              AND deleted_at IS NULL
+            """
+        )
+        return (
+            self.db.execute(
+                stmt, {"id": id_liquidacion_impuesto_trasladado}
+            ).scalar_one_or_none()
+            is not None
+        )
+
     def get_factura_servicio_para_materializar(
         self, id_factura_servicio: int
     ) -> dict[str, Any] | None:
@@ -2897,6 +2915,54 @@ class FinancieroRepository:
             )
         return egresos
 
+    def list_egresos_impuesto_disponibles_para_liquidacion(
+        self, id_comprobante_impuesto: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                e.id_egreso_impuesto_empresa,
+                e.id_movimiento_tesoreria,
+                e.fecha_pago,
+                e.importe_pagado,
+                e.medio_pago,
+                e.referencia_comprobante,
+                e.estado_egreso
+            FROM egreso_impuesto_empresa e
+            WHERE e.id_comprobante_impuesto = :id_comprobante_impuesto
+              AND e.estado_egreso = 'REGISTRADO'
+              AND e.deleted_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM liquidacion_impuesto_trasladado_egreso lite
+                  JOIN liquidacion_impuesto_trasladado lit
+                    ON lit.id_liquidacion_impuesto_trasladado =
+                       lite.id_liquidacion_impuesto_trasladado
+                   AND lit.deleted_at IS NULL
+                   AND lit.estado_liquidacion = 'EMITIDA'
+                  WHERE lite.id_egreso_impuesto_empresa = e.id_egreso_impuesto_empresa
+                    AND lite.deleted_at IS NULL
+                    AND lite.estado_liquidacion_impuesto_egreso = 'ACTIVO'
+              )
+            ORDER BY e.fecha_pago ASC, e.id_egreso_impuesto_empresa ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
+        ).mappings().all()
+        return [
+            {
+                "id_egreso_impuesto_empresa": row["id_egreso_impuesto_empresa"],
+                "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+                "fecha_pago": row["fecha_pago"],
+                "importe_pagado": Decimal(str(row["importe_pagado"])),
+                "medio_pago": row["medio_pago"],
+                "referencia_comprobante": row["referencia_comprobante"],
+                "estado_egreso": row["estado_egreso"],
+            }
+            for row in rows
+        ]
+
     def get_egreso_proveedor_factura_servicio_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
@@ -3465,6 +3531,83 @@ class FinancieroRepository:
             for row in rows
         ]
 
+    def get_liquidacion_impuesto_trasladado_by_op_id(
+        self, *, op_id: Any
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT id_liquidacion_impuesto_trasladado
+            FROM liquidacion_impuesto_trasladado
+            WHERE op_id_alta = :op_id
+              AND deleted_at IS NULL
+            ORDER BY id_liquidacion_impuesto_trasladado ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
+        if row is None:
+            return None
+        return self.get_liquidacion_impuesto_trasladado_by_id(
+            row["id_liquidacion_impuesto_trasladado"]
+        )
+
+    def get_liquidacion_impuesto_trasladado_by_id(
+        self, id_liquidacion_impuesto_trasladado: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                lit.id_liquidacion_impuesto_trasladado,
+                lit.codigo_liquidacion_impuesto_trasladado,
+                lit.estado_liquidacion,
+                lit.modalidad_gestion_impuesto,
+                lit.fecha_liquidacion,
+                lit.fecha_vencimiento,
+                lit.importe_total_base,
+                lit.importe_total_trasladar,
+                lit.importe_absorbido_empresa,
+                lit.id_relacion_generadora,
+                lit.id_obligacion_financiera,
+                lit.observaciones
+            FROM liquidacion_impuesto_trasladado lit
+            WHERE lit.id_liquidacion_impuesto_trasladado = :id
+              AND lit.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            stmt, {"id": id_liquidacion_impuesto_trasladado}
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+
+        payload = None
+        if row["observaciones"]:
+            try:
+                parsed = json.loads(row["observaciones"])
+                if parsed.get("tipo") == "liquidacion_impuesto_trasladado":
+                    payload = parsed
+            except (TypeError, ValueError):
+                payload = None
+
+        return {
+            "id_liquidacion_impuesto_trasladado": row[
+                "id_liquidacion_impuesto_trasladado"
+            ],
+            "codigo_liquidacion_impuesto_trasladado": row[
+                "codigo_liquidacion_impuesto_trasladado"
+            ],
+            "estado_liquidacion": row["estado_liquidacion"],
+            "modalidad_gestion_impuesto": row["modalidad_gestion_impuesto"],
+            "fecha_liquidacion": row["fecha_liquidacion"],
+            "fecha_vencimiento": row["fecha_vencimiento"],
+            "importe_total_base": float(row["importe_total_base"]),
+            "importe_total_trasladar": float(row["importe_total_trasladar"]),
+            "importe_absorbido_empresa": float(row["importe_absorbido_empresa"]),
+            "id_relacion_generadora": row["id_relacion_generadora"],
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "payload_idempotencia": payload,
+        }
+
     def get_liquidacion_recupero_para_anular(
         self, id_liquidacion_recupero: int
     ) -> dict[str, Any] | None:
@@ -3990,6 +4133,324 @@ class FinancieroRepository:
             ),
             {
                 "id_liquidacion_recupero": id_liquidacion_recupero,
+                "id_relacion_generadora": id_relacion_generadora,
+                "id_obligacion_financiera": id_obligacion,
+            },
+        )
+
+    def crear_liquidacion_impuesto_trasladado(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        comprobante = values["comprobante"]
+        stmt = text(
+            """
+            INSERT INTO liquidacion_impuesto_trasladado (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                codigo_liquidacion_impuesto_trasladado, estado_liquidacion,
+                modalidad_gestion_impuesto, fecha_liquidacion, fecha_vencimiento,
+                importe_total_base, importe_total_trasladar,
+                importe_absorbido_empresa, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :codigo_liquidacion_impuesto_trasladado, 'EMITIDA',
+                :modalidad_gestion_impuesto, :fecha_liquidacion, :fecha_vencimiento,
+                :importe_total_base, :importe_total_trasladar,
+                :importe_absorbido_empresa, :observaciones
+            )
+            RETURNING id_liquidacion_impuesto_trasladado
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "uid_global": values["uid_global_liquidacion"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "codigo_liquidacion_impuesto_trasladado": values[
+                    "codigo_liquidacion_impuesto_trasladado"
+                ],
+                "modalidad_gestion_impuesto": values["modalidad_gestion_impuesto"],
+                "fecha_liquidacion": values["fecha_liquidacion"],
+                "fecha_vencimiento": values["fecha_vencimiento"],
+                "importe_total_base": values["importe_total_base"],
+                "importe_total_trasladar": values["importe_total_trasladar"],
+                "importe_absorbido_empresa": values["importe_absorbido_empresa"],
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+        id_liquidacion = row["id_liquidacion_impuesto_trasladado"]
+
+        self.db.execute(
+            text(
+                """
+                INSERT INTO liquidacion_impuesto_trasladado_comprobante (
+                    id_liquidacion_impuesto_trasladado,
+                    id_comprobante_impuesto,
+                    organismo,
+                    tipo_impuesto,
+                    partida_nomenclatura,
+                    numero_comprobante,
+                    periodo_desde,
+                    periodo_hasta,
+                    fecha_vencimiento,
+                    importe_comprobante,
+                    importe_base,
+                    importe_trasladar
+                )
+                VALUES (
+                    :id_liquidacion,
+                    :id_comprobante_impuesto,
+                    :organismo,
+                    :tipo_impuesto,
+                    :partida_nomenclatura,
+                    :numero_comprobante,
+                    :periodo_desde,
+                    :periodo_hasta,
+                    :fecha_vencimiento,
+                    :importe_comprobante,
+                    :importe_base,
+                    :importe_trasladar
+                )
+                """
+            ),
+            {
+                "id_liquidacion": id_liquidacion,
+                "id_comprobante_impuesto": values["id_comprobante_impuesto"],
+                "organismo": comprobante["organismo"],
+                "tipo_impuesto": comprobante["tipo_impuesto"],
+                "partida_nomenclatura": comprobante["partida_nomenclatura"],
+                "numero_comprobante": comprobante["numero_comprobante"],
+                "periodo_desde": comprobante["periodo_desde"],
+                "periodo_hasta": comprobante["periodo_hasta"],
+                "fecha_vencimiento": comprobante["fecha_vencimiento"],
+                "importe_comprobante": comprobante["importe_total"],
+                "importe_base": values["importe_total_base"],
+                "importe_trasladar": values["importe_total_trasladar"],
+            },
+        )
+
+        egreso_stmt = text(
+            """
+            INSERT INTO liquidacion_impuesto_trasladado_egreso (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_liquidacion_impuesto_trasladado,
+                id_egreso_impuesto_empresa,
+                importe_imputado_base
+            )
+            VALUES (
+                gen_random_uuid(), :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_liquidacion,
+                :id_egreso_impuesto_empresa,
+                :importe_imputado_base
+            )
+            """
+        )
+        for egreso in values["egresos"]:
+            self.db.execute(
+                egreso_stmt,
+                {
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_liquidacion": id_liquidacion,
+                    "id_egreso_impuesto_empresa": egreso[
+                        "id_egreso_impuesto_empresa"
+                    ],
+                    "importe_imputado_base": egreso["importe_pagado"],
+                },
+            )
+
+        responsable_stmt = text(
+            """
+            INSERT INTO liquidacion_impuesto_trasladado_responsable (
+                id_liquidacion_impuesto_trasladado,
+                id_persona,
+                porcentaje_responsabilidad,
+                importe_responsable,
+                origen_responsable
+            )
+            VALUES (
+                :id_liquidacion,
+                :id_persona,
+                :porcentaje_responsabilidad,
+                :importe_responsable,
+                :origen_responsable
+            )
+            """
+        )
+        for responsable in values["responsables"]:
+            rv = self._values(responsable)
+            self.db.execute(
+                responsable_stmt,
+                {
+                    "id_liquidacion": id_liquidacion,
+                    "id_persona": rv["id_persona"],
+                    "porcentaje_responsabilidad": rv["porcentaje_responsabilidad"],
+                    "importe_responsable": rv["importe_responsable"],
+                    "origen_responsable": rv["origen_responsable"],
+                },
+            )
+        return {"id_liquidacion_impuesto_trasladado": id_liquidacion}
+
+    def completar_liquidacion_impuesto_trasladado_financiera(
+        self,
+        *,
+        id_liquidacion_impuesto_trasladado: int,
+        id_relacion_generadora: int,
+        payload: Any,
+    ) -> None:
+        values = self._values(payload)
+        ob_row = self.db.execute(
+            text(
+                """
+                INSERT INTO obligacion_financiera (
+                    uid_global, version_registro, created_at, updated_at,
+                    id_instalacion_origen, id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion,
+                    id_relacion_generadora, fecha_emision, fecha_vencimiento,
+                    periodo_desde, periodo_hasta,
+                    importe_total, saldo_pendiente, moneda, estado_obligacion
+                )
+                VALUES (
+                    :uid_global, :version_registro, :created_at, :updated_at,
+                    :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                    :op_id_alta, :op_id_ultima_modificacion,
+                    :id_relacion_generadora, :fecha_emision, :fecha_vencimiento,
+                    NULL, NULL,
+                    :importe_total, :importe_total, 'ARS', 'EMITIDA'
+                )
+                RETURNING id_obligacion_financiera
+                """
+            ),
+            {
+                "uid_global": values["uid_global_obligacion"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_relacion_generadora": id_relacion_generadora,
+                "fecha_emision": values["fecha_liquidacion"],
+                "fecha_vencimiento": values["fecha_vencimiento"],
+                "importe_total": values["importe_total_trasladar"],
+            },
+        ).mappings().one()
+        id_obligacion = ob_row["id_obligacion_financiera"]
+        self.db.execute(
+            text(
+                """
+                INSERT INTO composicion_obligacion (
+                    uid_global, version_registro, created_at, updated_at,
+                    id_instalacion_origen, id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion,
+                    id_obligacion_financiera, id_concepto_financiero,
+                    orden_composicion, importe_componente, saldo_componente
+                )
+                VALUES (
+                    :uid_global, :version_registro, :created_at, :updated_at,
+                    :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                    :op_id_alta, :op_id_ultima_modificacion,
+                    :id_obligacion_financiera, :id_concepto_financiero,
+                    1, :importe_componente, :importe_componente
+                )
+                """
+            ),
+            {
+                "uid_global": values["uid_global_composicion"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_obligacion_financiera": id_obligacion,
+                "id_concepto_financiero": values["id_concepto_financiero"],
+                "importe_componente": values["importe_total_trasladar"],
+            },
+        )
+
+        obligado_stmt = text(
+            """
+            INSERT INTO obligacion_obligado (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_persona,
+                rol_obligado, porcentaje_responsabilidad
+            )
+            VALUES (
+                gen_random_uuid(), :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_persona,
+                'RESPONSABLE_IMPUESTO_TRASLADADO', :porcentaje_responsabilidad
+            )
+            """
+        )
+        for responsable in values["responsables"]:
+            rv = self._values(responsable)
+            self.db.execute(
+                obligado_stmt,
+                {
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_obligacion_financiera": id_obligacion,
+                    "id_persona": rv["id_persona"],
+                    "porcentaje_responsabilidad": rv[
+                        "porcentaje_responsabilidad"
+                    ],
+                },
+            )
+
+        self.db.execute(
+            text(
+                """
+                UPDATE liquidacion_impuesto_trasladado
+                SET id_relacion_generadora = :id_relacion_generadora,
+                    id_obligacion_financiera = :id_obligacion_financiera
+                WHERE id_liquidacion_impuesto_trasladado =
+                      :id_liquidacion_impuesto_trasladado
+                """
+            ),
+            {
+                "id_liquidacion_impuesto_trasladado": (
+                    id_liquidacion_impuesto_trasladado
+                ),
                 "id_relacion_generadora": id_relacion_generadora,
                 "id_obligacion_financiera": id_obligacion,
             },

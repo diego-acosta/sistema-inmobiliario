@@ -1003,3 +1003,429 @@ def test_anular_egreso_impuesto_no_crea_efectos_financieros(
     assert response.status_code == 200
     assert after["financieros"] == before["financieros"]
     assert after["obligaciones"] == before["obligaciones"]
+
+
+def _liquidar_impuesto(
+    client,
+    *,
+    id_comprobante_impuesto: int,
+    id_persona: int,
+    importe_total_trasladar: float = 15000.00,
+    op_id: str = "00000000-0000-0000-0000-00000000f001",
+    porcentaje_responsabilidad: float = 100.00,
+):
+    return client.post(
+        (
+            "/api/v1/financiero/comprobantes-impuesto/"
+            f"{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado"
+        ),
+        json={
+            "fecha_liquidacion": "2026-05-25",
+            "fecha_vencimiento": "2026-06-10",
+            "importe_total_trasladar": importe_total_trasladar,
+            "responsables": [
+                {
+                    "id_persona": id_persona,
+                    "porcentaje_responsabilidad": porcentaje_responsabilidad,
+                }
+            ],
+            "observaciones": "Liquidacion impuesto municipal",
+        },
+        headers=_headers_op(op_id),
+    )
+
+
+def test_liquidacion_impuesto_empresa_asume_bloquea(client, db_session) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-ASUME")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-ASUME",
+        modalidad_gestion_impuesto="EMPRESA_ASUME",
+    ).json()["data"]
+
+    response = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f101",
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IMPUESTO_EMPRESA_ASUME_NO_TRASLADABLE"
+
+
+def test_liquidacion_impuesto_directo_responsable_sin_egreso_empresa(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-DIRECTO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-DIRECTO",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+        importe_total=15000,
+    ).json()["data"]
+
+    response = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f102",
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["modalidad_gestion_impuesto"] == "DIRECTO_RESPONSABLE"
+    assert data["importe_total_base"] == 15000.0
+    assert data["importe_total_trasladar"] == 15000.0
+    assert data["importe_absorbido_empresa"] == 0.0
+    assert data["id_relacion_generadora"] > 0
+    assert data["id_obligacion_financiera"] > 0
+
+
+def test_liquidacion_impuesto_empresa_paga_y_recupera_requiere_egreso(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-SIN-EGRESO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-SIN-EGRESO",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+
+    response = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f103",
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "EGRESO_IMPUESTO_REQUERIDO"
+
+
+def test_liquidacion_impuesto_empresa_paga_y_recupera_con_egreso(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-RECUPERA")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-RECUPERA",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+        importe_total=15000,
+    ).json()["data"]
+    _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000f104",
+    )
+
+    response = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f105",
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["modalidad_gestion_impuesto"] == "EMPRESA_PAGA_Y_RECUPERA"
+    assert data["importe_total_base"] == 15000.0
+    assert data["importe_total_trasladar"] == 15000.0
+
+
+def test_liquidacion_impuesto_crea_relacion_obligacion_composicion_y_obligado(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-FIN")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-FIN",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+
+    response = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f106",
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                rg.tipo_origen,
+                rg.id_origen,
+                o.estado_obligacion,
+                o.saldo_pendiente,
+                cf.codigo_concepto_financiero,
+                oo.id_persona,
+                oo.rol_obligado,
+                litc.numero_comprobante
+            FROM liquidacion_impuesto_trasladado lit
+            JOIN relacion_generadora rg
+              ON rg.id_relacion_generadora = lit.id_relacion_generadora
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = lit.id_obligacion_financiera
+            JOIN composicion_obligacion co
+              ON co.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN liquidacion_impuesto_trasladado_comprobante litc
+              ON litc.id_liquidacion_impuesto_trasladado =
+                 lit.id_liquidacion_impuesto_trasladado
+            WHERE lit.id_liquidacion_impuesto_trasladado = :id
+            """
+        ),
+        {"id": data["id_liquidacion_impuesto_trasladado"]},
+    ).mappings().one()
+    assert row["tipo_origen"] == "liquidacion_impuesto_trasladado"
+    assert row["id_origen"] == data["id_liquidacion_impuesto_trasladado"]
+    assert row["estado_obligacion"] == "EMITIDA"
+    assert float(row["saldo_pendiente"]) == 15000.0
+    assert row["codigo_concepto_financiero"] == "IMPUESTO_TRASLADADO"
+    assert row["id_persona"] == id_persona
+    assert row["rol_obligado"] == "RESPONSABLE_IMPUESTO_TRASLADADO"
+    assert row["numero_comprobante"] == "MUN-2026-LIT-FIN"
+
+
+def test_liquidacion_impuesto_no_crea_tesoreria_ni_pago_externo(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-SIN-EFECTOS")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-SIN-EFECTOS",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    before = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_tesoreria) AS tesoreria,
+                (SELECT COUNT(*) FROM movimiento_financiero
+                 WHERE tipo_movimiento = 'PAGO_EXTERNO_INFORMADO') AS externos
+            """
+        )
+    ).mappings().one()
+
+    response = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f107",
+    )
+
+    after = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM movimiento_tesoreria) AS tesoreria,
+                (SELECT COUNT(*) FROM movimiento_financiero
+                 WHERE tipo_movimiento = 'PAGO_EXTERNO_INFORMADO') AS externos
+            """
+        )
+    ).mappings().one()
+    assert response.status_code == 201
+    assert after["tesoreria"] == before["tesoreria"]
+    assert after["externos"] == before["externos"]
+
+
+def test_liquidacion_impuesto_no_reutiliza_egreso_con_vinculo_activo(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-NO-REUSA")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-NO-REUSA",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+    _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000f108",
+    )
+    first = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f109",
+    )
+    second = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f110",
+    )
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "EGRESO_IMPUESTO_NO_DISPONIBLE"
+
+
+def test_liquidacion_impuesto_porcentajes_invalidos_fallan(client, db_session) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-PCT")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-PCT",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    response = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        porcentaje_responsabilidad=50,
+        op_id="00000000-0000-0000-0000-00000000f111",
+    )
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "PORCENTAJES_RESPONSABLES_INVALIDOS"
+
+
+def test_liquidacion_impuesto_retry_mismo_op_id_no_duplica(client, db_session) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-IDEMP")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-IDEMP",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    op_id = "00000000-0000-0000-0000-00000000f112"
+
+    first = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id=op_id,
+    )
+    second = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id=op_id,
+    )
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json()["data"]["resultado"] == "YA_EMITIDA"
+    assert second.json()["data"]["id_liquidacion_impuesto_trasladado"] == first.json()[
+        "data"
+    ]["id_liquidacion_impuesto_trasladado"]
+
+
+def test_liquidacion_impuesto_mismo_op_id_payload_distinto_falla(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-IDEMP-CONFLICT")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-IDEMP-CONFLICT",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    op_id = "00000000-0000-0000-0000-00000000f113"
+    first = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        importe_total_trasladar=10000,
+        op_id=op_id,
+    )
+    second = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        importe_total_trasladar=12000,
+        op_id=op_id,
+    )
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+
+
+def test_liquidacion_impuesto_estado_cuenta_muestra_trasladado(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-EC")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-EC",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f114",
+    ).json()["data"]
+
+    response = client.get(
+        f"/api/v1/financiero/personas/{id_persona}/estado-cuenta",
+        headers=HEADERS,
+        params={"fecha_corte": "2026-05-25"},
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    trasladados = next(
+        g for g in data["grupos_deuda"] if g["grupo_origen_deuda"] == "TRASLADADOS"
+    )
+    relacion = next(
+        r
+        for r in trasladados["relaciones"]
+        if r["id_relacion_generadora"] == liquidacion["id_relacion_generadora"]
+    )
+    assert relacion["tipo_origen"] == "LIQUIDACION_IMPUESTO_TRASLADADO"
+    assert relacion["obligaciones"][0]["composiciones"][0][
+        "codigo_concepto_financiero"
+    ] == "IMPUESTO_TRASLADADO"
+
+
+def test_liquidacion_impuesto_pago_normal_reduce_saldo(client, db_session) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-PAGO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-PAGO",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f115",
+    ).json()["data"]
+
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers=_headers_op("00000000-0000-0000-0000-00000000f116"),
+        params={"id_persona": id_persona},
+        json={"monto": 15000.00, "fecha_pago": "2026-05-30"},
+    )
+    assert pago.status_code == 201, pago.text
+    assert pago.json()["data"]["obligaciones_pagadas"][0][
+        "id_obligacion_financiera"
+    ] == liquidacion["id_obligacion_financiera"]
+    saldo = db_session.execute(
+        text(
+            """
+            SELECT saldo_pendiente
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id
+            """
+        ),
+        {"id": liquidacion["id_obligacion_financiera"]},
+    ).scalar_one()
+    assert float(saldo) == 0.0

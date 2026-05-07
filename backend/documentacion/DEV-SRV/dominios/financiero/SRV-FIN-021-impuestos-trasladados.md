@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `IMPLEMENTADO PARCIAL V1`
-- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; materializacion, pago externo y liquidacion aun no implementados
+- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; liquidacion `IMPUESTO_TRASLADADO` fase 1 implementada; consulta formal, anulacion de liquidacion y pago externo aun no implementados
 - dominio owner: `financiero`
 - origen operativo: `comprobante_impuesto`
 - clasificacion: nucleo financiero para traslado de impuestos, tasas o contribuciones a responsables
@@ -45,6 +45,7 @@ Endpoints implementados:
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 
 Reglas implementadas:
 
@@ -83,7 +84,9 @@ Reglas:
 - no genera `obligacion_financiera`;
 - no genera `IMPUESTO_TRASLADADO`;
 - no genera `PAGO_EXTERNO_INFORMADO`;
-- no aparece como deuda de responsable.
+- no aparece como deuda de responsable;
+- bloquea `liquidacion_impuesto_trasladado` con
+  `IMPUESTO_EMPRESA_ASUME_NO_TRASLADABLE`.
 
 ### DIRECTO_RESPONSABLE
 
@@ -91,10 +94,14 @@ El responsable debe pagar directamente al organismo.
 
 Reglas:
 
-- puede materializar una obligacion `IMPUESTO_TRASLADADO`;
-- requiere unico responsable 100%;
-- el pago informado es externo;
-- el pago externo no crea caja, tesoreria ni recibo interno;
+- fase 1 materializa una obligacion `IMPUESTO_TRASLADADO` desde
+  `liquidacion_impuesto_trasladado`;
+- no requiere `egreso_impuesto_empresa`;
+- la base de liquidacion es `comprobante_impuesto.importe_total`;
+- los responsables son explicitos, con porcentajes positivos que suman 100%;
+- el pago informado externo queda pendiente;
+- cuando se implemente, el pago externo no debe crear caja, tesoreria ni recibo
+  interno;
 - reduce saldo mediante movimiento/aplicacion financiera de tipo
   `PAGO_EXTERNO_INFORMADO`, con reglas analogas al escenario
   `DIRECTO_RESPONSABLE` de servicios, pero sobre origen fiscal propio.
@@ -109,6 +116,10 @@ Reglas:
 - el pago al organismo registra egreso de tesoreria;
 - el recupero se liquida explicitamente;
 - la liquidacion genera obligacion `IMPUESTO_TRASLADADO`;
+- requiere `egreso_impuesto_empresa` `REGISTRADO` disponible;
+- puede trasladar hasta el total egresado disponible;
+- vincula egresos usados mediante `liquidacion_impuesto_trasladado_egreso`
+  `ACTIVO`;
 - el responsable paga a la empresa por el flujo normal de pago por persona;
 - la liquidacion no crea `movimiento_tesoreria` nuevo;
 - la anulacion futura debe ser conservadora y bloquearse si existen pagos,
@@ -163,7 +174,7 @@ Anulacion implementada:
 - no toca `comprobante_impuesto`;
 - no crea ni modifica `movimiento_financiero`, `relacion_generadora`,
   `obligacion_financiera` ni estado de cuenta;
-- pendiente futuro: bloquear anulacion si una futura
+- pendiente futuro: bloquear anulacion si una
   `liquidacion_impuesto_trasladado` activa usa el egreso.
 
 ## Relacion con liquidacion_recupero
@@ -187,6 +198,48 @@ V1 de impuestos puede reutilizar el patron:
 
 Entidad sugerida: `liquidacion_impuesto_trasladado`.
 
+### Liquidacion implementada fase 1
+
+`liquidacion_impuesto_trasladado` materializa deuda fiscal trasladada sin
+reutilizar `liquidacion_recupero`.
+
+Endpoint implementado:
+
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+
+Estructura persistida:
+
+- cabecera `liquidacion_impuesto_trasladado`;
+- snapshot de comprobante en
+  `liquidacion_impuesto_trasladado_comprobante`;
+- vinculo a egresos de empresa en
+  `liquidacion_impuesto_trasladado_egreso` para
+  `EMPRESA_PAGA_Y_RECUPERA`;
+- snapshot de responsables en
+  `liquidacion_impuesto_trasladado_responsable`;
+- `relacion_generadora.tipo_origen = liquidacion_impuesto_trasladado`;
+- `obligacion_financiera` `EMITIDA`;
+- `composicion_obligacion` con `IMPUESTO_TRASLADADO`;
+- `obligacion_obligado` con rol
+  `RESPONSABLE_IMPUESTO_TRASLADADO`.
+
+Reglas implementadas:
+
+- requiere `comprobante_impuesto` existente y `REGISTRADO`;
+- bloquea `EMPRESA_ASUME`;
+- `DIRECTO_RESPONSABLE` liquida sin egreso de empresa;
+- `EMPRESA_PAGA_Y_RECUPERA` requiere egreso registrado disponible y bloquea
+  reutilizacion de egresos con vinculo activo;
+- `importe_total_trasladar` debe ser mayor que cero y no superar la base de la
+  modalidad;
+- responsables obligatorios, con porcentajes mayores que cero y suma 100;
+- calcula importes por responsable a dos decimales, asignando residuo al ultimo
+  responsable;
+- aplica idempotencia por `X-Op-Id`;
+- no crea `movimiento_tesoreria`;
+- no crea `PAGO_EXTERNO_INFORMADO`;
+- no toca `comprobante_impuesto` ni `egreso_impuesto_empresa`.
+
 ## Estado de cuenta
 
 Las obligaciones activas con composicion `IMPUESTO_TRASLADADO` deben verse en
@@ -198,9 +251,9 @@ aparecer en estado de cuenta del responsable.
 ## Fuera de alcance V1
 
 - usar `factura_servicio` para impuestos;
-- materializacion de obligacion `IMPUESTO_TRASLADADO`, pendiente posterior;
+- consulta formal de `liquidacion_impuesto_trasladado`, pendiente posterior;
+- anulacion/reversion de `liquidacion_impuesto_trasladado`, pendiente posterior;
 - pago externo informado de impuesto, pendiente posterior;
-- liquidacion de recupero de impuesto, pendiente posterior;
 - expensas formales;
 - crear `IMPUESTO_RECUPERADO`;
 - maestro catastral completo;

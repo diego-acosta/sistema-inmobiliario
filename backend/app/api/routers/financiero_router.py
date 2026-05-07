@@ -87,6 +87,9 @@ from app.api.schemas.financiero import (
     LiquidacionRecuperoDetalleResponse,
     LiquidacionRecuperoFacturaServicioRequest,
     LiquidacionRecuperoFacturaServicioResponse,
+    LiquidacionImpuestoTrasladadoData,
+    LiquidacionImpuestoTrasladadoRequest,
+    LiquidacionImpuestoTrasladadoResponse,
     LiquidacionesRecuperoFacturaServicioListData,
     LiquidacionesRecuperoFacturaServicioListResponse,
     LiquidacionRecuperoFacturaServicioListItem,
@@ -231,6 +234,9 @@ from app.application.financiero.services.get_liquidacion_recupero_service import
 )
 from app.application.financiero.services.list_liquidaciones_recupero_factura_servicio_service import (
     ListLiquidacionesRecuperoFacturaServicioService,
+)
+from app.application.financiero.services.liquidar_impuesto_trasladado_service import (
+    LiquidarImpuestoTrasladadoService,
 )
 from app.application.financiero.services.regenerar_cronograma_locativo_service import (
     RegenerarCronogramaLocativoService,
@@ -619,6 +625,107 @@ def anular_egreso_impuesto_empresa(
     return AnularEgresoImpuestoEmpresaResponse(
         data=AnularEgresoImpuestoEmpresaData(**result.data)
     )
+
+
+@router.post(
+    "/api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado",
+    status_code=201,
+    response_model=LiquidacionImpuestoTrasladadoResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def liquidar_impuesto_trasladado(
+    id_comprobante_impuesto: int,
+    request: LiquidacionImpuestoTrasladadoRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> LiquidacionImpuestoTrasladadoResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = LiquidarImpuestoTrasladadoService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_comprobante_impuesto=id_comprobante_impuesto,
+            fecha_liquidacion=request.fecha_liquidacion,
+            fecha_vencimiento=request.fecha_vencimiento,
+            importe_total_trasladar=request.importe_total_trasladar,
+            responsables=[r.model_dump() for r in request.responsables],
+            observaciones=request.observaciones,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "COMPROBANTE_IMPUESTO_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="COMPROBANTE_IMPUESTO_NOT_FOUND",
+                    error_message="El comprobante de impuesto indicado no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "RESPONSABLE_PERSONA_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="RESPONSABLE_PERSONA_NOT_FOUND",
+                    error_message="Una persona responsable indicada no existe.",
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        conflict_errors = {
+            "COMPROBANTE_IMPUESTO_ANULADO",
+            "IMPUESTO_EMPRESA_ASUME_NO_TRASLADABLE",
+            "EGRESO_IMPUESTO_REQUERIDO",
+            "EGRESO_IMPUESTO_NO_DISPONIBLE",
+            "IMPORTE_TRASLADO_SUPERA_EGRESADO",
+            "IMPORTE_TRASLADO_INVALIDO",
+            "PORCENTAJES_RESPONSABLES_INVALIDOS",
+            "CONCEPTO_IMPUESTO_TRASLADADO_NO_EXISTE",
+            "IDEMPOTENCY_PAYLOAD_CONFLICT",
+        }
+        for code in conflict_errors:
+            if code in result.errors:
+                return JSONResponse(
+                    status_code=409,
+                    content=ErrorResponse(
+                        error_code=code,
+                        error_message=(
+                            "No se pudo liquidar el impuesto trasladado."
+                        ),
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudo liquidar el impuesto trasladado.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    response = LiquidacionImpuestoTrasladadoResponse(
+        data=LiquidacionImpuestoTrasladadoData(**result.data)
+    )
+    if result.data.get("resultado") == "YA_EMITIDA":
+        return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+    return response
 
 
 @router.post(

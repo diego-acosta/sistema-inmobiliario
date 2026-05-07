@@ -519,14 +519,31 @@ SRV-FIN-012
 - el egreso empresa se bloquea para modalidad `DIRECTO_RESPONSABLE`
 - `egreso_impuesto_empresa` no crea `movimiento_financiero`,
   `relacion_generadora`, `obligacion_financiera` ni estado de cuenta
-- pendiente futuro: si una `liquidacion_impuesto_trasladado` activa usa el
-  egreso, la anulacion debera bloquearse
+- `liquidacion_impuesto_trasladado` fase 1 esta implementada como entidad
+  propia para crear deuda fiscal trasladada
+- `liquidacion_impuesto_trasladado` persiste cabecera, snapshot de
+  `comprobante_impuesto`, vinculos activos a `egreso_impuesto_empresa` cuando
+  corresponde y snapshot de responsables
+- usa `relacion_generadora.tipo_origen = liquidacion_impuesto_trasladado`
+- crea `obligacion_financiera` `EMITIDA`, `composicion_obligacion`
+  `IMPUESTO_TRASLADADO` y `obligacion_obligado`
+- para `DIRECTO_RESPONSABLE` liquida sin egreso empresa
+- para `EMPRESA_PAGA_Y_RECUPERA` requiere egreso empresa `REGISTRADO`
+  disponible y bloquea reutilizacion mediante vinculo activo/no eliminado
+- para `EMPRESA_ASUME` bloquea liquidacion porque no hay deuda trasladada
+- la liquidacion no crea `movimiento_tesoreria` ni
+  `PAGO_EXTERNO_INFORMADO`, no toca `comprobante_impuesto` ni
+  `egreso_impuesto_empresa`
+- pendiente futuro: la anulacion de `egreso_impuesto_empresa` debe bloquearse
+  si una `liquidacion_impuesto_trasladado` activa usa el egreso
+- pendiente futuro: consulta formal y anulacion/reversion de
+  `liquidacion_impuesto_trasladado`
 - no se crea `IMPUESTO_RECUPERADO` en V1
 - `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision
   posterior
 - `liquidacion_recupero` no se reutiliza directamente porque pertenece a
-  servicios comunes y `SERVICIO_RECUPERADO`; para impuestos corresponde entidad
-  propia, por ejemplo `liquidacion_impuesto_trasladado`
+  servicios comunes y `SERVICIO_RECUPERADO`; para impuestos corresponde
+  `liquidacion_impuesto_trasladado`
 - `EXPENSA_TRASLADADA` queda reservada para expensas formales
 
 ### Personas

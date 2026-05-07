@@ -48,6 +48,7 @@ Este documento describe los endpoints financieros actualmente implementados en b
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
 - `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 
 ### EMPRESA_PAGA_Y_RECUPERA
 
@@ -594,12 +595,77 @@ Reglas:
 - no crea ni modifica `movimiento_financiero`, `relacion_generadora` ni
   `obligacion_financiera`;
 - no impacta estado de cuenta;
-- pendiente futuro: bloquear si una futura `liquidacion_impuesto_trasladado`
+- pendiente futuro: bloquear si una `liquidacion_impuesto_trasladado`
   activa usa el egreso.
 
 Errores principales:
 
 - `EGRESO_IMPUESTO_NOT_FOUND`
+
+### POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado
+
+Objetivo: liquidar deuda fiscal trasladada `IMPUESTO_TRASLADADO` desde un
+`comprobante_impuesto`.
+
+Request resumido:
+
+```json
+{
+  "fecha_liquidacion": "2026-05-25",
+  "fecha_vencimiento": "2026-06-10",
+  "importe_total_trasladar": 15000.00,
+  "responsables": [
+    {
+      "id_persona": 1,
+      "porcentaje_responsabilidad": 100.00
+    }
+  ],
+  "observaciones": "Liquidacion impuesto municipal"
+}
+```
+
+Respuesta resumida: datos de `liquidacion_impuesto_trasladado`, ids de
+`relacion_generadora` y `obligacion_financiera`, importes base/traslado,
+absorbido empresa y responsables liquidados.
+
+Reglas por modalidad:
+
+- `EMPRESA_ASUME`: bloquea con
+  `IMPUESTO_EMPRESA_ASUME_NO_TRASLADABLE`;
+- `DIRECTO_RESPONSABLE`: liquida sin `egreso_impuesto_empresa`;
+- `EMPRESA_PAGA_Y_RECUPERA`: requiere egreso empresa `REGISTRADO` disponible y
+  no permite reutilizar egresos con vinculo activo.
+
+Reglas generales:
+
+- requiere `comprobante_impuesto` existente y `REGISTRADO`;
+- `importe_total_trasladar` debe ser mayor que cero y no superar la base de la
+  modalidad;
+- responsables obligatorios, con porcentajes positivos que suman 100;
+- crea `relacion_generadora` con origen
+  `liquidacion_impuesto_trasladado`;
+- crea `obligacion_financiera` `EMITIDA`;
+- crea `composicion_obligacion` `IMPUESTO_TRASLADADO`;
+- crea `obligacion_obligado` con rol
+  `RESPONSABLE_IMPUESTO_TRASLADADO`;
+- no crea `movimiento_tesoreria`;
+- no crea `PAGO_EXTERNO_INFORMADO`;
+- no toca `comprobante_impuesto` ni `egreso_impuesto_empresa`;
+- admite idempotencia por `X-Op-Id`.
+
+Errores principales:
+
+- `COMPROBANTE_IMPUESTO_NOT_FOUND`
+- `COMPROBANTE_IMPUESTO_ANULADO`
+- `IMPUESTO_EMPRESA_ASUME_NO_TRASLADABLE`
+- `EGRESO_IMPUESTO_REQUERIDO`
+- `EGRESO_IMPUESTO_NO_DISPONIBLE`
+- `IMPORTE_TRASLADO_SUPERA_EGRESADO`
+- `IMPORTE_TRASLADO_INVALIDO`
+- `RESPONSABLE_PERSONA_NOT_FOUND`
+- `PORCENTAJES_RESPONSABLES_INVALIDOS`
+- `CONCEPTO_IMPUESTO_TRASLADADO_NO_EXISTE`
+- `IDEMPOTENCY_PAYLOAD_CONFLICT`
 
 ---
 
@@ -1079,7 +1145,8 @@ Estado: `IMPLEMENTADO PARCIAL V1`.
 El diseno V1 queda documentado en
 `backend/documentacion/DEV-SRV/dominios/financiero/SRV-FIN-021-impuestos-trasladados.md`.
 
-Reglas implementadas para `comprobante_impuesto` y egreso empresa:
+Reglas implementadas para `comprobante_impuesto`, egreso empresa y
+liquidacion fiscal fase 1:
 
 - entidad propia `comprobante_impuesto`;
 - no usar `factura_servicio` para impuestos;
@@ -1093,22 +1160,31 @@ Reglas implementadas para `comprobante_impuesto` y egreso empresa:
   `EMPRESA_PAGA_Y_RECUPERA`;
 - el egreso empresa bloquea `DIRECTO_RESPONSABLE`;
 - el egreso empresa no genera deuda ni estado de cuenta;
-- consulta y anulacion logica de egreso empresa estan implementadas.
+- consulta y anulacion logica de egreso empresa estan implementadas;
+- `liquidacion_impuesto_trasladado` crea `relacion_generadora`,
+  `obligacion_financiera`, `composicion_obligacion` `IMPUESTO_TRASLADADO` y
+  `obligacion_obligado`;
+- la liquidacion no crea `movimiento_tesoreria` ni
+  `PAGO_EXTERNO_INFORMADO`.
 
 Modalidades V1:
 
 - `EMPRESA_ASUME`: registra egreso de tesoreria y no genera obligacion al
   responsable.
-- `DIRECTO_RESPONSABLE`: puede materializar obligacion `IMPUESTO_TRASLADADO`;
-  el pago informado es externo, no caja/tesoreria, y requiere unico responsable
-  100%.
+- `DIRECTO_RESPONSABLE`: puede liquidar obligacion `IMPUESTO_TRASLADADO` sin
+  egreso empresa; el pago informado externo queda pendiente.
 - `EMPRESA_PAGA_Y_RECUPERA`: registra egreso de tesoreria, luego liquida
-  recupero como obligacion `IMPUESTO_TRASLADADO` y el responsable paga a la
-  empresa por flujo normal.
+  recupero como obligacion `IMPUESTO_TRASLADADO`, requiere egreso disponible y
+  el responsable paga a la empresa por flujo normal.
+
+Endpoint de liquidacion implementado:
+
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 
 Endpoints futuros a definir, no implementados:
 
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/materializar`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/pago-externo`
-- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}/anular`

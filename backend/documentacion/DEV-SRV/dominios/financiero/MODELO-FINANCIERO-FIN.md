@@ -487,7 +487,9 @@ Motivos:
 operaciones se habilitan. V1 implementado cubre alta y consulta del comprobante
 sin efectos financieros, y egreso empresa para `EMPRESA_ASUME` y
 `EMPRESA_PAGA_Y_RECUPERA`, incluyendo consulta y anulacion logica del egreso.
-Materializacion, pago externo y liquidacion quedan pendientes.
+La liquidacion `IMPUESTO_TRASLADADO` fase 1 esta implementada mediante entidad
+propia `liquidacion_impuesto_trasladado`; consulta formal, anulacion de la
+liquidacion y pago externo quedan pendientes.
 
 Modalidades V1:
 
@@ -497,22 +499,27 @@ Modalidades V1:
      `movimiento_tesoreria`;
    - la anulacion del egreso anula tambien el movimiento de tesoreria;
    - no genera obligacion al responsable;
-   - no genera `IMPUESTO_TRASLADADO`.
+   - no genera `IMPUESTO_TRASLADADO`;
+   - bloquea `liquidacion_impuesto_trasladado`.
 
 2. `DIRECTO_RESPONSABLE`
    - el responsable debe pagar directamente al organismo;
-   - puede materializar obligacion `IMPUESTO_TRASLADADO`;
-   - requiere unico responsable 100%;
-   - el pago informado es externo;
+   - fase 1 materializa obligacion `IMPUESTO_TRASLADADO` mediante
+     `liquidacion_impuesto_trasladado`;
+   - no requiere egreso de empresa;
+   - los responsables se informan explicitamente y sus porcentajes deben sumar
+     100%;
+   - el pago informado externo queda pendiente;
    - no impacta caja, tesoreria ni recibo interno.
 
 3. `EMPRESA_PAGA_Y_RECUPERA`
    - la empresa paga al organismo;
    - se registra egreso de tesoreria mediante `egreso_impuesto_empresa` y
      `movimiento_tesoreria`;
-   - la anulacion del egreso anula tambien el movimiento de tesoreria y queda
-     pendiente bloquearla si una futura liquidacion fiscal usa el egreso;
-   - luego se liquida recupero como obligacion `IMPUESTO_TRASLADADO`;
+   - luego se liquida recupero como obligacion `IMPUESTO_TRASLADADO` mediante
+     `liquidacion_impuesto_trasladado`;
+   - la liquidacion requiere egreso `REGISTRADO` disponible y bloquea su
+     reutilizacion con un vinculo activo;
    - el responsable paga a la empresa por el flujo normal de pago por persona.
 
 Decision de concepto V1:
@@ -526,10 +533,13 @@ Decision de concepto V1:
 
 `liquidacion_recupero` no debe reutilizarse directamente para impuestos porque
 esta acoplada a `factura_servicio`, `egreso_proveedor_factura_servicio` y
-`SERVICIO_RECUPERADO`. Para impuestos corresponde una entidad propia, por
-ejemplo `liquidacion_impuesto_trasladado`, reutilizando solo el patron de
-liquidacion, vinculos, responsables, relacion generadora, obligacion y anulacion
-conservadora.
+`SERVICIO_RECUPERADO`. Para impuestos corresponde la entidad propia
+`liquidacion_impuesto_trasladado`, reutilizando solo el patron de liquidacion,
+vinculos, responsables, relacion generadora, obligacion y anulacion
+conservadora. Fase 1 crea cabecera, snapshots, `relacion_generadora`
+`liquidacion_impuesto_trasladado`, obligacion `EMITIDA`, composicion
+`IMPUESTO_TRASLADADO` y `obligacion_obligado`; no implementa consulta formal ni
+anulacion de liquidacion.
 
 Referencia: `SRV-FIN-021-impuestos-trasladados`.
 

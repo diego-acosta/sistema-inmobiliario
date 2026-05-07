@@ -590,22 +590,22 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - descripcion: Los impuestos, tasas o contribuciones trasladadas deben registrarse desde una entidad propia `comprobante_impuesto`. No deben modelarse como `factura_servicio`, porque ese origen pertenece al circuito de servicios externos y sus obligaciones usan `SERVICIO_TRASLADADO` o `SERVICIO_RECUPERADO`.
 - aplica_a: comprobante_impuesto, egreso_impuesto_empresa, movimiento_tesoreria, relacion_generadora, obligacion_financiera, composicion_obligacion
 - origen_principal: SRV-FIN-021
-- estado: IMPLEMENTADO PARCIAL V1 para registro y consulta de `comprobante_impuesto`, y egreso empresa.
-- observaciones: `comprobante_impuesto` no genera deuda automaticamente. La modalidad financiera define si se registra solo egreso, deuda directa, pago externo informado o recupero posterior. En el backend actual estan implementadas alta y consultas del comprobante, mas egreso empresa para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; el egreso crea `movimiento_tesoreria` y `egreso_impuesto_empresa`, se puede consultar y anular logicamente, pero no crea `relacion_generadora`, `obligacion_financiera` ni `composicion_obligacion`.
+- estado: IMPLEMENTADO PARCIAL V1 para registro y consulta de `comprobante_impuesto`, egreso empresa y liquidacion fiscal fase 1.
+- observaciones: `comprobante_impuesto` no genera deuda automaticamente. La modalidad financiera define si se registra solo egreso, deuda directa, pago externo informado o recupero posterior. En el backend actual estan implementadas alta y consultas del comprobante, mas egreso empresa para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; el egreso crea `movimiento_tesoreria` y `egreso_impuesto_empresa`, se puede consultar y anular logicamente, pero no crea deuda. La deuda fiscal trasladada se crea mediante `liquidacion_impuesto_trasladado`, con `relacion_generadora`, `obligacion_financiera`, `composicion_obligacion` y `obligacion_obligado`.
 
 ### RN-FIN-082E - Modalidades V1 de IMPUESTO_TRASLADADO
 - descripcion: V1 distingue tres modalidades para impuestos trasladados: `EMPRESA_ASUME`, `DIRECTO_RESPONSABLE` y `EMPRESA_PAGA_Y_RECUPERA`.
 - aplica_a: comprobante_impuesto, movimiento_tesoreria, relacion_generadora, obligacion_financiera, composicion_obligacion, aplicacion_financiera
 - origen_principal: SRV-FIN-021
-- estado: IMPLEMENTADO PARCIAL V1 para validacion de modalidad en `comprobante_impuesto` y egreso empresa.
-- observaciones: `EMPRESA_ASUME` registra egreso de tesoreria y no genera obligacion. `DIRECTO_RESPONSABLE` puede generar obligacion `IMPUESTO_TRASLADADO` y admitir pago externo informado solo con unico responsable 100%, sin caja ni tesoreria; el egreso empresa esta bloqueado para esta modalidad. `EMPRESA_PAGA_Y_RECUPERA` registra egreso de tesoreria y luego liquida obligacion `IMPUESTO_TRASLADADO`; el cobro posterior usa pago normal por persona. La anulacion del egreso empresa anula el `movimiento_tesoreria` asociado y no toca deuda ni estado de cuenta.
+- estado: IMPLEMENTADO PARCIAL V1 para validacion de modalidad, egreso empresa y liquidacion fiscal fase 1.
+- observaciones: `EMPRESA_ASUME` registra egreso de tesoreria y bloquea `liquidacion_impuesto_trasladado`; no genera obligacion. `DIRECTO_RESPONSABLE` puede liquidar obligacion `IMPUESTO_TRASLADADO` sin egreso empresa; el pago externo informado queda pendiente. `EMPRESA_PAGA_Y_RECUPERA` registra egreso de tesoreria y luego liquida obligacion `IMPUESTO_TRASLADADO`; requiere egreso `REGISTRADO` disponible y bloquea reutilizacion con vinculo activo. El cobro posterior usa pago normal por persona. La anulacion del egreso empresa anula el `movimiento_tesoreria` asociado y no toca deuda ni estado de cuenta.
 
 ### RN-FIN-082F - Concepto financiero para impuestos trasladados
 - descripcion: La deuda fiscal trasladada en V1 debe usar `IMPUESTO_TRASLADADO`. No se crea `IMPUESTO_RECUPERADO` en V1.
 - aplica_a: concepto_financiero, composicion_obligacion
 - origen_principal: SRV-FIN-021 / MODELO-FINANCIERO-FIN
-- estado: DISENO V1 DOCUMENTADO / NO IMPLEMENTADO.
-- observaciones: `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision posterior documentada y migrada. `EXPENSA_TRASLADADA` queda reservada para expensas formales y `SERVICIO_RECUPERADO` para servicios comunes pagados por la empresa.
+- estado: IMPLEMENTADO PARCIAL V1.
+- observaciones: `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision posterior documentada y migrada. Fase 1 lo usa en `composicion_obligacion` creada por `liquidacion_impuesto_trasladado`. `EXPENSA_TRASLADADA` queda reservada para expensas formales y `SERVICIO_RECUPERADO` para servicios comunes pagados por la empresa.
 
 ### RN-FIN-083 - Reversion completa de pago agrupado
 - descripcion: La reversion V1 de un pago debe operar siempre por `codigo_pago_grupo` completo. Solo se permite si no existen operaciones posteriores activas sobre las obligaciones o composiciones afectadas. Debe marcar los movimientos `PAGO` como `ANULADO`, soft-deletear sus aplicaciones para excluirlas de saldos y registrar el motivo de reversion en campos de observaciones disponibles.

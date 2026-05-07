@@ -17,6 +17,7 @@ TIPOS_ORIGEN_VALIDOS = {
     "CONTRATO_ALQUILER",
     "FACTURA_SERVICIO",
     "LIQUIDACION_RECUPERO",
+    "LIQUIDACION_IMPUESTO_TRASLADADO",
 }
 
 
@@ -45,6 +46,10 @@ class FinancieroRepository(Protocol):
     def factura_servicio_exists(self, id_factura_servicio: int) -> bool: ...
 
     def liquidacion_recupero_exists(self, id_liquidacion_recupero: int) -> bool: ...
+
+    def liquidacion_impuesto_trasladado_exists(
+        self, id_liquidacion_impuesto_trasladado: int
+    ) -> bool: ...
 
     def create_relacion_generadora(
         self, payload: RelacionGeneradoraCreatePayload
@@ -81,6 +86,11 @@ class CreateRelacionGeneradoraService:
                 return AppResult.fail("NOT_FOUND_ORIGEN")
         elif tipo == "LIQUIDACION_RECUPERO":
             if not self.repository.liquidacion_recupero_exists(command.id_origen):
+                return AppResult.fail("NOT_FOUND_ORIGEN")
+        elif tipo == "LIQUIDACION_IMPUESTO_TRASLADADO":
+            if not self.repository.liquidacion_impuesto_trasladado_exists(
+                command.id_origen
+            ):
                 return AppResult.fail("NOT_FOUND_ORIGEN")
 
         now = datetime.now(UTC)

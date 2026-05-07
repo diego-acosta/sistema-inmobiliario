@@ -236,6 +236,63 @@ class AnularEgresoImpuestoEmpresaResponse(BaseModel):
     data: AnularEgresoImpuestoEmpresaData
 
 
+class LiquidacionImpuestoTrasladadoResponsableRequest(BaseModel):
+    id_persona: int
+    porcentaje_responsabilidad: float
+
+    @field_validator("id_persona")
+    @classmethod
+    def id_persona_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("id_persona debe ser mayor que cero.")
+        return v
+
+    @field_validator("porcentaje_responsabilidad")
+    @classmethod
+    def porcentaje_valid(cls, v: float) -> float:
+        if v <= 0 or v > 100:
+            raise ValueError("porcentaje_responsabilidad debe estar entre 0 y 100.")
+        return v
+
+
+class LiquidacionImpuestoTrasladadoRequest(BaseModel):
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    importe_total_trasladar: float
+    responsables: list[LiquidacionImpuestoTrasladadoResponsableRequest]
+    observaciones: str | None = None
+
+    @model_validator(mode="after")
+    def validar_liquidacion(self) -> "LiquidacionImpuestoTrasladadoRequest":
+        if self.fecha_vencimiento < self.fecha_liquidacion:
+            raise ValueError("fecha_vencimiento debe ser mayor o igual a fecha_liquidacion.")
+        if self.importe_total_trasladar <= 0:
+            raise ValueError("importe_total_trasladar debe ser mayor que cero.")
+        if not self.responsables:
+            raise ValueError("Debe informar responsables.")
+        return self
+
+
+class LiquidacionImpuestoTrasladadoData(BaseModel):
+    resultado: str | None = None
+    id_liquidacion_impuesto_trasladado: int
+    codigo_liquidacion_impuesto_trasladado: str
+    estado_liquidacion: str
+    modalidad_gestion_impuesto: str
+    fecha_liquidacion: date
+    fecha_vencimiento: date
+    importe_total_base: float
+    importe_total_trasladar: float
+    importe_absorbido_empresa: float
+    id_relacion_generadora: int
+    id_obligacion_financiera: int
+
+
+class LiquidacionImpuestoTrasladadoResponse(BaseModel):
+    ok: bool = True
+    data: LiquidacionImpuestoTrasladadoData
+
+
 class ConceptoFinancieroData(BaseModel):
     id_concepto_financiero: int
     codigo_concepto_financiero: str
