@@ -2,9 +2,9 @@
 
 ## Estado del documento
 
-- version: `1.2`
+- version: `1.3`
 - estado: `IMPLEMENTADO PARCIAL / ALINEADO A BACKEND`
-- ultima actualizacion: `2026-04-30`
+- ultima actualizacion: `2026-05-07`
 - fuente: backend real + SQL vigente + tests financieros
 
 Este documento describe los endpoints financieros actualmente implementados en backend. No documenta como operable funcionalidad que siga pendiente.
@@ -39,6 +39,16 @@ Este documento describe los endpoints financieros actualmente implementados en b
 ### Estado de cuenta
 
 - `GET /api/v1/financiero/estado-cuenta`
+
+### EMPRESA_PAGA_Y_RECUPERA
+
+- `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`
+- `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor`
+- `PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular`
+- `POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`
+- `GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}`
+- `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`
+- `PATCH /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular`
 
 ### Mora
 
@@ -409,7 +419,377 @@ Notas:
 
 ---
 
-## 9. Mora
+## 9. EMPRESA_PAGA_Y_RECUPERA
+
+Circuito para facturas de servicio donde la empresa paga al proveedor y luego
+recupera total o parcialmente el importe contra personas responsables. No usa
+`PAGO_EXTERNO_INFORMADO`, `SERVICIO_TRASLADADO` ni `EXPENSA_TRASLADADA`.
+
+Side effects generales:
+
+- el egreso proveedor crea `movimiento_tesoreria`;
+- `liquidacion_recupero` crea deuda `SERVICIO_RECUPERADO`;
+- la anulacion de `liquidacion_recupero` no toca tesoreria;
+- `PAGO_EXTERNO_INFORMADO` no participa en `EMPRESA_PAGA_Y_RECUPERA`.
+
+### POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor
+
+Objetivo: registrar el pago real de la empresa al proveedor de una
+`factura_servicio`.
+
+Request:
+
+```json
+{
+  "id_cuenta_financiera_origen": 1,
+  "fecha_pago": "2026-05-20",
+  "importe_pagado": 25000.00,
+  "medio_pago": "TRANSFERENCIA",
+  "referencia_comprobante": "TRX-001",
+  "observaciones": "Pago a proveedor"
+}
+```
+
+Response `201` resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "resultado": "REGISTRADO",
+    "id_egreso_proveedor_factura_servicio": 1,
+    "id_factura_servicio": 10,
+    "id_movimiento_tesoreria": 50,
+    "estado_egreso": "REGISTRADO",
+    "impacta_tesoreria": true,
+    "crea_movimiento_financiero": false,
+    "crea_obligacion_financiera": false
+  }
+}
+```
+
+Errores funcionales principales:
+
+- `FACTURA_SERVICIO_NOT_FOUND`
+- `FACTURA_SERVICIO_ANULADA`
+- `CUENTA_FINANCIERA_NOT_FOUND`
+- `CUENTA_FINANCIERA_INACTIVA`
+- `IMPORTE_INVALIDO`
+- `EGRESO_SUPERA_IMPORTE_FACTURA`
+- `IDEMPOTENCY_PAYLOAD_CONFLICT`
+
+Reglas:
+
+- crea `movimiento_tesoreria` con tipo
+  `EGRESO_PROVEEDOR_FACTURA_SERVICIO`;
+- crea `egreso_proveedor_factura_servicio`;
+- no crea `movimiento_financiero`;
+- no crea `obligacion_financiera`;
+- no crea recibo interno ni `PAGO_EXTERNO_INFORMADO`;
+- admite idempotencia por `X-Op-Id`.
+
+### GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/egresos-proveedor
+
+Objetivo: consultar egresos proveedor de una factura y el estado derivado del
+pago al proveedor.
+
+Response resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_factura_servicio": 10,
+    "importe_total_factura": 25000.00,
+    "total_egresado": 25000.00,
+    "saldo_pendiente_pago_proveedor": 0.00,
+    "estado_pago_proveedor": "PAGADA",
+    "egresos": [
+      {
+        "id_egreso_proveedor_factura_servicio": 1,
+        "id_movimiento_tesoreria": 50,
+        "fecha_pago": "2026-05-20",
+        "importe_pagado": 25000.00,
+        "estado_egreso": "REGISTRADO"
+      }
+    ]
+  }
+}
+```
+
+Errores funcionales principales:
+
+- `FACTURA_SERVICIO_NOT_FOUND`
+
+Reglas:
+
+- endpoint read-only;
+- estados derivados: `SIN_PAGO`, `PAGO_PARCIAL`, `PAGADA`,
+  `SOBREPAGADA`;
+- solo egresos `REGISTRADO` y no eliminados suman al total egresado;
+- no modifica `factura_servicio`.
+
+### PATCH /api/v1/financiero/egresos-proveedor-factura-servicio/{id_egreso}/anular
+
+Objetivo: anular un egreso proveedor registrado por error.
+
+Request:
+
+```json
+{
+  "motivo": "Egreso cargado por error"
+}
+```
+
+Response resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "resultado": "ANULADO",
+    "id_egreso_proveedor_factura_servicio": 1,
+    "id_movimiento_tesoreria": 50,
+    "estado_egreso": "ANULADO",
+    "estado_movimiento_tesoreria": "ANULADO",
+    "ya_anulado": false,
+    "motivo": "Egreso cargado por error"
+  }
+}
+```
+
+Errores funcionales principales:
+
+- `EGRESO_PROVEEDOR_NOT_FOUND`
+- `MOTIVO_REQUERIDO`
+- `EGRESO_PROVEEDOR_CON_LIQUIDACION_RECUPERO`
+
+Reglas:
+
+- marca `egreso_proveedor_factura_servicio.estado_egreso = ANULADO`;
+- marca `movimiento_tesoreria.estado = ANULADO`;
+- no borra fisicamente;
+- es idempotente si ya estaba anulado (`YA_ANULADO`);
+- bloquea si el egreso esta usado por una `liquidacion_recupero` activa.
+
+### POST /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero
+
+Objetivo: generar deuda recuperable contra personas responsables a partir de
+egresos proveedor registrados y disponibles.
+
+Request:
+
+```json
+{
+  "fecha_liquidacion": "2026-05-25",
+  "fecha_vencimiento": "2026-06-10",
+  "importe_total_recuperar": 20000.00,
+  "responsables": [
+    {
+      "id_persona": 1,
+      "porcentaje_responsabilidad": 100.00
+    }
+  ],
+  "observaciones": "Recupero parcial"
+}
+```
+
+Response `201` resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "resultado": "EMITIDA",
+    "id_liquidacion_recupero": 1,
+    "codigo_liquidacion_recupero": "REC-20260525-ABC12345",
+    "id_relacion_generadora": 10,
+    "id_obligacion_financiera": 20,
+    "estado_liquidacion": "EMITIDA",
+    "importe_total_egresado_base": 25000.00,
+    "importe_total_recuperar": 20000.00,
+    "importe_absorbido_empresa": 5000.00,
+    "crea_movimiento_tesoreria": false,
+    "crea_pago_externo_informado": false
+  }
+}
+```
+
+Errores funcionales principales:
+
+- `FACTURA_SERVICIO_NOT_FOUND`
+- `FACTURA_SERVICIO_ANULADA`
+- `RESPONSABLE_PERSONA_NOT_FOUND`
+- `RESPONSABLES_REQUERIDOS`
+- `RESPONSABLES_DUPLICADOS`
+- `RESPONSABLES_PORCENTAJE_INVALIDO`
+- `RESPONSABLES_SUMA_DISTINTA_100`
+- `EGRESO_PROVEEDOR_REQUERIDO`
+- `SIN_MONTO_EGRESADO_DISPONIBLE`
+- `IMPORTE_RECUPERO_SUPERA_EGRESADO`
+- `CONCEPTO_SERVICIO_RECUPERADO_NO_EXISTE`
+- `IDEMPOTENCY_PAYLOAD_CONFLICT`
+
+Reglas:
+
+- requiere egresos proveedor `REGISTRADO`, no eliminados y no usados por otra
+  liquidacion activa;
+- crea `liquidacion_recupero`;
+- crea vinculos `liquidacion_recupero_factura`,
+  `liquidacion_recupero_egreso` y `liquidacion_recupero_responsable`;
+- crea `relacion_generadora` de origen `LIQUIDACION_RECUPERO`;
+- crea `obligacion_financiera` `EMITIDA`;
+- crea composicion `SERVICIO_RECUPERADO`;
+- crea `obligacion_obligado` con rol `RESPONSABLE_RECUPERO`;
+- no crea `movimiento_tesoreria`;
+- no crea `PAGO_EXTERNO_INFORMADO`;
+- el cobro posterior usa el flujo normal de pago por persona.
+
+### GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}
+
+Objetivo: consultar el detalle formal de una `liquidacion_recupero`.
+
+Response resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_liquidacion_recupero": 1,
+    "codigo_liquidacion_recupero": "REC-20260525-ABC12345",
+    "estado_liquidacion": "EMITIDA",
+    "id_relacion_generadora": 10,
+    "id_obligacion_financiera": 20,
+    "facturas": [],
+    "egresos": [],
+    "responsables": [],
+    "obligacion": {
+      "id_obligacion_financiera": 20,
+      "estado_obligacion": "EMITIDA",
+      "saldo_pendiente": 20000.00,
+      "composiciones": [
+        {
+          "codigo_concepto_financiero": "SERVICIO_RECUPERADO",
+          "importe_componente": 20000.00,
+          "saldo_componente": 20000.00
+        }
+      ],
+      "obligados": []
+    }
+  }
+}
+```
+
+Errores funcionales principales:
+
+- `LIQUIDACION_RECUPERO_NOT_FOUND`
+
+Reglas:
+
+- endpoint read-only;
+- no crea movimientos;
+- no modifica saldos;
+- expone factura, egreso activo, responsables, relacion y obligacion asociada.
+
+### GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero
+
+Objetivo: listar liquidaciones de recupero asociadas a una
+`factura_servicio`.
+
+Response resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_factura_servicio": 10,
+    "items": [
+      {
+        "id_liquidacion_recupero": 1,
+        "codigo_liquidacion_recupero": "REC-20260525-ABC12345",
+        "estado_liquidacion": "EMITIDA",
+        "fecha_liquidacion": "2026-05-25",
+        "fecha_vencimiento": "2026-06-10",
+        "importe_total_recuperar": 20000.00,
+        "importe_absorbido_empresa": 5000.00,
+        "id_obligacion_financiera": 20,
+        "saldo_pendiente": 20000.00,
+        "cantidad_responsables": 1
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+Errores funcionales principales:
+
+- `FACTURA_SERVICIO_NOT_FOUND`
+
+Reglas:
+
+- endpoint read-only;
+- incluye liquidaciones activas y anuladas no eliminadas;
+- no modifica saldos ni crea movimientos.
+
+### PATCH /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular
+
+Objetivo: anular en forma conservadora una liquidacion de recupero sin
+operaciones financieras activas.
+
+Request:
+
+```json
+{
+  "motivo": "Liquidacion cargada por error"
+}
+```
+
+Response resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "resultado": "ANULADA",
+    "id_liquidacion_recupero": 1,
+    "estado_liquidacion": "ANULADA",
+    "id_relacion_generadora": 10,
+    "estado_relacion_generadora": "CANCELADA",
+    "id_obligacion_financiera": 20,
+    "estado_obligacion": "ANULADA",
+    "egresos_liberados": 1,
+    "ya_anulada": false,
+    "motivo": "Liquidacion cargada por error"
+  }
+}
+```
+
+Errores funcionales principales:
+
+- `LIQUIDACION_RECUPERO_NOT_FOUND`
+- `MOTIVO_REQUERIDO`
+- `LIQUIDACION_RECUPERO_TIENE_OPERACIONES`
+
+Reglas:
+
+- si ya estaba anulada, devuelve `YA_ANULADA`;
+- bloquea si existen aplicaciones financieras activas, movimientos
+  financieros activos asociados a esas aplicaciones, punitorios activos u
+  operaciones/composiciones posteriores;
+- marca `liquidacion_recupero.estado_liquidacion = ANULADA`;
+- marca `obligacion_financiera.estado_obligacion = ANULADA`;
+- marca composiciones asociadas como `ANULADA`;
+- marca `relacion_generadora.estado_relacion_generadora = CANCELADA`;
+- libera egresos con `liquidacion_recupero_egreso = ANULADO` y `deleted_at`;
+- no toca `movimiento_tesoreria`;
+- no toca `egreso_proveedor_factura_servicio`;
+- no toca `factura_servicio`;
+- no revierte pagos normales.
+
+---
+
+## 10. Mora
 
 ### POST /api/v1/financiero/mora/generar
 
@@ -457,7 +837,7 @@ Limitacion:
 
 ---
 
-## 10. Inbox de eventos
+## 11. Inbox de eventos
 
 ### POST /api/v1/financiero/inbox
 
@@ -495,16 +875,15 @@ Notas:
 
 ---
 
-## 11. Funcionalidad no implementada
+## 12. Funcionalidad no implementada
 
 Sigue pendiente:
 
 - activar/cancelar/finalizar `relacion_generadora`
 - materializacion de obligaciones desde plan externo
-- endpoint autonomo de pagos
 - reversion de imputaciones
-- obligados financieros
-- generacion desde `factura_servicio`
-- resolucion de obligado financiero
+- generacion automatica desde evento `factura_servicio_registrada`
+- resolucion general de obligado financiero fuera de los flujos V1
+  implementados
 - outbox financiero en estos writes
-- idempotencia completa por `X-Op-Id`
+- idempotencia completa por `X-Op-Id` en todos los writes del dominio
