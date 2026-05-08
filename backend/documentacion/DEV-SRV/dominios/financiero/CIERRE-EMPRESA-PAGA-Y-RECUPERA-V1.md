@@ -2,7 +2,8 @@
 
 ## 1. Alcance cerrado V1
 
-Queda cerrado el circuito V1 de `EMPRESA_PAGA_Y_RECUPERA` para recupero financiero de servicios comunes pagados por la empresa:
+Quedan cerrados los circuitos V1 hermanos de recupero financiero de servicios
+comunes e impuestos trasladados:
 
 - `SERVICIO_RECUPERADO` como concepto financiero de deuda recuperable.
 - `egreso_proveedor_factura_servicio` como registro del pago de la empresa al proveedor.
@@ -15,6 +16,14 @@ Queda cerrado el circuito V1 de `EMPRESA_PAGA_Y_RECUPERA` para recupero financie
 - `obligacion_financiera` con composicion `SERVICIO_RECUPERADO`.
 - `obligacion_obligado` para responsables de la liquidacion.
 - Pago posterior por flujo normal de pago por persona.
+- `IMPUESTO_TRASLADADO` como concepto financiero de deuda fiscal trasladada.
+- `comprobante_impuesto` como origen documental fiscal.
+- `egreso_impuesto_empresa` como registro del pago de la empresa al organismo.
+- `liquidacion_impuesto_trasladado`.
+- Consulta formal de `liquidacion_impuesto_trasladado`.
+- Listado de liquidaciones por `comprobante_impuesto`.
+- Anulacion conservadora de `liquidacion_impuesto_trasladado`.
+- Bloqueo de anulacion de egreso impuesto si sostiene liquidacion activa.
 
 ## 2. Flujo funcional
 
@@ -25,6 +34,13 @@ factura_servicio
 -> liquidacion_recupero
 -> obligacion SERVICIO_RECUPERADO
 -> responsable paga a empresa
+
+comprobante_impuesto
+-> empresa paga organismo o responsable directo
+-> egreso_impuesto_empresa si corresponde
+-> liquidacion_impuesto_trasladado
+-> obligacion IMPUESTO_TRASLADADO
+-> responsable paga a empresa por flujo normal, salvo pago externo futuro
 ```
 
 ## 3. Endpoints implementados
@@ -36,6 +52,16 @@ factura_servicio
 - `GET /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}`
 - `GET /api/v1/financiero/facturas-servicio/{id_factura_servicio}/liquidaciones-recupero`
 - `PATCH /api/v1/financiero/liquidaciones-recupero/{id_liquidacion_recupero}/anular`
+- `POST /api/v1/comprobantes-impuesto`
+- `GET /api/v1/comprobantes-impuesto/{id_comprobante_impuesto}`
+- `GET /api/v1/comprobantes-impuesto`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/egresos`
+- `PATCH /api/v1/financiero/egresos-impuesto-empresa/{id_egreso_impuesto_empresa}/anular`
+- `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
+- `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular`
 
 ## 4. Reglas principales
 
@@ -46,6 +72,8 @@ factura_servicio
 - No crea pago externo informado al liquidar recupero.
 - Requiere egreso proveedor registrado.
 - Bloquea egreso usado en liquidacion activa.
+- Bloquea egreso impuesto usado en liquidacion fiscal activa con
+  `EGRESO_IMPUESTO_CON_LIQUIDACION_TRASLADADA`.
 - El vinculo `liquidacion_recupero_egreso` soporta soft-delete y estado
   `ACTIVO`/`ANULADO`; solo vinculos activos bloquean reutilizacion del egreso.
 - Las consultas de `liquidacion_recupero` son solo lectura y no modifican
@@ -65,7 +93,8 @@ factura_servicio
 ## 5. Tests de cierre
 
 - `reset_db.bat` reconstruye correctamente.
-- `python -m pytest -q` -> `1006 passed`.
+- `python -m pytest tests/test_impuesto_trasladado_api.py -q` -> `58 passed`.
+- `python -m pytest -q` -> `1064 passed`.
 
 ## 6. Pendientes futuros no bloqueantes
 
@@ -73,9 +102,9 @@ factura_servicio
 - Agrupacion de varias facturas en una liquidacion.
 - Recuperacion automatica desde egreso proveedor.
 - Expensas formales.
-- Impuestos trasladados.
 - Test de conteo antes/despues para confirmar que liquidar recupero no crea `movimiento_tesoreria` ni `PAGO_EXTERNO_INFORMADO`.
 - Asserts directos sobre `liquidacion_recupero_factura` y `liquidacion_recupero_responsable`.
+- Pago externo informado para impuesto `DIRECTO_RESPONSABLE`.
 
 ## 7. Decisiones explicitas
 
@@ -84,10 +113,15 @@ factura_servicio
 - `SERVICIO_RECUPERADO` representa deuda recuperable con la empresa.
 - `EXPENSA_TRASLADADA` queda reservada para expensas formales.
 - `LIQUIDACION_RECUPERO` se persiste internamente como `tipo_origen = liquidacion_recupero` y puede exponerse en API/documentacion como `LIQUIDACION_RECUPERO`.
+- `IMPUESTO_TRASLADADO` no reutiliza `liquidacion_recupero`; usa
+  `liquidacion_impuesto_trasladado` como entidad propia.
+- La anulacion conservadora no reescribe tesoreria historica ni movimientos
+  financieros; bloquea cuando hay avance financiero.
 
 ## Referencias
 
 - [[SRV-FIN-020-recupero-servicios-comunes]]
+- [[SRV-FIN-021-impuestos-trasladados]]
 - [[SRV-FIN-011-gestion-de-caja-financiera-y-garantias-monetarias]]
 - [[SRV-FIN-019-registro-pago-persona]]
 - [[MODELO-FINANCIERO-FIN]]

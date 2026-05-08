@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `IMPLEMENTADA V1`
-- implementacion: egreso proveedor, anulacion, liquidacion, consulta formal y anulacion conservadora de recupero V1 implementados
+- implementacion: egreso proveedor, consulta, anulacion, liquidacion, consulta formal, listado por factura, anulacion conservadora y bloqueo de egreso base usado por liquidacion activa implementados. Submodulo `recupero_servicio_comun` cerrado en V1.
 - dominio owner: `financiero`
 - origen operativo: `factura_servicio` del dominio `inmobiliario`
 - clasificacion: nucleo financiero para recuperos contra personas
@@ -34,7 +34,7 @@ No incluye:
 - uso de `PAGO_EXTERNO_INFORMADO`;
 - automatizacion desde evento `factura_servicio_registrada`;
 - liquidacion automatica de expensas;
-- impuestos trasladados completos;
+- impuestos trasladados, cubiertos por `SRV-FIN-021`;
 - prorrateos complejos por cambio de responsable;
 - reversion historica con recomputacion.
 
@@ -100,7 +100,8 @@ Decision recomendada V1:
 - `aplica_punitorio = true`, porque el recupero sera deuda exigible con la
   empresa y se cobrara por el flujo normal de pagos financieros;
 - mantener `EXPENSA_TRASLADADA` para expensas formalmente liquidadas;
-- mantener `IMPUESTO_TRASLADADO` para un flujo especifico futuro de impuestos;
+- mantener `IMPUESTO_TRASLADADO` para el flujo especifico de impuestos
+  trasladados documentado en `SRV-FIN-021`;
 - dejar `CARGO_RECUPERO` como opcion futura si se crea una liquidacion
   transversal de cargos.
 
@@ -186,7 +187,6 @@ Decision recomendada V1:
 - reglas de reparto por inmueble, unidad funcional, servicio, consumo o
   porcentaje para automatizar responsables;
 - reversion historica de recuperos ya cobrados;
-- tratamiento de impuestos trasladados;
 - tratamiento de expensas formales.
 
 ## Implementacion V1
@@ -199,7 +199,7 @@ Decision recomendada V1:
 5. Consultar el detalle de la liquidacion o listar liquidaciones por factura.
 6. Anular la liquidacion solo si no tiene operaciones financieras activas.
 7. Cobrar por el flujo normal de pagos financieros.
-8. La reversion historica de recuperos cobrados queda pendiente.
+8. La reversion historica de recuperos cobrados queda fuera del cierre V1.
 
 ## Referencias
 

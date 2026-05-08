@@ -4,7 +4,7 @@
 
 - version: `1.3`
 - estado: `IMPLEMENTADO PARCIAL / ALINEADO A BACKEND`
-- ultima actualizacion: `2026-05-07`
+- ultima actualizacion: `2026-05-08`
 - fuente: backend real + SQL vigente + tests financieros
 
 Este documento describe los endpoints financieros actualmente implementados en backend. No documenta como operable funcionalidad que siga pendiente.
@@ -51,6 +51,7 @@ Este documento describe los endpoints financieros actualmente implementados en b
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular`
 
 ### EMPRESA_PAGA_Y_RECUPERA
 
@@ -598,9 +599,7 @@ Reglas:
 - no toca `comprobante_impuesto`;
 - no crea ni modifica `movimiento_financiero`, `relacion_generadora` ni
   `obligacion_financiera`;
-- no impacta estado de cuenta;
-- pendiente futuro: bloquear si una `liquidacion_impuesto_trasladado`
-  activa usa el egreso.
+- no impacta estado de cuenta.
 
 Errores principales:
 
@@ -1215,13 +1214,15 @@ Sigue pendiente:
 
 ### IMPUESTO_TRASLADADO V1
 
-Estado: `IMPLEMENTADO PARCIAL V1`.
+Estado: `IMPLEMENTADO / CERRADO V1` para comprobante, egreso empresa,
+liquidacion, consultas read-only, listado por comprobante, anulacion
+conservadora y bloqueo de egreso base usado por liquidacion activa.
 
 El diseno V1 queda documentado en
 `backend/documentacion/DEV-SRV/dominios/financiero/SRV-FIN-021-impuestos-trasladados.md`.
 
 Reglas implementadas para `comprobante_impuesto`, egreso empresa y
-liquidacion fiscal fase 1:
+liquidacion fiscal V1:
 
 - entidad propia `comprobante_impuesto`;
 - no usar `factura_servicio` para impuestos;
@@ -1236,10 +1237,14 @@ liquidacion fiscal fase 1:
 - el egreso empresa bloquea `DIRECTO_RESPONSABLE`;
 - el egreso empresa no genera deuda ni estado de cuenta;
 - consulta y anulacion logica de egreso empresa estan implementadas;
+- la anulacion de egreso empresa se bloquea si sostiene una
+  `liquidacion_impuesto_trasladado` activa;
 - `liquidacion_impuesto_trasladado` crea `relacion_generadora`,
   `obligacion_financiera`, `composicion_obligacion` `IMPUESTO_TRASLADADO` y
   `obligacion_obligado`;
 - consultas read-only de detalle y listado por comprobante estan implementadas;
+- anulacion conservadora de `liquidacion_impuesto_trasladado` esta
+  implementada;
 - la liquidacion no crea `movimiento_tesoreria` ni
   `PAGO_EXTERNO_INFORMADO`.
 
@@ -1258,9 +1263,9 @@ Endpoint de liquidacion implementado:
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}/anular`
 
 Endpoints futuros a definir, no implementados:
 
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/materializar`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/pago-externo`
-- `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}/anular`

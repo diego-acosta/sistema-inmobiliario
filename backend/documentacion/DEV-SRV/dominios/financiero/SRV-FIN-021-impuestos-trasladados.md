@@ -1,8 +1,8 @@
 # SRV-FIN-021 - Impuestos trasladados
 
 ## Estado
-- estado: `IMPLEMENTADO PARCIAL V1`
-- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; liquidacion `IMPUESTO_TRASLADADO` fase 1 implementada con consultas read-only y anulacion conservadora; pago externo aun no implementado
+- estado: `IMPLEMENTADA V1`
+- implementacion: registro y consulta de `comprobante_impuesto`, egreso empresa, consulta, anulacion, liquidacion `IMPUESTO_TRASLADADO`, consulta formal, listado por comprobante, anulacion conservadora y bloqueo de egreso base usado por liquidacion activa implementados. Submodulo `impuesto_trasladado` cerrado en V1.
 - dominio owner: `financiero`
 - origen operativo: `comprobante_impuesto`
 - clasificacion: nucleo financiero para traslado de impuestos, tasas o contribuciones a responsables
@@ -97,7 +97,7 @@ El responsable debe pagar directamente al organismo.
 
 Reglas:
 
-- fase 1 materializa una obligacion `IMPUESTO_TRASLADADO` desde
+- V1 materializa una obligacion `IMPUESTO_TRASLADADO` desde
   `liquidacion_impuesto_trasladado`;
 - no requiere `egreso_impuesto_empresa`;
 - la base de liquidacion es `comprobante_impuesto.importe_total`;
@@ -199,9 +199,9 @@ V1 de impuestos puede reutilizar el patron:
 - anulacion conservadora;
 - liberacion logica de egresos usados.
 
-Entidad sugerida: `liquidacion_impuesto_trasladado`.
+Entidad implementada: `liquidacion_impuesto_trasladado`.
 
-### Liquidacion implementada fase 1
+### Liquidacion implementada V1
 
 `liquidacion_impuesto_trasladado` materializa deuda fiscal trasladada sin
 reutilizar `liquidacion_recupero`.
@@ -251,7 +251,7 @@ Consultas read-only implementadas:
 - detalle por id, con comprobantes, egresos si corresponden, responsables,
   relacion generadora, obligacion, composiciones y obligados;
 - listado por `comprobante_impuesto`, incluyendo liquidaciones no eliminadas
-  aunque en el futuro esten anuladas;
+  aunque esten anuladas;
 - para `DIRECTO_RESPONSABLE`, el detalle devuelve lista de egresos vacia;
 - no crean movimientos, obligaciones ni modifican saldos.
 
@@ -285,7 +285,7 @@ aparecer en estado de cuenta del responsable.
 ## Fuera de alcance V1
 
 - usar `factura_servicio` para impuestos;
-- pago externo informado de impuesto, pendiente posterior;
+- pago externo informado de impuesto;
 - expensas formales;
 - crear `IMPUESTO_RECUPERADO`;
 - maestro catastral completo;

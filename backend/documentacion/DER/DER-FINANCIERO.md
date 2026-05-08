@@ -489,7 +489,7 @@ SRV-FIN-012
 
 ### Impuestos trasladados
 
-- estado: `IMPLEMENTADO PARCIAL V1`
+- estado: `IMPLEMENTADO / CERRADO V1`
 - los impuestos, tasas o contribuciones no deben modelarse como
   `factura_servicio`
 - V1 implementa entidad propia `comprobante_impuesto` como origen documental
@@ -519,7 +519,7 @@ SRV-FIN-012
 - el egreso empresa se bloquea para modalidad `DIRECTO_RESPONSABLE`
 - `egreso_impuesto_empresa` no crea `movimiento_financiero`,
   `relacion_generadora`, `obligacion_financiera` ni estado de cuenta
-- `liquidacion_impuesto_trasladado` fase 1 esta implementada como entidad
+- `liquidacion_impuesto_trasladado` V1 esta implementada como entidad
   propia para crear deuda fiscal trasladada
 - `liquidacion_impuesto_trasladado` persiste cabecera, snapshot de
   `comprobante_impuesto`, vinculos activos a `egreso_impuesto_empresa` cuando

@@ -107,7 +107,7 @@ Implementado:
 - consulta por `GET /api/v1/financiero/conceptos-financieros`
 - busqueda interna por codigo para crear obligaciones e imputaciones
 - catalogo base con `INTERES_MORA` disponible en seeds actuales solo por compatibilidad heredada; V1 no lo usa como concepto activo de mora persistida
-- catalogo base con `SERVICIO_RECUPERADO` para futuro recupero
+- catalogo base con `SERVICIO_RECUPERADO` para recupero
   manual/controlado de servicios comunes pagados por la empresa
 - `aplica_punitorio`: indica si el saldo vivo de ese concepto integra la base
   morable para liquidar `PUNITORIO`
@@ -460,7 +460,8 @@ Decision:
   `ANULADA`, y libera egresos anulando logicamente
   `liquidacion_recupero_egreso`; no toca tesoreria ni el egreso proveedor.
 
-Expensas e impuestos trasladados no se implementan en este bloque.
+Expensas formales no se implementan en este bloque. Impuestos trasladados se
+documentan en la seccion especifica `IMPUESTO_TRASLADADO V1`.
 El diseno de este circuito queda documentado en
 `SRV-FIN-020-recupero-servicios-comunes`.
 
@@ -468,7 +469,7 @@ El diseno de este circuito queda documentado en
 
 ## 4.2 Diseno V1 Para Impuestos Trasladados
 
-Estado: `IMPLEMENTADO PARCIAL V1`.
+Estado: `IMPLEMENTADO / CERRADO V1`.
 
 Los impuestos, tasas o contribuciones trasladadas se modelan con entidad propia
 `comprobante_impuesto`. No deben registrarse como `factura_servicio`.
@@ -487,10 +488,10 @@ Motivos:
 operaciones se habilitan. V1 implementado cubre alta y consulta del comprobante
 sin efectos financieros, y egreso empresa para `EMPRESA_ASUME` y
 `EMPRESA_PAGA_Y_RECUPERA`, incluyendo consulta y anulacion logica del egreso.
-La liquidacion `IMPUESTO_TRASLADADO` fase 1 esta implementada mediante entidad
-propia `liquidacion_impuesto_trasladado`, con consultas read-only de detalle y
-listado por comprobante; anulacion de la liquidacion y pago externo quedan
-pendientes.
+La liquidacion `IMPUESTO_TRASLADADO` V1 esta implementada mediante entidad
+propia `liquidacion_impuesto_trasladado`, con consultas read-only de detalle,
+listado por comprobante y anulacion conservadora. El pago externo informado de
+impuesto queda fuera del cierre V1.
 
 Modalidades V1:
 
@@ -499,13 +500,15 @@ Modalidades V1:
    - se registra egreso de tesoreria mediante `egreso_impuesto_empresa` y
      `movimiento_tesoreria`;
    - la anulacion del egreso anula tambien el movimiento de tesoreria;
+   - si el egreso sostiene una `liquidacion_impuesto_trasladado` activa, la
+     anulacion del egreso se bloquea;
    - no genera obligacion al responsable;
    - no genera `IMPUESTO_TRASLADADO`;
    - bloquea `liquidacion_impuesto_trasladado`.
 
 2. `DIRECTO_RESPONSABLE`
    - el responsable debe pagar directamente al organismo;
-   - fase 1 materializa obligacion `IMPUESTO_TRASLADADO` mediante
+   - V1 materializa obligacion `IMPUESTO_TRASLADADO` mediante
      `liquidacion_impuesto_trasladado`;
    - no requiere egreso de empresa;
    - los responsables se informan explicitamente y sus porcentajes deben sumar
@@ -521,6 +524,8 @@ Modalidades V1:
      `liquidacion_impuesto_trasladado`;
    - la liquidacion requiere egreso `REGISTRADO` disponible y bloquea su
      reutilizacion con un vinculo activo;
+   - el egreso base usado queda protegido contra anulacion mientras sostenga
+     una liquidacion activa;
    - el responsable paga a la empresa por el flujo normal de pago por persona.
 
 Decision de concepto V1:
@@ -541,7 +546,11 @@ conservadora. Fase 1 crea cabecera, snapshots, `relacion_generadora`
 `liquidacion_impuesto_trasladado`, obligacion `EMITIDA`, composicion
 `IMPUESTO_TRASLADADO` y `obligacion_obligado`. Las consultas read-only permiten
 ver detalle de la liquidacion y listar liquidaciones por comprobante sin crear
-movimientos ni modificar saldos; no implementa anulacion de liquidacion.
+movimientos ni modificar saldos. La anulacion conservadora de la liquidacion
+bloquea pagos, aplicaciones, punitorios y operaciones posteriores; si procede,
+anula liquidacion, relacion generadora, obligacion y composiciones, y libera
+logicamente vinculos `liquidacion_impuesto_trasladado_egreso` sin tocar
+tesoreria ni `egreso_impuesto_empresa`.
 
 Referencia: `SRV-FIN-021-impuestos-trasladados`.
 
