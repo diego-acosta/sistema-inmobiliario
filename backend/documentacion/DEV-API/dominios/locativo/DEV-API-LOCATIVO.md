@@ -623,6 +623,75 @@ Shape publico real propuesto:
   - `id_contrato_anterior`
   - intervinientes por `relacion_persona_rol`
 
+#### `GET /api/v1/contratos-alquiler/{id_contrato_alquiler}/detalle-integral`
+
+Objetivo:
+
+- consulta integral read-only de un contrato de alquiler
+- consolidar datos locativos, partes y lectura financiera asociada sin generar efectos transaccionales
+
+Response:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_contrato_alquiler": 1,
+    "version_registro": 3,
+    "codigo_contrato": "CA-0001",
+    "fecha_inicio": "2026-05-01",
+    "fecha_fin": "2027-04-30",
+    "estado_contrato": "activo",
+    "objetos": [],
+    "condiciones_economicas_alquiler": [],
+    "partes": [],
+    "entrega_locativa": null,
+    "restitucion_locativa": null,
+    "relacion_financiera": {
+      "id_relacion_generadora": 10,
+      "tipo_origen": "contrato_alquiler",
+      "id_origen": 1,
+      "estado_relacion_generadora": "ACTIVA"
+    },
+    "obligaciones_financieras": [
+      {
+        "id_obligacion_financiera": 100,
+        "importe_total": 150000.00,
+        "saldo_pendiente": 150000.00,
+        "importe_cancelado_acumulado": 0.00,
+        "estado_obligacion": "EMITIDA",
+        "fecha_emision": "2026-05-01",
+        "fecha_vencimiento": "2026-05-10",
+        "periodo_desde": "2026-05-01",
+        "periodo_hasta": "2026-05-31",
+        "composiciones": [],
+        "obligados": []
+      }
+    ],
+    "resumen_financiero": {
+      "cantidad_obligaciones": 1,
+      "saldo_total": 150000.00,
+      "saldo_pendiente": 150000.00,
+      "importe_cancelado": 0.00,
+      "cantidad_vencidas": 0,
+      "cantidad_canceladas": 0,
+      "cantidad_anuladas": 0
+    },
+    "deleted_at": null
+  }
+}
+```
+
+Reglas de lectura:
+
+- si el contrato no existe o tiene `deleted_at` informado, devuelve `404 NOT_FOUND`
+- si no hay partes por `relacion_persona_rol`, devuelve `partes = []`
+- si no hay entrega o restitucion, devuelve `null`
+- si no existe `relacion_generadora` para `tipo_origen = 'contrato_alquiler'` e `id_origen = id_contrato_alquiler`, devuelve `relacion_financiera = null` y `obligaciones_financieras = []`
+- `obligaciones_financieras` incluye composiciones, concepto financiero, obligados, saldos persistidos, estados, fechas y periodos
+- `resumen_financiero` usa saldos persistidos y estados actuales; no recalcula deuda, no ejecuta mora y no modifica estados
+- el endpoint no genera `relacion_generadora`, no genera obligaciones, no registra pagos, no toca outbox ni inbox
+
 #### `GET /api/v1/contratos-alquiler`
 
 Objetivo:
@@ -697,8 +766,8 @@ Observacion:
 - `contrato_objeto_locativo` se consume embebido en el contrato
 - `condicion_economica_alquiler` se expone solo bajo el contrato padre
 - `v1` no expone la gestión ampliada de `solicitud_alquiler` ni de `reserva_locativa`; los endpoints implementados y documentados explícitamente en este documento sí son parte del contrato `v1`
-- `v1` no expone `ajuste_alquiler`, `modificacion_locativa`, `rescision_finalizacion_alquiler` ni `entrega_restitucion_inmueble`
 - `v1` no expone write local de partes intervinientes porque esa semantica sigue dependiendo de soporte transversal
+- la consulta integral de contrato expone partes y estado financiero asociado solo como lectura
 - la activacion del contrato debe revalidar que las partes principales ya existan por soporte transversal
 - el contrato no debe superponerse invalidamente sobre el mismo objeto locativo
 - la condicion economica debe respetar vigencias sin solapamiento incompatible

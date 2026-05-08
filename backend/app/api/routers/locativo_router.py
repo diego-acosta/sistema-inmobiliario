@@ -35,6 +35,8 @@ from app.api.schemas.locativo import (
     ContratoAlquilerFinalizeData,
     ContratoAlquilerFinalizeResponse,
     ContratoAlquilerGetData,
+    ContratoAlquilerDetalleIntegralData,
+    ContratoAlquilerDetalleIntegralResponse,
     ContratoAlquilerGetResponse,
     ContratoAlquilerListData,
     ContratoAlquilerListItemData,
@@ -64,6 +66,9 @@ from app.application.locativo.services.create_contrato_alquiler_service import (
 )
 from app.application.locativo.services.get_contrato_alquiler_service import (
     GetContratoAlquilerService,
+)
+from app.application.locativo.services.get_contrato_alquiler_detalle_integral_service import (
+    GetContratoAlquilerDetalleIntegralService,
 )
 from app.application.locativo.services.activate_contrato_alquiler_service import (
     ActivateContratoAlquilerService,
@@ -328,6 +333,33 @@ def get_contrato_alquiler(
         return JSONResponse(status_code=404, content=error.model_dump())
 
     return ContratoAlquilerGetResponse(data=ContratoAlquilerGetData(**result.data))
+
+
+@router.get(
+    "/api/v1/contratos-alquiler/{id_contrato_alquiler}/detalle-integral",
+    response_model=ContratoAlquilerDetalleIntegralResponse,
+    responses={
+        404: {"model": ErrorResponse},
+    },
+)
+def get_contrato_alquiler_detalle_integral(
+    id_contrato_alquiler: int,
+    db: Session = Depends(get_db),
+) -> ContratoAlquilerDetalleIntegralResponse | JSONResponse:
+    repository = LocativoRepository(db)
+    service = GetContratoAlquilerDetalleIntegralService(repository=repository)
+    result = service.execute(id_contrato_alquiler)
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="El contrato de alquiler indicado no existe.",
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return ContratoAlquilerDetalleIntegralResponse(
+        data=ContratoAlquilerDetalleIntegralData(**result.data)
+    )
 
 
 @router.put(

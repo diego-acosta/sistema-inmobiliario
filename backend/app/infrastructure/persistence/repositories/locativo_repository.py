@@ -1,8 +1,9 @@
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.application.common.outbox import OutboxEventPayload
@@ -363,6 +364,298 @@ class LocativoRepository:
             "deleted_at": contrato_row["deleted_at"],
             "objetos": objetos,
             "condiciones_economicas_alquiler": condiciones,
+        }
+
+    def get_contrato_alquiler_detalle_integral(
+        self, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None:
+        contrato = self.get_contrato_alquiler(id_contrato_alquiler)
+        if contrato is None:
+            return None
+
+        partes = self._get_partes_for_contrato(id_contrato_alquiler)
+        entrega = self._get_entrega_for_contrato(id_contrato_alquiler)
+        restitucion = self._get_restitucion_for_contrato(id_contrato_alquiler)
+        relacion = self._get_relacion_financiera_for_contrato(id_contrato_alquiler)
+
+        obligaciones: list[dict[str, Any]] = []
+        if relacion is not None:
+            obligaciones = self._get_obligaciones_financieras_for_relacion(
+                relacion["id_relacion_generadora"]
+            )
+
+        resumen = self._build_resumen_financiero(obligaciones)
+
+        return {
+            **contrato,
+            "partes": partes,
+            "entrega_locativa": entrega,
+            "restitucion_locativa": restitucion,
+            "relacion_financiera": relacion,
+            "obligaciones_financieras": obligaciones,
+            "resumen_financiero": resumen,
+        }
+
+    def _get_partes_for_contrato(
+        self, id_contrato_alquiler: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                rpr.id_relacion_persona_rol,
+                rpr.id_persona,
+                p.tipo_persona,
+                p.codigo_persona,
+                p.nombre,
+                p.apellido,
+                p.razon_social,
+                p.estado_persona,
+                rpr.id_rol_participacion,
+                rp.codigo_rol,
+                rp.nombre_rol,
+                rpr.fecha_desde,
+                rpr.fecha_hasta,
+                rpr.observaciones
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+            JOIN persona p
+              ON p.id_persona = rpr.id_persona
+             AND p.deleted_at IS NULL
+            WHERE rpr.tipo_relacion = 'contrato_alquiler'
+              AND rpr.id_relacion = :id
+              AND rpr.deleted_at IS NULL
+            ORDER BY rp.codigo_rol ASC, rpr.fecha_desde ASC, rpr.id_relacion_persona_rol ASC
+            """
+        )
+        rows = self.db.execute(stmt, {"id": id_contrato_alquiler}).mappings().all()
+        return [dict(row) for row in rows]
+
+    def _get_entrega_for_contrato(
+        self, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_entrega_locativa,
+                uid_global,
+                version_registro,
+                id_contrato_alquiler,
+                fecha_entrega,
+                observaciones,
+                deleted_at
+            FROM entrega_locativa
+            WHERE id_contrato_alquiler = :id
+              AND deleted_at IS NULL
+            ORDER BY id_entrega_locativa ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_contrato_alquiler}).mappings().one_or_none()
+        if row is None:
+            return None
+        data = dict(row)
+        data["uid_global"] = str(data["uid_global"])
+        return data
+
+    def _get_restitucion_for_contrato(
+        self, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None:
+        if not self._table_exists("restitucion_locativa"):
+            return None
+
+        stmt = text(
+            """
+            SELECT
+                id_restitucion_locativa,
+                uid_global,
+                version_registro,
+                id_contrato_alquiler,
+                fecha_restitucion,
+                estado_inmueble,
+                observaciones,
+                deleted_at
+            FROM restitucion_locativa
+            WHERE id_contrato_alquiler = :id
+              AND deleted_at IS NULL
+            ORDER BY id_restitucion_locativa ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_contrato_alquiler}).mappings().one_or_none()
+        if row is None:
+            return None
+        data = dict(row)
+        data["uid_global"] = str(data["uid_global"])
+        return data
+
+    def _table_exists(self, table_name: str) -> bool:
+        row = self.db.execute(
+            text("SELECT to_regclass(:table_name)"),
+            {"table_name": f"public.{table_name}"},
+        ).scalar_one_or_none()
+        return row is not None
+
+    def _get_relacion_financiera_for_contrato(
+        self, id_contrato_alquiler: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_relacion_generadora,
+                uid_global,
+                version_registro,
+                tipo_origen,
+                id_origen,
+                descripcion,
+                estado_relacion_generadora,
+                fecha_alta
+            FROM relacion_generadora
+            WHERE LOWER(tipo_origen) = 'contrato_alquiler'
+              AND id_origen = :id
+              AND deleted_at IS NULL
+            ORDER BY id_relacion_generadora ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_contrato_alquiler}).mappings().one_or_none()
+        if row is None:
+            return None
+        data = dict(row)
+        data["uid_global"] = str(data["uid_global"])
+        return data
+
+    def _get_obligaciones_financieras_for_relacion(
+        self, id_relacion_generadora: int
+    ) -> list[dict[str, Any]]:
+        obligaciones_stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                uid_global,
+                version_registro,
+                id_relacion_generadora,
+                codigo_obligacion_financiera,
+                descripcion_operativa,
+                fecha_emision,
+                fecha_vencimiento,
+                periodo_desde,
+                periodo_hasta,
+                importe_total,
+                saldo_pendiente,
+                importe_cancelado_acumulado,
+                importe_bonificado_acumulado,
+                importe_anulado_acumulado,
+                moneda,
+                estado_obligacion
+            FROM obligacion_financiera
+            WHERE id_relacion_generadora = :id_relacion_generadora
+              AND deleted_at IS NULL
+            ORDER BY periodo_desde ASC NULLS LAST, id_obligacion_financiera ASC
+            """
+        )
+        ob_rows = self.db.execute(
+            obligaciones_stmt, {"id_relacion_generadora": id_relacion_generadora}
+        ).mappings().all()
+        if not ob_rows:
+            return []
+
+        ids = [row["id_obligacion_financiera"] for row in ob_rows]
+        params = {"ids": tuple(ids)}
+
+        comps_stmt = text(
+            """
+            SELECT
+                co.id_obligacion_financiera,
+                co.id_composicion_obligacion,
+                co.id_concepto_financiero,
+                cf.codigo_concepto_financiero,
+                cf.nombre_concepto_financiero,
+                cf.tipo_concepto_financiero,
+                cf.naturaleza_concepto,
+                co.orden_composicion,
+                co.estado_composicion_obligacion,
+                co.importe_componente,
+                co.saldo_componente,
+                co.moneda_componente,
+                co.observaciones
+            FROM composicion_obligacion co
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+             AND cf.deleted_at IS NULL
+            WHERE co.id_obligacion_financiera IN :ids
+              AND co.deleted_at IS NULL
+            ORDER BY co.id_obligacion_financiera ASC, co.orden_composicion ASC,
+                     co.id_composicion_obligacion ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        obligados_stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                id_obligacion_obligado,
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera IN :ids
+              AND deleted_at IS NULL
+            ORDER BY id_obligacion_financiera ASC, id_obligacion_obligado ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+
+        comps_by_ob: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
+        for row in self.db.execute(comps_stmt, params).mappings().all():
+            item = dict(row)
+            id_ob = item.pop("id_obligacion_financiera")
+            comps_by_ob[id_ob].append(item)
+
+        obligados_by_ob: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
+        for row in self.db.execute(obligados_stmt, params).mappings().all():
+            item = dict(row)
+            id_ob = item.pop("id_obligacion_financiera")
+            obligados_by_ob[id_ob].append(item)
+
+        obligaciones = []
+        for row in ob_rows:
+            item = dict(row)
+            item["uid_global"] = str(item["uid_global"])
+            item["composiciones"] = comps_by_ob[item["id_obligacion_financiera"]]
+            item["obligados"] = obligados_by_ob[item["id_obligacion_financiera"]]
+            obligaciones.append(item)
+        return obligaciones
+
+    def _build_resumen_financiero(
+        self, obligaciones: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        saldo_total = sum(
+            (Decimal(str(ob["importe_total"])) for ob in obligaciones), Decimal("0")
+        )
+        saldo_pendiente = sum(
+            (Decimal(str(ob["saldo_pendiente"])) for ob in obligaciones), Decimal("0")
+        )
+        importe_cancelado = sum(
+            (
+                Decimal(str(ob["importe_cancelado_acumulado"]))
+                for ob in obligaciones
+            ),
+            Decimal("0"),
+        )
+        return {
+            "cantidad_obligaciones": len(obligaciones),
+            "saldo_total": saldo_total,
+            "saldo_pendiente": saldo_pendiente,
+            "importe_cancelado": importe_cancelado,
+            "cantidad_vencidas": sum(
+                1 for ob in obligaciones if ob["estado_obligacion"] == "VENCIDA"
+            ),
+            "cantidad_canceladas": sum(
+                1 for ob in obligaciones if ob["estado_obligacion"] == "CANCELADA"
+            ),
+            "cantidad_anuladas": sum(
+                1 for ob in obligaciones if ob["estado_obligacion"] == "ANULADA"
+            ),
         }
 
     def delete_contrato_alquiler(self, payload: Any) -> dict[str, Any]:

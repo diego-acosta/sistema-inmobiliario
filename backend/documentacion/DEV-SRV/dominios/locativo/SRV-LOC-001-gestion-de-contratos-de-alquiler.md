@@ -51,6 +51,33 @@ Permite invalidar un contrato sin eliminarlo físicamente.
 ### Consulta
 Permite visualizar contratos y su composición básica.
 
+### Consulta integral read-only
+Permite visualizar el contrato de alquiler con su composicion locativa,
+partes, entrega, restitucion y estado financiero asociado.
+
+Esta consulta no es un proceso de negocio financiero. Solo lee datos ya
+persistidos por locativo, personas y financiero:
+
+- contrato_alquiler
+- contrato_objeto_locativo
+- condicion_economica_alquiler
+- relacion_persona_rol, rol_participacion y persona
+- entrega locativa, si existe
+- restitucion locativa, si existe
+- relacion_generadora con `tipo_origen = contrato_alquiler`
+- obligacion_financiera, composicion_obligacion y obligacion_obligado
+
+Restricciones:
+
+- no genera relacion_generadora
+- no genera obligaciones financieras
+- no recalcula saldos
+- no ejecuta mora
+- no modifica estados
+- no registra pagos
+- no escribe outbox ni inbox
+- no reemplaza las consultas financieras propias del dominio financiero
+
 ## Entradas conceptuales
 
 ### Contexto técnico (write)
@@ -143,6 +170,17 @@ Permite visualizar contratos y su composición básica.
 3. resolver personas y objetos asociados
 4. devolver vista de lectura
 
+### Consulta integral read-only
+1. validar identificador de contrato
+2. cargar contrato vigente no dado de baja
+3. cargar objetos y condiciones economicas
+4. cargar partes desde soporte transversal `relacion_persona_rol`
+5. cargar entrega y restitucion si existen
+6. cargar relacion generadora financiera asociada si existe
+7. cargar obligaciones financieras asociadas, con composiciones y obligados
+8. calcular resumen financiero solo con importes persistidos
+9. devolver vista consolidada sin efectos transaccionales
+
 ## Validaciones clave
 - personas intervinientes existentes
 - objeto locativo existente y elegible
@@ -194,6 +232,8 @@ Reglas implementadas:
 - si no hay ningun periodo con condicion aplicable, financiero no crea
   `relacion_generadora`
 - existe pipeline automatico interno `outbox_event -> inbox` mediante worker financiero
+- la consulta integral de contrato puede leer `relacion_generadora` y
+  obligaciones asociadas, pero no genera ni recalcula deuda
 
 Limitaciones financieras vigentes:
 
