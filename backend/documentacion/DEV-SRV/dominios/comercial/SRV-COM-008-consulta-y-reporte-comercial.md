@@ -11,11 +11,13 @@ Este servicio cubre hoy:
 - detalle de `reserva_venta`
 - listado de `reserva_venta`
 - detalle enriquecido de `venta`
+- detalle integral read-only de `venta`
 - listado por `venta` de:
   - `instrumento_compraventa`
   - `cesion`
   - `escrituracion`
 - lectura del estado de integracion `comercial -> inmobiliario` por `venta`
+- lectura del estado financiero asociado a una `venta`, solo si ya existe `relacion_generadora`
 
 No cubre en el `v1` vigente:
 
@@ -25,6 +27,12 @@ No cubre en el `v1` vigente:
 - detalle individual de `instrumento_compraventa`, `cesion` o `escrituracion`
 - listados globales de `venta`, `instrumento_compraventa`, `cesion` o `escrituracion`
 - analitica o BI
+- generacion de `relacion_generadora`
+- generacion de obligaciones financieras
+- recalculo de deuda, mora o punitorio
+- plan financiero avanzado de venta
+- rescision de venta
+- cesion real con cambio de comprador
 
 ## Entidades principales
 
@@ -50,6 +58,22 @@ Permite reconstruir procedencia de la venta, objetos alcanzados y registros come
 
 Permite leer, por `venta`, el estado de los eventos emitidos hacia `inmobiliario` y su efecto contractual esperado.
 
+### Consulta integral de venta
+
+Permite consultar una `venta` con sus datos comerciales, partes, objetos, trazabilidad operativa y estado financiero asociado.
+
+Esta consulta es estrictamente read-only:
+
+- no crea ni modifica `venta`
+- no crea ni modifica `relacion_generadora`
+- no crea ni modifica `obligacion_financiera`
+- no crea compradores ni obligados
+- no crea `movimiento_financiero`, `aplicacion_financiera` ni `movimiento_tesoreria`
+- no escribe `outbox_event` ni `inbox_event`
+- no recalcula deuda
+- no ejecuta mora ni punitorio
+- no cambia estados
+
 ## Entradas conceptuales
 
 ### Parametros de consulta hoy materializados
@@ -64,6 +88,8 @@ Permite leer, por `venta`, el estado de los eventos emitidos hacia `inmobiliario
   - `limit`
   - `offset`
 - identificador de venta
+- identificador de venta para detalle integral:
+  - `GET /api/v1/ventas/{id_venta}/detalle-integral`
 - filtros de `instrumento_compraventa` por venta:
   - `tipo_instrumento`
   - `estado_instrumento`
@@ -86,6 +112,11 @@ Permite leer, por `venta`, el estado de los eventos emitidos hacia `inmobiliario
 - origen de la venta desde `reserva_venta` cuando exista
 - instrumentos, cesiones y escrituraciones asociados a una `venta`
 - estado de integracion `comercial -> inmobiliario`
+- partes comerciales desde `relacion_persona_rol`, `rol_participacion` y `persona`
+- condiciones comerciales simples desde `venta.monto_total` y `venta_objeto_inmobiliario.precio_asignado`
+- relacion financiera asociada cuando exista `relacion_generadora.tipo_origen = venta`
+- obligaciones financieras asociadas a la relacion, con composiciones, conceptos y obligados si existen
+- resumen financiero usando saldos persistidos
 - resumen de lectura derivado de hechos persistidos
 
 ## Flujo de alto nivel
@@ -98,7 +129,8 @@ Permite leer, por `venta`, el estado de los eventos emitidos hacia `inmobiliario
 4. integrar objetos y relaciones asociadas
 5. enriquecer con lecturas actuales de `inmobiliario` cuando corresponda
 6. enriquecer con observabilidad de outbox cuando corresponda
-7. devolver la proyeccion de lectura
+7. para detalle integral, leer `relacion_generadora` y obligaciones asociadas solo como datos persistidos
+8. devolver la proyeccion de lectura
 
 ## Validaciones clave
 
@@ -112,6 +144,9 @@ Permite leer, por `venta`, el estado de los eventos emitidos hacia `inmobiliario
 - no genera efectos persistentes
 - no modifica estado del sistema
 - no registra outbox
+- no registra inbox
+- no crea relaciones generadoras ni obligaciones
+- no recalcula saldos ni mora
 - no requiere idempotencia write
 
 ## Errores

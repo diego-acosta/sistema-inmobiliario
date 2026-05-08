@@ -399,6 +399,114 @@ class VentaDetailResponse(BaseModel):
     data: VentaDetailData
 
 
+class VentaParteData(BaseModel):
+    id_relacion_persona_rol: int
+    id_persona: int
+    tipo_persona: str
+    codigo_persona: str | None
+    nombre: str | None
+    apellido: str | None
+    razon_social: str | None
+    estado_persona: str
+    id_rol_participacion: int
+    codigo_rol: str
+    nombre_rol: str
+    fecha_desde: datetime
+    fecha_hasta: datetime | None
+    observaciones: str | None
+
+
+class VentaCondicionesComercialesData(BaseModel):
+    monto_total: Decimal | None
+    moneda: str | None
+    observaciones: str | None
+    objetos: list[VentaObjetoData]
+
+
+class VentaRelacionFinancieraData(BaseModel):
+    id_relacion_generadora: int
+    uid_global: str
+    version_registro: int
+    tipo_origen: str
+    id_origen: int
+    descripcion: str | None
+    estado_relacion_generadora: str
+    fecha_alta: datetime
+
+
+class VentaObligacionComposicionData(BaseModel):
+    id_composicion_obligacion: int
+    id_concepto_financiero: int
+    codigo_concepto_financiero: str
+    nombre_concepto_financiero: str
+    tipo_concepto_financiero: str
+    naturaleza_concepto: str
+    orden_composicion: int
+    estado_composicion_obligacion: str
+    importe_componente: Decimal
+    saldo_componente: Decimal
+    moneda_componente: str
+    observaciones: str | None
+
+
+class VentaObligacionObligadoData(BaseModel):
+    id_obligacion_obligado: int
+    id_persona: int
+    rol_obligado: str
+    porcentaje_responsabilidad: Decimal
+
+
+class VentaObligacionFinancieraData(BaseModel):
+    id_obligacion_financiera: int
+    uid_global: str
+    version_registro: int
+    id_relacion_generadora: int
+    codigo_obligacion_financiera: str | None
+    descripcion_operativa: str | None
+    fecha_emision: date
+    fecha_vencimiento: date | None
+    periodo_desde: date | None
+    periodo_hasta: date | None
+    importe_total: Decimal
+    saldo_pendiente: Decimal
+    importe_cancelado_acumulado: Decimal
+    importe_bonificado_acumulado: Decimal
+    importe_anulado_acumulado: Decimal
+    moneda: str
+    estado_obligacion: str
+    composiciones: list[VentaObligacionComposicionData]
+    obligados: list[VentaObligacionObligadoData]
+
+
+class VentaResumenFinancieroData(BaseModel):
+    cantidad_obligaciones: int
+    saldo_total: Decimal
+    saldo_pendiente: Decimal
+    importe_cancelado: Decimal
+    cantidad_vencidas: int
+    cantidad_canceladas: int
+    cantidad_anuladas: int
+
+
+class VentaDetalleIntegralData(VentaDetailData):
+    uid_global: str
+    id_reserva_venta: int | None
+    observaciones: str | None
+    created_at: datetime
+    updated_at: datetime
+    reserva_origen: VentaOrigenConReservaData | None
+    condiciones_comerciales: VentaCondicionesComercialesData
+    partes: list[VentaParteData]
+    relacion_financiera: VentaRelacionFinancieraData | None
+    obligaciones_financieras: list[VentaObligacionFinancieraData]
+    resumen_financiero: VentaResumenFinancieroData
+
+
+class VentaDetalleIntegralResponse(BaseModel):
+    ok: Literal[True] = True
+    data: VentaDetalleIntegralData
+
+
 class ErrorResponse(BaseModel):
     ok: Literal[False] = False
     error_code: str

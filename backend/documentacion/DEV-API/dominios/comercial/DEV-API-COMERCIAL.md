@@ -823,7 +823,7 @@ Response:
 #### `GET /api/v1/ventas/{id_venta}`
 
 Objetivo:
-- consulta integral de una `venta` como read model enriquecido
+- consulta enriquecida de una `venta` como read model operativo
 - exponer datos persistidos de la `venta` y su trazabilidad comercial asociada
 - incluir origen desde `reserva_venta` cuando exista
 - incluir objetos inmobiliarios asociados con su `disponibilidad` y `ocupacion` actualmente conocidas
@@ -1001,6 +1001,59 @@ Observaciones de alineacion con arquitectura:
 - la consulta no debe interpretarse como cierre operativo del activo ni como mutacion del estado inmobiliario
 - la presencia de `instrumento_compraventa`, `cesion` o `escrituracion` no redefine por si sola `estado_venta`
 - este contrato no expone `requiere_definicion_operativa`
+
+#### `GET /api/v1/ventas/{id_venta}/detalle-integral`
+
+Objetivo:
+- consulta integral read-only de una `venta`
+- exponer venta base, reserva origen, objetos, condiciones comerciales simples, partes comerciales, instrumentos, cesiones, escrituraciones, integracion inmobiliaria y estado financiero asociado
+- permitir una vista completa para operar bloques posteriores sin ejecutar logica financiera ni modificar datos
+
+Naturaleza del endpoint:
+- operacion `read only`
+- sin efectos persistentes
+- sin mutacion de `venta`, `reserva_venta`, `relacion_persona_rol`, `disponibilidad`, `ocupacion`, `relacion_generadora` ni `obligacion_financiera`
+- sin creacion de compradores ni obligados
+- sin creacion de `movimiento_financiero`, `aplicacion_financiera` ni `movimiento_tesoreria`
+- sin `outbox` ni `inbox`
+- sin recalculo de deuda
+- sin ejecucion de mora ni punitorio
+- sin `If-Match-Version` y sin headers write
+
+Datos incluidos:
+- datos base de `venta`, incluyendo `uid_global`, `id_reserva_venta`, `observaciones`, `created_at` y `updated_at`
+- `reserva_origen` cuando exista
+- `objetos` con lectura operativa actual ya disponible en `GET /api/v1/ventas/{id_venta}`
+- `condiciones_comerciales` derivadas de:
+  - `venta.monto_total`
+  - `venta.observaciones`
+  - `venta_objeto_inmobiliario.precio_asignado`
+  - `moneda = null` porque SQL real de `venta` no materializa moneda
+- `partes` desde `relacion_persona_rol`, `rol_participacion` y `persona`, filtrando `tipo_relacion = venta` e `id_relacion = id_venta`
+- `instrumentos_compraventa`, `cesiones` y `escrituraciones` como arrays directos
+- `integracion_inmobiliaria` en el mismo criterio que el detalle enriquecido existente
+- `relacion_financiera` cuando exista `relacion_generadora` para `tipo_origen = venta` e `id_origen = id_venta`, tolerando casing por normalizacion `LOWER(tipo_origen)`
+- `obligaciones_financieras` asociadas a la relacion, con composiciones, conceptos y obligados si existen
+- `resumen_financiero` construido solo con saldos persistidos
+
+Comportamiento financiero:
+- si la venta no tiene relacion financiera, `relacion_financiera = null`, `obligaciones_financieras = []` y el resumen financiero queda en cero
+- si la venta confirmada ya fue procesada por financiero, se devuelve la relacion generadora `tipo_origen = venta` y sus obligaciones, por ejemplo la obligacion V1 `CAPITAL_VENTA`
+- el endpoint no materializa el plan financiero de venta, no crea obligaciones y no resuelve obligados
+- el endpoint no implementa anticipo, cuotas, saldo extraordinario, cancelacion anticipada, rescision ni cesion real con cambio de comprador
+
+Resumen financiero:
+- `cantidad_obligaciones`
+- `saldo_total`
+- `saldo_pendiente`
+- `importe_cancelado`
+- `cantidad_vencidas`
+- `cantidad_canceladas`
+- `cantidad_anuladas`
+
+Errores posibles:
+- `404 NOT_FOUND`: la `venta` no existe o se encuentra dada de baja logica
+- `500 INTERNAL_ERROR`: error inesperado al construir la vista de lectura
 
 ### 7.3 `instrumento_compraventa`
 

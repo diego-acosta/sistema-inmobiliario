@@ -58,6 +58,8 @@ from app.api.schemas.comercial import (
     ReservaVentaUpdateResponse,
     VentaDetailData,
     VentaDetailResponse,
+    VentaDetalleIntegralData,
+    VentaDetalleIntegralResponse,
     VentaObjetoData,
 )
 from app.application.comercial.commands.activate_reserva_venta import (
@@ -152,6 +154,9 @@ from app.application.comercial.services.update_reserva_venta_service import (
     UpdateReservaVentaService,
 )
 from app.application.comercial.services.get_venta_service import GetVentaService
+from app.application.comercial.services.get_venta_detalle_integral_service import (
+    GetVentaDetalleIntegralService,
+)
 from app.application.common.commands import CommandContext
 from app.infrastructure.persistence.repositories.comercial_repository import (
     ComercialRepository,
@@ -1605,6 +1610,41 @@ def get_venta(
         return JSONResponse(status_code=404, content=error.model_dump())
 
     return VentaDetailResponse(data=VentaDetailData(**result.data))
+
+
+@router.get(
+    "/api/v1/ventas/{id_venta}/detalle-integral",
+    response_model=VentaDetalleIntegralResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_venta_detalle_integral(
+    id_venta: int,
+    db: Session = Depends(get_db),
+) -> VentaDetalleIntegralResponse | JSONResponse:
+    repository = ComercialRepository(db)
+    service = GetVentaDetalleIntegralService(repository=repository)
+
+    try:
+        result = service.execute(id_venta)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="La venta indicada no existe.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return VentaDetalleIntegralResponse(data=VentaDetalleIntegralData(**result.data))
 
 
 @router.post(

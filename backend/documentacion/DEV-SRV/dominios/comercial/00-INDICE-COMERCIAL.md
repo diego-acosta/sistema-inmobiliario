@@ -22,6 +22,7 @@ Alcance implementado real del `v1`:
   - generar `venta`
 - `venta`
   - detalle enriquecido
+  - detalle integral read-only con partes y estado financiero asociado
   - definir condiciones comerciales
   - confirmar
 - recursos hijos de `venta`
@@ -32,6 +33,9 @@ Alcance implementado real del `v1`:
   - emision de `venta_confirmada`
   - emision de `escrituracion_registrada`
   - lectura de estado de integracion por venta
+- integracion `comercial -> financiero`
+  - lectura read-only de `relacion_generadora` y obligaciones asociadas a una venta
+  - sin recalculo de deuda, sin mora y sin generacion de obligaciones desde la consulta
 
 Backlog fuera de `v1`:
 
@@ -42,7 +46,9 @@ Backlog fuera de `v1`:
 - detalle individual de recursos hijos
 - reportes amplios o analiticos
 - documental comercial propia
-- integracion con financiero
+- plan financiero avanzado de venta
+- rescision financiera/comercial de venta
+- cesion real con cambio de comprador y ajuste de obligados
 
 ## Catalogos del dominio
 
