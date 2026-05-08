@@ -131,6 +131,16 @@ reduce o cancela `SERVICIO_TRASLADADO`, pero no representa cobro de la
 inmobiliaria: no crea movimiento de caja, no crea `movimiento_tesoreria`, no
 usa `codigo_pago_grupo` y no genera constancia interna de cobro.
 
+Observacion futura sobre `PAGO_EXTERNO_INFORMADO`: en V1 existen
+implementaciones separadas para pago externo informado de servicio trasladado y
+de impuesto trasladado. Esta separacion es intencional: el pago externo de
+servicio opera sobre `factura_servicio` y `SERVICIO_TRASLADADO`, mientras que el
+pago externo de impuesto opera sobre `liquidacion_impuesto_trasladado` e
+`IMPUESTO_TRASLADADO`. No se abstrae todavia porque los origenes, validaciones
+y reglas de responsabilidad son distintos. Si aparece un tercer origen que use
+`PAGO_EXTERNO_INFORMADO`, se evaluara una abstraccion comun por estrategia de
+origen.
+
 `DIRECTO_RESPONSABLE` debe entenderse en V1 como una factura/servicio de
 responsabilidad 100% de una persona que paga directamente al proveedor. No
 aplica a facturas comunes, compartidas, porcentuales ni repartidas.
