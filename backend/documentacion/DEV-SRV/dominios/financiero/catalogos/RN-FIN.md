@@ -483,11 +483,11 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - observaciones: `importe_anticipo + importe_saldo` debe coincidir con `venta.monto_total`. El saldo ordinario no usa `SALDO_EXTRAORDINARIO`. Ambas obligaciones usan comprador canonico `COMPRADOR` al 100%.
 
 ### RN-COM-FIN-001 - Obligado comprador de venta V1
-- descripcion: La materializacion financiera de `venta_confirmada` debe resolver exactamente un comprador canonico desde `relacion_persona_rol` y `rol_participacion` con `tipo_relacion = venta`, `id_relacion = id_venta` y `codigo_rol = COMPRADOR`. Si existe uno solo, crea `obligacion_obligado` para la obligacion `CAPITAL_VENTA` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00`.
+- descripcion: La materializacion financiera de `venta_confirmada` debe resolver exactamente un comprador canonico desde `relacion_persona_rol` y `rol_participacion` con `tipo_relacion = venta`, `id_relacion = id_venta` y `codigo_rol = COMPRADOR`. Si existe uno solo, crea `obligacion_obligado` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00` para cada obligacion financiera generada por el plan de venta V1.
 - aplica_a: venta, relacion_persona_rol, rol_participacion, relacion_generadora, obligacion_financiera, obligacion_obligado
 - origen_principal: SRV-FIN-014-plan-financiero-venta
 - estado: IMPLEMENTADA V1.
-- observaciones: si no existe comprador canonico devuelve `COMPRADOR_VENTA_NO_RESUELTO`; si existen multiples compradores canonicos devuelve `COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO`. V1 no usa `cliente_comprador`, no infiere porcentajes, no crea multiples obligados y no implementa cuotas, anticipo ni plan financiero avanzado.
+- observaciones: si no existe comprador canonico devuelve `COMPRADOR_VENTA_NO_RESUELTO`; si existen multiples compradores canonicos devuelve `COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO`. V1 no usa `cliente_comprador`, no infiere porcentajes, no crea multiples obligados y no implementa cuotas, intereses, indexacion ni plan financiero avanzado.
 
 ### RN-FIN-069 — Reduccion de saldo controlada
 - descripcion: Ninguna transicion puede reducir saldo sin `aplicacion_financiera`, anulacion formal o credito documentado.
