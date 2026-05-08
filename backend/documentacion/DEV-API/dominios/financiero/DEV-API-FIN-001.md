@@ -346,6 +346,32 @@ Campos de alcance opcionales:
 - `id_relacion_generadora`
 - `alcance_pago`: `OBLIGACION`, `RELACION_GENERADORA` o `GLOBAL_PERSONA`
 
+Ejemplos de alcance:
+
+```json
+{
+  "monto": 5000.00,
+  "fecha_pago": "2026-05-20",
+  "id_obligacion_financiera": 10
+}
+```
+
+```json
+{
+  "monto": 5000.00,
+  "fecha_pago": "2026-05-20",
+  "id_relacion_generadora": 20
+}
+```
+
+```json
+{
+  "monto": 5000.00,
+  "fecha_pago": "2026-05-20",
+  "alcance_pago": "GLOBAL_PERSONA"
+}
+```
+
 Reglas:
 
 - con `id_obligacion_financiera`, imputa solo esa obligacion si pertenece a

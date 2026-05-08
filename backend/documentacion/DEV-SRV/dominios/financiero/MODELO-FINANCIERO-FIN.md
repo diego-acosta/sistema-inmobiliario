@@ -870,6 +870,46 @@ Reglas:
 
 Referencia: `SRV-FIN-019-registro-pago-persona`
 
+### Diferencia entre pagos implementados
+
+Pago normal por persona:
+
+- endpoint: `POST /api/v1/financiero/pagos?id_persona={id}`
+- registra cobro interno de la inmobiliaria contra deuda de la persona
+- crea `movimiento_financiero.tipo_movimiento = PAGO`
+- crea `aplicacion_financiera` contra composiciones con saldo
+- usa `uid_pago_grupo` y `codigo_pago_grupo`
+- puede liquidar `PUNITORIO` accesorio dentro de las obligaciones alcanzadas
+- no debe cruzar relaciones/origenes salvo `alcance_pago = GLOBAL_PERSONA`
+  explicito
+
+Pago scoped por obligacion o relacion:
+
+- usa el mismo endpoint de pago normal por persona
+- `id_obligacion_financiera` limita la imputacion a una obligacion de la
+  persona
+- `id_relacion_generadora` limita la imputacion a obligaciones abiertas de esa
+  relacion para la persona
+- la prioridad de conceptos y el orden entre obligaciones operan solo dentro
+  del alcance efectivo
+- `PUNITORIO` se imputa como componente accesorio de la obligacion alcanzada,
+  no como deuda autonoma
+
+Pago externo informado:
+
+- registra un pago hecho por el responsable a un tercero, no un cobro de la
+  inmobiliaria
+- usa `movimiento_financiero.tipo_movimiento = PAGO_EXTERNO_INFORMADO` y
+  `aplicacion_financiera.tipo_aplicacion = PAGO_EXTERNO_INFORMADO`
+- no crea `movimiento_tesoreria`, caja, recibo interno,
+  `uid_pago_grupo` ni `codigo_pago_grupo`
+- en servicio trasladado opera sobre `factura_servicio` materializada y
+  composicion `SERVICIO_TRASLADADO`
+- en impuesto trasladado opera sobre `liquidacion_impuesto_trasladado` y
+  composicion `IMPUESTO_TRASLADADO`
+- no liquida punitorio; solo informa y aplica el pago externo contra el saldo
+  permitido por el flujo correspondiente
+
 Integraciones por evento implementadas:
 
 - Comercial -> Financiero:
