@@ -992,7 +992,18 @@ class FinancieroRepository:
                 o.estado_obligacion,
                 o.fecha_vencimiento,
                 o.importe_total,
-                o.saldo_pendiente
+                o.saldo_pendiente,
+                COALESCE((
+                    SELECT SUM(c.saldo_componente)
+                    FROM composicion_obligacion c
+                    JOIN concepto_financiero cf
+                      ON cf.id_concepto_financiero = c.id_concepto_financiero
+                    WHERE c.id_obligacion_financiera = o.id_obligacion_financiera
+                      AND c.estado_composicion_obligacion = 'ACTIVA'
+                      AND c.deleted_at IS NULL
+                      AND cf.deleted_at IS NULL
+                      AND cf.aplica_punitorio = true
+                ), 0) AS saldo_morable
             FROM obligacion_financiera o
             WHERE {where}
             ORDER BY o.id_obligacion_financiera DESC
@@ -1046,7 +1057,7 @@ class FinancieroRepository:
         items = []
         for row in ob_rows:
             mora = _calcular_mora_dinamica(
-                row["saldo_pendiente"],
+                row["saldo_morable"],
                 row["fecha_vencimiento"],
                 fecha_corte,
             )
@@ -1094,7 +1105,18 @@ class FinancieroRepository:
                 rg.tipo_origen,
                 rg.id_origen,
                 o.fecha_vencimiento,
-                o.saldo_pendiente
+                o.saldo_pendiente,
+                COALESCE((
+                    SELECT SUM(c.saldo_componente)
+                    FROM composicion_obligacion c
+                    JOIN concepto_financiero cf
+                      ON cf.id_concepto_financiero = c.id_concepto_financiero
+                    WHERE c.id_obligacion_financiera = o.id_obligacion_financiera
+                      AND c.estado_composicion_obligacion = 'ACTIVA'
+                      AND c.deleted_at IS NULL
+                      AND cf.deleted_at IS NULL
+                      AND cf.aplica_punitorio = true
+                ), 0) AS saldo_morable
             FROM obligacion_financiera o
             JOIN relacion_generadora rg
                 ON rg.id_relacion_generadora = o.id_relacion_generadora
@@ -1126,7 +1148,7 @@ class FinancieroRepository:
                 id_origen=row["id_origen"],
             )
             mora = _calcular_mora_dinamica(
-                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte, resolucion
+                row["saldo_morable"], row["fecha_vencimiento"], fecha_corte, resolucion
             )
             saldo = Decimal(str(row["saldo_pendiente"]))
             mora_dec = Decimal(str(mora["mora_calculada"]))
@@ -1304,7 +1326,8 @@ class FinancieroRepository:
                 c.orden_composicion,
                 c.estado_composicion_obligacion,
                 c.importe_componente,
-                c.saldo_componente
+                c.saldo_componente,
+                cf.aplica_punitorio
             FROM composicion_obligacion c
             JOIN concepto_financiero cf
                 ON cf.id_concepto_financiero = c.id_concepto_financiero
@@ -1352,6 +1375,7 @@ class FinancieroRepository:
                     ],
                     "importe_componente": float(row["importe_componente"]),
                     "saldo_componente": float(row["saldo_componente"]),
+                    "aplica_punitorio": row["aplica_punitorio"],
                 }
             )
 
@@ -1373,11 +1397,22 @@ class FinancieroRepository:
         fecha_corte = date.today()
         obligaciones = []
         for row in ob_rows:
+            composiciones = comps_by_ob[row["id_obligacion_financiera"]]
+            saldo_morable = sum(
+                Decimal(str(comp["saldo_componente"]))
+                for comp in composiciones
+                if comp["estado_composicion_obligacion"] == "ACTIVA"
+                and comp["aplica_punitorio"]
+            )
             mora = _calcular_mora_dinamica(
-                row["saldo_pendiente"],
+                saldo_morable,
                 row["fecha_vencimiento"],
                 fecha_corte,
             )
+            composiciones_response = [
+                {k: v for k, v in comp.items() if k != "aplica_punitorio"}
+                for comp in composiciones
+            ]
             obligaciones.append(
                 {
                     "id_obligacion_financiera": row["id_obligacion_financiera"],
@@ -1387,7 +1422,7 @@ class FinancieroRepository:
                     "importe_total": float(row["importe_total"]),
                     "saldo_pendiente": float(row["saldo_pendiente"]),
                     **mora,
-                    "composiciones": comps_by_ob[row["id_obligacion_financiera"]],
+                    "composiciones": composiciones_response,
                     "aplicaciones": aplics_by_ob[row["id_obligacion_financiera"]],
                 }
             )
@@ -7409,7 +7444,8 @@ class FinancieroRepository:
                     cf.codigo_concepto_financiero,
                     c.importe_componente,
                     c.saldo_componente,
-                    c.estado_composicion_obligacion
+                    c.estado_composicion_obligacion,
+                    cf.aplica_punitorio
                 FROM composicion_obligacion c
                 JOIN concepto_financiero cf
                     ON cf.id_concepto_financiero = c.id_concepto_financiero
@@ -7434,6 +7470,7 @@ class FinancieroRepository:
                         "estado_composicion_obligacion": comp[
                             "estado_composicion_obligacion"
                         ],
+                        "aplica_punitorio": comp["aplica_punitorio"],
                     }
                 )
 
@@ -7459,13 +7496,23 @@ class FinancieroRepository:
                 for comp in composiciones
             }
             grupo = _grupo_por_origen(str(row["tipo_origen"]), codigos)
+            saldo_morable = sum(
+                Decimal(str(comp["saldo_componente"]))
+                for comp in composiciones
+                if comp["estado_composicion_obligacion"] == "ACTIVA"
+                and comp["aplica_punitorio"]
+            )
+            composiciones_response = [
+                {k: v for k, v in comp.items() if k != "aplica_punitorio"}
+                for comp in composiciones
+            ]
 
             resolucion = resolver_mora_params(
                 tipo_origen=str(row["tipo_origen"]).upper(),
                 id_origen=row["id_origen"],
             )
             mora = _calcular_mora_dinamica(
-                row["saldo_pendiente"], row["fecha_vencimiento"], fecha_corte, resolucion
+                saldo_morable, row["fecha_vencimiento"], fecha_corte, resolucion
             )
             mora_dec = Decimal(str(mora["mora_calculada"]))
 
@@ -7500,7 +7547,7 @@ class FinancieroRepository:
                 "monto_responsabilidad": float(monto_resp),
                 **mora,
                 "total_con_mora": float(total_con_mora_ob),
-                "composiciones": composiciones,
+                "composiciones": composiciones_response,
             }
             obligaciones.append(obligacion_item)
 
@@ -7532,7 +7579,7 @@ class FinancieroRepository:
                     "periodo_desde": row["periodo_desde"],
                     "periodo_hasta": row["periodo_hasta"],
                     "saldo_pendiente": float(saldo),
-                    "composiciones": composiciones,
+                    "composiciones": composiciones_response,
                 }
             )
 

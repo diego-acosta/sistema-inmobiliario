@@ -2434,6 +2434,76 @@ def test_liquidacion_recupero_pago_normal_cancela_y_no_toca_egreso_base(
     assert dict(egreso_base_despues) == dict(egreso_base_antes)
 
 
+def test_pago_normal_servicio_recuperado_vencido_genera_punitorio_si_aplica(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-PUNIT-APLICA"
+    )
+    assert _registrar_egreso_proveedor(client, db_session, id_factura).status_code == 201
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    id_obligacion = liquidacion.json()["data"]["id_obligacion_financiera"]
+    aplica_antes = db_session.execute(
+        text(
+            """
+            SELECT aplica_punitorio
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'SERVICIO_RECUPERADO'
+            """
+        )
+    ).scalar_one()
+
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers={**HEADERS, "X-Op-Id": "aaaaaaaa-0000-4000-8000-000000000102"},
+        params={"id_persona": id_persona},
+        json={"monto": 1.00, "fecha_pago": "2026-06-20"},
+    )
+
+    assert pago.status_code == 201, pago.text
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                co.saldo_componente,
+                lp.base_morable,
+                lp.importe_liquidado,
+                cf.aplica_punitorio
+            FROM composicion_obligacion co
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+            JOIN liquidacion_punitorio lp
+              ON lp.id_composicion_obligacion = co.id_composicion_obligacion
+            WHERE co.id_obligacion_financiera = :id_obligacion
+              AND cf.codigo_concepto_financiero = 'PUNITORIO'
+              AND co.deleted_at IS NULL
+              AND lp.deleted_at IS NULL
+            """
+        ),
+        {"id_obligacion": id_obligacion},
+    ).mappings().one()
+    aplica_despues = db_session.execute(
+        text(
+            """
+            SELECT aplica_punitorio
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'SERVICIO_RECUPERADO'
+            """
+        )
+    ).scalar_one()
+
+    assert aplica_antes is True
+    assert aplica_despues is True
+    assert row["aplica_punitorio"] is False
+    assert float(row["base_morable"]) == 25000.0
+    assert float(row["importe_liquidado"]) > 0.0
+
+
 def test_anular_egreso_proveedor_usado_en_liquidacion_recupero_bloquea(
     client, db_session
 ) -> None:

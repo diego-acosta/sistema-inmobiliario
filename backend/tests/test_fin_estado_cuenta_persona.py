@@ -1061,6 +1061,79 @@ def test_estado_cuenta_persona_muestra_impuesto_trasladado_en_trasladados(
     )
 
 
+def test_estado_cuenta_persona_servicio_recuperado_mora_por_aplica_punitorio(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="ECP-MORA-REC"
+    )
+    egreso = _registrar_egreso_proveedor(client, db_session, id_factura)
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.0}],
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+
+    resp = client.get(
+        _url(id_persona),
+        headers=HEADERS,
+        params={"fecha_corte": "2026-06-20"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    obligacion = data["obligaciones"][0]
+    mora_esperada = 25000.00 * TASA_DIARIA_MORA * 5
+    assert obligacion["composiciones"][0]["codigo_concepto_financiero"] == (
+        "SERVICIO_RECUPERADO"
+    )
+    assert obligacion["mora_calculada"] == pytest.approx(mora_esperada)
+    assert data["resumen"]["mora_calculada"] == pytest.approx(mora_esperada)
+
+
+def test_estado_cuenta_persona_impuesto_trasladado_no_mora_por_default(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(client, nombre="Impuesto", apellido="SinMora")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-ECP-IMP-SIN-MORA",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000ec11",
+    )
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000ec12",
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+
+    resp = client.get(
+        _url(id_persona),
+        headers=HEADERS,
+        params={"fecha_corte": "2026-06-20"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    obligacion = data["obligaciones"][0]
+    assert obligacion["composiciones"][0]["codigo_concepto_financiero"] == (
+        "IMPUESTO_TRASLADADO"
+    )
+    assert obligacion["mora_calculada"] == pytest.approx(0.0)
+    assert data["resumen"]["mora_calculada"] == pytest.approx(0.0)
+
+
 def test_estado_cuenta_persona_excluye_cancelada_sin_saldo_por_default(
     client, db_session
 ) -> None:

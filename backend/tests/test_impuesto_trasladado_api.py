@@ -2142,6 +2142,78 @@ def test_liquidacion_impuesto_empresa_recupera_pago_normal_cancela_y_no_toca_egr
     assert dict(egreso_base_despues) == dict(egreso_base_antes)
 
 
+def test_pago_normal_impuesto_trasladado_vencido_no_genera_punitorio_por_default(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-SIN-PUNIT")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-SIN-PUNIT",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000f411",
+    )
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f412",
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    id_obligacion = liquidacion.json()["data"]["id_obligacion_financiera"]
+    aplica_antes = db_session.execute(
+        text(
+            """
+            SELECT aplica_punitorio
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'IMPUESTO_TRASLADADO'
+            """
+        )
+    ).scalar_one()
+
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers=_headers_op("00000000-0000-0000-0000-00000000f413"),
+        params={"id_persona": id_persona},
+        json={"monto": 1.00, "fecha_pago": "2026-06-20"},
+    )
+
+    assert pago.status_code == 201, pago.text
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                (SELECT COUNT(*)
+                   FROM composicion_obligacion co
+                   JOIN concepto_financiero cf
+                     ON cf.id_concepto_financiero = co.id_concepto_financiero
+                  WHERE co.id_obligacion_financiera = :id_obligacion
+                    AND cf.codigo_concepto_financiero = 'PUNITORIO'
+                    AND co.deleted_at IS NULL) AS punitorios,
+                (SELECT COUNT(*)
+                   FROM liquidacion_punitorio lp
+                  WHERE lp.id_obligacion_financiera = :id_obligacion
+                    AND lp.deleted_at IS NULL) AS liquidaciones,
+                (SELECT aplica_punitorio
+                   FROM concepto_financiero
+                  WHERE codigo_concepto_financiero = 'IMPUESTO_TRASLADADO') AS aplica_despues
+            """
+        ),
+        {"id_obligacion": id_obligacion},
+    ).mappings().one()
+
+    assert aplica_antes is False
+    assert row["aplica_despues"] is False
+    assert row["punitorios"] == 0
+    assert row["liquidaciones"] == 0
+
+
 def test_get_liquidacion_impuesto_directo_responsable_sin_egresos(
     client, db_session
 ) -> None:
