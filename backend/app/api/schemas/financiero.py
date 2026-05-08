@@ -421,6 +421,59 @@ class AnularLiquidacionImpuestoTrasladadoResponse(BaseModel):
     data: AnularLiquidacionImpuestoTrasladadoData
 
 
+class PagoExternoImpuestoTrasladadoRequest(BaseModel):
+    id_persona: int | None = None
+    fecha_pago: date
+    importe_pagado: float
+    medio_pago: str
+    referencia_comprobante: str | None = None
+    observaciones: str | None = None
+
+    @field_validator("id_persona")
+    @classmethod
+    def id_persona_positive(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("id_persona debe ser mayor que cero.")
+        return v
+
+    @field_validator("importe_pagado")
+    @classmethod
+    def importe_pagado_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("importe_pagado debe ser mayor que cero.")
+        return v
+
+    @field_validator("medio_pago")
+    @classmethod
+    def medio_pago_not_blank(cls, v: str) -> str:
+        medio = v.strip()
+        if not medio:
+            raise ValueError("medio_pago es obligatorio.")
+        return medio
+
+
+class PagoExternoImpuestoTrasladadoData(BaseModel):
+    resultado: str | None = None
+    id_liquidacion_impuesto_trasladado: int
+    id_relacion_generadora: int
+    id_obligacion_financiera: int
+    id_movimiento_financiero: int
+    id_aplicacion_financiera: int
+    id_persona: int
+    importe_informado: float
+    importe_aplicado: float
+    remanente_no_aplicado: float
+    saldo_obligacion_posterior: float
+    crea_movimiento_tesoreria: bool = False
+    crea_recibo: bool = False
+    tipo_movimiento: str
+
+
+class PagoExternoImpuestoTrasladadoResponse(BaseModel):
+    ok: bool = True
+    data: PagoExternoImpuestoTrasladadoData
+
+
 class ConceptoFinancieroData(BaseModel):
     id_concepto_financiero: int
     codigo_concepto_financiero: str

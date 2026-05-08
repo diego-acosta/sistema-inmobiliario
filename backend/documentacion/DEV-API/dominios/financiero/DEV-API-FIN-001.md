@@ -52,6 +52,7 @@ Este documento describe los endpoints financieros actualmente implementados en b
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `POST /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/pago-externo`
 - `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular`
 
 ### EMPRESA_PAGA_Y_RECUPERA
@@ -744,6 +745,77 @@ Reglas:
 - incluye liquidaciones no eliminadas, activas o anuladas futuras;
 - no modifica saldos ni estado de cuenta.
 
+### POST /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/pago-externo
+
+Objetivo: registrar pago externo informado por el responsable al organismo
+fiscal para liquidaciones `DIRECTO_RESPONSABLE`.
+
+Request:
+
+```json
+{
+  "id_persona": 123,
+  "fecha_pago": "2026-05-20",
+  "importe_pagado": 15000.00,
+  "medio_pago": "TRANSFERENCIA",
+  "referencia_comprobante": "COMPROBANTE-ORGANISMO-001",
+  "observaciones": "Pago informado por responsable al organismo"
+}
+```
+
+`id_persona` es opcional solo cuando la liquidacion tiene un unico responsable.
+Con multiples responsables es obligatorio.
+
+Response resumida:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "resultado": "REGISTRADO",
+    "id_liquidacion_impuesto_trasladado": 1,
+    "id_relacion_generadora": 2,
+    "id_obligacion_financiera": 10,
+    "id_movimiento_financiero": 20,
+    "id_aplicacion_financiera": 30,
+    "id_persona": 123,
+    "importe_informado": 15000.00,
+    "importe_aplicado": 15000.00,
+    "remanente_no_aplicado": 0.00,
+    "saldo_obligacion_posterior": 0.00,
+    "crea_movimiento_tesoreria": false,
+    "crea_recibo": false,
+    "tipo_movimiento": "PAGO_EXTERNO_INFORMADO"
+  }
+}
+```
+
+Reglas:
+
+- aplica solo a `liquidacion_impuesto_trasladado` `EMITIDA` y modalidad
+  `DIRECTO_RESPONSABLE`;
+- bloquea `ANULADA`, `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`;
+- requiere obligacion activa y composicion `IMPUESTO_TRASLADADO` con saldo;
+- no permite informar mas que el saldo imputable a la responsabilidad de la
+  persona;
+- crea `movimiento_financiero` y `aplicacion_financiera` con tipo
+  `PAGO_EXTERNO_INFORMADO`;
+- no crea `movimiento_tesoreria`, caja, egreso de impuesto, grupo de pago ni
+  recibo interno;
+- con `X-Op-Id`, mismo payload devuelve 200 con resultado existente y payload
+  distinto devuelve 409.
+
+Errores principales:
+
+- `LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND`
+- `LIQUIDACION_IMPUESTO_TRASLADADO_ANULADA`
+- `PAGO_EXTERNO_IMPUESTO_NO_APLICA_MODALIDAD`
+- `OBLIGACION_IMPUESTO_TRASLADADO_NO_EXISTE`
+- `SIN_SALDO_APLICABLE`
+- `RESPONSABLE_IMPUESTO_NO_VALIDO`
+- `PAGO_EXTERNO_IMPUESTO_SUPERA_RESPONSABILIDAD`
+- `IDEMPOTENCY_PAYLOAD_CONFLICT`
+
 ### PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular
 
 Objetivo: anular de forma conservadora una liquidacion de impuesto trasladado
@@ -1291,7 +1363,8 @@ Modalidades V1:
 - `EMPRESA_ASUME`: registra egreso de tesoreria y no genera obligacion al
   responsable.
 - `DIRECTO_RESPONSABLE`: puede liquidar obligacion `IMPUESTO_TRASLADADO` sin
-  egreso empresa; el pago informado externo queda pendiente.
+  egreso empresa y registrar pago externo informado sin tesoreria ni recibo
+  interno.
 - `EMPRESA_PAGA_Y_RECUPERA`: registra egreso de tesoreria, luego liquida
   recupero como obligacion `IMPUESTO_TRASLADADO`, requiere egreso disponible y
   el responsable paga a la empresa por flujo normal.
@@ -1301,6 +1374,7 @@ Endpoint de liquidacion implementado:
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `POST /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}/pago-externo`
 - `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion}/anular`
 
 Endpoints futuros a definir, no implementados:

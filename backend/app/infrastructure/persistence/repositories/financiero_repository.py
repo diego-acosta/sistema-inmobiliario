@@ -1646,6 +1646,34 @@ class FinancieroRepository:
         row = self.db.execute(stmt, {"id": id_obligacion_financiera}).mappings().one_or_none()
         return dict(row) if row else None
 
+    def get_composicion_impuesto_trasladado_con_saldo(
+        self, id_obligacion_financiera: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                c.id_composicion_obligacion,
+                c.id_obligacion_financiera,
+                c.orden_composicion,
+                c.importe_componente,
+                c.saldo_componente,
+                cf.codigo_concepto_financiero
+            FROM composicion_obligacion c
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = c.id_concepto_financiero
+            WHERE c.id_obligacion_financiera = :id
+              AND c.estado_composicion_obligacion = 'ACTIVA'
+              AND c.deleted_at IS NULL
+              AND cf.deleted_at IS NULL
+              AND cf.codigo_concepto_financiero = 'IMPUESTO_TRASLADADO'
+              AND c.saldo_componente > 0
+            ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"id": id_obligacion_financiera}).mappings().one_or_none()
+        return dict(row) if row else None
+
     def create_imputacion(self, payload: Any) -> dict[str, Any]:
         mov = payload.movimiento
         mov_values = self._values(mov)
@@ -2756,6 +2784,72 @@ class FinancieroRepository:
             "payload_idempotencia": payload,
         }
 
+    def get_pago_externo_impuesto_trasladado_by_op_id(
+        self, *, op_id: Any
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                m.id_movimiento_financiero,
+                m.fecha_movimiento,
+                m.importe AS importe_aplicado,
+                m.observaciones,
+                a.id_aplicacion_financiera,
+                a.id_obligacion_financiera,
+                a.id_composicion_obligacion,
+                o.id_relacion_generadora,
+                o.estado_obligacion AS estado_obligacion_resultante,
+                o.saldo_pendiente AS saldo_obligacion_posterior
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = a.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            WHERE m.op_id_alta = :op_id
+              AND m.tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+              AND m.deleted_at IS NULL
+            ORDER BY m.id_movimiento_financiero ASC
+            """
+        )
+        rows = self.db.execute(stmt, {"op_id": op_id}).mappings().all()
+        for row in rows:
+            payload = None
+            if row["observaciones"]:
+                try:
+                    parsed = json.loads(row["observaciones"])
+                    if parsed.get("tipo") == "pago_externo_impuesto_trasladado":
+                        payload = parsed
+                except (TypeError, ValueError):
+                    payload = None
+            if payload is None:
+                continue
+
+            return {
+                "id_liquidacion_impuesto_trasladado": int(
+                    payload["id_liquidacion_impuesto_trasladado"]
+                ),
+                "id_relacion_generadora": row["id_relacion_generadora"],
+                "id_obligacion_financiera": row["id_obligacion_financiera"],
+                "id_movimiento_financiero": row["id_movimiento_financiero"],
+                "id_aplicacion_financiera": row["id_aplicacion_financiera"],
+                "id_persona": int(payload["id_persona"]),
+                "importe_informado": float(payload["importe_pagado"]),
+                "importe_aplicado": float(row["importe_aplicado"]),
+                "remanente_no_aplicado": float(
+                    payload.get("remanente_no_aplicado", 0)
+                ),
+                "saldo_obligacion_posterior": float(
+                    row["saldo_obligacion_posterior"]
+                ),
+                "crea_movimiento_tesoreria": False,
+                "crea_recibo": False,
+                "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
+                "payload_idempotencia": payload,
+            }
+        return None
+
     def get_cuenta_financiera_by_id(
         self, id_cuenta_financiera: int
     ) -> dict[str, Any] | None:
@@ -3829,6 +3923,117 @@ class FinancieroRepository:
             "responsables": responsables,
             "obligacion": obligacion,
         }
+
+    def get_liquidacion_impuesto_trasladado_para_pago_externo(
+        self, id_liquidacion_impuesto_trasladado: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                lit.id_liquidacion_impuesto_trasladado,
+                lit.estado_liquidacion,
+                lit.modalidad_gestion_impuesto,
+                lit.importe_total_trasladar,
+                lit.id_relacion_generadora,
+                lit.id_obligacion_financiera,
+                o.estado_obligacion,
+                o.saldo_pendiente
+            FROM liquidacion_impuesto_trasladado lit
+            LEFT JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = lit.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            WHERE lit.id_liquidacion_impuesto_trasladado = :id
+              AND lit.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            stmt, {"id": id_liquidacion_impuesto_trasladado}
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+
+        responsables_stmt = text(
+            """
+            SELECT
+                id_persona,
+                porcentaje_responsabilidad,
+                importe_responsable
+            FROM liquidacion_impuesto_trasladado_responsable
+            WHERE id_liquidacion_impuesto_trasladado = :id
+            ORDER BY id_liquidacion_impuesto_trasladado_responsable ASC
+            """
+        )
+        responsables = [
+            {
+                "id_persona": r["id_persona"],
+                "porcentaje_responsabilidad": float(
+                    r["porcentaje_responsabilidad"]
+                ),
+                "importe_responsable": float(r["importe_responsable"]),
+            }
+            for r in self.db.execute(
+                responsables_stmt, {"id": id_liquidacion_impuesto_trasladado}
+            ).mappings().all()
+        ]
+        return {
+            "id_liquidacion_impuesto_trasladado": row[
+                "id_liquidacion_impuesto_trasladado"
+            ],
+            "estado_liquidacion": row["estado_liquidacion"],
+            "modalidad_gestion_impuesto": row["modalidad_gestion_impuesto"],
+            "importe_total_trasladar": float(row["importe_total_trasladar"]),
+            "id_relacion_generadora": row["id_relacion_generadora"],
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "estado_obligacion": row["estado_obligacion"],
+            "saldo_pendiente": (
+                float(row["saldo_pendiente"])
+                if row["saldo_pendiente"] is not None
+                else None
+            ),
+            "responsables": responsables,
+        }
+
+    def get_pagos_externos_impuesto_persona_aplicados(
+        self,
+        *,
+        id_liquidacion_impuesto_trasladado: int,
+        id_persona: int,
+    ) -> Decimal:
+        stmt = text(
+            """
+            SELECT m.observaciones, a.importe_aplicado
+            FROM movimiento_financiero m
+            JOIN aplicacion_financiera a
+              ON a.id_movimiento_financiero = m.id_movimiento_financiero
+             AND a.deleted_at IS NULL
+            WHERE m.tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+              AND m.estado_movimiento = 'APLICADO'
+              AND m.deleted_at IS NULL
+            """
+        )
+        total = Decimal("0.00")
+        for row in self.db.execute(stmt).mappings().all():
+            if not row["observaciones"]:
+                continue
+            try:
+                payload = json.loads(row["observaciones"])
+            except (TypeError, ValueError):
+                continue
+            if payload.get("tipo") != "pago_externo_impuesto_trasladado":
+                continue
+            try:
+                payload_liquidacion = int(
+                    payload["id_liquidacion_impuesto_trasladado"]
+                )
+                payload_persona = int(payload["id_persona"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (
+                payload_liquidacion == id_liquidacion_impuesto_trasladado
+                and payload_persona == id_persona
+            ):
+                total += Decimal(str(row["importe_aplicado"]))
+        return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     def list_liquidaciones_impuesto_trasladado_by_comprobante(
         self, id_comprobante_impuesto: int
@@ -5463,6 +5668,141 @@ class FinancieroRepository:
             "estado_obligacion_resultante": estado_row["estado_obligacion"],
             "impacta_caja": False,
             "genera_recibo_interno": False,
+        }
+
+    def registrar_pago_externo_impuesto_trasladado(
+        self, payload: Any
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+        mov_stmt = text(
+            """
+            INSERT INTO movimiento_financiero (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                fecha_movimiento, tipo_movimiento, importe, signo, estado_movimiento,
+                observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :fecha_movimiento, :tipo_movimiento, :importe, :signo,
+                :estado_movimiento, :observaciones
+            )
+            RETURNING id_movimiento_financiero
+            """
+        )
+        aplic_stmt = text(
+            """
+            INSERT INTO aplicacion_financiera (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_movimiento_financiero, id_obligacion_financiera,
+                id_composicion_obligacion, fecha_aplicacion,
+                tipo_aplicacion, orden_aplicacion, importe_aplicado,
+                origen_automatico_o_manual, observaciones
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_movimiento_financiero, :id_obligacion_financiera,
+                :id_composicion_obligacion, :fecha_aplicacion,
+                :tipo_aplicacion, :orden_aplicacion, :importe_aplicado,
+                :origen_automatico_o_manual, :observaciones
+            )
+            RETURNING id_aplicacion_financiera
+            """
+        )
+        estado_stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET estado_obligacion = CASE
+                    WHEN saldo_pendiente = 0             THEN 'CANCELADA'
+                    WHEN saldo_pendiente < importe_total THEN 'PARCIALMENTE_CANCELADA'
+                    ELSE estado_obligacion
+                END
+            WHERE id_obligacion_financiera = :id
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            RETURNING estado_obligacion, saldo_pendiente
+            """
+        )
+
+        mov_row = self.db.execute(
+            mov_stmt,
+            {
+                "uid_global": values["uid_global_movimiento"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "fecha_movimiento": datetime.combine(
+                    values["fecha_pago"], datetime.min.time()
+                ),
+                "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
+                "importe": values["importe_aplicado"],
+                "signo": "CREDITO",
+                "estado_movimiento": "APLICADO",
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+        id_movimiento = mov_row["id_movimiento_financiero"]
+
+        aplic_row = self.db.execute(
+            aplic_stmt,
+            {
+                "uid_global": values["uid_global_aplicacion"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_movimiento_financiero": id_movimiento,
+                "id_obligacion_financiera": values["id_obligacion_financiera"],
+                "id_composicion_obligacion": values["id_composicion_obligacion"],
+                "fecha_aplicacion": datetime.combine(
+                    values["fecha_pago"], datetime.min.time()
+                ),
+                "tipo_aplicacion": "PAGO_EXTERNO_INFORMADO",
+                "orden_aplicacion": 1,
+                "importe_aplicado": values["importe_aplicado"],
+                "origen_automatico_o_manual": "MANUAL",
+                "observaciones": values["observaciones"],
+            },
+        ).mappings().one()
+
+        estado_row = self.db.execute(
+            estado_stmt,
+            {"id": values["id_obligacion_financiera"]},
+        ).mappings().one()
+
+        return {
+            "id_liquidacion_impuesto_trasladado": values[
+                "id_liquidacion_impuesto_trasladado"
+            ],
+            "id_relacion_generadora": values["id_relacion_generadora"],
+            "id_obligacion_financiera": values["id_obligacion_financiera"],
+            "id_movimiento_financiero": id_movimiento,
+            "id_aplicacion_financiera": aplic_row["id_aplicacion_financiera"],
+            "id_persona": values["id_persona"],
+            "importe_informado": float(values["importe_informado"]),
+            "importe_aplicado": float(values["importe_aplicado"]),
+            "remanente_no_aplicado": float(values["remanente_no_aplicado"]),
+            "saldo_obligacion_posterior": float(estado_row["saldo_pendiente"]),
+            "crea_movimiento_tesoreria": False,
+            "crea_recibo": False,
+            "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
         }
 
     def registrar_egreso_proveedor_factura_servicio(

@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `IMPLEMENTADA V1`
-- implementacion: registro y consulta de `comprobante_impuesto`, egreso empresa, consulta, anulacion, liquidacion `IMPUESTO_TRASLADADO`, consulta formal, listado por comprobante, anulacion conservadora y bloqueo de egreso base usado por liquidacion activa implementados. Submodulo `impuesto_trasladado` cerrado en V1.
+- implementacion: registro y consulta de `comprobante_impuesto`, egreso empresa, consulta, anulacion, liquidacion `IMPUESTO_TRASLADADO`, consulta formal, listado por comprobante, pago externo informado `DIRECTO_RESPONSABLE`, anulacion conservadora y bloqueo de egreso base usado por liquidacion activa implementados. Submodulo `impuesto_trasladado` cerrado en V1.
 - dominio owner: `financiero`
 - origen operativo: `comprobante_impuesto`
 - clasificacion: nucleo financiero para traslado de impuestos, tasas o contribuciones a responsables
@@ -48,6 +48,7 @@ Endpoints implementados:
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `POST /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/pago-externo`
 - `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular`
 
 Reglas implementadas:
@@ -102,9 +103,8 @@ Reglas:
 - no requiere `egreso_impuesto_empresa`;
 - la base de liquidacion es `comprobante_impuesto.importe_total`;
 - los responsables son explicitos, con porcentajes positivos que suman 100%;
-- el pago informado externo queda pendiente;
-- cuando se implemente, el pago externo no debe crear caja, tesoreria ni recibo
-  interno;
+- el pago externo informado esta implementado sobre la liquidacion fiscal;
+- el pago externo no crea caja, tesoreria, egreso de empresa ni recibo interno;
 - reduce saldo mediante movimiento/aplicacion financiera de tipo
   `PAGO_EXTERNO_INFORMADO`, con reglas analogas al escenario
   `DIRECTO_RESPONSABLE` de servicios, pero sobre origen fiscal propio.
@@ -211,6 +211,7 @@ Endpoint implementado:
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `POST /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/pago-externo`
 - `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular`
 
 Estructura persistida:
@@ -274,6 +275,43 @@ Anulacion conservadora implementada:
 - no borra registros fisicamente;
 - no modifica pagos, comprobantes existentes ni egresos de empresa.
 
+### Pago externo informado DIRECTO_RESPONSABLE
+
+Endpoint implementado:
+
+- `POST /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/pago-externo`
+
+Reglas:
+
+- aplica solo a liquidaciones `EMITIDA` con modalidad `DIRECTO_RESPONSABLE`;
+- bloquea liquidaciones `ANULADA`, `EMPRESA_ASUME` y
+  `EMPRESA_PAGA_Y_RECUPERA`;
+- requiere relacion generadora, obligacion activa y composicion activa
+  `IMPUESTO_TRASLADADO` con saldo;
+- si hay un responsable unico, `id_persona` puede omitirse y se resuelve desde
+  la liquidacion;
+- si hay multiples responsables, `id_persona` es obligatorio;
+- no permite informar mas que el saldo imputable a la responsabilidad de la
+  persona;
+- crea `movimiento_financiero.tipo_movimiento = PAGO_EXTERNO_INFORMADO`;
+- crea `aplicacion_financiera.tipo_aplicacion = PAGO_EXTERNO_INFORMADO`;
+- reduce saldos mediante los triggers de composicion/aplicacion financiera;
+- no crea `movimiento_tesoreria`, caja, egreso de impuesto, codigo de grupo de
+  pago ni recibo interno;
+- usa idempotencia por `X-Op-Id`: mismo payload devuelve el resultado existente,
+  payload distinto devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`.
+
+Errores principales:
+
+- `LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND`;
+- `LIQUIDACION_IMPUESTO_TRASLADADO_ANULADA`;
+- `PAGO_EXTERNO_IMPUESTO_NO_APLICA_MODALIDAD`;
+- `OBLIGACION_IMPUESTO_TRASLADADO_NO_EXISTE`;
+- `SIN_SALDO_APLICABLE`;
+- `RESPONSABLE_IMPUESTO_NO_VALIDO`;
+- `PAGO_EXTERNO_IMPUESTO_SUPERA_RESPONSABILIDAD`;
+- `IDEMPOTENCY_PAYLOAD_CONFLICT`.
+
 ## Estado de cuenta
 
 Las obligaciones activas con composicion `IMPUESTO_TRASLADADO` deben verse en
@@ -285,7 +323,6 @@ aparecer en estado de cuenta del responsable.
 ## Fuera de alcance V1
 
 - usar `factura_servicio` para impuestos;
-- pago externo informado de impuesto;
 - expensas formales;
 - crear `IMPUESTO_RECUPERADO`;
 - maestro catastral completo;

@@ -511,8 +511,8 @@ SRV-FIN-012
   - `EMPRESA_ASUME`: la empresa paga, se registra tesoreria con
     `egreso_impuesto_empresa` y no se genera obligacion al responsable
   - `DIRECTO_RESPONSABLE`: puede generar obligacion `IMPUESTO_TRASLADADO`,
-    requiere unico responsable 100% y el pago informado es externo, sin caja ni
-    tesoreria
+    permite pago informado externo contra la liquidacion y no crea caja,
+    tesoreria ni recibo interno
   - `EMPRESA_PAGA_Y_RECUPERA`: la empresa paga al organismo con tesoreria y
     `egreso_impuesto_empresa`; luego liquida recupero como obligacion
     `IMPUESTO_TRASLADADO`; el cobro posterior usa pago normal por persona
@@ -534,6 +534,10 @@ SRV-FIN-012
 - la liquidacion no crea `movimiento_tesoreria` ni
   `PAGO_EXTERNO_INFORMADO`, no toca `comprobante_impuesto` ni
   `egreso_impuesto_empresa`
+- el pago externo informado de `DIRECTO_RESPONSABLE` crea
+  `movimiento_financiero` y `aplicacion_financiera` de tipo
+  `PAGO_EXTERNO_INFORMADO`, reduce saldo de `IMPUESTO_TRASLADADO`, exige
+  responsable compatible y no toca tesoreria ni egresos
 - la consulta read-only de `liquidacion_impuesto_trasladado` expone detalle con
   comprobantes, egresos si corresponden, responsables, relacion generadora,
   obligacion, composiciones y obligados

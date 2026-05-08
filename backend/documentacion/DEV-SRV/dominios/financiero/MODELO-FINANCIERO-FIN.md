@@ -490,8 +490,8 @@ sin efectos financieros, y egreso empresa para `EMPRESA_ASUME` y
 `EMPRESA_PAGA_Y_RECUPERA`, incluyendo consulta y anulacion logica del egreso.
 La liquidacion `IMPUESTO_TRASLADADO` V1 esta implementada mediante entidad
 propia `liquidacion_impuesto_trasladado`, con consultas read-only de detalle,
-listado por comprobante y anulacion conservadora. El pago externo informado de
-impuesto queda fuera del cierre V1.
+listado por comprobante, pago externo informado `DIRECTO_RESPONSABLE` y
+anulacion conservadora.
 
 Modalidades V1:
 
@@ -513,8 +513,10 @@ Modalidades V1:
    - no requiere egreso de empresa;
    - los responsables se informan explicitamente y sus porcentajes deben sumar
      100%;
-   - el pago informado externo queda pendiente;
-   - no impacta caja, tesoreria ni recibo interno.
+   - el pago externo informado se registra contra la liquidacion con
+     `PAGO_EXTERNO_INFORMADO`;
+   - reduce saldos mediante `aplicacion_financiera`;
+   - no impacta caja, tesoreria, egreso de empresa ni recibo interno.
 
 3. `EMPRESA_PAGA_Y_RECUPERA`
    - la empresa paga al organismo;
@@ -546,11 +548,14 @@ conservadora. Fase 1 crea cabecera, snapshots, `relacion_generadora`
 `liquidacion_impuesto_trasladado`, obligacion `EMITIDA`, composicion
 `IMPUESTO_TRASLADADO` y `obligacion_obligado`. Las consultas read-only permiten
 ver detalle de la liquidacion y listar liquidaciones por comprobante sin crear
-movimientos ni modificar saldos. La anulacion conservadora de la liquidacion
-bloquea pagos, aplicaciones, punitorios y operaciones posteriores; si procede,
-anula liquidacion, relacion generadora, obligacion y composiciones, y libera
-logicamente vinculos `liquidacion_impuesto_trasladado_egreso` sin tocar
-tesoreria ni `egreso_impuesto_empresa`.
+movimientos ni modificar saldos. El pago externo informado aplica solo a
+`DIRECTO_RESPONSABLE`, crea `movimiento_financiero` y `aplicacion_financiera`
+de tipo `PAGO_EXTERNO_INFORMADO`, exige responsable compatible y no permite
+exceder su responsabilidad pendiente. La anulacion conservadora de la
+liquidacion bloquea pagos, aplicaciones, punitorios y operaciones posteriores;
+si procede, anula liquidacion, relacion generadora, obligacion y composiciones,
+y libera logicamente vinculos `liquidacion_impuesto_trasladado_egreso` sin
+tocar tesoreria ni `egreso_impuesto_empresa`.
 
 Referencia: `SRV-FIN-021-impuestos-trasladados`.
 
