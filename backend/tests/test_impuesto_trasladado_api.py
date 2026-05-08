@@ -2000,6 +2000,148 @@ def test_liquidacion_impuesto_pago_normal_reduce_saldo(client, db_session) -> No
     assert float(saldo) == 0.0
 
 
+def test_liquidacion_impuesto_empresa_recupera_pago_normal_cancela_y_no_toca_egreso_base(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-PAGO-REC")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-PAGO-REC",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000f401",
+    )
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f402",
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    data_liq = liquidacion.json()["data"]
+    id_obligacion = data_liq["id_obligacion_financiera"]
+    id_liquidacion = data_liq["id_liquidacion_impuesto_trasladado"]
+
+    estado_antes = client.get(
+        f"/api/v1/financiero/personas/{id_persona}/estado-cuenta",
+        headers=HEADERS,
+    )
+    assert estado_antes.status_code == 200, estado_antes.text
+    assert estado_antes.json()["data"]["resumen"]["saldo_trasladados"] == 15000.0
+
+    egreso_base_antes = db_session.execute(
+        text(
+            """
+            SELECT
+                eie.id_egreso_impuesto_empresa,
+                eie.estado_egreso,
+                eie.importe_pagado,
+                mt.id_movimiento_tesoreria,
+                mt.estado AS estado_movimiento_tesoreria,
+                lite.estado_liquidacion_impuesto_egreso,
+                lite.deleted_at
+            FROM egreso_impuesto_empresa eie
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = eie.id_movimiento_tesoreria
+            JOIN liquidacion_impuesto_trasladado_egreso lite
+              ON lite.id_egreso_impuesto_empresa = eie.id_egreso_impuesto_empresa
+            WHERE lite.id_liquidacion_impuesto_trasladado = :id_liquidacion
+            """
+        ),
+        {"id_liquidacion": id_liquidacion},
+    ).mappings().one()
+
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers=_headers_op("00000000-0000-0000-0000-00000000f403"),
+        params={"id_persona": id_persona},
+        json={"monto": 15000.00, "fecha_pago": "2026-05-30"},
+    )
+
+    assert pago.status_code == 201, pago.text
+    assert pago.json()["data"]["obligaciones_pagadas"][0][
+        "id_obligacion_financiera"
+    ] == id_obligacion
+
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                o.estado_obligacion,
+                o.saldo_pendiente,
+                co.saldo_componente,
+                cf.codigo_concepto_financiero,
+                m.tipo_movimiento,
+                a.tipo_aplicacion,
+                (SELECT COUNT(*)
+                   FROM movimiento_financiero mx
+                   JOIN aplicacion_financiera ax
+                     ON ax.id_movimiento_financiero = mx.id_movimiento_financiero
+                  WHERE ax.id_obligacion_financiera = o.id_obligacion_financiera
+                    AND mx.tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+                    AND mx.deleted_at IS NULL
+                    AND ax.deleted_at IS NULL) AS pagos_externos
+            FROM obligacion_financiera o
+            JOIN composicion_obligacion co
+              ON co.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+            JOIN aplicacion_financiera a
+              ON a.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN movimiento_financiero m
+              ON m.id_movimiento_financiero = a.id_movimiento_financiero
+            WHERE o.id_obligacion_financiera = :id_obligacion
+              AND m.tipo_movimiento = 'PAGO'
+            """
+        ),
+        {"id_obligacion": id_obligacion},
+    ).mappings().one()
+
+    assert row["estado_obligacion"] == "CANCELADA"
+    assert float(row["saldo_pendiente"]) == 0.0
+    assert float(row["saldo_componente"]) == 0.0
+    assert row["codigo_concepto_financiero"] == "IMPUESTO_TRASLADADO"
+    assert row["tipo_movimiento"] == "PAGO"
+    assert row["tipo_aplicacion"] == "PAGO"
+    assert row["pagos_externos"] == 0
+
+    estado_despues = client.get(
+        f"/api/v1/financiero/personas/{id_persona}/estado-cuenta",
+        headers=HEADERS,
+    )
+    assert estado_despues.status_code == 200, estado_despues.text
+    assert estado_despues.json()["data"]["resumen"]["saldo_trasladados"] == 0.0
+
+    egreso_base_despues = db_session.execute(
+        text(
+            """
+            SELECT
+                eie.id_egreso_impuesto_empresa,
+                eie.estado_egreso,
+                eie.importe_pagado,
+                mt.id_movimiento_tesoreria,
+                mt.estado AS estado_movimiento_tesoreria,
+                lite.estado_liquidacion_impuesto_egreso,
+                lite.deleted_at
+            FROM egreso_impuesto_empresa eie
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = eie.id_movimiento_tesoreria
+            JOIN liquidacion_impuesto_trasladado_egreso lite
+              ON lite.id_egreso_impuesto_empresa = eie.id_egreso_impuesto_empresa
+            WHERE lite.id_liquidacion_impuesto_trasladado = :id_liquidacion
+            """
+        ),
+        {"id_liquidacion": id_liquidacion},
+    ).mappings().one()
+    assert dict(egreso_base_despues) == dict(egreso_base_antes)
+
+
 def test_get_liquidacion_impuesto_directo_responsable_sin_egresos(
     client, db_session
 ) -> None:

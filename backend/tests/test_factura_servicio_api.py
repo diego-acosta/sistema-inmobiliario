@@ -2308,6 +2308,132 @@ def test_liquidacion_recupero_pago_posterior_usa_flujo_normal_pago_persona(
     assert float(saldo) == 0.0
 
 
+def test_liquidacion_recupero_pago_normal_cancela_y_no_toca_egreso_base(
+    client, db_session
+) -> None:
+    id_factura, _, _, id_persona = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="REC-PAGO-NORMAL"
+    )
+    egreso = _registrar_egreso_proveedor(client, db_session, id_factura)
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.00}],
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    data_liq = liquidacion.json()["data"]
+    id_obligacion = data_liq["id_obligacion_financiera"]
+    id_liquidacion = data_liq["id_liquidacion_recupero"]
+
+    estado_antes = client.get(f"/api/v1/financiero/personas/{id_persona}/estado-cuenta")
+    assert estado_antes.status_code == 200, estado_antes.text
+    assert estado_antes.json()["data"]["resumen"]["saldo_trasladados"] == 25000.0
+
+    egreso_base_antes = db_session.execute(
+        text(
+            """
+            SELECT
+                e.id_egreso_proveedor_factura_servicio,
+                e.estado_egreso,
+                e.importe_pagado,
+                mt.id_movimiento_tesoreria,
+                mt.estado AS estado_movimiento_tesoreria,
+                lre.estado_liquidacion_recupero_egreso,
+                lre.deleted_at
+            FROM egreso_proveedor_factura_servicio e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+            JOIN liquidacion_recupero_egreso lre
+              ON lre.id_egreso_proveedor_factura_servicio =
+                 e.id_egreso_proveedor_factura_servicio
+            WHERE lre.id_liquidacion_recupero = :id_liquidacion
+            """
+        ),
+        {"id_liquidacion": id_liquidacion},
+    ).mappings().one()
+
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers={**HEADERS, "X-Op-Id": "aaaaaaaa-0000-4000-8000-000000000101"},
+        params={"id_persona": id_persona},
+        json={"monto": 25000.00, "fecha_pago": "2026-05-30"},
+    )
+
+    assert pago.status_code == 201, pago.text
+    assert pago.json()["data"]["obligaciones_pagadas"][0]["id_obligacion_financiera"] == id_obligacion
+
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                o.estado_obligacion,
+                o.saldo_pendiente,
+                co.saldo_componente,
+                cf.codigo_concepto_financiero,
+                m.tipo_movimiento,
+                a.tipo_aplicacion,
+                (SELECT COUNT(*)
+                   FROM movimiento_financiero mx
+                   JOIN aplicacion_financiera ax
+                     ON ax.id_movimiento_financiero = mx.id_movimiento_financiero
+                  WHERE ax.id_obligacion_financiera = o.id_obligacion_financiera
+                    AND mx.tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
+                    AND mx.deleted_at IS NULL
+                    AND ax.deleted_at IS NULL) AS pagos_externos
+            FROM obligacion_financiera o
+            JOIN composicion_obligacion co
+              ON co.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+            JOIN aplicacion_financiera a
+              ON a.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN movimiento_financiero m
+              ON m.id_movimiento_financiero = a.id_movimiento_financiero
+            WHERE o.id_obligacion_financiera = :id_obligacion
+              AND m.tipo_movimiento = 'PAGO'
+            """
+        ),
+        {"id_obligacion": id_obligacion},
+    ).mappings().one()
+
+    assert row["estado_obligacion"] == "CANCELADA"
+    assert float(row["saldo_pendiente"]) == 0.0
+    assert float(row["saldo_componente"]) == 0.0
+    assert row["codigo_concepto_financiero"] == "SERVICIO_RECUPERADO"
+    assert row["tipo_movimiento"] == "PAGO"
+    assert row["tipo_aplicacion"] == "PAGO"
+    assert row["pagos_externos"] == 0
+
+    estado_despues = client.get(f"/api/v1/financiero/personas/{id_persona}/estado-cuenta")
+    assert estado_despues.status_code == 200, estado_despues.text
+    assert estado_despues.json()["data"]["resumen"]["saldo_trasladados"] == 0.0
+
+    egreso_base_despues = db_session.execute(
+        text(
+            """
+            SELECT
+                e.id_egreso_proveedor_factura_servicio,
+                e.estado_egreso,
+                e.importe_pagado,
+                mt.id_movimiento_tesoreria,
+                mt.estado AS estado_movimiento_tesoreria,
+                lre.estado_liquidacion_recupero_egreso,
+                lre.deleted_at
+            FROM egreso_proveedor_factura_servicio e
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = e.id_movimiento_tesoreria
+            JOIN liquidacion_recupero_egreso lre
+              ON lre.id_egreso_proveedor_factura_servicio =
+                 e.id_egreso_proveedor_factura_servicio
+            WHERE lre.id_liquidacion_recupero = :id_liquidacion
+            """
+        ),
+        {"id_liquidacion": id_liquidacion},
+    ).mappings().one()
+    assert dict(egreso_base_despues) == dict(egreso_base_antes)
+
+
 def test_anular_egreso_proveedor_usado_en_liquidacion_recupero_bloquea(
     client, db_session
 ) -> None:
