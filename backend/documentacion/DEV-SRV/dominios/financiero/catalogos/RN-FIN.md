@@ -494,7 +494,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - aplica_a: venta, relacion_persona_rol, rol_participacion, relacion_generadora, obligacion_financiera, obligacion_obligado
 - origen_principal: SRV-FIN-014-plan-financiero-venta
 - estado: IMPLEMENTADA V1.
-- observaciones: si no existe comprador canonico devuelve `COMPRADOR_VENTA_NO_RESUELTO`; si existen multiples compradores canonicos devuelve `COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO`. V1 no usa `cliente_comprador`, no infiere porcentajes, no crea multiples obligados y no implementa cuotas, intereses, indexacion ni plan financiero avanzado.
+- observaciones: si no existe comprador canonico devuelve `COMPRADOR_VENTA_NO_RESUELTO`; si existen multiples compradores canonicos devuelve `COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO`. V1 no usa `cliente_comprador`, no infiere porcentajes ni crea multiples obligados. Las cuotas fijas se rigen por RN-COM-FIN-000C; no implementa intereses, indexacion ni plan financiero avanzado.
 
 ### RN-FIN-069 — Reduccion de saldo controlada
 - descripcion: Ninguna transicion puede reducir saldo sin `aplicacion_financiera`, anulacion formal o credito documentado.
