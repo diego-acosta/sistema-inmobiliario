@@ -262,6 +262,12 @@ En `POST /api/v1/financiero/pagos`, cada obligacion afectada conserva su propio
 `codigo_pago_grupo` agrupan los movimientos creados por la misma operacion de
 pago, sin modificar las relaciones con `aplicacion_financiera`.
 
+El alcance de imputacion del pago se define en el contrato API: obligacion
+especifica, relacion generadora especifica o `GLOBAL_PERSONA` explicito. Sin
+alcance explicito solo se admite compatibilidad cuando la persona tiene deuda
+abierta de una unica relacion generadora. `PUNITORIO` se conserva como
+componente accesorio de la obligacion alcanzada, no como deuda autonoma.
+
 ### 4.6 aplicacion_financiera
 
 #### Descripción

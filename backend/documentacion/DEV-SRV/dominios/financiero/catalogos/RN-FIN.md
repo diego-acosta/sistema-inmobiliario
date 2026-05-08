@@ -390,12 +390,12 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - aplica_a: aplicacion_financiera, obligacion_financiera, composicion_obligacion
 - origen_principal: MODELO-FINANCIERO-FIN
 
-### RN-FIN-060 — Prioridad de distribucion de pago global
-- descripcion: Cuando un pago global deba distribuirse hacia componentes, la prioridad base V1 es `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre. `INTERES_MORA` queda solo como compatibilidad heredada y no se usa como concepto activo de mora persistida en V1.
+### RN-FIN-060 — Prioridad de distribucion de pago dentro del alcance
+- descripcion: Cuando un pago deba distribuirse hacia componentes, la prioridad base V1 es `PUNITORIO`, `CARGO_ADMINISTRATIVO`, `INTERES_FINANCIERO`, `AJUSTE_INDEXACION`, capitales/canones/trasladados, y luego otros conceptos de cierre. Esta prioridad se aplica dentro del alcance efectivo del pago (`OBLIGACION`, `RELACION_GENERADORA` o `GLOBAL_PERSONA` explicito) y no autoriza mezcla automatica de deudas de distintas relaciones/origenes. `INTERES_MORA` queda solo como compatibilidad heredada y no se usa como concepto activo de mora persistida en V1.
 - aplica_a: aplicacion_financiera, composicion_obligacion, concepto_financiero
 - origen_principal: MODELO-FINANCIERO-FIN
-- estado: IMPLEMENTADA PARCIALMENTE en `POST /api/v1/financiero/imputaciones`.
-- observaciones: La implementacion actual distribuye dentro de una obligacion, genera una o mas aplicaciones y usa `orden_aplicacion`.
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/imputaciones` y `POST /api/v1/financiero/pagos`.
+- observaciones: La implementacion distribuye dentro de cada obligacion alcanzada, genera una o mas aplicaciones y usa `orden_aplicacion`. `PUNITORIO` es accesorio de la obligacion que lo contiene.
 
 ### RN-FIN-061 — Cancelacion exige componentes sin saldo
 - descripcion: No debe permitirse que una obligacion figure cancelada si alguna composicion activa conserva `saldo_componente > 0`.

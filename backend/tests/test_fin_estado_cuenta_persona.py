@@ -213,6 +213,107 @@ def _crear_deuda_venta_para_persona(
     }
 
 
+def _relacion_por_contrato(db_session, id_contrato: int) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT id_relacion_generadora
+            FROM relacion_generadora
+            WHERE tipo_origen = 'contrato_alquiler'
+              AND id_origen = :id_contrato
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {"id_contrato": id_contrato},
+    ).scalar_one()
+
+
+def _pagar_persona(
+    client,
+    *,
+    id_persona: int,
+    monto: float,
+    fecha_pago: str = "2026-05-10",
+    **scope,
+) -> dict:
+    body = {"monto": monto, "fecha_pago": fecha_pago}
+    body.update(scope)
+    response = client.post(
+        "/api/v1/financiero/pagos",
+        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        params={"id_persona": id_persona},
+        json=body,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["data"]
+
+
+def _obligacion_por_relacion(db_session, id_relacion_generadora: int) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT id_obligacion_financiera
+            FROM obligacion_financiera
+            WHERE id_relacion_generadora = :id_rg
+              AND deleted_at IS NULL
+            ORDER BY id_obligacion_financiera ASC
+            LIMIT 1
+            """
+        ),
+        {"id_rg": id_relacion_generadora},
+    ).scalar_one()
+
+
+def _agregar_punitorio_manual(db_session, *, id_obligacion: int, importe: Decimal) -> None:
+    id_concepto = db_session.execute(
+        text(
+            """
+            SELECT id_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'PUNITORIO'
+              AND deleted_at IS NULL
+            """
+        )
+    ).scalar_one()
+    orden = db_session.execute(
+        text(
+            """
+            SELECT COALESCE(MAX(orden_composicion), 0) + 1
+            FROM composicion_obligacion
+            WHERE id_obligacion_financiera = :id_obligacion
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id_obligacion": id_obligacion},
+    ).scalar_one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_concepto_financiero,
+                orden_composicion, importe_componente, saldo_componente
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                :id_obligacion, :id_concepto, :orden, :importe, :importe
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_obligacion": id_obligacion,
+            "id_concepto": id_concepto,
+            "orden": orden,
+            "importe": importe,
+        },
+    )
+
+
 # ── tests ─────────────────────────────────────────────────────────────────────
 
 def test_estado_cuenta_persona_con_deuda_devuelve_resumen_correcto(client, db_session) -> None:
@@ -1059,6 +1160,260 @@ def test_estado_cuenta_persona_muestra_impuesto_trasladado_en_trasladados(
     assert obligacion["composiciones"][0]["codigo_concepto_financiero"] == (
         "IMPUESTO_TRASLADADO"
     )
+
+
+def test_estado_cuenta_persona_post_pago_por_relacion_reduce_solo_alquiler(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup_contrato_con_obligaciones(
+        client,
+        db_session,
+        codigo="ECP-PAGO-SCOPE-LOC",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=1000.00,
+        dia_vencimiento_canon=20,
+    )
+    id_rg_locativo = _relacion_por_contrato(
+        db_session, contrato["id_contrato_alquiler"]
+    )
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="ECP-PAGO-SCOPE-REC"
+    )
+    egreso = _registrar_egreso_proveedor(
+        client, db_session, id_factura, importe=500.00
+    )
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.0}],
+        importe=500.00,
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    id_rg_recupero = liquidacion.json()["data"]["id_relacion_generadora"]
+
+    _pagar_persona(
+        client,
+        id_persona=id_persona,
+        monto=400.00,
+        id_relacion_generadora=id_rg_locativo,
+    )
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    grupos = {g["grupo_origen_deuda"]: g for g in data["grupos_deuda"]}
+    assert data["resumen"]["saldo_locativo"] == pytest.approx(600.00)
+    assert data["resumen"]["saldo_trasladados"] == pytest.approx(500.00)
+    locativo = grupos["LOCATIVO"]["relaciones"][0]
+    trasladados = grupos["TRASLADADOS"]["relaciones"][0]
+    assert locativo["id_relacion_generadora"] == id_rg_locativo
+    assert locativo["saldo_total"] == pytest.approx(600.00)
+    assert trasladados["id_relacion_generadora"] == id_rg_recupero
+    assert trasladados["saldo_total"] == pytest.approx(500.00)
+
+
+def test_estado_cuenta_persona_post_pago_por_relacion_reduce_solo_impuesto(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup_contrato_con_obligaciones(
+        client,
+        db_session,
+        codigo="ECP-PAGO-SCOPE-IMP",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=1000.00,
+    )
+    id_rg_locativo = _relacion_por_contrato(
+        db_session, contrato["id_contrato_alquiler"]
+    )
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-ECP-PAGO-SCOPE-IMP",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+        importe_total=500.00,
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        importe_pagado=500.00,
+        op_id="00000000-0000-0000-0000-00000000ed01",
+    )
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        importe_total_trasladar=500.00,
+        op_id="00000000-0000-0000-0000-00000000ed02",
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    impuesto = liquidacion.json()["data"]
+
+    _pagar_persona(
+        client,
+        id_persona=id_persona,
+        monto=300.00,
+        id_relacion_generadora=impuesto["id_relacion_generadora"],
+    )
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    grupos = {g["grupo_origen_deuda"]: g for g in data["grupos_deuda"]}
+    assert data["resumen"]["saldo_locativo"] == pytest.approx(1000.00)
+    assert data["resumen"]["saldo_trasladados"] == pytest.approx(200.00)
+    assert grupos["LOCATIVO"]["relaciones"][0]["id_relacion_generadora"] == id_rg_locativo
+    assert grupos["LOCATIVO"]["relaciones"][0]["saldo_total"] == pytest.approx(1000.00)
+    assert grupos["TRASLADADOS"]["relaciones"][0]["id_relacion_generadora"] == (
+        impuesto["id_relacion_generadora"]
+    )
+    assert grupos["TRASLADADOS"]["relaciones"][0]["saldo_total"] == pytest.approx(200.00)
+
+
+def test_estado_cuenta_persona_post_pago_global_explicito_refleja_orden_global(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(client, nombre="Global", apellido="Explicito")
+    venta = _crear_deuda_venta_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        codigo="ECP-PAGO-GLOBAL-VTA",
+        monto=Decimal("1000.00"),
+    )
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="ECP-PAGO-GLOBAL-REC"
+    )
+    egreso = _registrar_egreso_proveedor(
+        client, db_session, id_factura, importe=500.00
+    )
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.0}],
+        importe=500.00,
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    recupero = liquidacion.json()["data"]
+
+    data_pago = _pagar_persona(
+        client,
+        id_persona=id_persona,
+        monto=1200.00,
+        alcance_pago="GLOBAL_PERSONA",
+    )
+
+    assert [o["id_obligacion_financiera"] for o in data_pago["obligaciones_pagadas"]] == [
+        venta["id_obligacion_financiera"],
+        recupero["id_obligacion_financiera"],
+    ]
+    resp = client.get(_url(id_persona), headers=HEADERS)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["resumen"]["saldo_total"] == pytest.approx(300.00)
+    assert data["resumen"]["saldo_venta"] == pytest.approx(0.00)
+    assert data["resumen"]["saldo_trasladados"] == pytest.approx(300.00)
+    assert data["grupos_deuda"][0]["grupo_origen_deuda"] == "TRASLADADOS"
+    assert data["grupos_deuda"][0]["relaciones"][0]["id_relacion_generadora"] == (
+        recupero["id_relacion_generadora"]
+    )
+
+
+def test_estado_cuenta_persona_punitorio_queda_en_relacion_de_obligacion(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup_contrato_con_obligaciones(
+        client,
+        db_session,
+        codigo="ECP-PUNIT-ACCESORIO",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=500.00,
+    )
+    id_rg = _relacion_por_contrato(db_session, contrato["id_contrato_alquiler"])
+    id_ob = _obligacion_por_relacion(db_session, id_rg)
+    _agregar_punitorio_manual(db_session, id_obligacion=id_ob, importe=Decimal("100.00"))
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert [g["grupo_origen_deuda"] for g in data["grupos_deuda"]] == ["LOCATIVO"]
+    relacion = data["grupos_deuda"][0]["relaciones"][0]
+    assert relacion["id_relacion_generadora"] == id_rg
+    codigos = {
+        c["codigo_concepto_financiero"]
+        for c in relacion["obligaciones"][0]["composiciones"]
+    }
+    assert codigos == {"CANON_LOCATIVO", "PUNITORIO"}
+    assert relacion["saldo_total"] == pytest.approx(600.00)
+
+
+def test_deuda_consolidada_post_pago_por_relacion_muestra_saldos_aislados(
+    client, db_session
+) -> None:
+    id_persona, contrato = _setup_contrato_con_obligaciones(
+        client,
+        db_session,
+        codigo="ECP-DEUDA-CAN",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-05-31",
+        monto=1000.00,
+        dia_vencimiento_canon=20,
+    )
+    id_rg_canon = _relacion_por_contrato(db_session, contrato["id_contrato_alquiler"])
+    id_ob_canon = _obligacion_por_relacion(db_session, id_rg_canon)
+    id_factura, _, _, _ = _crear_factura_servicio_con_responsable(
+        client, db_session, codigo="ECP-DEUDA-REC"
+    )
+    egreso = _registrar_egreso_proveedor(
+        client, db_session, id_factura, importe=500.00
+    )
+    assert egreso.status_code == 201, egreso.text
+    liquidacion = _liquidar_recupero(
+        client,
+        id_factura,
+        [{"id_persona": id_persona, "porcentaje_responsabilidad": 100.0}],
+        importe=500.00,
+    )
+    assert liquidacion.status_code == 201, liquidacion.text
+    recupero = liquidacion.json()["data"]
+
+    _pagar_persona(
+        client,
+        id_persona=id_persona,
+        monto=400.00,
+        id_relacion_generadora=id_rg_canon,
+    )
+
+    deuda_canon = client.get(
+        "/api/v1/financiero/deuda",
+        headers=HEADERS,
+        params={"id_relacion_generadora": id_rg_canon},
+    )
+    deuda_recupero = client.get(
+        "/api/v1/financiero/deuda",
+        headers=HEADERS,
+        params={"id_relacion_generadora": recupero["id_relacion_generadora"]},
+    )
+
+    assert deuda_canon.status_code == 200, deuda_canon.text
+    assert deuda_recupero.status_code == 200, deuda_recupero.text
+    item_canon = deuda_canon.json()["data"]["items"][0]
+    item_recupero = deuda_recupero.json()["data"]["items"][0]
+    assert item_canon["id_obligacion_financiera"] == id_ob_canon
+    assert item_canon["saldo_pendiente"] == pytest.approx(600.00)
+    assert item_canon["composiciones"][0]["saldo_componente"] == pytest.approx(600.00)
+    assert item_recupero["id_obligacion_financiera"] == recupero["id_obligacion_financiera"]
+    assert item_recupero["saldo_pendiente"] == pytest.approx(500.00)
+    assert item_recupero["composiciones"][0]["saldo_componente"] == pytest.approx(500.00)
 
 
 def test_estado_cuenta_persona_servicio_recuperado_mora_por_aplica_punitorio(
