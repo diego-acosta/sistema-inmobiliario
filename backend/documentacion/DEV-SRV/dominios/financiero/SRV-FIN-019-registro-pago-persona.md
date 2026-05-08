@@ -18,15 +18,51 @@ Registrar un pago que impacta saldos de obligaciones de una persona, creando los
 ```json
 {
   "monto": 50000.00,
-  "fecha_pago": "2026-05-20"
+  "fecha_pago": "2026-05-20",
+  "id_relacion_generadora": 10
 }
 ```
 
 - `monto` (obligatorio): monto a aplicar; debe ser > 0
 - `fecha_pago` (opcional): fecha del pago; también usada como `fecha_corte` para mora; default `date.today()`
+- `id_obligacion_financiera` (opcional): acota el pago a una obligacion especifica
+- `id_relacion_generadora` (opcional): acota el pago a obligaciones abiertas de esa relacion
+- `alcance_pago` (opcional): `OBLIGACION`, `RELACION_GENERADORA` o `GLOBAL_PERSONA`
 
 Query param:
 - `id_persona` (obligatorio): persona pagante
+
+---
+
+## Alcance de imputacion
+
+Estado: `IMPLEMENTADO`.
+
+El pago por persona no usa prioridad global para mezclar automaticamente deudas
+de distintas relaciones u origenes salvo que el request lo indique con
+`alcance_pago = GLOBAL_PERSONA`.
+
+Alcances efectivos:
+
+- si viene `id_obligacion_financiera`, se imputa solo esa obligacion
+- si viene `id_relacion_generadora`, se imputan solo obligaciones abiertas de
+  esa relacion
+- si viene `alcance_pago = GLOBAL_PERSONA`, se mantiene el comportamiento global
+  historico y puede cruzar relaciones/origenes
+- si no viene ningun alcance, se mantiene compatibilidad solo cuando la persona
+  tiene deuda abierta de una unica `relacion_generadora`
+
+Errores de alcance:
+
+- `ALCANCE_PAGO_INVALIDO`
+- `OBLIGACION_NO_PERTENECE_A_PERSONA`
+- `RELACION_GENERADORA_SIN_OBLIGACIONES_PARA_PERSONA`
+- `PAGO_PERSONA_REQUIERE_ALCANCE`
+
+La prioridad de conceptos se aplica dentro de cada obligacion incluida por el
+alcance elegido. El orden entre obligaciones se aplica solo dentro de ese
+alcance. `PUNITORIO` es componente accesorio de la obligacion que lo contiene;
+no se considera deuda autonoma fuera de su obligacion/relacion.
 
 ---
 
@@ -92,9 +128,11 @@ crea nuevos movimientos ni nuevas aplicaciones.
 Antes de devolver el resultado idempotente, el servicio valida que el payload
 minimo coincida con el registrado originalmente en
 `movimiento_financiero.observaciones`: `tipo = pago_persona`, `id_persona`,
-`monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva. Si el
-mismo `X-Op-Id` se reutiliza con otro `id_persona`, `monto` o `fecha_pago`,
-devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT` con HTTP 409.
+`monto_ingresado` normalizado a 2 decimales, `fecha_pago` efectiva y alcance
+efectivo (`alcance_pago`, `id_obligacion_financiera`,
+`id_relacion_generadora`). Si el mismo `X-Op-Id` se reutiliza con otro
+`id_persona`, `monto`, `fecha_pago` o alcance, devuelve
+`IDEMPOTENCY_PAYLOAD_CONFLICT` con HTTP 409.
 
 Si la operacion original asociada al `X-Op-Id` ya fue revertida, el reintento
 no recrea el pago ni vuelve a liquidar punitorios: devuelve `PAGO_YA_REVERTIDO`
@@ -175,9 +213,9 @@ Reglas:
 
 | | `imputaciones` | `pagos` |
 |---|---|---|
-| Alcance | 1 obligación | todas las de la persona |
+| Alcance | 1 obligación | obligacion, relacion o global explicito |
 | Transacción | 1 obligación | múltiples obligaciones |
-| Orden | manual | vencidas primero |
+| Orden | manual | vencidas primero dentro del alcance |
 | Mora | no incluye | incluye en total_a_cubrir |
 
 ---

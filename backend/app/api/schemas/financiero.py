@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -1261,12 +1261,24 @@ class EstadoCuentaPersonaResponse(BaseModel):
 class RegistrarPagoPersonaRequest(BaseModel):
     monto: float
     fecha_pago: date | None = None
+    id_obligacion_financiera: int | None = None
+    id_relacion_generadora: int | None = None
+    alcance_pago: Literal[
+        "OBLIGACION", "RELACION_GENERADORA", "GLOBAL_PERSONA"
+    ] | None = None
 
     @field_validator("monto")
     @classmethod
     def monto_positive(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("monto debe ser mayor que cero.")
+        return v
+
+    @field_validator("id_obligacion_financiera", "id_relacion_generadora")
+    @classmethod
+    def id_scope_positive(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("Los identificadores de alcance deben ser mayores que cero.")
         return v
 
 

@@ -826,13 +826,23 @@ Aplica un pago contra la deuda de una persona, creando `movimiento_financiero` y
 
 Reglas:
 
+- el request puede acotar la imputacion con `id_obligacion_financiera`,
+  `id_relacion_generadora` o `alcance_pago = GLOBAL_PERSONA`
+- sin alcance explicito, solo se mantiene compatibilidad si la persona tiene
+  deuda abierta de una unica `relacion_generadora`; con multiples relaciones
+  abiertas devuelve `PAGO_PERSONA_REQUIERE_ALCANCE`
+- `alcance_pago = GLOBAL_PERSONA` conserva el comportamiento global historico
+  y puede cruzar relaciones/origenes por decision explicita del operador/API
 - si corresponde punitorio por mora al momento del pago, se liquida antes de
   imputar como `composicion_obligacion` `PUNITORIO`; no se crea obligacion nueva
   ni composicion `INTERES_MORA` para esta liquidacion V1
+- `PUNITORIO` se trata como accesorio de la obligacion que lo contiene; la
+  prioridad de conceptos se aplica dentro de la obligacion/relacion alcanzada,
+  no para mezclar deudas de origenes distintos
 - cada liquidacion positiva de `PUNITORIO` registra una fila trazable en
   `liquidacion_punitorio` vinculada a la obligacion, composicion y
   `uid_pago_grupo`/`codigo_pago_grupo`
-- orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras
+- orden de aplicación: obligaciones vencidas primero (por `fecha_vencimiento ASC`), luego futuras, siempre dentro del alcance elegido
 - mora dinámica incluida en `total_a_cubrir`; cuando corresponde liquidacion al
   registrar el pago, el cargo por mora se persiste como `PUNITORIO`
 - la mora dinamica respeta la tasa y dias de gracia resueltos por
@@ -847,8 +857,8 @@ Reglas:
   para la persona, se devuelve el resultado persistido sin crear nuevos
   movimientos ni volver a reducir saldos
 - antes de devolver el resultado idempotente, valida `id_persona`,
-  `monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva contra
-  el resumen persistido en `observaciones`
+  `monto_ingresado` normalizado a 2 decimales, `fecha_pago` efectiva y alcance
+  contra el resumen persistido en `observaciones`
 - si el mismo `X-Op-Id` se reutiliza con payload distinto, se devuelve
   `IDEMPOTENCY_PAYLOAD_CONFLICT`
 - si la operacion original asociada al `X-Op-Id` ya fue revertida, el reintento

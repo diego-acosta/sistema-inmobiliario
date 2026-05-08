@@ -561,7 +561,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
 
 ### RN-FIN-081 - Idempotencia de pago por payload minimo
-- descripcion: Si `POST /api/v1/financiero/pagos` recibe un `X-Op-Id` ya utilizado, debe comparar el payload minimo (`id_persona`, `monto_ingresado` normalizado a 2 decimales y `fecha_pago` efectiva) contra el resumen persistido de la operacion original. Si coincide, devuelve el resultado existente sin duplicar pagos ni punitorios. Si difiere, devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`. Si la operacion original ya fue revertida, debe devolver `PAGO_YA_REVERTIDO` y no recrear el pago.
+- descripcion: Si `POST /api/v1/financiero/pagos` recibe un `X-Op-Id` ya utilizado, debe comparar el payload minimo (`id_persona`, `monto_ingresado` normalizado a 2 decimales, `fecha_pago` efectiva y alcance de imputacion) contra el resumen persistido de la operacion original. Si coincide, devuelve el resultado existente sin duplicar pagos ni punitorios. Si difiere, devuelve `IDEMPOTENCY_PAYLOAD_CONFLICT`. Si la operacion original ya fue revertida, debe devolver `PAGO_YA_REVERTIDO` y no recrear el pago.
 - aplica_a: movimiento_financiero, aplicacion_financiera, composicion_obligacion, liquidacion_punitorio
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
@@ -571,6 +571,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - aplica_a: movimiento_financiero, aplicacion_financiera
 - origen_principal: SRV-FIN-019-registro-pago-persona
 - estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
+
+### RN-FIN-082A - Alcance de imputacion en pago por persona
+- descripcion: `POST /api/v1/financiero/pagos` debe resolver un alcance efectivo antes de buscar obligaciones. Con `id_obligacion_financiera` imputa solo esa obligacion perteneciente a la persona. Con `id_relacion_generadora` imputa solo obligaciones abiertas de esa relacion para la persona. Con `alcance_pago = GLOBAL_PERSONA` mantiene el comportamiento global historico y puede cruzar relaciones/origenes de forma explicita. Sin alcance, solo mantiene compatibilidad si la persona tiene deuda abierta de una unica relacion; con multiples relaciones abiertas devuelve `PAGO_PERSONA_REQUIERE_ALCANCE`.
+- aplica_a: obligacion_financiera, obligacion_obligado, composicion_obligacion, movimiento_financiero, aplicacion_financiera
+- origen_principal: SRV-FIN-019-registro-pago-persona
+- estado: IMPLEMENTADA en `POST /api/v1/financiero/pagos`.
+- observaciones: `PUNITORIO` es accesorio de la obligacion que lo contiene. La prioridad de conceptos se aplica dentro del alcance elegido y no se usa para mezclar automaticamente deudas locativas, de venta o trasladadas.
 
 ### RN-FIN-082B - Pago externo informado de factura_servicio
 - descripcion: Cuando una factura de servicio corresponde al escenario `DIRECTO_RESPONSABLE`, financiero puede registrar un pago externo informado contra la obligacion `SERVICIO_TRASLADADO` materializada. En V1 `DIRECTO_RESPONSABLE` significa responsabilidad 100% de una persona que paga directamente al proveedor. Reduce saldos mediante `aplicacion_financiera`, pero no representa ingreso ni egreso de caja de la inmobiliaria.

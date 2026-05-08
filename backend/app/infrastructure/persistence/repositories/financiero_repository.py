@@ -7204,13 +7204,24 @@ class FinancieroRepository:
         *,
         id_persona: int,
         fecha_corte: date,
+        id_obligacion_financiera: int | None = None,
+        id_relacion_generadora: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Obligaciones con saldo > 0 de la persona, ordenadas vencidas primero.
         Vencida = fecha_vencimiento < fecha_corte.
         """
+        filters = ""
+        params: dict[str, Any] = {"id_persona": id_persona, "fecha_corte": fecha_corte}
+        if id_obligacion_financiera is not None:
+            filters += "\n              AND o.id_obligacion_financiera = :id_obligacion_financiera"
+            params["id_obligacion_financiera"] = id_obligacion_financiera
+        if id_relacion_generadora is not None:
+            filters += "\n              AND o.id_relacion_generadora = :id_relacion_generadora"
+            params["id_relacion_generadora"] = id_relacion_generadora
+
         stmt = text(
-            """
+            f"""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
@@ -7239,6 +7250,7 @@ class FinancieroRepository:
               AND o.deleted_at IS NULL
               AND o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
               AND o.saldo_pendiente > 0
+              {filters}
             ORDER BY
               CASE WHEN o.fecha_vencimiento IS NOT NULL
                         AND o.fecha_vencimiento < :fecha_corte
@@ -7247,10 +7259,35 @@ class FinancieroRepository:
               o.id_obligacion_financiera ASC
             """
         )
-        rows = self.db.execute(
-            stmt, {"id_persona": id_persona, "fecha_corte": fecha_corte}
-        ).mappings().all()
+        rows = self.db.execute(stmt, params).mappings().all()
         return [dict(r) for r in rows]
+
+    def obligacion_pertenece_a_persona(
+        self, *, id_persona: int, id_obligacion_financiera: int
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM obligacion_obligado oo
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = oo.id_obligacion_financiera
+            WHERE oo.id_persona = :id_persona
+              AND oo.id_obligacion_financiera = :id_obligacion_financiera
+              AND oo.deleted_at IS NULL
+              AND o.deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+        return (
+            self.db.execute(
+                stmt,
+                {
+                    "id_persona": id_persona,
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                },
+            ).scalar_one_or_none()
+            is not None
+        )
 
     # ── estado de cuenta por persona ────────────────────────────────────────
 

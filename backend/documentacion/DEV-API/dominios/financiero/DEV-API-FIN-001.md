@@ -31,6 +31,7 @@ Este documento describe los endpoints financieros actualmente implementados en b
 ### Imputaciones
 
 - `POST /api/v1/financiero/imputaciones`
+- `POST /api/v1/financiero/pagos`
 
 ### Deuda consolidada
 
@@ -107,6 +108,10 @@ Codigos usados por el backend actual:
 - `ESTADO_INVALIDO`
 - `FECHA_RANGO_INVALIDO`
 - `INTERNAL_ERROR`
+- `PAGO_PERSONA_REQUIERE_ALCANCE`
+- `ALCANCE_PAGO_INVALIDO`
+- `OBLIGACION_NO_PERTENECE_A_PERSONA`
+- `RELACION_GENERADORA_SIN_OBLIGACIONES_PARA_PERSONA`
 
 ---
 
@@ -315,6 +320,54 @@ Response `201`:
   }
 }
 ```
+
+---
+
+## 6B. Pagos Por Persona
+
+### POST /api/v1/financiero/pagos?id_persona={id_persona}
+
+Registra un pago normal de una persona y crea `movimiento_financiero` tipo
+`PAGO` con sus `aplicacion_financiera`.
+
+Request:
+
+```json
+{
+  "monto": 5000.00,
+  "fecha_pago": "2026-05-20",
+  "id_relacion_generadora": 10
+}
+```
+
+Campos de alcance opcionales:
+
+- `id_obligacion_financiera`
+- `id_relacion_generadora`
+- `alcance_pago`: `OBLIGACION`, `RELACION_GENERADORA` o `GLOBAL_PERSONA`
+
+Reglas:
+
+- con `id_obligacion_financiera`, imputa solo esa obligacion si pertenece a
+  `id_persona`
+- con `id_relacion_generadora`, imputa solo obligaciones abiertas de esa
+  relacion para `id_persona`
+- con `alcance_pago = GLOBAL_PERSONA`, permite el comportamiento global por
+  persona y puede cruzar relaciones/origenes
+- sin alcance, solo se acepta si la persona tiene obligaciones abiertas de una
+  unica relacion generadora; con multiples relaciones devuelve HTTP 409
+  `PAGO_PERSONA_REQUIERE_ALCANCE`
+- `PUNITORIO` se imputa como componente accesorio de la obligacion que lo
+  contiene; no se trata como deuda autonoma
+
+Errores `409`:
+
+- `PAGO_PERSONA_REQUIERE_ALCANCE`
+- `ALCANCE_PAGO_INVALIDO`
+- `OBLIGACION_NO_PERTENECE_A_PERSONA`
+- `RELACION_GENERADORA_SIN_OBLIGACIONES_PARA_PERSONA`
+- `IDEMPOTENCY_PAYLOAD_CONFLICT`
+- `PAGO_YA_REVERTIDO`
 
 ---
 

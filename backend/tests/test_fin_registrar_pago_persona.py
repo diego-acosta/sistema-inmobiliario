@@ -51,9 +51,17 @@ def _install_patch_validacion_aplicacion(db_session) -> None:
     db_session.connection().exec_driver_sql(sql)
 
 
-def _pagar(client, id_persona: int, monto: float, fecha_pago: str | None = None) -> dict:
+def _pagar(
+    client,
+    id_persona: int,
+    monto: float,
+    fecha_pago: str | None = None,
+    **scope,
+) -> dict:
     headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
-    return _pagar_con_headers(client, id_persona, monto, fecha_pago=fecha_pago, headers=headers)
+    return _pagar_con_headers(
+        client, id_persona, monto, fecha_pago=fecha_pago, headers=headers, **scope
+    )
 
 
 def _pagar_con_headers(
@@ -62,10 +70,12 @@ def _pagar_con_headers(
     monto: float,
     fecha_pago: str | None = None,
     headers: dict | None = None,
+    **scope,
 ) -> dict:
     body: dict = {"monto": monto}
     if fecha_pago:
         body["fecha_pago"] = fecha_pago
+    body.update({k: v for k, v in scope.items() if v is not None})
     resp = client.post(
         URL, headers=headers or HEADERS,
         params={"id_persona": id_persona},
@@ -226,11 +236,75 @@ def _post_pago(
     monto: float,
     headers: dict,
     fecha_pago: str | None = None,
+    **scope,
 ):
     body: dict = {"monto": monto}
     if fecha_pago is not None:
         body["fecha_pago"] = fecha_pago
+    body.update({k: v for k, v in scope.items() if v is not None})
     return client.post(URL, headers=headers, params={"id_persona": id_persona}, json=body)
+
+
+def _crear_persona_pago(client, *, codigo: str) -> int:
+    resp = client.post(
+        "/api/v1/personas",
+        headers=HEADERS,
+        json={
+            "tipo_persona": "FISICA",
+            "nombre": f"Persona {codigo}",
+            "apellido": "Pago",
+            "razon_social": None,
+            "estado_persona": "ACTIVA",
+            "observaciones": None,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["data"]["id_persona"]
+
+
+def _crear_obligacion_para_persona(
+    client,
+    db_session,
+    *,
+    id_persona: int,
+    id_relacion_generadora: int,
+    composiciones: list[dict],
+    fecha_vencimiento: str = "2026-05-10",
+) -> dict:
+    resp = client.post(
+        "/api/v1/financiero/obligaciones",
+        headers=HEADERS,
+        json={
+            "id_relacion_generadora": id_relacion_generadora,
+            "fecha_vencimiento": fecha_vencimiento,
+            "composiciones": composiciones,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    obligacion = resp.json()["data"]
+    db_session.execute(
+        text(
+            """
+            INSERT INTO obligacion_obligado (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                id_obligacion_financiera, id_persona,
+                rol_obligado, porcentaje_responsabilidad
+            )
+            VALUES (
+                gen_random_uuid(), 1, now(), now(),
+                1, 1,
+                :id_obligacion_financiera, :id_persona,
+                'RESPONSABLE_PAGO', 100.00
+            )
+            """
+        ),
+        {
+            "id_obligacion_financiera": obligacion["id_obligacion_financiera"],
+            "id_persona": id_persona,
+        },
+    )
+    return obligacion
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
@@ -312,6 +386,426 @@ def test_pago_persona_sin_deuda_no_aplica(client, db_session) -> None:
     assert data["monto_aplicado"] == pytest.approx(0.0)
     assert data["remanente"] == pytest.approx(5000.00)
     assert data["obligaciones_pagadas"] == []
+
+
+def test_pago_con_relacion_generadora_aisla_canon_de_servicio_recuperado(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-CANON-SERV")
+    rg_canon = _crear_rg(client, codigo="AISLA-CANON-SERV-CAN")
+    rg_servicio = _crear_rg(client, codigo="AISLA-CANON-SERV-SRV")
+    ob_canon = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_canon["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 1000.00}
+        ],
+    )
+    ob_servicio = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_servicio["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "SERVICIO_RECUPERADO", "importe_componente": 1000.00}
+        ],
+    )
+
+    data = _pagar(
+        client,
+        id_persona,
+        monto=1000.00,
+        fecha_pago="2026-05-10",
+        id_relacion_generadora=rg_canon["id_relacion_generadora"],
+    )
+
+    assert [o["id_obligacion_financiera"] for o in data["obligaciones_pagadas"]] == [
+        ob_canon["id_obligacion_financiera"]
+    ]
+    assert float(_obligacion_importes(db_session, ob_canon["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(0.00)
+    assert float(_obligacion_importes(db_session, ob_servicio["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(1000.00)
+
+
+def test_pago_con_relacion_generadora_aisla_impuesto_de_canon(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-IMP-CANON")
+    rg_canon = _crear_rg(client, codigo="AISLA-IMP-CANON-CAN")
+    rg_impuesto = _crear_rg(client, codigo="AISLA-IMP-CANON-IMP")
+    ob_canon = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_canon["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 800.00}
+        ],
+    )
+    ob_impuesto = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_impuesto["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "IMPUESTO_TRASLADADO", "importe_componente": 700.00}
+        ],
+    )
+
+    data = _pagar(
+        client,
+        id_persona,
+        monto=700.00,
+        fecha_pago="2026-05-10",
+        alcance_pago="RELACION_GENERADORA",
+        id_relacion_generadora=rg_impuesto["id_relacion_generadora"],
+    )
+
+    assert [o["id_obligacion_financiera"] for o in data["obligaciones_pagadas"]] == [
+        ob_impuesto["id_obligacion_financiera"]
+    ]
+    assert float(_obligacion_importes(db_session, ob_impuesto["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(0.00)
+    assert float(_obligacion_importes(db_session, ob_canon["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(800.00)
+
+
+def test_pago_con_relacion_generadora_imputa_punitorio_accesorio_solo_de_esa_relacion(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-PUNITORIO")
+    rg_canon = _crear_rg(client, codigo="AISLA-PUNIT-CAN")
+    rg_otra = _crear_rg(client, codigo="AISLA-PUNIT-OTRA")
+    ob_canon = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_canon["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00},
+            {"codigo_concepto_financiero": "PUNITORIO", "importe_componente": 100.00},
+        ],
+    )
+    ob_otra = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_otra["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": 500.00},
+            {"codigo_concepto_financiero": "PUNITORIO", "importe_componente": 100.00},
+        ],
+    )
+
+    data = _pagar(
+        client,
+        id_persona,
+        monto=150.00,
+        fecha_pago="2026-05-10",
+        id_relacion_generadora=rg_canon["id_relacion_generadora"],
+    )
+
+    aplicaciones = _aplicaciones_por_movimiento(
+        db_session, data["obligaciones_pagadas"][0]["id_movimiento_financiero"]
+    )
+    assert [a["codigo_concepto_financiero"] for a in aplicaciones] == [
+        "PUNITORIO",
+        "CANON_LOCATIVO",
+    ]
+    assert float(_composicion(db_session, ob_canon["id_obligacion_financiera"], "PUNITORIO")["saldo_componente"]) == pytest.approx(0.00)
+    assert float(_composicion(db_session, ob_canon["id_obligacion_financiera"], "CANON_LOCATIVO")["saldo_componente"]) == pytest.approx(450.00)
+    assert float(_obligacion_importes(db_session, ob_otra["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(600.00)
+
+
+def test_pago_recupero_con_relacion_imputa_punitorio_antes_que_servicio_recuperado(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-REC-PUNIT")
+    rg_recupero = _crear_rg(client, codigo="AISLA-REC-PUNIT-REC")
+    rg_canon = _crear_rg(client, codigo="AISLA-REC-PUNIT-CAN")
+    ob_recupero = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_recupero["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "SERVICIO_RECUPERADO", "importe_componente": 500.00},
+            {"codigo_concepto_financiero": "PUNITORIO", "importe_componente": 100.00},
+        ],
+    )
+    ob_canon = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_canon["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00}
+        ],
+    )
+
+    data = _pagar(
+        client,
+        id_persona,
+        monto=150.00,
+        fecha_pago="2026-05-10",
+        id_relacion_generadora=rg_recupero["id_relacion_generadora"],
+    )
+
+    aplicaciones = _aplicaciones_por_movimiento(
+        db_session, data["obligaciones_pagadas"][0]["id_movimiento_financiero"]
+    )
+    assert [a["codigo_concepto_financiero"] for a in aplicaciones] == [
+        "PUNITORIO",
+        "SERVICIO_RECUPERADO",
+    ]
+    assert float(_composicion(db_session, ob_recupero["id_obligacion_financiera"], "PUNITORIO")["saldo_componente"]) == pytest.approx(0.00)
+    assert float(_composicion(db_session, ob_recupero["id_obligacion_financiera"], "SERVICIO_RECUPERADO")["saldo_componente"]) == pytest.approx(450.00)
+    assert float(_obligacion_importes(db_session, ob_canon["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(500.00)
+
+
+def test_pago_con_obligacion_especifica_no_toca_otras_deudas_vencidas(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-OBL")
+    rg_1 = _crear_rg(client, codigo="AISLA-OBL-1")
+    rg_2 = _crear_rg(client, codigo="AISLA-OBL-2")
+    ob_no_target = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_1["id_relacion_generadora"],
+        fecha_vencimiento="2026-05-10",
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 900.00}
+        ],
+    )
+    ob_target = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_2["id_relacion_generadora"],
+        fecha_vencimiento="2026-05-10",
+        composiciones=[
+            {"codigo_concepto_financiero": "SERVICIO_RECUPERADO", "importe_componente": 600.00}
+        ],
+    )
+
+    data = _pagar(
+        client,
+        id_persona,
+        monto=600.00,
+        fecha_pago="2026-05-10",
+        id_obligacion_financiera=ob_target["id_obligacion_financiera"],
+    )
+
+    assert [o["id_obligacion_financiera"] for o in data["obligaciones_pagadas"]] == [
+        ob_target["id_obligacion_financiera"]
+    ]
+    assert float(_obligacion_importes(db_session, ob_target["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(0.00)
+    assert float(_obligacion_importes(db_session, ob_no_target["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(900.00)
+
+
+def test_pago_sin_scope_una_relacion_mantiene_compatibilidad(client, db_session) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-COMPAT")
+    rg = _crear_rg(client, codigo="AISLA-COMPAT-RG")
+    ob = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00}
+        ],
+    )
+
+    data = _pagar(client, id_persona, monto=500.00, fecha_pago="2026-05-10")
+
+    assert [o["id_obligacion_financiera"] for o in data["obligaciones_pagadas"]] == [
+        ob["id_obligacion_financiera"]
+    ]
+    assert data["monto_aplicado"] == pytest.approx(500.00)
+
+
+def test_pago_sin_scope_multiples_relaciones_devuelve_409(client, db_session) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-409")
+    rg_1 = _crear_rg(client, codigo="AISLA-409-1")
+    rg_2 = _crear_rg(client, codigo="AISLA-409-2")
+    _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_1["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00}
+        ],
+    )
+    _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_2["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "SERVICIO_RECUPERADO", "importe_componente": 500.00}
+        ],
+    )
+
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=500.00,
+        fecha_pago="2026-05-10",
+        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error_code"] == "PAGO_PERSONA_REQUIERE_ALCANCE"
+
+
+def test_pago_global_persona_explicito_mantiene_comportamiento_global(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-GLOBAL")
+    rg_1 = _crear_rg(client, codigo="AISLA-GLOBAL-1")
+    rg_2 = _crear_rg(client, codigo="AISLA-GLOBAL-2")
+    ob_1 = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_1["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00}
+        ],
+    )
+    ob_2 = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_2["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "SERVICIO_RECUPERADO", "importe_componente": 500.00}
+        ],
+    )
+
+    data = _pagar(
+        client,
+        id_persona,
+        monto=1000.00,
+        fecha_pago="2026-05-10",
+        alcance_pago="GLOBAL_PERSONA",
+    )
+
+    assert {
+        o["id_obligacion_financiera"] for o in data["obligaciones_pagadas"]
+    } == {ob_1["id_obligacion_financiera"], ob_2["id_obligacion_financiera"]}
+    assert data["monto_aplicado"] == pytest.approx(1000.00)
+
+
+def test_pago_rechaza_obligacion_y_relacion_juntas(client, db_session) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-INV")
+    rg = _crear_rg(client, codigo="AISLA-INV-RG")
+    ob = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00}
+        ],
+    )
+
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=100.00,
+        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        id_obligacion_financiera=ob["id_obligacion_financiera"],
+        id_relacion_generadora=rg["id_relacion_generadora"],
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error_code"] == "ALCANCE_PAGO_INVALIDO"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"monto": 100.00, "alcance_pago": "OBLIGACION"},
+        {"monto": 100.00, "alcance_pago": "RELACION_GENERADORA"},
+        {
+            "monto": 100.00,
+            "alcance_pago": "GLOBAL_PERSONA",
+            "id_obligacion_financiera": 1,
+        },
+        {
+            "monto": 100.00,
+            "alcance_pago": "GLOBAL_PERSONA",
+            "id_relacion_generadora": 1,
+        },
+    ],
+)
+def test_pago_rechaza_alcances_inconsistentes(client, db_session, body) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-ALCANCE-INV")
+
+    resp = client.post(
+        URL,
+        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        params={"id_persona": id_persona},
+        json=body,
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error_code"] == "ALCANCE_PAGO_INVALIDO"
+
+
+def test_pago_rechaza_obligacion_ajena_a_persona(client, db_session) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-AJENA-1")
+    id_otra = _crear_persona_pago(client, codigo="AISLA-AJENA-2")
+    rg = _crear_rg(client, codigo="AISLA-AJENA-RG")
+    ob = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_otra,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00}
+        ],
+    )
+
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=100.00,
+        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        id_obligacion_financiera=ob["id_obligacion_financiera"],
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error_code"] == "OBLIGACION_NO_PERTENECE_A_PERSONA"
+
+
+def test_pago_rechaza_relacion_sin_obligaciones_para_persona(client, db_session) -> None:
+    id_persona = _crear_persona_pago(client, codigo="AISLA-SIN-REL")
+    id_otra = _crear_persona_pago(client, codigo="AISLA-SIN-REL-OTRA")
+    rg = _crear_rg(client, codigo="AISLA-SIN-REL-RG")
+    _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_otra,
+        id_relacion_generadora=rg["id_relacion_generadora"],
+        composiciones=[
+            {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": 500.00}
+        ],
+    )
+
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=100.00,
+        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        id_relacion_generadora=rg["id_relacion_generadora"],
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error_code"] == "RELACION_GENERADORA_SIN_OBLIGACIONES_PARA_PERSONA"
 
 
 def test_pago_con_mora_consume_del_monto(client, db_session) -> None:

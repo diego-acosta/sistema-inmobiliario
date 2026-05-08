@@ -2624,6 +2624,9 @@ def registrar_pago_persona(
             id_persona=id_persona,
             monto=request.monto,
             fecha_pago=request.fecha_pago,
+            id_obligacion_financiera=request.id_obligacion_financiera,
+            id_relacion_generadora=request.id_relacion_generadora,
+            alcance_pago=request.alcance_pago,
             context=context,
         )
     except Exception as exc:
@@ -2669,6 +2672,22 @@ def registrar_pago_persona(
                     details={"errors": result.errors},
                 ).model_dump(),
             )
+        conflict_errors = {
+            "PAGO_PERSONA_REQUIERE_ALCANCE",
+            "ALCANCE_PAGO_INVALIDO",
+            "OBLIGACION_NO_PERTENECE_A_PERSONA",
+            "RELACION_GENERADORA_SIN_OBLIGACIONES_PARA_PERSONA",
+        }
+        for code in conflict_errors:
+            if code in result.errors:
+                return JSONResponse(
+                    status_code=409,
+                    content=ErrorResponse(
+                        error_code=code,
+                        error_message="No se pudo registrar el pago con el alcance indicado.",
+                        details={"errors": result.errors},
+                    ).model_dump(),
+                )
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(

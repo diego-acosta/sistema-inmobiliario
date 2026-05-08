@@ -57,6 +57,9 @@ def _payload_idempotencia_equivalente(
     id_persona: int,
     monto: Decimal,
     fecha_pago: date,
+    alcance_pago: str,
+    id_obligacion_financiera: int | None,
+    id_relacion_generadora: int | None,
 ) -> bool:
     if payload is None or payload.get("tipo") != "pago_persona":
         return False
@@ -67,6 +70,9 @@ def _payload_idempotencia_equivalente(
             _Q, rounding=ROUND_HALF_UP
         )
         payload_persona = int(payload["id_persona"])
+        payload_alcance = str(payload.get("alcance_pago") or "SIN_ALCANCE")
+        payload_obligacion = payload.get("id_obligacion_financiera")
+        payload_relacion = payload.get("id_relacion_generadora")
     except (KeyError, TypeError, ValueError):
         return False
 
@@ -74,6 +80,19 @@ def _payload_idempotencia_equivalente(
         payload_persona == id_persona
         and payload_fecha == fecha_pago
         and payload_monto == monto
+        and payload_alcance == alcance_pago
+        and (
+            int(payload_obligacion)
+            if payload_obligacion is not None
+            else None
+        )
+        == id_obligacion_financiera
+        and (
+            int(payload_relacion)
+            if payload_relacion is not None
+            else None
+        )
+        == id_relacion_generadora
     )
 
 
@@ -107,8 +126,17 @@ class FinancieroRepository(Protocol):
     def persona_exists(self, id_persona: int) -> bool: ...
 
     def get_obligaciones_para_simular_pago(
-        self, *, id_persona: int, fecha_corte: date
+        self,
+        *,
+        id_persona: int,
+        fecha_corte: date,
+        id_obligacion_financiera: int | None = None,
+        id_relacion_generadora: int | None = None,
     ) -> list[dict[str, Any]]: ...
+
+    def obligacion_pertenece_a_persona(
+        self, *, id_persona: int, id_obligacion_financiera: int
+    ) -> bool: ...
 
     def get_composiciones_para_imputar(
         self, id_obligacion_financiera: int
@@ -182,6 +210,9 @@ class RegistrarPagoPersonaService:
         id_persona: int,
         monto: float,
         fecha_pago: date | None,
+        id_obligacion_financiera: int | None = None,
+        id_relacion_generadora: int | None = None,
+        alcance_pago: str | None = None,
         context: Any,
     ) -> AppResult[dict[str, Any]]:
         if monto <= 0:
@@ -189,6 +220,15 @@ class RegistrarPagoPersonaService:
 
         if not self.repository.persona_exists(id_persona):
             return AppResult.fail("NOT_FOUND_PERSONA")
+
+        alcance_efectivo_result = self._resolver_alcance(
+            alcance_pago=alcance_pago,
+            id_obligacion_financiera=id_obligacion_financiera,
+            id_relacion_generadora=id_relacion_generadora,
+        )
+        if not alcance_efectivo_result.success:
+            return alcance_efectivo_result
+        alcance_efectivo = alcance_efectivo_result.data or "SIN_ALCANCE"
 
         corte = fecha_pago if fecha_pago is not None else date.today()
         now = datetime.now(UTC)
@@ -211,6 +251,9 @@ class RegistrarPagoPersonaService:
                     id_persona=id_persona,
                     monto=monto_dec,
                     fecha_pago=corte,
+                    alcance_pago=alcance_efectivo,
+                    id_obligacion_financiera=id_obligacion_financiera,
+                    id_relacion_generadora=id_relacion_generadora,
                 ):
                     return AppResult.fail("IDEMPOTENCY_PAYLOAD_CONFLICT")
 
@@ -242,9 +285,37 @@ class RegistrarPagoPersonaService:
         uid_pago_grupo = str(self.uuid_generator())
         codigo_pago_grupo = f"PAGO-{corte:%Y%m%d}-{uid_pago_grupo[:8].upper()}"
 
+        if alcance_efectivo == "OBLIGACION":
+            if not self.repository.obligacion_pertenece_a_persona(
+                id_persona=id_persona,
+                id_obligacion_financiera=id_obligacion_financiera or 0,
+            ):
+                return AppResult.fail("OBLIGACION_NO_PERTENECE_A_PERSONA")
+
         obligaciones = self.repository.get_obligaciones_para_simular_pago(
-            id_persona=id_persona, fecha_corte=corte
+            id_persona=id_persona,
+            fecha_corte=corte,
+            id_obligacion_financiera=(
+                id_obligacion_financiera if alcance_efectivo == "OBLIGACION" else None
+            ),
+            id_relacion_generadora=(
+                id_relacion_generadora
+                if alcance_efectivo == "RELACION_GENERADORA"
+                else None
+            ),
         )
+
+        if alcance_efectivo == "RELACION_GENERADORA" and not obligaciones:
+            return AppResult.fail("RELACION_GENERADORA_SIN_OBLIGACIONES_PARA_PERSONA")
+
+        if alcance_efectivo == "SIN_ALCANCE":
+            relaciones = {
+                ob.get("id_relacion_generadora")
+                for ob in obligaciones
+                if ob.get("id_relacion_generadora") is not None
+            }
+            if len(relaciones) > 1:
+                return AppResult.fail("PAGO_PERSONA_REQUIERE_ALCANCE")
 
         restante = monto_dec
         pagos: list[PagoObligacionPayload] = []
@@ -402,6 +473,9 @@ class RegistrarPagoPersonaService:
                 "monto_ingresado": float(monto_dec),
                 "monto_aplicado": float(total_aplicado),
                 "remanente": float(restante),
+                "alcance_pago": alcance_efectivo,
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "id_relacion_generadora": id_relacion_generadora,
             },
             separators=(",", ":"),
         )
@@ -422,3 +496,37 @@ class RegistrarPagoPersonaService:
                 "obligaciones_pagadas": resultados,
             }
         )
+
+    def _resolver_alcance(
+        self,
+        *,
+        alcance_pago: str | None,
+        id_obligacion_financiera: int | None,
+        id_relacion_generadora: int | None,
+    ) -> AppResult[str]:
+        if id_obligacion_financiera is not None and id_relacion_generadora is not None:
+            return AppResult.fail("ALCANCE_PAGO_INVALIDO")
+
+        if alcance_pago == "GLOBAL_PERSONA":
+            if id_obligacion_financiera is not None or id_relacion_generadora is not None:
+                return AppResult.fail("ALCANCE_PAGO_INVALIDO")
+            return AppResult.ok("GLOBAL_PERSONA")
+
+        if alcance_pago == "OBLIGACION":
+            if id_obligacion_financiera is None or id_relacion_generadora is not None:
+                return AppResult.fail("ALCANCE_PAGO_INVALIDO")
+            return AppResult.ok("OBLIGACION")
+
+        if alcance_pago == "RELACION_GENERADORA":
+            if id_relacion_generadora is None or id_obligacion_financiera is not None:
+                return AppResult.fail("ALCANCE_PAGO_INVALIDO")
+            return AppResult.ok("RELACION_GENERADORA")
+
+        if alcance_pago is not None:
+            return AppResult.fail("ALCANCE_PAGO_INVALIDO")
+
+        if id_obligacion_financiera is not None:
+            return AppResult.ok("OBLIGACION")
+        if id_relacion_generadora is not None:
+            return AppResult.ok("RELACION_GENERADORA")
+        return AppResult.ok("SIN_ALCANCE")
