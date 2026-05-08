@@ -90,6 +90,7 @@ from app.application.comercial.commands.delete_reserva_venta import (
 )
 from app.application.comercial.commands.define_condiciones_comerciales_venta import (
     DefineCondicionesComercialesVentaCommand,
+    DefineCondicionesComercialesVentaCuotaCommand,
     DefineCondicionesComercialesVentaObjetoCommand,
 )
 from app.application.comercial.commands.expire_reserva_venta import (
@@ -1718,6 +1719,16 @@ def define_condiciones_comerciales_venta(
         fecha_vencimiento_anticipo=request.fecha_vencimiento_anticipo,
         importe_saldo=request.importe_saldo,
         fecha_vencimiento_saldo=request.fecha_vencimiento_saldo,
+        cuotas=[
+            DefineCondicionesComercialesVentaCuotaCommand(
+                numero_cuota=item.numero_cuota,
+                importe_cuota=item.importe_cuota,
+                fecha_vencimiento=item.fecha_vencimiento,
+                moneda=item.moneda,
+                observaciones=item.observaciones,
+            )
+            for item in request.cuotas
+        ],
         objetos=[
             DefineCondicionesComercialesVentaObjetoCommand(
                 id_inmueble=item.id_inmueble,
@@ -1816,7 +1827,7 @@ def define_condiciones_comerciales_venta(
         if "INVALID_TIPO_PLAN_FINANCIERO" in result.errors:
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
-                error_message="tipo_plan_financiero debe ser CONTADO o ANTICIPO_Y_SALDO.",
+                error_message="tipo_plan_financiero debe ser CONTADO, ANTICIPO_Y_SALDO o CUOTAS_FIJAS.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
@@ -1825,6 +1836,14 @@ def define_condiciones_comerciales_venta(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="moneda es requerida para las condiciones comerciales.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if any(error.startswith("INVALID_PLAN_CUOTAS_FIJAS") for error in result.errors):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="El plan CUOTAS_FIJAS requiere cuotas secuenciales desde 1, importes positivos, moneda consistente, fechas de vencimiento y suma exacta contra monto_total.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())

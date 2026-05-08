@@ -21,18 +21,21 @@ No cubre:
 - el SQL vigente materializa las condiciones comerciales basicas en `venta.monto_total`, `venta.moneda`, columnas minimas de plan financiero y `venta_objeto_inmobiliario.precio_asignado`
 - no existe hoy una tabla materializada `venta_condicion_comercial`
 - no existe hoy una tabla materializada `esquema_financiamiento`
-- por lo tanto, la implementacion actual del servicio debe operar sobre `venta` y su detalle multiobjeto ya persistido
+- existe `venta_plan_cuota` como detalle comercial minimo para `CUOTAS_FIJAS V1`
+- por lo tanto, la implementacion actual del servicio debe operar sobre `venta`, `venta_plan_cuota` y su detalle multiobjeto ya persistido
 
 Con estos datos, los planes financieros derivables formalmente en V1 son:
 
 - `CONTADO`: una obligacion `CAPITAL_VENTA` por `venta.monto_total`, con vencimiento en `venta.fecha_venta`, materializada por financiero al procesar `venta_confirmada`.
 - `ANTICIPO_Y_SALDO`: una obligacion `ANTICIPO_VENTA` por `venta.importe_anticipo` y una obligacion `CAPITAL_VENTA` por `venta.importe_saldo`.
+- `CUOTAS_FIJAS`: N obligaciones `CAPITAL_VENTA`, una por cada cuota activa de `venta_plan_cuota`, con importe y vencimiento propios.
 
-Cuotas, saldo extraordinario o cualquier estructura distinta de las anteriores no deben inferirse desde texto libre ni desde campos incompletos. Requieren persistir datos comerciales minimos adicionales.
+Saldo extraordinario o cualquier estructura distinta de las anteriores no deben inferirse desde texto libre ni desde campos incompletos. Requieren persistir datos comerciales minimos adicionales.
 
 ## Entidades principales
 - venta
 - venta_objeto_inmobiliario
+- venta_plan_cuota
 
 ## Modos del servicio
 
@@ -58,6 +61,8 @@ Permite visualizar `monto_total` y precios por objeto desde la propia `venta`.
 - identificador de venta
 - precio total
 - lista completa de objetos de la venta con `precio_asignado`
+- plan financiero: `CONTADO`, `ANTICIPO_Y_SALDO` o `CUOTAS_FIJAS`
+- cuotas pactadas cuando el plan sea `CUOTAS_FIJAS`
 - observaciones comerciales cuando corresponda
 
 ### Parametros de consulta
@@ -112,12 +117,15 @@ Permite visualizar `monto_total` y precios por objeto desde la propia `venta`.
 - no duplicidad de objetos en request
 - `precio_asignado > 0`
 - suma exacta de `precio_asignado == monto_total`
+- para `CUOTAS_FIJAS`, cuotas obligatorias, secuenciales desde 1, sin duplicados, con importes positivos, fechas obligatorias, moneda consistente y suma exacta de cuotas igual a `monto_total`
 - no modificacion indebida en estados no permitidos
 - control de versionado
 - coherencia multiobjeto persistida
 
 ## Efectos transaccionales
 - actualizacion de `venta.monto_total`
+- actualizacion de columnas minimas del plan financiero de `venta`
+- reemplazo transaccional por soft delete de cuotas activas en `venta_plan_cuota`
 - actualizacion de `venta_objeto_inmobiliario.precio_asignado` para todos los objetos de la venta
 - actualizacion de metadatos transversales
 - rollback completo si falla cualquier actualizacion parcial
@@ -150,7 +158,6 @@ Permite visualizar `monto_total` y precios por objeto desde la propia `venta`.
 ## Pendientes abiertos
 - definicion futura de si las condiciones comerciales deben materializarse en una entidad propia
 - catalogo final de formas de pago
-- definicion exacta de esquemas de financiamiento
 - reglas de modificacion segun estado de venta
 - integracion completa con generacion de obligaciones
-- tratamiento de moneda y ajustes
+- tratamiento de ajustes, intereses, indexacion, refinanciacion y cancelacion anticipada

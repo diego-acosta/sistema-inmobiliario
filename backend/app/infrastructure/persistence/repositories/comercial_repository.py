@@ -378,6 +378,7 @@ class ComercialRepository:
         objetos_rows = self.db.execute(
             objeto_statement, {"id_venta": id_venta}
         ).mappings().all()
+        cuotas = self._get_cuotas_venta(id_venta)
 
         return {
             "id_venta": venta_row["id_venta"],
@@ -409,7 +410,27 @@ class ComercialRepository:
                 }
                 for row in objetos_rows
             ],
+            "cuotas": cuotas,
         }
+
+    def _get_cuotas_venta(self, id_venta: int) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT
+                id_venta_plan_cuota,
+                numero_cuota,
+                importe_cuota,
+                fecha_vencimiento,
+                moneda,
+                observaciones
+            FROM venta_plan_cuota
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY numero_cuota ASC
+            """
+        )
+        rows = self.db.execute(statement, {"id_venta": id_venta}).mappings().all()
+        return [dict(row) for row in rows]
 
     def get_venta_detail(self, id_venta: int) -> dict[str, Any] | None:
         venta = self.get_venta(id_venta)
@@ -479,6 +500,7 @@ class ComercialRepository:
             "fecha_vencimiento_anticipo": venta["fecha_vencimiento_anticipo"],
             "importe_saldo": venta["importe_saldo"],
             "fecha_vencimiento_saldo": venta["fecha_vencimiento_saldo"],
+            "cuotas": venta["cuotas"],
             "deleted_at": venta["deleted_at"],
             "origen": origen,
             "objetos": objetos,
@@ -529,6 +551,7 @@ class ComercialRepository:
                 ],
                 "importe_saldo": venta["importe_saldo"],
                 "fecha_vencimiento_saldo": venta["fecha_vencimiento_saldo"],
+                "cuotas": venta["cuotas"],
                 "observaciones": venta["observaciones"],
                 "objetos": [
                     {
@@ -2141,6 +2164,7 @@ class ComercialRepository:
         self,
         payload: Any,
         objetos: list[Any],
+        cuotas: list[Any],
     ) -> dict[str, Any]:
         venta_values = self._values(payload)
 
@@ -2205,6 +2229,62 @@ class ComercialRepository:
             """
         )
 
+        delete_cuotas_statement = text(
+            """
+            UPDATE venta_plan_cuota
+            SET
+                deleted_at = :updated_at,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            """
+        )
+        insert_cuota_statement = text(
+            """
+            INSERT INTO venta_plan_cuota (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_venta,
+                numero_cuota,
+                importe_cuota,
+                fecha_vencimiento,
+                moneda,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_venta,
+                :numero_cuota,
+                :importe_cuota,
+                :fecha_vencimiento,
+                :moneda,
+                :observaciones
+            )
+            RETURNING
+                id_venta_plan_cuota,
+                numero_cuota,
+                importe_cuota,
+                fecha_vencimiento,
+                moneda,
+                observaciones
+            """
+        )
+
         try:
             venta_row = self.db.execute(
                 venta_statement,
@@ -2265,6 +2345,28 @@ class ComercialRepository:
                     }
                 )
 
+            self.db.execute(
+                delete_cuotas_statement,
+                {
+                    "id_venta": venta_values["id_venta"],
+                    "updated_at": venta_values["updated_at"],
+                    "id_instalacion_ultima_modificacion": venta_values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_ultima_modificacion": venta_values[
+                        "op_id_ultima_modificacion"
+                    ],
+                },
+            )
+            updated_cuotas: list[dict[str, Any]] = []
+            for cuota in cuotas:
+                cuota_values = self._values(cuota)
+                cuota_row = self.db.execute(
+                    insert_cuota_statement,
+                    cuota_values,
+                ).mappings().one()
+                updated_cuotas.append(dict(cuota_row))
+
             self.db.commit()
             return {
                 "status": "OK",
@@ -2285,6 +2387,7 @@ class ComercialRepository:
                     ],
                     "importe_saldo": venta_row["importe_saldo"],
                     "fecha_vencimiento_saldo": venta_row["fecha_vencimiento_saldo"],
+                    "cuotas": updated_cuotas,
                     "observaciones": venta_row["observaciones"],
                     "objetos": updated_objetos,
                     "created_at": venta_row["created_at"],

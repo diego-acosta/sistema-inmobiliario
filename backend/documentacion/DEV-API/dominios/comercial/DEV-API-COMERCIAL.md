@@ -515,6 +515,7 @@ Request:
   "fecha_vencimiento_anticipo": "2026-05-10",
   "importe_saldo": 100000.00,
   "fecha_vencimiento_saldo": "2026-06-10",
+  "cuotas": [],
   "objetos": [
     {
       "id_inmueble": 100,
@@ -546,16 +547,17 @@ Validaciones:
 - la suma exacta de `precio_asignado` debe coincidir con `monto_total`
 - `tipo_plan_financiero` omitido o `CONTADO` limpia anticipo/saldo y usa moneda default `ARS` si no se informa
 - `ANTICIPO_Y_SALDO` requiere anticipo y saldo positivos, fechas de vencimiento y suma exacta contra `monto_total`
+- `CUOTAS_FIJAS` requiere `cuotas` con `numero_cuota` secuencial desde 1, `importe_cuota > 0`, `fecha_vencimiento`, moneda consistente y suma exacta contra `monto_total`
 - el detalle multiobjeto persistido de la venta debe seguir siendo coherente
 
 Reglas de negocio:
 
 - este endpoint no crea nuevas filas de `venta_objeto_inmobiliario`; actualiza las ya materializadas para la venta
-- en la implementacion actual, las condiciones comerciales se materializan en `venta.monto_total`, columnas minimas de plan financiero y `venta_objeto_inmobiliario.precio_asignado`
+- en la implementacion actual, las condiciones comerciales se materializan en `venta.monto_total`, columnas minimas de plan financiero, `venta_plan_cuota` para `CUOTAS_FIJAS` y `venta_objeto_inmobiliario.precio_asignado`
 - la operacion no modifica `disponibilidad`
 - la operacion no modifica `ocupacion`
 - la operacion no dispara logica financiera ni `relacion_generadora`
-- no implementa cuotas, intereses, indexacion ni multiples compradores
+- no implementa intereses, indexacion, refinanciacion, cancelacion anticipada ni multiples compradores
 - la actualizacion de `venta` y de todos sus objetos debe ejecutarse de forma transaccional; si falla un solo objeto, debe hacerse rollback completo
 
 #### `PATCH /api/v1/ventas/{id_venta}/confirmar`
@@ -1041,6 +1043,7 @@ Datos incluidos:
   - `venta.fecha_vencimiento_anticipo`
   - `venta.importe_saldo`
   - `venta.fecha_vencimiento_saldo`
+  - `venta_plan_cuota` para cuotas pactadas activas cuando `tipo_plan_financiero = CUOTAS_FIJAS`
   - `venta.observaciones`
   - `venta_objeto_inmobiliario.precio_asignado`
 - `partes` desde `relacion_persona_rol`, `rol_participacion` y `persona`, filtrando `tipo_relacion = venta` e `id_relacion = id_venta`
@@ -1055,9 +1058,10 @@ Comportamiento financiero:
 - si la venta confirmada ya fue procesada por financiero, se devuelve la relacion generadora `tipo_origen = venta` y sus obligaciones, por ejemplo la obligacion V1 `CAPITAL_VENTA`
 - si la venta no tiene estructura financiera explicita persistida, financiero la trata como plan `CONTADO V1`: una unica obligacion `CAPITAL_VENTA` por `venta.monto_total`, con `fecha_vencimiento = venta.fecha_venta`
 - si `tipo_plan_financiero = ANTICIPO_Y_SALDO`, financiero materializa dos obligaciones: `ANTICIPO_VENTA` por `importe_anticipo` y `CAPITAL_VENTA` por `importe_saldo`
+- si `tipo_plan_financiero = CUOTAS_FIJAS`, financiero materializa una obligacion por cada fila activa de `venta_plan_cuota`, todas con composicion `CAPITAL_VENTA`, vencimiento propio y obligado `COMPRADOR` al 100%
 - si financiero ya materializo el comprador V1, la obligacion incluye `obligados` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00`
 - el endpoint no materializa el plan financiero de venta, no crea obligaciones y no resuelve obligados; solo expone los obligados persistidos por financiero
-- el endpoint no implementa cuotas, saldo extraordinario, cancelacion anticipada, rescision ni cesion real con cambio de comprador
+- el endpoint no implementa intereses, indexacion, saldo extraordinario, refinanciacion, cancelacion anticipada, rescision ni cesion real con cambio de comprador
 
 Resumen financiero:
 - `cantidad_obligaciones`

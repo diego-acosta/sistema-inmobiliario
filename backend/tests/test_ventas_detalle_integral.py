@@ -260,6 +260,76 @@ def test_detalle_integral_anticipo_y_saldo_muestra_plan_y_dos_obligaciones(
     assert float(data["resumen_financiero"]["saldo_pendiente"]) == 150000.00
 
 
+def test_detalle_integral_cuotas_fijas_muestra_cuotas_y_obligaciones(
+    client, db_session
+) -> None:
+    venta_base = _crear_venta_desde_reserva_publica(client, db_session)
+    db_session.execute(
+        text(
+            """
+            UPDATE venta
+            SET tipo_plan_financiero = 'CUOTAS_FIJAS',
+                moneda = 'ARS',
+                importe_anticipo = NULL,
+                fecha_vencimiento_anticipo = NULL,
+                importe_saldo = NULL,
+                fecha_vencimiento_saldo = NULL
+            WHERE id_venta = :id_venta
+            """
+        ),
+        {"id_venta": venta_base["id_venta"]},
+    )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO venta_plan_cuota (
+                id_venta,
+                numero_cuota,
+                importe_cuota,
+                fecha_vencimiento,
+                moneda
+            )
+            VALUES
+                (:id_venta, 1, 50000.00, DATE '2026-05-10', 'ARS'),
+                (:id_venta, 2, 100000.00, DATE '2026-06-10', 'ARS')
+            """
+        ),
+        {"id_venta": venta_base["id_venta"]},
+    )
+    response_confirm = client.patch(
+        f"/api/v1/ventas/{venta_base['id_venta']}/confirmar",
+        headers={**HEADERS, "If-Match-Version": str(venta_base["version_registro"])},
+        json=_payload_confirmar_venta(),
+    )
+    assert response_confirm.status_code == 200
+    _procesar_evento_financiero_venta(db_session, id_venta=venta_base["id_venta"])
+
+    response = _detalle(client, venta_base["id_venta"])
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    condiciones = data["condiciones_comerciales"]
+    assert condiciones["tipo_plan_financiero"] == "CUOTAS_FIJAS"
+    assert [cuota["numero_cuota"] for cuota in condiciones["cuotas"]] == [1, 2]
+    assert [float(cuota["importe_cuota"]) for cuota in condiciones["cuotas"]] == [
+        50000.00,
+        100000.00,
+    ]
+
+    obligaciones = data["obligaciones_financieras"]
+    assert len(obligaciones) == 2
+    assert [
+        obligacion["composiciones"][0]["codigo_concepto_financiero"]
+        for obligacion in obligaciones
+    ] == ["CAPITAL_VENTA", "CAPITAL_VENTA"]
+    assert [obligacion["fecha_vencimiento"] for obligacion in obligaciones] == [
+        "2026-05-10",
+        "2026-06-10",
+    ]
+    assert data["resumen_financiero"]["cantidad_obligaciones"] == 2
+    assert float(data["resumen_financiero"]["saldo_pendiente"]) == 150000.00
+
+
 def test_detalle_integral_no_crea_efectos_ni_ejecuta_mora(client, db_session) -> None:
     venta = _confirmar_venta(client, db_session)
     fin = _procesar_evento_financiero_venta(db_session, id_venta=venta["id_venta"])

@@ -24,6 +24,7 @@ CONCEPTO_ANTICIPO_VENTA = "ANTICIPO_VENTA"
 ROL_OBLIGADO_COMPRADOR = "COMPRADOR"
 TIPO_PLAN_CONTADO = "CONTADO"
 TIPO_PLAN_ANTICIPO_Y_SALDO = "ANTICIPO_Y_SALDO"
+TIPO_PLAN_CUOTAS_FIJAS = "CUOTAS_FIJAS"
 
 
 @dataclass(slots=True)
@@ -56,6 +57,7 @@ class VentaObligacionPlan:
     codigo_concepto_financiero: str
     importe: Decimal
     fecha_vencimiento: date
+    moneda: str
 
 
 class _RollbackAppResult(Exception):
@@ -254,10 +256,10 @@ class HandleVentaConfirmadaEventService:
             )
 
         now = datetime.now(UTC)
-        moneda = (venta.get("moneda") or "ARS").strip().upper()
         obligaciones_creadas: list[dict[str, Any]] = []
         for item in plan_result.data:
             concepto = conceptos[item.codigo_concepto_financiero]
+            moneda = item.moneda
             obligacion = self.repository.create_obligacion_financiera(
                 ObligacionCreatePayload(
                     id_relacion_generadora=id_relacion_generadora,
@@ -313,6 +315,7 @@ class HandleVentaConfirmadaEventService:
 
     def _build_plan(self, venta: dict[str, Any]) -> AppResult[list[VentaObligacionPlan]]:
         tipo_plan = (venta.get("tipo_plan_financiero") or TIPO_PLAN_CONTADO).strip().upper()
+        moneda_venta = (venta.get("moneda") or "ARS").strip().upper()
         if tipo_plan == TIPO_PLAN_CONTADO:
             fecha_venta = venta["fecha_venta"]
             fecha_vencimiento = (
@@ -324,9 +327,40 @@ class HandleVentaConfirmadaEventService:
                         codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
                         importe=Decimal(str(venta["monto_total"])),
                         fecha_vencimiento=fecha_vencimiento,
+                        moneda=moneda_venta,
                     )
                 ]
             )
+
+        if tipo_plan == TIPO_PLAN_CUOTAS_FIJAS:
+            cuotas = venta.get("cuotas") or []
+            if not cuotas:
+                return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS")
+
+            plan: list[VentaObligacionPlan] = []
+            total = Decimal("0")
+            numeros = [cuota["numero_cuota"] for cuota in cuotas]
+            if numeros != list(range(1, len(cuotas) + 1)):
+                return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS")
+
+            for cuota in cuotas:
+                importe = Decimal(str(cuota["importe_cuota"]))
+                fecha_vencimiento = cuota.get("fecha_vencimiento")
+                if importe <= 0 or fecha_vencimiento is None:
+                    return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS")
+                total += importe
+                plan.append(
+                    VentaObligacionPlan(
+                        codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
+                        importe=importe,
+                        fecha_vencimiento=fecha_vencimiento,
+                        moneda=(cuota.get("moneda") or moneda_venta).strip().upper(),
+                    )
+                )
+
+            if total != Decimal(str(venta["monto_total"])):
+                return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS")
+            return AppResult.ok(plan)
 
         if tipo_plan != TIPO_PLAN_ANTICIPO_Y_SALDO:
             return AppResult.fail("INVALID_TIPO_PLAN_FINANCIERO")
@@ -355,11 +389,13 @@ class HandleVentaConfirmadaEventService:
                     codigo_concepto_financiero=CONCEPTO_ANTICIPO_VENTA,
                     importe=anticipo,
                     fecha_vencimiento=fecha_anticipo,
+                    moneda=moneda_venta,
                 ),
                 VentaObligacionPlan(
                     codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
                     importe=saldo,
                     fecha_vencimiento=fecha_saldo,
+                    moneda=moneda_venta,
                 ),
             ]
         )

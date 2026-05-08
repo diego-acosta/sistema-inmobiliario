@@ -473,7 +473,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - aplica_a: venta, relacion_generadora, obligacion_financiera, composicion_obligacion, obligacion_obligado
 - origen_principal: SRV-FIN-014-plan-financiero-venta
 - estado: IMPLEMENTADA V1.
-- observaciones: `ANTICIPO_Y_SALDO`, cuotas o saldos extraordinarios requieren persistir datos comerciales minimos antes de materializar obligaciones distintas de contado. El obligado financiero se rige por RN-COM-FIN-001.
+- observaciones: `ANTICIPO_Y_SALDO` y `CUOTAS_FIJAS` requieren datos comerciales minimos persistidos antes de materializar obligaciones distintas de contado. El obligado financiero se rige por RN-COM-FIN-001.
 
 ### RN-COM-FIN-000B - Venta ANTICIPO_Y_SALDO V1
 - descripcion: Si `venta.tipo_plan_financiero = ANTICIPO_Y_SALDO`, financiero debe generar dos obligaciones: una `ANTICIPO_VENTA` por `venta.importe_anticipo` con vencimiento `venta.fecha_vencimiento_anticipo`, y una `CAPITAL_VENTA` por `venta.importe_saldo` con vencimiento `venta.fecha_vencimiento_saldo`.
@@ -481,6 +481,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-014-plan-financiero-venta
 - estado: IMPLEMENTADA V1.
 - observaciones: `importe_anticipo + importe_saldo` debe coincidir con `venta.monto_total`. El saldo ordinario no usa `SALDO_EXTRAORDINARIO`. Ambas obligaciones usan comprador canonico `COMPRADOR` al 100%.
+
+### RN-COM-FIN-000C - Venta CUOTAS_FIJAS V1
+- descripcion: Si `venta.tipo_plan_financiero = CUOTAS_FIJAS`, financiero debe generar una obligacion financiera por cada cuota activa de `venta_plan_cuota`, con `fecha_vencimiento = venta_plan_cuota.fecha_vencimiento`, importe igual a `venta_plan_cuota.importe_cuota` y composicion `CAPITAL_VENTA`.
+- aplica_a: venta, venta_plan_cuota, relacion_generadora, obligacion_financiera, composicion_obligacion, obligacion_obligado
+- origen_principal: SRV-FIN-014-plan-financiero-venta
+- estado: IMPLEMENTADA V1.
+- observaciones: `CUOTA_VENTA` no se usa en V1 porque no esta formalmente vigente. Las cuotas deben ser secuenciales desde 1, positivas, con vencimiento y moneda, y la suma debe coincidir con `venta.monto_total`. No incluye interes, indexacion, refinanciacion, cancelacion anticipada ni multiples compradores.
 
 ### RN-COM-FIN-001 - Obligado comprador de venta V1
 - descripcion: La materializacion financiera de `venta_confirmada` debe resolver exactamente un comprador canonico desde `relacion_persona_rol` y `rol_participacion` con `tipo_relacion = venta`, `id_relacion = id_venta` y `codigo_rol = COMPRADOR`. Si existe uno solo, crea `obligacion_obligado` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00` para cada obligacion financiera generada por el plan de venta V1.

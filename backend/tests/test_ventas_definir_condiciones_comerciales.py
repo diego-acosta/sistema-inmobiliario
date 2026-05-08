@@ -468,6 +468,215 @@ def test_definir_condiciones_comerciales_venta_anticipo_y_saldo_suma_invalida_fa
     assert response.json()["error_code"] == "APPLICATION_ERROR"
 
 
+def test_definir_condiciones_comerciales_venta_cuotas_fijas_valido_persiste_cuotas(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(client, codigo="INM-VTA-COND-CUO-001")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta="V-COND-CUO-001",
+        estado_venta="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None, "precio_asignado": None}
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/definir-condiciones-comerciales",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json={
+            **_payload_condiciones(
+                monto_total=150000.00,
+                objetos=[
+                    {
+                        "id_inmueble": id_inmueble,
+                        "id_unidad_funcional": None,
+                        "precio_asignado": 150000.00,
+                    }
+                ],
+            ),
+            "tipo_plan_financiero": "CUOTAS_FIJAS",
+            "moneda": "ARS",
+            "cuotas": [
+                {
+                    "numero_cuota": 1,
+                    "importe_cuota": 50000.00,
+                    "fecha_vencimiento": "2026-05-10",
+                },
+                {
+                    "numero_cuota": 2,
+                    "importe_cuota": 100000.00,
+                    "fecha_vencimiento": "2026-06-10",
+                    "moneda": "ARS",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["tipo_plan_financiero"] == "CUOTAS_FIJAS"
+    assert data["importe_anticipo"] is None
+    assert data["importe_saldo"] is None
+    assert [cuota["numero_cuota"] for cuota in data["cuotas"]] == [1, 2]
+    assert [Decimal(cuota["importe_cuota"]) for cuota in data["cuotas"]] == [
+        Decimal("50000.00"),
+        Decimal("100000.00"),
+    ]
+
+    rows = db_session.execute(
+        text(
+            """
+            SELECT numero_cuota, importe_cuota, fecha_vencimiento, moneda
+            FROM venta_plan_cuota
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY numero_cuota
+            """
+        ),
+        {"id_venta": venta["id_venta"]},
+    ).mappings().all()
+    assert len(rows) == 2
+    assert [row["numero_cuota"] for row in rows] == [1, 2]
+    assert [row["moneda"] for row in rows] == ["ARS", "ARS"]
+
+
+def test_definir_condiciones_comerciales_venta_cuotas_fijas_suma_invalida_falla(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(client, codigo="INM-VTA-COND-CUO-002")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta="V-COND-CUO-002",
+        estado_venta="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None, "precio_asignado": None}
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/definir-condiciones-comerciales",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json={
+            **_payload_condiciones(
+                monto_total=150000.00,
+                objetos=[
+                    {
+                        "id_inmueble": id_inmueble,
+                        "id_unidad_funcional": None,
+                        "precio_asignado": 150000.00,
+                    }
+                ],
+            ),
+            "tipo_plan_financiero": "CUOTAS_FIJAS",
+            "cuotas": [
+                {
+                    "numero_cuota": 1,
+                    "importe_cuota": 50000.00,
+                    "fecha_vencimiento": "2026-05-10",
+                },
+                {
+                    "numero_cuota": 2,
+                    "importe_cuota": 90000.00,
+                    "fecha_vencimiento": "2026-06-10",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "APPLICATION_ERROR"
+
+
+def test_definir_condiciones_comerciales_venta_cuotas_fijas_importe_invalido_falla(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(client, codigo="INM-VTA-COND-CUO-003")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta="V-COND-CUO-003",
+        estado_venta="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None, "precio_asignado": None}
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/definir-condiciones-comerciales",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json={
+            **_payload_condiciones(
+                monto_total=150000.00,
+                objetos=[
+                    {
+                        "id_inmueble": id_inmueble,
+                        "id_unidad_funcional": None,
+                        "precio_asignado": 150000.00,
+                    }
+                ],
+            ),
+            "tipo_plan_financiero": "CUOTAS_FIJAS",
+            "cuotas": [
+                {
+                    "numero_cuota": 1,
+                    "importe_cuota": 0,
+                    "fecha_vencimiento": "2026-05-10",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "APPLICATION_ERROR"
+
+
+def test_definir_condiciones_comerciales_venta_cuotas_fijas_numero_duplicado_falla(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(client, codigo="INM-VTA-COND-CUO-004")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta="V-COND-CUO-004",
+        estado_venta="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None, "precio_asignado": None}
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/definir-condiciones-comerciales",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json={
+            **_payload_condiciones(
+                monto_total=150000.00,
+                objetos=[
+                    {
+                        "id_inmueble": id_inmueble,
+                        "id_unidad_funcional": None,
+                        "precio_asignado": 150000.00,
+                    }
+                ],
+            ),
+            "tipo_plan_financiero": "CUOTAS_FIJAS",
+            "cuotas": [
+                {
+                    "numero_cuota": 1,
+                    "importe_cuota": 50000.00,
+                    "fecha_vencimiento": "2026-05-10",
+                },
+                {
+                    "numero_cuota": 1,
+                    "importe_cuota": 100000.00,
+                    "fecha_vencimiento": "2026-06-10",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "APPLICATION_ERROR"
+
+
 def test_definir_condiciones_comerciales_venta_devuelve_404_si_no_existe(
     client,
 ) -> None:

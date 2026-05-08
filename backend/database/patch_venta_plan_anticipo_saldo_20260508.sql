@@ -11,7 +11,7 @@ DROP CONSTRAINT IF EXISTS chk_venta_tipo_plan_financiero;
 
 ALTER TABLE public.venta
 ADD CONSTRAINT chk_venta_tipo_plan_financiero
-CHECK (tipo_plan_financiero IN ('CONTADO', 'ANTICIPO_Y_SALDO'));
+CHECK (tipo_plan_financiero IN ('CONTADO', 'ANTICIPO_Y_SALDO', 'CUOTAS_FIJAS'));
 
 ALTER TABLE public.venta
 DROP CONSTRAINT IF EXISTS chk_venta_plan_contado_sin_detalle;

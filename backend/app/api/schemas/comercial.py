@@ -151,6 +151,14 @@ class DefineCondicionesComercialesVentaObjetoRequest(BaseModel):
     precio_asignado: Decimal
 
 
+class DefineCondicionesComercialesVentaCuotaRequest(BaseModel):
+    numero_cuota: int
+    importe_cuota: Decimal
+    fecha_vencimiento: date
+    moneda: str | None = None
+    observaciones: str | None = None
+
+
 class DefineCondicionesComercialesVentaRequest(BaseModel):
     monto_total: Decimal
     tipo_plan_financiero: str | None = None
@@ -159,6 +167,7 @@ class DefineCondicionesComercialesVentaRequest(BaseModel):
     fecha_vencimiento_anticipo: date | None = None
     importe_saldo: Decimal | None = None
     fecha_vencimiento_saldo: date | None = None
+    cuotas: list[DefineCondicionesComercialesVentaCuotaRequest] = []
     objetos: list[DefineCondicionesComercialesVentaObjetoRequest]
 
 
@@ -201,6 +210,15 @@ class VentaObjetoData(BaseModel):
     observaciones: str | None
 
 
+class VentaPlanCuotaData(BaseModel):
+    id_venta_plan_cuota: int | None = None
+    numero_cuota: int
+    importe_cuota: Decimal
+    fecha_vencimiento: date
+    moneda: str
+    observaciones: str | None = None
+
+
 class GenerateVentaFromReservaVentaData(BaseModel):
     id_venta: int
     uid_global: str
@@ -216,6 +234,7 @@ class GenerateVentaFromReservaVentaData(BaseModel):
     fecha_vencimiento_anticipo: date | None
     importe_saldo: Decimal | None
     fecha_vencimiento_saldo: date | None
+    cuotas: list[VentaPlanCuotaData] = []
     observaciones: str | None
     objetos: list[VentaObjetoData]
     created_at: datetime
@@ -442,6 +461,7 @@ class VentaCondicionesComercialesData(BaseModel):
     fecha_vencimiento_anticipo: date | None
     importe_saldo: Decimal | None
     fecha_vencimiento_saldo: date | None
+    cuotas: list[VentaPlanCuotaData] = []
     observaciones: str | None
     objetos: list[VentaObjetoData]
 

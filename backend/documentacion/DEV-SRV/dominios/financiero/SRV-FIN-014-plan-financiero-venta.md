@@ -4,7 +4,8 @@
 
 Definir como una `venta` confirmada del dominio `comercial` debe transformarse en un plan de obligaciones financieras, sin trasladar ownership comercial al dominio financiero y sin generar obligaciones desde `confirm_venta_service`.
 
-Este documento es una propuesta de diseno. No modifica SQL, backend ni tests.
+Este documento define la regla V1 implementada para materializar obligaciones
+financieras de venta desde condiciones comerciales persistidas.
 
 ---
 
@@ -30,9 +31,10 @@ El flujo comercial implementado actualmente es:
 8. Si existe exactamente un comprador, financiero materializa
    `obligacion_obligado` para la obligacion `CAPITAL_VENTA`.
 
-La generacion automatica V1 desde venta confirmada materializa una deuda contado
-minima: relacion generadora, obligacion `CAPITAL_VENTA`, composicion y obligado
-financiero comprador.
+La generacion automatica V1 desde venta confirmada materializa una deuda de venta
+segun el plan comercial persistido: `CONTADO`, `ANTICIPO_Y_SALDO` o
+`CUOTAS_FIJAS`. En todos los casos usa la misma relacion generadora de venta,
+composiciones financieras y obligado financiero comprador.
 
 ---
 
@@ -46,6 +48,13 @@ Datos disponibles para construir un plan minimo:
 - `venta.fecha_venta`
 - `venta.estado_venta`
 - `venta.monto_total`
+- `venta.tipo_plan_financiero`
+- `venta.moneda`
+- `venta.importe_anticipo`
+- `venta.fecha_vencimiento_anticipo`
+- `venta.importe_saldo`
+- `venta.fecha_vencimiento_saldo`
+- `venta_plan_cuota` para cuotas fijas pactadas
 - `venta.id_reserva_venta`
 - `venta_objeto_inmobiliario.id_venta`
 - `venta_objeto_inmobiliario.id_inmueble`
@@ -83,12 +92,6 @@ No existen hoy datos implementados suficientes para modelos avanzados de financi
 
 Faltan como datos comerciales persistidos:
 
-- forma de pago de la venta
-- moneda comercial explicita de la venta
-- anticipo pactado
-- saldo a financiar
-- cantidad de cuotas
-- calendario de vencimientos
 - periodicidad
 - tasa de interes financiero
 - composicion capital/interes por cuota
@@ -97,7 +100,9 @@ Faltan como datos comerciales persistidos:
 - tabla materializada `venta_condicion_comercial`
 - tabla materializada `esquema_financiamiento`
 
-Por lo tanto, cualquier plan distinto de venta contado o `ANTICIPO_Y_SALDO` V1 debe considerarse futuro o pendiente.
+`CUOTAS_FIJAS V1` queda soportado mediante `venta_plan_cuota`: no incluye
+interes, indexacion, refinanciacion, cancelacion anticipada ni multiples
+compradores.
 
 ---
 
@@ -123,6 +128,25 @@ Si `venta.tipo_plan_financiero = ANTICIPO_Y_SALDO`, financiero materializa:
 - ambas obligaciones con obligado `COMPRADOR` al 100%
 
 `importe_anticipo + importe_saldo` debe coincidir con `venta.monto_total`. El saldo ordinario pactado usa `CAPITAL_VENTA`; `SALDO_EXTRAORDINARIO` queda reservado para saldos no ordinarios futuros.
+
+## Decision V1: CUOTAS_FIJAS
+
+Si `venta.tipo_plan_financiero = CUOTAS_FIJAS`, financiero materializa una
+obligacion por cada cuota activa de `venta_plan_cuota`:
+
+- cada cuota genera una `obligacion_financiera`
+- cada obligacion usa composicion `CAPITAL_VENTA`
+- `fecha_vencimiento = venta_plan_cuota.fecha_vencimiento`
+- `importe_total = venta_plan_cuota.importe_cuota`
+- moneda de la obligacion = `venta_plan_cuota.moneda`
+- todas las obligaciones usan obligado `COMPRADOR` al 100%
+
+`CUOTA_VENTA` no se usa en V1 porque no esta formalmente vigente en seeds/base
+ni documentado como concepto financiero operativo. Cada cuota representa una
+parte del capital ordinario de venta.
+
+La suma de cuotas activas debe coincidir exactamente con `venta.monto_total` y
+los numeros de cuota deben ser secuenciales desde 1.
 
 ---
 
@@ -158,8 +182,8 @@ Campos:
 - `id_venta`: identificador de la venta confirmada.
 - `id_relacion_generadora`: relacion financiera creada para `tipo_origen = 'venta'`.
 - `monto_total`: total comercial de la venta.
-- `moneda`: moneda del plan. En V1 debe ser `ARS` por default tecnico actual, porque venta no persiste moneda.
-- `fecha_base`: fecha usada para emitir o vencer la obligacion. En V1 debe derivarse de `venta.fecha_venta`.
+- `moneda`: moneda del plan.
+- `fecha_base`: fecha comercial usada como referencia del plan.
 - `obligaciones`: lista de obligaciones a materializar.
 - `fecha_vencimiento`: vencimiento de la obligacion.
 - `composiciones`: desglose economico de la obligacion.
@@ -174,7 +198,8 @@ Campos:
 
 Regla:
 
-- Una venta confirmada se interpreta como venta contado si no existe informacion implementada de anticipo, cuotas o financiacion.
+- Una venta confirmada con `tipo_plan_financiero = CONTADO` genera una unica
+  obligacion de capital de venta.
 
 Plan:
 
@@ -182,7 +207,7 @@ Plan:
 - una unica composicion
 - concepto financiero: `CAPITAL_VENTA`
 - importe: `venta.monto_total`
-- moneda: `ARS`
+- moneda: `venta.moneda`
 - fecha_base: `venta.fecha_venta`
 - fecha_vencimiento: `venta.fecha_venta`
 
@@ -209,7 +234,8 @@ Ejemplo:
 }
 ```
 
-Este caso es el unico implementable hoy sin inventar datos comerciales no persistidos.
+Este caso queda vigente como plan simple y como default tecnico cuando la venta
+no explicita otro plan soportado.
 
 ---
 
@@ -230,21 +256,21 @@ Plan implementado:
 - obligacion por `ANTICIPO_VENTA`
 - obligacion posterior por `CAPITAL_VENTA`
 
-### Cuotas
+### Cuotas fijas V1
 
-Requiere datos futuros:
+Datos persistidos:
 
-- cantidad de cuotas
-- periodicidad
-- fechas de vencimiento
-- importe por cuota
-- regla de redondeo
+- `venta_plan_cuota.numero_cuota`
+- `venta_plan_cuota.importe_cuota`
+- `venta_plan_cuota.fecha_vencimiento`
+- `venta_plan_cuota.moneda`
 
-Plan futuro:
+Plan implementado:
 
 - N obligaciones
 - cada obligacion con composicion `CAPITAL_VENTA`
-- si corresponde, composicion adicional `INTERES_FINANCIERO`
+- sin composicion adicional `INTERES_FINANCIERO`
+- sin indexacion ni refinanciacion
 
 ### Saldo extraordinario
 
@@ -323,7 +349,7 @@ venta_confirmada
 
 Para V1:
 
-- la clave funcional del plan debe ser `(tipo_origen = 'venta', id_venta, version_plan = 'V1_CONTADO')`
+- la clave funcional del plan debe ser `(tipo_origen = 'venta', id_venta, tipo_plan_financiero)`
 - antes de materializar, financiero debe verificar si ya existen obligaciones no eliminadas para la `id_relacion_generadora`
 - si ya existen obligaciones, no debe crear nuevas obligaciones automaticamente
 
@@ -354,9 +380,9 @@ Cualquier correccion posterior debe modelarse como operacion financiera explicit
 
 ## Riesgos
 
-- La venta no persiste moneda; V1 debe asumir `ARS` por default tecnico financiero.
-- La venta no persiste forma de pago; V1 interpreta todo como contado.
-- No hay datos de vencimiento; V1 usa `venta.fecha_venta`.
+- La fecha de emision de obligaciones de venta mantiene el criterio tecnico
+  vigente `fecha_emision = fecha_vencimiento`; su semantica queda documentada
+  como decision pendiente menor.
 - No hay idempotencia SQL para impedir duplicacion de obligaciones por plan.
 - No hay tabla de plan financiero materializado.
 - La resolucion de obligado financiero de venta V1 solo soporta un comprador
@@ -370,30 +396,32 @@ Cualquier correccion posterior debe modelarse como operacion financiera explicit
 
 ## Propuesta de implementacion por fases
 
-### Fase 1 - V1 contado
+### Fase 1 - V1 implementado
 
 Alcance:
 
-- implementar materializacion financiera para venta contado
+- materializacion financiera para venta `CONTADO`
+- materializacion financiera para venta `ANTICIPO_Y_SALDO`
+- materializacion financiera para venta `CUOTAS_FIJAS`
 - usar `relacion_generadora` existente
-- crear una obligacion con una composicion `CAPITAL_VENTA`
+- crear obligaciones con composiciones `CAPITAL_VENTA` y `ANTICIPO_VENTA`
+  segun el plan comercial vigente
 - crear `obligacion_obligado` para el comprador canonico `COMPRADOR`
   con `porcentaje_responsabilidad = 100.00`
-- importe igual a `venta.monto_total`
-- moneda `ARS`
-- fecha de vencimiento igual a `venta.fecha_venta`
+- importe y vencimiento derivados de venta o `venta_plan_cuota`
+- moneda derivada del plan comercial
 - idempotencia aplicativa por existencia de obligacion y obligado para la relacion
 
 No incluye:
 
-- anticipo
-- cuotas
 - intereses
-- moneda comercial configurable
+- indexacion
+- refinanciacion
+- cancelacion anticipada
 - multiples compradores
 - porcentajes de responsabilidad
 - `cliente_comprador`
-- cambios SQL
+- rescision
 
 ### Fase 2 - Contrato explicito de plan
 

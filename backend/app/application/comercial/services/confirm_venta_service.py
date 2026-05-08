@@ -131,6 +131,29 @@ class ConfirmVentaService:
         if monto_total is None or monto_total <= 0:
             return AppResult.fail("INCOMPLETE_VENTA_CONDITIONS")
 
+        tipo_plan = (venta.get("tipo_plan_financiero") or "CONTADO").strip().upper()
+        if tipo_plan == "CUOTAS_FIJAS":
+            cuotas = venta.get("cuotas") or []
+            if not cuotas:
+                return AppResult.fail("INCOMPLETE_VENTA_CONDITIONS")
+            total_cuotas = sum(
+                (Decimal(str(cuota["importe_cuota"])) for cuota in cuotas),
+                start=Decimal("0"),
+            )
+            numeros = [cuota["numero_cuota"] for cuota in cuotas]
+            if (
+                total_cuotas != monto_total
+                or numeros != list(range(1, len(cuotas) + 1))
+                or any(
+                    cuota["fecha_vencimiento"] is None
+                    or Decimal(str(cuota["importe_cuota"])) <= 0
+                    or (cuota["moneda"] or "").strip().upper()
+                    != (venta["moneda"] or "ARS").strip().upper()
+                    for cuota in cuotas
+                )
+            ):
+                return AppResult.fail("INCOMPLETE_VENTA_CONDITIONS")
+
         suma_precios = sum(
             (objeto["precio_asignado"] for objeto in objetos),
             start=Decimal("0"),

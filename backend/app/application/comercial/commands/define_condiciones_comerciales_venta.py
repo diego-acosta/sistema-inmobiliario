@@ -13,6 +13,15 @@ class DefineCondicionesComercialesVentaObjetoCommand:
 
 
 @dataclass(slots=True)
+class DefineCondicionesComercialesVentaCuotaCommand:
+    numero_cuota: int
+    importe_cuota: Decimal
+    fecha_vencimiento: date
+    moneda: str | None = None
+    observaciones: str | None = None
+
+
+@dataclass(slots=True)
 class DefineCondicionesComercialesVentaCommand:
     context: CommandContext
     id_venta: int
@@ -24,4 +33,5 @@ class DefineCondicionesComercialesVentaCommand:
     fecha_vencimiento_anticipo: date | None
     importe_saldo: Decimal | None
     fecha_vencimiento_saldo: date | None
+    cuotas: list[DefineCondicionesComercialesVentaCuotaCommand]
     objetos: list[DefineCondicionesComercialesVentaObjetoCommand]

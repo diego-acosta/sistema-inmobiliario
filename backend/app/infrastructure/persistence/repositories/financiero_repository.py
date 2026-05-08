@@ -663,7 +663,30 @@ class FinancieroRepository:
             .mappings()
             .one_or_none()
         )
-        return dict(row) if row else None
+        if row is None:
+            return None
+        data = dict(row)
+        data["cuotas"] = self.get_cuotas_venta_para_financiero(id_venta)
+        return data
+
+    def get_cuotas_venta_para_financiero(self, id_venta: int) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                id_venta_plan_cuota,
+                numero_cuota,
+                importe_cuota,
+                fecha_vencimiento,
+                moneda,
+                observaciones
+            FROM venta_plan_cuota
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY numero_cuota ASC
+            """
+        )
+        rows = self.db.execute(stmt, {"id_venta": id_venta}).mappings().all()
+        return [dict(row) for row in rows]
 
     def get_obligaciones_activas_by_relacion_generadora(
         self, id_relacion_generadora: int

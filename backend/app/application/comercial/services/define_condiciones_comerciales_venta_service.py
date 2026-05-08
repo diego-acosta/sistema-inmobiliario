@@ -13,6 +13,7 @@ from app.application.common.results import AppResult
 ESTADO_VENTA_DEFINIBLE = "borrador"
 TIPO_PLAN_CONTADO = "CONTADO"
 TIPO_PLAN_ANTICIPO_Y_SALDO = "ANTICIPO_Y_SALDO"
+TIPO_PLAN_CUOTAS_FIJAS = "CUOTAS_FIJAS"
 MONEDA_DEFAULT = "ARS"
 
 
@@ -44,6 +45,22 @@ class VentaObjetoPrecioUpdatePayload:
     op_id_ultima_modificacion: UUID | None
 
 
+@dataclass(slots=True)
+class VentaPlanCuotaReplacePayload:
+    id_venta: int
+    numero_cuota: int
+    importe_cuota: Decimal
+    fecha_vencimiento: Any
+    moneda: str
+    observaciones: str | None
+    created_at: datetime
+    updated_at: datetime
+    id_instalacion_origen: Any
+    id_instalacion_ultima_modificacion: Any
+    op_id_alta: UUID | None
+    op_id_ultima_modificacion: UUID | None
+
+
 class ComercialRepository(Protocol):
     def get_venta(self, id_venta: int) -> dict[str, Any] | None:
         ...
@@ -52,6 +69,7 @@ class ComercialRepository(Protocol):
         self,
         payload: VentaCondicionComercialUpdatePayload,
         objetos: list[VentaObjetoPrecioUpdatePayload],
+        cuotas: list[VentaPlanCuotaReplacePayload],
     ) -> dict[str, Any]:
         ...
 
@@ -172,6 +190,23 @@ class DefineCondicionesComercialesVentaService:
         result = self.repository.define_condiciones_comerciales_venta(
             payload,
             objetos_payload,
+            [
+                VentaPlanCuotaReplacePayload(
+                    id_venta=command.id_venta,
+                    numero_cuota=cuota["numero_cuota"],
+                    importe_cuota=cuota["importe_cuota"],
+                    fecha_vencimiento=cuota["fecha_vencimiento"],
+                    moneda=cuota["moneda"],
+                    observaciones=cuota["observaciones"],
+                    created_at=now,
+                    updated_at=now,
+                    id_instalacion_origen=id_instalacion,
+                    id_instalacion_ultima_modificacion=id_instalacion,
+                    op_id_alta=op_id,
+                    op_id_ultima_modificacion=op_id,
+                )
+                for cuota in plan_result.data["cuotas"]
+            ],
         )
         status = result.get("status")
         if status == "CONCURRENCY_ERROR":
@@ -198,6 +233,60 @@ class DefineCondicionesComercialesVentaService:
                     "fecha_vencimiento_anticipo": None,
                     "importe_saldo": None,
                     "fecha_vencimiento_saldo": None,
+                    "cuotas": [],
+                }
+            )
+
+        if tipo_plan == TIPO_PLAN_CUOTAS_FIJAS:
+            cuotas = command.cuotas or []
+            if not cuotas:
+                return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS")
+
+            cuotas_normalizadas: list[dict[str, Any]] = []
+            numeros: set[int] = set()
+            total = Decimal("0")
+            for cuota in cuotas:
+                if cuota.numero_cuota <= 0:
+                    return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS")
+                if cuota.numero_cuota in numeros:
+                    return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS_DUPLICATE")
+                numeros.add(cuota.numero_cuota)
+
+                if cuota.importe_cuota <= 0:
+                    return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS")
+
+                cuota_moneda = (cuota.moneda or moneda).strip().upper()
+                if cuota_moneda != moneda:
+                    return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS_MONEDA")
+
+                total += cuota.importe_cuota
+                cuotas_normalizadas.append(
+                    {
+                        "numero_cuota": cuota.numero_cuota,
+                        "importe_cuota": cuota.importe_cuota,
+                        "fecha_vencimiento": cuota.fecha_vencimiento,
+                        "moneda": cuota_moneda,
+                        "observaciones": cuota.observaciones,
+                    }
+                )
+
+            numeros_esperados = set(range(1, len(cuotas_normalizadas) + 1))
+            if numeros != numeros_esperados:
+                return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS_SECUENCIA")
+
+            if total != command.monto_total:
+                return AppResult.fail("INVALID_PLAN_CUOTAS_FIJAS_TOTAL")
+
+            cuotas_normalizadas.sort(key=lambda item: item["numero_cuota"])
+            return AppResult.ok(
+                {
+                    "tipo_plan_financiero": TIPO_PLAN_CUOTAS_FIJAS,
+                    "moneda": moneda,
+                    "importe_anticipo": None,
+                    "fecha_vencimiento_anticipo": None,
+                    "importe_saldo": None,
+                    "fecha_vencimiento_saldo": None,
+                    "cuotas": cuotas_normalizadas,
                 }
             )
 
@@ -229,5 +318,6 @@ class DefineCondicionesComercialesVentaService:
                 "fecha_vencimiento_anticipo": command.fecha_vencimiento_anticipo,
                 "importe_saldo": command.importe_saldo,
                 "fecha_vencimiento_saldo": command.fecha_vencimiento_saldo,
+                "cuotas": [],
             }
         )

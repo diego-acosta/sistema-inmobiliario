@@ -1696,3 +1696,111 @@ def test_estado_cuenta_persona_saldos_jerarquicos_suman(client, db_session) -> N
                 sum(o["saldo_pendiente"] for o in relacion["obligaciones"])
             )
             assert all(o["composiciones"] for o in relacion["obligaciones"])
+
+
+def test_estado_cuenta_persona_muestra_cuotas_fijas_venta(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(client, nombre="Comprador", apellido="Cuotas")
+    venta = _crear_deuda_venta_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        codigo="ECP-VTA-CUOTAS",
+        monto=Decimal("50000.00"),
+    )
+    id_concepto = db_session.execute(
+        text(
+            """
+            SELECT id_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = 'CAPITAL_VENTA'
+              AND deleted_at IS NULL
+            """
+        )
+    ).scalar_one()
+    for numero, fecha in ((2, "2026-06-30"), (3, "2026-07-31")):
+        id_ob = db_session.execute(
+            text(
+                """
+                INSERT INTO obligacion_financiera (
+                    uid_global, version_registro, created_at, updated_at,
+                    id_instalacion_origen, id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion,
+                    id_relacion_generadora, fecha_emision, fecha_vencimiento,
+                    importe_total, saldo_pendiente, estado_obligacion
+                )
+                VALUES (
+                    gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                    :id_rg, CAST(:fecha AS date), CAST(:fecha AS date),
+                    50000.00, 50000.00, 'EMITIDA'
+                )
+                RETURNING id_obligacion_financiera
+                """
+            ),
+            {
+                "op_id": HEADERS["X-Op-Id"],
+                "id_rg": venta["id_relacion_generadora"],
+                "fecha": fecha,
+            },
+        ).scalar_one()
+        db_session.execute(
+            text(
+                """
+                INSERT INTO composicion_obligacion (
+                    uid_global, version_registro, created_at, updated_at,
+                    id_instalacion_origen, id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion,
+                    id_obligacion_financiera, id_concepto_financiero,
+                    orden_composicion, importe_componente, saldo_componente
+                )
+                VALUES (
+                    gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                    :id_ob, :id_concepto, :numero, 50000.00, 50000.00
+                )
+                """
+            ),
+            {
+                "op_id": HEADERS["X-Op-Id"],
+                "id_ob": id_ob,
+                "id_concepto": id_concepto,
+                "numero": numero,
+            },
+        )
+        db_session.execute(
+            text(
+                """
+                INSERT INTO obligacion_obligado (
+                    uid_global, version_registro, created_at, updated_at,
+                    id_instalacion_origen, id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion,
+                    id_obligacion_financiera, id_persona,
+                    rol_obligado, porcentaje_responsabilidad
+                )
+                VALUES (
+                    gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    1, 1, CAST(:op_id AS uuid), CAST(:op_id AS uuid),
+                    :id_ob, :id_persona, 'COMPRADOR', 100.00
+                )
+                """
+            ),
+            {
+                "op_id": HEADERS["X-Op-Id"],
+                "id_ob": id_ob,
+                "id_persona": id_persona,
+            },
+        )
+
+    resp = client.get(_url(id_persona), headers=HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    venta_grupo = next(g for g in data["grupos_deuda"] if g["grupo_origen_deuda"] == "VENTA")
+    assert data["resumen"]["saldo_venta"] == pytest.approx(150000.00)
+    assert len(venta_grupo["relaciones"][0]["obligaciones"]) == 3
+    assert {
+        ob["composiciones"][0]["codigo_concepto_financiero"]
+        for ob in venta_grupo["relaciones"][0]["obligaciones"]
+    } == {"CAPITAL_VENTA"}

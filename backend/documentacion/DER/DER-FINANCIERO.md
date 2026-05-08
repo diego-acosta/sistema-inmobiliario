@@ -158,9 +158,9 @@ Si no existe un comprador canonico, o existen multiples compradores canonicos,
 la materializacion financiera se bloquea. V1 no usa `cliente_comprador`, no
 infiere porcentajes y no crea reparto entre multiples compradores.
 
-Anticipo, cuotas y saldo extraordinario no forman parte del cierre `CONTADO V1`;
-requieren persistencia comercial minima adicional antes de generar nuevas
-obligaciones financieras.
+Anticipo, cuotas fijas y saldo extraordinario no forman parte del cierre
+`CONTADO V1`; requieren persistencia comercial minima adicional antes de generar
+nuevas obligaciones financieras.
 
 #### Venta V1 anticipo y saldo
 
@@ -173,6 +173,20 @@ Cuando `venta.tipo_plan_financiero = ANTICIPO_Y_SALDO`, la misma
 Ambas obligaciones usan `venta.moneda` y un `obligacion_obligado` `COMPRADOR`
 con `porcentaje_responsabilidad = 100.00`. El saldo pactado ordinario no usa
 `SALDO_EXTRAORDINARIO`.
+
+#### Venta V1 cuotas fijas
+
+Cuando `venta.tipo_plan_financiero = CUOTAS_FIJAS`, la misma
+`relacion_generadora` de venta contiene N obligaciones financieras, una por cada
+fila activa de `venta_plan_cuota`.
+
+Cada obligacion usa composicion `CAPITAL_VENTA`, importe
+`venta_plan_cuota.importe_cuota`, vencimiento
+`venta_plan_cuota.fecha_vencimiento`, moneda de la cuota y
+`obligacion_obligado` `COMPRADOR` con `porcentaje_responsabilidad = 100.00`.
+
+`CUOTA_VENTA` no se usa en V1 porque no esta formalmente vigente como concepto
+financiero operativo.
 
 ---
 
