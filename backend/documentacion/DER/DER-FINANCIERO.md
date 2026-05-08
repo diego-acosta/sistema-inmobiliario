@@ -539,9 +539,12 @@ SRV-FIN-012
   obligacion, composiciones y obligados
 - el listado por `comprobante_impuesto` incluye liquidaciones no eliminadas,
   activas o anuladas futuras, y no modifica saldos
-- pendiente futuro: la anulacion de `egreso_impuesto_empresa` debe bloquearse
-  si una `liquidacion_impuesto_trasladado` activa usa el egreso
-- pendiente futuro: anulacion/reversion de `liquidacion_impuesto_trasladado`
+- la anulacion de `egreso_impuesto_empresa` se bloquea si una
+  `liquidacion_impuesto_trasladado` activa usa el egreso
+- la anulacion conservadora de `liquidacion_impuesto_trasladado` marca la
+  liquidacion como `ANULADA`, cancela la relacion generadora, anula la
+  obligacion y composiciones, y libera logicamente vinculos a egresos
+  sin tocar `egreso_impuesto_empresa` ni `movimiento_tesoreria`
 - no se crea `IMPUESTO_RECUPERADO` en V1
 - `IMPUESTO_TRASLADADO.aplica_punitorio = false` se mantiene salvo decision
   posterior

@@ -592,6 +592,8 @@ Reglas:
 - si esta `REGISTRADO`, marca `egreso_impuesto_empresa` y
   `movimiento_tesoreria` como `ANULADO`;
 - si ya estaba `ANULADO`, devuelve `YA_ANULADO`;
+- si el egreso fue usado por una `liquidacion_impuesto_trasladado` activa,
+  bloquea con `EGRESO_IMPUESTO_CON_LIQUIDACION_TRASLADADA`;
 - no borra fisicamente;
 - no toca `comprobante_impuesto`;
 - no crea ni modifica `movimiento_financiero`, `relacion_generadora` ni
@@ -603,6 +605,7 @@ Reglas:
 Errores principales:
 
 - `EGRESO_IMPUESTO_NOT_FOUND`
+- `EGRESO_IMPUESTO_CON_LIQUIDACION_TRASLADADA`
 
 ### POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado
 

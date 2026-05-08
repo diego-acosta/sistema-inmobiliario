@@ -909,6 +909,68 @@ def test_get_egresos_impuesto_no_suma_egreso_anulado(client, db_session) -> None
     assert data["egresos"][0]["estado_egreso"] == "ANULADO"
 
 
+def test_anular_egreso_impuesto_usado_en_liquidacion_activa_bloquea(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-EIE-BLOQ-LIQ")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-EIE-BLOQ-LIQ",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000e215",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000e216",
+    ).json()["data"]
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/egresos-impuesto-empresa/"
+            f"{egreso['id_egreso_impuesto_empresa']}/anular"
+        ),
+        json={"motivo": "Intento posterior a liquidacion"},
+        headers=_headers_op("00000000-0000-0000-0000-00000000e217"),
+    )
+
+    assert response.status_code == 409, response.text
+    assert (
+        response.json()["error_code"]
+        == "EGRESO_IMPUESTO_CON_LIQUIDACION_TRASLADADA"
+    )
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                e.estado_egreso,
+                lit.estado_liquidacion
+            FROM egreso_impuesto_empresa e
+            JOIN liquidacion_impuesto_trasladado_egreso lite
+              ON lite.id_egreso_impuesto_empresa = e.id_egreso_impuesto_empresa
+            JOIN liquidacion_impuesto_trasladado lit
+              ON lit.id_liquidacion_impuesto_trasladado =
+                 lite.id_liquidacion_impuesto_trasladado
+            WHERE e.id_egreso_impuesto_empresa = :id_egreso
+              AND lit.id_liquidacion_impuesto_trasladado = :id_liquidacion
+            """
+        ),
+        {
+            "id_egreso": egreso["id_egreso_impuesto_empresa"],
+            "id_liquidacion": liquidacion["id_liquidacion_impuesto_trasladado"],
+        },
+    ).mappings().one()
+    assert row["estado_egreso"] == "REGISTRADO"
+    assert row["estado_liquidacion"] == "EMITIDA"
+
+
 def test_anular_egreso_impuesto_repetido_devuelve_ya_anulado(
     client, db_session
 ) -> None:

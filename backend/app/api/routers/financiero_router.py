@@ -630,6 +630,18 @@ def anular_egreso_impuesto_empresa(
                     details={"errors": result.errors},
                 ).model_dump(),
             )
+        if "EGRESO_IMPUESTO_CON_LIQUIDACION_TRASLADADA" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="EGRESO_IMPUESTO_CON_LIQUIDACION_TRASLADADA",
+                    error_message=(
+                        "El egreso de impuesto ya fue usado por una "
+                        "liquidacion de impuesto trasladado activa."
+                    ),
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(

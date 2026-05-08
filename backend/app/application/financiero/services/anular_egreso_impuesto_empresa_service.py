@@ -13,6 +13,10 @@ class FinancieroRepository(Protocol):
         self, id_egreso: int
     ) -> dict[str, Any] | None: ...
 
+    def egreso_impuesto_usado_en_liquidacion_trasladada(
+        self, id_egreso: int
+    ) -> bool: ...
+
     def anular_egreso_impuesto_empresa(
         self, *, id_egreso: int, motivo: str, context: Any
     ) -> dict[str, Any]: ...
@@ -52,6 +56,11 @@ class AnularEgresoImpuestoEmpresaService:
             egreso["motivo"] = egreso.get("motivo_anulacion") or motivo
             egreso["ya_anulado"] = True
             return AppResult.ok(_response(egreso))
+
+        if self.repository.egreso_impuesto_usado_en_liquidacion_trasladada(
+            id_egreso
+        ):
+            return AppResult.fail("EGRESO_IMPUESTO_CON_LIQUIDACION_TRASLADADA")
 
         anulado = self.repository.anular_egreso_impuesto_empresa(
             id_egreso=id_egreso,

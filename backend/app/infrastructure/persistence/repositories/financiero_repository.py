@@ -5158,7 +5158,33 @@ class FinancieroRepository:
             LIMIT 1
             """
         )
-        return self.db.execute(stmt, {"id_egreso": id_egreso}).scalar_one_or_none() is not None
+        return (
+            self.db.execute(stmt, {"id_egreso": id_egreso}).scalar_one_or_none()
+            is not None
+        )
+
+    def egreso_impuesto_usado_en_liquidacion_trasladada(
+        self, id_egreso: int
+    ) -> bool:
+        stmt = text(
+            """
+            SELECT 1
+            FROM liquidacion_impuesto_trasladado_egreso lite
+            JOIN liquidacion_impuesto_trasladado lit
+              ON lit.id_liquidacion_impuesto_trasladado =
+                 lite.id_liquidacion_impuesto_trasladado
+             AND lit.deleted_at IS NULL
+             AND lit.estado_liquidacion = 'EMITIDA'
+            WHERE lite.id_egreso_impuesto_empresa = :id_egreso
+              AND lite.deleted_at IS NULL
+              AND lite.estado_liquidacion_impuesto_egreso = 'ACTIVO'
+            LIMIT 1
+            """
+        )
+        return (
+            self.db.execute(stmt, {"id_egreso": id_egreso}).scalar_one_or_none()
+            is not None
+        )
 
     def anular_egreso_proveedor_factura_servicio(
         self, *, id_egreso: int, motivo: str, context: Any
