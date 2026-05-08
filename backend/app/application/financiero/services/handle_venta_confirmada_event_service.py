@@ -19,6 +19,7 @@ from app.application.financiero.services.create_relacion_generadora_service impo
 EVENT_TYPE_VENTA_CONFIRMADA = "venta_confirmada"
 TIPO_ORIGEN_VENTA = "venta"
 CONCEPTO_CAPITAL_VENTA = "CAPITAL_VENTA"
+ROL_OBLIGADO_COMPRADOR = "COMPRADOR"
 
 
 @dataclass(slots=True)
@@ -28,6 +29,22 @@ class HandleVentaConfirmadaEventData:
     relacion_generadora_created: bool
     obligacion_created: bool
     id_obligacion_financiera: int | None
+
+
+@dataclass(slots=True)
+class ObligadoVentaCreatePayload:
+    id_obligacion_financiera: int
+    id_persona: int
+    rol_obligado: str
+    porcentaje_responsabilidad: float
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: UUID | None
+    op_id_ultima_modificacion: UUID | None
 
 
 class _RollbackAppResult(Exception):
@@ -58,6 +75,21 @@ class FinancieroRepository(Protocol):
     ) -> bool:
         ...
 
+    def get_obligacion_activa_by_relacion_generadora(
+        self, id_relacion_generadora: int
+    ) -> dict[str, Any] | None:
+        ...
+
+    def get_obligados_by_obligacion(
+        self, id_obligacion_financiera: int
+    ) -> list[dict[str, Any]]:
+        ...
+
+    def get_compradores_financieros_venta(
+        self, id_venta: int
+    ) -> list[dict[str, Any]]:
+        ...
+
     def get_concepto_financiero_by_codigo(
         self, codigo: str
     ) -> dict[str, Any] | None:
@@ -67,6 +99,12 @@ class FinancieroRepository(Protocol):
         self,
         obligacion: ObligacionCreatePayload,
         composiciones: list[ComposicionCreatePayload],
+    ) -> dict[str, Any]:
+        ...
+
+    def create_obligacion_obligado(
+        self,
+        payload: ObligadoVentaCreatePayload,
     ) -> dict[str, Any]:
         ...
 
@@ -115,22 +153,60 @@ class HandleVentaConfirmadaEventService:
             id_venta,
         )
         relacion_generadora_created = False
+        obligacion_existente = None
+        if relacion_generadora is not None:
+            obligacion_existente = (
+                self.repository.get_obligacion_activa_by_relacion_generadora(
+                    relacion_generadora["id_relacion_generadora"]
+                )
+            )
+            if obligacion_existente is not None:
+                obligados = self.repository.get_obligados_by_obligacion(
+                    obligacion_existente["id_obligacion_financiera"]
+                )
+                if obligados:
+                    return AppResult.ok(
+                        {
+                            "id_venta": id_venta,
+                            "id_relacion_generadora": relacion_generadora[
+                                "id_relacion_generadora"
+                            ],
+                            "created": False,
+                            "relacion_generadora_created": False,
+                            "obligacion_created": False,
+                            "obligado_created": False,
+                            "id_obligacion_financiera": obligacion_existente[
+                                "id_obligacion_financiera"
+                            ],
+                        }
+                    )
+
+        comprador = self._resolve_comprador_financiero(id_venta)
+
         if relacion_generadora is None:
             relacion_generadora = self._create_relacion_generadora(id_venta, event)
             relacion_generadora_created = True
 
         id_relacion_generadora = relacion_generadora["id_relacion_generadora"]
-        if self.repository.has_obligaciones_by_relacion_generadora(
-            id_relacion_generadora
-        ):
+        if obligacion_existente is not None:
+            self._create_obligado(
+                id_obligacion_financiera=obligacion_existente[
+                    "id_obligacion_financiera"
+                ],
+                id_persona=comprador["id_persona"],
+                event=event,
+            )
             return AppResult.ok(
                 {
                     "id_venta": id_venta,
                     "id_relacion_generadora": id_relacion_generadora,
-                    "created": relacion_generadora_created,
-                    "relacion_generadora_created": relacion_generadora_created,
+                    "created": False,
+                    "relacion_generadora_created": False,
                     "obligacion_created": False,
-                    "id_obligacion_financiera": None,
+                    "obligado_created": True,
+                    "id_obligacion_financiera": obligacion_existente[
+                        "id_obligacion_financiera"
+                    ],
                 }
             )
 
@@ -180,6 +256,11 @@ class HandleVentaConfirmadaEventService:
                 )
             ],
         )
+        self._create_obligado(
+            id_obligacion_financiera=obligacion["id_obligacion_financiera"],
+            id_persona=comprador["id_persona"],
+            event=event,
+        )
 
         return AppResult.ok(
             {
@@ -188,10 +269,47 @@ class HandleVentaConfirmadaEventService:
                 "created": relacion_generadora_created,
                 "relacion_generadora_created": relacion_generadora_created,
                 "obligacion_created": True,
+                "obligado_created": True,
                 "id_obligacion_financiera": obligacion[
                     "id_obligacion_financiera"
                 ],
             }
+        )
+
+    def _resolve_comprador_financiero(self, id_venta: int) -> dict[str, Any]:
+        compradores = self.repository.get_compradores_financieros_venta(id_venta)
+        if not compradores:
+            raise _RollbackAppResult(AppResult.fail("COMPRADOR_VENTA_NO_RESUELTO"))
+        personas = {row["id_persona"] for row in compradores}
+        if len(personas) != 1 or len(compradores) != 1:
+            raise _RollbackAppResult(
+                AppResult.fail("COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO")
+            )
+        return compradores[0]
+
+    def _create_obligado(
+        self,
+        *,
+        id_obligacion_financiera: int,
+        id_persona: int,
+        event: dict[str, Any],
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        return self.repository.create_obligacion_obligado(
+            ObligadoVentaCreatePayload(
+                id_obligacion_financiera=id_obligacion_financiera,
+                id_persona=id_persona,
+                rol_obligado=ROL_OBLIGADO_COMPRADOR,
+                porcentaje_responsabilidad=100.00,
+                uid_global=str(self.uuid_generator()),
+                version_registro=1,
+                created_at=now,
+                updated_at=now,
+                id_instalacion_origen=None,
+                id_instalacion_ultima_modificacion=None,
+                op_id_alta=self._parse_op_id(event),
+                op_id_ultima_modificacion=self._parse_op_id(event),
+            )
         )
 
     def _create_relacion_generadora(

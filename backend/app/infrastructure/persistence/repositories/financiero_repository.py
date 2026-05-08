@@ -659,6 +659,35 @@ class FinancieroRepository:
         )
         return dict(row) if row else None
 
+    def get_compradores_financieros_venta(
+        self, id_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                rpr.id_relacion_persona_rol,
+                rpr.id_persona,
+                rp.codigo_rol
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+             AND rp.estado_rol = 'ACTIVO'
+            JOIN persona p
+              ON p.id_persona = rpr.id_persona
+             AND p.deleted_at IS NULL
+            WHERE rpr.tipo_relacion = 'venta'
+              AND rpr.id_relacion = :id_venta
+              AND rpr.deleted_at IS NULL
+              AND rpr.fecha_desde <= CURRENT_TIMESTAMP
+              AND (rpr.fecha_hasta IS NULL OR rpr.fecha_hasta >= CURRENT_TIMESTAMP)
+              AND UPPER(rp.codigo_rol) = 'COMPRADOR'
+            ORDER BY rpr.fecha_desde ASC, rpr.id_relacion_persona_rol ASC
+            """
+        )
+        rows = self.db.execute(stmt, {"id_venta": id_venta}).mappings().all()
+        return [dict(row) for row in rows]
+
     # ── contrato_alquiler / condicion_economica (lectura para financiero) ────────
 
     def get_contrato_alquiler_para_financiero(
@@ -1261,6 +1290,89 @@ class FinancieroRepository:
             ).scalar_one_or_none()
             is not None
         )
+
+    def get_obligados_by_obligacion(
+        self, id_obligacion_financiera: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                id_obligacion_obligado,
+                id_obligacion_financiera,
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND deleted_at IS NULL
+            ORDER BY id_obligacion_obligado ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+        ).mappings().all()
+        return [
+            {
+                **dict(row),
+                "porcentaje_responsabilidad": (
+                    float(row["porcentaje_responsabilidad"])
+                    if row["porcentaje_responsabilidad"] is not None
+                    else None
+                ),
+            }
+            for row in rows
+        ]
+
+    def create_obligacion_obligado(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO obligacion_obligado (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_obligacion_financiera, id_persona,
+                rol_obligado, porcentaje_responsabilidad
+            )
+            VALUES (
+                :uid_global, :version_registro, :created_at, :updated_at,
+                :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                :op_id_alta, :op_id_ultima_modificacion,
+                :id_obligacion_financiera, :id_persona,
+                :rol_obligado, :porcentaje_responsabilidad
+            )
+            RETURNING
+                id_obligacion_obligado,
+                id_obligacion_financiera,
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "uid_global": values["uid_global"],
+                "version_registro": values["version_registro"],
+                "created_at": values["created_at"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_origen": values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": values["op_id_alta"],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                "id_obligacion_financiera": values["id_obligacion_financiera"],
+                "id_persona": values["id_persona"],
+                "rol_obligado": values["rol_obligado"],
+                "porcentaje_responsabilidad": values["porcentaje_responsabilidad"],
+            },
+        ).mappings().one()
+        result = dict(row)
+        result["porcentaje_responsabilidad"] = float(
+            result["porcentaje_responsabilidad"]
+        )
+        return result
 
     def get_estado_cuenta_financiero(
         self,

@@ -96,48 +96,6 @@ def _id_persona_parte_venta(db_session, *, id_venta: int) -> int:
     ).mappings().one()["id_persona"]
 
 
-def _insertar_obligado(db_session, *, id_obligacion_financiera: int, id_persona: int):
-    db_session.execute(
-        text(
-            """
-            INSERT INTO obligacion_obligado (
-                uid_global,
-                version_registro,
-                created_at,
-                updated_at,
-                id_instalacion_origen,
-                id_instalacion_ultima_modificacion,
-                op_id_alta,
-                op_id_ultima_modificacion,
-                id_obligacion_financiera,
-                id_persona,
-                rol_obligado,
-                porcentaje_responsabilidad
-            )
-            VALUES (
-                gen_random_uuid(),
-                1,
-                CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP,
-                1,
-                1,
-                CAST(:op_id AS uuid),
-                CAST(:op_id AS uuid),
-                :id_obligacion_financiera,
-                :id_persona,
-                'COMPRADOR',
-                100.00
-            )
-            """
-        ),
-        {
-            "op_id": HEADERS["X-Op-Id"],
-            "id_obligacion_financiera": id_obligacion_financiera,
-            "id_persona": id_persona,
-        },
-    )
-
-
 def test_detalle_integral_venta_sin_financiero_devuelve_relacion_null_y_obligaciones_vacias(
     client, db_session
 ) -> None:
@@ -230,7 +188,7 @@ def test_detalle_integral_incluye_objetos_condiciones_partes_y_recursos_comercia
     assert data["condiciones_comerciales"]["moneda"] is None
     assert float(data["condiciones_comerciales"]["objetos"][0]["precio_asignado"]) == 150000.00
     assert len(data["partes"]) == 1
-    assert data["partes"][0]["codigo_rol"] == "ROL-COM-9301"
+    assert data["partes"][0]["codigo_rol"] == "COMPRADOR"
     assert len(data["instrumentos_compraventa"]) == 1
     assert len(data["cesiones"]) == 1
     assert len(data["escrituraciones"]) == 1
@@ -239,13 +197,8 @@ def test_detalle_integral_incluye_objetos_condiciones_partes_y_recursos_comercia
 
 def test_detalle_integral_incluye_obligados_si_existen(client, db_session) -> None:
     venta = _confirmar_venta(client, db_session)
-    fin = _procesar_evento_financiero_venta(db_session, id_venta=venta["id_venta"])
+    _procesar_evento_financiero_venta(db_session, id_venta=venta["id_venta"])
     id_persona = _id_persona_parte_venta(db_session, id_venta=venta["id_venta"])
-    _insertar_obligado(
-        db_session,
-        id_obligacion_financiera=fin["id_obligacion_financiera"],
-        id_persona=id_persona,
-    )
 
     response = _detalle(client, venta["id_venta"])
 

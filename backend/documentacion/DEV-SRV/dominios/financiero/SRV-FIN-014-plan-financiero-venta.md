@@ -25,8 +25,14 @@ El flujo comercial implementado actualmente es:
 6. Financiero crea `relacion_generadora` desde `venta_confirmada` con:
    - `tipo_origen = 'venta'`
    - `id_origen = id_venta`
+7. Financiero resuelve un comprador canonico desde `relacion_persona_rol`
+   y `rol_participacion` usando `codigo_rol = COMPRADOR`.
+8. Si existe exactamente un comprador, financiero materializa
+   `obligacion_obligado` para la obligacion `CAPITAL_VENTA`.
 
-La generacion automatica de obligaciones desde venta no esta implementada.
+La generacion automatica V1 desde venta confirmada materializa una deuda contado
+minima: relacion generadora, obligacion `CAPITAL_VENTA`, composicion y obligado
+financiero comprador.
 
 ---
 
@@ -326,9 +332,12 @@ Cualquier correccion posterior debe modelarse como operacion financiera explicit
 - No hay datos de vencimiento; V1 usa `venta.fecha_venta`.
 - No hay idempotencia SQL para impedir duplicacion de obligaciones por plan.
 - No hay tabla de plan financiero materializado.
-- No hay resolucion de obligado financiero implementada para obligaciones de venta.
+- La resolucion de obligado financiero de venta V1 solo soporta un comprador
+  canonico `COMPRADOR` al 100%.
 - Si se generan obligaciones automaticamente sin plan explicito, puede confundirse la responsabilidad comercial con la financiera.
 - Si financiero calcula cuotas o intereses, invade ownership comercial.
+- Multiples compradores requieren un diseno futuro de porcentajes o
+  responsabilidad; V1 bloquea el caso y no inventa reparto.
 
 ---
 
@@ -341,10 +350,12 @@ Alcance:
 - implementar materializacion financiera para venta contado
 - usar `relacion_generadora` existente
 - crear una obligacion con una composicion `CAPITAL_VENTA`
+- crear `obligacion_obligado` para el comprador canonico `COMPRADOR`
+  con `porcentaje_responsabilidad = 100.00`
 - importe igual a `venta.monto_total`
 - moneda `ARS`
 - fecha de vencimiento igual a `venta.fecha_venta`
-- idempotencia aplicativa por existencia de obligaciones para la relacion
+- idempotencia aplicativa por existencia de obligacion y obligado para la relacion
 
 No incluye:
 
@@ -352,7 +363,9 @@ No incluye:
 - cuotas
 - intereses
 - moneda comercial configurable
-- obligado financiero
+- multiples compradores
+- porcentajes de responsabilidad
+- `cliente_comprador`
 - cambios SQL
 
 ### Fase 2 - Contrato explicito de plan
@@ -381,12 +394,14 @@ Alcance:
 - evitar duplicidad bajo procesamiento concurrente real
 - definir clave unica por venta y version de plan
 
-### Fase 5 - Obligado financiero
+### Fase 5 - Multiples obligados
 
 Alcance:
 
-- resolver comprador u obligado financiero desde participaciones comerciales
-- persistir `obligacion_obligado` cuando el modelo este definido
+- resolver multiples compradores cuando exista modelo de porcentajes o
+  responsabilidad
+- definir solidaridad, participacion o reparto
+- persistir varios `obligacion_obligado` solo con regla explicita
 
 ---
 
@@ -409,7 +424,7 @@ La materializacion del plan financiero de venta se realiza a traves del inbox:
 venta_confirmada
 -> POST /api/v1/financiero/inbox
 -> HandleVentaConfirmadaEventService
--> relacion_generadora + obligacion CAPITAL_VENTA
+-> relacion_generadora + obligacion CAPITAL_VENTA + obligacion_obligado COMPRADOR
 ```
 
 ---
@@ -420,6 +435,13 @@ venta_confirmada
   se ejecuta de forma atomica junto con la creacion de la relacion generadora.
 - No existe riesgo de inconsistencias intermedias.
 - La idempotencia sigue siendo aplicativa.
+- Si no existe comprador canonico `COMPRADOR`, se devuelve
+  `COMPRADOR_VENTA_NO_RESUELTO` y no se crea relacion ni obligacion.
+- Si existen multiples compradores canonicos, se devuelve
+  `COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO` y no se crea relacion ni obligacion.
+- Si ya existe obligacion sin obligado y en reproceso existe exactamente un
+  comprador canonico, el handler completa `obligacion_obligado` sin duplicar la
+  obligacion.
 
 ---
 

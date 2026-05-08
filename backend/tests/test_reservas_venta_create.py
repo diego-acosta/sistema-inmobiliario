@@ -18,7 +18,13 @@ def _apply_reserva_multiobjeto_patch(db_session) -> None:
         cursor.execute(PATCH_SQL_PATH.read_text(encoding="utf-8"))
 
 
-def _crear_rol_participacion_activo(db_session, *, id_rol_participacion: int) -> None:
+def _crear_rol_participacion_activo(
+    db_session,
+    *,
+    id_rol_participacion: int,
+    codigo_rol: str | None = None,
+) -> None:
+    codigo = codigo_rol or f"ROL-COM-{id_rol_participacion}"
     db_session.execute(
         text(
             """
@@ -57,8 +63,8 @@ def _crear_rol_participacion_activo(db_session, *, id_rol_participacion: int) ->
         {
             "id_rol_participacion": id_rol_participacion,
             "op_id": HEADERS["X-Op-Id"],
-            "codigo_rol": f"ROL-COM-{id_rol_participacion}",
-            "nombre_rol": f"Rol Comercial {id_rol_participacion}",
+            "codigo_rol": codigo,
+            "nombre_rol": f"Rol Comercial {codigo}",
         },
     )
 

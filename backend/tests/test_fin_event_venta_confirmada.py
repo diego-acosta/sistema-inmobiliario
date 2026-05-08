@@ -65,6 +65,20 @@ def _count_obligaciones_relacion(db_session, *, id_relacion_generadora: int) -> 
     ).mappings().one()["total"]
 
 
+def _count_obligados_obligacion(db_session, *, id_obligacion_financiera: int) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT COUNT(*) AS total
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id_obligacion_financiera": id_obligacion_financiera},
+    ).mappings().one()["total"]
+
+
 def _get_fecha_venta(db_session, *, id_venta: int) -> str:
     return str(
         db_session.execute(
@@ -124,6 +138,132 @@ def _insertar_venta_confirmada_con_monto(db_session, *, monto_total) -> int:
     )
     db_session.commit()
     return id_venta
+
+
+def _asegurar_rol_comprador(db_session, *, id_rol_participacion: int = 9901) -> int:
+    row = db_session.execute(
+        text(
+            """
+            SELECT id_rol_participacion
+            FROM rol_participacion
+            WHERE codigo_rol = 'COMPRADOR'
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+    ).mappings().one_or_none()
+    if row is not None:
+        return row["id_rol_participacion"]
+
+    return db_session.execute(
+        text(
+            """
+            INSERT INTO rol_participacion (
+                id_rol_participacion,
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                codigo_rol,
+                nombre_rol,
+                estado_rol
+            )
+            VALUES (
+                :id_rol_participacion,
+                gen_random_uuid(),
+                1,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP,
+                'COMPRADOR',
+                'Comprador',
+                'ACTIVO'
+            )
+            RETURNING id_rol_participacion
+            """
+        ),
+        {"id_rol_participacion": id_rol_participacion},
+    ).mappings().one()["id_rol_participacion"]
+
+
+def _crear_persona_minima(db_session, *, codigo: str) -> int:
+    return db_session.execute(
+        text(
+            """
+            INSERT INTO persona (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                tipo_persona,
+                codigo_persona,
+                nombre,
+                apellido,
+                estado_persona
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP,
+                'FISICA',
+                :codigo,
+                'Comprador',
+                :codigo,
+                'ACTIVA'
+            )
+            RETURNING id_persona
+            """
+        ),
+        {"codigo": codigo},
+    ).mappings().one()["id_persona"]
+
+
+def _vincular_comprador_venta(
+    db_session,
+    *,
+    id_venta: int,
+    id_persona: int | None = None,
+    id_rol_participacion: int | None = None,
+) -> int:
+    id_rol = id_rol_participacion or _asegurar_rol_comprador(db_session)
+    id_persona_final = id_persona or _crear_persona_minima(
+        db_session, codigo=f"PER-COMP-VTA-{id_venta}"
+    )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO relacion_persona_rol (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_persona,
+                id_rol_participacion,
+                tipo_relacion,
+                id_relacion,
+                fecha_desde
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP,
+                :id_persona,
+                :id_rol_participacion,
+                'venta',
+                :id_venta,
+                CURRENT_TIMESTAMP
+            )
+            """
+        ),
+        {
+            "id_persona": id_persona_final,
+            "id_rol_participacion": id_rol,
+            "id_venta": id_venta,
+        },
+    )
+    db_session.commit()
+    return id_persona_final
 
 
 def test_fin_venta_confirmada_crea_relacion_generadora_y_obligacion_capital_venta(
@@ -193,6 +333,19 @@ def test_fin_venta_confirmada_crea_relacion_generadora_y_obligacion_capital_vent
     assert str(obligacion["importe_componente"]) == "150000.00"
     assert str(obligacion["saldo_componente"]) == "150000.00"
     assert obligacion["moneda_componente"] == "ARS"
+    obligado = db_session.execute(
+        text(
+            """
+            SELECT id_persona, rol_obligado, porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id_obligacion_financiera": result.data["id_obligacion_financiera"]},
+    ).mappings().one()
+    assert obligado["rol_obligado"] == "COMPRADOR"
+    assert str(obligado["porcentaje_responsabilidad"]) == "100.00"
 
 
 def test_fin_venta_confirmada_no_duplica_si_ya_existe(client, db_session) -> None:
@@ -220,6 +373,13 @@ def test_fin_venta_confirmada_no_duplica_si_ya_existe(client, db_session) -> Non
         _count_obligaciones_relacion(
             db_session,
             id_relacion_generadora=first_result.data["id_relacion_generadora"],
+        )
+        == 1
+    )
+    assert (
+        _count_obligados_obligacion(
+            db_session,
+            id_obligacion_financiera=first_result.data["id_obligacion_financiera"],
         )
         == 1
     )
@@ -304,6 +464,7 @@ def test_fin_venta_confirmada_rollback_si_falla_creacion_obligacion(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_confirmada_con_monto(db_session, monto_total=150000)
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
     event = dict(_get_venta_confirmada_event(db_session, id_venta=id_venta))
     service = HandleVentaConfirmadaEventService(
         repository=FailingObligacionFinancieraRepository(db_session),
@@ -317,3 +478,78 @@ def test_fin_venta_confirmada_rollback_si_falla_creacion_obligacion(
         text("SELECT COUNT(*) AS total FROM obligacion_financiera")
     ).mappings().one()
     assert obligaciones["total"] == 0
+
+
+def test_fin_venta_confirmada_sin_comprador_bloquea_sin_crear_deuda(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_confirmada_con_monto(db_session, monto_total=150000)
+    event = dict(_get_venta_confirmada_event(db_session, id_venta=id_venta))
+
+    result = _build_service(db_session).execute(event)
+
+    assert result.success is False
+    assert result.errors == ["COMPRADOR_VENTA_NO_RESUELTO"]
+    assert _count_relaciones_venta(db_session, id_venta=id_venta) == 0
+    assert db_session.execute(
+        text("SELECT COUNT(*) AS total FROM obligacion_financiera")
+    ).mappings().one()["total"] == 0
+
+
+def test_fin_venta_confirmada_multiples_compradores_bloquea_v1(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_confirmada_con_monto(db_session, monto_total=150000)
+    _vincular_comprador_venta(
+        db_session,
+        id_venta=id_venta,
+        id_persona=_crear_persona_minima(db_session, codigo="PER-COMP-MULTI-1"),
+    )
+    _vincular_comprador_venta(
+        db_session,
+        id_venta=id_venta,
+        id_persona=_crear_persona_minima(db_session, codigo="PER-COMP-MULTI-2"),
+    )
+    event = dict(_get_venta_confirmada_event(db_session, id_venta=id_venta))
+
+    result = _build_service(db_session).execute(event)
+
+    assert result.success is False
+    assert result.errors == ["COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO"]
+    assert _count_relaciones_venta(db_session, id_venta=id_venta) == 0
+    assert db_session.execute(
+        text("SELECT COUNT(*) AS total FROM obligacion_financiera")
+    ).mappings().one()["total"] == 0
+
+
+def test_fin_venta_confirmada_reproceso_completa_obligado_faltante(
+    client,
+    db_session,
+) -> None:
+    venta = _confirmar_venta_publica(client, db_session)
+    event = dict(_get_venta_confirmada_event(db_session, id_venta=venta["id_venta"]))
+    service = _build_service(db_session)
+
+    first_result = service.execute(event)
+    assert first_result.success is True
+    id_obligacion = first_result.data["id_obligacion_financiera"]
+    db_session.execute(
+        text(
+            """
+            UPDATE obligacion_obligado
+            SET deleted_at = CURRENT_TIMESTAMP
+            WHERE id_obligacion_financiera = :id_obligacion
+            """
+        ),
+        {"id_obligacion": id_obligacion},
+    )
+    db_session.commit()
+
+    second_result = service.execute(event)
+
+    assert second_result.success is True
+    assert second_result.data["obligacion_created"] is False
+    assert second_result.data["obligado_created"] is True
+    assert _count_obligados_obligacion(
+        db_session, id_obligacion_financiera=id_obligacion
+    ) == 1

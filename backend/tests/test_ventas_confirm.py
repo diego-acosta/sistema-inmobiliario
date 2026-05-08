@@ -61,7 +61,11 @@ def _crear_trigger_falla_confirmacion_venta(db_session, *, id_venta: int) -> Non
 def _crear_venta_desde_reserva_publica(client, db_session) -> dict[str, int]:
     _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Margaret", apellido="Hamilton")
-    _crear_rol_participacion_activo(db_session, id_rol_participacion=9301)
+    _crear_rol_participacion_activo(
+        db_session,
+        id_rol_participacion=9301,
+        codigo_rol="COMPRADOR",
+    )
     id_inmueble = _crear_inmueble(client, codigo="INM-VTA-CONF-001")
     _crear_disponibilidad(
         client,

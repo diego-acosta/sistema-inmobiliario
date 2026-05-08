@@ -229,9 +229,9 @@ BEGIN
         1,
         v_op_id,
         v_op_id,
-        'ROL-COM-SEED-001',
+        'COMPRADOR',
         'Comprador comercial seed',
-        'Rol de participacion minimo para reservas y ventas',
+        'Rol canonico de comprador para reservas y ventas',
         'ACTIVO'
     )
     ON CONFLICT (codigo_rol) DO NOTHING;
@@ -239,7 +239,7 @@ BEGIN
     SELECT id_rol_participacion
     INTO v_id_rol
     FROM public.rol_participacion
-    WHERE codigo_rol = 'ROL-COM-SEED-001';
+    WHERE codigo_rol = 'COMPRADOR';
 
     INSERT INTO public.inmueble (
         id_instalacion_origen,

@@ -916,6 +916,11 @@ Integraciones por evento implementadas:
   - `venta_confirmada`
   - crea o reutiliza `relacion_generadora` con `tipo_origen = 'venta'`
   - materializa una obligacion `CAPITAL_VENTA` para V1 contado
+  - resuelve exactamente un comprador canonico `COMPRADOR` desde
+    `relacion_persona_rol` / `rol_participacion` y materializa
+    `obligacion_obligado` con `porcentaje_responsabilidad = 100.00`
+  - si no hay comprador canonico o hay multiples compradores canonicos, bloquea
+    la materializacion financiera sin crear deuda huerfana
 - Locativo -> Financiero:
   - `contrato_alquiler_activado`
   - crea o reutiliza `relacion_generadora` con

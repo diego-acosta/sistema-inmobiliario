@@ -15,6 +15,7 @@ from tests.test_ventas_confirm import (
 
 URL_DEUDA = "/api/v1/financiero/deuda"
 URL_ESTADO_CUENTA = "/api/v1/financiero/estado-cuenta"
+URL_ESTADO_CUENTA_PERSONA = "/api/v1/financiero/personas/{id_persona}/estado-cuenta"
 
 
 def _get_venta_confirmada_event(db_session, *, id_venta: int) -> dict:
@@ -43,6 +44,26 @@ def _get_venta_minima(db_session, *, id_venta: int) -> dict:
         ),
         {"id_venta": id_venta},
     ).mappings().one()
+
+
+def _get_comprador_venta(db_session, *, id_venta: int) -> int:
+    return db_session.execute(
+        text(
+            """
+            SELECT rpr.id_persona
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+            WHERE rpr.tipo_relacion = 'venta'
+              AND rpr.id_relacion = :id_venta
+              AND rpr.deleted_at IS NULL
+              AND UPPER(rp.codigo_rol) = 'COMPRADOR'
+            ORDER BY rpr.id_relacion_persona_rol ASC
+            LIMIT 1
+            """
+        ),
+        {"id_venta": id_venta},
+    ).mappings().one()["id_persona"]
 
 
 def test_venta_confirmada_materializa_deuda_y_estado_cuenta_v1_contado(
@@ -117,6 +138,21 @@ def test_venta_confirmada_materializa_deuda_y_estado_cuenta_v1_contado(
     assert obligacion["saldo_pendiente"] == monto_total
     assert obligacion["fecha_vencimiento"] == fecha_venta
     assert obligacion["moneda_componente"] == "ARS"
+    obligado = db_session.execute(
+        text(
+            """
+            SELECT id_persona, rol_obligado, porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id_obligacion_financiera": id_obligacion_financiera},
+    ).mappings().one()
+    id_comprador = _get_comprador_venta(db_session, id_venta=id_venta)
+    assert obligado["id_persona"] == id_comprador
+    assert obligado["rol_obligado"] == "COMPRADOR"
+    assert str(obligado["porcentaje_responsabilidad"]) == "100.00"
 
     deuda_response = client.get(
         URL_DEUDA,
@@ -150,4 +186,16 @@ def test_venta_confirmada_materializa_deuda_y_estado_cuenta_v1_contado(
     assert (
         estado_obligacion["composiciones"][0]["codigo_concepto_financiero"]
         == "CAPITAL_VENTA"
+    )
+
+    estado_persona_response = client.get(
+        URL_ESTADO_CUENTA_PERSONA.format(id_persona=id_comprador),
+        headers=HEADERS,
+    )
+    assert estado_persona_response.status_code == 200
+    estado_persona_data = estado_persona_response.json()["data"]
+    assert any(
+        ob["id_obligacion_financiera"] == id_obligacion_financiera
+        and ob["composiciones"][0]["codigo_concepto_financiero"] == "CAPITAL_VENTA"
+        for ob in estado_persona_data["obligaciones"]
     )
