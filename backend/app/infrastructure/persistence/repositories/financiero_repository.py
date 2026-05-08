@@ -646,6 +646,12 @@ class FinancieroRepository:
                 fecha_venta,
                 estado_venta,
                 monto_total,
+                tipo_plan_financiero,
+                moneda,
+                importe_anticipo,
+                fecha_vencimiento_anticipo,
+                importe_saldo,
+                fecha_vencimiento_saldo,
                 deleted_at
             FROM venta
             WHERE id_venta = :id_venta
@@ -658,6 +664,25 @@ class FinancieroRepository:
             .one_or_none()
         )
         return dict(row) if row else None
+
+    def get_obligaciones_activas_by_relacion_generadora(
+        self, id_relacion_generadora: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                id_obligacion_financiera,
+                id_relacion_generadora,
+                estado_obligacion
+            FROM obligacion_financiera
+            WHERE id_relacion_generadora = :id
+              AND deleted_at IS NULL
+              AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
+            ORDER BY id_obligacion_financiera ASC
+            """
+        )
+        rows = self.db.execute(stmt, {"id": id_relacion_generadora}).mappings().all()
+        return [dict(row) for row in rows]
 
     def get_compradores_financieros_venta(
         self, id_venta: int
@@ -2488,21 +2513,21 @@ class FinancieroRepository:
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
                 op_id_alta, op_id_ultima_modificacion,
                 id_relacion_generadora, fecha_emision, fecha_vencimiento,
-                importe_total, saldo_pendiente, estado_obligacion
+                importe_total, saldo_pendiente, moneda, estado_obligacion
             )
             VALUES (
                 :uid_global, :version_registro, :created_at, :updated_at,
                 :id_instalacion_origen, :id_instalacion_ultima_modificacion,
                 :op_id_alta, :op_id_ultima_modificacion,
                 :id_relacion_generadora, :fecha_emision, :fecha_vencimiento,
-                :importe_total, :importe_total, :estado_obligacion
+                :importe_total, :importe_total, :moneda, :estado_obligacion
             )
             RETURNING
                 id_obligacion_financiera, uid_global, version_registro,
                 id_relacion_generadora, codigo_obligacion_financiera,
                 descripcion_operativa, fecha_emision, fecha_vencimiento,
                 periodo_desde, periodo_hasta, importe_total, saldo_pendiente,
-                estado_obligacion
+                moneda, estado_obligacion
             """
         )
 
@@ -2513,14 +2538,16 @@ class FinancieroRepository:
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
                 op_id_alta, op_id_ultima_modificacion,
                 id_obligacion_financiera, id_concepto_financiero,
-                orden_composicion, importe_componente, saldo_componente
+                orden_composicion, importe_componente, saldo_componente,
+                moneda_componente
             )
             VALUES (
                 :uid_global, :version_registro, :created_at, :updated_at,
                 :id_instalacion_origen, :id_instalacion_ultima_modificacion,
                 :op_id_alta, :op_id_ultima_modificacion,
                 :id_obligacion_financiera, :id_concepto_financiero,
-                :orden_composicion, :importe_componente, :importe_componente
+                :orden_composicion, :importe_componente, :importe_componente,
+                :moneda_componente
             )
             RETURNING
                 id_composicion_obligacion, orden_composicion,
@@ -2544,6 +2571,7 @@ class FinancieroRepository:
                 "fecha_emision": ob_values["fecha_emision"],
                 "fecha_vencimiento": ob_values["fecha_vencimiento"],
                 "importe_total": ob_values["importe_total"],
+                "moneda": ob_values.get("moneda", "ARS"),
                 "estado_obligacion": ob_values["estado_obligacion"],
             },
         ).mappings().one()
@@ -2568,6 +2596,7 @@ class FinancieroRepository:
                     "id_concepto_financiero": cv["id_concepto_financiero"],
                     "orden_composicion": cv["orden_composicion"],
                     "importe_componente": cv["importe_componente"],
+                    "moneda_componente": cv.get("moneda_componente", "ARS"),
                 },
             ).mappings().one()
             comp_results.append(

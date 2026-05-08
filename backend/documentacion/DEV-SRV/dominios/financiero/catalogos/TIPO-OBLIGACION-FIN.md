@@ -74,6 +74,7 @@ Cada "tipo" legacy debe mapearse hacia:
 |---|---|---|---|
 | cuota de venta | `VENTA` | `CAPITAL_VENTA`; `INTERES_FINANCIERO` si corresponde | Capital y/o interes ordinario de una obligacion originada por venta. |
 | anticipo | `VENTA` | `ANTICIPO_VENTA` | Anticipo exigible de venta. |
+| saldo ordinario de venta | `VENTA` | `CAPITAL_VENTA` | Saldo pactado ordinario de `ANTICIPO_Y_SALDO`; no usa `SALDO_EXTRAORDINARIO`. |
 | alquiler mensual | `CONTRATO_ALQUILER` | `CANON_LOCATIVO` | Canon locativo del periodo. |
 | servicio trasladado | `FACTURA_SERVICIO` en V1 | `SERVICIO_TRASLADADO` | Servicio trasladado al obligado financiero desde factura externa de proveedor. |
 | recupero de servicio comun | `LIQUIDACION_RECUPERO` | `SERVICIO_RECUPERADO` | Recupero contra personas por factura de servicio comun pagada previamente por la empresa. V1 se liquida explicitamente desde egresos proveedor registrados. |

@@ -509,6 +509,12 @@ Request:
 ```json
 {
   "monto_total": 150000.00,
+  "tipo_plan_financiero": "ANTICIPO_Y_SALDO",
+  "moneda": "ARS",
+  "importe_anticipo": 50000.00,
+  "fecha_vencimiento_anticipo": "2026-05-10",
+  "importe_saldo": 100000.00,
+  "fecha_vencimiento_saldo": "2026-06-10",
   "objetos": [
     {
       "id_inmueble": 100,
@@ -538,15 +544,18 @@ Validaciones:
 - no deben repetirse objetos dentro del mismo payload
 - `precio_asignado` debe ser mayor que cero en todos los objetos
 - la suma exacta de `precio_asignado` debe coincidir con `monto_total`
+- `tipo_plan_financiero` omitido o `CONTADO` limpia anticipo/saldo y usa moneda default `ARS` si no se informa
+- `ANTICIPO_Y_SALDO` requiere anticipo y saldo positivos, fechas de vencimiento y suma exacta contra `monto_total`
 - el detalle multiobjeto persistido de la venta debe seguir siendo coherente
 
 Reglas de negocio:
 
 - este endpoint no crea nuevas filas de `venta_objeto_inmobiliario`; actualiza las ya materializadas para la venta
-- en la implementacion basica actual, las condiciones comerciales se materializan en `venta.monto_total` y `venta_objeto_inmobiliario.precio_asignado`
+- en la implementacion actual, las condiciones comerciales se materializan en `venta.monto_total`, columnas minimas de plan financiero y `venta_objeto_inmobiliario.precio_asignado`
 - la operacion no modifica `disponibilidad`
 - la operacion no modifica `ocupacion`
 - la operacion no dispara logica financiera ni `relacion_generadora`
+- no implementa cuotas, intereses, indexacion ni multiples compradores
 - la actualizacion de `venta` y de todos sus objetos debe ejecutarse de forma transaccional; si falla un solo objeto, debe hacerse rollback completo
 
 #### `PATCH /api/v1/ventas/{id_venta}/confirmar`
@@ -1026,9 +1035,14 @@ Datos incluidos:
 - `objetos` con lectura operativa actual ya disponible en `GET /api/v1/ventas/{id_venta}`
 - `condiciones_comerciales` derivadas de:
   - `venta.monto_total`
+  - `venta.tipo_plan_financiero`
+  - `venta.moneda`
+  - `venta.importe_anticipo`
+  - `venta.fecha_vencimiento_anticipo`
+  - `venta.importe_saldo`
+  - `venta.fecha_vencimiento_saldo`
   - `venta.observaciones`
   - `venta_objeto_inmobiliario.precio_asignado`
-  - `moneda = null` porque SQL real de `venta` no materializa moneda
 - `partes` desde `relacion_persona_rol`, `rol_participacion` y `persona`, filtrando `tipo_relacion = venta` e `id_relacion = id_venta`
 - `instrumentos_compraventa`, `cesiones` y `escrituraciones` como arrays directos
 - `integracion_inmobiliaria` en el mismo criterio que el detalle enriquecido existente
@@ -1040,9 +1054,10 @@ Comportamiento financiero:
 - si la venta no tiene relacion financiera, `relacion_financiera = null`, `obligaciones_financieras = []` y el resumen financiero queda en cero
 - si la venta confirmada ya fue procesada por financiero, se devuelve la relacion generadora `tipo_origen = venta` y sus obligaciones, por ejemplo la obligacion V1 `CAPITAL_VENTA`
 - si la venta no tiene estructura financiera explicita persistida, financiero la trata como plan `CONTADO V1`: una unica obligacion `CAPITAL_VENTA` por `venta.monto_total`, con `fecha_vencimiento = venta.fecha_venta`
+- si `tipo_plan_financiero = ANTICIPO_Y_SALDO`, financiero materializa dos obligaciones: `ANTICIPO_VENTA` por `importe_anticipo` y `CAPITAL_VENTA` por `importe_saldo`
 - si financiero ya materializo el comprador V1, la obligacion incluye `obligados` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00`
 - el endpoint no materializa el plan financiero de venta, no crea obligaciones y no resuelve obligados; solo expone los obligados persistidos por financiero
-- el endpoint no implementa anticipo, cuotas, saldo extraordinario, cancelacion anticipada, rescision ni cesion real con cambio de comprador; anticipo, cuotas y saldo extraordinario requieren persistir datos comerciales minimos antes de poder materializarse financieramente
+- el endpoint no implementa cuotas, saldo extraordinario, cancelacion anticipada, rescision ni cesion real con cambio de comprador
 
 Resumen financiero:
 - `cantidad_obligaciones`

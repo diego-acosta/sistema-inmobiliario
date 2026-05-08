@@ -918,12 +918,13 @@ Integraciones por evento implementadas:
   - materializa una obligacion `CAPITAL_VENTA` para V1 contado
   - si la venta no tiene estructura financiera explicita persistida, se considera plan `CONTADO V1`
   - `CONTADO V1` genera una unica obligacion por `venta.monto_total`, con `fecha_vencimiento = venta.fecha_venta`
+  - `ANTICIPO_Y_SALDO V1` genera dos obligaciones: `ANTICIPO_VENTA` por `venta.importe_anticipo` y `CAPITAL_VENTA` por `venta.importe_saldo`
   - resuelve exactamente un comprador canonico `COMPRADOR` desde
     `relacion_persona_rol` / `rol_participacion` y materializa
     `obligacion_obligado` con `porcentaje_responsabilidad = 100.00`
   - si no hay comprador canonico o hay multiples compradores canonicos, bloquea
     la materializacion financiera sin crear deuda huerfana
-  - no genera anticipo, cuotas ni saldo extraordinario hasta que comercial persista datos minimos de estructura financiera
+  - no genera cuotas, intereses, indexacion ni saldo extraordinario
 - Locativo -> Financiero:
   - `contrato_alquiler_activado`
   - crea o reutiliza `relacion_generadora` con

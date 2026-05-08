@@ -1712,6 +1712,12 @@ def define_condiciones_comerciales_venta(
         id_venta=id_venta,
         if_match_version=parsed_if_match_version,
         monto_total=request.monto_total,
+        tipo_plan_financiero=request.tipo_plan_financiero,
+        moneda=request.moneda,
+        importe_anticipo=request.importe_anticipo,
+        fecha_vencimiento_anticipo=request.fecha_vencimiento_anticipo,
+        importe_saldo=request.importe_saldo,
+        fecha_vencimiento_saldo=request.fecha_vencimiento_saldo,
         objetos=[
             DefineCondicionesComercialesVentaObjetoCommand(
                 id_inmueble=item.id_inmueble,
@@ -1803,6 +1809,33 @@ def define_condiciones_comerciales_venta(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La suma de precio_asignado debe coincidir exactamente con monto_total.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if "INVALID_TIPO_PLAN_FINANCIERO" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="tipo_plan_financiero debe ser CONTADO o ANTICIPO_Y_SALDO.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if "INVALID_MONEDA" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="moneda es requerida para las condiciones comerciales.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if (
+            "INVALID_PLAN_ANTICIPO_Y_SALDO" in result.errors
+            or "INVALID_PLAN_ANTICIPO_Y_SALDO_TOTAL" in result.errors
+        ):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="El plan ANTICIPO_Y_SALDO requiere anticipo y saldo positivos, fechas de vencimiento y suma exacta contra monto_total.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())

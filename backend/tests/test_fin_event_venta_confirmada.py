@@ -553,3 +553,81 @@ def test_fin_venta_confirmada_reproceso_completa_obligado_faltante(
     assert _count_obligados_obligacion(
         db_session, id_obligacion_financiera=id_obligacion
     ) == 1
+
+
+def test_fin_venta_confirmada_anticipo_y_saldo_crea_dos_obligaciones(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_confirmada_con_monto(db_session, monto_total=150000)
+    db_session.execute(
+        text(
+            """
+            UPDATE venta
+            SET tipo_plan_financiero = 'ANTICIPO_Y_SALDO',
+                moneda = 'ARS',
+                importe_anticipo = 50000.00,
+                fecha_vencimiento_anticipo = DATE '2026-05-10',
+                importe_saldo = 100000.00,
+                fecha_vencimiento_saldo = DATE '2026-06-10'
+            WHERE id_venta = :id_venta
+            """
+        ),
+        {"id_venta": id_venta},
+    )
+    id_persona = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    event = dict(_get_venta_confirmada_event(db_session, id_venta=id_venta))
+
+    result = _build_service(db_session).execute(event)
+
+    assert result.success is True
+    assert result.data["obligacion_created"] is True
+    assert len(result.data["id_obligaciones_financieras"]) == 2
+    rows = db_session.execute(
+        text(
+            """
+            SELECT
+                o.id_obligacion_financiera,
+                o.fecha_vencimiento,
+                o.importe_total,
+                o.moneda,
+                cf.codigo_concepto_financiero,
+                oo.id_persona,
+                oo.rol_obligado,
+                oo.porcentaje_responsabilidad
+            FROM obligacion_financiera o
+            JOIN composicion_obligacion co
+              ON co.id_obligacion_financiera = o.id_obligacion_financiera
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = o.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+            WHERE o.id_relacion_generadora = :id_relacion_generadora
+              AND o.deleted_at IS NULL
+            ORDER BY o.fecha_vencimiento ASC
+            """
+        ),
+        {"id_relacion_generadora": result.data["id_relacion_generadora"]},
+    ).mappings().all()
+
+    assert len(rows) == 2
+    assert rows[0]["codigo_concepto_financiero"] == "ANTICIPO_VENTA"
+    assert str(rows[0]["importe_total"]) == "50000.00"
+    assert str(rows[0]["fecha_vencimiento"]) == "2026-05-10"
+    assert rows[1]["codigo_concepto_financiero"] == "CAPITAL_VENTA"
+    assert str(rows[1]["importe_total"]) == "100000.00"
+    assert str(rows[1]["fecha_vencimiento"]) == "2026-06-10"
+    assert {row["id_persona"] for row in rows} == {id_persona}
+    assert {row["rol_obligado"] for row in rows} == {"COMPRADOR"}
+    assert {str(row["porcentaje_responsabilidad"]) for row in rows} == {"100.00"}
+
+    second_result = _build_service(db_session).execute(event)
+    assert second_result.success is True
+    assert second_result.data["obligacion_created"] is False
+    assert (
+        _count_obligaciones_relacion(
+            db_session,
+            id_relacion_generadora=result.data["id_relacion_generadora"],
+        )
+        == 2
+    )

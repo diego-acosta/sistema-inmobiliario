@@ -18,14 +18,17 @@ No cubre:
 - escrituracion
 
 ## Estado actual materializado
-- el SQL vigente materializa las condiciones comerciales basicas en `venta.monto_total` y `venta_objeto_inmobiliario.precio_asignado`
+- el SQL vigente materializa las condiciones comerciales basicas en `venta.monto_total`, `venta.moneda`, columnas minimas de plan financiero y `venta_objeto_inmobiliario.precio_asignado`
 - no existe hoy una tabla materializada `venta_condicion_comercial`
 - no existe hoy una tabla materializada `esquema_financiamiento`
 - por lo tanto, la implementacion actual del servicio debe operar sobre `venta` y su detalle multiobjeto ya persistido
 
-Con estos datos, el unico plan financiero derivable formalmente en V1 es `CONTADO`: una obligacion `CAPITAL_VENTA` por `venta.monto_total`, con vencimiento en `venta.fecha_venta`, materializada por financiero al procesar `venta_confirmada`.
+Con estos datos, los planes financieros derivables formalmente en V1 son:
 
-Anticipo, cuotas, saldo extraordinario o cualquier estructura distinta de contado no deben inferirse desde texto libre ni desde campos incompletos. Requieren persistir datos comerciales minimos como importe, vencimientos, periodicidad, moneda y observaciones estructuradas.
+- `CONTADO`: una obligacion `CAPITAL_VENTA` por `venta.monto_total`, con vencimiento en `venta.fecha_venta`, materializada por financiero al procesar `venta_confirmada`.
+- `ANTICIPO_Y_SALDO`: una obligacion `ANTICIPO_VENTA` por `venta.importe_anticipo` y una obligacion `CAPITAL_VENTA` por `venta.importe_saldo`.
+
+Cuotas, saldo extraordinario o cualquier estructura distinta de las anteriores no deben inferirse desde texto libre ni desde campos incompletos. Requieren persistir datos comerciales minimos adicionales.
 
 ## Entidades principales
 - venta

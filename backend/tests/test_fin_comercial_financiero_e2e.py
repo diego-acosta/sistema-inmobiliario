@@ -199,3 +199,58 @@ def test_venta_confirmada_materializa_deuda_y_estado_cuenta_v1_contado(
         and ob["composiciones"][0]["codigo_concepto_financiero"] == "CAPITAL_VENTA"
         for ob in estado_persona_data["obligaciones"]
     )
+
+
+def test_venta_anticipo_y_saldo_estado_cuenta_persona_muestra_ambas_obligaciones(
+    client,
+    db_session,
+) -> None:
+    venta = _crear_venta_desde_reserva_publica(client, db_session)
+    db_session.execute(
+        text(
+            """
+            UPDATE venta
+            SET tipo_plan_financiero = 'ANTICIPO_Y_SALDO',
+                moneda = 'ARS',
+                importe_anticipo = 50000.00,
+                fecha_vencimiento_anticipo = DATE '2026-05-10',
+                importe_saldo = 100000.00,
+                fecha_vencimiento_saldo = DATE '2026-06-10'
+            WHERE id_venta = :id_venta
+            """
+        ),
+        {"id_venta": venta["id_venta"]},
+    )
+
+    confirm_response = client.patch(
+        f"/api/v1/ventas/{venta['id_venta']}/confirmar",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json=_payload_confirmar_venta(),
+    )
+    assert confirm_response.status_code == 200
+    id_venta = confirm_response.json()["data"]["id_venta"]
+    id_comprador = _get_comprador_venta(db_session, id_venta=id_venta)
+
+    event = dict(_get_venta_confirmada_event(db_session, id_venta=id_venta))
+    result = HandleVentaConfirmadaEventService(
+        repository=FinancieroRepository(db_session),
+    ).execute(event)
+    assert result.success is True
+    assert len(result.data["id_obligaciones_financieras"]) == 2
+
+    estado_persona_response = client.get(
+        URL_ESTADO_CUENTA_PERSONA.format(id_persona=id_comprador),
+        headers=HEADERS,
+        params={"tipo_origen": "venta"},
+    )
+
+    assert estado_persona_response.status_code == 200
+    data = estado_persona_response.json()["data"]
+    conceptos = [
+        ob["composiciones"][0]["codigo_concepto_financiero"]
+        for ob in data["obligaciones"]
+        if ob["id_obligacion_financiera"]
+        in result.data["id_obligaciones_financieras"]
+    ]
+    assert conceptos == ["ANTICIPO_VENTA", "CAPITAL_VENTA"]
+    assert float(data["resumen"]["saldo_pendiente_total"]) == 150000.00

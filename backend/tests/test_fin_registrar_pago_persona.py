@@ -469,6 +469,48 @@ def test_pago_con_relacion_generadora_aisla_impuesto_de_canon(
     assert float(_obligacion_importes(db_session, ob_canon["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(800.00)
 
 
+def test_pago_scoped_venta_anticipo_y_saldo_paga_solo_obligacion_alcanzada(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona_pago(client, codigo="PAGO-VTA-ANT-SALDO")
+    rg_venta = _crear_rg(client, codigo="PAGO-VTA-ANT-SALDO-RG")
+    ob_anticipo = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_venta["id_relacion_generadora"],
+        fecha_vencimiento="2026-05-10",
+        composiciones=[
+            {"codigo_concepto_financiero": "ANTICIPO_VENTA", "importe_componente": 500.00}
+        ],
+    )
+    ob_saldo = _crear_obligacion_para_persona(
+        client,
+        db_session,
+        id_persona=id_persona,
+        id_relacion_generadora=rg_venta["id_relacion_generadora"],
+        fecha_vencimiento="2026-06-10",
+        composiciones=[
+            {"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": 1000.00}
+        ],
+    )
+
+    data = _pagar(
+        client,
+        id_persona,
+        monto=500.00,
+        fecha_pago="2026-05-10",
+        alcance_pago="OBLIGACION",
+        id_obligacion_financiera=ob_anticipo["id_obligacion_financiera"],
+    )
+
+    assert [o["id_obligacion_financiera"] for o in data["obligaciones_pagadas"]] == [
+        ob_anticipo["id_obligacion_financiera"]
+    ]
+    assert float(_obligacion_importes(db_session, ob_anticipo["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(0.00)
+    assert float(_obligacion_importes(db_session, ob_saldo["id_obligacion_financiera"])["saldo_pendiente"]) == pytest.approx(1000.00)
+
+
 def test_pago_con_relacion_generadora_imputa_punitorio_accesorio_solo_de_esa_relacion(
     client, db_session
 ) -> None:

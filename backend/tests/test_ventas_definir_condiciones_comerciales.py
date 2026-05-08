@@ -342,6 +342,130 @@ def test_definir_condiciones_comerciales_venta_acepta_suma_exacta(
 
     assert response.status_code == 200
     assert Decimal(response.json()["data"]["monto_total"]) == Decimal("99999.99")
+    assert response.json()["data"]["tipo_plan_financiero"] == "CONTADO"
+    assert response.json()["data"]["moneda"] == "ARS"
+
+
+def test_definir_condiciones_comerciales_venta_anticipo_y_saldo_persiste_plan(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(client, codigo="INM-VTA-COND-014")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta="V-COND-010",
+        estado_venta="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None, "precio_asignado": None}
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/definir-condiciones-comerciales",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json={
+            **_payload_condiciones(
+                monto_total=150000.00,
+                objetos=[
+                    {
+                        "id_inmueble": id_inmueble,
+                        "id_unidad_funcional": None,
+                        "precio_asignado": 150000.00,
+                    }
+                ],
+            ),
+            "tipo_plan_financiero": "ANTICIPO_Y_SALDO",
+            "moneda": "ARS",
+            "importe_anticipo": 50000.00,
+            "fecha_vencimiento_anticipo": "2026-05-10",
+            "importe_saldo": 100000.00,
+            "fecha_vencimiento_saldo": "2026-06-10",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["tipo_plan_financiero"] == "ANTICIPO_Y_SALDO"
+    assert data["moneda"] == "ARS"
+    assert Decimal(data["importe_anticipo"]) == Decimal("50000.00")
+    assert data["fecha_vencimiento_anticipo"] == "2026-05-10"
+    assert Decimal(data["importe_saldo"]) == Decimal("100000.00")
+    assert data["fecha_vencimiento_saldo"] == "2026-06-10"
+
+
+def test_definir_condiciones_comerciales_venta_anticipo_y_saldo_incompleto_falla(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(client, codigo="INM-VTA-COND-015")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta="V-COND-011",
+        estado_venta="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None, "precio_asignado": None}
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/definir-condiciones-comerciales",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json={
+            **_payload_condiciones(
+                monto_total=150000.00,
+                objetos=[
+                    {
+                        "id_inmueble": id_inmueble,
+                        "id_unidad_funcional": None,
+                        "precio_asignado": 150000.00,
+                    }
+                ],
+            ),
+            "tipo_plan_financiero": "ANTICIPO_Y_SALDO",
+            "importe_anticipo": 50000.00,
+            "fecha_vencimiento_anticipo": "2026-05-10",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "APPLICATION_ERROR"
+
+
+def test_definir_condiciones_comerciales_venta_anticipo_y_saldo_suma_invalida_falla(
+    client, db_session
+) -> None:
+    id_inmueble = _crear_inmueble(client, codigo="INM-VTA-COND-016")
+    venta = _insertar_venta_para_condiciones(
+        db_session,
+        codigo_venta="V-COND-012",
+        estado_venta="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None, "precio_asignado": None}
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/definir-condiciones-comerciales",
+        headers={**HEADERS, "If-Match-Version": str(venta["version_registro"])},
+        json={
+            **_payload_condiciones(
+                monto_total=150000.00,
+                objetos=[
+                    {
+                        "id_inmueble": id_inmueble,
+                        "id_unidad_funcional": None,
+                        "precio_asignado": 150000.00,
+                    }
+                ],
+            ),
+            "tipo_plan_financiero": "ANTICIPO_Y_SALDO",
+            "importe_anticipo": 50000.00,
+            "fecha_vencimiento_anticipo": "2026-05-10",
+            "importe_saldo": 90000.00,
+            "fecha_vencimiento_saldo": "2026-06-10",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "APPLICATION_ERROR"
 
 
 def test_definir_condiciones_comerciales_venta_devuelve_404_si_no_existe(

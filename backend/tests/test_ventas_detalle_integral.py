@@ -185,7 +185,8 @@ def test_detalle_integral_incluye_objetos_condiciones_partes_y_recursos_comercia
     assert len(data["objetos"]) == 1
     assert data["objetos"][0]["id_inmueble"] == venta["id_inmueble"]
     assert float(data["condiciones_comerciales"]["monto_total"]) == 150000.00
-    assert data["condiciones_comerciales"]["moneda"] is None
+    assert data["condiciones_comerciales"]["tipo_plan_financiero"] == "CONTADO"
+    assert data["condiciones_comerciales"]["moneda"] == "ARS"
     assert float(data["condiciones_comerciales"]["objetos"][0]["precio_asignado"]) == 150000.00
     assert len(data["partes"]) == 1
     assert data["partes"][0]["codigo_rol"] == "COMPRADOR"
@@ -207,6 +208,56 @@ def test_detalle_integral_incluye_obligados_si_existen(client, db_session) -> No
     assert len(obligados) == 1
     assert obligados[0]["id_persona"] == id_persona
     assert obligados[0]["rol_obligado"] == "COMPRADOR"
+
+
+def test_detalle_integral_anticipo_y_saldo_muestra_plan_y_dos_obligaciones(
+    client, db_session
+) -> None:
+    venta_base = _crear_venta_desde_reserva_publica(client, db_session)
+    db_session.execute(
+        text(
+            """
+            UPDATE venta
+            SET tipo_plan_financiero = 'ANTICIPO_Y_SALDO',
+                moneda = 'ARS',
+                importe_anticipo = 50000.00,
+                fecha_vencimiento_anticipo = DATE '2026-05-10',
+                importe_saldo = 100000.00,
+                fecha_vencimiento_saldo = DATE '2026-06-10'
+            WHERE id_venta = :id_venta
+            """
+        ),
+        {"id_venta": venta_base["id_venta"]},
+    )
+    response_confirm = client.patch(
+        f"/api/v1/ventas/{venta_base['id_venta']}/confirmar",
+        headers={**HEADERS, "If-Match-Version": str(venta_base["version_registro"])},
+        json=_payload_confirmar_venta(),
+    )
+    assert response_confirm.status_code == 200
+    _procesar_evento_financiero_venta(db_session, id_venta=venta_base["id_venta"])
+
+    response = _detalle(client, venta_base["id_venta"])
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    condiciones = data["condiciones_comerciales"]
+    assert condiciones["tipo_plan_financiero"] == "ANTICIPO_Y_SALDO"
+    assert condiciones["moneda"] == "ARS"
+    assert float(condiciones["importe_anticipo"]) == 50000.00
+    assert condiciones["fecha_vencimiento_anticipo"] == "2026-05-10"
+    assert float(condiciones["importe_saldo"]) == 100000.00
+    assert condiciones["fecha_vencimiento_saldo"] == "2026-06-10"
+
+    obligaciones = data["obligaciones_financieras"]
+    assert len(obligaciones) == 2
+    conceptos = [
+        obligacion["composiciones"][0]["codigo_concepto_financiero"]
+        for obligacion in obligaciones
+    ]
+    assert conceptos == ["ANTICIPO_VENTA", "CAPITAL_VENTA"]
+    assert data["resumen_financiero"]["cantidad_obligaciones"] == 2
+    assert float(data["resumen_financiero"]["saldo_pendiente"]) == 150000.00
 
 
 def test_detalle_integral_no_crea_efectos_ni_ejecuta_mora(client, db_session) -> None:

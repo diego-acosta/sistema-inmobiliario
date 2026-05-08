@@ -27,6 +27,7 @@ class ObligacionCreatePayload:
     id_instalacion_ultima_modificacion: Any
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
+    moneda: str = "ARS"
 
 
 @dataclass(slots=True)
@@ -43,6 +44,7 @@ class ComposicionCreatePayload:
     id_instalacion_ultima_modificacion: Any
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
+    moneda_componente: str = "ARS"
 
 
 class FinancieroRepository(Protocol):

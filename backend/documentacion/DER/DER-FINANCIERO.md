@@ -162,6 +162,18 @@ Anticipo, cuotas y saldo extraordinario no forman parte del cierre `CONTADO V1`;
 requieren persistencia comercial minima adicional antes de generar nuevas
 obligaciones financieras.
 
+#### Venta V1 anticipo y saldo
+
+Cuando `venta.tipo_plan_financiero = ANTICIPO_Y_SALDO`, la misma
+`relacion_generadora` de venta contiene dos obligaciones financieras:
+
+- `ANTICIPO_VENTA` por `venta.importe_anticipo`
+- `CAPITAL_VENTA` por `venta.importe_saldo`
+
+Ambas obligaciones usan `venta.moneda` y un `obligacion_obligado` `COMPRADOR`
+con `porcentaje_responsabilidad = 100.00`. El saldo pactado ordinario no usa
+`SALDO_EXTRAORDINARIO`.
+
 ---
 
 ### 4.3 obligacion_obligado

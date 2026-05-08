@@ -97,7 +97,7 @@ Faltan como datos comerciales persistidos:
 - tabla materializada `venta_condicion_comercial`
 - tabla materializada `esquema_financiamiento`
 
-Por lo tanto, cualquier plan distinto de venta contado debe considerarse futuro o pendiente.
+Por lo tanto, cualquier plan distinto de venta contado o `ANTICIPO_Y_SALDO` V1 debe considerarse futuro o pendiente.
 
 ---
 
@@ -111,8 +111,18 @@ Reglas cerradas:
 - el importe surge de `venta.monto_total`
 - `fecha_vencimiento = venta.fecha_venta`
 - el obligado financiero es el comprador canonico `COMPRADOR` con `porcentaje_responsabilidad = 100.00`
-- no se generan `ANTICIPO_VENTA`, `CUOTA_VENTA` ni `SALDO_EXTRAORDINARIO`
-- anticipo, saldo y cuotas requieren persistir datos comerciales minimos antes de materializar obligaciones financieras adicionales
+- no se generan `CUOTA_VENTA` ni `SALDO_EXTRAORDINARIO`
+
+## Decision V1: ANTICIPO_Y_SALDO
+
+Si `venta.tipo_plan_financiero = ANTICIPO_Y_SALDO`, financiero materializa:
+
+- una obligacion `ANTICIPO_VENTA` por `venta.importe_anticipo`, con `fecha_vencimiento = venta.fecha_vencimiento_anticipo`
+- una obligacion `CAPITAL_VENTA` por `venta.importe_saldo`, con `fecha_vencimiento = venta.fecha_vencimiento_saldo`
+- ambas obligaciones con moneda `venta.moneda`
+- ambas obligaciones con obligado `COMPRADOR` al 100%
+
+`importe_anticipo + importe_saldo` debe coincidir con `venta.monto_total`. El saldo ordinario pactado usa `CAPITAL_VENTA`; `SALDO_EXTRAORDINARIO` queda reservado para saldos no ordinarios futuros.
 
 ---
 
@@ -203,20 +213,22 @@ Este caso es el unico implementable hoy sin inventar datos comerciales no persis
 
 ---
 
-## Casos futuros
+## Casos implementados y futuros
 
-### Anticipo
+### Anticipo y saldo V1
 
-Requiere datos futuros:
+Datos persistidos en `venta`:
 
 - importe de anticipo
 - fecha de vencimiento de anticipo
-- regla de saldo restante
+- importe de saldo
+- fecha de vencimiento de saldo
+- moneda
 
-Plan futuro:
+Plan implementado:
 
 - obligacion por `ANTICIPO_VENTA`
-- una o mas obligaciones posteriores por `CAPITAL_VENTA` o `SALDO_EXTRAORDINARIO`
+- obligacion posterior por `CAPITAL_VENTA`
 
 ### Cuotas
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -19,7 +20,10 @@ from app.application.financiero.services.create_relacion_generadora_service impo
 EVENT_TYPE_VENTA_CONFIRMADA = "venta_confirmada"
 TIPO_ORIGEN_VENTA = "venta"
 CONCEPTO_CAPITAL_VENTA = "CAPITAL_VENTA"
+CONCEPTO_ANTICIPO_VENTA = "ANTICIPO_VENTA"
 ROL_OBLIGADO_COMPRADOR = "COMPRADOR"
+TIPO_PLAN_CONTADO = "CONTADO"
+TIPO_PLAN_ANTICIPO_Y_SALDO = "ANTICIPO_Y_SALDO"
 
 
 @dataclass(slots=True)
@@ -45,6 +49,13 @@ class ObligadoVentaCreatePayload:
     id_instalacion_ultima_modificacion: int | None
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
+
+
+@dataclass(slots=True)
+class VentaObligacionPlan:
+    codigo_concepto_financiero: str
+    importe: Decimal
+    fecha_vencimiento: date
 
 
 class _RollbackAppResult(Exception):
@@ -78,6 +89,11 @@ class FinancieroRepository(Protocol):
     def get_obligacion_activa_by_relacion_generadora(
         self, id_relacion_generadora: int
     ) -> dict[str, Any] | None:
+        ...
+
+    def get_obligaciones_activas_by_relacion_generadora(
+        self, id_relacion_generadora: int
+    ) -> list[dict[str, Any]]:
         ...
 
     def get_obligados_by_obligacion(
@@ -153,32 +169,33 @@ class HandleVentaConfirmadaEventService:
             id_venta,
         )
         relacion_generadora_created = False
-        obligacion_existente = None
+        obligaciones_existentes: list[dict[str, Any]] = []
         if relacion_generadora is not None:
-            obligacion_existente = (
-                self.repository.get_obligacion_activa_by_relacion_generadora(
+            obligaciones_existentes = (
+                self.repository.get_obligaciones_activas_by_relacion_generadora(
                     relacion_generadora["id_relacion_generadora"]
                 )
             )
-            if obligacion_existente is not None:
-                obligados = self.repository.get_obligados_by_obligacion(
-                    obligacion_existente["id_obligacion_financiera"]
-                )
-                if obligados:
+            if obligaciones_existentes:
+                obligaciones_sin_obligado = [
+                    obligacion
+                    for obligacion in obligaciones_existentes
+                    if not self.repository.get_obligados_by_obligacion(
+                        obligacion["id_obligacion_financiera"]
+                    )
+                ]
+                if not obligaciones_sin_obligado:
                     return AppResult.ok(
-                        {
-                            "id_venta": id_venta,
-                            "id_relacion_generadora": relacion_generadora[
+                        self._result_payload(
+                            id_venta=id_venta,
+                            id_relacion_generadora=relacion_generadora[
                                 "id_relacion_generadora"
                             ],
-                            "created": False,
-                            "relacion_generadora_created": False,
-                            "obligacion_created": False,
-                            "obligado_created": False,
-                            "id_obligacion_financiera": obligacion_existente[
-                                "id_obligacion_financiera"
-                            ],
-                        }
+                            relacion_generadora_created=False,
+                            obligacion_created=False,
+                            obligado_created=False,
+                            obligaciones=obligaciones_existentes,
+                        )
                     )
 
         comprador = self._resolve_comprador_financiero(id_venta)
@@ -188,63 +205,66 @@ class HandleVentaConfirmadaEventService:
             relacion_generadora_created = True
 
         id_relacion_generadora = relacion_generadora["id_relacion_generadora"]
-        if obligacion_existente is not None:
-            self._create_obligado(
-                id_obligacion_financiera=obligacion_existente[
-                    "id_obligacion_financiera"
-                ],
-                id_persona=comprador["id_persona"],
-                event=event,
-            )
-            return AppResult.ok(
-                {
-                    "id_venta": id_venta,
-                    "id_relacion_generadora": id_relacion_generadora,
-                    "created": False,
-                    "relacion_generadora_created": False,
-                    "obligacion_created": False,
-                    "obligado_created": True,
-                    "id_obligacion_financiera": obligacion_existente[
+        if obligaciones_existentes:
+            obligado_created = False
+            for obligacion_existente in obligaciones_existentes:
+                obligados = self.repository.get_obligados_by_obligacion(
+                    obligacion_existente["id_obligacion_financiera"]
+                )
+                if obligados:
+                    continue
+                self._create_obligado(
+                    id_obligacion_financiera=obligacion_existente[
                         "id_obligacion_financiera"
                     ],
-                }
+                    id_persona=comprador["id_persona"],
+                    event=event,
+                )
+                obligado_created = True
+            return AppResult.ok(
+                self._result_payload(
+                    id_venta=id_venta,
+                    id_relacion_generadora=id_relacion_generadora,
+                    relacion_generadora_created=False,
+                    obligacion_created=False,
+                    obligado_created=obligado_created,
+                    obligaciones=obligaciones_existentes,
+                )
             )
 
-        concepto = self.repository.get_concepto_financiero_by_codigo(
-            CONCEPTO_CAPITAL_VENTA
-        )
-        if concepto is None:
+        plan_result = self._build_plan(venta)
+        if not plan_result.success or plan_result.data is None:
+            raise _RollbackAppResult(AppResult.fail(plan_result.errors[0]))
+
+        conceptos: dict[str, dict[str, Any]] = {}
+        for item in plan_result.data:
+            concepto = self.repository.get_concepto_financiero_by_codigo(
+                item.codigo_concepto_financiero
+            )
+            if concepto is not None:
+                conceptos[item.codigo_concepto_financiero] = concepto
+        missing = [
+            item.codigo_concepto_financiero
+            for item in plan_result.data
+            if item.codigo_concepto_financiero not in conceptos
+        ]
+        if missing:
             raise _RollbackAppResult(
-                AppResult.fail(f"NOT_FOUND_CONCEPTO:{CONCEPTO_CAPITAL_VENTA}")
+                AppResult.fail(f"NOT_FOUND_CONCEPTO:{missing[0]}")
             )
 
         now = datetime.now(UTC)
-        fecha_venta = venta["fecha_venta"]
-        fecha_vencimiento = (
-            fecha_venta.date() if isinstance(fecha_venta, datetime) else fecha_venta
-        )
-        obligacion = self.repository.create_obligacion_financiera(
-            ObligacionCreatePayload(
-                id_relacion_generadora=id_relacion_generadora,
-                fecha_emision=fecha_vencimiento,
-                fecha_vencimiento=fecha_vencimiento,
-                importe_total=float(monto_total),
-                estado_obligacion="PROYECTADA",
-                uid_global=str(self.uuid_generator()),
-                version_registro=1,
-                created_at=now,
-                updated_at=now,
-                id_instalacion_origen=None,
-                id_instalacion_ultima_modificacion=None,
-                op_id_alta=self._parse_op_id(event),
-                op_id_ultima_modificacion=self._parse_op_id(event),
-            ),
-            [
-                ComposicionCreatePayload(
-                    id_concepto_financiero=concepto["id_concepto_financiero"],
-                    codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
-                    orden_composicion=1,
-                    importe_componente=float(monto_total),
+        moneda = (venta.get("moneda") or "ARS").strip().upper()
+        obligaciones_creadas: list[dict[str, Any]] = []
+        for item in plan_result.data:
+            concepto = conceptos[item.codigo_concepto_financiero]
+            obligacion = self.repository.create_obligacion_financiera(
+                ObligacionCreatePayload(
+                    id_relacion_generadora=id_relacion_generadora,
+                    fecha_emision=item.fecha_vencimiento,
+                    fecha_vencimiento=item.fecha_vencimiento,
+                    importe_total=float(item.importe),
+                    estado_obligacion="PROYECTADA",
                     uid_global=str(self.uuid_generator()),
                     version_registro=1,
                     created_at=now,
@@ -253,28 +273,118 @@ class HandleVentaConfirmadaEventService:
                     id_instalacion_ultima_modificacion=None,
                     op_id_alta=self._parse_op_id(event),
                     op_id_ultima_modificacion=self._parse_op_id(event),
-                )
-            ],
-        )
-        self._create_obligado(
-            id_obligacion_financiera=obligacion["id_obligacion_financiera"],
-            id_persona=comprador["id_persona"],
-            event=event,
-        )
+                    moneda=moneda,
+                ),
+                [
+                    ComposicionCreatePayload(
+                        id_concepto_financiero=concepto["id_concepto_financiero"],
+                        codigo_concepto_financiero=item.codigo_concepto_financiero,
+                        orden_composicion=1,
+                        importe_componente=float(item.importe),
+                        uid_global=str(self.uuid_generator()),
+                        version_registro=1,
+                        created_at=now,
+                        updated_at=now,
+                        id_instalacion_origen=None,
+                        id_instalacion_ultima_modificacion=None,
+                        op_id_alta=self._parse_op_id(event),
+                        op_id_ultima_modificacion=self._parse_op_id(event),
+                        moneda_componente=moneda,
+                    )
+                ],
+            )
+            self._create_obligado(
+                id_obligacion_financiera=obligacion["id_obligacion_financiera"],
+                id_persona=comprador["id_persona"],
+                event=event,
+            )
+            obligaciones_creadas.append(obligacion)
 
         return AppResult.ok(
-            {
-                "id_venta": id_venta,
-                "id_relacion_generadora": id_relacion_generadora,
-                "created": relacion_generadora_created,
-                "relacion_generadora_created": relacion_generadora_created,
-                "obligacion_created": True,
-                "obligado_created": True,
-                "id_obligacion_financiera": obligacion[
-                    "id_obligacion_financiera"
-                ],
-            }
+            self._result_payload(
+                id_venta=id_venta,
+                id_relacion_generadora=id_relacion_generadora,
+                relacion_generadora_created=relacion_generadora_created,
+                obligacion_created=True,
+                obligado_created=True,
+                obligaciones=obligaciones_creadas,
+            )
         )
+
+    def _build_plan(self, venta: dict[str, Any]) -> AppResult[list[VentaObligacionPlan]]:
+        tipo_plan = (venta.get("tipo_plan_financiero") or TIPO_PLAN_CONTADO).strip().upper()
+        if tipo_plan == TIPO_PLAN_CONTADO:
+            fecha_venta = venta["fecha_venta"]
+            fecha_vencimiento = (
+                fecha_venta.date() if isinstance(fecha_venta, datetime) else fecha_venta
+            )
+            return AppResult.ok(
+                [
+                    VentaObligacionPlan(
+                        codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
+                        importe=Decimal(str(venta["monto_total"])),
+                        fecha_vencimiento=fecha_vencimiento,
+                    )
+                ]
+            )
+
+        if tipo_plan != TIPO_PLAN_ANTICIPO_Y_SALDO:
+            return AppResult.fail("INVALID_TIPO_PLAN_FINANCIERO")
+
+        importe_anticipo = venta.get("importe_anticipo")
+        importe_saldo = venta.get("importe_saldo")
+        fecha_anticipo = venta.get("fecha_vencimiento_anticipo")
+        fecha_saldo = venta.get("fecha_vencimiento_saldo")
+        if (
+            importe_anticipo is None
+            or importe_saldo is None
+            or fecha_anticipo is None
+            or fecha_saldo is None
+        ):
+            return AppResult.fail("INVALID_PLAN_ANTICIPO_Y_SALDO")
+
+        anticipo = Decimal(str(importe_anticipo))
+        saldo = Decimal(str(importe_saldo))
+        total = Decimal(str(venta["monto_total"]))
+        if anticipo <= 0 or saldo <= 0 or anticipo + saldo != total:
+            return AppResult.fail("INVALID_PLAN_ANTICIPO_Y_SALDO")
+
+        return AppResult.ok(
+            [
+                VentaObligacionPlan(
+                    codigo_concepto_financiero=CONCEPTO_ANTICIPO_VENTA,
+                    importe=anticipo,
+                    fecha_vencimiento=fecha_anticipo,
+                ),
+                VentaObligacionPlan(
+                    codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
+                    importe=saldo,
+                    fecha_vencimiento=fecha_saldo,
+                ),
+            ]
+        )
+
+    @staticmethod
+    def _result_payload(
+        *,
+        id_venta: int,
+        id_relacion_generadora: int,
+        relacion_generadora_created: bool,
+        obligacion_created: bool,
+        obligado_created: bool,
+        obligaciones: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        ids = [item["id_obligacion_financiera"] for item in obligaciones]
+        return {
+            "id_venta": id_venta,
+            "id_relacion_generadora": id_relacion_generadora,
+            "created": relacion_generadora_created,
+            "relacion_generadora_created": relacion_generadora_created,
+            "obligacion_created": obligacion_created,
+            "obligado_created": obligado_created,
+            "id_obligacion_financiera": ids[0] if ids else None,
+            "id_obligaciones_financieras": ids,
+        }
 
     def _resolve_comprador_financiero(self, id_venta: int) -> dict[str, Any]:
         compradores = self.repository.get_compradores_financieros_venta(id_venta)

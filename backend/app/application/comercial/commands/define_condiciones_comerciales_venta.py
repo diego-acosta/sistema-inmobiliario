@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from app.application.common.commands import CommandContext
@@ -17,4 +18,10 @@ class DefineCondicionesComercialesVentaCommand:
     id_venta: int
     if_match_version: int | None
     monto_total: Decimal
+    tipo_plan_financiero: str | None
+    moneda: str | None
+    importe_anticipo: Decimal | None
+    fecha_vencimiento_anticipo: date | None
+    importe_saldo: Decimal | None
+    fecha_vencimiento_saldo: date | None
     objetos: list[DefineCondicionesComercialesVentaObjetoCommand]

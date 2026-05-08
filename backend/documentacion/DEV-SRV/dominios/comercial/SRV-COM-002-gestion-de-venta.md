@@ -43,7 +43,7 @@ Alcance implementado actual para alta derivada:
 
 La confirmacion comercial emite `venta_confirmada`, pero no crea deuda por si misma.
 
-El dominio financiero consume ese evento y, si la venta no tiene una estructura financiera explicita persistida, la interpreta como plan `CONTADO V1`.
+El dominio financiero consume ese evento y materializa el plan financiero V1 definido en `venta`.
 
 El comportamiento `CONTADO V1` materializa:
 
@@ -53,7 +53,7 @@ El comportamiento `CONTADO V1` materializa:
 - `fecha_vencimiento = venta.fecha_venta`
 - un `obligacion_obligado` para el comprador canonico `COMPRADOR` al 100%
 
-Comercial no define todavia anticipo, cuotas, saldo extraordinario ni calendario financiero avanzado. Esos casos requieren persistir datos comerciales minimos antes de que financiero pueda generar obligaciones distintas de contado.
+El comportamiento `ANTICIPO_Y_SALDO V1` materializa una obligacion `ANTICIPO_VENTA` y una obligacion `CAPITAL_VENTA` para el saldo ordinario pactado. Comercial no define todavia cuotas, saldo extraordinario ni calendario financiero avanzado.
 
 ### Modificacion
 Permite actualizar datos comerciales de la venta.
@@ -215,5 +215,5 @@ Permite visualizar la informacion y estado de la venta.
 - definicion completa del ciclo de estados de venta
 - reglas de cancelacion y reversion
 - relacion exacta entre venta y condiciones comerciales
-- integracion avanzada con el dominio financiero para anticipo, cuotas y saldo extraordinario
+- integracion avanzada con el dominio financiero para cuotas y saldo extraordinario
 - asignacion posterior de importes por objeto en `venta_objeto_inmobiliario`

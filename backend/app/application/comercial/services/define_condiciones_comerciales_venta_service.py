@@ -11,12 +11,21 @@ from app.application.common.results import AppResult
 
 
 ESTADO_VENTA_DEFINIBLE = "borrador"
+TIPO_PLAN_CONTADO = "CONTADO"
+TIPO_PLAN_ANTICIPO_Y_SALDO = "ANTICIPO_Y_SALDO"
+MONEDA_DEFAULT = "ARS"
 
 
 @dataclass(slots=True)
 class VentaCondicionComercialUpdatePayload:
     id_venta: int
     monto_total: Decimal
+    tipo_plan_financiero: str
+    moneda: str
+    importe_anticipo: Decimal | None
+    fecha_vencimiento_anticipo: Any
+    importe_saldo: Decimal | None
+    fecha_vencimiento_saldo: Any
     version_registro_actual: int
     version_registro_nueva: int
     updated_at: datetime
@@ -120,12 +129,24 @@ class DefineCondicionesComercialesVentaService:
         if suma_precios != command.monto_total:
             return AppResult.fail("INVALID_MONTO_TOTAL")
 
+        plan_result = self._normalizar_plan(command)
+        if not plan_result.success or plan_result.data is None:
+            return AppResult.fail(plan_result.errors[0])
+
         now = datetime.now(UTC)
         op_id = getattr(command.context, "op_id", None)
 
         payload = VentaCondicionComercialUpdatePayload(
             id_venta=command.id_venta,
             monto_total=command.monto_total,
+            tipo_plan_financiero=plan_result.data["tipo_plan_financiero"],
+            moneda=plan_result.data["moneda"],
+            importe_anticipo=plan_result.data["importe_anticipo"],
+            fecha_vencimiento_anticipo=plan_result.data[
+                "fecha_vencimiento_anticipo"
+            ],
+            importe_saldo=plan_result.data["importe_saldo"],
+            fecha_vencimiento_saldo=plan_result.data["fecha_vencimiento_saldo"],
             version_registro_actual=venta["version_registro"],
             version_registro_nueva=venta["version_registro"] + 1,
             updated_at=now,
@@ -159,3 +180,54 @@ class DefineCondicionesComercialesVentaService:
             return AppResult.fail("INVALID_VENTA_OBJECTS")
 
         return AppResult.ok(result["data"])
+
+    def _normalizar_plan(
+        self, command: DefineCondicionesComercialesVentaCommand
+    ) -> AppResult[dict[str, Any]]:
+        tipo_plan = (command.tipo_plan_financiero or TIPO_PLAN_CONTADO).strip().upper()
+        moneda = (command.moneda or MONEDA_DEFAULT).strip().upper()
+        if not moneda:
+            return AppResult.fail("INVALID_MONEDA")
+
+        if tipo_plan == TIPO_PLAN_CONTADO:
+            return AppResult.ok(
+                {
+                    "tipo_plan_financiero": TIPO_PLAN_CONTADO,
+                    "moneda": moneda,
+                    "importe_anticipo": None,
+                    "fecha_vencimiento_anticipo": None,
+                    "importe_saldo": None,
+                    "fecha_vencimiento_saldo": None,
+                }
+            )
+
+        if tipo_plan != TIPO_PLAN_ANTICIPO_Y_SALDO:
+            return AppResult.fail("INVALID_TIPO_PLAN_FINANCIERO")
+
+        if (
+            command.importe_anticipo is None
+            or command.importe_anticipo <= 0
+            or command.importe_saldo is None
+            or command.importe_saldo <= 0
+        ):
+            return AppResult.fail("INVALID_PLAN_ANTICIPO_Y_SALDO")
+
+        if (
+            command.fecha_vencimiento_anticipo is None
+            or command.fecha_vencimiento_saldo is None
+        ):
+            return AppResult.fail("INVALID_PLAN_ANTICIPO_Y_SALDO")
+
+        if command.importe_anticipo + command.importe_saldo != command.monto_total:
+            return AppResult.fail("INVALID_PLAN_ANTICIPO_Y_SALDO_TOTAL")
+
+        return AppResult.ok(
+            {
+                "tipo_plan_financiero": TIPO_PLAN_ANTICIPO_Y_SALDO,
+                "moneda": moneda,
+                "importe_anticipo": command.importe_anticipo,
+                "fecha_vencimiento_anticipo": command.fecha_vencimiento_anticipo,
+                "importe_saldo": command.importe_saldo,
+                "fecha_vencimiento_saldo": command.fecha_vencimiento_saldo,
+            }
+        )

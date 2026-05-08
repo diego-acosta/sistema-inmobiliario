@@ -5527,6 +5527,12 @@ CREATE TABLE public.venta (
     fecha_venta timestamp without time zone NOT NULL,
     estado_venta character varying(30) NOT NULL,
     monto_total numeric(14,2),
+    tipo_plan_financiero character varying(30) DEFAULT 'CONTADO'::character varying NOT NULL,
+    moneda character varying(10) DEFAULT 'ARS'::character varying NOT NULL,
+    importe_anticipo numeric(14,2),
+    fecha_vencimiento_anticipo date,
+    importe_saldo numeric(14,2),
+    fecha_vencimiento_saldo date,
     observaciones text
 );
 
@@ -7923,6 +7929,30 @@ ALTER TABLE ONLY public.venta_objeto_inmobiliario
 
 ALTER TABLE ONLY public.venta
     ADD CONSTRAINT venta_pkey PRIMARY KEY (id_venta);
+
+
+--
+-- Name: venta chk_venta_tipo_plan_financiero; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.venta
+    ADD CONSTRAINT chk_venta_tipo_plan_financiero CHECK (((tipo_plan_financiero)::text = ANY ((ARRAY['CONTADO'::character varying, 'ANTICIPO_Y_SALDO'::character varying])::text[])));
+
+
+--
+-- Name: venta chk_venta_plan_contado_sin_detalle; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.venta
+    ADD CONSTRAINT chk_venta_plan_contado_sin_detalle CHECK ((((tipo_plan_financiero)::text <> 'CONTADO'::text) OR ((importe_anticipo IS NULL) AND (fecha_vencimiento_anticipo IS NULL) AND (importe_saldo IS NULL) AND (fecha_vencimiento_saldo IS NULL))));
+
+
+--
+-- Name: venta chk_venta_plan_anticipo_saldo_completo; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.venta
+    ADD CONSTRAINT chk_venta_plan_anticipo_saldo_completo CHECK ((((tipo_plan_financiero)::text <> 'ANTICIPO_Y_SALDO'::text) OR ((monto_total IS NOT NULL) AND (importe_anticipo IS NOT NULL) AND (importe_anticipo > (0)::numeric) AND (fecha_vencimiento_anticipo IS NOT NULL) AND (importe_saldo IS NOT NULL) AND (importe_saldo > (0)::numeric) AND (fecha_vencimiento_saldo IS NOT NULL) AND ((importe_anticipo + importe_saldo) = monto_total))));
 
 
 --
