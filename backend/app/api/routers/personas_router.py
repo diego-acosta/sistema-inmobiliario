@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,11 @@ from app.api.schemas.personas import (
     PersonaCreateResponse,
     PersonaDetailData,
     PersonaDetailResponse,
+    PersonaDetalleIntegralData,
+    PersonaDetalleIntegralResponse,
+    PersonaListData,
+    PersonaListItem,
+    PersonaListResponse,
     PersonaBajaData,
     PersonaBajaResponse,
     RelacionPersonaRolCreateData,
@@ -196,6 +201,10 @@ from app.application.personas.services.update_relacion_persona_rol_service impor
 from app.application.personas.services.get_persona_participaciones_service import (
     GetPersonaParticipacionesService,
 )
+from app.application.personas.services.list_personas_service import ListPersonasService
+from app.application.personas.services.get_persona_detalle_integral_service import (
+    GetPersonaDetalleIntegralService,
+)
 from app.application.personas.services.get_persona_service import GetPersonaService
 from app.application.personas.services.get_persona_domicilios_service import (
     GetPersonaDomiciliosService,
@@ -237,6 +246,68 @@ class PersonaCommandContext(CommandContext):
         super().__init__(**kwargs)
         self.id_instalacion = id_instalacion
         self.op_id = op_id
+
+
+@router.get(
+    "/api/v1/personas",
+    response_model=PersonaListResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_personas(
+    q: str | None = Query(default=None),
+    tipo_persona: str | None = Query(default=None),
+    estado_persona: str | None = Query(default=None),
+    numero_documento: str | None = Query(default=None),
+    cuit_cuil: str | None = Query(default=None),
+    tipo_documento: str | None = Query(default=None),
+    contacto: str | None = Query(default=None),
+    rol_codigo: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> PersonaListResponse | JSONResponse:
+    repository = PersonaRepository(db)
+    service = ListPersonasService(repository=repository)
+
+    try:
+        result = service.execute(
+            q=q,
+            tipo_persona=tipo_persona,
+            estado_persona=estado_persona,
+            numero_documento=numero_documento,
+            cuit_cuil=cuit_cuil,
+            tipo_documento=tipo_documento,
+            contacto=contacto,
+            rol_codigo=rol_codigo,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudieron listar las personas.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return PersonaListResponse(
+        data=PersonaListData(
+            items=[PersonaListItem(**item) for item in result.data["items"]],
+            total=result.data["total"],
+            limit=result.data["limit"],
+            offset=result.data["offset"],
+        )
+    )
 
 
 @router.post(
@@ -2504,6 +2575,50 @@ def update_persona_contacto(
 
     return PersonaContactoUpdateResponse(
         data=PersonaContactoUpdateData(**result.data)
+    )
+
+
+@router.get(
+    "/api/v1/personas/{id_persona}/detalle-integral",
+    response_model=PersonaDetalleIntegralResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_persona_detalle_integral(
+    id_persona: int,
+    db: Session = Depends(get_db),
+) -> PersonaDetalleIntegralResponse | JSONResponse:
+    repository = PersonaRepository(db)
+    service = GetPersonaDetalleIntegralService(repository=repository)
+
+    try:
+        result = service.execute(id_persona)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error_code = "NOT_FOUND" if "NOT_FOUND" in result.errors else "APPLICATION_ERROR"
+        error_message = (
+            "La persona indicada no existe."
+            if error_code == "NOT_FOUND"
+            else "No se pudo obtener el detalle integral de la persona."
+        )
+        status_code = 404 if error_code == "NOT_FOUND" else 400
+        error = ErrorResponse(
+            error_code=error_code,
+            error_message=error_message,
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=status_code, content=error.model_dump())
+
+    return PersonaDetalleIntegralResponse(
+        data=PersonaDetalleIntegralData(**result.data)
     )
 
 

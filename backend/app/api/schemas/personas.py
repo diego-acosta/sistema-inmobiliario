@@ -161,6 +161,131 @@ class PersonaDetailResponse(BaseModel):
     data: PersonaDetailData
 
 
+class PersonaDetalleIntegralParticipacionItem(BaseModel):
+    id_relacion_persona_rol: int
+    id_persona: int
+    id_rol_participacion: int
+    codigo_rol: str | None
+    nombre_rol: str | None
+    estado_rol: str | None
+    tipo_relacion: str
+    id_relacion: int
+    fecha_desde: datetime
+    fecha_hasta: datetime | None
+
+
+class PersonaDetalleIntegralObligacionItem(BaseModel):
+    id_obligacion_obligado: int
+    id_obligacion_financiera: int
+    id_relacion_generadora: int
+    tipo_origen: str
+    id_origen: int
+    rol_obligado: str | None
+    porcentaje_responsabilidad: float | None
+    fecha_emision: date
+    fecha_vencimiento: date | None
+    estado_obligacion: str
+    importe_total: float
+    saldo_pendiente: float
+    moneda: str
+    monto_responsabilidad: float
+    saldo_responsabilidad: float
+
+
+class PersonaDetalleIntegralResumenFinanciero(BaseModel):
+    cantidad_obligaciones: int
+    importe_total: float
+    saldo_pendiente_total: float
+    importe_total_responsabilidad: float
+    saldo_pendiente_responsabilidad: float
+
+
+class PersonaUsoVentaItem(BaseModel):
+    id_venta: int
+    codigo_venta: str | None
+    estado_venta: str | None
+    monto_total: float | None
+    moneda: str | None
+    rol: str | None
+
+
+class PersonaUsoContratoItem(BaseModel):
+    id_contrato_alquiler: int
+    codigo_contrato: str | None
+    estado_contrato: str | None
+    fecha_inicio: date | None
+    fecha_fin: date | None
+    rol: str | None
+
+
+class PersonaUsoServicioResponsableItem(BaseModel):
+    id_asignacion_servicio_responsable: int
+    id_servicio: int
+    id_inmueble: int | None
+    id_unidad_funcional: int | None
+    porcentaje_responsabilidad: float
+    fecha_desde: date
+    fecha_hasta: date | None
+    estado_asignacion: str
+
+
+class PersonaDetalleIntegralUsosTransversales(BaseModel):
+    comprador_ventas: list[PersonaUsoVentaItem]
+    contratos_locativos: list[PersonaUsoContratoItem]
+    servicios_responsable: list[PersonaUsoServicioResponsableItem]
+    obligado_financiero: PersonaDetalleIntegralResumenFinanciero
+
+
+class PersonaDetalleIntegralData(PersonaDetailData):
+    participaciones: list[PersonaDetalleIntegralParticipacionItem]
+    obligaciones_financieras: list[PersonaDetalleIntegralObligacionItem]
+    resumen_financiero: PersonaDetalleIntegralResumenFinanciero
+    usos_transversales: PersonaDetalleIntegralUsosTransversales
+
+
+class PersonaDetalleIntegralResponse(BaseModel):
+    ok: Literal[True] = True
+    data: PersonaDetalleIntegralData
+
+
+class PersonaListDocumentoPrincipal(BaseModel):
+    id_persona_documento: int
+    tipo_documento_persona: str
+    numero_documento: str
+    pais_emision: str | None
+
+
+class PersonaListContactoPrincipal(BaseModel):
+    id_persona_contacto: int
+    tipo_contacto: str | None
+    valor_contacto: str
+
+
+class PersonaListItem(BaseModel):
+    id_persona: int
+    tipo_persona: str
+    nombre: str | None
+    apellido: str | None
+    razon_social: str | None
+    display_name: str
+    estado_persona: str
+    cuit_cuil: str | None
+    documento_principal: PersonaListDocumentoPrincipal | None
+    contacto_principal: PersonaListContactoPrincipal | None
+
+
+class PersonaListData(BaseModel):
+    items: list[PersonaListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class PersonaListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: PersonaListData
+
+
 class PersonaDocumentoCreateRequest(BaseModel):
     tipo_documento: str
     numero_documento: str

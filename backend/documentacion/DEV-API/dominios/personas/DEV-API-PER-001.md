@@ -76,8 +76,24 @@ Headers transversales observables en operaciones write:
 - estado: vigente
 - objetivo: consulta de detalle de persona
 
-Observacion:
-- no existe hoy en implementacion un endpoint general `GET /api/v1/personas` de busqueda o listado, aunque si aparece en el DEV-API historico.
+#### `GET /api/v1/personas`
+- estado: vigente
+- objetivo: listado/busqueda read-only de personas para UI y selector operativo
+- filtros:
+  - `q`
+  - `tipo_persona`
+  - `estado_persona`
+  - `numero_documento`
+  - `cuit_cuil`
+  - `tipo_documento`
+  - `contacto`
+  - `rol_codigo`
+  - `limit`
+  - `offset`
+- respuesta: `items`, `total`, `limit`, `offset`
+- cada item expone persona base compacta, `display_name`, `documento_principal` y `contacto_principal` si existen
+- regla: no expone personas con `deleted_at` informado y no genera efectos persistentes
+- `q` busca por nombre, apellido, razon social, CUIT/CUIL, documentos y contactos
 
 ### 4.2 Documentos identificatorios
 
@@ -212,6 +228,22 @@ Separacion contractual del bloque:
 - estado: vigente
 - objetivo: consulta de participaciones contextuales de la persona basada en `relacion_persona_rol`
 
+#### `GET /api/v1/personas/{id_persona}/detalle-integral`
+- estado: vigente
+- objetivo: consulta integral read-only para UI
+- devuelve:
+  - datos base de persona
+  - documentos, domicilios, contactos, relaciones y representaciones/poderes
+  - participaciones desde `relacion_persona_rol` enriquecidas con `rol_participacion`
+  - obligaciones financieras donde la persona aparece en `obligacion_obligado`
+  - resumen financiero basico calculado solo desde importes y saldos persistidos
+  - usos transversales simples: comprador en ventas, roles locativos en contratos, responsable de servicios y obligado financiero
+- error: `404` si la persona no existe o tiene baja logica
+- restricciones:
+  - no modifica persona, roles, relaciones, pagos, movimientos ni obligaciones
+  - no recalcula deuda ni ejecuta mora
+  - no asume ownership semantico sobre `comercial`, `locativo` ni `financiero`; solo lee referencias materializadas
+
 Observaciones de diseno:
 
 - `rol_participacion` no debe interpretarse como atributo base de persona.
@@ -226,6 +258,7 @@ Observaciones de diseno:
 
 Endpoints de consulta efectivamente implementados:
 
+- `GET /api/v1/personas`
 - `GET /api/v1/personas/{id_persona}`
 - `GET /api/v1/personas/{id_persona}/documentos`
 - `GET /api/v1/personas/{id_persona}/domicilios`
@@ -233,13 +266,10 @@ Endpoints de consulta efectivamente implementados:
 - `GET /api/v1/personas/{id_persona}/relaciones`
 - `GET /api/v1/personas/{id_persona}/representaciones-poder`
 - `GET /api/v1/personas/{id_persona}/participaciones`
+- `GET /api/v1/personas/{id_persona}/detalle-integral`
 
 Elementos heredados del DEV-API historico que no deben considerarse contrato vigente implementado:
 
-- `GET /api/v1/personas`
-  estado: heredado, no implementado actualmente
-  aclaracion contractual: no forma parte del contrato vigente y no debe asumirse como disponible hoy
-  nota de evolucion: podra redefinirse a futuro como endpoint de busqueda o consulta analitica, sin implicar disponibilidad actual
 - bloque de reporte consolidado amplio del dominio
   estado: heredado, no confirmado en router actual
 

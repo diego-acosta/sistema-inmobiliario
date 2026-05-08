@@ -47,8 +47,33 @@ Permite reconstruir información histórica o vigencias cuando corresponda.
 ### Búsqueda
 Permite localizar personas por criterios básicos o combinados.
 
+Implementacion vigente:
+
+- `GET /api/v1/personas`
+- filtros: `q`, `tipo_persona`, `estado_persona`, `numero_documento`,
+  `cuit_cuil`, `tipo_documento`, `contacto`, `rol_codigo`, `limit`, `offset`
+- respuesta compacta para UI con persona base, `display_name`,
+  `documento_principal` y `contacto_principal`
+- no expone personas con baja logica y no modifica datos
+
 ### Reporte consolidado
 Permite obtener una vista integrada de la persona y su participación funcional en el sistema.
+
+Implementacion vigente:
+
+- `GET /api/v1/personas/{id_persona}/detalle-integral`
+- lectura integral para UI sobre persona base, documentos, domicilios, contactos,
+  relaciones, representaciones/poderes y participaciones contextuales
+- integra participaciones desde `relacion_persona_rol` + `rol_participacion`
+- expone obligaciones financieras donde la persona figura en
+  `obligacion_obligado`
+- el resumen financiero usa `importe_total`, `saldo_pendiente` y
+  `porcentaje_responsabilidad` persistidos; no recalcula deuda ni ejecuta mora
+- incluye usos transversales simples ya materializados: comprador en ventas,
+  roles locativos en contratos, responsable de servicios y obligado financiero
+- devuelve `404` si la persona no existe o tiene baja logica
+- no modifica persona, roles, relaciones, obligaciones, pagos, movimientos ni
+  datos de dominios comercial, locativo o financiero
 
 ## Entradas conceptuales
 

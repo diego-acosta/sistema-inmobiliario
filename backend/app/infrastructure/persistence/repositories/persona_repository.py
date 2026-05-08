@@ -44,6 +44,237 @@ class PersonaRepository(BaseRepository[Any]):
             "observaciones": row["observaciones"],
         }
 
+    def list_personas(
+        self,
+        *,
+        q: str | None,
+        tipo_persona: str | None,
+        estado_persona: str | None,
+        numero_documento: str | None,
+        cuit_cuil: str | None,
+        tipo_documento: str | None,
+        contacto: str | None,
+        rol_codigo: str | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        filters = ["p.deleted_at IS NULL"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if q is not None:
+            filters.append(
+                """
+                (
+                    p.nombre ILIKE :q_like
+                    OR p.apellido ILIKE :q_like
+                    OR p.razon_social ILIKE :q_like
+                    OR p.cuit_cuil ILIKE :q_like
+                    OR EXISTS (
+                        SELECT 1
+                        FROM persona_documento pdq
+                        WHERE pdq.id_persona = p.id_persona
+                          AND pdq.deleted_at IS NULL
+                          AND pdq.numero_documento ILIKE :q_like
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM persona_contacto pcq
+                        WHERE pcq.id_persona = p.id_persona
+                          AND pcq.deleted_at IS NULL
+                          AND pcq.valor_contacto ILIKE :q_like
+                    )
+                )
+                """
+            )
+            params["q_like"] = f"%{q}%"
+        if tipo_persona is not None:
+            filters.append("UPPER(p.tipo_persona) = :tipo_persona")
+            params["tipo_persona"] = tipo_persona.upper()
+        if estado_persona is not None:
+            filters.append("UPPER(p.estado_persona) = :estado_persona")
+            params["estado_persona"] = estado_persona.upper()
+        if numero_documento is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM persona_documento pdf
+                    WHERE pdf.id_persona = p.id_persona
+                      AND pdf.deleted_at IS NULL
+                      AND pdf.numero_documento ILIKE :numero_documento_like
+                )
+                """
+            )
+            params["numero_documento_like"] = f"%{numero_documento}%"
+        if cuit_cuil is not None:
+            filters.append("p.cuit_cuil ILIKE :cuit_cuil_like")
+            params["cuit_cuil_like"] = f"%{cuit_cuil}%"
+        if tipo_documento is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM persona_documento pdt
+                    WHERE pdt.id_persona = p.id_persona
+                      AND pdt.deleted_at IS NULL
+                      AND UPPER(pdt.tipo_documento_persona) = :tipo_documento
+                )
+                """
+            )
+            params["tipo_documento"] = tipo_documento.upper()
+        if contacto is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM persona_contacto pcf
+                    WHERE pcf.id_persona = p.id_persona
+                      AND pcf.deleted_at IS NULL
+                      AND pcf.valor_contacto ILIKE :contacto_like
+                )
+                """
+            )
+            params["contacto_like"] = f"%{contacto}%"
+        if rol_codigo is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM relacion_persona_rol rpr
+                    JOIN rol_participacion rp
+                      ON rp.id_rol_participacion = rpr.id_rol_participacion
+                     AND rp.deleted_at IS NULL
+                    WHERE rpr.id_persona = p.id_persona
+                      AND rpr.deleted_at IS NULL
+                      AND UPPER(rp.codigo_rol) = :rol_codigo
+                )
+                """
+            )
+            params["rol_codigo"] = rol_codigo.upper()
+
+        where_clause = " AND ".join(filters)
+        base_from = f"""
+            FROM persona p
+            WHERE {where_clause}
+        """
+        count_statement = text(f"SELECT COUNT(*) {base_from}")
+        total = self.db.execute(count_statement, params).scalar_one()
+
+        data_statement = text(
+            f"""
+            WITH personas_filtradas AS (
+                SELECT
+                    p.id_persona,
+                    p.tipo_persona,
+                    p.nombre,
+                    p.apellido,
+                    p.razon_social,
+                    COALESCE(
+                        NULLIF(BTRIM(p.razon_social), ''),
+                        NULLIF(BTRIM(CONCAT_WS(' ', p.nombre, p.apellido)), ''),
+                        CONCAT('Persona ', p.id_persona)
+                    ) AS display_name,
+                    p.estado_persona,
+                    p.cuit_cuil
+                {base_from}
+                ORDER BY
+                    CASE WHEN UPPER(p.estado_persona) = 'ACTIVA' THEN 0 ELSE 1 END,
+                    COALESCE(
+                        NULLIF(BTRIM(p.razon_social), ''),
+                        NULLIF(BTRIM(CONCAT_WS(' ', p.nombre, p.apellido)), ''),
+                        CONCAT('Persona ', p.id_persona)
+                    ) ASC,
+                    p.id_persona ASC
+                LIMIT :limit OFFSET :offset
+            )
+            SELECT
+                pf.id_persona,
+                pf.tipo_persona,
+                pf.nombre,
+                pf.apellido,
+                pf.razon_social,
+                pf.display_name,
+                pf.estado_persona,
+                pf.cuit_cuil,
+                dp.id_persona_documento,
+                dp.tipo_documento_persona,
+                dp.numero_documento,
+                dp.pais_emision,
+                cp.id_persona_contacto,
+                cp.tipo_contacto,
+                cp.valor_contacto
+            FROM personas_filtradas pf
+            LEFT JOIN LATERAL (
+                SELECT
+                    id_persona_documento,
+                    tipo_documento_persona,
+                    numero_documento,
+                    pais_emision
+                FROM persona_documento
+                WHERE id_persona = pf.id_persona
+                  AND deleted_at IS NULL
+                  AND es_principal IS TRUE
+                ORDER BY id_persona_documento ASC
+                LIMIT 1
+            ) dp ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    id_persona_contacto,
+                    tipo_contacto,
+                    valor_contacto
+                FROM persona_contacto
+                WHERE id_persona = pf.id_persona
+                  AND deleted_at IS NULL
+                  AND es_principal IS TRUE
+                ORDER BY id_persona_contacto ASC
+                LIMIT 1
+            ) cp ON TRUE
+            ORDER BY
+                CASE WHEN UPPER(pf.estado_persona) = 'ACTIVA' THEN 0 ELSE 1 END,
+                pf.display_name ASC,
+                pf.id_persona ASC
+            """
+        )
+        rows = self.db.execute(data_statement, params).mappings().all()
+        items = []
+        for row in rows:
+            documento_principal = None
+            if row["id_persona_documento"] is not None:
+                documento_principal = {
+                    "id_persona_documento": row["id_persona_documento"],
+                    "tipo_documento_persona": row["tipo_documento_persona"],
+                    "numero_documento": row["numero_documento"],
+                    "pais_emision": row["pais_emision"],
+                }
+            contacto_principal = None
+            if row["id_persona_contacto"] is not None:
+                contacto_principal = {
+                    "id_persona_contacto": row["id_persona_contacto"],
+                    "tipo_contacto": row["tipo_contacto"],
+                    "valor_contacto": row["valor_contacto"],
+                }
+            items.append(
+                {
+                    "id_persona": row["id_persona"],
+                    "tipo_persona": row["tipo_persona"],
+                    "nombre": row["nombre"],
+                    "apellido": row["apellido"],
+                    "razon_social": row["razon_social"],
+                    "display_name": row["display_name"],
+                    "estado_persona": row["estado_persona"],
+                    "cuit_cuil": row["cuit_cuil"],
+                    "documento_principal": documento_principal,
+                    "contacto_principal": contacto_principal,
+                }
+            )
+
+        return {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
     def create_persona(self, payload: Any) -> dict[str, Any]:
         if isinstance(payload, dict):
             values = payload
@@ -1116,6 +1347,270 @@ class PersonaRepository(BaseRepository[Any]):
                 "id_relacion": row["id_relacion"],
                 "fecha_desde": row["fecha_desde"],
                 "fecha_hasta": row["fecha_hasta"],
+            }
+            for row in rows
+        ]
+
+    def get_persona_detalle_integral(self, id_persona: int) -> dict[str, Any] | None:
+        persona = self.get_persona(id_persona)
+        if persona is None:
+            return None
+
+        participaciones = self._get_persona_participaciones_detalle(id_persona)
+        obligaciones = self._get_persona_obligaciones_financieras(id_persona)
+        resumen = self._build_resumen_financiero(obligaciones)
+        usos = self._get_persona_usos_transversales(id_persona, resumen)
+
+        return {
+            **persona,
+            "documentos": self.get_persona_documentos(id_persona),
+            "domicilios": self.get_persona_domicilios(id_persona),
+            "contactos": self.get_persona_contactos(id_persona),
+            "relaciones": self.get_persona_relaciones(id_persona),
+            "representaciones_poder": self.get_representaciones_poder(id_persona),
+            "participaciones": participaciones,
+            "obligaciones_financieras": obligaciones,
+            "resumen_financiero": resumen,
+            "usos_transversales": usos,
+        }
+
+    def _get_persona_participaciones_detalle(
+        self, id_persona: int
+    ) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT
+                rpr.id_relacion_persona_rol,
+                rpr.id_persona,
+                rpr.id_rol_participacion,
+                rp.codigo_rol,
+                rp.nombre_rol,
+                rp.estado_rol,
+                rpr.tipo_relacion,
+                rpr.id_relacion,
+                rpr.fecha_desde,
+                rpr.fecha_hasta
+            FROM relacion_persona_rol rpr
+            LEFT JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+            WHERE rpr.id_persona = :id_persona
+              AND rpr.deleted_at IS NULL
+            ORDER BY rpr.id_relacion_persona_rol
+            """
+        )
+        rows = self.db.execute(statement, {"id_persona": id_persona}).mappings().all()
+        return [
+            {
+                "id_relacion_persona_rol": row["id_relacion_persona_rol"],
+                "id_persona": row["id_persona"],
+                "id_rol_participacion": row["id_rol_participacion"],
+                "codigo_rol": row["codigo_rol"],
+                "nombre_rol": row["nombre_rol"],
+                "estado_rol": row["estado_rol"],
+                "tipo_relacion": row["tipo_relacion"],
+                "id_relacion": row["id_relacion"],
+                "fecha_desde": row["fecha_desde"],
+                "fecha_hasta": row["fecha_hasta"],
+            }
+            for row in rows
+        ]
+
+    def _get_persona_obligaciones_financieras(
+        self, id_persona: int
+    ) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT
+                oo.id_obligacion_obligado,
+                o.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                rg.tipo_origen,
+                rg.id_origen,
+                oo.rol_obligado,
+                oo.porcentaje_responsabilidad,
+                o.fecha_emision,
+                o.fecha_vencimiento,
+                o.estado_obligacion,
+                o.importe_total,
+                o.saldo_pendiente,
+                o.moneda
+            FROM obligacion_obligado oo
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = oo.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            JOIN relacion_generadora rg
+              ON rg.id_relacion_generadora = o.id_relacion_generadora
+             AND rg.deleted_at IS NULL
+            WHERE oo.id_persona = :id_persona
+              AND oo.deleted_at IS NULL
+            ORDER BY o.fecha_vencimiento ASC NULLS LAST, o.id_obligacion_financiera ASC
+            """
+        )
+        rows = self.db.execute(statement, {"id_persona": id_persona}).mappings().all()
+        obligaciones: list[dict[str, Any]] = []
+        for row in rows:
+            porcentaje = row["porcentaje_responsabilidad"]
+            pct = float(porcentaje) if porcentaje is not None else 0.0
+            importe_total = float(row["importe_total"])
+            saldo_pendiente = float(row["saldo_pendiente"])
+            obligaciones.append(
+                {
+                    "id_obligacion_obligado": row["id_obligacion_obligado"],
+                    "id_obligacion_financiera": row["id_obligacion_financiera"],
+                    "id_relacion_generadora": row["id_relacion_generadora"],
+                    "tipo_origen": str(row["tipo_origen"]).upper(),
+                    "id_origen": row["id_origen"],
+                    "rol_obligado": row["rol_obligado"],
+                    "porcentaje_responsabilidad": pct if porcentaje is not None else None,
+                    "fecha_emision": row["fecha_emision"],
+                    "fecha_vencimiento": row["fecha_vencimiento"],
+                    "estado_obligacion": row["estado_obligacion"],
+                    "importe_total": importe_total,
+                    "saldo_pendiente": saldo_pendiente,
+                    "moneda": row["moneda"],
+                    "monto_responsabilidad": round(importe_total * pct / 100, 2),
+                    "saldo_responsabilidad": round(saldo_pendiente * pct / 100, 2),
+                }
+            )
+        return obligaciones
+
+    def _build_resumen_financiero(
+        self, obligaciones: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return {
+            "cantidad_obligaciones": len(obligaciones),
+            "importe_total": round(sum(o["importe_total"] for o in obligaciones), 2),
+            "saldo_pendiente_total": round(
+                sum(o["saldo_pendiente"] for o in obligaciones), 2
+            ),
+            "importe_total_responsabilidad": round(
+                sum(o["monto_responsabilidad"] for o in obligaciones), 2
+            ),
+            "saldo_pendiente_responsabilidad": round(
+                sum(o["saldo_responsabilidad"] for o in obligaciones), 2
+            ),
+        }
+
+    def _get_persona_usos_transversales(
+        self, id_persona: int, resumen_financiero: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "comprador_ventas": self._get_persona_usos_ventas(id_persona),
+            "contratos_locativos": self._get_persona_usos_contratos(id_persona),
+            "servicios_responsable": self._get_persona_usos_servicios(id_persona),
+            "obligado_financiero": resumen_financiero,
+        }
+
+    def _get_persona_usos_ventas(self, id_persona: int) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT
+                v.id_venta,
+                v.codigo_venta,
+                v.estado_venta,
+                v.monto_total,
+                v.moneda,
+                rp.codigo_rol
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+            JOIN venta v
+              ON v.id_venta = rpr.id_relacion
+             AND v.deleted_at IS NULL
+            WHERE rpr.id_persona = :id_persona
+              AND rpr.deleted_at IS NULL
+              AND LOWER(rpr.tipo_relacion) = 'venta'
+              AND UPPER(rp.codigo_rol) = 'COMPRADOR'
+            ORDER BY v.id_venta
+            """
+        )
+        rows = self.db.execute(statement, {"id_persona": id_persona}).mappings().all()
+        return [
+            {
+                "id_venta": row["id_venta"],
+                "codigo_venta": row["codigo_venta"],
+                "estado_venta": row["estado_venta"],
+                "monto_total": float(row["monto_total"]) if row["monto_total"] is not None else None,
+                "moneda": row["moneda"],
+                "rol": row["codigo_rol"],
+            }
+            for row in rows
+        ]
+
+    def _get_persona_usos_contratos(self, id_persona: int) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT
+                ca.id_contrato_alquiler,
+                ca.codigo_contrato,
+                ca.estado_contrato,
+                ca.fecha_inicio,
+                ca.fecha_fin,
+                rp.codigo_rol
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+            JOIN contrato_alquiler ca
+              ON ca.id_contrato_alquiler = rpr.id_relacion
+             AND ca.deleted_at IS NULL
+            WHERE rpr.id_persona = :id_persona
+              AND rpr.deleted_at IS NULL
+              AND LOWER(rpr.tipo_relacion) IN ('contrato_alquiler', 'contrato')
+              AND UPPER(rp.codigo_rol) IN (
+                  'LOCATARIO', 'LOCATARIO_PRINCIPAL', 'GARANTE', 'LOCADOR'
+              )
+            ORDER BY ca.id_contrato_alquiler
+            """
+        )
+        rows = self.db.execute(statement, {"id_persona": id_persona}).mappings().all()
+        return [
+            {
+                "id_contrato_alquiler": row["id_contrato_alquiler"],
+                "codigo_contrato": row["codigo_contrato"],
+                "estado_contrato": row["estado_contrato"],
+                "fecha_inicio": row["fecha_inicio"],
+                "fecha_fin": row["fecha_fin"],
+                "rol": row["codigo_rol"],
+            }
+            for row in rows
+        ]
+
+    def _get_persona_usos_servicios(self, id_persona: int) -> list[dict[str, Any]]:
+        statement = text(
+            """
+            SELECT
+                id_asignacion_servicio_responsable,
+                id_servicio,
+                id_inmueble,
+                id_unidad_funcional,
+                porcentaje_responsabilidad,
+                fecha_desde,
+                fecha_hasta,
+                estado_asignacion
+            FROM asignacion_servicio_responsable
+            WHERE id_persona = :id_persona
+              AND deleted_at IS NULL
+            ORDER BY id_asignacion_servicio_responsable
+            """
+        )
+        rows = self.db.execute(statement, {"id_persona": id_persona}).mappings().all()
+        return [
+            {
+                "id_asignacion_servicio_responsable": row[
+                    "id_asignacion_servicio_responsable"
+                ],
+                "id_servicio": row["id_servicio"],
+                "id_inmueble": row["id_inmueble"],
+                "id_unidad_funcional": row["id_unidad_funcional"],
+                "porcentaje_responsabilidad": float(
+                    row["porcentaje_responsabilidad"]
+                ),
+                "fecha_desde": row["fecha_desde"],
+                "fecha_hasta": row["fecha_hasta"],
+                "estado_asignacion": row["estado_asignacion"],
             }
             for row in rows
         ]
