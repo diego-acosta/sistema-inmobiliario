@@ -1039,9 +1039,10 @@ Datos incluidos:
 Comportamiento financiero:
 - si la venta no tiene relacion financiera, `relacion_financiera = null`, `obligaciones_financieras = []` y el resumen financiero queda en cero
 - si la venta confirmada ya fue procesada por financiero, se devuelve la relacion generadora `tipo_origen = venta` y sus obligaciones, por ejemplo la obligacion V1 `CAPITAL_VENTA`
+- si la venta no tiene estructura financiera explicita persistida, financiero la trata como plan `CONTADO V1`: una unica obligacion `CAPITAL_VENTA` por `venta.monto_total`, con `fecha_vencimiento = venta.fecha_venta`
 - si financiero ya materializo el comprador V1, la obligacion incluye `obligados` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00`
 - el endpoint no materializa el plan financiero de venta, no crea obligaciones y no resuelve obligados; solo expone los obligados persistidos por financiero
-- el endpoint no implementa anticipo, cuotas, saldo extraordinario, cancelacion anticipada, rescision ni cesion real con cambio de comprador
+- el endpoint no implementa anticipo, cuotas, saldo extraordinario, cancelacion anticipada, rescision ni cesion real con cambio de comprador; anticipo, cuotas y saldo extraordinario requieren persistir datos comerciales minimos antes de poder materializarse financieramente
 
 Resumen financiero:
 - `cantidad_obligaciones`

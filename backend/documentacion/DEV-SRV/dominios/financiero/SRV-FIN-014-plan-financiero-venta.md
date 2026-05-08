@@ -101,6 +101,21 @@ Por lo tanto, cualquier plan distinto de venta contado debe considerarse futuro 
 
 ---
 
+## Decision de cierre V1: CONTADO default
+
+Mientras la venta no tenga una estructura financiera explicita persistida, la materializacion financiera de `venta_confirmada` se define formalmente como plan `CONTADO V1`.
+
+Reglas cerradas:
+
+- se genera una unica obligacion `CAPITAL_VENTA`
+- el importe surge de `venta.monto_total`
+- `fecha_vencimiento = venta.fecha_venta`
+- el obligado financiero es el comprador canonico `COMPRADOR` con `porcentaje_responsabilidad = 100.00`
+- no se generan `ANTICIPO_VENTA`, `CUOTA_VENTA` ni `SALDO_EXTRAORDINARIO`
+- anticipo, saldo y cuotas requieren persistir datos comerciales minimos antes de materializar obligaciones financieras adicionales
+
+---
+
 ## Diseno del plan
 
 `PlanFinancieroVenta` es el contrato conceptual que comercial prepara a partir de condiciones comerciales ya confirmadas y financiero materializa como obligaciones.

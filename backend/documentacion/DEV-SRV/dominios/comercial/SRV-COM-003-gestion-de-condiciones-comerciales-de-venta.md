@@ -23,6 +23,10 @@ No cubre:
 - no existe hoy una tabla materializada `esquema_financiamiento`
 - por lo tanto, la implementacion actual del servicio debe operar sobre `venta` y su detalle multiobjeto ya persistido
 
+Con estos datos, el unico plan financiero derivable formalmente en V1 es `CONTADO`: una obligacion `CAPITAL_VENTA` por `venta.monto_total`, con vencimiento en `venta.fecha_venta`, materializada por financiero al procesar `venta_confirmada`.
+
+Anticipo, cuotas, saldo extraordinario o cualquier estructura distinta de contado no deben inferirse desde texto libre ni desde campos incompletos. Requieren persistir datos comerciales minimos como importe, vencimientos, periodicidad, moneda y observaciones estructuradas.
+
 ## Entidades principales
 - venta
 - venta_objeto_inmobiliario

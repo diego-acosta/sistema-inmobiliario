@@ -151,9 +151,16 @@ obligacion `CAPITAL_VENTA` y un `obligacion_obligado` desde el comprador
 canonico de la venta. El comprador se resuelve por `relacion_persona_rol` y
 `rol_participacion.codigo_rol = COMPRADOR`, con responsabilidad `100.00`.
 
+Este es el comportamiento default cuando la venta no tiene estructura financiera
+explicita persistida. La obligacion usa `fecha_vencimiento = venta.fecha_venta`.
+
 Si no existe un comprador canonico, o existen multiples compradores canonicos,
 la materializacion financiera se bloquea. V1 no usa `cliente_comprador`, no
 infiere porcentajes y no crea reparto entre multiples compradores.
+
+Anticipo, cuotas y saldo extraordinario no forman parte del cierre `CONTADO V1`;
+requieren persistencia comercial minima adicional antes de generar nuevas
+obligaciones financieras.
 
 ---
 

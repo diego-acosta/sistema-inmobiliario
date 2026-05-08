@@ -468,6 +468,13 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - origen_principal: SRV-FIN-015-plan-financiero-locativo
 - estado: IMPLEMENTADA.
 
+### RN-COM-FIN-000 - Venta CONTADO V1 por defecto
+- descripcion: Si una venta confirmada no tiene estructura financiera explicita persistida, financiero debe tratarla como plan `CONTADO V1`. Debe generar una unica obligacion financiera `CAPITAL_VENTA`, por importe igual a `venta.monto_total`, con `fecha_vencimiento = venta.fecha_venta`.
+- aplica_a: venta, relacion_generadora, obligacion_financiera, composicion_obligacion, obligacion_obligado
+- origen_principal: SRV-FIN-014-plan-financiero-venta
+- estado: IMPLEMENTADA V1.
+- observaciones: `ANTICIPO_Y_SALDO`, cuotas o saldos extraordinarios requieren persistir datos comerciales minimos antes de materializar obligaciones distintas de contado. El obligado financiero se rige por RN-COM-FIN-001.
+
 ### RN-COM-FIN-001 - Obligado comprador de venta V1
 - descripcion: La materializacion financiera de `venta_confirmada` debe resolver exactamente un comprador canonico desde `relacion_persona_rol` y `rol_participacion` con `tipo_relacion = venta`, `id_relacion = id_venta` y `codigo_rol = COMPRADOR`. Si existe uno solo, crea `obligacion_obligado` para la obligacion `CAPITAL_VENTA` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00`.
 - aplica_a: venta, relacion_persona_rol, rol_participacion, relacion_generadora, obligacion_financiera, obligacion_obligado

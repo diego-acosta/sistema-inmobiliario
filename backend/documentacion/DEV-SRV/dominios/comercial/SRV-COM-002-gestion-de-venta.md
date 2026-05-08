@@ -39,6 +39,22 @@ Alcance implementado actual para alta derivada:
 - la conversion no crea `ocupacion`
 - la conversion no genera obligaciones financieras ni `relacion_generadora`
 
+### Integracion financiera V1
+
+La confirmacion comercial emite `venta_confirmada`, pero no crea deuda por si misma.
+
+El dominio financiero consume ese evento y, si la venta no tiene una estructura financiera explicita persistida, la interpreta como plan `CONTADO V1`.
+
+El comportamiento `CONTADO V1` materializa:
+
+- una `relacion_generadora` con `tipo_origen = venta`
+- una unica `obligacion_financiera` `CAPITAL_VENTA`
+- importe igual a `venta.monto_total`
+- `fecha_vencimiento = venta.fecha_venta`
+- un `obligacion_obligado` para el comprador canonico `COMPRADOR` al 100%
+
+Comercial no define todavia anticipo, cuotas, saldo extraordinario ni calendario financiero avanzado. Esos casos requieren persistir datos comerciales minimos antes de que financiero pueda generar obligaciones distintas de contado.
+
 ### Modificacion
 Permite actualizar datos comerciales de la venta.
 
@@ -199,5 +215,5 @@ Permite visualizar la informacion y estado de la venta.
 - definicion completa del ciclo de estados de venta
 - reglas de cancelacion y reversion
 - relacion exacta entre venta y condiciones comerciales
-- integracion exacta con el dominio financiero
+- integracion avanzada con el dominio financiero para anticipo, cuotas y saldo extraordinario
 - asignacion posterior de importes por objeto en `venta_objeto_inmobiliario`
