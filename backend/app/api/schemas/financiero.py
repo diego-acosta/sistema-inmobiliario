@@ -391,6 +391,36 @@ class LiquidacionesImpuestoTrasladadoComprobanteListResponse(BaseModel):
     data: LiquidacionesImpuestoTrasladadoComprobanteListData
 
 
+class AnularLiquidacionImpuestoTrasladadoRequest(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_not_blank(cls, v: str) -> str:
+        motivo = v.strip()
+        if not motivo:
+            raise ValueError("motivo es obligatorio.")
+        return motivo
+
+
+class AnularLiquidacionImpuestoTrasladadoData(BaseModel):
+    resultado: str | None = None
+    id_liquidacion_impuesto_trasladado: int
+    estado_liquidacion: str
+    id_relacion_generadora: int | None = None
+    estado_relacion_generadora: str | None = None
+    id_obligacion_financiera: int | None = None
+    estado_obligacion: str | None = None
+    egresos_liberados: int
+    ya_anulada: bool
+    motivo: str
+
+
+class AnularLiquidacionImpuestoTrasladadoResponse(BaseModel):
+    ok: bool = True
+    data: AnularLiquidacionImpuestoTrasladadoData
+
+
 class ConceptoFinancieroData(BaseModel):
     id_concepto_financiero: int
     codigo_concepto_financiero: str

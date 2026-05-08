@@ -22,6 +22,9 @@ from app.api.schemas.financiero import (
     AnularLiquidacionRecuperoData,
     AnularLiquidacionRecuperoRequest,
     AnularLiquidacionRecuperoResponse,
+    AnularLiquidacionImpuestoTrasladadoData,
+    AnularLiquidacionImpuestoTrasladadoRequest,
+    AnularLiquidacionImpuestoTrasladadoResponse,
     BonificacionIndexacionData,
     BonificacionIndexacionRequest,
     BonificacionIndexacionResponse,
@@ -230,6 +233,9 @@ from app.application.financiero.services.anular_egreso_proveedor_factura_servici
 )
 from app.application.financiero.services.anular_liquidacion_recupero_service import (
     AnularLiquidacionRecuperoService,
+)
+from app.application.financiero.services.anular_liquidacion_impuesto_trasladado_service import (
+    AnularLiquidacionImpuestoTrasladadoService,
 )
 from app.application.financiero.services.liquidar_recupero_factura_servicio_service import (
     LiquidarRecuperoFacturaServicioService,
@@ -826,6 +832,81 @@ def list_liquidaciones_impuesto_trasladado_comprobante(
             items=items,
             total=len(items),
         )
+    )
+
+
+@router.patch(
+    "/api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular",
+    response_model=AnularLiquidacionImpuestoTrasladadoResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def anular_liquidacion_impuesto_trasladado(
+    id_liquidacion_impuesto_trasladado: int,
+    request: AnularLiquidacionImpuestoTrasladadoRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> AnularLiquidacionImpuestoTrasladadoResponse | JSONResponse:
+    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    repository = FinancieroRepository(db)
+    service = AnularLiquidacionImpuestoTrasladadoService(repository=repository)
+
+    try:
+        result = service.execute(
+            id_liquidacion_impuesto_trasladado=id_liquidacion_impuesto_trasladado,
+            motivo=request.motivo,
+            context=context,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error_code="INTERNAL_ERROR", error_message=str(exc)
+            ).model_dump(),
+        )
+
+    if not result.success or result.data is None:
+        if "LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND" in result.errors:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error_code="LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND",
+                    error_message=(
+                        "La liquidacion de impuesto trasladado indicada no existe."
+                    ),
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        if "LIQUIDACION_IMPUESTO_TRASLADADO_TIENE_OPERACIONES" in result.errors:
+            return JSONResponse(
+                status_code=409,
+                content=ErrorResponse(
+                    error_code="LIQUIDACION_IMPUESTO_TRASLADADO_TIENE_OPERACIONES",
+                    error_message=(
+                        "La liquidacion de impuesto trasladado tiene "
+                        "operaciones financieras activas."
+                    ),
+                    details={"errors": result.errors},
+                ).model_dump(),
+            )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=result.errors[0] if result.errors else "APPLICATION_ERROR",
+                error_message="No se pudo anular la liquidacion de impuesto trasladado.",
+                details={"errors": result.errors},
+            ).model_dump(),
+        )
+
+    return AnularLiquidacionImpuestoTrasladadoResponse(
+        data=AnularLiquidacionImpuestoTrasladadoData(**result.data)
     )
 
 

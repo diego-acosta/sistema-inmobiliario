@@ -2,7 +2,7 @@
 
 ## Estado
 - estado: `IMPLEMENTADO PARCIAL V1`
-- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; liquidacion `IMPUESTO_TRASLADADO` fase 1 implementada con consultas read-only; anulacion de liquidacion y pago externo aun no implementados
+- implementacion: registro y consulta de `comprobante_impuesto` implementados; egreso empresa implementado para `EMPRESA_ASUME` y `EMPRESA_PAGA_Y_RECUPERA`; liquidacion `IMPUESTO_TRASLADADO` fase 1 implementada con consultas read-only y anulacion conservadora; pago externo aun no implementado
 - dominio owner: `financiero`
 - origen operativo: `comprobante_impuesto`
 - clasificacion: nucleo financiero para traslado de impuestos, tasas o contribuciones a responsables
@@ -48,6 +48,7 @@ Endpoints implementados:
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular`
 
 Reglas implementadas:
 
@@ -124,8 +125,8 @@ Reglas:
   `ACTIVO`;
 - el responsable paga a la empresa por el flujo normal de pago por persona;
 - la liquidacion no crea `movimiento_tesoreria` nuevo;
-- la anulacion futura debe ser conservadora y bloquearse si existen pagos,
-  aplicaciones, punitorios u operaciones posteriores.
+- la anulacion es conservadora y se bloquea si existen pagos, aplicaciones,
+  punitorios u operaciones posteriores.
 
 ## Relacion con tesoreria
 
@@ -176,8 +177,8 @@ Anulacion implementada:
 - no toca `comprobante_impuesto`;
 - no crea ni modifica `movimiento_financiero`, `relacion_generadora`,
   `obligacion_financiera` ni estado de cuenta;
-- pendiente futuro: bloquear anulacion si una
-  `liquidacion_impuesto_trasladado` activa usa el egreso.
+- bloquea anulacion si una `liquidacion_impuesto_trasladado` activa usa el
+  egreso.
 
 ## Relacion con liquidacion_recupero
 
@@ -210,6 +211,7 @@ Endpoint implementado:
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
 - `GET /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}`
 - `GET /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/liquidaciones-impuesto-trasladado`
+- `PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular`
 
 Estructura persistida:
 
@@ -253,6 +255,25 @@ Consultas read-only implementadas:
 - para `DIRECTO_RESPONSABLE`, el detalle devuelve lista de egresos vacia;
 - no crean movimientos, obligaciones ni modifican saldos.
 
+Anulacion conservadora implementada:
+
+- requiere motivo;
+- si la liquidacion no existe, devuelve
+  `LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND`;
+- si ya esta `ANULADA`, devuelve respuesta idempotente `YA_ANULADA`;
+- si hay aplicaciones financieras, movimientos financieros activos,
+  punitorios o composiciones posteriores, bloquea con
+  `LIQUIDACION_IMPUESTO_TRASLADADO_TIENE_OPERACIONES`;
+- si procede, marca `liquidacion_impuesto_trasladado.estado_liquidacion =
+  ANULADA`;
+- marca la `relacion_generadora` asociada como `CANCELADA`;
+- marca la `obligacion_financiera` y sus composiciones como `ANULADA`;
+- para `EMPRESA_PAGA_Y_RECUPERA`, libera logicamente los vinculos
+  `liquidacion_impuesto_trasladado_egreso` activos, sin tocar
+  `egreso_impuesto_empresa` ni `movimiento_tesoreria`;
+- no borra registros fisicamente;
+- no modifica pagos, comprobantes existentes ni egresos de empresa.
+
 ## Estado de cuenta
 
 Las obligaciones activas con composicion `IMPUESTO_TRASLADADO` deben verse en
@@ -264,7 +285,6 @@ aparecer en estado de cuenta del responsable.
 ## Fuera de alcance V1
 
 - usar `factura_servicio` para impuestos;
-- anulacion/reversion de `liquidacion_impuesto_trasladado`, pendiente posterior;
 - pago externo informado de impuesto, pendiente posterior;
 - expensas formales;
 - crear `IMPUESTO_RECUPERADO`;

@@ -3903,6 +3903,314 @@ class FinancieroRepository:
             for row in rows
         ]
 
+    def get_liquidacion_impuesto_trasladado_para_anular(
+        self, id_liquidacion_impuesto_trasladado: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                lit.id_liquidacion_impuesto_trasladado,
+                lit.estado_liquidacion,
+                lit.id_relacion_generadora,
+                rg.estado_relacion_generadora,
+                lit.id_obligacion_financiera,
+                o.estado_obligacion,
+                lit.observaciones
+            FROM liquidacion_impuesto_trasladado lit
+            LEFT JOIN relacion_generadora rg
+              ON rg.id_relacion_generadora = lit.id_relacion_generadora
+             AND rg.deleted_at IS NULL
+            LEFT JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = lit.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            WHERE lit.id_liquidacion_impuesto_trasladado =
+                  :id_liquidacion_impuesto_trasladado
+              AND lit.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "id_liquidacion_impuesto_trasladado": (
+                    id_liquidacion_impuesto_trasladado
+                )
+            },
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+
+        motivo_anulacion = None
+        if row["observaciones"]:
+            try:
+                parsed = json.loads(row["observaciones"])
+                anulacion = parsed.get("anulacion") if isinstance(parsed, dict) else None
+                if isinstance(anulacion, dict):
+                    motivo_anulacion = anulacion.get("motivo")
+            except (TypeError, ValueError):
+                motivo_anulacion = None
+
+        return {
+            "id_liquidacion_impuesto_trasladado": row[
+                "id_liquidacion_impuesto_trasladado"
+            ],
+            "estado_liquidacion": row["estado_liquidacion"],
+            "id_relacion_generadora": row["id_relacion_generadora"],
+            "estado_relacion_generadora": row["estado_relacion_generadora"],
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "estado_obligacion": row["estado_obligacion"],
+            "motivo_anulacion": motivo_anulacion,
+        }
+
+    def get_operaciones_activas_liquidacion_impuesto_trasladado(
+        self, id_liquidacion_impuesto_trasladado: int
+    ) -> dict[str, Any]:
+        stmt = text(
+            """
+            WITH liq AS (
+                SELECT
+                    id_liquidacion_impuesto_trasladado,
+                    id_obligacion_financiera,
+                    updated_at,
+                    op_id_alta
+                FROM liquidacion_impuesto_trasladado
+                WHERE id_liquidacion_impuesto_trasladado =
+                      :id_liquidacion_impuesto_trasladado
+                  AND deleted_at IS NULL
+            ),
+            comps AS (
+                SELECT c.id_composicion_obligacion
+                FROM composicion_obligacion c
+                JOIN liq ON liq.id_obligacion_financiera =
+                    c.id_obligacion_financiera
+                WHERE c.deleted_at IS NULL
+            ),
+            apps AS (
+                SELECT a.id_aplicacion_financiera, a.id_movimiento_financiero
+                FROM aplicacion_financiera a
+                JOIN liq ON liq.id_obligacion_financiera =
+                    a.id_obligacion_financiera
+                WHERE a.deleted_at IS NULL
+                  AND (
+                      a.id_obligacion_financiera =
+                          liq.id_obligacion_financiera
+                      OR a.id_composicion_obligacion IN (
+                          SELECT id_composicion_obligacion FROM comps
+                      )
+                  )
+            )
+            SELECT
+                (SELECT COUNT(*) FROM apps) AS aplicaciones,
+                (
+                    SELECT COUNT(DISTINCT mf.id_movimiento_financiero)
+                    FROM apps a
+                    JOIN movimiento_financiero mf
+                      ON mf.id_movimiento_financiero =
+                         a.id_movimiento_financiero
+                     AND mf.deleted_at IS NULL
+                     AND COALESCE(mf.estado_movimiento, 'ACTIVO') <> 'ANULADO'
+                ) AS movimientos,
+                (
+                    SELECT COUNT(*)
+                    FROM liquidacion_punitorio lp
+                    JOIN liq ON liq.id_obligacion_financiera =
+                        lp.id_obligacion_financiera
+                    WHERE lp.deleted_at IS NULL
+                      AND lp.estado_liquidacion = 'ACTIVA'
+                ) AS punitorios,
+                (
+                    SELECT COUNT(*)
+                    FROM composicion_obligacion c
+                    JOIN liq ON liq.id_obligacion_financiera =
+                        c.id_obligacion_financiera
+                    JOIN concepto_financiero cf
+                      ON cf.id_concepto_financiero = c.id_concepto_financiero
+                     AND cf.deleted_at IS NULL
+                    WHERE c.deleted_at IS NULL
+                      AND c.estado_composicion_obligacion = 'ACTIVA'
+                      AND (
+                          c.created_at > liq.updated_at
+                          OR c.updated_at > liq.updated_at
+                      )
+                      AND NOT (
+                          cf.codigo_concepto_financiero = 'IMPUESTO_TRASLADADO'
+                          AND c.op_id_alta = liq.op_id_alta
+                          AND c.op_id_ultima_modificacion = liq.op_id_alta
+                      )
+                ) AS composiciones_posteriores
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "id_liquidacion_impuesto_trasladado": (
+                    id_liquidacion_impuesto_trasladado
+                )
+            },
+        ).mappings().one()
+        counts = {
+            "aplicaciones": int(row["aplicaciones"]),
+            "movimientos": int(row["movimientos"]),
+            "punitorios": int(row["punitorios"]),
+            "composiciones_posteriores": int(row["composiciones_posteriores"]),
+        }
+        counts["tiene_operaciones"] = any(counts.values())
+        return counts
+
+    def anular_liquidacion_impuesto_trasladado(
+        self,
+        *,
+        id_liquidacion_impuesto_trasladado: int,
+        motivo: str,
+        context: Any,
+    ) -> dict[str, Any]:
+        row_stmt = text(
+            """
+            SELECT
+                lit.id_liquidacion_impuesto_trasladado,
+                lit.estado_liquidacion,
+                lit.id_relacion_generadora,
+                lit.id_obligacion_financiera,
+                lit.observaciones
+            FROM liquidacion_impuesto_trasladado lit
+            WHERE lit.id_liquidacion_impuesto_trasladado =
+                  :id_liquidacion_impuesto_trasladado
+              AND lit.deleted_at IS NULL
+            FOR UPDATE
+            """
+        )
+        row = self.db.execute(
+            row_stmt,
+            {
+                "id_liquidacion_impuesto_trasladado": (
+                    id_liquidacion_impuesto_trasladado
+                )
+            },
+        ).mappings().one()
+        observaciones = _append_motivo_anulacion(row["observaciones"], motivo)
+        op_id = getattr(context, "op_id", None)
+        id_instalacion = getattr(context, "id_instalacion", None)
+
+        lit_row = self.db.execute(
+            text(
+                """
+                UPDATE liquidacion_impuesto_trasladado
+                SET estado_liquidacion = 'ANULADA',
+                    observaciones = :observaciones,
+                    id_instalacion_ultima_modificacion = :id_instalacion,
+                    op_id_ultima_modificacion = :op_id
+                WHERE id_liquidacion_impuesto_trasladado =
+                      :id_liquidacion_impuesto_trasladado
+                RETURNING estado_liquidacion
+                """
+            ),
+            {
+                "id_liquidacion_impuesto_trasladado": (
+                    id_liquidacion_impuesto_trasladado
+                ),
+                "observaciones": observaciones,
+                "id_instalacion": id_instalacion,
+                "op_id": op_id,
+            },
+        ).mappings().one()
+
+        rg_row = None
+        if row["id_relacion_generadora"] is not None:
+            rg_row = self.db.execute(
+                text(
+                    """
+                    UPDATE relacion_generadora
+                    SET estado_relacion_generadora = 'CANCELADA',
+                        id_instalacion_ultima_modificacion = :id_instalacion,
+                        op_id_ultima_modificacion = :op_id
+                    WHERE id_relacion_generadora = :id_relacion_generadora
+                      AND deleted_at IS NULL
+                    RETURNING estado_relacion_generadora
+                    """
+                ),
+                {
+                    "id_relacion_generadora": row["id_relacion_generadora"],
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                },
+            ).mappings().one_or_none()
+
+        ob_row = None
+        if row["id_obligacion_financiera"] is not None:
+            ob_row = self.db.execute(
+                text(
+                    """
+                    UPDATE obligacion_financiera
+                    SET estado_obligacion = 'ANULADA',
+                        id_instalacion_ultima_modificacion = :id_instalacion,
+                        op_id_ultima_modificacion = :op_id
+                    WHERE id_obligacion_financiera = :id_obligacion_financiera
+                      AND deleted_at IS NULL
+                    RETURNING estado_obligacion
+                    """
+                ),
+                {
+                    "id_obligacion_financiera": row["id_obligacion_financiera"],
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                },
+            ).mappings().one_or_none()
+            self.db.execute(
+                text(
+                    """
+                    UPDATE composicion_obligacion
+                    SET estado_composicion_obligacion = 'ANULADA',
+                        id_instalacion_ultima_modificacion = :id_instalacion,
+                        op_id_ultima_modificacion = :op_id
+                    WHERE id_obligacion_financiera = :id_obligacion_financiera
+                      AND deleted_at IS NULL
+                    """
+                ),
+                {
+                    "id_obligacion_financiera": row["id_obligacion_financiera"],
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                },
+            )
+
+        egresos_liberados = self.db.execute(
+            text(
+                """
+                UPDATE liquidacion_impuesto_trasladado_egreso
+                SET estado_liquidacion_impuesto_egreso = 'ANULADO',
+                    deleted_at = CURRENT_TIMESTAMP,
+                    id_instalacion_ultima_modificacion = :id_instalacion,
+                    op_id_ultima_modificacion = :op_id
+                WHERE id_liquidacion_impuesto_trasladado =
+                      :id_liquidacion_impuesto_trasladado
+                  AND deleted_at IS NULL
+                  AND estado_liquidacion_impuesto_egreso = 'ACTIVO'
+                """
+            ),
+            {
+                "id_liquidacion_impuesto_trasladado": (
+                    id_liquidacion_impuesto_trasladado
+                ),
+                "id_instalacion": id_instalacion,
+                "op_id": op_id,
+            },
+        ).rowcount
+
+        return {
+            "id_liquidacion_impuesto_trasladado": row[
+                "id_liquidacion_impuesto_trasladado"
+            ],
+            "estado_liquidacion": lit_row["estado_liquidacion"],
+            "id_relacion_generadora": row["id_relacion_generadora"],
+            "estado_relacion_generadora": (
+                rg_row["estado_relacion_generadora"] if rg_row is not None else None
+            ),
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "estado_obligacion": (
+                ob_row["estado_obligacion"] if ob_row is not None else None
+            ),
+            "egresos_liberados": int(egresos_liberados or 0),
+        }
+
     def get_liquidacion_recupero_para_anular(
         self, id_liquidacion_recupero: int
     ) -> dict[str, Any] | None:

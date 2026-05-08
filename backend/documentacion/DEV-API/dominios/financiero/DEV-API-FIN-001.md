@@ -704,6 +704,41 @@ Reglas:
 - incluye liquidaciones no eliminadas, activas o anuladas futuras;
 - no modifica saldos ni estado de cuenta.
 
+### PATCH /api/v1/financiero/liquidaciones-impuesto-trasladado/{id_liquidacion_impuesto_trasladado}/anular
+
+Objetivo: anular de forma conservadora una liquidacion de impuesto trasladado
+sin borrar registros ni tocar tesoreria.
+
+Request:
+
+```json
+{
+  "motivo": "Carga incorrecta"
+}
+```
+
+Respuesta resumida: estado de la liquidacion, relacion generadora, obligacion,
+cantidad de vinculos de egreso liberados, motivo y marca `ya_anulada`.
+
+Reglas:
+
+- requiere motivo;
+- si ya estaba anulada, devuelve `YA_ANULADA`;
+- bloquea con `LIQUIDACION_IMPUESTO_TRASLADADO_TIENE_OPERACIONES` si existen
+  pagos, aplicaciones financieras, punitorios, composiciones posteriores u otro
+  avance financiero activo;
+- marca la liquidacion como `ANULADA`;
+- marca la relacion generadora como `CANCELADA`;
+- marca la obligacion y sus composiciones como `ANULADA`;
+- libera logicamente vinculos `liquidacion_impuesto_trasladado_egreso` activos;
+- no toca `egreso_impuesto_empresa`, `movimiento_tesoreria`,
+  `comprobante_impuesto` ni pagos existentes.
+
+Errores principales:
+
+- `LIQUIDACION_IMPUESTO_TRASLADADO_NOT_FOUND`
+- `LIQUIDACION_IMPUESTO_TRASLADADO_TIENE_OPERACIONES`
+
 ---
 
 ## 10. EMPRESA_PAGA_Y_RECUPERA

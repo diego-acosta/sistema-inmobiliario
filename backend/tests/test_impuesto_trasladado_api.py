@@ -1668,3 +1668,306 @@ def test_consulta_liquidacion_impuesto_no_crea_movimientos_ni_obligaciones(
     assert after["tesoreria"] == before["tesoreria"]
     assert after["financieros"] == before["financieros"]
     assert after["obligaciones"] == before["obligaciones"]
+
+
+def test_anular_liquidacion_impuesto_sin_operaciones(client, db_session) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-ANULA")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-ANULA",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f301",
+    ).json()["data"]
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}/anular"
+        ),
+        json={"motivo": "Carga incorrecta"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["resultado"] == "ANULADA"
+    assert data["estado_liquidacion"] == "ANULADA"
+    assert data["estado_relacion_generadora"] == "CANCELADA"
+    assert data["estado_obligacion"] == "ANULADA"
+    assert data["egresos_liberados"] == 0
+    row = db_session.execute(
+        text(
+            """
+            SELECT o.estado_obligacion, c.estado_composicion_obligacion
+            FROM obligacion_financiera o
+            JOIN composicion_obligacion c
+              ON c.id_obligacion_financiera = o.id_obligacion_financiera
+            WHERE o.id_obligacion_financiera = :id_obligacion
+            """
+        ),
+        {"id_obligacion": liquidacion["id_obligacion_financiera"]},
+    ).mappings().one()
+    assert row["estado_obligacion"] == "ANULADA"
+    assert row["estado_composicion_obligacion"] == "ANULADA"
+
+
+def test_anular_liquidacion_impuesto_rechaza_si_tiene_pago(client, db_session) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-ANULA-PAGO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-ANULA-PAGO",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f302",
+    ).json()["data"]
+    pago = client.post(
+        "/api/v1/financiero/pagos",
+        headers=_headers_op("00000000-0000-0000-0000-00000000f303"),
+        params={"id_persona": id_persona},
+        json={"monto": 1000.00, "fecha_pago": "2026-05-30"},
+    )
+    assert pago.status_code == 201, pago.text
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}/anular"
+        ),
+        json={"motivo": "No corresponde"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert (
+        response.json()["error_code"]
+        == "LIQUIDACION_IMPUESTO_TRASLADADO_TIENE_OPERACIONES"
+    )
+
+
+def test_anular_liquidacion_impuesto_rechaza_si_tiene_punitorio(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-ANULA-PUNITORIO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-ANULA-PUNITORIO",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f304",
+    ).json()["data"]
+    id_composicion_punitorio = db_session.execute(
+        text(
+            """
+            INSERT INTO composicion_obligacion (
+                id_obligacion_financiera,
+                id_concepto_financiero,
+                orden_composicion,
+                importe_componente,
+                saldo_componente,
+                created_at,
+                updated_at
+            )
+            SELECT
+                :id_obligacion,
+                cf.id_concepto_financiero,
+                2,
+                100,
+                100,
+                CURRENT_TIMESTAMP + INTERVAL '1 second',
+                CURRENT_TIMESTAMP + INTERVAL '1 second'
+            FROM concepto_financiero cf
+            WHERE cf.codigo_concepto_financiero = 'PUNITORIO'
+            RETURNING id_composicion_obligacion
+            """
+        ),
+        {"id_obligacion": liquidacion["id_obligacion_financiera"]},
+    ).scalar_one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO liquidacion_punitorio (
+                id_obligacion_financiera,
+                id_composicion_obligacion,
+                uid_pago_grupo,
+                codigo_pago_grupo,
+                fecha_vencimiento,
+                fecha_inicio_calculo,
+                fecha_fin_calculo,
+                base_morable,
+                tasa_diaria,
+                dias_calculados,
+                importe_liquidado
+            )
+            VALUES (
+                :id_obligacion,
+                :id_composicion,
+                gen_random_uuid(),
+                'PAGO-TEST-PUNITORIO',
+                DATE '2026-06-10',
+                DATE '2026-06-10',
+                DATE '2026-06-15',
+                15000,
+                0.001,
+                5,
+                100
+            )
+            """
+        ),
+        {
+            "id_obligacion": liquidacion["id_obligacion_financiera"],
+            "id_composicion": id_composicion_punitorio,
+        },
+    )
+    db_session.commit()
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}/anular"
+        ),
+        json={"motivo": "No corresponde"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert (
+        response.json()["error_code"]
+        == "LIQUIDACION_IMPUESTO_TRASLADADO_TIENE_OPERACIONES"
+    )
+
+
+def test_anular_liquidacion_impuesto_libera_egresos_sin_tocar_egreso(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-ANULA-EGRESO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-ANULA-EGRESO",
+        modalidad_gestion_impuesto="EMPRESA_PAGA_Y_RECUPERA",
+    ).json()["data"]
+    egreso = _registrar_egreso_impuesto(
+        client,
+        db_session,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        op_id="00000000-0000-0000-0000-00000000f305",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f306",
+    ).json()["data"]
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}/anular"
+        ),
+        json={"motivo": "Se rehace la liquidacion"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["egresos_liberados"] == 1
+    row = db_session.execute(
+        text(
+            """
+            SELECT
+                eie.estado_egreso,
+                mt.estado AS estado_movimiento_tesoreria,
+                lite.estado_liquidacion_impuesto_egreso,
+                lite.deleted_at
+            FROM egreso_impuesto_empresa eie
+            JOIN movimiento_tesoreria mt
+              ON mt.id_movimiento_tesoreria = eie.id_movimiento_tesoreria
+            JOIN liquidacion_impuesto_trasladado_egreso lite
+              ON lite.id_egreso_impuesto_empresa = eie.id_egreso_impuesto_empresa
+            WHERE eie.id_egreso_impuesto_empresa = :id_egreso
+            """
+        ),
+        {"id_egreso": egreso["id_egreso_impuesto_empresa"]},
+    ).mappings().one()
+    assert row["estado_egreso"] == "REGISTRADO"
+    assert row["estado_movimiento_tesoreria"] == "REGISTRADO"
+    assert row["estado_liquidacion_impuesto_egreso"] == "ANULADO"
+    assert row["deleted_at"] is not None
+
+
+def test_anular_liquidacion_impuesto_directo_responsable_sin_egresos(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-ANULA-DIRECTO")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-ANULA-DIRECTO",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f307",
+    ).json()["data"]
+
+    response = client.patch(
+        (
+            "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+            f"{liquidacion['id_liquidacion_impuesto_trasladado']}/anular"
+        ),
+        json={"motivo": "Carga duplicada"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["estado_liquidacion"] == "ANULADA"
+    assert response.json()["data"]["egresos_liberados"] == 0
+
+
+def test_anular_liquidacion_impuesto_ya_anulada_es_idempotente(
+    client, db_session
+) -> None:
+    id_persona = _crear_persona(db_session, codigo="IMP-LIT-ANULA-IDEMP")
+    comprobante = _crear_comprobante(
+        client,
+        db_session,
+        numero_comprobante="MUN-2026-LIT-ANULA-IDEMP",
+        modalidad_gestion_impuesto="DIRECTO_RESPONSABLE",
+    ).json()["data"]
+    liquidacion = _liquidar_impuesto(
+        client,
+        id_comprobante_impuesto=comprobante["id_comprobante_impuesto"],
+        id_persona=id_persona,
+        op_id="00000000-0000-0000-0000-00000000f308",
+    ).json()["data"]
+    url = (
+        "/api/v1/financiero/liquidaciones-impuesto-trasladado/"
+        f"{liquidacion['id_liquidacion_impuesto_trasladado']}/anular"
+    )
+
+    first = client.patch(url, json={"motivo": "Anulacion inicial"}, headers=HEADERS)
+    second = client.patch(url, json={"motivo": "Segundo intento"}, headers=HEADERS)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    data = second.json()["data"]
+    assert data["resultado"] == "YA_ANULADA"
+    assert data["ya_anulada"] is True
+    assert data["motivo"] == "Anulacion inicial"
