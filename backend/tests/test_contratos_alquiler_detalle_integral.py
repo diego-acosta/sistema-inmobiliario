@@ -23,7 +23,10 @@ def _contadores_financieros(db_session) -> dict:
                     (SELECT COUNT(*) FROM relacion_generadora) AS relaciones,
                     (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones,
                     (SELECT COUNT(*) FROM movimiento_financiero) AS movimientos,
-                    (SELECT COUNT(*) FROM aplicacion_financiera) AS aplicaciones
+                    (SELECT COUNT(*) FROM aplicacion_financiera) AS aplicaciones,
+                    (SELECT COUNT(*) FROM movimiento_tesoreria) AS movimientos_tesoreria,
+                    (SELECT COUNT(*) FROM outbox_event) AS outbox_events,
+                    (SELECT COUNT(*) FROM inbox_event) AS inbox_events
                 """
             )
         ).mappings().one()

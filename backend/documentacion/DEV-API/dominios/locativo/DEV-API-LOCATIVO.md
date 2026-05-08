@@ -691,6 +691,9 @@ Reglas de lectura:
 - `obligaciones_financieras` incluye composiciones, concepto financiero, obligados, saldos persistidos, estados, fechas y periodos
 - `resumen_financiero` usa saldos persistidos y estados actuales; no recalcula deuda, no ejecuta mora y no modifica estados
 - el endpoint no genera `relacion_generadora`, no genera obligaciones, no registra pagos, no toca outbox ni inbox
+- el endpoint no crea `movimiento_financiero`, `aplicacion_financiera` ni `movimiento_tesoreria`
+- no reemplaza el flujo formal futuro de rescision/finalizacion ni renovacion/prorroga
+- sirve como base de lectura para proximos bloques locativos y comerciales, sin transferir ownership financiero al dominio locativo
 
 #### `GET /api/v1/contratos-alquiler`
 

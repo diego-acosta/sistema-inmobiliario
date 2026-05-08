@@ -76,7 +76,11 @@ Restricciones:
 - no modifica estados
 - no registra pagos
 - no escribe outbox ni inbox
+- no crea movimiento financiero, aplicacion financiera ni movimiento de tesoreria
 - no reemplaza las consultas financieras propias del dominio financiero
+- no reemplaza el flujo formal de rescision/finalizacion
+- no reemplaza renovacion ni prorroga
+- sirve como base de lectura para proximos bloques locativos y comerciales
 
 ## Entradas conceptuales
 
