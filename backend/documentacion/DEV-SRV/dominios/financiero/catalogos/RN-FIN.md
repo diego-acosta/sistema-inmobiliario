@@ -492,7 +492,7 @@ Incluye relaciones generadoras, obligaciones, imputaciones, ajustes y consultas.
 - estado: IMPLEMENTADA.
 
 ### RN-FIN-090 - Estado de cuenta por persona agrupado por origen funcional
-- descripcion: El estado de cuenta por persona debe exponer la deuda en grupos funcionales (`LOCATIVO`, `VENTA`, `TRASLADADOS`, `OTROS`) y, dentro de cada grupo, separar cada `relacion_generadora` como bloque independiente. La vista conserva el arreglo plano de obligaciones por compatibilidad, pero la lectura funcional principal es `grupos_deuda`.
+- descripcion: El estado de cuenta por persona debe exponer la deuda en grupos funcionales (`LOCATIVO`, `VENTA`, `TRASLADADOS`, `OTROS`) y, dentro de cada grupo, separar cada `relacion_generadora` como bloque independiente. La pertenencia se determina por `obligacion_obligado`; los trasladados incluyen `FACTURA_SERVICIO`, `LIQUIDACION_RECUPERO` y `LIQUIDACION_IMPUESTO_TRASLADADO`, mas el fallback por conceptos `SERVICIO_TRASLADADO`, `SERVICIO_RECUPERADO`, `EXPENSA_TRASLADADA` e `IMPUESTO_TRASLADADO`. Por defecto excluye obligaciones `ANULADA`, `REEMPLAZADA` y `CANCELADA` sin saldo, salvo consulta explicita por `estado`. La vista conserva el arreglo plano de obligaciones por compatibilidad, pero la lectura funcional principal es `grupos_deuda`.
 - aplica_a: estado_cuenta_persona, relacion_generadora, obligacion_financiera, composicion_obligacion
 - origen_principal: SRV-FIN-016-estado-cuenta-por-persona
 - estado: IMPLEMENTADA.

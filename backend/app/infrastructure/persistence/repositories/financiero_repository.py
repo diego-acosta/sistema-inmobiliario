@@ -6980,7 +6980,11 @@ class FinancieroRepository:
                 return "LOCATIVO"
             if tipo in {"VENTA", "RESERVA_VENTA", "PLAN_VENTA"}:
                 return "VENTA"
-            if tipo in {"FACTURA_SERVICIO", "LIQUIDACION_RECUPERO"}:
+            if tipo in {
+                "FACTURA_SERVICIO",
+                "LIQUIDACION_RECUPERO",
+                "LIQUIDACION_IMPUESTO_TRASLADADO",
+            }:
                 return "TRASLADADOS"
             if codigos.intersection(
                 {
@@ -6998,13 +7002,17 @@ class FinancieroRepository:
             "oo.deleted_at IS NULL",
             "o.deleted_at IS NULL",
             "rg.deleted_at IS NULL",
-            "o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')",
         ]
         params: dict[str, Any] = {"id_persona": id_persona}
 
         if estado is not None:
             filters.append("o.estado_obligacion = :estado")
             params["estado"] = estado.strip().upper()
+        else:
+            filters.append("o.estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')")
+            filters.append(
+                "NOT (o.estado_obligacion = 'CANCELADA' AND o.saldo_pendiente <= 0)"
+            )
         if tipo_origen is not None:
             filters.append("UPPER(rg.tipo_origen) = :tipo_origen")
             params["tipo_origen"] = tipo_origen.strip().upper()

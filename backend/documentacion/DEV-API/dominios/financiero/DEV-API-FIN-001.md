@@ -39,6 +39,7 @@ Este documento describe los endpoints financieros actualmente implementados en b
 ### Estado de cuenta
 
 - `GET /api/v1/financiero/estado-cuenta`
+- `GET /api/v1/financiero/personas/{id_persona}/estado-cuenta`
 
 ### Comprobantes de impuesto
 
@@ -429,6 +430,43 @@ Notas:
 
 - `importe_cancelado` se obtiene de campo persistido; no es una suma dinamica en backend.
 - `cantidad_vencidas` usa la fecha actual del sistema.
+
+### GET /api/v1/financiero/personas/{id_persona}/estado-cuenta
+
+Devuelve el estado de cuenta consolidado de una persona desde
+`obligacion_obligado`.
+
+Query params:
+
+- `estado` string, opcional
+- `tipo_origen` string, opcional
+- `id_origen` int, opcional
+- `vencidas` bool, opcional
+- `fecha_vencimiento_desde` date, opcional
+- `fecha_vencimiento_hasta` date, opcional
+- `fecha_corte` date, opcional
+
+Reglas:
+
+- consulta obligaciones activas asociadas por `obligacion_obligado`
+- no recalcula saldos en backend; usa `saldo_pendiente` y
+  `saldo_componente` persistidos
+- expone `porcentaje_responsabilidad` y
+  `monto_responsabilidad = saldo_pendiente * porcentaje_responsabilidad / 100`
+- expone origen (`id_relacion_generadora`, `tipo_origen`, `id_origen`),
+  obligacion y composiciones
+- agrupa en `LOCATIVO`, `VENTA`, `TRASLADADOS` y `OTROS`
+- clasifica como `TRASLADADOS` los origenes `FACTURA_SERVICIO`,
+  `LIQUIDACION_RECUPERO`, `LIQUIDACION_IMPUESTO_TRASLADADO` y, como fallback,
+  conceptos `SERVICIO_TRASLADADO`, `SERVICIO_RECUPERADO`,
+  `EXPENSA_TRASLADADA` e `IMPUESTO_TRASLADADO`
+- excluye por defecto `ANULADA`, `REEMPLAZADA` y `CANCELADA` sin saldo
+- si se informa `estado`, se consulta ese estado en forma explicita
+- endpoint read-only: no crea movimientos, aplicaciones, tesoreria ni ejecuta
+  liquidacion de mora
+
+Devuelve 404 si la persona no existe. Si existe pero no tiene deuda visible,
+devuelve resumen cero y listas vacias.
 
 ---
 

@@ -682,6 +682,9 @@ Incluye:
 Reglas:
 
 - excluye obligaciones con estado `ANULADA` o `REEMPLAZADA`
+- excluye obligaciones `CANCELADA` con `saldo_pendiente <= 0`
+- si se informa `estado`, se aplica como filtro explicito y no como vista
+  default
 - incluye `EMITIDA` y `VENCIDA` por defecto
 - mora solo si `saldo_pendiente > 0` y
   `fecha_corte > fecha_vencimiento + dias_gracia` resueltos
@@ -708,8 +711,10 @@ Clasificacion funcional V1:
 
 - `contrato_alquiler` -> `LOCATIVO`
 - `venta`, `reserva_venta`, `plan_venta` -> `VENTA`
-- `factura_servicio` -> `TRASLADADOS`
-- conceptos `SERVICIO_TRASLADADO`, `EXPENSA_TRASLADADA` o
+- `factura_servicio`, `liquidacion_recupero` y
+  `liquidacion_impuesto_trasladado` -> `TRASLADADOS`
+- conceptos `SERVICIO_TRASLADADO`, `SERVICIO_RECUPERADO`,
+  `EXPENSA_TRASLADADA` o
   `IMPUESTO_TRASLADADO` como fallback -> `TRASLADADOS`
 - resto -> `OTROS`
 

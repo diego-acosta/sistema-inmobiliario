@@ -555,6 +555,15 @@ SRV-FIN-012
 
 ### Personas
 - obligacion_obligado → persona
+- `obligacion_obligado` vincula la deuda financiera con la persona obligada.
+- El estado de cuenta por persona es una vista read-only derivada de
+  `obligacion_obligado -> obligacion_financiera -> relacion_generadora` y sus
+  `composicion_obligacion`.
+- Los trasladados se exponen en esa vista cuando la relacion generadora es
+  `FACTURA_SERVICIO`, `LIQUIDACION_RECUPERO` o
+  `LIQUIDACION_IMPUESTO_TRASLADADO`, o cuando la composicion usa conceptos
+  `SERVICIO_TRASLADADO`, `SERVICIO_RECUPERADO`, `EXPENSA_TRASLADADA` o
+  `IMPUESTO_TRASLADADO`.
 
 ---
 
