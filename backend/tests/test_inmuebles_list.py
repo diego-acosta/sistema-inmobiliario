@@ -65,7 +65,19 @@ def test_get_inmuebles_devuelve_solo_no_borrados(client, db_session) -> None:
     assert id_inmueble_2 not in ids
 
     item = next(item for item in body["data"] if item["id_inmueble"] == id_inmueble_1)
-    assert item == {
+    assert {
+        key: item[key]
+        for key in (
+            "id_inmueble",
+            "id_desarrollo",
+            "codigo_inmueble",
+            "nombre_inmueble",
+            "superficie",
+            "estado_administrativo",
+            "estado_juridico",
+            "observaciones",
+        )
+    } == {
         "id_inmueble": id_inmueble_1,
         "id_desarrollo": None,
         "codigo_inmueble": "INM-LIST-001",
@@ -75,6 +87,17 @@ def test_get_inmuebles_devuelve_solo_no_borrados(client, db_session) -> None:
         "estado_juridico": "REGULAR",
         "observaciones": "obs uno",
     }
+    assert item["nombre"] == "Unidad Uno"
+    assert item["descripcion"] == "obs uno"
+    assert item["disponibilidad_actual"] is None
+    assert item["disponibilidad_ambigua"] is False
+    assert item["ocupacion_actual"] is None
+    assert item["ocupacion_ambigua"] is False
+    assert item["cantidad_unidades_funcionales"] == 0
+    assert body["items"] == body["data"]
+    assert body["total"] >= 1
+    assert body["limit"] == 100
+    assert body["offset"] == 0
 
     row = db_session.execute(
         text(
@@ -116,4 +139,8 @@ def test_get_inmuebles_devuelve_lista_vacia_si_no_hay_registros_activos(
     assert response.json() == {
         "ok": True,
         "data": [],
+        "items": [],
+        "total": 0,
+        "limit": 100,
+        "offset": 0,
     }

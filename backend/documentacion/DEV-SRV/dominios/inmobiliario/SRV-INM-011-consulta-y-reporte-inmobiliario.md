@@ -33,8 +33,25 @@
 ## Funcionalidad disponible
 - consultas operativas simples y relacionales del modelo ya implementado
 - filtros basicos por identificador o por padre inmediato
+- listados UI read-only de `GET /api/v1/inmuebles` y `GET /api/v1/unidades-funcionales` con paginacion obligatoria (`limit`, `offset`), `total`, `items` y `data` compatible
+- filtros UI vigentes para inmuebles: `q`, `estado_administrativo`, `estado_juridico`, `id_desarrollo`, `disponibilidad_actual`, `ocupacion_actual`, `id_servicio`, `limit`, `offset`
+- filtros UI vigentes para unidades funcionales: `q`, `id_inmueble`, `estado_administrativo`, `estado_operativo`, `disponibilidad_actual`, `ocupacion_actual`, `id_servicio`, `limit`, `offset`
+- lectura consolidada read-only de disponibilidad y ocupacion abierta del mismo activo consultado
 - lectura de vigencia historica por activo para `disponibilidad` y `ocupacion`
 - lectura de trazabilidad de integracion comercial por activo basada en `venta`, `venta_objeto_inmobiliario` y `outbox_event`
+
+## Reglas UI vigentes
+- `GET /api/v1/inmuebles` no modifica disponibilidad, ocupacion ni vigencias.
+- `GET /api/v1/unidades-funcionales` no modifica disponibilidad, ocupacion ni vigencias.
+- la disponibilidad actual de inmueble se obtiene solo de `disponibilidad.id_inmueble` con `id_unidad_funcional IS NULL`, `fecha_hasta IS NULL` y `deleted_at IS NULL`.
+- la disponibilidad actual de unidad funcional se obtiene solo de `disponibilidad.id_unidad_funcional` con `id_inmueble IS NULL`, `fecha_hasta IS NULL` y `deleted_at IS NULL`.
+- la ocupacion actual de inmueble se obtiene solo de `ocupacion.id_inmueble` con `id_unidad_funcional IS NULL`, `fecha_hasta IS NULL` y `deleted_at IS NULL`.
+- la ocupacion actual de unidad funcional se obtiene solo de `ocupacion.id_unidad_funcional` con `id_inmueble IS NULL`, `fecha_hasta IS NULL` y `deleted_at IS NULL`.
+- si no hay registro abierto, `disponibilidad_actual` u `ocupacion_actual` se devuelve `null`.
+- si hay exactamente un registro abierto, se devuelve ese registro como actual.
+- si hay mas de un registro abierto, el actual se devuelve `null` y el indicador `*_ambigua` se devuelve `true`.
+- los filtros por `disponibilidad_actual` y `ocupacion_actual` aplican solo cuando existe un unico registro abierto no ambiguo.
+- no se consultan ni modifican dominios comercial, locativo o financiero para resolver estos listados.
 
 ## Funcionalidad pendiente
 - ficha integral de `inmueble`: `NO IMPLEMENTADO`

@@ -50,15 +50,29 @@ class InmuebleListItem(BaseModel):
     id_desarrollo: int | None
     codigo_inmueble: str
     nombre_inmueble: str | None
+    nombre: str | None = None
+    descripcion: str | None = None
+    tipo_inmueble: str | None = None
+    direccion: str | None = None
+    ubicacion: str | None = None
     superficie: Decimal | None
     estado_administrativo: str
     estado_juridico: str
     observaciones: str | None
+    disponibilidad_actual: dict[str, Any] | None = None
+    disponibilidad_ambigua: bool | None = None
+    ocupacion_actual: dict[str, Any] | None = None
+    ocupacion_ambigua: bool | None = None
+    cantidad_unidades_funcionales: int | None = None
 
 
 class InmuebleListResponse(BaseModel):
     ok: Literal[True] = True
     data: list[InmuebleListItem]
+    items: list[InmuebleListItem] | None = None
+    total: int | None = None
+    limit: int | None = None
+    offset: int | None = None
 
 
 class InmuebleUpdateRequest(BaseModel):
@@ -153,16 +167,29 @@ class UnidadFuncionalListItem(BaseModel):
     id_unidad_funcional: int
     id_inmueble: int
     codigo_unidad: str
+    codigo_unidad_funcional: str | None = None
     nombre_unidad: str | None
+    nombre: str | None = None
+    descripcion: str | None = None
+    tipo_unidad: str | None = None
     superficie: Decimal | None
     estado_administrativo: str
     estado_operativo: str
     observaciones: str | None
+    disponibilidad_actual: dict[str, Any] | None = None
+    disponibilidad_ambigua: bool | None = None
+    ocupacion_actual: dict[str, Any] | None = None
+    ocupacion_ambigua: bool | None = None
+    inmueble: dict[str, Any] | None = None
 
 
 class UnidadFuncionalListResponse(BaseModel):
     ok: Literal[True] = True
     data: list[UnidadFuncionalListItem]
+    items: list[UnidadFuncionalListItem] | None = None
+    total: int | None = None
+    limit: int | None = None
+    offset: int | None = None
 
 
 class UnidadFuncionalDetailData(BaseModel):

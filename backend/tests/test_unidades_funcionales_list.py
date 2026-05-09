@@ -83,7 +83,19 @@ def test_get_unidades_funcionales_global_devuelve_solo_no_borradas(
     item = next(
         item for item in body["data"] if item["id_unidad_funcional"] == id_unidad_1
     )
-    assert item == {
+    assert {
+        key: item[key]
+        for key in (
+            "id_unidad_funcional",
+            "id_inmueble",
+            "codigo_unidad",
+            "nombre_unidad",
+            "superficie",
+            "estado_administrativo",
+            "estado_operativo",
+            "observaciones",
+        )
+    } == {
         "id_unidad_funcional": id_unidad_1,
         "id_inmueble": id_inmueble,
         "codigo_unidad": "UF-GLOB-001",
@@ -93,6 +105,19 @@ def test_get_unidades_funcionales_global_devuelve_solo_no_borradas(
         "estado_operativo": "DISPONIBLE",
         "observaciones": "obs uno",
     }
+    assert item["codigo_unidad_funcional"] == "UF-GLOB-001"
+    assert item["nombre"] == "Unidad Global Uno"
+    assert item["descripcion"] == "obs uno"
+    assert item["disponibilidad_actual"] is None
+    assert item["disponibilidad_ambigua"] is False
+    assert item["ocupacion_actual"] is None
+    assert item["ocupacion_ambigua"] is False
+    assert item["inmueble"]["id_inmueble"] == id_inmueble
+    assert item["inmueble"]["codigo_inmueble"] == "INM-UF-GLOB-001"
+    assert body["items"] == body["data"]
+    assert body["total"] >= 1
+    assert body["limit"] == 100
+    assert body["offset"] == 0
 
     row = db_session.execute(
         text(
@@ -136,4 +161,8 @@ def test_get_unidades_funcionales_global_devuelve_lista_vacia_si_no_hay_registro
     assert response.json() == {
         "ok": True,
         "data": [],
+        "items": [],
+        "total": 0,
+        "limit": 100,
+        "offset": 0,
     }

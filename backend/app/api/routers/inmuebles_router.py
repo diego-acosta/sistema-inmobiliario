@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -2234,6 +2234,7 @@ def get_inmueble_servicios(
 @router.get(
     "/api/v1/inmuebles/{id_inmueble}/unidades-funcionales",
     response_model=UnidadFuncionalListResponse,
+    response_model_exclude_none=True,
     responses={
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -2277,13 +2278,32 @@ def get_unidades_funcionales(
     },
 )
 def get_unidades_funcionales_global(
+    q: str | None = None,
+    id_inmueble: int | None = None,
+    estado_administrativo: str | None = None,
+    estado_operativo: str | None = None,
+    disponibilidad_actual: str | None = None,
+    ocupacion_actual: str | None = None,
+    id_servicio: int | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> UnidadFuncionalListResponse | JSONResponse:
     repository = InmuebleRepository(db)
     service = GetUnidadesFuncionalesGlobalService(repository=repository)
 
     try:
-        result = service.execute()
+        result = service.execute(
+            q=q,
+            id_inmueble=id_inmueble,
+            estado_administrativo=estado_administrativo,
+            estado_operativo=estado_operativo,
+            disponibilidad_actual=disponibilidad_actual,
+            ocupacion_actual=ocupacion_actual,
+            id_servicio=id_servicio,
+            limit=limit,
+            offset=offset,
+        )
     except Exception as exc:
         error = ErrorResponse(
             error_code="INTERNAL_ERROR",
@@ -2299,8 +2319,13 @@ def get_unidades_funcionales_global(
         )
         return JSONResponse(status_code=400, content=error.model_dump())
 
+    items = [UnidadFuncionalListItem(**item) for item in result.data["items"]]
     return UnidadFuncionalListResponse(
-        data=[UnidadFuncionalListItem(**item) for item in result.data]
+        data=items,
+        items=items,
+        total=result.data["total"],
+        limit=result.data["limit"],
+        offset=result.data["offset"],
     )
 
 
@@ -2616,13 +2641,32 @@ def get_inmueble(
     },
 )
 def get_inmuebles(
+    q: str | None = None,
+    estado_administrativo: str | None = None,
+    estado_juridico: str | None = None,
+    id_desarrollo: int | None = None,
+    disponibilidad_actual: str | None = None,
+    ocupacion_actual: str | None = None,
+    id_servicio: int | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> InmuebleListResponse | JSONResponse:
     repository = InmuebleRepository(db)
     service = GetInmueblesService(repository=repository)
 
     try:
-        result = service.execute()
+        result = service.execute(
+            q=q,
+            estado_administrativo=estado_administrativo,
+            estado_juridico=estado_juridico,
+            id_desarrollo=id_desarrollo,
+            disponibilidad_actual=disponibilidad_actual,
+            ocupacion_actual=ocupacion_actual,
+            id_servicio=id_servicio,
+            limit=limit,
+            offset=offset,
+        )
     except Exception as exc:
         error = ErrorResponse(
             error_code="INTERNAL_ERROR",
@@ -2638,7 +2682,14 @@ def get_inmuebles(
         )
         return JSONResponse(status_code=400, content=error.model_dump())
 
-    return InmuebleListResponse(data=[InmuebleListItem(**item) for item in result.data])
+    items = [InmuebleListItem(**item) for item in result.data["items"]]
+    return InmuebleListResponse(
+        data=items,
+        items=items,
+        total=result.data["total"],
+        limit=result.data["limit"],
+        offset=result.data["offset"],
+    )
 
 
 @router.put(

@@ -502,38 +502,201 @@ class InmuebleRepository(BaseRepository[Any]):
             for row in rows
         ]
 
-    def get_unidades_funcionales_global(self) -> list[dict[str, Any]]:
-        statement = text(
-            """
-            SELECT
-                id_unidad_funcional,
-                id_inmueble,
-                codigo_unidad,
-                nombre_unidad,
-                superficie,
-                estado_administrativo,
-                estado_operativo,
-                observaciones
-            FROM unidad_funcional
-            WHERE deleted_at IS NULL
-            ORDER BY id_unidad_funcional
+    def get_unidades_funcionales_global(
+        self,
+        *,
+        q: str | None = None,
+        id_inmueble: int | None = None,
+        estado_administrativo: str | None = None,
+        estado_operativo: str | None = None,
+        disponibilidad_actual: str | None = None,
+        ocupacion_actual: str | None = None,
+        id_servicio: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        where_clauses = ["uf.deleted_at IS NULL", "i.deleted_at IS NULL"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if q:
+            where_clauses.append(
+                """
+                (
+                    LOWER(uf.codigo_unidad) LIKE :q
+                    OR LOWER(COALESCE(uf.nombre_unidad, '')) LIKE :q
+                    OR LOWER(COALESCE(uf.observaciones, '')) LIKE :q
+                    OR LOWER(i.codigo_inmueble) LIKE :q
+                    OR LOWER(COALESCE(i.nombre_inmueble, '')) LIKE :q
+                )
+                """
+            )
+            params["q"] = f"%{q.lower()}%"
+        if id_inmueble is not None:
+            where_clauses.append("uf.id_inmueble = :id_inmueble")
+            params["id_inmueble"] = id_inmueble
+        if estado_administrativo:
+            where_clauses.append("uf.estado_administrativo = :estado_administrativo")
+            params["estado_administrativo"] = estado_administrativo
+        if estado_operativo:
+            where_clauses.append("uf.estado_operativo = :estado_operativo")
+            params["estado_operativo"] = estado_operativo
+        if disponibilidad_actual:
+            where_clauses.append("disp.estado_actual = :disponibilidad_actual")
+            params["disponibilidad_actual"] = disponibilidad_actual
+        if ocupacion_actual:
+            where_clauses.append("ocup.tipo_actual = :ocupacion_actual")
+            params["ocupacion_actual"] = ocupacion_actual
+        if id_servicio is not None:
+            where_clauses.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM unidad_funcional_servicio ufs
+                    WHERE ufs.id_unidad_funcional = uf.id_unidad_funcional
+                      AND ufs.id_servicio = :id_servicio
+                      AND ufs.deleted_at IS NULL
+                )
+                """
+            )
+            params["id_servicio"] = id_servicio
+
+        where_sql = "\n              AND ".join(where_clauses)
+        ctes = """
+            WITH disp AS (
+                SELECT
+                    id_unidad_funcional,
+                    COUNT(*) AS abiertos,
+                    MIN(id_disponibilidad) AS id_disponibilidad,
+                    MIN(estado_disponibilidad) AS estado_actual,
+                    MIN(fecha_desde) AS fecha_desde,
+                    MIN(fecha_hasta) AS fecha_hasta,
+                    MIN(motivo) AS motivo,
+                    MIN(observaciones) AS observaciones
+                FROM disponibilidad
+                WHERE id_unidad_funcional IS NOT NULL
+                  AND id_inmueble IS NULL
+                  AND fecha_hasta IS NULL
+                  AND deleted_at IS NULL
+                GROUP BY id_unidad_funcional
+            ),
+            ocup AS (
+                SELECT
+                    id_unidad_funcional,
+                    COUNT(*) AS abiertos,
+                    MIN(id_ocupacion) AS id_ocupacion,
+                    MIN(tipo_ocupacion) AS tipo_actual,
+                    MIN(fecha_desde) AS fecha_desde,
+                    MIN(fecha_hasta) AS fecha_hasta,
+                    MIN(descripcion) AS descripcion,
+                    MIN(observaciones) AS observaciones
+                FROM ocupacion
+                WHERE id_unidad_funcional IS NOT NULL
+                  AND id_inmueble IS NULL
+                  AND fecha_hasta IS NULL
+                  AND deleted_at IS NULL
+                GROUP BY id_unidad_funcional
+            )
+        """
+        count_statement = text(
+            f"""
+            {ctes}
+            SELECT COUNT(*)
+            FROM unidad_funcional uf
+            JOIN inmueble i
+              ON i.id_inmueble = uf.id_inmueble
+            LEFT JOIN disp
+              ON disp.id_unidad_funcional = uf.id_unidad_funcional
+            LEFT JOIN ocup
+              ON ocup.id_unidad_funcional = uf.id_unidad_funcional
+            WHERE {where_sql}
             """
         )
-        result = self.db.execute(statement)
-        rows = result.mappings().all()
-        return [
+        total = self.db.execute(count_statement, params).scalar_one()
+
+        statement = text(
+            f"""
+            {ctes}
+            SELECT
+                uf.id_unidad_funcional,
+                uf.id_inmueble,
+                uf.codigo_unidad,
+                uf.nombre_unidad,
+                uf.superficie,
+                uf.estado_administrativo,
+                uf.estado_operativo,
+                uf.observaciones,
+                i.codigo_inmueble,
+                i.nombre_inmueble,
+                CASE
+                    WHEN COALESCE(disp.abiertos, 0) = 1 THEN json_build_object(
+                        'id_disponibilidad', disp.id_disponibilidad,
+                        'id_inmueble', NULL,
+                        'id_unidad_funcional', uf.id_unidad_funcional,
+                        'estado_disponibilidad', disp.estado_actual,
+                        'fecha_desde', disp.fecha_desde,
+                        'fecha_hasta', disp.fecha_hasta,
+                        'motivo', disp.motivo,
+                        'observaciones', disp.observaciones
+                    )
+                    ELSE NULL
+                END AS disponibilidad_actual,
+                COALESCE(disp.abiertos, 0) > 1 AS disponibilidad_ambigua,
+                CASE
+                    WHEN COALESCE(ocup.abiertos, 0) = 1 THEN json_build_object(
+                        'id_ocupacion', ocup.id_ocupacion,
+                        'id_inmueble', NULL,
+                        'id_unidad_funcional', uf.id_unidad_funcional,
+                        'tipo_ocupacion', ocup.tipo_actual,
+                        'fecha_desde', ocup.fecha_desde,
+                        'fecha_hasta', ocup.fecha_hasta,
+                        'descripcion', ocup.descripcion,
+                        'observaciones', ocup.observaciones
+                    )
+                    ELSE NULL
+                END AS ocupacion_actual,
+                COALESCE(ocup.abiertos, 0) > 1 AS ocupacion_ambigua
+            FROM unidad_funcional uf
+            JOIN inmueble i
+              ON i.id_inmueble = uf.id_inmueble
+            LEFT JOIN disp
+              ON disp.id_unidad_funcional = uf.id_unidad_funcional
+            LEFT JOIN ocup
+              ON ocup.id_unidad_funcional = uf.id_unidad_funcional
+            WHERE {where_sql}
+            ORDER BY uf.id_unidad_funcional
+            LIMIT :limit OFFSET :offset
+            """
+        )
+        rows = self.db.execute(statement, params).mappings().all()
+        items = [
             {
                 "id_unidad_funcional": row["id_unidad_funcional"],
                 "id_inmueble": row["id_inmueble"],
                 "codigo_unidad": row["codigo_unidad"],
+                "codigo_unidad_funcional": row["codigo_unidad"],
                 "nombre_unidad": row["nombre_unidad"],
+                "nombre": row["nombre_unidad"],
+                "descripcion": row["observaciones"],
+                "tipo_unidad": None,
                 "superficie": row["superficie"],
                 "estado_administrativo": row["estado_administrativo"],
                 "estado_operativo": row["estado_operativo"],
                 "observaciones": row["observaciones"],
+                "disponibilidad_actual": row["disponibilidad_actual"],
+                "disponibilidad_ambigua": row["disponibilidad_ambigua"],
+                "ocupacion_actual": row["ocupacion_actual"],
+                "ocupacion_ambigua": row["ocupacion_ambigua"],
+                "inmueble": {
+                    "id_inmueble": row["id_inmueble"],
+                    "codigo_inmueble": row["codigo_inmueble"],
+                    "nombre_inmueble": row["nombre_inmueble"],
+                    "direccion": None,
+                    "ubicacion": None,
+                },
             }
             for row in rows
         ]
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     def get_unidad_funcional(self, id_unidad_funcional: int) -> dict[str, Any] | None:
         statement = text(
@@ -607,38 +770,199 @@ class InmuebleRepository(BaseRepository[Any]):
             "version_registro": row["version_registro"],
         }
 
-    def get_inmuebles(self) -> list[dict[str, Any]]:
-        statement = text(
-            """
-            SELECT
-                id_inmueble,
-                id_desarrollo,
-                codigo_inmueble,
-                nombre_inmueble,
-                superficie,
-                estado_administrativo,
-                estado_juridico,
-                observaciones
-            FROM inmueble
-            WHERE deleted_at IS NULL
-            ORDER BY id_inmueble
+    def get_inmuebles(
+        self,
+        *,
+        q: str | None = None,
+        estado_administrativo: str | None = None,
+        estado_juridico: str | None = None,
+        id_desarrollo: int | None = None,
+        disponibilidad_actual: str | None = None,
+        ocupacion_actual: str | None = None,
+        id_servicio: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        where_clauses = ["i.deleted_at IS NULL"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if q:
+            where_clauses.append(
+                """
+                (
+                    LOWER(i.codigo_inmueble) LIKE :q
+                    OR LOWER(COALESCE(i.nombre_inmueble, '')) LIKE :q
+                    OR LOWER(COALESCE(i.observaciones, '')) LIKE :q
+                )
+                """
+            )
+            params["q"] = f"%{q.lower()}%"
+        if estado_administrativo:
+            where_clauses.append("i.estado_administrativo = :estado_administrativo")
+            params["estado_administrativo"] = estado_administrativo
+        if estado_juridico:
+            where_clauses.append("i.estado_juridico = :estado_juridico")
+            params["estado_juridico"] = estado_juridico
+        if id_desarrollo is not None:
+            where_clauses.append("i.id_desarrollo = :id_desarrollo")
+            params["id_desarrollo"] = id_desarrollo
+        if disponibilidad_actual:
+            where_clauses.append("disp.estado_actual = :disponibilidad_actual")
+            params["disponibilidad_actual"] = disponibilidad_actual
+        if ocupacion_actual:
+            where_clauses.append("ocup.tipo_actual = :ocupacion_actual")
+            params["ocupacion_actual"] = ocupacion_actual
+        if id_servicio is not None:
+            where_clauses.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM inmueble_servicio ins
+                    WHERE ins.id_inmueble = i.id_inmueble
+                      AND ins.id_servicio = :id_servicio
+                      AND ins.deleted_at IS NULL
+                )
+                """
+            )
+            params["id_servicio"] = id_servicio
+
+        where_sql = "\n              AND ".join(where_clauses)
+        ctes = """
+            WITH disp AS (
+                SELECT
+                    id_inmueble,
+                    COUNT(*) AS abiertos,
+                    MIN(id_disponibilidad) AS id_disponibilidad,
+                    MIN(estado_disponibilidad) AS estado_actual,
+                    MIN(fecha_desde) AS fecha_desde,
+                    MIN(fecha_hasta) AS fecha_hasta,
+                    MIN(motivo) AS motivo,
+                    MIN(observaciones) AS observaciones
+                FROM disponibilidad
+                WHERE id_inmueble IS NOT NULL
+                  AND id_unidad_funcional IS NULL
+                  AND fecha_hasta IS NULL
+                  AND deleted_at IS NULL
+                GROUP BY id_inmueble
+            ),
+            ocup AS (
+                SELECT
+                    id_inmueble,
+                    COUNT(*) AS abiertos,
+                    MIN(id_ocupacion) AS id_ocupacion,
+                    MIN(tipo_ocupacion) AS tipo_actual,
+                    MIN(fecha_desde) AS fecha_desde,
+                    MIN(fecha_hasta) AS fecha_hasta,
+                    MIN(descripcion) AS descripcion,
+                    MIN(observaciones) AS observaciones
+                FROM ocupacion
+                WHERE id_inmueble IS NOT NULL
+                  AND id_unidad_funcional IS NULL
+                  AND fecha_hasta IS NULL
+                  AND deleted_at IS NULL
+                GROUP BY id_inmueble
+            ),
+            uf_count AS (
+                SELECT id_inmueble, COUNT(*) AS cantidad
+                FROM unidad_funcional
+                WHERE deleted_at IS NULL
+                GROUP BY id_inmueble
+            )
+        """
+        count_statement = text(
+            f"""
+            {ctes}
+            SELECT COUNT(*)
+            FROM inmueble i
+            LEFT JOIN disp
+              ON disp.id_inmueble = i.id_inmueble
+            LEFT JOIN ocup
+              ON ocup.id_inmueble = i.id_inmueble
+            LEFT JOIN uf_count
+              ON uf_count.id_inmueble = i.id_inmueble
+            WHERE {where_sql}
             """
         )
-        result = self.db.execute(statement)
-        rows = result.mappings().all()
-        return [
+        total = self.db.execute(count_statement, params).scalar_one()
+
+        statement = text(
+            f"""
+            {ctes}
+            SELECT
+                i.id_inmueble,
+                i.id_desarrollo,
+                i.codigo_inmueble,
+                i.nombre_inmueble,
+                i.superficie,
+                i.estado_administrativo,
+                i.estado_juridico,
+                i.observaciones,
+                CASE
+                    WHEN COALESCE(disp.abiertos, 0) = 1 THEN json_build_object(
+                        'id_disponibilidad', disp.id_disponibilidad,
+                        'id_inmueble', i.id_inmueble,
+                        'id_unidad_funcional', NULL,
+                        'estado_disponibilidad', disp.estado_actual,
+                        'fecha_desde', disp.fecha_desde,
+                        'fecha_hasta', disp.fecha_hasta,
+                        'motivo', disp.motivo,
+                        'observaciones', disp.observaciones
+                    )
+                    ELSE NULL
+                END AS disponibilidad_actual,
+                COALESCE(disp.abiertos, 0) > 1 AS disponibilidad_ambigua,
+                CASE
+                    WHEN COALESCE(ocup.abiertos, 0) = 1 THEN json_build_object(
+                        'id_ocupacion', ocup.id_ocupacion,
+                        'id_inmueble', i.id_inmueble,
+                        'id_unidad_funcional', NULL,
+                        'tipo_ocupacion', ocup.tipo_actual,
+                        'fecha_desde', ocup.fecha_desde,
+                        'fecha_hasta', ocup.fecha_hasta,
+                        'descripcion', ocup.descripcion,
+                        'observaciones', ocup.observaciones
+                    )
+                    ELSE NULL
+                END AS ocupacion_actual,
+                COALESCE(ocup.abiertos, 0) > 1 AS ocupacion_ambigua,
+                COALESCE(uf_count.cantidad, 0) AS cantidad_unidades_funcionales
+            FROM inmueble i
+            LEFT JOIN disp
+              ON disp.id_inmueble = i.id_inmueble
+            LEFT JOIN ocup
+              ON ocup.id_inmueble = i.id_inmueble
+            LEFT JOIN uf_count
+              ON uf_count.id_inmueble = i.id_inmueble
+            WHERE {where_sql}
+            ORDER BY i.id_inmueble
+            LIMIT :limit OFFSET :offset
+            """
+        )
+        rows = self.db.execute(statement, params).mappings().all()
+        items = [
             {
                 "id_inmueble": row["id_inmueble"],
                 "id_desarrollo": row["id_desarrollo"],
                 "codigo_inmueble": row["codigo_inmueble"],
                 "nombre_inmueble": row["nombre_inmueble"],
+                "nombre": row["nombre_inmueble"],
+                "descripcion": row["observaciones"],
+                "tipo_inmueble": None,
+                "direccion": None,
+                "ubicacion": None,
                 "superficie": row["superficie"],
                 "estado_administrativo": row["estado_administrativo"],
                 "estado_juridico": row["estado_juridico"],
                 "observaciones": row["observaciones"],
+                "disponibilidad_actual": row["disponibilidad_actual"],
+                "disponibilidad_ambigua": row["disponibilidad_ambigua"],
+                "ocupacion_actual": row["ocupacion_actual"],
+                "ocupacion_ambigua": row["ocupacion_ambigua"],
+                "cantidad_unidades_funcionales": row["cantidad_unidades_funcionales"],
             }
             for row in rows
         ]
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     def get_inmueble(self, id_inmueble: int) -> dict[str, Any] | None:
         statement = text(

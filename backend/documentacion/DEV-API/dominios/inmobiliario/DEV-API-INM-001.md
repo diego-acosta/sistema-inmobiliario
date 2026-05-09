@@ -5,7 +5,7 @@
 - version: `1.0`
 - estado: `vigente`
 - fuente: `backend implementado + documentacion consolidada`
-- ultima actualizacion: `2026-04-21`
+- ultima actualizacion: `2026-05-09`
 
 ## Resumen
 
@@ -178,6 +178,17 @@ Observaciones de implementacion real:
 #### `GET /api/v1/inmuebles`
 - estado: vigente
 - objetivo: listado de inmuebles
+- extension UI read-only vigente:
+  - query params: `q`, `estado_administrativo`, `estado_juridico`, `id_desarrollo`, `disponibilidad_actual`, `ocupacion_actual`, `id_servicio`, `limit`, `offset`
+  - respuesta mantiene `data` como lista compatible y agrega `items`, `total`, `limit`, `offset`
+  - cada item agrega, cuando corresponde por SQL vigente: `nombre`, `descripcion`, `tipo_inmueble`, `direccion`, `ubicacion`, `disponibilidad_actual`, `disponibilidad_ambigua`, `ocupacion_actual`, `ocupacion_ambigua`, `cantidad_unidades_funcionales`
+  - `tipo_inmueble`, `direccion` y `ubicacion` pueden ser `null` porque no existen como campos vigentes en `inmueble`
+  - `disponibilidad_actual` se resuelve solo con registros abiertos de `disponibilidad` del mismo `id_inmueble` y `id_unidad_funcional IS NULL`
+  - `ocupacion_actual` se resuelve solo con registros abiertos de `ocupacion` del mismo `id_inmueble` y `id_unidad_funcional IS NULL`
+  - si no hay registro abierto, el valor actual es `null`
+  - si hay exactamente un registro abierto, se devuelve ese registro
+  - si hay mas de un registro abierto, el valor actual es `null` y el indicador `*_ambigua` es `true`
+  - el endpoint es estrictamente read-only y no cierra, reemplaza ni modifica vigencias
 
 #### `PUT /api/v1/inmuebles/{id_inmueble}`
 - estado: vigente
@@ -215,6 +226,19 @@ Observaciones de implementacion real:
 #### `GET /api/v1/unidades-funcionales`
 - estado: vigente
 - objetivo: listado global de unidades funcionales
+- extension UI read-only vigente:
+  - query params: `q`, `id_inmueble`, `estado_administrativo`, `estado_operativo`, `disponibilidad_actual`, `ocupacion_actual`, `id_servicio`, `limit`, `offset`
+  - respuesta mantiene `data` como lista compatible y agrega `items`, `total`, `limit`, `offset`
+  - cada item agrega, cuando corresponde por SQL vigente: `codigo_unidad_funcional`, `nombre`, `descripcion`, `tipo_unidad`, `disponibilidad_actual`, `disponibilidad_ambigua`, `ocupacion_actual`, `ocupacion_ambigua`, `inmueble`
+  - `codigo_unidad_funcional` es alias UI compatible de `codigo_unidad`
+  - `tipo_unidad` puede ser `null` porque no existe como campo vigente en `unidad_funcional`
+  - `inmueble` incluye datos minimos del padre: `id_inmueble`, `codigo_inmueble`, `nombre_inmueble`, `direccion`, `ubicacion`; `direccion` y `ubicacion` pueden ser `null` porque no existen como campos vigentes en `inmueble`
+  - `disponibilidad_actual` se resuelve solo con registros abiertos de `disponibilidad` del mismo `id_unidad_funcional` y `id_inmueble IS NULL`
+  - `ocupacion_actual` se resuelve solo con registros abiertos de `ocupacion` del mismo `id_unidad_funcional` y `id_inmueble IS NULL`
+  - si no hay registro abierto, el valor actual es `null`
+  - si hay exactamente un registro abierto, se devuelve ese registro
+  - si hay mas de un registro abierto, el valor actual es `null` y el indicador `*_ambigua` es `true`
+  - el endpoint es estrictamente read-only y no cierra, reemplaza ni modifica vigencias
 
 #### `GET /api/v1/unidades-funcionales/{id_unidad_funcional}`
 - estado: vigente
