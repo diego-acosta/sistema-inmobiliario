@@ -290,7 +290,7 @@ class InmuebleDetailView:
                     controls=[
                         ft.Text(_inmueble_title(data), size=30, weight=ft.FontWeight.W_700),
                         ft.Container(expand=True),
-                        status_badge(data.get("estado_administrativo")),
+                        status_badge(_text_or_none(data.get("estado_administrativo"))),
                     ]
                 ),
                 detail_section("Datos base", [_base_inmueble(data)]),
@@ -331,7 +331,7 @@ class UnidadDetailView:
                     controls=[
                         ft.Text(_unidad_title(data), size=30, weight=ft.FontWeight.W_700),
                         ft.Container(expand=True),
-                        status_badge(data.get("estado_operativo")),
+                        status_badge(_text_or_none(data.get("estado_operativo"))),
                     ]
                 ),
                 detail_section("Datos base", [_base_unidad(data)]),
@@ -484,6 +484,8 @@ def _table_any(value: object) -> ft.Control:
     if not rows:
         return ft.Text("Sin registros.")
     keys = _first_keys(rows, limit=8)
+    if not keys:
+        return ft.Text("Sin campos disponibles.")
     return entity_table(columns=[(key, key) for key in keys], rows=rows)
 
 
@@ -516,9 +518,22 @@ def _safe_list(value: object) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def _text_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
 def _compact(value: object) -> str:
     if isinstance(value, dict):
-        for key in ("codigo_inmueble", "codigo_unidad", "display_name", "nombre", "estado"):
+        for key in (
+            "codigo_inmueble",
+            "codigo_unidad_funcional",
+            "codigo_unidad",
+            "display_name",
+            "nombre",
+            "estado",
+        ):
             if value.get(key):
                 return str(value[key])
         return f"{len(value)} campos"
