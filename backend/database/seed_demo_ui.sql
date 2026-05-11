@@ -7,6 +7,9 @@ DO $$
 DECLARE
     v_op_id constant uuid := '22222222-2222-2222-2222-222222222222'::uuid;
 
+    v_id_sucursal bigint;
+    v_id_instalacion bigint;
+
     v_comprador bigint;
     v_locatario bigint;
     v_locador bigint;
@@ -42,12 +45,24 @@ DECLARE
     v_venta_anticipo bigint;
     v_venta_cuotas bigint;
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM public.sucursal WHERE id_sucursal = 1 AND deleted_at IS NULL
-    ) OR NOT EXISTS (
-        SELECT 1 FROM public.instalacion WHERE id_instalacion = 1 AND deleted_at IS NULL
-    ) THEN
-        RAISE EXCEPTION 'seed_demo_ui.sql requiere baseline tecnico previo con sucursal=1 e instalacion=1';
+    SELECT id_sucursal
+      INTO v_id_sucursal
+      FROM public.sucursal
+     WHERE codigo_sucursal = 'SUC-TEST-001'
+       AND deleted_at IS NULL
+     ORDER BY id_sucursal
+     LIMIT 1;
+
+    SELECT id_instalacion
+      INTO v_id_instalacion
+      FROM public.instalacion
+     WHERE codigo_instalacion = 'INST-TEST-001'
+       AND deleted_at IS NULL
+     ORDER BY id_instalacion
+     LIMIT 1;
+
+    IF v_id_sucursal IS NULL OR v_id_instalacion IS NULL THEN
+        RAISE EXCEPTION 'seed_demo_ui.sql requiere baseline tecnico previo con codigos SUC-TEST-001 e INST-TEST-001';
     END IF;
 
     INSERT INTO public.rol_participacion (
@@ -56,20 +71,20 @@ BEGIN
         codigo_rol, nombre_rol, descripcion, estado_rol
     )
     VALUES
-        (1, 1, v_op_id, v_op_id, 'COMPRADOR', 'Comprador', 'Rol comercial para ventas demo UI', 'ACTIVO'),
-        (1, 1, v_op_id, v_op_id, 'LOCATARIO', 'Locatario', 'Rol locativo para contratos demo UI', 'ACTIVO'),
-        (1, 1, v_op_id, v_op_id, 'LOCADOR', 'Locador', 'Rol locativo para contratos demo UI', 'ACTIVO'),
-        (1, 1, v_op_id, v_op_id, 'GARANTE', 'Garante', 'Rol locativo para contratos demo UI', 'ACTIVO')
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-ROL-COMPRADOR', 'Comprador demo', 'Rol comercial demo UI para ventas', 'ACTIVO'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-ROL-LOCATARIO', 'Locatario demo', 'Rol locativo demo UI para contratos', 'ACTIVO'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-ROL-LOCADOR', 'Locador demo', 'Rol locativo demo UI para contratos', 'ACTIVO'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-ROL-GARANTE', 'Garante demo', 'Rol locativo demo UI para contratos', 'ACTIVO')
     ON CONFLICT (codigo_rol) DO UPDATE SET
         nombre_rol = EXCLUDED.nombre_rol,
         descripcion = EXCLUDED.descripcion,
         estado_rol = EXCLUDED.estado_rol,
         op_id_ultima_modificacion = EXCLUDED.op_id_ultima_modificacion;
 
-    SELECT id_rol_participacion INTO v_rol_comprador FROM public.rol_participacion WHERE codigo_rol = 'COMPRADOR';
-    SELECT id_rol_participacion INTO v_rol_locatario FROM public.rol_participacion WHERE codigo_rol = 'LOCATARIO';
-    SELECT id_rol_participacion INTO v_rol_locador FROM public.rol_participacion WHERE codigo_rol = 'LOCADOR';
-    SELECT id_rol_participacion INTO v_rol_garante FROM public.rol_participacion WHERE codigo_rol = 'GARANTE';
+    SELECT id_rol_participacion INTO v_rol_comprador FROM public.rol_participacion WHERE codigo_rol = 'DEMO-ROL-COMPRADOR' AND deleted_at IS NULL;
+    SELECT id_rol_participacion INTO v_rol_locatario FROM public.rol_participacion WHERE codigo_rol = 'DEMO-ROL-LOCATARIO' AND deleted_at IS NULL;
+    SELECT id_rol_participacion INTO v_rol_locador FROM public.rol_participacion WHERE codigo_rol = 'DEMO-ROL-LOCADOR' AND deleted_at IS NULL;
+    SELECT id_rol_participacion INTO v_rol_garante FROM public.rol_participacion WHERE codigo_rol = 'DEMO-ROL-GARANTE' AND deleted_at IS NULL;
 
     INSERT INTO public.persona (
         id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -79,12 +94,12 @@ BEGIN
         nacionalidad, fecha_alta, observaciones
     )
     VALUES
-        (1, 1, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-COMPRADOR', 'Compradora', 'Julia Demo', NULL, NULL, 'ACTIVA', DATE '1985-04-15', '20-90000001-1', 'Argentina', DATE '2026-01-01', 'DEMO UI comprador'),
-        (1, 1, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-LOCATARIO', 'Locatario', 'Martin Demo', NULL, NULL, 'ACTIVA', DATE '1990-08-22', '20-90000002-2', 'Argentina', DATE '2026-01-01', 'DEMO UI locatario'),
-        (1, 1, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-LOCADOR', 'Locadora', 'Ana Demo', NULL, NULL, 'ACTIVA', DATE '1978-03-10', '20-90000003-3', 'Argentina', DATE '2026-01-01', 'DEMO UI locador'),
-        (1, 1, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-GARANTE', 'Garante', 'Roberto Demo', NULL, NULL, 'ACTIVA', DATE '1980-11-30', '20-90000004-4', 'Argentina', DATE '2026-01-01', 'DEMO UI garante'),
-        (1, 1, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-RESP-SERV', 'Servicios', 'Carolina Demo', NULL, NULL, 'ACTIVA', DATE '1988-05-05', '20-90000005-5', 'Argentina', DATE '2026-01-01', 'DEMO UI responsable de servicio'),
-        (1, 1, v_op_id, v_op_id, 'JURIDICA', 'DEMO-PER-JURIDICA', NULL, NULL, 'Demo Propiedades SA', 'Demo Propiedades', 'ACTIVA', DATE '2020-02-01', '30-90000006-6', 'Argentina', DATE '2026-01-01', 'DEMO UI persona juridica')
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-COMPRADOR', 'Compradora', 'Julia Demo', NULL, NULL, 'ACTIVA', DATE '1985-04-15', '20-90000001-1', 'Argentina', DATE '2026-01-01', 'DEMO UI comprador'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-LOCATARIO', 'Locatario', 'Martin Demo', NULL, NULL, 'ACTIVA', DATE '1990-08-22', '20-90000002-2', 'Argentina', DATE '2026-01-01', 'DEMO UI locatario'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-LOCADOR', 'Locadora', 'Ana Demo', NULL, NULL, 'ACTIVA', DATE '1978-03-10', '20-90000003-3', 'Argentina', DATE '2026-01-01', 'DEMO UI locador'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-GARANTE', 'Garante', 'Roberto Demo', NULL, NULL, 'ACTIVA', DATE '1980-11-30', '20-90000004-4', 'Argentina', DATE '2026-01-01', 'DEMO UI garante'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'FISICA', 'DEMO-PER-RESP-SERV', 'Servicios', 'Carolina Demo', NULL, NULL, 'ACTIVA', DATE '1988-05-05', '20-90000005-5', 'Argentina', DATE '2026-01-01', 'DEMO UI responsable de servicio'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'JURIDICA', 'DEMO-PER-JURIDICA', NULL, NULL, 'Demo Propiedades SA', 'Demo Propiedades', 'ACTIVA', DATE '2020-02-01', '30-90000006-6', 'Argentina', DATE '2026-01-01', 'DEMO UI persona juridica')
     ON CONFLICT (codigo_persona) DO UPDATE SET
         tipo_persona = EXCLUDED.tipo_persona,
         apellido = EXCLUDED.apellido,
@@ -109,7 +124,7 @@ BEGIN
         id_persona, tipo_documento_persona, numero_documento, pais_emision,
         es_principal, fecha_desde, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_persona, x.tipo_documento, x.numero_documento,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_persona, x.tipo_documento, x.numero_documento,
            'Argentina', true, DATE '2026-01-01', 'DEMO UI documento principal'
     FROM (VALUES
         (v_comprador, 'DNI', '90000001'),
@@ -132,7 +147,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_persona, tipo_contacto, valor_contacto, es_principal, fecha_desde, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_persona, 'EMAIL', x.email, true, DATE '2026-01-01', 'DEMO UI contacto principal'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_persona, 'EMAIL', x.email, true, DATE '2026-01-01', 'DEMO UI contacto principal'
     FROM (VALUES
         (v_comprador, 'comprador.demo@example.com'),
         (v_locatario, 'locatario.demo@example.com'),
@@ -163,7 +178,7 @@ BEGIN
         id_persona, tipo_domicilio, direccion, localidad, provincia, pais,
         codigo_postal, es_principal, fecha_desde, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_persona, 'REAL', x.direccion,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_persona, 'REAL', x.direccion,
            'Ciudad Demo', 'Buenos Aires', 'Argentina', '1000', true, DATE '2026-01-01',
            'DEMO UI domicilio principal'
     FROM (VALUES
@@ -189,9 +204,9 @@ BEGIN
         estado_administrativo, estado_juridico, fecha_alta, observaciones
     )
     VALUES
-        (1, 1, v_op_id, v_op_id, 'DEMO-INM-CASA-001', 'Casa Demo Palermo', 220.00, 'ACTIVO', 'REGULAR', DATE '2026-01-01', 'DEMO UI inmueble con disponibilidad normal'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-INM-EDIF-001', 'Edificio Demo Centro', 980.00, 'ACTIVO', 'REGULAR', DATE '2026-01-01', 'DEMO UI inmueble con estados ambiguos'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-INM-LOTE-001', 'Lote Demo Costa', 500.00, 'ACTIVO', 'EN_TRAMITE', DATE '2026-01-01', 'DEMO UI inmueble sin vigencia abierta')
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-INM-CASA-001', 'Casa Demo Palermo', 220.00, 'ACTIVO', 'REGULAR', DATE '2026-01-01', 'DEMO UI inmueble con disponibilidad normal'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-INM-EDIF-001', 'Edificio Demo Centro', 980.00, 'ACTIVO', 'REGULAR', DATE '2026-01-01', 'DEMO UI inmueble con estados ambiguos'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-INM-LOTE-001', 'Lote Demo Costa', 500.00, 'ACTIVO', 'EN_TRAMITE', DATE '2026-01-01', 'DEMO UI inmueble sin vigencia abierta')
     ON CONFLICT (codigo_inmueble) DO UPDATE SET
         nombre_inmueble = EXCLUDED.nombre_inmueble,
         superficie = EXCLUDED.superficie,
@@ -211,10 +226,10 @@ BEGIN
         estado_administrativo, estado_operativo, fecha_alta, observaciones
     )
     VALUES
-        (1, 1, v_op_id, v_op_id, v_inm_edificio, 'DEMO-UF-EDIF-1A', 'Departamento Demo 1A', 58.00, 'ACTIVA', 'DISPONIBLE', DATE '2026-01-01', 'DEMO UI unidad alquilada'),
-        (1, 1, v_op_id, v_op_id, v_inm_edificio, 'DEMO-UF-EDIF-1B', 'Departamento Demo 1B', 62.00, 'ACTIVA', 'RESERVADA', DATE '2026-01-01', 'DEMO UI unidad ambigua'),
-        (1, 1, v_op_id, v_op_id, v_inm_edificio, 'DEMO-UF-EDIF-2A', 'Departamento Demo 2A', 75.00, 'ACTIVA', 'DISPONIBLE', DATE '2026-01-01', 'DEMO UI unidad venta cuotas'),
-        (1, 1, v_op_id, v_op_id, v_inm_casa, 'DEMO-UF-CASA-DEP', 'Deposito Demo Casa', 24.00, 'ACTIVA', 'USO_INTERNO', DATE '2026-01-01', 'DEMO UI unidad de servicio')
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_inm_edificio, 'DEMO-UF-EDIF-1A', 'Departamento Demo 1A', 58.00, 'ACTIVA', 'DISPONIBLE', DATE '2026-01-01', 'DEMO UI unidad alquilada'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_inm_edificio, 'DEMO-UF-EDIF-1B', 'Departamento Demo 1B', 62.00, 'ACTIVA', 'RESERVADA', DATE '2026-01-01', 'DEMO UI unidad ambigua'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_inm_edificio, 'DEMO-UF-EDIF-2A', 'Departamento Demo 2A', 75.00, 'ACTIVA', 'DISPONIBLE', DATE '2026-01-01', 'DEMO UI unidad venta cuotas'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_inm_casa, 'DEMO-UF-CASA-DEP', 'Deposito Demo Casa', 24.00, 'ACTIVA', 'USO_INTERNO', DATE '2026-01-01', 'DEMO UI unidad de servicio')
     ON CONFLICT (codigo_unidad) DO UPDATE SET
         id_inmueble = EXCLUDED.id_inmueble,
         nombre_unidad = EXCLUDED.nombre_unidad,
@@ -235,10 +250,10 @@ BEGIN
         codigo_servicio, nombre_servicio, descripcion, estado_servicio
     )
     VALUES
-        (1, 1, v_op_id, v_op_id, 'DEMO-SRV-AGUA', 'Agua demo', 'Servicio de agua para UI demo', 'ACTIVO'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-SRV-LUZ', 'Luz demo', 'Servicio electrico para UI demo', 'ACTIVO'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-SRV-GAS', 'Gas demo', 'Servicio de gas para UI demo', 'ACTIVO'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-SRV-EXPENSAS', 'Expensas demo', 'Servicio comun/expensas para UI demo', 'ACTIVO')
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-SRV-AGUA', 'Agua demo', 'Servicio de agua para UI demo', 'ACTIVO'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-SRV-LUZ', 'Luz demo', 'Servicio electrico para UI demo', 'ACTIVO'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-SRV-GAS', 'Gas demo', 'Servicio de gas para UI demo', 'ACTIVO'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-SRV-EXPENSAS', 'Expensas demo', 'Servicio comun/expensas para UI demo', 'ACTIVO')
     ON CONFLICT (codigo_servicio) DO UPDATE SET
         nombre_servicio = EXCLUDED.nombre_servicio,
         descripcion = EXCLUDED.descripcion,
@@ -255,7 +270,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_inmueble, id_servicio, estado, fecha_alta, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_inmueble, x.id_servicio, 'ACTIVO', DATE '2026-01-01', 'DEMO UI servicio inmueble'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_inmueble, x.id_servicio, 'ACTIVO', DATE '2026-01-01', 'DEMO UI servicio inmueble'
     FROM (VALUES
         (v_inm_casa, v_srv_agua), (v_inm_casa, v_srv_luz), (v_inm_casa, v_srv_gas),
         (v_inm_edificio, v_srv_agua), (v_inm_edificio, v_srv_luz), (v_inm_edificio, v_srv_expensas),
@@ -273,7 +288,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_unidad_funcional, id_servicio, estado, fecha_alta, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_unidad_funcional, x.id_servicio, 'ACTIVO', DATE '2026-01-01', 'DEMO UI servicio unidad'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_unidad_funcional, x.id_servicio, 'ACTIVO', DATE '2026-01-01', 'DEMO UI servicio unidad'
     FROM (VALUES
         (v_uf_1a, v_srv_agua), (v_uf_1a, v_srv_luz), (v_uf_1a, v_srv_expensas),
         (v_uf_1b, v_srv_luz), (v_uf_1b, v_srv_expensas),
@@ -293,7 +308,7 @@ BEGIN
         id_servicio, id_inmueble, id_unidad_funcional, id_persona,
         porcentaje_responsabilidad, fecha_desde, estado_asignacion, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_servicio, x.id_inmueble, x.id_unidad_funcional,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_servicio, x.id_inmueble, x.id_unidad_funcional,
            v_responsable_servicio, 100.00, DATE '2026-01-01', 'ACTIVA', 'DEMO UI responsable de servicio'
     FROM (VALUES
         (v_srv_agua, v_inm_casa, NULL::bigint),
@@ -316,7 +331,7 @@ BEGIN
         id_inmueble, id_unidad_funcional, estado_disponibilidad,
         fecha_desde, fecha_hasta, motivo, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_inmueble, x.id_unidad_funcional,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_inmueble, x.id_unidad_funcional,
            x.estado, x.fecha_desde, x.fecha_hasta, x.motivo, x.obs
     FROM (VALUES
         (v_inm_casa, NULL::bigint, 'DISPONIBLE', TIMESTAMP '2026-01-01 00:00:00', NULL::timestamp, 'demo', 'DEMO_UI:DISP-CASA-ACTUAL'),
@@ -340,7 +355,7 @@ BEGIN
         id_inmueble, id_unidad_funcional, tipo_ocupacion,
         fecha_desde, fecha_hasta, descripcion, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_inmueble, x.id_unidad_funcional,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_inmueble, x.id_unidad_funcional,
            x.tipo, x.fecha_desde, x.fecha_hasta, x.descripcion, x.obs
     FROM (VALUES
         (v_inm_casa, NULL::bigint, 'DESOCUPADO', TIMESTAMP '2026-01-01 00:00:00', NULL::timestamp, 'Sin ocupacion actual', 'DEMO_UI:OCUP-CASA-ACTUAL'),
@@ -362,7 +377,7 @@ BEGIN
         codigo_reserva, fecha_reserva, fecha_vencimiento, estado_reserva, observaciones
     )
     VALUES (
-        1, 1, v_op_id, v_op_id,
+        v_id_instalacion, v_id_instalacion, v_op_id, v_op_id,
         'DEMO-RES-LOC-001', TIMESTAMP '2025-12-15 10:00:00',
         TIMESTAMP '2026-01-15 10:00:00', 'confirmada', 'DEMO UI reserva locativa'
     )
@@ -380,7 +395,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_reserva_locativa, id_inmueble, id_unidad_funcional, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, v_reserva_loc, NULL::bigint, v_uf_1a, 'DEMO UI reserva locativa objeto'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_reserva_loc, NULL::bigint, v_uf_1a, 'DEMO UI reserva locativa objeto'
     WHERE NOT EXISTS (
         SELECT 1 FROM public.reserva_locativa_objeto
         WHERE id_reserva_locativa = v_reserva_loc
@@ -395,7 +410,7 @@ BEGIN
         estado_contrato, observaciones, dia_vencimiento_canon
     )
     VALUES (
-        1, 1, v_op_id, v_op_id, v_reserva_loc,
+        v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_reserva_loc,
         'DEMO-CA-001', DATE '2026-01-01', DATE '2026-12-31',
         'activo', 'DEMO UI contrato alquiler activo', 10
     )
@@ -415,7 +430,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_contrato_alquiler, id_inmueble, id_unidad_funcional, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, v_contrato, NULL::bigint, v_uf_1a, 'DEMO UI objeto locativo'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_contrato, NULL::bigint, v_uf_1a, 'DEMO UI objeto locativo'
     WHERE NOT EXISTS (
         SELECT 1 FROM public.contrato_objeto_locativo
         WHERE id_contrato_alquiler = v_contrato
@@ -429,7 +444,7 @@ BEGIN
         id_contrato_alquiler, monto_base, periodicidad, moneda,
         fecha_desde, fecha_hasta, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, v_contrato, 250000.00, 'MENSUAL', 'ARS',
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_contrato, 250000.00, 'MENSUAL', 'ARS',
            DATE '2026-01-01', DATE '2026-12-31', 'DEMO UI condicion economica alquiler'
     WHERE NOT EXISTS (
         SELECT 1 FROM public.condicion_economica_alquiler
@@ -444,9 +459,9 @@ BEGIN
         codigo_reserva, fecha_reserva, estado_reserva, fecha_vencimiento, observaciones
     )
     VALUES
-        (1, 1, v_op_id, v_op_id, 'DEMO-RES-VTA-CONTADO', TIMESTAMP '2026-01-10 10:00:00', 'confirmada', TIMESTAMP '2026-02-10 10:00:00', 'DEMO UI reserva venta contado'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-RES-VTA-ANTICIPO', TIMESTAMP '2026-02-10 10:00:00', 'confirmada', TIMESTAMP '2026-03-10 10:00:00', 'DEMO UI reserva venta anticipo y saldo'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-RES-VTA-CUOTAS', TIMESTAMP '2026-03-10 10:00:00', 'confirmada', TIMESTAMP '2026-04-10 10:00:00', 'DEMO UI reserva venta cuotas')
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-RES-VTA-CONTADO', TIMESTAMP '2026-01-10 10:00:00', 'confirmada', TIMESTAMP '2026-02-10 10:00:00', 'DEMO UI reserva venta contado'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-RES-VTA-ANTICIPO', TIMESTAMP '2026-02-10 10:00:00', 'confirmada', TIMESTAMP '2026-03-10 10:00:00', 'DEMO UI reserva venta anticipo y saldo'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, 'DEMO-RES-VTA-CUOTAS', TIMESTAMP '2026-03-10 10:00:00', 'confirmada', TIMESTAMP '2026-04-10 10:00:00', 'DEMO UI reserva venta cuotas')
     ON CONFLICT (codigo_reserva) DO UPDATE SET
         fecha_reserva = EXCLUDED.fecha_reserva,
         estado_reserva = EXCLUDED.estado_reserva,
@@ -463,7 +478,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_reserva_venta, id_inmueble, id_unidad_funcional, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_reserva_venta, x.id_inmueble, x.id_unidad_funcional, 'DEMO UI reserva venta objeto'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_reserva_venta, x.id_inmueble, x.id_unidad_funcional, 'DEMO UI reserva venta objeto'
     FROM (VALUES
         (v_reserva_contado, v_inm_casa, NULL::bigint),
         (v_reserva_anticipo, v_inm_lote, NULL::bigint),
@@ -486,9 +501,9 @@ BEGIN
         importe_saldo, fecha_vencimiento_saldo, observaciones
     )
     VALUES
-        (1, 1, v_op_id, v_op_id, v_reserva_contado, 'DEMO-VTA-CONTADO', TIMESTAMP '2026-01-20 12:00:00', 'confirmada', 150000000.00, 'CONTADO', 'ARS', NULL, NULL, NULL, NULL, 'DEMO UI venta contado cancelada'),
-        (1, 1, v_op_id, v_op_id, v_reserva_anticipo, 'DEMO-VTA-ANTICIPO', TIMESTAMP '2026-02-20 12:00:00', 'confirmada', 90000000.00, 'ANTICIPO_Y_SALDO', 'ARS', 30000000.00, DATE '2026-05-10', 60000000.00, DATE '2026-08-10', 'DEMO UI venta anticipo y saldo'),
-        (1, 1, v_op_id, v_op_id, v_reserva_cuotas, 'DEMO-VTA-CUOTAS', TIMESTAMP '2026-03-20 12:00:00', 'confirmada', 120000000.00, 'CUOTAS_FIJAS', 'ARS', NULL, NULL, NULL, NULL, 'DEMO UI venta cuotas fijas')
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_reserva_contado, 'DEMO-VTA-CONTADO', TIMESTAMP '2026-01-20 12:00:00', 'confirmada', 150000000.00, 'CONTADO', 'ARS', NULL, NULL, NULL, NULL, 'DEMO UI venta contado cancelada'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_reserva_anticipo, 'DEMO-VTA-ANTICIPO', TIMESTAMP '2026-02-20 12:00:00', 'confirmada', 90000000.00, 'ANTICIPO_Y_SALDO', 'ARS', 30000000.00, DATE '2026-05-10', 60000000.00, DATE '2026-08-10', 'DEMO UI venta anticipo y saldo'),
+        (v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_reserva_cuotas, 'DEMO-VTA-CUOTAS', TIMESTAMP '2026-03-20 12:00:00', 'confirmada', 120000000.00, 'CUOTAS_FIJAS', 'ARS', NULL, NULL, NULL, NULL, 'DEMO UI venta cuotas fijas')
     ON CONFLICT (codigo_venta) DO UPDATE SET
         id_reserva_venta = EXCLUDED.id_reserva_venta,
         fecha_venta = EXCLUDED.fecha_venta,
@@ -512,7 +527,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_venta, id_inmueble, id_unidad_funcional, precio_asignado, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_venta, x.id_inmueble, x.id_unidad_funcional, x.precio, 'DEMO UI venta objeto'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_venta, x.id_inmueble, x.id_unidad_funcional, x.precio, 'DEMO UI venta objeto'
     FROM (VALUES
         (v_venta_contado, v_inm_casa, NULL::bigint, 150000000.00),
         (v_venta_anticipo, v_inm_lote, NULL::bigint, 90000000.00),
@@ -531,7 +546,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         id_venta, numero_cuota, importe_cuota, fecha_vencimiento, moneda, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, v_venta_cuotas, x.numero_cuota, 40000000.00, x.fecha_vencimiento, 'ARS', 'DEMO UI cuota venta'
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, v_venta_cuotas, x.numero_cuota, 40000000.00, x.fecha_vencimiento, 'ARS', 'DEMO UI cuota venta'
     FROM (VALUES
         (1, DATE '2026-06-10'),
         (2, DATE '2026-07-10'),
@@ -550,7 +565,7 @@ BEGIN
         id_persona, id_rol_participacion, tipo_relacion, id_relacion,
         fecha_desde, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.id_persona, x.id_rol, x.tipo_relacion,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.id_persona, x.id_rol, x.tipo_relacion,
            x.id_relacion, TIMESTAMP '2026-01-01 00:00:00', 'DEMO UI relacion persona rol'
     FROM (VALUES
         (v_locatario, v_rol_locatario, 'contrato_alquiler', v_contrato),
@@ -574,7 +589,7 @@ BEGIN
         op_id_alta, op_id_ultima_modificacion,
         tipo_origen, id_origen, descripcion, fecha_alta, estado_relacion_generadora
     )
-    SELECT 1, 1, v_op_id, v_op_id, x.tipo_origen, x.id_origen, x.descripcion,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, x.tipo_origen, x.id_origen, x.descripcion,
            TIMESTAMP '2026-01-01 00:00:00', 'ACTIVA'
     FROM (VALUES
         ('contrato_alquiler', v_contrato, 'DEMO UI relacion financiera contrato alquiler'),
@@ -597,7 +612,7 @@ BEGIN
         moneda, importe_total, saldo_pendiente, importe_cancelado_acumulado,
         periodo_desde, periodo_hasta, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, rg.id_relacion_generadora, x.codigo,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, rg.id_relacion_generadora, x.codigo,
            x.fecha_emision, x.fecha_vencimiento, x.estado,
            'ARS', x.importe_total, x.saldo_pendiente, x.cancelado,
            x.periodo_desde, x.periodo_hasta, x.observaciones
@@ -629,7 +644,7 @@ BEGIN
         importe_componente, saldo_componente, moneda_componente,
         detalle_calculo, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, ofi.id_obligacion_financiera,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, ofi.id_obligacion_financiera,
            cf.id_concepto_financiero, 1, 'ACTIVA',
            x.importe_componente, x.saldo_componente, 'ARS',
            '{"fuente":"seed_demo_ui"}', 'DEMO UI composicion obligacion'
@@ -663,7 +678,7 @@ BEGIN
         id_obligacion_financiera, id_persona, rol_obligado,
         porcentaje_responsabilidad, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id, ofi.id_obligacion_financiera,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id, ofi.id_obligacion_financiera,
            x.id_persona, x.rol_obligado, 100.00, 'DEMO UI obligado financiero'
     FROM (VALUES
         ('DEMO-OBL-CA-ENE-2026', v_locatario, 'LOCATARIO'),
@@ -692,7 +707,7 @@ BEGIN
         uid_pago_grupo, codigo_pago_grupo, fecha_movimiento,
         tipo_movimiento, importe, signo, estado_movimiento, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id,
            '22222222-aaaa-bbbb-cccc-222222222222'::uuid,
            'DEMO-PAGO-CONTADO-001', TIMESTAMP '2026-02-10 12:00:00',
            'PAGO', 150000000.00, 'CREDITO', 'CONFIRMADO', 'DEMO UI pago scoped venta contado'
@@ -709,7 +724,7 @@ BEGIN
         fecha_aplicacion, tipo_aplicacion, orden_aplicacion, importe_aplicado,
         origen_automatico_o_manual, observaciones
     )
-    SELECT 1, 1, v_op_id, v_op_id,
+    SELECT v_id_instalacion, v_id_instalacion, v_op_id, v_op_id,
            mf.id_movimiento_financiero, ofi.id_obligacion_financiera,
            co.id_composicion_obligacion, TIMESTAMP '2026-02-10 12:00:00',
            'PAGO', 1, 150000000.00, 'MANUAL', 'DEMO UI aplicacion pago contado'
