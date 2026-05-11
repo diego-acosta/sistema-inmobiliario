@@ -20,27 +20,53 @@ class ParteDetailPage:
         if not result.success:
             return ft.Column(
                 controls=[
-                    ft.TextButton("Volver al listado", on_click=lambda _: self.on_navigate("partes")),
-                    error_state(result.error_message or "No se pudo cargar la ficha de parte."),
+                    ft.TextButton(
+                        "Volver al listado",
+                        on_click=lambda _: self.on_navigate("partes"),
+                    ),
+                    error_state(
+                        result.error_message or "No se pudo cargar la ficha de parte."
+                    ),
                 ],
                 spacing=12,
             )
 
         data = result.data or {}
+        if not isinstance(data, dict):
+            return ft.Column(
+                controls=[
+                    ft.TextButton(
+                        "Volver al listado",
+                        on_click=lambda _: self.on_navigate("partes"),
+                    ),
+                    error_state("La ficha de parte devolvio un formato inesperado."),
+                ],
+                spacing=12,
+            )
+
         return ft.Column(
             controls=[
                 ft.Row(
                     controls=[
-                        ft.TextButton("Volver al listado", on_click=lambda _: self.on_navigate("partes")),
+                        ft.TextButton(
+                            "Volver al listado",
+                            on_click=lambda _: self.on_navigate("partes"),
+                        ),
                         ft.Container(expand=True),
                         status_badge(data.get("estado_persona")),
                     ]
                 ),
                 ft.Text(self._display_name(data), size=30, weight=ft.FontWeight.W_700),
                 detail_section("Datos base", [self._datos_base(data)]),
-                detail_section("Documentos", [self._simple_table(data.get("documentos", []))]),
-                detail_section("Contactos", [self._simple_table(data.get("contactos", []))]),
-                detail_section("Domicilios", [self._simple_table(data.get("domicilios", []))]),
+                detail_section(
+                    "Documentos", [self._simple_table(data.get("documentos", []))]
+                ),
+                detail_section(
+                    "Contactos", [self._simple_table(data.get("contactos", []))]
+                ),
+                detail_section(
+                    "Domicilios", [self._simple_table(data.get("domicilios", []))]
+                ),
                 detail_section(
                     "Roles / participaciones",
                     [self._participaciones_table(data.get("participaciones", []))],
@@ -70,7 +96,8 @@ class ParteDetailPage:
         )
 
     def _estado_financiero(self, data: dict[str, Any]) -> ft.Control:
-        resumen = data.get("resumen_financiero") or {}
+        raw_resumen = data.get("resumen_financiero") or {}
+        resumen = raw_resumen if isinstance(raw_resumen, dict) else {}
         return key_value_grid(
             [
                 ("Cantidad obligaciones", resumen.get("cantidad_obligaciones")),
@@ -83,7 +110,8 @@ class ParteDetailPage:
         )
 
     def _obligaciones_table(self, data: dict[str, Any]) -> ft.Control:
-        obligaciones = data.get("obligaciones_financieras") or []
+        raw_obligaciones = data.get("obligaciones_financieras") or []
+        obligaciones = self._dict_rows(raw_obligaciones)
         if not obligaciones:
             return ft.Text("Sin obligaciones financieras.")
         return entity_table(
@@ -98,7 +126,8 @@ class ParteDetailPage:
             rows=obligaciones,
         )
 
-    def _participaciones_table(self, rows: list[dict[str, Any]]) -> ft.Control:
+    def _participaciones_table(self, rows: object) -> ft.Control:
+        rows = self._dict_rows(rows)
         if not rows:
             return ft.Text("Sin roles ni participaciones.")
         return entity_table(
@@ -113,7 +142,8 @@ class ParteDetailPage:
         )
 
     def _usos_transversales(self, data: dict[str, Any]) -> ft.Control:
-        usos = data.get("usos_transversales") or {}
+        raw_usos = data.get("usos_transversales") or {}
+        usos = raw_usos if isinstance(raw_usos, dict) else {}
         rows = [
             ("Ventas como comprador", len(usos.get("comprador_ventas") or [])),
             ("Contratos locativos", len(usos.get("contratos_locativos") or [])),
@@ -121,17 +151,23 @@ class ParteDetailPage:
         ]
         return key_value_grid(rows)
 
-    def _simple_table(self, rows: list[dict[str, Any]]) -> ft.Control:
+    def _simple_table(self, rows: object) -> ft.Control:
+        rows = self._dict_rows(rows)
         if not rows:
             return ft.Text("Sin registros.")
         keys = list(rows[0].keys())[:6]
         return entity_table(columns=[(key, key) for key in keys], rows=rows)
 
+    def _dict_rows(self, rows: object) -> list[dict[str, Any]]:
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict)]
+
     def _display_name(self, data: dict[str, Any]) -> str:
         if data.get("display_name"):
-            return data["display_name"]
+            return str(data["display_name"])
         if data.get("razon_social"):
-            return data["razon_social"]
+            return str(data["razon_social"])
         parts = [data.get("nombre"), data.get("apellido")]
         value = " ".join(part for part in parts if part)
         return value or f"Ficha de parte #{self.id_persona}"

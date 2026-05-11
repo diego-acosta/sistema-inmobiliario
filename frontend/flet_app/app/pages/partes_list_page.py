@@ -67,8 +67,19 @@ class PartesListPage:
             return
 
         data = result.data or {}
-        items = data.get("items", [])
-        self.total = int(data.get("total") or 0)
+        if not isinstance(data, dict):
+            self.results.controls.append(
+                error_state("El listado de partes devolvio un formato inesperado.")
+            )
+            return
+
+        raw_items = data.get("items", [])
+        items = (
+            [item for item in raw_items if isinstance(item, dict)]
+            if isinstance(raw_items, list)
+            else []
+        )
+        self.total = self._safe_int(data.get("total"))
 
         if not items:
             self.results.controls.append(
@@ -98,13 +109,19 @@ class PartesListPage:
         self.results.controls.append(self._pagination())
 
     def _row_actions(self, row: dict[str, Any]) -> list[ft.Control]:
+        id_persona = row.get("id_persona")
         return [
             ft.TextButton(
                 "Abrir ficha",
-                on_click=lambda _, id_persona=row["id_persona"]: self.on_navigate(
-                    "parte_detail",
-                    id_persona=id_persona,
-                ),
+                disabled=id_persona is None,
+                on_click=(
+                    lambda _, id_persona=id_persona: self.on_navigate(
+                        "parte_detail",
+                        id_persona=id_persona,
+                    )
+                )
+                if id_persona is not None
+                else None,
             )
         ]
 
@@ -129,6 +146,12 @@ class PartesListPage:
             spacing=12,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
+
+    def _safe_int(self, value: object) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def _previous(self, _) -> None:
         self.offset = max(0, self.offset - self.limit)

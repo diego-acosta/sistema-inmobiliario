@@ -76,6 +76,13 @@ class ApiClient:
                 status_code=response.status_code,
             )
 
+        if not isinstance(payload, dict) or "data" not in payload:
+            return ApiResult(
+                success=False,
+                error_message="El backend devolvio un formato JSON inesperado.",
+                status_code=response.status_code,
+            )
+
         return ApiResult(
             success=True,
             data=payload.get("data"),
