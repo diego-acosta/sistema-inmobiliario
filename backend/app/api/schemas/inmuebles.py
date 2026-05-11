@@ -45,6 +45,11 @@ class InmuebleDetailResponse(BaseModel):
     data: InmuebleDetailData
 
 
+class InmuebleDetalleIntegralResponse(BaseModel):
+    ok: Literal[True] = True
+    data: dict[str, Any]
+
+
 class InmuebleListItem(BaseModel):
     id_inmueble: int
     id_desarrollo: int | None
@@ -206,6 +211,11 @@ class UnidadFuncionalDetailData(BaseModel):
 class UnidadFuncionalDetailResponse(BaseModel):
     ok: Literal[True] = True
     data: UnidadFuncionalDetailData
+
+
+class UnidadFuncionalDetalleIntegralResponse(BaseModel):
+    ok: Literal[True] = True
+    data: dict[str, Any]
 
 
 class UnidadFuncionalUpdateRequest(BaseModel):

@@ -502,6 +502,434 @@ class InmuebleRepository(BaseRepository[Any]):
             for row in rows
         ]
 
+    def get_inmueble_detalle_integral(
+        self, id_inmueble: int
+    ) -> dict[str, Any] | None:
+        inmueble = self.get_inmueble(id_inmueble)
+        if inmueble is None:
+            return None
+
+        disponibilidades = self._get_disponibilidades_activo(
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=None,
+        )
+        ocupaciones = self._get_ocupaciones_activo(
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=None,
+        )
+        disponibilidad_actual, disponibilidad_ambigua = self._get_actual(
+            disponibilidades
+        )
+        ocupacion_actual, ocupacion_ambigua = self._get_actual(ocupaciones)
+        unidades = self.get_unidades_funcionales(id_inmueble)
+        servicios = self.get_inmueble_servicios(id_inmueble)
+        responsables = self._get_responsables_servicio_activo(
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=None,
+        )
+
+        return {
+            "inmueble": inmueble,
+            "desarrollo": self._get_desarrollo(inmueble["id_desarrollo"]),
+            "unidades_funcionales": unidades,
+            "servicios": servicios,
+            "responsables_servicio": responsables,
+            "disponibilidad_actual": disponibilidad_actual,
+            "disponibilidad_ambigua": disponibilidad_ambigua,
+            "ocupacion_actual": ocupacion_actual,
+            "ocupacion_ambigua": ocupacion_ambigua,
+            "disponibilidades": disponibilidades,
+            "ocupaciones": ocupaciones,
+            "reservas_venta": self._get_reservas_venta_activo(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=None,
+            ),
+            "ventas": self._get_ventas_activo(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=None,
+            ),
+            "reservas_locativas": self._get_reservas_locativas_activo(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=None,
+            ),
+            "contratos_alquiler": self._get_contratos_alquiler_activo(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=None,
+            ),
+            "trazabilidad_integracion": self._get_integracion_trazabilidad_activo(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=None,
+            ),
+            "resumen_operativo": {
+                "cantidad_unidades": len(unidades),
+                "cantidad_servicios": len(servicios),
+                "tiene_ocupacion_actual": ocupacion_actual is not None,
+                "tiene_disponibilidad_actual": disponibilidad_actual is not None,
+                "disponibilidad_ambigua": disponibilidad_ambigua,
+                "ocupacion_ambigua": ocupacion_ambigua,
+            },
+        }
+
+    def get_unidad_funcional_detalle_integral(
+        self, id_unidad_funcional: int
+    ) -> dict[str, Any] | None:
+        unidad = self.get_unidad_funcional(id_unidad_funcional)
+        if unidad is None:
+            return None
+
+        inmueble = self.get_inmueble(unidad["id_inmueble"])
+        if inmueble is None:
+            return None
+
+        disponibilidades = self._get_disponibilidades_activo(
+            id_inmueble=None,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        ocupaciones = self._get_ocupaciones_activo(
+            id_inmueble=None,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        disponibilidad_actual, disponibilidad_ambigua = self._get_actual(
+            disponibilidades
+        )
+        ocupacion_actual, ocupacion_ambigua = self._get_actual(ocupaciones)
+        servicios = self.get_unidad_funcional_servicios(id_unidad_funcional)
+        responsables = self._get_responsables_servicio_activo(
+            id_inmueble=None,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+
+        return {
+            "unidad_funcional": unidad,
+            "inmueble": inmueble,
+            "servicios": servicios,
+            "responsables_servicio": responsables,
+            "disponibilidad_actual": disponibilidad_actual,
+            "disponibilidad_ambigua": disponibilidad_ambigua,
+            "ocupacion_actual": ocupacion_actual,
+            "ocupacion_ambigua": ocupacion_ambigua,
+            "disponibilidades": disponibilidades,
+            "ocupaciones": ocupaciones,
+            "reservas_venta": self._get_reservas_venta_activo(
+                id_inmueble=None,
+                id_unidad_funcional=id_unidad_funcional,
+            ),
+            "ventas": self._get_ventas_activo(
+                id_inmueble=None,
+                id_unidad_funcional=id_unidad_funcional,
+            ),
+            "reservas_locativas": self._get_reservas_locativas_activo(
+                id_inmueble=None,
+                id_unidad_funcional=id_unidad_funcional,
+            ),
+            "contratos_alquiler": self._get_contratos_alquiler_activo(
+                id_inmueble=None,
+                id_unidad_funcional=id_unidad_funcional,
+            ),
+            "trazabilidad_integracion": self._get_integracion_trazabilidad_activo(
+                id_inmueble=None,
+                id_unidad_funcional=id_unidad_funcional,
+            ),
+            "resumen_operativo": {
+                "cantidad_servicios": len(servicios),
+                "tiene_ocupacion_actual": ocupacion_actual is not None,
+                "tiene_disponibilidad_actual": disponibilidad_actual is not None,
+                "disponibilidad_ambigua": disponibilidad_ambigua,
+                "ocupacion_ambigua": ocupacion_ambigua,
+            },
+        }
+
+    def _get_actual(
+        self, vigencias: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any] | None, bool]:
+        abiertas = [item for item in vigencias if item["fecha_hasta"] is None]
+        if len(abiertas) == 1:
+            return abiertas[0], False
+        if len(abiertas) > 1:
+            return None, True
+        return None, False
+
+    def _asset_where(
+        self, *, alias: str = "", id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> tuple[str, dict[str, int]]:
+        prefix = f"{alias}." if alias else ""
+        if id_inmueble is not None:
+            return (
+                f"{prefix}id_inmueble = :id_inmueble AND {prefix}id_unidad_funcional IS NULL",
+                {"id_inmueble": id_inmueble},
+            )
+        return (
+            f"{prefix}id_unidad_funcional = :id_unidad_funcional AND {prefix}id_inmueble IS NULL",
+            {"id_unidad_funcional": id_unidad_funcional or 0},
+        )
+
+    def _get_desarrollo(self, id_desarrollo: int | None) -> dict[str, Any] | None:
+        if id_desarrollo is None:
+            return None
+        row = self.db.execute(
+            text(
+                """
+                SELECT
+                    id_desarrollo,
+                    codigo_desarrollo,
+                    nombre_desarrollo,
+                    descripcion,
+                    estado_desarrollo,
+                    observaciones
+                FROM desarrollo
+                WHERE id_desarrollo = :id_desarrollo
+                  AND deleted_at IS NULL
+                """
+            ),
+            {"id_desarrollo": id_desarrollo},
+        ).mappings().one_or_none()
+        return dict(row) if row is not None else None
+
+    def _get_disponibilidades_activo(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> list[dict[str, Any]]:
+        where, params = self._asset_where(
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        rows = self.db.execute(
+            text(
+                f"""
+                SELECT
+                    id_disponibilidad,
+                    id_inmueble,
+                    id_unidad_funcional,
+                    estado_disponibilidad,
+                    fecha_desde,
+                    fecha_hasta,
+                    motivo,
+                    observaciones
+                FROM disponibilidad
+                WHERE {where}
+                  AND deleted_at IS NULL
+                ORDER BY fecha_desde DESC, id_disponibilidad DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def _get_ocupaciones_activo(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> list[dict[str, Any]]:
+        where, params = self._asset_where(
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        rows = self.db.execute(
+            text(
+                f"""
+                SELECT
+                    id_ocupacion,
+                    id_inmueble,
+                    id_unidad_funcional,
+                    tipo_ocupacion,
+                    fecha_desde,
+                    fecha_hasta,
+                    descripcion,
+                    observaciones
+                FROM ocupacion
+                WHERE {where}
+                  AND deleted_at IS NULL
+                ORDER BY fecha_desde DESC, id_ocupacion DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def _get_responsables_servicio_activo(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> list[dict[str, Any]]:
+        where, params = self._asset_where(
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        rows = self.db.execute(
+            text(
+                f"""
+                SELECT
+                    id_asignacion_servicio_responsable,
+                    id_servicio,
+                    id_inmueble,
+                    id_unidad_funcional,
+                    id_persona,
+                    porcentaje_responsabilidad,
+                    fecha_desde,
+                    fecha_hasta,
+                    estado_asignacion,
+                    observaciones
+                FROM asignacion_servicio_responsable
+                WHERE {where}
+                  AND deleted_at IS NULL
+                ORDER BY id_asignacion_servicio_responsable
+                """
+            ),
+            params,
+        ).mappings().all()
+        return [
+            {
+                **dict(row),
+                "porcentaje_responsabilidad": (
+                    float(row["porcentaje_responsabilidad"])
+                    if row["porcentaje_responsabilidad"] is not None
+                    else None
+                ),
+                "fecha_desde": (
+                    row["fecha_desde"].isoformat()
+                    if row["fecha_desde"] is not None
+                    else None
+                ),
+                "fecha_hasta": (
+                    row["fecha_hasta"].isoformat()
+                    if row["fecha_hasta"] is not None
+                    else None
+                ),
+            }
+            for row in rows
+        ]
+
+    def _get_reservas_venta_activo(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> list[dict[str, Any]]:
+        where, params = self._asset_where(
+            alias="rvo",
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        rows = self.db.execute(
+            text(
+                f"""
+                SELECT DISTINCT
+                    rv.id_reserva_venta,
+                    rv.codigo_reserva,
+                    rv.fecha_reserva,
+                    rv.fecha_vencimiento,
+                    rv.estado_reserva,
+                    rv.observaciones
+                FROM reserva_venta rv
+                JOIN reserva_venta_objeto_inmobiliario rvo
+                  ON rvo.id_reserva_venta = rv.id_reserva_venta
+                WHERE rv.deleted_at IS NULL
+                  AND rvo.deleted_at IS NULL
+                  AND {where}
+                ORDER BY rv.fecha_reserva DESC, rv.id_reserva_venta DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def _get_ventas_activo(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> list[dict[str, Any]]:
+        where, params = self._asset_where(
+            alias="voi",
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        rows = self.db.execute(
+            text(
+                f"""
+                SELECT DISTINCT
+                    v.id_venta,
+                    v.id_reserva_venta,
+                    v.codigo_venta,
+                    v.fecha_venta,
+                    v.estado_venta,
+                    v.monto_total,
+                    v.moneda,
+                    v.observaciones
+                FROM venta v
+                JOIN venta_objeto_inmobiliario voi
+                  ON voi.id_venta = v.id_venta
+                WHERE v.deleted_at IS NULL
+                  AND voi.deleted_at IS NULL
+                  AND {where}
+                ORDER BY v.fecha_venta DESC, v.id_venta DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+        return [
+            {
+                **dict(row),
+                "monto_total": (
+                    float(row["monto_total"]) if row["monto_total"] is not None else None
+                ),
+            }
+            for row in rows
+        ]
+
+    def _get_reservas_locativas_activo(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> list[dict[str, Any]]:
+        where, params = self._asset_where(
+            alias="rlo",
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        rows = self.db.execute(
+            text(
+                f"""
+                SELECT DISTINCT
+                    rl.id_reserva_locativa,
+                    rl.id_solicitud_alquiler,
+                    rl.codigo_reserva,
+                    rl.fecha_reserva,
+                    rl.fecha_vencimiento,
+                    rl.estado_reserva,
+                    rl.observaciones
+                FROM reserva_locativa rl
+                JOIN reserva_locativa_objeto rlo
+                  ON rlo.id_reserva_locativa = rl.id_reserva_locativa
+                WHERE rl.deleted_at IS NULL
+                  AND rlo.deleted_at IS NULL
+                  AND {where}
+                ORDER BY rl.fecha_reserva DESC, rl.id_reserva_locativa DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def _get_contratos_alquiler_activo(
+        self, *, id_inmueble: int | None, id_unidad_funcional: int | None
+    ) -> list[dict[str, Any]]:
+        where, params = self._asset_where(
+            alias="col",
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+        )
+        rows = self.db.execute(
+            text(
+                f"""
+                SELECT DISTINCT
+                    ca.id_contrato_alquiler,
+                    ca.id_reserva_locativa,
+                    ca.codigo_contrato,
+                    ca.fecha_inicio,
+                    ca.fecha_fin,
+                    ca.estado_contrato,
+                    ca.observaciones
+                FROM contrato_alquiler ca
+                JOIN contrato_objeto_locativo col
+                  ON col.id_contrato_alquiler = ca.id_contrato_alquiler
+                WHERE ca.deleted_at IS NULL
+                  AND col.deleted_at IS NULL
+                  AND {where}
+                ORDER BY ca.fecha_inicio DESC, ca.id_contrato_alquiler DESC
+                """
+            ),
+            params,
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
     def get_unidades_funcionales_global(
         self,
         *,

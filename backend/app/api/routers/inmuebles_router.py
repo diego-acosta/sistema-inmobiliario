@@ -49,6 +49,7 @@ from app.api.schemas.inmuebles import (
     InmuebleDesasociarDesarrolloResponse,
     InmuebleDetailData,
     InmuebleDetailResponse,
+    InmuebleDetalleIntegralResponse,
     InmuebleListItem,
     InmuebleListResponse,
     InmuebleServicioCreateData,
@@ -66,6 +67,7 @@ from app.api.schemas.inmuebles import (
     UnidadFuncionalBajaResponse,
     UnidadFuncionalDetailData,
     UnidadFuncionalDetailResponse,
+    UnidadFuncionalDetalleIntegralResponse,
     UnidadFuncionalListItem,
     UnidadFuncionalListResponse,
     UnidadFuncionalServicioCreateData,
@@ -183,6 +185,9 @@ from app.application.inmuebles.services.disassociate_inmueble_desarrollo_service
 from app.application.inmuebles.services.get_inmueble_disponibilidades_service import (
     GetInmuebleDisponibilidadesService,
 )
+from app.application.inmuebles.services.get_inmueble_detalle_integral_service import (
+    GetInmuebleDetalleIntegralService,
+)
 from app.application.inmuebles.services.get_inmueble_integracion_trazabilidad_service import (
     GetInmuebleIntegracionTrazabilidadService,
 )
@@ -200,6 +205,9 @@ from app.application.inmuebles.services.get_inmuebles_service import (
 )
 from app.application.inmuebles.services.get_unidad_funcional_disponibilidades_service import (
     GetUnidadFuncionalDisponibilidadesService,
+)
+from app.application.inmuebles.services.get_unidad_funcional_detalle_integral_service import (
+    GetUnidadFuncionalDetalleIntegralService,
 )
 from app.application.inmuebles.services.get_unidad_funcional_integracion_trazabilidad_service import (
     GetUnidadFuncionalIntegracionTrazabilidadService,
@@ -2330,6 +2338,41 @@ def get_unidades_funcionales_global(
 
 
 @router.get(
+    "/api/v1/unidades-funcionales/{id_unidad_funcional}/detalle-integral",
+    response_model=UnidadFuncionalDetalleIntegralResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_unidad_funcional_detalle_integral(
+    id_unidad_funcional: int,
+    db: Session = Depends(get_db),
+) -> UnidadFuncionalDetalleIntegralResponse | JSONResponse:
+    repository = InmuebleRepository(db)
+    service = GetUnidadFuncionalDetalleIntegralService(repository=repository)
+
+    try:
+        result = service.execute(id_unidad_funcional)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="La unidad funcional indicada no existe.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return UnidadFuncionalDetalleIntegralResponse(data=result.data)
+
+
+@router.get(
     "/api/v1/unidades-funcionales/{id_unidad_funcional}",
     response_model=UnidadFuncionalDetailResponse,
     responses={
@@ -2588,6 +2631,41 @@ def delete_unidad_funcional(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return UnidadFuncionalBajaResponse(data=UnidadFuncionalBajaData(**result.data))
+
+
+@router.get(
+    "/api/v1/inmuebles/{id_inmueble}/detalle-integral",
+    response_model=InmuebleDetalleIntegralResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_inmueble_detalle_integral(
+    id_inmueble: int,
+    db: Session = Depends(get_db),
+) -> InmuebleDetalleIntegralResponse | JSONResponse:
+    repository = InmuebleRepository(db)
+    service = GetInmuebleDetalleIntegralService(repository=repository)
+
+    try:
+        result = service.execute(id_inmueble)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="NOT_FOUND",
+            error_message="El inmueble indicado no existe.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return InmuebleDetalleIntegralResponse(data=result.data)
 
 
 @router.get(

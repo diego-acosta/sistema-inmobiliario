@@ -175,6 +175,31 @@ Observaciones de implementacion real:
 - estado: vigente
 - objetivo: consulta de detalle de inmueble
 
+#### `GET /api/v1/inmuebles/{id_inmueble}/detalle-integral`
+- estado: vigente
+- objetivo: ficha integral read-only de inmueble para UI
+- respuesta vigente:
+  - `inmueble`: datos base del inmueble
+  - `desarrollo`: desarrollo asociado o `null`
+  - `unidades_funcionales`: unidades activas del inmueble
+  - `servicios`: asociaciones activas `inmueble_servicio`
+  - `responsables_servicio`: asignaciones activas de responsables de servicio del inmueble
+  - `disponibilidad_actual`, `disponibilidad_ambigua`
+  - `ocupacion_actual`, `ocupacion_ambigua`
+  - `disponibilidades`: historial del inmueble
+  - `ocupaciones`: historial del inmueble
+  - `reservas_venta`, `ventas`, `reservas_locativas`, `contratos_alquiler`: lecturas simples asociadas por objeto inmobiliario
+  - `trazabilidad_integracion`: misma lectura vigente de trazabilidad por activo
+  - `resumen_operativo`: `cantidad_unidades`, `cantidad_servicios`, `tiene_ocupacion_actual`, `tiene_disponibilidad_actual`, `disponibilidad_ambigua`, `ocupacion_ambigua`
+- reglas:
+  - estrictamente read-only
+  - 404 si el inmueble no existe o esta dado de baja logica
+  - disponibilidad y ocupacion se leen solo con `id_inmueble` y `id_unidad_funcional IS NULL`
+  - no cierra, reemplaza ni modifica vigencias
+  - no emite outbox/inbox
+  - no recalcula estados
+  - no transfiere ownership comercial, locativo ni financiero al dominio inmobiliario
+
 #### `GET /api/v1/inmuebles`
 - estado: vigente
 - objetivo: listado de inmuebles
@@ -239,6 +264,30 @@ Observaciones de implementacion real:
   - si hay exactamente un registro abierto, se devuelve ese registro
   - si hay mas de un registro abierto, el valor actual es `null` y el indicador `*_ambigua` es `true`
   - el endpoint es estrictamente read-only y no cierra, reemplaza ni modifica vigencias
+
+#### `GET /api/v1/unidades-funcionales/{id_unidad_funcional}/detalle-integral`
+- estado: vigente
+- objetivo: ficha integral read-only de unidad funcional para UI
+- respuesta vigente:
+  - `unidad_funcional`: datos base de la unidad funcional
+  - `inmueble`: inmueble padre
+  - `servicios`: asociaciones activas `unidad_funcional_servicio`
+  - `responsables_servicio`: asignaciones activas de responsables de servicio de la unidad
+  - `disponibilidad_actual`, `disponibilidad_ambigua`
+  - `ocupacion_actual`, `ocupacion_ambigua`
+  - `disponibilidades`: historial de la unidad
+  - `ocupaciones`: historial de la unidad
+  - `reservas_venta`, `ventas`, `reservas_locativas`, `contratos_alquiler`: lecturas simples asociadas por objeto inmobiliario
+  - `trazabilidad_integracion`: misma lectura vigente de trazabilidad por activo
+  - `resumen_operativo`: `cantidad_servicios`, `tiene_ocupacion_actual`, `tiene_disponibilidad_actual`, `disponibilidad_ambigua`, `ocupacion_ambigua`
+- reglas:
+  - estrictamente read-only
+  - 404 si la unidad no existe, esta dada de baja logica o su inmueble padre no esta activo
+  - disponibilidad y ocupacion se leen solo con `id_unidad_funcional` y `id_inmueble IS NULL`
+  - no cierra, reemplaza ni modifica vigencias
+  - no emite outbox/inbox
+  - no recalcula estados
+  - no transfiere ownership comercial, locativo ni financiero al dominio inmobiliario
 
 #### `GET /api/v1/unidades-funcionales/{id_unidad_funcional}`
 - estado: vigente

@@ -10,9 +10,11 @@
   - `GET /api/v1/desarrollos/{id_desarrollo}`
   - `GET /api/v1/inmuebles`
   - `GET /api/v1/inmuebles/{id_inmueble}`
+  - `GET /api/v1/inmuebles/{id_inmueble}/detalle-integral`
   - `GET /api/v1/inmuebles/{id_inmueble}/unidades-funcionales`
   - `GET /api/v1/unidades-funcionales`
   - `GET /api/v1/unidades-funcionales/{id_unidad_funcional}`
+  - `GET /api/v1/unidades-funcionales/{id_unidad_funcional}/detalle-integral`
   - `GET /api/v1/inmuebles/{id_inmueble}/servicios`
   - `GET /api/v1/servicios/{id_servicio}/inmuebles`
   - `GET /api/v1/unidades-funcionales/{id_unidad_funcional}/servicios`
@@ -37,12 +39,15 @@
 - filtros UI vigentes para inmuebles: `q`, `estado_administrativo`, `estado_juridico`, `id_desarrollo`, `disponibilidad_actual`, `ocupacion_actual`, `id_servicio`, `limit`, `offset`
 - filtros UI vigentes para unidades funcionales: `q`, `id_inmueble`, `estado_administrativo`, `estado_operativo`, `disponibilidad_actual`, `ocupacion_actual`, `id_servicio`, `limit`, `offset`
 - lectura consolidada read-only de disponibilidad y ocupacion abierta del mismo activo consultado
+- ficha integral UI read-only de inmueble y unidad funcional con datos base, asociaciones inmobiliarias, responsables de servicio, disponibilidad/ocupacion actual, historial simple, relaciones comerciales/locativas simples, trazabilidad de integracion y resumen operativo
 - lectura de vigencia historica por activo para `disponibilidad` y `ocupacion`
 - lectura de trazabilidad de integracion comercial por activo basada en `venta`, `venta_objeto_inmobiliario` y `outbox_event`
 
 ## Reglas UI vigentes
 - `GET /api/v1/inmuebles` no modifica disponibilidad, ocupacion ni vigencias.
 - `GET /api/v1/unidades-funcionales` no modifica disponibilidad, ocupacion ni vigencias.
+- `GET /api/v1/inmuebles/{id_inmueble}/detalle-integral` no modifica disponibilidad, ocupacion, outbox, inbox ni relaciones de otros dominios.
+- `GET /api/v1/unidades-funcionales/{id_unidad_funcional}/detalle-integral` no modifica disponibilidad, ocupacion, outbox, inbox ni relaciones de otros dominios.
 - la disponibilidad actual de inmueble se obtiene solo de `disponibilidad.id_inmueble` con `id_unidad_funcional IS NULL`, `fecha_hasta IS NULL` y `deleted_at IS NULL`.
 - la disponibilidad actual de unidad funcional se obtiene solo de `disponibilidad.id_unidad_funcional` con `id_inmueble IS NULL`, `fecha_hasta IS NULL` y `deleted_at IS NULL`.
 - la ocupacion actual de inmueble se obtiene solo de `ocupacion.id_inmueble` con `id_unidad_funcional IS NULL`, `fecha_hasta IS NULL` y `deleted_at IS NULL`.
@@ -52,9 +57,9 @@
 - si hay mas de un registro abierto, el actual se devuelve `null` y el indicador `*_ambigua` se devuelve `true`.
 - los filtros por `disponibilidad_actual` y `ocupacion_actual` aplican solo cuando existe un unico registro abierto no ambiguo.
 - no se consultan ni modifican dominios comercial, locativo o financiero para resolver estos listados.
+- en detalle integral, las lecturas de reservas, ventas y contratos son proyecciones simples por objeto inmobiliario ya persistido; no recalculan reglas comerciales, locativas ni financieras.
 
 ## Funcionalidad pendiente
-- ficha integral de `inmueble`: `NO IMPLEMENTADO`
 - reportes consolidados cross-activo con `disponibilidad` u `ocupacion`: `NO IMPLEMENTADO`
 - analitica agregada del dominio: `CONCEPTUAL`
 
