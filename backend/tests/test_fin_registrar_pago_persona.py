@@ -1,6 +1,7 @@
 """
 Tests de integración para POST /api/v1/financiero/pagos.
 """
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -271,12 +272,14 @@ def _crear_obligacion_para_persona(
     composiciones: list[dict],
     fecha_vencimiento: str = "2026-05-10",
 ) -> dict:
+    vencimiento = date.fromisoformat(fecha_vencimiento)
+    fecha_vencimiento_segura = max(vencimiento, date.today()).isoformat()
     resp = client.post(
         "/api/v1/financiero/obligaciones",
         headers=HEADERS,
         json={
             "id_relacion_generadora": id_relacion_generadora,
-            "fecha_vencimiento": fecha_vencimiento,
+            "fecha_vencimiento": fecha_vencimiento_segura,
             "composiciones": composiciones,
         },
     )

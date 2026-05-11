@@ -1,6 +1,8 @@
 """
 Tests de integración para GET /api/v1/financiero/deuda/consolidado.
 """
+from datetime import date, timedelta
+
 import pytest
 
 from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
@@ -76,12 +78,16 @@ def test_consolidado_separacion_vencida_futura(client, db_session) -> None:
     """
     rg = _crear_rg(client, codigo="DC-VF-001")
     id_rg = rg["id_relacion_generadora"]
+    hoy = date.today()
+    vencida = hoy
+    futura = hoy + timedelta(days=60)
+    fecha_corte = hoy + timedelta(days=20)
     _crear_ob(client, id_relacion_generadora=id_rg, importe=10000.00,
-              fecha_vencimiento="2026-05-15")
+              fecha_vencimiento=vencida.isoformat())
     _crear_ob(client, id_relacion_generadora=id_rg, importe=20000.00,
-              fecha_vencimiento="2026-12-31")
+              fecha_vencimiento=futura.isoformat())
 
-    resp = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-06-01"})
+    resp = client.get(URL, headers=HEADERS, params={"fecha_corte": fecha_corte.isoformat()})
 
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -100,10 +106,12 @@ def test_consolidado_mora_calculada(client, db_session) -> None:
     """
     rg = _crear_rg(client, codigo="DC-MORA-001")
     id_rg = rg["id_relacion_generadora"]
+    fecha_vencimiento = date.today()
+    fecha_corte = fecha_vencimiento + timedelta(days=10)
     _crear_ob(client, id_relacion_generadora=id_rg, importe=50000.00,
-              fecha_vencimiento="2026-05-10")
+              fecha_vencimiento=fecha_vencimiento.isoformat())
 
-    resp = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-05-20"})
+    resp = client.get(URL, headers=HEADERS, params={"fecha_corte": fecha_corte.isoformat()})
 
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -120,16 +128,29 @@ def test_consolidado_mora_respeta_dias_gracia(client, db_session) -> None:
     """Dentro de gracia y en el limite exacto no calcula mora; fuera de gracia si."""
     rg = _crear_rg(client, codigo="DC-GRACIA-001")
     id_rg = rg["id_relacion_generadora"]
+    fecha_vencimiento = date.today()
     _crear_ob(
         client,
         id_relacion_generadora=id_rg,
         importe=10000.00,
-        fecha_vencimiento="2026-05-10",
+        fecha_vencimiento=fecha_vencimiento.isoformat(),
     )
 
-    resp_dentro = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-05-14"})
-    resp_limite = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-05-15"})
-    resp_fuera = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-05-16"})
+    resp_dentro = client.get(
+        URL,
+        headers=HEADERS,
+        params={"fecha_corte": (fecha_vencimiento + timedelta(days=4)).isoformat()},
+    )
+    resp_limite = client.get(
+        URL,
+        headers=HEADERS,
+        params={"fecha_corte": (fecha_vencimiento + timedelta(days=5)).isoformat()},
+    )
+    resp_fuera = client.get(
+        URL,
+        headers=HEADERS,
+        params={"fecha_corte": (fecha_vencimiento + timedelta(days=6)).isoformat()},
+    )
 
     assert resp_dentro.status_code == 200
     assert resp_limite.status_code == 200
@@ -230,5 +251,4 @@ def test_consolidado_fecha_corte_en_respuesta(client, db_session) -> None:
     assert resp_sin.status_code == 200
     assert resp_con.json()["data"]["fecha_corte"] == "2026-06-15"
 
-    from datetime import date
     assert resp_sin.json()["data"]["fecha_corte"] == str(date.today())
