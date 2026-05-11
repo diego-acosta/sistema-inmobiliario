@@ -40,7 +40,11 @@ class AppShell:
                                     ),
                                     padding=16,
                                 ),
-                                self.rail,
+                                ft.Container(
+                                    content=self.rail,
+                                    expand=True,
+                                    alignment=ft.alignment.top_left,
+                                ),
                                 ft.Container(
                                     content=ft.Text(
                                         get_api_base_url(),
@@ -60,6 +64,7 @@ class AppShell:
                 ],
                 expand=True,
                 spacing=0,
+                vertical_alignment=ft.CrossAxisAlignment.STRETCH,
             )
         )
         self.navigate("home")
