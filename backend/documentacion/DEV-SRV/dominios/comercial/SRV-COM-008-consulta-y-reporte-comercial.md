@@ -91,10 +91,10 @@ Filtros materializados:
 - `fecha_venta_desde`
 - `fecha_venta_hasta`
 - `con_saldo`
-- `limit`
+- `limit` (0..100; `0` es valido para consultar solo `total` sin items)
 - `offset`
 
-La proyeccion incluye compradores, objetos y resumen financiero solo como lectura de hechos persistidos. No genera relacion financiera, no genera obligaciones, no recalcula saldos, no ejecuta mora, no crea pagos y no escribe outbox ni inbox.
+La proyeccion incluye compradores, objetos y resumen financiero solo como lectura de hechos persistidos. No genera relacion financiera, no genera obligaciones, no recalcula saldos, no ejecuta mora, no crea pagos y no escribe outbox ni inbox. `con_saldo=false` incluye ventas sin saldo pendiente positivo, tambien cuando no existe relacion generadora persistida. `rol_codigo` puede aplicarse sin `id_persona`. `cantidad_vencidas` usa el estado persistido `VENCIDA` y no calcula mora dinamica.
 
 ## Entradas conceptuales
 

@@ -63,10 +63,10 @@ Filtros materializados:
 - `fecha_fin_desde`
 - `fecha_fin_hasta`
 - `con_saldo`
-- `limit`
+- `limit` (0..100; `0` es valido para consultar solo `total` sin items)
 - `offset`
 
-La proyeccion incluye partes, objetos locativos y resumen financiero solo como lectura de hechos persistidos. No genera relacion financiera, no genera obligaciones, no recalcula saldos, no ejecuta mora, no registra pagos y no escribe outbox ni inbox.
+La proyeccion incluye partes, objetos locativos y resumen financiero solo como lectura de hechos persistidos. No genera relacion financiera, no genera obligaciones, no recalcula saldos, no ejecuta mora, no registra pagos y no escribe outbox ni inbox. `con_saldo=false` incluye contratos sin saldo pendiente positivo, tambien cuando no existe relacion generadora persistida. `rol_codigo` puede aplicarse sin `id_persona`. `cantidad_vencidas` usa el estado persistido `VENCIDA` y no calcula mora dinamica.
 
 ### Reporte consolidado
 Permite obtener una vista integrada del dominio.
