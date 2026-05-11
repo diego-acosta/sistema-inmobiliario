@@ -720,7 +720,7 @@ Filtros permitidos:
 
 Paginacion basica:
 
-- `limit`
+- `limit` (0..100; `0` es valido para consultar solo `total` sin items)
 - `offset`
 
 Response:
@@ -779,6 +779,10 @@ Observacion:
 - `partes_resumen`, `objetos_resumen` y `relacion_financiera` son proyecciones compactas
 - `relacion_financiera` solo resume saldos persistidos en obligaciones existentes; no crea deuda ni recalcula saldos
 - `con_saldo=true` filtra contratos con obligaciones existentes y `saldo_pendiente > 0`
+- `con_saldo=false` devuelve contratos sin saldo pendiente positivo; esto incluye contratos sin `relacion_generadora` persistida
+- `cantidad_vencidas` cuenta obligaciones persistidas con `estado_obligacion = VENCIDA`; no calcula mora dinamica
+- si existieran multiples `relacion_generadora` activas para un mismo contrato, el listado conserva una sola fila de contrato y usa la primera relacion por `id_relacion_generadora` como resumen compacto, sin duplicar la respuesta
+- el filtro `rol_codigo` puede usarse con o sin `id_persona`; sin `id_persona` filtra contratos que tienen al menos una participacion con ese rol
 - el filtro `id_persona` usa `relacion_persona_rol` de `tipo_relacion = contrato_alquiler`; si se informa `rol_codigo`, restringe por ese rol contractual
 
 ### 7.2 `condicion_economica_alquiler`

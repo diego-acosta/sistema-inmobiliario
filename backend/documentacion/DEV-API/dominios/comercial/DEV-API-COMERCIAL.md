@@ -1030,7 +1030,7 @@ Filtros permitidos:
 - `fecha_venta_desde`
 - `fecha_venta_hasta`
 - `con_saldo`
-- `limit`
+- `limit` (0..100; `0` es valido para consultar solo `total` sin items)
 - `offset`
 
 Response:
@@ -1090,6 +1090,10 @@ Reglas:
 - `comprador_resumen`, `objetos_resumen` y `relacion_financiera` son proyecciones compactas
 - `relacion_financiera` solo resume saldos persistidos en obligaciones existentes; no crea deuda ni recalcula saldos
 - `con_saldo=true` filtra ventas con obligaciones existentes y `saldo_pendiente > 0`
+- `con_saldo=false` devuelve ventas sin saldo pendiente positivo; esto incluye ventas sin `relacion_generadora` persistida
+- `cantidad_vencidas` cuenta obligaciones persistidas con `estado_obligacion = VENCIDA`; no calcula mora dinamica
+- si existieran multiples `relacion_generadora` activas para una misma venta, el listado conserva una sola fila de venta y usa la primera relacion por `id_relacion_generadora` como resumen compacto, sin duplicar la respuesta
+- el filtro `rol_codigo` puede usarse con o sin `id_persona`; sin `id_persona` filtra ventas que tienen al menos una participacion con ese rol
 - el filtro `id_persona` usa `relacion_persona_rol` de `tipo_relacion = venta`; si se informa `rol_codigo`, restringe por ese rol comercial
 - si hay multiples compradores u objetos, se devuelven listas compactas y no se decide negocio desde la UI
 
@@ -1281,7 +1285,7 @@ Observacion:
 - las consultas y reportes comerciales consolidados quedan fuera de este contrato operativo
 - no se expone alta directa `POST /api/v1/ventas`; la venta nace hoy desde `reserva_venta` confirmada por `POST /api/v1/reservas-venta/{id_reserva_venta}/generar-venta`
 - no se exponen `PUT` ni `PATCH /baja` para `venta`, `instrumento_compraventa`, `cesion` o `escrituracion`
-- no se expone `GET /api/v1/ventas` ni detalles individuales de `instrumento_compraventa`, `cesion` o `escrituracion`
+- no se exponen detalles individuales de `instrumento_compraventa`, `cesion` o `escrituracion`; el listado `GET /api/v1/ventas` si queda expuesto como consulta UI read-only
 - no se incorpora `PATCH /api/v1/ventas/{id_venta}/rescindir` en esta version:
   - la rescision tiene entidad SQL propia `rescision_venta`
   - modelarla como simple cambio de estado sobre `venta` ocultaria trazabilidad y mezclaria operacion con evento de cierre anomalo
