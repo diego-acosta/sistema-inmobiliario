@@ -541,10 +541,14 @@ class InmuebleRepository(BaseRepository[Any]):
             where_clauses.append("uf.estado_operativo = :estado_operativo")
             params["estado_operativo"] = estado_operativo
         if disponibilidad_actual:
-            where_clauses.append("disp.estado_actual = :disponibilidad_actual")
+            where_clauses.append(
+                "disp.abiertos = 1 AND disp.estado_actual = :disponibilidad_actual"
+            )
             params["disponibilidad_actual"] = disponibilidad_actual
         if ocupacion_actual:
-            where_clauses.append("ocup.tipo_actual = :ocupacion_actual")
+            where_clauses.append(
+                "ocup.abiertos = 1 AND ocup.tipo_actual = :ocupacion_actual"
+            )
             params["ocupacion_actual"] = ocupacion_actual
         if id_servicio is not None:
             where_clauses.append(
@@ -807,10 +811,14 @@ class InmuebleRepository(BaseRepository[Any]):
             where_clauses.append("i.id_desarrollo = :id_desarrollo")
             params["id_desarrollo"] = id_desarrollo
         if disponibilidad_actual:
-            where_clauses.append("disp.estado_actual = :disponibilidad_actual")
+            where_clauses.append(
+                "disp.abiertos = 1 AND disp.estado_actual = :disponibilidad_actual"
+            )
             params["disponibilidad_actual"] = disponibilidad_actual
         if ocupacion_actual:
-            where_clauses.append("ocup.tipo_actual = :ocupacion_actual")
+            where_clauses.append(
+                "ocup.abiertos = 1 AND ocup.tipo_actual = :ocupacion_actual"
+            )
             params["ocupacion_actual"] = ocupacion_actual
         if id_servicio is not None:
             where_clauses.append(

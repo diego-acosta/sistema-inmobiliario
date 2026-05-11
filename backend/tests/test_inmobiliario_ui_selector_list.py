@@ -239,6 +239,18 @@ def test_selector_inmuebles_disponibilidad_ocupacion_actual_y_ambigua(
     assert item_ambiguo["ocupacion_actual"] is None
     assert item_ambiguo["ocupacion_ambigua"] is True
 
+    filtrado_ambiguo = client.get(
+        "/api/v1/inmuebles",
+        params={
+            "q": "INM-SEL-AMB",
+            "disponibilidad_actual": "DOS",
+            "ocupacion_actual": "DOS",
+        },
+    )
+    assert filtrado_ambiguo.status_code == 200
+    assert filtrado_ambiguo.json()["items"] == []
+    assert filtrado_ambiguo.json()["total"] == 0
+
 
 def test_selector_unidades_filtros_actuales_y_no_mezcla_con_inmueble(
     client, db_session
@@ -328,6 +340,18 @@ def test_selector_unidades_ambigua_y_consulta_no_modifica_vigencias(
     assert item["disponibilidad_ambigua"] is True
     assert item["ocupacion_actual"] is None
     assert item["ocupacion_ambigua"] is True
+
+    filtrado_ambiguo = client.get(
+        "/api/v1/unidades-funcionales",
+        params={
+            "q": "UF-SEL-AMB",
+            "disponibilidad_actual": "DOS",
+            "ocupacion_actual": "DOS",
+        },
+    )
+    assert filtrado_ambiguo.status_code == 200
+    assert filtrado_ambiguo.json()["items"] == []
+    assert filtrado_ambiguo.json()["total"] == 0
 
     after = db_session.execute(
         text(
