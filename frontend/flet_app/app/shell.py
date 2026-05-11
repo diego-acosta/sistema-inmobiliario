@@ -124,6 +124,8 @@ class AppShell:
             "partes": 1,
             "parte_detail": 1,
             "inmuebles": 2,
+            "inmueble_detail": 2,
+            "unidad_detail": 2,
             "contratos": 3,
             "ventas": 4,
             "finanzas": 5,
@@ -143,7 +145,23 @@ class AppShell:
                 on_navigate=self.navigate,
             ).build()
         if route.name == "inmuebles":
-            return InmueblesPage().build()
+            return InmueblesPage(api=self.api, on_navigate=self.navigate).build()
+        if route.name == "inmueble_detail":
+            id_inmueble = int((route.params or {})["id_inmueble"])
+            return InmueblesPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                detail_kind="inmueble",
+                detail_id=id_inmueble,
+            ).build()
+        if route.name == "unidad_detail":
+            id_unidad = int((route.params or {})["id_unidad_funcional"])
+            return InmueblesPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                detail_kind="unidad",
+                detail_id=id_unidad,
+            ).build()
         if route.name == "contratos":
             return ContratosPage().build()
         if route.name == "ventas":

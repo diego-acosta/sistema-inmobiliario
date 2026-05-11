@@ -40,6 +40,66 @@ class ApiClient:
     def get_persona_detalle_integral(self, id_persona: int) -> ApiResult:
         return self._get(f"/api/v1/personas/{id_persona}/detalle-integral")
 
+    def get_inmuebles(
+        self,
+        *,
+        q: str | None = None,
+        estado_administrativo: str | None = None,
+        estado_juridico: str | None = None,
+        disponibilidad_actual: str | None = None,
+        ocupacion_actual: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/inmuebles",
+            params={
+                "q": q or None,
+                "estado_administrativo": estado_administrativo or None,
+                "estado_juridico": estado_juridico or None,
+                "disponibilidad_actual": disponibilidad_actual or None,
+                "ocupacion_actual": ocupacion_actual or None,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+    def get_inmueble_detalle_integral(self, id_inmueble: int) -> ApiResult:
+        return self._get(f"/api/v1/inmuebles/{id_inmueble}/detalle-integral")
+
+    def get_unidades_funcionales(
+        self,
+        *,
+        q: str | None = None,
+        id_inmueble: int | None = None,
+        estado_administrativo: str | None = None,
+        estado_operativo: str | None = None,
+        disponibilidad_actual: str | None = None,
+        ocupacion_actual: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/unidades-funcionales",
+            params={
+                "q": q or None,
+                "id_inmueble": id_inmueble,
+                "estado_administrativo": estado_administrativo or None,
+                "estado_operativo": estado_operativo or None,
+                "disponibilidad_actual": disponibilidad_actual or None,
+                "ocupacion_actual": ocupacion_actual or None,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+    def get_unidad_funcional_detalle_integral(
+        self, id_unidad_funcional: int
+    ) -> ApiResult:
+        return self._get(
+            f"/api/v1/unidades-funcionales/{id_unidad_funcional}/detalle-integral"
+        )
+
     def _get(self, path: str, params: dict[str, Any] | None = None) -> ApiResult:
         url = f"{self.base_url}{path}"
         try:
