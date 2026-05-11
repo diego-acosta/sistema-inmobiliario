@@ -436,6 +436,34 @@ class VentaDetailResponse(BaseModel):
     data: VentaDetailData
 
 
+class VentaListItemData(BaseModel):
+    id_venta: int
+    uid_global: str
+    version_registro: int
+    codigo_venta: str
+    fecha_venta: datetime
+    estado_venta: str
+    monto_total: Decimal | None
+    moneda: str
+    tipo_plan_financiero: str
+    comprador_resumen: list[dict[str, Any]] = []
+    objetos_resumen: list[dict[str, Any]] = []
+    relacion_financiera: dict[str, Any] | None = None
+    acciones_ui: dict[str, Any] | None = None
+
+
+class VentaListData(BaseModel):
+    items: list[VentaListItemData]
+    total: int
+    limit: int | None = None
+    offset: int | None = None
+
+
+class VentaListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: VentaListData
+
+
 class VentaParteData(BaseModel):
     id_relacion_persona_rol: int
     id_persona: int

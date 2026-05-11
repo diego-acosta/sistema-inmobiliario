@@ -763,6 +763,346 @@ class ComercialRepository:
             ),
         }
 
+    def list_ventas(
+        self,
+        *,
+        q: str | None,
+        estado_venta: str | None,
+        id_persona: int | None,
+        rol_codigo: str | None,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        tipo_plan_financiero: str | None,
+        fecha_venta_desde: datetime | None,
+        fecha_venta_hasta: datetime | None,
+        con_saldo: bool | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        filters = ["v.deleted_at IS NULL"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if q is not None and q.strip():
+            filters.append(
+                """
+                (
+                    v.codigo_venta ILIKE :q
+                    OR COALESCE(v.observaciones, '') ILIKE :q
+                    OR EXISTS (
+                        SELECT 1
+                        FROM relacion_persona_rol rpr
+                        JOIN persona p ON p.id_persona = rpr.id_persona
+                         AND p.deleted_at IS NULL
+                        WHERE rpr.tipo_relacion = 'venta'
+                          AND rpr.id_relacion = v.id_venta
+                          AND rpr.deleted_at IS NULL
+                          AND (
+                            COALESCE(p.nombre, '') ILIKE :q
+                            OR COALESCE(p.apellido, '') ILIKE :q
+                            OR COALESCE(p.razon_social, '') ILIKE :q
+                            OR COALESCE(p.cuit_cuil, '') ILIKE :q
+                            OR COALESCE(p.codigo_persona, '') ILIKE :q
+                          )
+                    )
+                )
+                """
+            )
+            params["q"] = f"%{q.strip()}%"
+
+        if estado_venta is not None:
+            filters.append("LOWER(v.estado_venta) = :estado_venta")
+            params["estado_venta"] = estado_venta.strip().lower()
+
+        if tipo_plan_financiero is not None:
+            filters.append("UPPER(v.tipo_plan_financiero) = :tipo_plan_financiero")
+            params["tipo_plan_financiero"] = tipo_plan_financiero.strip().upper()
+
+        if id_persona is not None:
+            rol_filter = ""
+            if rol_codigo is not None:
+                rol_filter = "AND UPPER(rp.codigo_rol) = :rol_codigo"
+                params["rol_codigo"] = rol_codigo.strip().upper()
+            filters.append(
+                f"""
+                EXISTS (
+                    SELECT 1
+                    FROM relacion_persona_rol rpr
+                    JOIN rol_participacion rp
+                      ON rp.id_rol_participacion = rpr.id_rol_participacion
+                     AND rp.deleted_at IS NULL
+                    WHERE rpr.tipo_relacion = 'venta'
+                      AND rpr.id_relacion = v.id_venta
+                      AND rpr.deleted_at IS NULL
+                      AND rpr.id_persona = :id_persona
+                      {rol_filter}
+                )
+                """
+            )
+            params["id_persona"] = id_persona
+        elif rol_codigo is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM relacion_persona_rol rpr
+                    JOIN rol_participacion rp
+                      ON rp.id_rol_participacion = rpr.id_rol_participacion
+                     AND rp.deleted_at IS NULL
+                    WHERE rpr.tipo_relacion = 'venta'
+                      AND rpr.id_relacion = v.id_venta
+                      AND rpr.deleted_at IS NULL
+                      AND UPPER(rp.codigo_rol) = :rol_codigo
+                )
+                """
+            )
+            params["rol_codigo"] = rol_codigo.strip().upper()
+
+        if id_inmueble is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM venta_objeto_inmobiliario voi
+                    WHERE voi.id_venta = v.id_venta
+                      AND voi.deleted_at IS NULL
+                      AND voi.id_inmueble = :id_inmueble
+                )
+                """
+            )
+            params["id_inmueble"] = id_inmueble
+
+        if id_unidad_funcional is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM venta_objeto_inmobiliario voi
+                    WHERE voi.id_venta = v.id_venta
+                      AND voi.deleted_at IS NULL
+                      AND voi.id_unidad_funcional = :id_unidad_funcional
+                )
+                """
+            )
+            params["id_unidad_funcional"] = id_unidad_funcional
+
+        if fecha_venta_desde is not None:
+            filters.append("v.fecha_venta >= :fecha_venta_desde")
+            params["fecha_venta_desde"] = fecha_venta_desde
+
+        if fecha_venta_hasta is not None:
+            filters.append("v.fecha_venta <= :fecha_venta_hasta")
+            params["fecha_venta_hasta"] = fecha_venta_hasta
+
+        if con_saldo is not None:
+            saldo_clause = (
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM relacion_generadora rg
+                    JOIN obligacion_financiera ofi
+                      ON ofi.id_relacion_generadora = rg.id_relacion_generadora
+                     AND ofi.deleted_at IS NULL
+                     AND ofi.saldo_pendiente > 0
+                    WHERE LOWER(rg.tipo_origen) = 'venta'
+                      AND rg.id_origen = v.id_venta
+                      AND rg.deleted_at IS NULL
+                )
+                """
+            )
+            filters.append(saldo_clause if con_saldo else f"NOT {saldo_clause}")
+
+        where_clause = " AND ".join(filters)
+        list_stmt = text(
+            f"""
+            SELECT
+                v.id_venta,
+                v.uid_global,
+                v.version_registro,
+                v.codigo_venta,
+                v.fecha_venta,
+                v.estado_venta,
+                v.monto_total,
+                v.moneda,
+                v.tipo_plan_financiero
+            FROM venta v
+            WHERE {where_clause}
+            ORDER BY v.fecha_venta DESC, v.id_venta DESC
+            LIMIT :limit
+            OFFSET :offset
+            """
+        )
+        total_stmt = text(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM venta v
+            WHERE {where_clause}
+            """
+        )
+        rows = self.db.execute(list_stmt, params).mappings().all()
+        total = self.db.execute(total_stmt, params).scalar_one()
+        ids = [row["id_venta"] for row in rows]
+        compradores_by_id = self._get_compradores_resumen_for_ventas(ids)
+        objetos_by_id = self._get_objetos_resumen_for_ventas(ids)
+        financiero_by_id = self._get_resumen_financiero_for_origenes("venta", ids)
+
+        return {
+            "items": [
+                {
+                    "id_venta": row["id_venta"],
+                    "uid_global": str(row["uid_global"]),
+                    "version_registro": row["version_registro"],
+                    "codigo_venta": row["codigo_venta"],
+                    "fecha_venta": row["fecha_venta"],
+                    "estado_venta": row["estado_venta"],
+                    "monto_total": row["monto_total"],
+                    "moneda": row["moneda"],
+                    "tipo_plan_financiero": row["tipo_plan_financiero"],
+                    "comprador_resumen": compradores_by_id.get(row["id_venta"], []),
+                    "objetos_resumen": objetos_by_id.get(row["id_venta"], []),
+                    "relacion_financiera": financiero_by_id.get(row["id_venta"]),
+                    "acciones_ui": {"puede_abrir_detalle": True},
+                }
+                for row in rows
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def _get_compradores_resumen_for_ventas(
+        self, ids: list[int]
+    ) -> dict[int, list[dict[str, Any]]]:
+        if not ids:
+            return {}
+        stmt = text(
+            """
+            SELECT
+                rpr.id_relacion AS id_venta,
+                rpr.id_relacion_persona_rol,
+                rpr.id_persona,
+                rp.codigo_rol,
+                rp.nombre_rol,
+                p.tipo_persona,
+                p.codigo_persona,
+                p.nombre,
+                p.apellido,
+                p.razon_social,
+                p.cuit_cuil
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+            JOIN persona p
+              ON p.id_persona = rpr.id_persona
+             AND p.deleted_at IS NULL
+            WHERE rpr.tipo_relacion = 'venta'
+              AND rpr.id_relacion IN :ids
+              AND rpr.deleted_at IS NULL
+              AND UPPER(rp.codigo_rol) = 'COMPRADOR'
+            ORDER BY rpr.id_relacion ASC, rp.codigo_rol ASC,
+                     rpr.id_relacion_persona_rol ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        result: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
+        for row in self.db.execute(stmt, {"ids": tuple(ids)}).mappings().all():
+            result[row["id_venta"]].append(
+                {
+                    "id_relacion_persona_rol": row["id_relacion_persona_rol"],
+                    "id_persona": row["id_persona"],
+                    "display_name": self._display_name(row),
+                    "codigo_rol": row["codigo_rol"],
+                    "nombre_rol": row["nombre_rol"],
+                    "tipo_persona": row["tipo_persona"],
+                    "cuit_cuil": row["cuit_cuil"],
+                }
+            )
+        return result
+
+    def _get_objetos_resumen_for_ventas(
+        self, ids: list[int]
+    ) -> dict[int, list[dict[str, Any]]]:
+        if not ids:
+            return {}
+        stmt = text(
+            """
+            SELECT
+                voi.id_venta,
+                voi.id_venta_objeto,
+                voi.id_inmueble,
+                i.codigo_inmueble,
+                i.nombre_inmueble,
+                voi.id_unidad_funcional,
+                uf.codigo_unidad,
+                uf.nombre_unidad,
+                voi.precio_asignado,
+                voi.observaciones
+            FROM venta_objeto_inmobiliario voi
+            LEFT JOIN inmueble i
+              ON i.id_inmueble = voi.id_inmueble
+             AND i.deleted_at IS NULL
+            LEFT JOIN unidad_funcional uf
+              ON uf.id_unidad_funcional = voi.id_unidad_funcional
+             AND uf.deleted_at IS NULL
+            WHERE voi.id_venta IN :ids
+              AND voi.deleted_at IS NULL
+            ORDER BY voi.id_venta ASC, voi.id_venta_objeto ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        result: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
+        for row in self.db.execute(stmt, {"ids": tuple(ids)}).mappings().all():
+            result[row["id_venta"]].append(dict(row))
+        return result
+
+    def _get_resumen_financiero_for_origenes(
+        self, tipo_origen: str, ids: list[int]
+    ) -> dict[int, dict[str, Any]]:
+        if not ids:
+            return {}
+        stmt = text(
+            """
+            SELECT
+                rg.id_origen,
+                rg.id_relacion_generadora,
+                COUNT(ofi.id_obligacion_financiera) AS cantidad_obligaciones,
+                COALESCE(SUM(ofi.saldo_pendiente), 0) AS saldo_pendiente_total,
+                COALESCE(
+                    SUM(CASE WHEN ofi.estado_obligacion = 'VENCIDA' THEN 1 ELSE 0 END),
+                    0
+                ) AS cantidad_vencidas
+            FROM relacion_generadora rg
+            LEFT JOIN obligacion_financiera ofi
+              ON ofi.id_relacion_generadora = rg.id_relacion_generadora
+             AND ofi.deleted_at IS NULL
+            WHERE LOWER(rg.tipo_origen) = :tipo_origen
+              AND rg.id_origen IN :ids
+              AND rg.deleted_at IS NULL
+            GROUP BY rg.id_origen, rg.id_relacion_generadora
+            ORDER BY rg.id_relacion_generadora ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        result: dict[int, dict[str, Any]] = {}
+        for row in self.db.execute(
+            stmt, {"tipo_origen": tipo_origen, "ids": tuple(ids)}
+        ).mappings().all():
+            result.setdefault(
+                row["id_origen"],
+                {
+                    "id_relacion_generadora": row["id_relacion_generadora"],
+                    "cantidad_obligaciones": row["cantidad_obligaciones"],
+                    "saldo_pendiente_total": row["saldo_pendiente_total"],
+                    "cantidad_vencidas": row["cantidad_vencidas"],
+                },
+            )
+        return result
+
+    def _display_name(self, row: Any) -> str:
+        razon = row["razon_social"]
+        if razon:
+            return razon
+        parts = [row["nombre"], row["apellido"]]
+        display = " ".join(part for part in parts if part)
+        return display or row["codigo_persona"] or f"Persona {row['id_persona']}"
+
     def list_instrumentos_compraventa_for_venta(
         self,
         id_venta: int,

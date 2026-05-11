@@ -1,6 +1,13 @@
 from tests.test_contratos_alquiler_create import _payload_base
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import _crear_inmueble
+from tests.test_fin_event_contrato_alquiler import (
+    _activar,
+    _crear_condicion,
+    _crear_contrato_borrador as _crear_contrato_con_cronograma,
+    _crear_locatario_principal,
+)
+from sqlalchemy import text
 
 
 def _crear_contrato_simple(client, *, codigo: str) -> dict:
@@ -103,3 +110,83 @@ def test_list_contratos_alquiler_filtra_por_id_inmueble(client) -> None:
     response_otro = client.get("/api/v1/contratos-alquiler?id_inmueble=999999")
     assert response_otro.status_code == 200
     assert response_otro.json()["data"]["total"] == 0
+
+
+def _contadores_no_mutacion(db_session) -> dict:
+    return dict(
+        db_session.execute(
+            text(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM relacion_generadora) AS relaciones,
+                    (SELECT COUNT(*) FROM obligacion_financiera) AS obligaciones,
+                    (SELECT COUNT(*) FROM movimiento_financiero) AS movimientos,
+                    (SELECT COUNT(*) FROM outbox_event) AS outbox_events,
+                    (SELECT COUNT(*) FROM inbox_event) AS inbox_events
+                """
+            )
+        ).mappings().one()
+    )
+
+
+def test_list_contratos_alquiler_ui_enriquece_sin_duplicar_y_no_muta(
+    client, db_session
+) -> None:
+    contrato = _crear_contrato_con_cronograma(
+        client,
+        codigo="CA-LIST-UI-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-06-30",
+    )
+    _crear_condicion(client, contrato["id_contrato_alquiler"], 1000.00, "2026-05-01")
+    id_locatario = _crear_locatario_principal(
+        client, db_session, contrato["id_contrato_alquiler"]
+    )
+    otro_inmueble = _crear_inmueble(client, codigo="INM-CA-LIST-UI-OTRO")
+    db_session.execute(
+        text(
+            """
+            INSERT INTO contrato_objeto_locativo (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_contrato_alquiler, id_inmueble, id_unidad_funcional, observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id,
+                :id_contrato, :id_inmueble, NULL, 'Objeto adicional'
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_contrato": contrato["id_contrato_alquiler"],
+            "id_inmueble": otro_inmueble,
+        },
+    )
+    _activar(client, contrato["id_contrato_alquiler"], contrato["version_registro"])
+    before = _contadores_no_mutacion(db_session)
+
+    response = client.get(
+        "/api/v1/contratos-alquiler",
+        params={
+            "q": "CA-LIST-UI-001",
+            "id_persona": id_locatario,
+            "rol_codigo": "LOCATARIO_PRINCIPAL",
+            "con_saldo": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()["data"]
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["codigo_contrato"] == "CA-LIST-UI-001"
+    assert len(item["partes_resumen"]) == 1
+    assert item["partes_resumen"][0]["id_persona"] == id_locatario
+    assert len(item["objetos_resumen"]) == 2
+    assert item["relacion_financiera"]["cantidad_obligaciones"] == 2
+    assert float(item["relacion_financiera"]["saldo_pendiente_total"]) == 2000.00
+    assert item["acciones_ui"]["puede_abrir_detalle"] is True
+    assert _contadores_no_mutacion(db_session) == before

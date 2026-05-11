@@ -60,6 +60,9 @@ from app.api.schemas.comercial import (
     VentaDetailResponse,
     VentaDetalleIntegralData,
     VentaDetalleIntegralResponse,
+    VentaListData,
+    VentaListItemData,
+    VentaListResponse,
     VentaObjetoData,
 )
 from app.application.comercial.commands.activate_reserva_venta import (
@@ -142,6 +145,7 @@ from app.application.comercial.services.get_reserva_venta_service import (
 from app.application.comercial.services.list_reservas_venta_service import (
     ListReservasVentaService,
 )
+from app.application.comercial.services.list_ventas_service import ListVentasService
 from app.application.comercial.services.list_instrumentos_compraventa_service import (
     ListInstrumentosCompraventaService,
 )
@@ -1575,6 +1579,72 @@ def generate_venta_from_reserva_venta(
     }
     return GenerateVentaFromReservaVentaResponse(
         data=GenerateVentaFromReservaVentaData(**data)
+    )
+
+
+@router.get(
+    "/api/v1/ventas",
+    response_model=VentaListResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_ventas(
+    q: str | None = Query(default=None),
+    estado_venta: str | None = Query(default=None),
+    id_persona: int | None = Query(default=None),
+    rol_codigo: str | None = Query(default=None),
+    id_inmueble: int | None = Query(default=None),
+    id_unidad_funcional: int | None = Query(default=None),
+    tipo_plan_financiero: str | None = Query(default=None),
+    fecha_venta_desde: datetime | None = Query(default=None),
+    fecha_venta_hasta: datetime | None = Query(default=None),
+    con_saldo: bool | None = Query(default=None),
+    limit: int = Query(default=50, ge=0, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> VentaListResponse | JSONResponse:
+    repository = ComercialRepository(db)
+    service = ListVentasService(repository=repository)
+
+    try:
+        result = service.execute(
+            q=q,
+            estado_venta=estado_venta,
+            id_persona=id_persona,
+            rol_codigo=rol_codigo,
+            id_inmueble=id_inmueble,
+            id_unidad_funcional=id_unidad_funcional,
+            tipo_plan_financiero=tipo_plan_financiero,
+            fecha_venta_desde=fecha_venta_desde,
+            fecha_venta_hasta=fecha_venta_hasta,
+            con_saldo=con_saldo,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudieron obtener las ventas.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return VentaListResponse(
+        data=VentaListData(
+            items=[VentaListItemData(**item) for item in result.data["items"]],
+            total=result.data["total"],
+            limit=result.data.get("limit"),
+            offset=result.data.get("offset"),
+        )
     )
 
 

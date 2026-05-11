@@ -699,16 +699,24 @@ Reglas de lectura:
 
 Objetivo:
 
-- listado de contratos de alquiler
+- listado UI read-only de contratos de alquiler
+- exponer datos compactos suficientes para abrir `GET /api/v1/contratos-alquiler/{id_contrato_alquiler}/detalle-integral`
 
 Filtros permitidos:
 
+- `q`
 - `codigo_contrato`
 - `estado_contrato`
+- `id_persona`
+- `rol_codigo`
 - `id_inmueble`
 - `id_unidad_funcional`
-- `fecha_desde`
-- `fecha_hasta`
+- `fecha_inicio_desde`
+- `fecha_inicio_hasta`
+- `fecha_fin_desde`
+- `fecha_fin_hasta`
+- `fecha_desde` y `fecha_hasta` se mantienen como compatibilidad para `fecha_inicio_desde` y `fecha_inicio_hasta`
+- `con_saldo`
 
 Paginacion basica:
 
@@ -721,15 +729,57 @@ Response:
 {
   "ok": true,
   "data": {
-    "items": [],
-    "total": 0
+    "items": [
+      {
+        "id_contrato_alquiler": 10,
+        "uid_global": "00000000-0000-0000-0000-000000000000",
+        "version_registro": 1,
+        "codigo_contrato": "CA-001",
+        "fecha_inicio": "2026-05-01",
+        "fecha_fin": "2027-04-30",
+        "estado_contrato": "activo",
+        "observaciones": null,
+        "partes_resumen": [
+          {
+            "id_persona": 20,
+            "display_name": "Locatario Principal",
+            "codigo_rol": "LOCATARIO_PRINCIPAL"
+          }
+        ],
+        "objetos_resumen": [
+          {
+            "id_inmueble": 30,
+            "codigo_inmueble": "INM-001",
+            "id_unidad_funcional": null
+          }
+        ],
+        "relacion_financiera": {
+          "id_relacion_generadora": 40,
+          "cantidad_obligaciones": 12,
+          "saldo_pendiente_total": 150000.00,
+          "cantidad_vencidas": 1
+        },
+        "acciones_ui": {
+          "puede_abrir_detalle": true
+        }
+      }
+    ],
+    "total": 1,
+    "limit": 50,
+    "offset": 0
   }
 }
 ```
 
 Observacion:
 
-- en `v1` no se definen filtros por personas intervinientes
+- operacion estrictamente read-only
+- excluye `contrato_alquiler.deleted_at`
+- no modifica contratos, partes, objetos, relacion generadora, obligaciones, pagos, mora, outbox ni inbox
+- `partes_resumen`, `objetos_resumen` y `relacion_financiera` son proyecciones compactas
+- `relacion_financiera` solo resume saldos persistidos en obligaciones existentes; no crea deuda ni recalcula saldos
+- `con_saldo=true` filtra contratos con obligaciones existentes y `saldo_pendiente > 0`
+- el filtro `id_persona` usa `relacion_persona_rol` de `tipo_relacion = contrato_alquiler`; si se informa `rol_codigo`, restringe por ese rol contractual
 
 ### 7.2 `condicion_economica_alquiler`
 

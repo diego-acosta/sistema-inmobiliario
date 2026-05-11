@@ -10,6 +10,7 @@ Este servicio cubre hoy:
 
 - detalle de `reserva_venta`
 - listado de `reserva_venta`
+- listado UI read-only de `venta`
 - detalle enriquecido de `venta`
 - detalle integral read-only de `venta`
 - listado por `venta` de:
@@ -25,7 +26,7 @@ No cubre en el `v1` vigente:
 - busqueda avanzada multi-criterio fuera de los filtros ya materializados
 - lectura propia de documental comercial
 - detalle individual de `instrumento_compraventa`, `cesion` o `escrituracion`
-- listados globales de `venta`, `instrumento_compraventa`, `cesion` o `escrituracion`
+- listados globales de `instrumento_compraventa`, `cesion` o `escrituracion`
 - analitica o BI
 - generacion de `relacion_generadora`
 - generacion de obligaciones financieras
@@ -74,6 +75,27 @@ Esta consulta es estrictamente read-only:
 - no ejecuta mora ni punitorio
 - no cambia estados
 
+### Listado UI de venta
+
+Permite localizar ventas para abrir la ficha integral, usando filtros operativos y una proyeccion compacta.
+
+Filtros materializados:
+
+- `q`
+- `estado_venta`
+- `id_persona`
+- `rol_codigo`
+- `id_inmueble`
+- `id_unidad_funcional`
+- `tipo_plan_financiero`
+- `fecha_venta_desde`
+- `fecha_venta_hasta`
+- `con_saldo`
+- `limit`
+- `offset`
+
+La proyeccion incluye compradores, objetos y resumen financiero solo como lectura de hechos persistidos. No genera relacion financiera, no genera obligaciones, no recalcula saldos, no ejecuta mora, no crea pagos y no escribe outbox ni inbox.
+
 ## Entradas conceptuales
 
 ### Parametros de consulta hoy materializados
@@ -88,6 +110,19 @@ Esta consulta es estrictamente read-only:
   - `limit`
   - `offset`
 - identificador de venta
+- filtros de listado UI de `venta`:
+  - `q`
+  - `estado_venta`
+  - `id_persona`
+  - `rol_codigo`
+  - `id_inmueble`
+  - `id_unidad_funcional`
+  - `tipo_plan_financiero`
+  - `fecha_venta_desde`
+  - `fecha_venta_hasta`
+  - `con_saldo`
+  - `limit`
+  - `offset`
 - identificador de venta para detalle integral:
   - `GET /api/v1/ventas/{id_venta}/detalle-integral`
 - filtros de `instrumento_compraventa` por venta:

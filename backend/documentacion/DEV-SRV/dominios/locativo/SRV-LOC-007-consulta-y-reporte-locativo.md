@@ -6,6 +6,7 @@ Proveer una capa de lectura consolidada del dominio locativo, permitiendo consul
 ## Alcance
 Este servicio cubre:
 - consulta de contratos de alquiler
+- listado UI read-only de contratos de alquiler
 - consulta de condiciones locativas
 - consulta de garantías
 - consulta de renovaciones y rescisiones
@@ -46,6 +47,27 @@ Permite reconstruir información histórica contractual.
 ### Búsqueda
 Permite localizar contratos por múltiples criterios.
 
+### Listado UI de contratos de alquiler
+Permite localizar contratos para abrir la ficha integral, usando filtros operativos y una proyeccion compacta.
+
+Filtros materializados:
+- `q`
+- `codigo_contrato`
+- `estado_contrato`
+- `id_persona`
+- `rol_codigo`
+- `id_inmueble`
+- `id_unidad_funcional`
+- `fecha_inicio_desde`
+- `fecha_inicio_hasta`
+- `fecha_fin_desde`
+- `fecha_fin_hasta`
+- `con_saldo`
+- `limit`
+- `offset`
+
+La proyeccion incluye partes, objetos locativos y resumen financiero solo como lectura de hechos persistidos. No genera relacion financiera, no genera obligaciones, no recalcula saldos, no ejecuta mora, no registra pagos y no escribe outbox ni inbox.
+
 ### Reporte consolidado
 Permite obtener una vista integrada del dominio.
 
@@ -60,6 +82,7 @@ Permite obtener una vista integrada del dominio.
 - estado de ocupación
 - rango de fechas
 - criterios de búsqueda y agrupación
+- filtros UI materializados para `GET /api/v1/contratos-alquiler`
 
 ## Resultado esperado
 

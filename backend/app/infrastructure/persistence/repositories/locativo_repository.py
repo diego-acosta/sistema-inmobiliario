@@ -906,39 +906,120 @@ class LocativoRepository:
     def list_contratos_alquiler(
         self,
         *,
+        q: str | None,
         codigo_contrato: str | None,
         estado_contrato: str | None,
+        id_persona: int | None,
+        rol_codigo: str | None,
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
-        fecha_desde: date | None,
-        fecha_hasta: date | None,
+        fecha_inicio_desde: date | None,
+        fecha_inicio_hasta: date | None,
+        fecha_fin_desde: date | None,
+        fecha_fin_hasta: date | None,
+        con_saldo: bool | None,
         limit: int,
         offset: int,
     ) -> dict[str, Any]:
-        filters = ["deleted_at IS NULL"]
+        filters = ["ca.deleted_at IS NULL"]
         params: dict[str, Any] = {"limit": limit, "offset": offset}
 
+        if q is not None and q.strip():
+            filters.append(
+                """
+                (
+                    ca.codigo_contrato ILIKE :q
+                    OR COALESCE(ca.observaciones, '') ILIKE :q
+                    OR EXISTS (
+                        SELECT 1
+                        FROM relacion_persona_rol rpr
+                        JOIN persona p ON p.id_persona = rpr.id_persona
+                         AND p.deleted_at IS NULL
+                        WHERE rpr.tipo_relacion = 'contrato_alquiler'
+                          AND rpr.id_relacion = ca.id_contrato_alquiler
+                          AND rpr.deleted_at IS NULL
+                          AND (
+                            COALESCE(p.nombre, '') ILIKE :q
+                            OR COALESCE(p.apellido, '') ILIKE :q
+                            OR COALESCE(p.razon_social, '') ILIKE :q
+                            OR COALESCE(p.cuit_cuil, '') ILIKE :q
+                            OR COALESCE(p.codigo_persona, '') ILIKE :q
+                          )
+                    )
+                )
+                """
+            )
+            params["q"] = f"%{q.strip()}%"
+
         if codigo_contrato is not None:
-            filters.append("codigo_contrato = :codigo_contrato")
+            filters.append("ca.codigo_contrato = :codigo_contrato")
             params["codigo_contrato"] = codigo_contrato
 
         if estado_contrato is not None:
-            filters.append("LOWER(estado_contrato) = :estado_contrato")
+            filters.append("LOWER(ca.estado_contrato) = :estado_contrato")
             params["estado_contrato"] = estado_contrato.strip().lower()
 
-        if fecha_desde is not None:
-            filters.append("fecha_inicio >= :fecha_desde")
-            params["fecha_desde"] = fecha_desde
+        if id_persona is not None:
+            rol_filter = ""
+            if rol_codigo is not None:
+                rol_filter = "AND UPPER(rp.codigo_rol) = :rol_codigo"
+                params["rol_codigo"] = rol_codigo.strip().upper()
+            filters.append(
+                f"""
+                EXISTS (
+                    SELECT 1
+                    FROM relacion_persona_rol rpr
+                    JOIN rol_participacion rp
+                      ON rp.id_rol_participacion = rpr.id_rol_participacion
+                     AND rp.deleted_at IS NULL
+                    WHERE rpr.tipo_relacion = 'contrato_alquiler'
+                      AND rpr.id_relacion = ca.id_contrato_alquiler
+                      AND rpr.deleted_at IS NULL
+                      AND rpr.id_persona = :id_persona
+                      {rol_filter}
+                )
+                """
+            )
+            params["id_persona"] = id_persona
+        elif rol_codigo is not None:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM relacion_persona_rol rpr
+                    JOIN rol_participacion rp
+                      ON rp.id_rol_participacion = rpr.id_rol_participacion
+                     AND rp.deleted_at IS NULL
+                    WHERE rpr.tipo_relacion = 'contrato_alquiler'
+                      AND rpr.id_relacion = ca.id_contrato_alquiler
+                      AND rpr.deleted_at IS NULL
+                      AND UPPER(rp.codigo_rol) = :rol_codigo
+                )
+                """
+            )
+            params["rol_codigo"] = rol_codigo.strip().upper()
 
-        if fecha_hasta is not None:
-            filters.append("fecha_inicio <= :fecha_hasta")
-            params["fecha_hasta"] = fecha_hasta
+        if fecha_inicio_desde is not None:
+            filters.append("ca.fecha_inicio >= :fecha_inicio_desde")
+            params["fecha_inicio_desde"] = fecha_inicio_desde
+
+        if fecha_inicio_hasta is not None:
+            filters.append("ca.fecha_inicio <= :fecha_inicio_hasta")
+            params["fecha_inicio_hasta"] = fecha_inicio_hasta
+
+        if fecha_fin_desde is not None:
+            filters.append("ca.fecha_fin >= :fecha_fin_desde")
+            params["fecha_fin_desde"] = fecha_fin_desde
+
+        if fecha_fin_hasta is not None:
+            filters.append("ca.fecha_fin <= :fecha_fin_hasta")
+            params["fecha_fin_hasta"] = fecha_fin_hasta
 
         if id_inmueble is not None:
             filters.append(
                 "EXISTS ("
                 "SELECT 1 FROM contrato_objeto_locativo col"
-                " WHERE col.id_contrato_alquiler = contrato_alquiler.id_contrato_alquiler"
+                " WHERE col.id_contrato_alquiler = ca.id_contrato_alquiler"
                 "   AND col.deleted_at IS NULL"
                 "   AND col.id_inmueble = :id_inmueble"
                 ")"
@@ -949,29 +1030,47 @@ class LocativoRepository:
             filters.append(
                 "EXISTS ("
                 "SELECT 1 FROM contrato_objeto_locativo col"
-                " WHERE col.id_contrato_alquiler = contrato_alquiler.id_contrato_alquiler"
+                " WHERE col.id_contrato_alquiler = ca.id_contrato_alquiler"
                 "   AND col.deleted_at IS NULL"
                 "   AND col.id_unidad_funcional = :id_unidad_funcional"
                 ")"
             )
             params["id_unidad_funcional"] = id_unidad_funcional
 
+        if con_saldo is not None:
+            saldo_clause = (
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM relacion_generadora rg
+                    JOIN obligacion_financiera ofi
+                      ON ofi.id_relacion_generadora = rg.id_relacion_generadora
+                     AND ofi.deleted_at IS NULL
+                     AND ofi.saldo_pendiente > 0
+                    WHERE LOWER(rg.tipo_origen) = 'contrato_alquiler'
+                      AND rg.id_origen = ca.id_contrato_alquiler
+                      AND rg.deleted_at IS NULL
+                )
+                """
+            )
+            filters.append(saldo_clause if con_saldo else f"NOT {saldo_clause}")
+
         where_clause = " AND ".join(filters)
 
         list_statement = text(
             f"""
             SELECT
-                id_contrato_alquiler,
-                uid_global,
-                version_registro,
-                codigo_contrato,
-                fecha_inicio,
-                fecha_fin,
-                estado_contrato,
-                observaciones
-            FROM contrato_alquiler
+                ca.id_contrato_alquiler,
+                ca.uid_global,
+                ca.version_registro,
+                ca.codigo_contrato,
+                ca.fecha_inicio,
+                ca.fecha_fin,
+                ca.estado_contrato,
+                ca.observaciones
+            FROM contrato_alquiler ca
             WHERE {where_clause}
-            ORDER BY fecha_inicio DESC, id_contrato_alquiler DESC
+            ORDER BY ca.fecha_inicio DESC, ca.id_contrato_alquiler DESC
             LIMIT :limit
             OFFSET :offset
             """
@@ -979,13 +1078,19 @@ class LocativoRepository:
         total_statement = text(
             f"""
             SELECT COUNT(*) AS total
-            FROM contrato_alquiler
+            FROM contrato_alquiler ca
             WHERE {where_clause}
             """
         )
 
         rows = self.db.execute(list_statement, params).mappings().all()
         total = self.db.execute(total_statement, params).scalar_one()
+        ids = [row["id_contrato_alquiler"] for row in rows]
+        partes_by_id = self._get_partes_resumen_for_contratos(ids)
+        objetos_by_id = self._get_objetos_resumen_for_contratos(ids)
+        financiero_by_id = self._get_resumen_financiero_for_origenes(
+            "contrato_alquiler", ids
+        )
 
         return {
             "items": [
@@ -998,11 +1103,156 @@ class LocativoRepository:
                     "fecha_fin": row["fecha_fin"],
                     "estado_contrato": row["estado_contrato"],
                     "observaciones": row["observaciones"],
+                    "partes_resumen": partes_by_id.get(
+                        row["id_contrato_alquiler"], []
+                    ),
+                    "objetos_resumen": objetos_by_id.get(
+                        row["id_contrato_alquiler"], []
+                    ),
+                    "relacion_financiera": financiero_by_id.get(
+                        row["id_contrato_alquiler"]
+                    ),
+                    "acciones_ui": {"puede_abrir_detalle": True},
                 }
                 for row in rows
             ],
             "total": total,
+            "limit": limit,
+            "offset": offset,
         }
+
+    def _get_partes_resumen_for_contratos(
+        self, ids: list[int]
+    ) -> dict[int, list[dict[str, Any]]]:
+        if not ids:
+            return {}
+        stmt = text(
+            """
+            SELECT
+                rpr.id_relacion AS id_contrato_alquiler,
+                rpr.id_relacion_persona_rol,
+                rpr.id_persona,
+                rp.codigo_rol,
+                rp.nombre_rol,
+                p.tipo_persona,
+                p.codigo_persona,
+                p.nombre,
+                p.apellido,
+                p.razon_social,
+                p.cuit_cuil
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+            JOIN persona p
+              ON p.id_persona = rpr.id_persona
+             AND p.deleted_at IS NULL
+            WHERE rpr.tipo_relacion = 'contrato_alquiler'
+              AND rpr.id_relacion IN :ids
+              AND rpr.deleted_at IS NULL
+            ORDER BY rpr.id_relacion ASC, rp.codigo_rol ASC,
+                     rpr.id_relacion_persona_rol ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        result: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
+        for row in self.db.execute(stmt, {"ids": tuple(ids)}).mappings().all():
+            display_name = self._display_name(row)
+            result[row["id_contrato_alquiler"]].append(
+                {
+                    "id_relacion_persona_rol": row["id_relacion_persona_rol"],
+                    "id_persona": row["id_persona"],
+                    "display_name": display_name,
+                    "codigo_rol": row["codigo_rol"],
+                    "nombre_rol": row["nombre_rol"],
+                    "tipo_persona": row["tipo_persona"],
+                    "cuit_cuil": row["cuit_cuil"],
+                }
+            )
+        return result
+
+    def _get_objetos_resumen_for_contratos(
+        self, ids: list[int]
+    ) -> dict[int, list[dict[str, Any]]]:
+        if not ids:
+            return {}
+        stmt = text(
+            """
+            SELECT
+                col.id_contrato_alquiler,
+                col.id_contrato_objeto,
+                col.id_inmueble,
+                i.codigo_inmueble,
+                i.nombre_inmueble,
+                col.id_unidad_funcional,
+                uf.codigo_unidad,
+                uf.nombre_unidad,
+                col.observaciones
+            FROM contrato_objeto_locativo col
+            LEFT JOIN inmueble i
+              ON i.id_inmueble = col.id_inmueble
+             AND i.deleted_at IS NULL
+            LEFT JOIN unidad_funcional uf
+              ON uf.id_unidad_funcional = col.id_unidad_funcional
+             AND uf.deleted_at IS NULL
+            WHERE col.id_contrato_alquiler IN :ids
+              AND col.deleted_at IS NULL
+            ORDER BY col.id_contrato_alquiler ASC, col.id_contrato_objeto ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        result: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
+        for row in self.db.execute(stmt, {"ids": tuple(ids)}).mappings().all():
+            result[row["id_contrato_alquiler"]].append(dict(row))
+        return result
+
+    def _get_resumen_financiero_for_origenes(
+        self, tipo_origen: str, ids: list[int]
+    ) -> dict[int, dict[str, Any]]:
+        if not ids:
+            return {}
+        stmt = text(
+            """
+            SELECT
+                rg.id_origen,
+                rg.id_relacion_generadora,
+                COUNT(ofi.id_obligacion_financiera) AS cantidad_obligaciones,
+                COALESCE(SUM(ofi.saldo_pendiente), 0) AS saldo_pendiente_total,
+                COALESCE(
+                    SUM(CASE WHEN ofi.estado_obligacion = 'VENCIDA' THEN 1 ELSE 0 END),
+                    0
+                ) AS cantidad_vencidas
+            FROM relacion_generadora rg
+            LEFT JOIN obligacion_financiera ofi
+              ON ofi.id_relacion_generadora = rg.id_relacion_generadora
+             AND ofi.deleted_at IS NULL
+            WHERE LOWER(rg.tipo_origen) = :tipo_origen
+              AND rg.id_origen IN :ids
+              AND rg.deleted_at IS NULL
+            GROUP BY rg.id_origen, rg.id_relacion_generadora
+            ORDER BY rg.id_relacion_generadora ASC
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        result: dict[int, dict[str, Any]] = {}
+        for row in self.db.execute(
+            stmt, {"tipo_origen": tipo_origen, "ids": tuple(ids)}
+        ).mappings().all():
+            result.setdefault(
+                row["id_origen"],
+                {
+                    "id_relacion_generadora": row["id_relacion_generadora"],
+                    "cantidad_obligaciones": row["cantidad_obligaciones"],
+                    "saldo_pendiente_total": row["saldo_pendiente_total"],
+                    "cantidad_vencidas": row["cantidad_vencidas"],
+                },
+            )
+        return result
+
+    def _display_name(self, row: Any) -> str:
+        razon = row["razon_social"]
+        if razon:
+            return razon
+        parts = [row["nombre"], row["apellido"]]
+        display = " ".join(part for part in parts if part)
+        return display or row["codigo_persona"] or f"Persona {row['id_persona']}"
 
     def has_vigencia_overlap_condicion(
         self,

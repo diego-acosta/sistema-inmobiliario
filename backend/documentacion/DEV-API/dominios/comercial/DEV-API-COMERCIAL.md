@@ -1013,6 +1013,86 @@ Observaciones de alineacion con arquitectura:
 - la presencia de `instrumento_compraventa`, `cesion` o `escrituracion` no redefine por si sola `estado_venta`
 - este contrato no expone `requiere_definicion_operativa`
 
+#### `GET /api/v1/ventas`
+
+Objetivo:
+- listado UI read-only de ventas
+- exponer datos compactos suficientes para abrir `GET /api/v1/ventas/{id_venta}/detalle-integral`
+
+Filtros permitidos:
+- `q`
+- `estado_venta`
+- `id_persona`
+- `rol_codigo`
+- `id_inmueble`
+- `id_unidad_funcional`
+- `tipo_plan_financiero`
+- `fecha_venta_desde`
+- `fecha_venta_hasta`
+- `con_saldo`
+- `limit`
+- `offset`
+
+Response:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "id_venta": 10,
+        "uid_global": "00000000-0000-0000-0000-000000000000",
+        "version_registro": 1,
+        "codigo_venta": "V-001",
+        "fecha_venta": "2026-05-01T10:00:00",
+        "estado_venta": "confirmada",
+        "monto_total": 150000.00,
+        "moneda": "ARS",
+        "tipo_plan_financiero": "CONTADO",
+        "comprador_resumen": [
+          {
+            "id_persona": 20,
+            "display_name": "Comprador Principal",
+            "codigo_rol": "COMPRADOR"
+          }
+        ],
+        "objetos_resumen": [
+          {
+            "id_inmueble": 30,
+            "codigo_inmueble": "INM-001",
+            "id_unidad_funcional": null
+          }
+        ],
+        "relacion_financiera": {
+          "id_relacion_generadora": 40,
+          "cantidad_obligaciones": 1,
+          "saldo_pendiente_total": 150000.00,
+          "cantidad_vencidas": 0
+        },
+        "acciones_ui": {
+          "puede_abrir_detalle": true
+        }
+      }
+    ],
+    "total": 1,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+Reglas:
+- operacion estrictamente read-only
+- excluye `venta.deleted_at`
+- no modifica ventas, reservas, partes, objetos, relacion generadora, obligaciones, pagos, mora, outbox ni inbox
+- no crea compradores, obligados ni relacion financiera
+- `comprador_resumen`, `objetos_resumen` y `relacion_financiera` son proyecciones compactas
+- `relacion_financiera` solo resume saldos persistidos en obligaciones existentes; no crea deuda ni recalcula saldos
+- `con_saldo=true` filtra ventas con obligaciones existentes y `saldo_pendiente > 0`
+- el filtro `id_persona` usa `relacion_persona_rol` de `tipo_relacion = venta`; si se informa `rol_codigo`, restringe por ese rol comercial
+- si hay multiples compradores u objetos, se devuelven listas compactas y no se decide negocio desde la UI
+
 #### `GET /api/v1/ventas/{id_venta}/detalle-integral`
 
 Objetivo:

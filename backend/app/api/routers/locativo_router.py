@@ -507,12 +507,20 @@ def update_contrato_alquiler(
     },
 )
 def list_contratos_alquiler(
+    q: str | None = Query(default=None),
     codigo_contrato: str | None = Query(default=None),
     estado_contrato: str | None = Query(default=None),
+    id_persona: int | None = Query(default=None),
+    rol_codigo: str | None = Query(default=None),
     id_inmueble: int | None = Query(default=None),
     id_unidad_funcional: int | None = Query(default=None),
+    fecha_inicio_desde: date | None = Query(default=None),
+    fecha_inicio_hasta: date | None = Query(default=None),
+    fecha_fin_desde: date | None = Query(default=None),
+    fecha_fin_hasta: date | None = Query(default=None),
     fecha_desde: date | None = Query(default=None),
     fecha_hasta: date | None = Query(default=None),
+    con_saldo: bool | None = Query(default=None),
     limit: int = Query(default=50, ge=0, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -522,12 +530,18 @@ def list_contratos_alquiler(
 
     try:
         result = service.execute(
+            q=q,
             codigo_contrato=codigo_contrato,
             estado_contrato=estado_contrato,
+            id_persona=id_persona,
+            rol_codigo=rol_codigo,
             id_inmueble=id_inmueble,
             id_unidad_funcional=id_unidad_funcional,
-            fecha_desde=fecha_desde,
-            fecha_hasta=fecha_hasta,
+            fecha_inicio_desde=fecha_inicio_desde or fecha_desde,
+            fecha_inicio_hasta=fecha_inicio_hasta or fecha_hasta,
+            fecha_fin_desde=fecha_fin_desde,
+            fecha_fin_hasta=fecha_fin_hasta,
+            con_saldo=con_saldo,
             limit=limit,
             offset=offset,
         )
@@ -550,6 +564,8 @@ def list_contratos_alquiler(
         data=ContratoAlquilerListData(
             items=[ContratoAlquilerListItemData(**item) for item in result.data["items"]],
             total=result.data["total"],
+            limit=result.data.get("limit"),
+            offset=result.data.get("offset"),
         )
     )
 

@@ -302,11 +302,17 @@ class ContratoAlquilerListItemData(BaseModel):
     fecha_fin: date | None
     estado_contrato: str
     observaciones: str | None
+    partes_resumen: list[dict[str, Any]] = []
+    objetos_resumen: list[dict[str, Any]] = []
+    relacion_financiera: dict[str, Any] | None = None
+    acciones_ui: dict[str, Any] | None = None
 
 
 class ContratoAlquilerListData(BaseModel):
     items: list[ContratoAlquilerListItemData]
     total: int
+    limit: int | None = None
+    offset: int | None = None
 
 
 class ContratoAlquilerListResponse(BaseModel):
