@@ -156,6 +156,9 @@ class ApiClient:
         except ValueError:
             return default
 
+        if not isinstance(payload, dict):
+            return default
+
         code = payload.get("error_code")
         message = payload.get("error_message") or default
         return f"{code}: {message}" if code else message

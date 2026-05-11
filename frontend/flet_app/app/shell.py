@@ -138,7 +138,9 @@ class AppShell:
         if route.name == "partes":
             return PartesListPage(api=self.api, on_navigate=self.navigate).build()
         if route.name == "parte_detail":
-            id_persona = int((route.params or {})["id_persona"])
+            id_persona = self._route_int(route, "id_persona")
+            if id_persona is None:
+                return self._invalid_route("No se indico una parte valida.")
             return ParteDetailPage(
                 api=self.api,
                 id_persona=id_persona,
@@ -147,7 +149,9 @@ class AppShell:
         if route.name == "inmuebles":
             return InmueblesPage(api=self.api, on_navigate=self.navigate).build()
         if route.name == "inmueble_detail":
-            id_inmueble = int((route.params or {})["id_inmueble"])
+            id_inmueble = self._route_int(route, "id_inmueble")
+            if id_inmueble is None:
+                return self._invalid_route("No se indico un inmueble valido.")
             return InmueblesPage(
                 api=self.api,
                 on_navigate=self.navigate,
@@ -155,7 +159,9 @@ class AppShell:
                 detail_id=id_inmueble,
             ).build()
         if route.name == "unidad_detail":
-            id_unidad = int((route.params or {})["id_unidad_funcional"])
+            id_unidad = self._route_int(route, "id_unidad_funcional")
+            if id_unidad is None:
+                return self._invalid_route("No se indico una unidad funcional valida.")
             return InmueblesPage(
                 api=self.api,
                 on_navigate=self.navigate,
@@ -169,3 +175,18 @@ class AppShell:
         if route.name == "finanzas":
             return FinanzasPage().build()
         return HomePage(on_navigate=self.navigate).build()
+
+    def _route_int(self, route: Route, key: str) -> int | None:
+        try:
+            return int((route.params or {}).get(key))
+        except (TypeError, ValueError):
+            return None
+
+    def _invalid_route(self, message: str) -> ft.Control:
+        return ft.Column(
+            controls=[
+                ft.Text(message, size=20, weight=ft.FontWeight.W_600),
+                ft.TextButton("Volver al inicio", on_click=lambda _: self.navigate("home")),
+            ],
+            spacing=12,
+        )
