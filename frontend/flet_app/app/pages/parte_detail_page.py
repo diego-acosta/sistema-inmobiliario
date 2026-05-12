@@ -783,24 +783,37 @@ class ParteDetailPage:
         controls.append(ft.Row(controls=cards, wrap=True, spacing=10, run_spacing=10))
         return ft.Column(controls=controls, spacing=8)
 
-    def _summary_card(self, label: str, value: object) -> ft.Control:
+    def _summary_card(
+        self, label: str, value: object, *, accent: bool = False
+    ) -> ft.Control:
+        display_value = (
+            str(value)
+            if isinstance(value, str)
+            and (
+                value.startswith("$")
+                or value == "-"
+                or label.lower().startswith("cantidad")
+            )
+            else self._format_money(value)
+        )
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_700),
+                    ft.Text(label, size=11 if not accent else 12, color=ft.Colors.BLUE_GREY_700),
                     ft.Text(
-                        self._format_money(value),
-                        size=16,
+                        display_value,
+                        size=16 if not accent else 20,
                         weight=ft.FontWeight.W_700,
+                        color=ft.Colors.BLUE_900 if accent else ft.Colors.BLUE_GREY_900,
                     ),
                 ],
                 spacing=2,
             ),
-            width=170,
-            padding=12,
-            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            width=230 if accent else 170,
+            padding=14 if accent else 12,
+            border=ft.border.all(1, ft.Colors.BLUE_200 if accent else ft.Colors.BLUE_GREY_100),
             border_radius=6,
-            bgcolor=ft.Colors.WHITE,
+            bgcolor=ft.Colors.BLUE_50 if accent else ft.Colors.WHITE,
         )
 
     def _estado_cuenta_sin_deuda(
