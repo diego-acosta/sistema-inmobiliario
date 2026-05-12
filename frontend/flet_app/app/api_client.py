@@ -135,6 +135,39 @@ class ApiClient:
             f"/api/v1/contratos-alquiler/{id_contrato_alquiler}/detalle-integral"
         )
 
+    def get_ventas(
+        self,
+        *,
+        q: str | None = None,
+        estado_venta: str | None = None,
+        id_persona: int | None = None,
+        rol_codigo: str | None = None,
+        id_inmueble: int | None = None,
+        id_unidad_funcional: int | None = None,
+        tipo_plan_financiero: str | None = None,
+        con_saldo: bool | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/ventas",
+            params={
+                "q": q or None,
+                "estado_venta": estado_venta or None,
+                "id_persona": id_persona,
+                "rol_codigo": rol_codigo or None,
+                "id_inmueble": id_inmueble,
+                "id_unidad_funcional": id_unidad_funcional,
+                "tipo_plan_financiero": tipo_plan_financiero or None,
+                "con_saldo": con_saldo,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+    def get_venta_detalle_integral(self, id_venta: int) -> ApiResult:
+        return self._get(f"/api/v1/ventas/{id_venta}/detalle-integral")
+
     def _get(self, path: str, params: dict[str, Any] | None = None) -> ApiResult:
         url = f"{self.base_url}{path}"
         try:

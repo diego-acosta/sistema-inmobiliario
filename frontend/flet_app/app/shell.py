@@ -129,6 +129,7 @@ class AppShell:
             "contratos": 3,
             "contrato_detail": 3,
             "ventas": 4,
+            "venta_detail": 4,
             "finanzas": 5,
         }
         self.rail.selected_index = index_by_route.get(route.name, 0)
@@ -181,7 +182,16 @@ class AppShell:
                 detail_id=id_contrato,
             ).build()
         if route.name == "ventas":
-            return VentasPage().build()
+            return VentasPage(api=self.api, on_navigate=self.navigate).build()
+        if route.name == "venta_detail":
+            id_venta = self._route_int(route, "id_venta")
+            if id_venta is None:
+                return self._invalid_route("No se indico una venta valida.")
+            return VentasPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                detail_id=id_venta,
+            ).build()
         if route.name == "finanzas":
             return FinanzasPage().build()
         return HomePage(on_navigate=self.navigate).build()
