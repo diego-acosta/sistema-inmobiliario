@@ -55,11 +55,8 @@ class ParteDetailPage:
                             "Volver al listado",
                             on_click=lambda _: self.on_navigate("partes"),
                         ),
-                        ft.Container(expand=True),
-                        status_badge(data.get("estado_persona")),
                     ]
                 ),
-                ft.Text(self._display_name(data), size=30, weight=ft.FontWeight.W_700),
                 self._header_card(data),
                 detail_tabs(
                     [
@@ -130,18 +127,32 @@ class ParteDetailPage:
         )
 
     def _header_card(self, data: dict[str, Any]) -> ft.Control:
+        secondary = self._join_secondary(
+            data.get("tipo_persona"),
+            self._documento_principal(data),
+            data.get("cuit_cuil"),
+            self._contacto_principal(data),
+        )
         return ft.Container(
-            content=key_value_grid(
-                [
-                    ("Parte", self._display_name(data)),
-                    ("Tipo de parte", data.get("tipo_persona")),
-                    ("Estado", data.get("estado_persona")),
-                    ("Documento principal", self._documento_principal(data)),
-                    ("CUIT/CUIL", data.get("cuit_cuil")),
-                    ("Contacto principal", self._contacto_principal(data)),
-                ]
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Text(
+                                self._display_name(data),
+                                size=24,
+                                weight=ft.FontWeight.W_700,
+                            ),
+                            ft.Container(expand=True),
+                            status_badge(data.get("estado_persona")),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Text(secondary or "Sin datos principales.", size=12, color=ft.Colors.BLUE_GREY_700),
+                ],
+                spacing=4,
             ),
-            padding=16,
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
             border_radius=6,
         )
@@ -297,9 +308,11 @@ class ParteDetailPage:
 
         def show_detail(row: dict[str, Any]):
             def handler(_) -> None:
+                deuda = row.get("_deuda")
+                title = f"Detalle de {self._deuda_label(deuda)}" if isinstance(deuda, dict) else "Detalle de deuda"
                 detalle_panel.content = detail_section(
-                    "Detalle de deuda seleccionada",
-                    [self._deuda_detalle(row.get("_deuda"))],
+                    title,
+                    [self._deuda_detalle(deuda)],
                 )
                 detalle_panel.visible = True
                 detalle_panel.update()
@@ -333,15 +346,21 @@ class ParteDetailPage:
             "concepto": self._deuda_label(obligacion),
             "origen": self._origen_label(obligacion),
             "vencimiento": obligacion.get("fecha_vencimiento"),
-            "estado": obligacion.get("estado_obligacion")
-            or obligacion.get("estado")
-            or obligacion.get("estado_relacion_generadora"),
-            "saldo": obligacion.get("saldo_pendiente") or obligacion.get("saldo_total"),
-            "mora": obligacion.get("mora_calculada"),
-            "total": obligacion.get("total_con_mora")
+            "estado": self._debt_status_badge(
+                obligacion.get("estado_obligacion")
+                or obligacion.get("estado")
+                or obligacion.get("estado_relacion_generadora")
+            ),
+            "saldo": self._format_money(
+                obligacion.get("saldo_pendiente") or obligacion.get("saldo_total")
+            ),
+            "mora": self._format_money(obligacion.get("mora_calculada")),
+            "total": self._format_money(
+                obligacion.get("total_con_mora")
             or obligacion.get("total_a_cubrir")
             or obligacion.get("saldo_pendiente")
-            or obligacion.get("saldo_total"),
+                or obligacion.get("saldo_total")
+            ),
             "_deuda": obligacion,
         }
 
@@ -357,14 +376,24 @@ class ParteDetailPage:
                     ("Concepto", self._deuda_label(deuda)),
                     ("Origen", self._origen_label(deuda)),
                     ("Vencimiento", deuda.get("fecha_vencimiento")),
-                    ("Estado", deuda.get("estado_obligacion") or deuda.get("estado")),
-                    ("Saldo", deuda.get("saldo_pendiente") or deuda.get("saldo_total")),
-                    ("Mora / punitorio", deuda.get("mora_calculada")),
+                    (
+                        "Estado",
+                        deuda.get("estado_obligacion") or deuda.get("estado"),
+                    ),
+                    (
+                        "Saldo",
+                        self._format_money(
+                            deuda.get("saldo_pendiente") or deuda.get("saldo_total")
+                        ),
+                    ),
+                    ("Mora / punitorio", self._format_money(deuda.get("mora_calculada"))),
                     (
                         "Total",
-                        deuda.get("total_con_mora")
-                        or deuda.get("total_a_cubrir")
-                        or deuda.get("saldo_pendiente"),
+                        self._format_money(
+                            deuda.get("total_con_mora")
+                            or deuda.get("total_a_cubrir")
+                            or deuda.get("saldo_pendiente")
+                        ),
                     ),
                 ]
             )
@@ -384,10 +413,16 @@ class ParteDetailPage:
                         rows=[
                             {
                                 "concepto": self._concepto_label(item),
-                                "importe": item.get("importe_componente"),
-                                "saldo": item.get("saldo_componente"),
-                                "estado": item.get("estado_composicion_obligacion")
-                                or item.get("estado"),
+                                "importe": self._format_money(
+                                    item.get("importe_componente")
+                                ),
+                                "saldo": self._format_money(
+                                    item.get("saldo_componente")
+                                ),
+                                "estado": self._debt_status_badge(
+                                    item.get("estado_composicion_obligacion")
+                                    or item.get("estado")
+                                ),
                             }
                             for item in composiciones
                         ],
@@ -413,10 +448,10 @@ class ParteDetailPage:
                                 or item.get("codigo_rol")
                                 or item.get("rol"),
                                 "porcentaje": item.get("porcentaje_responsabilidad"),
-                                "saldo_responsabilidad": item.get(
-                                    "saldo_responsabilidad"
-                                )
-                                or item.get("saldo_pendiente_responsabilidad"),
+                                "saldo_responsabilidad": self._format_money(
+                                    item.get("saldo_responsabilidad")
+                                    or item.get("saldo_pendiente_responsabilidad")
+                                ),
                             }
                             for item in obligados
                         ],
@@ -449,9 +484,13 @@ class ParteDetailPage:
             {
                 "origen": self._origen_label(relacion),
                 "categoria": self._categoria_origen(relacion),
-                "saldo": relacion.get("saldo_total") or relacion.get("saldo_pendiente"),
-                "estado": relacion.get("estado_relacion_generadora")
-                or relacion.get("estado"),
+                "saldo": self._format_money(
+                    relacion.get("saldo_total") or relacion.get("saldo_pendiente")
+                ),
+                "estado": self._debt_status_badge(
+                    relacion.get("estado_relacion_generadora")
+                    or relacion.get("estado")
+                ),
             }
             for relacion in relaciones
         ]
@@ -552,11 +591,17 @@ class ParteDetailPage:
             key_value_grid(
                 [
                     ("Fecha corte", payload.get("fecha_corte")),
-                    ("Total simulado", payload.get("total_deuda_considerada")),
-                    ("Monto ingresado", payload.get("monto_ingresado")),
-                    ("Monto aplicado", payload.get("monto_aplicado")),
-                    ("Remanente", payload.get("remanente")),
-                    ("Mora / punitorio", self._sum_field(detalle, "mora_calculada")),
+                    (
+                        "Total simulado",
+                        self._format_money(payload.get("total_deuda_considerada")),
+                    ),
+                    ("Monto ingresado", self._format_money(payload.get("monto_ingresado"))),
+                    ("Monto aplicado", self._format_money(payload.get("monto_aplicado"))),
+                    ("Remanente", self._format_money(payload.get("remanente"))),
+                    (
+                        "Mora / punitorio",
+                        self._format_money(self._sum_field(detalle, "mora_calculada")),
+                    ),
                 ]
             )
         ]
@@ -580,6 +625,21 @@ class ParteDetailPage:
                                 **item,
                                 "concepto": self._deuda_label(item),
                                 "origen": self._origen_label(item),
+                                "saldo_pendiente": self._format_money(
+                                    item.get("saldo_pendiente")
+                                ),
+                                "mora_calculada": self._format_money(
+                                    item.get("mora_calculada")
+                                ),
+                                "total_a_cubrir": self._format_money(
+                                    item.get("total_a_cubrir")
+                                ),
+                                "monto_aplicado": self._format_money(
+                                    item.get("monto_aplicado")
+                                ),
+                                "saldo_restante_simulado": self._format_money(
+                                    item.get("saldo_restante_simulado")
+                                ),
                             }
                             for item in detalle
                         ],
@@ -600,7 +660,16 @@ class ParteDetailPage:
                             ("Saldo", "saldo_componente"),
                         ],
                         rows=[
-                            {**item, "concepto": self._concepto_label(item)}
+                            {
+                                **item,
+                                "concepto": self._concepto_label(item),
+                                "importe_componente": self._format_money(
+                                    item.get("importe_componente")
+                                ),
+                                "saldo_componente": self._format_money(
+                                    item.get("saldo_componente")
+                                ),
+                            }
                             for item in composiciones
                         ],
                     ),
@@ -616,24 +685,55 @@ class ParteDetailPage:
     def _estado_cuenta_resumen(
         self, payload: dict[str, Any], resumen: dict[str, Any]
     ) -> ft.Control:
-        return key_value_grid(
-            [
-                ("Fecha corte", payload.get("fecha_corte")),
-                (
-                    "Saldo total",
-                    self._first_present(
-                        resumen, ["saldo_total", "saldo_pendiente_total"]
+        items = [
+            (
+                "Saldo total",
+                self._first_present(resumen, ["saldo_total", "saldo_pendiente_total"]),
+            ),
+            ("Saldo vencido", resumen.get("saldo_vencido")),
+            ("Saldo futuro", resumen.get("saldo_futuro")),
+            ("Mora / punitorio", resumen.get("mora_calculada")),
+            ("Total con mora", resumen.get("total_con_mora")),
+            ("Saldo locativo", resumen.get("saldo_locativo")),
+            ("Saldo venta", resumen.get("saldo_venta")),
+            ("Saldo trasladados", resumen.get("saldo_trasladados")),
+            ("Saldo otros", resumen.get("saldo_otros")),
+        ]
+        cards = [
+            self._summary_card(label, value)
+            for label, value in items
+            if value is not None or label in {"Saldo total", "Saldo vencido", "Saldo futuro"}
+        ]
+        controls: list[ft.Control] = []
+        if payload.get("fecha_corte"):
+            controls.append(
+                ft.Text(
+                    f"Fecha de corte: {payload.get('fecha_corte')}",
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                )
+            )
+        controls.append(ft.Row(controls=cards, wrap=True, spacing=10, run_spacing=10))
+        return ft.Column(controls=controls, spacing=8)
+
+    def _summary_card(self, label: str, value: object) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_700),
+                    ft.Text(
+                        self._format_money(value),
+                        size=16,
+                        weight=ft.FontWeight.W_700,
                     ),
-                ),
-                ("Saldo vencido", resumen.get("saldo_vencido")),
-                ("Saldo futuro", resumen.get("saldo_futuro")),
-                ("Mora / punitorio", resumen.get("mora_calculada")),
-                ("Total con mora", resumen.get("total_con_mora")),
-                ("Saldo locativo", resumen.get("saldo_locativo")),
-                ("Saldo venta", resumen.get("saldo_venta")),
-                ("Saldo trasladados", resumen.get("saldo_trasladados")),
-                ("Saldo otros", resumen.get("saldo_otros")),
-            ]
+                ],
+                spacing=2,
+            ),
+            width=170,
+            padding=12,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            bgcolor=ft.Colors.WHITE,
         )
 
     def _estado_cuenta_sin_deuda(
@@ -967,6 +1067,47 @@ class ParteDetailPage:
         except (TypeError, ValueError):
             return 0.0
 
+    def _format_money(self, value: object) -> str:
+        if value is None or value == "":
+            return "-"
+        if isinstance(value, (int, float)):
+            amount = float(value)
+        else:
+            try:
+                text = str(value).strip()
+                if "," in text:
+                    text = text.replace(".", "").replace(",", ".")
+                amount = float(text)
+            except (TypeError, ValueError):
+                return str(value)
+        formatted = f"{amount:,.2f}"
+        formatted = formatted.replace(",", "_").replace(".", ",").replace("_", ".")
+        return f"$ {formatted}"
+
+    def _debt_status_badge(self, value: object) -> ft.Control:
+        text = str(value or "Sin estado")
+        normalized = text.upper()
+        color = ft.Colors.BLUE_GREY_100
+        text_color = ft.Colors.BLUE_GREY_900
+        if normalized in {"VENCIDA", "VENCIDO", "EN_MORA", "MORA"}:
+            color = ft.Colors.RED_100
+            text_color = ft.Colors.RED_900
+        elif normalized in {"EMITIDA", "EMITIDO", "PENDIENTE"}:
+            color = ft.Colors.BLUE_50
+            text_color = ft.Colors.BLUE_900
+        elif normalized in {"CANCELADA", "CANCELADO", "PAGADA", "PAGADO"}:
+            color = ft.Colors.GREEN_100
+            text_color = ft.Colors.GREEN_900
+        elif normalized in {"ANULADA", "ANULADO"}:
+            color = ft.Colors.BLUE_GREY_100
+            text_color = ft.Colors.BLUE_GREY_700
+        return ft.Container(
+            content=ft.Text(text, size=12, color=text_color),
+            bgcolor=color,
+            border_radius=6,
+            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+        )
+
     def _parse_positive_float(self, value: object) -> float | None:
         try:
             parsed = float(str(value or "").replace(",", "."))
@@ -1156,6 +1297,9 @@ class ParteDetailPage:
         parts = [data.get("nombre"), data.get("apellido")]
         value = " ".join(part for part in parts if part)
         return value or "Ficha de parte"
+
+    def _join_secondary(self, *values: object) -> str:
+        return " · ".join(str(value) for value in values if value not in (None, ""))
 
     def _documento_principal(self, data: dict[str, Any]) -> object:
         documentos = self._dict_rows(data.get("documentos"))

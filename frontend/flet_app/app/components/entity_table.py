@@ -18,7 +18,7 @@ def entity_table(
 
     table_rows: list[ft.DataRow] = []
     for row in rows:
-        cells = [ft.DataCell(ft.Text(_cell(row.get(key)))) for _, key in columns]
+        cells = [ft.DataCell(_cell_control(row.get(key))) for _, key in columns]
         if actions is not None:
             cells.append(ft.DataCell(ft.Row(actions(row), spacing=6)))
         table_rows.append(ft.DataRow(cells=cells))
@@ -31,9 +31,11 @@ def entity_table(
                 heading_row_color=ft.Colors.BLUE_GREY_50,
                 data_row_min_height=44,
                 data_row_max_height=64,
+                expand=True,
             )
         ],
         scroll=ft.ScrollMode.AUTO,
+        expand=True,
     )
 
 
@@ -43,3 +45,9 @@ def _cell(value: object) -> str:
     if isinstance(value, dict):
         return value.get("numero_documento") or value.get("valor_contacto") or "-"
     return str(value)
+
+
+def _cell_control(value: object) -> ft.Control:
+    if isinstance(value, ft.Control):
+        return value
+    return ft.Text(_cell(value))
