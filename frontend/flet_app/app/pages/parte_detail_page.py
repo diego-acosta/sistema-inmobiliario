@@ -77,15 +77,15 @@ class ParteDetailPage:
                             [
                                 detail_section(
                                     "Documentos",
-                                    [self._simple_table(data.get("documentos", []))],
+                                    [self._documentos_table(data.get("documentos", []))],
                                 ),
                                 detail_section(
                                     "Contactos",
-                                    [self._simple_table(data.get("contactos", []))],
+                                    [self._contactos_table(data.get("contactos", []))],
                                 ),
                                 detail_section(
                                     "Domicilios",
-                                    [self._simple_table(data.get("domicilios", []))],
+                                    [self._domicilios_table(data.get("domicilios", []))],
                                 ),
                             ],
                         ),
@@ -1283,6 +1283,173 @@ class ParteDetailPage:
         if not keys:
             return ft.Text("Sin campos visibles.")
         return entity_table(columns=[(key, key) for key in keys], rows=rows)
+
+    def _documentos_table(self, rows: object) -> ft.Control:
+        documentos = self._dict_rows(rows)
+        if not documentos:
+            return ft.Text("Sin documentos registrados.")
+        return self._card_list(
+            [
+                self._info_card(
+                    title=self._label_documento_tipo(
+                        documento.get("tipo_documento")
+                        or documento.get("tipo_documento_persona")
+                    ),
+                    subtitle=self._join_secondary(
+                        documento.get("numero_documento"),
+                        documento.get("pais_emision"),
+                    )
+                    or "Sin numero informado.",
+                    principal=self._is_principal(documento),
+                )
+                for documento in documentos
+            ]
+        )
+
+    def _contactos_table(self, rows: object) -> ft.Control:
+        contactos = self._dict_rows(rows)
+        if not contactos:
+            return ft.Text("Sin contactos registrados.")
+        return self._card_list(
+            [
+                self._info_card(
+                    title=self._contacto_title(contacto),
+                    subtitle=(
+                        contacto.get("valor_contacto")
+                        or contacto.get("valor")
+                        or contacto.get("contacto")
+                        or "Sin contacto informado."
+                    ),
+                    principal=self._is_principal(contacto),
+                )
+                for contacto in contactos
+            ]
+        )
+
+    def _domicilios_table(self, rows: object) -> ft.Control:
+        domicilios = self._dict_rows(rows)
+        if not domicilios:
+            return ft.Text("Sin domicilios registrados.")
+        return self._card_list(
+            [
+                self._info_card(
+                    title=self._label_domicilio_tipo(domicilio.get("tipo_domicilio")),
+                    subtitle=self._format_address(domicilio),
+                    principal=self._is_principal(domicilio),
+                    extra=domicilio.get("observaciones"),
+                )
+                for domicilio in domicilios
+            ]
+        )
+
+    def _card_list(self, controls: list[ft.Control]) -> ft.Control:
+        return ft.Column(controls=controls, spacing=8)
+
+    def _info_card(
+        self,
+        *,
+        title: object,
+        subtitle: object,
+        principal: bool = False,
+        extra: object = None,
+    ) -> ft.Control:
+        header_controls: list[ft.Control] = [
+            ft.Text(str(title or "Sin tipo"), weight=ft.FontWeight.W_600)
+        ]
+        if principal:
+            header_controls.append(self._principal_badge())
+
+        body_controls: list[ft.Control] = [
+            ft.Row(
+                controls=header_controls,
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Text(str(subtitle or "-"), selectable=True),
+        ]
+        if extra not in (None, ""):
+            body_controls.append(
+                ft.Text(str(extra), size=12, color=ft.Colors.BLUE_GREY_700)
+            )
+
+        return ft.Container(
+            content=ft.Column(controls=body_controls, spacing=4),
+            padding=12,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            bgcolor=ft.Colors.WHITE,
+        )
+
+    def _principal_badge(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Text("Principal", size=11, color=ft.Colors.GREEN_900),
+            bgcolor=ft.Colors.GREEN_100,
+            border_radius=6,
+            padding=ft.padding.symmetric(horizontal=8, vertical=3),
+        )
+
+    def _contacto_title(self, contacto: dict[str, Any]) -> str:
+        label = self._label_contacto_tipo(contacto.get("tipo_contacto"))
+        if self._is_principal(contacto):
+            return f"{label} principal"
+        return label
+
+    def _label_documento_tipo(self, value: object) -> str:
+        return self._friendly_label(value)
+
+    def _label_contacto_tipo(self, value: object) -> str:
+        labels = {
+            "EMAIL": "Email",
+            "E_MAIL": "Email",
+            "MAIL": "Email",
+            "TELEFONO": "Teléfono",
+            "TEL": "Teléfono",
+            "WHATSAPP": "WhatsApp",
+        }
+        return self._mapped_label(value, labels)
+
+    def _label_domicilio_tipo(self, value: object) -> str:
+        labels = {
+            "REAL": "Domicilio real",
+            "LEGAL": "Domicilio legal",
+            "FISCAL": "Domicilio fiscal",
+            "POSTAL": "Domicilio postal",
+        }
+        return self._mapped_label(value, labels)
+
+    def _mapped_label(self, value: object, labels: dict[str, str]) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return "Sin tipo"
+        normalized = text.upper().replace(" ", "_")
+        return labels.get(normalized, self._friendly_label(text))
+
+    def _friendly_label(self, value: object) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return "Sin tipo"
+        if text.isupper() and "_" not in text:
+            return text
+        return text.replace("_", " ").capitalize()
+
+    def _format_address(self, domicilio: dict[str, Any]) -> str:
+        parts = [
+            domicilio.get("direccion") or domicilio.get("calle") or domicilio.get("domicilio"),
+            domicilio.get("localidad"),
+            domicilio.get("provincia"),
+            domicilio.get("pais"),
+        ]
+        address = ", ".join(str(part) for part in parts if part not in (None, ""))
+        postal = domicilio.get("codigo_postal")
+        if postal not in (None, ""):
+            address = f"{address} ({postal})" if address else f"({postal})"
+        return address or "Sin direccion informada."
+
+    def _is_principal(self, row: dict[str, Any]) -> bool:
+        value = row.get("es_principal", row.get("principal"))
+        if isinstance(value, bool):
+            return value
+        return str(value or "").strip().lower() in {"true", "1", "si", "sí", "s"}
 
     def _dict_rows(self, rows: object) -> list[dict[str, Any]]:
         if not isinstance(rows, list):
