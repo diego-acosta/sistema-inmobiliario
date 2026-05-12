@@ -80,7 +80,7 @@ class ParteDetailPage:
                     "Estado de cuenta",
                     self._estado_cuenta_controls(estado_cuenta_result),
                 ),
-                detail_section("Simular pago", [self._simular_pago_section()]),
+                detail_section("Simular pago global", [self._simular_pago_section()]),
                 detail_section("Obligaciones", [self._obligaciones_table(data)]),
                 detail_section("Usos transversales", [self._usos_transversales(data)]),
             ],
@@ -252,31 +252,10 @@ class ParteDetailPage:
             keyboard_type=ft.KeyboardType.NUMBER,
             width=180,
         )
-        fecha_pago = ft.TextField(
-            label="Fecha pago",
+        fecha_corte = ft.TextField(
+            label="Fecha corte",
             value=date.today().isoformat(),
             width=180,
-        )
-        alcance_pago = ft.Dropdown(
-            label="Alcance",
-            value="GLOBAL_PERSONA",
-            width=220,
-            options=[
-                ft.dropdown.Option("GLOBAL_PERSONA"),
-                ft.dropdown.Option("OBLIGACION"),
-                ft.dropdown.Option("RELACION_GENERADORA"),
-                ft.dropdown.Option(""),
-            ],
-        )
-        id_obligacion = ft.TextField(
-            label="ID obligacion",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            width=180,
-        )
-        id_relacion = ft.TextField(
-            label="ID relacion generadora",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            width=220,
         )
         result_area = ft.Container(content=ft.Text("Sin simulacion ejecutada."))
 
@@ -290,24 +269,10 @@ class ParteDetailPage:
                 show_error("El monto es obligatorio y debe ser mayor que cero.")
                 return
 
-            alcance = alcance_pago.value or None
-            id_ob_value = self._parse_optional_int(id_obligacion.value)
-            id_rel_value = self._parse_optional_int(id_relacion.value)
-
-            if alcance == "OBLIGACION" and id_ob_value is None:
-                show_error("Para alcance OBLIGACION indique id_obligacion_financiera.")
-                return
-            if alcance == "RELACION_GENERADORA" and id_rel_value is None:
-                show_error("Para alcance RELACION_GENERADORA indique id_relacion_generadora.")
-                return
-
             result = self.api.simular_pago_persona(
                 self.id_persona,
                 monto=monto_value,
-                fecha_pago=fecha_pago.value or None,
-                alcance_pago=alcance,
-                id_obligacion_financiera=id_ob_value,
-                id_relacion_generadora=id_rel_value,
+                fecha_corte=fecha_corte.value or None,
             )
             if not result.success:
                 show_error(result.error_message or "No se pudo simular el pago.")
@@ -318,13 +283,12 @@ class ParteDetailPage:
 
         return ft.Column(
             controls=[
-                ft.Row(
-                    controls=[monto, fecha_pago, alcance_pago],
-                    spacing=10,
-                    wrap=True,
+                ft.Text(
+                    "Simulacion global por persona: no registra pagos ni modifica saldos.",
+                    size=12,
                 ),
                 ft.Row(
-                    controls=[id_obligacion, id_relacion],
+                    controls=[monto, fecha_corte],
                     spacing=10,
                     wrap=True,
                 ),
