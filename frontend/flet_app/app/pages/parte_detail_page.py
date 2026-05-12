@@ -64,7 +64,7 @@ class ParteDetailPage:
                             "Resumen",
                             [
                                 detail_section(
-                                    "Datos base ampliados", [self._datos_base(data)]
+                                    "Informacion general", [self._datos_base(data)]
                                 ),
                                 detail_section(
                                     "Resumen financiero de parte",
@@ -158,15 +158,17 @@ class ParteDetailPage:
         )
 
     def _datos_base(self, data: dict[str, Any]) -> ft.Control:
-        return key_value_grid(
+        razon_social = data.get("razon_social")
+        display_name = self._display_name(data)
+        razon_social_complementaria = (
+            razon_social if razon_social and str(razon_social) != display_name else None
+        )
+        return self._filtered_key_value_grid(
             [
-                ("Tipo", data.get("tipo_persona")),
+                ("Razon social", razon_social_complementaria),
+                ("Fecha nacimiento", data.get("fecha_nacimiento")),
+                ("Fecha alta", data.get("fecha_alta")),
                 ("Codigo", data.get("codigo_persona")),
-                ("Nombre", data.get("nombre")),
-                ("Apellido", data.get("apellido")),
-                ("Razon social", data.get("razon_social")),
-                ("CUIT/CUIL", data.get("cuit_cuil")),
-                ("Estado", data.get("estado_persona")),
                 ("Observaciones", data.get("observaciones")),
             ]
         )
@@ -174,16 +176,81 @@ class ParteDetailPage:
     def _estado_financiero(self, data: dict[str, Any]) -> ft.Control:
         raw_resumen = data.get("resumen_financiero") or {}
         resumen = raw_resumen if isinstance(raw_resumen, dict) else {}
-        return key_value_grid(
-            [
-                ("Cantidad obligaciones", resumen.get("cantidad_obligaciones")),
-                ("Saldo pendiente total", resumen.get("saldo_pendiente_total")),
-                (
-                    "Saldo pendiente responsabilidad",
-                    resumen.get("saldo_pendiente_responsabilidad"),
+        return ft.Row(
+            controls=[
+                self._summary_card(
+                    "Cantidad de obligaciones",
+                    self._format_count(resumen.get("cantidad_obligaciones")),
                 ),
-            ]
+                self._summary_card(
+                    "Saldo pendiente total",
+                    self._format_money(resumen.get("saldo_pendiente_total")),
+                    accent=True,
+                ),
+                self._summary_card(
+                    "Saldo pendiente responsabilidad",
+                    self._format_money(
+                        resumen.get("saldo_pendiente_responsabilidad")
+                    ),
+                    accent=True,
+                ),
+            ],
+            wrap=True,
+            spacing=10,
+            run_spacing=10,
         )
+
+    def _filtered_key_value_grid(self, items: list[tuple[str, object]]) -> ft.Control:
+        visible = [
+            (label, value)
+            for label, value in items
+            if not self._is_empty_value(value)
+        ]
+        if not visible:
+            return ft.Text("Sin informacion complementaria.")
+        return key_value_grid(visible)
+
+    def _is_empty_value(self, value: object) -> bool:
+        if value is None:
+            return True
+        if value == "":
+            return True
+        if value == "-":
+            return True
+        if isinstance(value, (list, dict)) and not value:
+            return True
+        return False
+
+    def _summary_card(
+        self, title: str, value: object, *, accent: bool = False
+    ) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(title, size=12, color=ft.Colors.BLUE_GREY_700),
+                    ft.Text(
+                        str(value or "-"),
+                        size=20,
+                        weight=ft.FontWeight.W_700,
+                        color=ft.Colors.BLUE_900 if accent else ft.Colors.BLUE_GREY_900,
+                    ),
+                ],
+                spacing=4,
+            ),
+            width=230,
+            padding=14,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            bgcolor=ft.Colors.BLUE_50 if accent else ft.Colors.WHITE,
+        )
+
+    def _format_count(self, value: object) -> str:
+        if self._is_empty_value(value):
+            return "-"
+        try:
+            return str(int(value))
+        except (TypeError, ValueError):
+            return str(value)
 
     def _obligaciones_table(self, data: dict[str, Any]) -> ft.Control:
         raw_obligaciones = data.get("obligaciones_financieras") or []
