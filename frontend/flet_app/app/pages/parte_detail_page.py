@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import flet as ft
@@ -233,25 +233,24 @@ class ParteDetailPage:
             return [
                 error_state(
                     result.error_message
-                    or "No se pudo cargar el estado de cuenta formal."
+                    or "No se pudo cargar el estado de cuenta."
                 )
             ]
 
         payload = result.data
         if isinstance(payload, list):
-            rows = self._dict_rows(payload)
+            rows = self._dedupe_obligaciones(self._dict_rows(payload))
             if not rows:
                 return [ft.Text("Sin deuda registrada")]
-            return [self._generic_table(rows)]
+            return [self._deudas_operativas_table(rows)]
 
         if not isinstance(payload, dict):
             return [ft.Text("Sin deuda registrada")]
 
         resumen = self._as_dict(payload.get("resumen"))
         grupos = self._dict_rows(payload.get("grupos_deuda"))
-        obligaciones = self._dict_rows(payload.get("obligaciones"))
         relaciones = self._flatten_relaciones(grupos)
-        composiciones = self._flatten_composiciones(obligaciones, relaciones)
+        obligaciones = self._obligaciones_estado_cuenta(payload, relaciones)
 
         controls: list[ft.Control] = [
             ft.Text("Resumen general", weight=ft.FontWeight.W_600),
@@ -262,78 +261,211 @@ class ParteDetailPage:
             controls.append(ft.Text("Sin deuda registrada"))
             return controls
 
-        if grupos:
-            controls.extend(
-                [
-                    ft.Text("Grupos de deuda", weight=ft.FontWeight.W_600),
-                    entity_table(
-                        columns=[
-                            ("Grupo", "grupo_origen_deuda"),
-                            ("Saldo total", "saldo_total"),
-                            ("Relaciones", "cantidad_relaciones"),
-                        ],
-                        rows=[self._grupo_row(grupo) for grupo in grupos],
-                    ),
-                ]
-            )
-
-        if relaciones:
-            controls.extend(
-                [
-                    ft.Text("Relaciones generadoras", weight=ft.FontWeight.W_600),
-                    entity_table(
-                        columns=[
-                            ("Grupo", "grupo_origen_deuda"),
-                            ("Tipo origen", "tipo_origen"),
-                            ("Descripcion", "descripcion_origen"),
-                            ("Saldo", "saldo_total"),
-                            ("Obligaciones", "cantidad_obligaciones"),
-                        ],
-                        rows=relaciones,
-                    ),
-                ]
-            )
-
         if obligaciones:
             controls.extend(
                 [
-                    ft.Text("Obligaciones", weight=ft.FontWeight.W_600),
-                    entity_table(
-                        columns=[
-                            ("Origen", "tipo_origen"),
-                            ("Estado", "estado_obligacion"),
-                            ("Vencimiento", "fecha_vencimiento"),
-                            ("Saldo", "saldo_pendiente"),
-                            ("Mora", "mora_calculada"),
-                            ("Total con mora", "total_con_mora"),
-                        ],
-                        rows=obligaciones,
-                    ),
+                    ft.Text("Conceptos a pagar", weight=ft.FontWeight.W_600),
+                    self._deudas_operativas_table(obligaciones),
                 ]
             )
-
-        if composiciones:
+        elif relaciones:
             controls.extend(
                 [
-                    ft.Text("Composiciones", weight=ft.FontWeight.W_600),
-                    entity_table(
-                        columns=[
-                            ("Concepto", "codigo_concepto_financiero"),
-                            ("Importe", "importe_componente"),
-                            ("Saldo", "saldo_componente"),
-                            ("Estado", "estado_composicion_obligacion"),
-                        ],
-                        rows=composiciones,
-                    ),
+                    ft.Text("Origen de deuda", weight=ft.FontWeight.W_600),
+                    self._origenes_deuda_table(relaciones),
                 ]
             )
 
         if len(controls) == 2:
-            extra_rows = self._dict_rows(payload.get("items"))
+            extra_rows = self._dedupe_obligaciones(self._dict_rows(payload.get("items")))
             if extra_rows:
-                controls.append(self._generic_table(extra_rows))
+                controls.append(self._deudas_operativas_table(extra_rows))
 
         return controls
+
+    def _deudas_operativas_table(
+        self, obligaciones: list[dict[str, Any]]
+    ) -> ft.Control:
+        detalle_panel = ft.Container(visible=False)
+        rows = [
+            self._deuda_operativa_row(obligacion)
+            for obligacion in obligaciones
+            if isinstance(obligacion, dict)
+        ]
+        if not rows:
+            return ft.Text("Sin deudas pendientes.")
+
+        def show_detail(row: dict[str, Any]):
+            def handler(_) -> None:
+                detalle_panel.content = detail_section(
+                    "Detalle de deuda seleccionada",
+                    [self._deuda_detalle(row.get("_deuda"))],
+                )
+                detalle_panel.visible = True
+                detalle_panel.update()
+
+            return handler
+
+        return ft.Column(
+            controls=[
+                entity_table(
+                    columns=[
+                        ("Concepto", "concepto"),
+                        ("Origen", "origen"),
+                        ("Vencimiento", "vencimiento"),
+                        ("Estado", "estado"),
+                        ("Saldo", "saldo"),
+                        ("Mora", "mora"),
+                        ("Total", "total"),
+                    ],
+                    rows=rows,
+                    actions=lambda row: [
+                        ft.TextButton("Ver detalle", on_click=show_detail(row))
+                    ],
+                ),
+                detalle_panel,
+            ],
+            spacing=12,
+        )
+
+    def _deuda_operativa_row(self, obligacion: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "concepto": self._deuda_label(obligacion),
+            "origen": self._origen_label(obligacion),
+            "vencimiento": obligacion.get("fecha_vencimiento"),
+            "estado": obligacion.get("estado_obligacion")
+            or obligacion.get("estado")
+            or obligacion.get("estado_relacion_generadora"),
+            "saldo": obligacion.get("saldo_pendiente") or obligacion.get("saldo_total"),
+            "mora": obligacion.get("mora_calculada"),
+            "total": obligacion.get("total_con_mora")
+            or obligacion.get("total_a_cubrir")
+            or obligacion.get("saldo_pendiente")
+            or obligacion.get("saldo_total"),
+            "_deuda": obligacion,
+        }
+
+    def _deuda_detalle(self, value: object) -> ft.Control:
+        deuda = value if isinstance(value, dict) else {}
+        composiciones = self._dict_rows(deuda.get("composiciones"))
+        obligados = self._dict_rows(deuda.get("obligados"))
+        relacion = self._as_dict(deuda.get("_relacion_context"))
+
+        controls: list[ft.Control] = [
+            key_value_grid(
+                [
+                    ("Concepto", self._deuda_label(deuda)),
+                    ("Origen", self._origen_label(deuda)),
+                    ("Vencimiento", deuda.get("fecha_vencimiento")),
+                    ("Estado", deuda.get("estado_obligacion") or deuda.get("estado")),
+                    ("Saldo", deuda.get("saldo_pendiente") or deuda.get("saldo_total")),
+                    ("Mora / punitorio", deuda.get("mora_calculada")),
+                    (
+                        "Total",
+                        deuda.get("total_con_mora")
+                        or deuda.get("total_a_cubrir")
+                        or deuda.get("saldo_pendiente"),
+                    ),
+                ]
+            )
+        ]
+
+        if composiciones:
+            controls.extend(
+                [
+                    ft.Text("Detalle de conceptos", weight=ft.FontWeight.W_600),
+                    entity_table(
+                        columns=[
+                            ("Concepto", "concepto"),
+                            ("Importe", "importe"),
+                            ("Saldo", "saldo"),
+                            ("Estado", "estado"),
+                        ],
+                        rows=[
+                            {
+                                "concepto": self._concepto_label(item),
+                                "importe": item.get("importe_componente"),
+                                "saldo": item.get("saldo_componente"),
+                                "estado": item.get("estado_composicion_obligacion")
+                                or item.get("estado"),
+                            }
+                            for item in composiciones
+                        ],
+                    ),
+                ]
+            )
+        else:
+            controls.append(ft.Text("Sin detalle de conceptos."))
+
+        if obligados:
+            controls.extend(
+                [
+                    ft.Text("Responsables", weight=ft.FontWeight.W_600),
+                    entity_table(
+                        columns=[
+                            ("Rol", "rol"),
+                            ("Porcentaje", "porcentaje"),
+                            ("Saldo responsabilidad", "saldo_responsabilidad"),
+                        ],
+                        rows=[
+                            {
+                                "rol": item.get("rol_obligado")
+                                or item.get("codigo_rol")
+                                or item.get("rol"),
+                                "porcentaje": item.get("porcentaje_responsabilidad"),
+                                "saldo_responsabilidad": item.get(
+                                    "saldo_responsabilidad"
+                                )
+                                or item.get("saldo_pendiente_responsabilidad"),
+                            }
+                            for item in obligados
+                        ],
+                    ),
+                ]
+            )
+
+        technical_rows = [
+            ("ID obligacion", deuda.get("id_obligacion_financiera")),
+            (
+                "ID relacion",
+                deuda.get("id_relacion_generadora")
+                or relacion.get("id_relacion_generadora"),
+            ),
+            ("Tipo origen", deuda.get("tipo_origen") or relacion.get("tipo_origen")),
+            ("ID origen", deuda.get("id_origen") or relacion.get("id_origen")),
+        ]
+        if any(value is not None for _, value in technical_rows):
+            controls.extend(
+                [
+                    ft.Text("Datos tecnicos", weight=ft.FontWeight.W_600),
+                    key_value_grid(technical_rows),
+                ]
+            )
+
+        return ft.Column(controls=controls, spacing=10)
+
+    def _origenes_deuda_table(self, relaciones: list[dict[str, Any]]) -> ft.Control:
+        rows = [
+            {
+                "origen": self._origen_label(relacion),
+                "categoria": self._categoria_origen(relacion),
+                "saldo": relacion.get("saldo_total") or relacion.get("saldo_pendiente"),
+                "estado": relacion.get("estado_relacion_generadora")
+                or relacion.get("estado"),
+            }
+            for relacion in relaciones
+        ]
+        if not rows:
+            return ft.Text("Sin origenes de deuda.")
+        return entity_table(
+            columns=[
+                ("Origen", "origen"),
+                ("Categoria", "categoria"),
+                ("Saldo", "saldo"),
+                ("Estado", "estado"),
+            ],
+            rows=rows,
+        )
 
     def _simular_pago_contextual(self) -> ft.Control:
         panel = ft.Container(visible=False)
@@ -432,33 +564,45 @@ class ParteDetailPage:
         if detalle:
             controls.extend(
                 [
-                    ft.Text("Obligaciones afectadas", weight=ft.FontWeight.W_600),
+                    ft.Text("Deudas simuladas", weight=ft.FontWeight.W_600),
                     entity_table(
                         columns=[
+                            ("Concepto", "concepto"),
+                            ("Origen", "origen"),
                             ("Saldo", "saldo_pendiente"),
                             ("Mora", "mora_calculada"),
                             ("Total a cubrir", "total_a_cubrir"),
                             ("Aplicado", "monto_aplicado"),
                             ("Saldo simulado", "saldo_restante_simulado"),
                         ],
-                        rows=detalle,
+                        rows=[
+                            {
+                                **item,
+                                "concepto": self._deuda_label(item),
+                                "origen": self._origen_label(item),
+                            }
+                            for item in detalle
+                        ],
                     ),
                 ]
             )
         else:
-            controls.append(ft.Text("Sin obligaciones afectadas."))
+            controls.append(ft.Text("Sin deudas afectadas."))
 
         if composiciones:
             controls.extend(
                 [
-                    ft.Text("Composiciones afectadas", weight=ft.FontWeight.W_600),
+                    ft.Text("Detalle de conceptos afectados", weight=ft.FontWeight.W_600),
                     entity_table(
                         columns=[
-                            ("Concepto", "codigo_concepto_financiero"),
+                            ("Concepto", "concepto"),
                             ("Importe", "importe_componente"),
                             ("Saldo", "saldo_componente"),
                         ],
-                        rows=composiciones,
+                        rows=[
+                            {**item, "concepto": self._concepto_label(item)}
+                            for item in composiciones
+                        ],
                     ),
                 ]
             )
@@ -483,7 +627,7 @@ class ParteDetailPage:
                 ),
                 ("Saldo vencido", resumen.get("saldo_vencido")),
                 ("Saldo futuro", resumen.get("saldo_futuro")),
-                ("Mora calculada", resumen.get("mora_calculada")),
+                ("Mora / punitorio", resumen.get("mora_calculada")),
                 ("Total con mora", resumen.get("total_con_mora")),
                 ("Saldo locativo", resumen.get("saldo_locativo")),
                 ("Saldo venta", resumen.get("saldo_venta")),
@@ -539,6 +683,255 @@ class ParteDetailPage:
                 row.setdefault("id_obligacion_financiera", id_obligacion)
                 rows.append(row)
         return rows
+
+    def _obligaciones_estado_cuenta(
+        self, payload: dict[str, Any], relaciones: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        rows = [
+            dict(item)
+            for item in self._dict_rows(payload.get("obligaciones"))
+            if self._is_obligacion_row(item)
+        ]
+        for relacion in relaciones:
+            nested = self._dict_rows(relacion.get("obligaciones"))
+            if nested:
+                for obligacion in nested:
+                    if not self._is_obligacion_row(obligacion):
+                        continue
+                    row = dict(obligacion)
+                    row.setdefault("tipo_origen", relacion.get("tipo_origen"))
+                    row.setdefault("id_origen", relacion.get("id_origen"))
+                    row.setdefault(
+                        "descripcion_origen", relacion.get("descripcion_origen")
+                    )
+                    row["_relacion_context"] = relacion
+                    rows.append(row)
+        return self._dedupe_obligaciones(rows)
+
+    def _dedupe_obligaciones(
+        self, rows: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        unique: dict[tuple[object, ...], dict[str, Any]] = {}
+        for row in rows:
+            if not self._is_obligacion_row(row):
+                continue
+            key = self._obligacion_key(row)
+            if key not in unique:
+                unique[key] = row
+                continue
+            current = unique[key]
+            if not self._dict_rows(current.get("composiciones")) and self._dict_rows(
+                row.get("composiciones")
+            ):
+                current["composiciones"] = row.get("composiciones")
+            if not self._dict_rows(current.get("obligados")) and self._dict_rows(
+                row.get("obligados")
+            ):
+                current["obligados"] = row.get("obligados")
+            if not current.get("_relacion_context") and row.get("_relacion_context"):
+                current["_relacion_context"] = row.get("_relacion_context")
+        return list(unique.values())
+
+    def _is_obligacion_row(self, row: dict[str, Any]) -> bool:
+        if row.get("id_obligacion_financiera") is not None:
+            return True
+        if row.get("fecha_vencimiento") is not None and (
+            row.get("saldo_pendiente") is not None
+            or row.get("importe_total") is not None
+            or row.get("total_con_mora") is not None
+        ):
+            return True
+        if self._dict_rows(row.get("composiciones")) and (
+            row.get("saldo_pendiente") is not None
+            or row.get("estado_obligacion") is not None
+        ):
+            return True
+        return False
+
+    def _obligacion_key(self, row: dict[str, Any]) -> tuple[object, ...]:
+        id_obligacion = row.get("id_obligacion_financiera")
+        if id_obligacion is not None:
+            return ("id", id_obligacion)
+        return (
+            "natural",
+            row.get("tipo_origen"),
+            row.get("id_origen"),
+            row.get("fecha_vencimiento"),
+            row.get("saldo_pendiente") or row.get("saldo_total"),
+            row.get("estado_obligacion") or row.get("estado"),
+        )
+
+    def _deuda_label(self, deuda: dict[str, Any]) -> str:
+        cuota = self._first_present(
+            deuda,
+            ["numero_cuota", "nro_cuota", "cuota", "orden", "numero"],
+        )
+        if cuota is not None:
+            return f"Cuota {cuota}"
+
+        composiciones = self._dict_rows(deuda.get("composiciones"))
+        concepto = self._main_concept(composiciones) or deuda
+        code = str(
+            concepto.get("codigo_concepto_financiero")
+            or concepto.get("codigo_concepto")
+            or deuda.get("codigo_concepto_financiero")
+            or ""
+        ).upper()
+        tipo_origen = str(deuda.get("tipo_origen") or "").lower()
+
+        if code == "CANON_LOCATIVO" or tipo_origen == "contrato_alquiler":
+            return self._alquiler_label(deuda.get("fecha_vencimiento"))
+        if code == "ANTICIPO_VENTA":
+            return "Anticipo"
+        if code == "CAPITAL_VENTA":
+            if self._looks_like_sale_balance(deuda, concepto):
+                return "Saldo de venta"
+            return "Capital de venta"
+        if code in {"SERVICIO_RECUPERADO", "SERVICIO_TRASLADADO"}:
+            return self._named_concept(concepto, "Servicio trasladado")
+        if code == "IMPUESTO_TRASLADADO":
+            return self._named_concept(concepto, "Impuesto trasladado")
+        if tipo_origen == "venta":
+            return "Cuota de venta"
+        label = self._concepto_label(concepto)
+        return label if label != "Deuda" else "Concepto pendiente"
+
+    def _main_concept(self, composiciones: list[dict[str, Any]]) -> dict[str, Any]:
+        accessory = {"PUNITORIO", "INTERES_FINANCIERO"}
+        for item in composiciones:
+            code = str(item.get("codigo_concepto_financiero") or "").upper()
+            if code and code not in accessory:
+                return item
+        return composiciones[0] if composiciones else {}
+
+    def _concepto_label(self, item: dict[str, Any]) -> str:
+        explicit = (
+            item.get("nombre_concepto_financiero")
+            or item.get("nombre_concepto")
+            or item.get("descripcion")
+        )
+        if explicit:
+            return str(explicit)
+        code = str(
+            item.get("codigo_concepto_financiero")
+            or item.get("codigo_concepto")
+            or ""
+        ).upper()
+        labels = {
+            "CAPITAL_VENTA": "Capital de venta",
+            "ANTICIPO_VENTA": "Anticipo",
+            "CANON_LOCATIVO": "Alquiler",
+            "SERVICIO_RECUPERADO": "Servicio trasladado",
+            "SERVICIO_TRASLADADO": "Servicio trasladado",
+            "IMPUESTO_TRASLADADO": "Impuesto trasladado",
+            "PUNITORIO": "Punitorio",
+            "INTERES_FINANCIERO": "Interes",
+        }
+        return labels.get(code, code.replace("_", " ").capitalize() if code else "Deuda")
+
+    def _origen_label(self, item: dict[str, Any]) -> str:
+        relacion = self._as_dict(item.get("_relacion_context"))
+        data = {**relacion, **item}
+        for key, prefix in (
+            ("codigo_venta", "Venta"),
+            ("codigo_contrato", "Contrato"),
+            ("codigo_contrato_alquiler", "Contrato"),
+        ):
+            if data.get(key):
+                return f"{prefix} {data[key]}"
+        if data.get("descripcion_origen"):
+            cleaned = self._clean_origin_description(data["descripcion_origen"])
+            if cleaned:
+                return cleaned
+
+        tipo_origen = str(data.get("tipo_origen") or "").lower()
+        grupo = str(data.get("grupo_origen_deuda") or "").lower()
+        if tipo_origen == "venta":
+            return "Venta"
+        if tipo_origen == "contrato_alquiler":
+            return "Contrato de alquiler"
+        if tipo_origen in {"factura_servicio", "liquidacion_recupero"}:
+            return "Servicio / recupero"
+        if tipo_origen == "liquidacion_impuesto_trasladado":
+            return "Impuesto trasladado"
+        if "venta" in grupo:
+            return "Venta"
+        if "locativo" in grupo or "alquiler" in grupo:
+            return "Contrato de alquiler"
+        if "traslad" in grupo or "servicio" in grupo:
+            return "Servicio / recupero"
+        return "Otro origen"
+
+    def _clean_origin_description(self, value: object) -> str:
+        text = str(value or "").strip()
+        lowered = text.lower()
+        if "relacion financiera" in lowered or "relación financiera" in lowered:
+            if "venta" in lowered:
+                return "Venta"
+            if "contrato" in lowered or "alquiler" in lowered:
+                return "Contrato de alquiler"
+            return ""
+        return text
+
+    def _categoria_origen(self, item: dict[str, Any]) -> str:
+        tipo = str(item.get("tipo_origen") or "").lower()
+        grupo = str(item.get("grupo_origen_deuda") or "").lower()
+        if tipo == "venta" or "venta" in grupo:
+            return "Venta"
+        if tipo == "contrato_alquiler" or "locativo" in grupo:
+            return "Locativo"
+        if "impuesto" in tipo:
+            return "Impuesto trasladado"
+        if "servicio" in tipo or "recupero" in tipo:
+            return "Servicio / recupero"
+        return "Otro"
+
+    def _alquiler_label(self, value: object) -> str:
+        if not value:
+            return "Alquiler"
+        try:
+            parsed = datetime.fromisoformat(str(value)[:10])
+        except ValueError:
+            return "Alquiler"
+        months = [
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        ]
+        return f"Alquiler {months[parsed.month - 1]}"
+
+    def _named_concept(self, item: dict[str, Any], fallback: str) -> str:
+        return str(
+            item.get("nombre_servicio")
+            or item.get("nombre_impuesto")
+            or item.get("nombre_concepto_financiero")
+            or item.get("descripcion")
+            or fallback
+        )
+
+    def _looks_like_sale_balance(
+        self, deuda: dict[str, Any], concepto: dict[str, Any]
+    ) -> bool:
+        text = " ".join(
+            str(value or "").lower()
+            for value in (
+                deuda.get("tipo_plan_financiero"),
+                deuda.get("descripcion"),
+                deuda.get("descripcion_origen"),
+                concepto.get("descripcion"),
+                concepto.get("nombre_concepto_financiero"),
+            )
+        )
+        return "saldo" in text or "anticipo_y_saldo" in text
 
     def _grupo_row(self, grupo: dict[str, Any]) -> dict[str, Any]:
         row = dict(grupo)
