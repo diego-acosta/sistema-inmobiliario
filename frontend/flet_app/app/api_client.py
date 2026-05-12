@@ -70,33 +70,13 @@ class ApiClient:
         self,
         id_persona: int,
         monto: float,
-        fecha_pago: str | None = None,
-        alcance_pago: str | None = None,
-        id_obligacion_financiera: int | None = None,
-        id_relacion_generadora: int | None = None,
+        fecha_corte: str | None = None,
     ) -> ApiResult:
-        if alcance_pago in {"OBLIGACION", "RELACION_GENERADORA"}:
-            return ApiResult(
-                success=False,
-                error_message=(
-                    "El endpoint de simulacion V1 solo admite simulacion global "
-                    "por persona."
-                ),
-            )
-        if id_obligacion_financiera is not None or id_relacion_generadora is not None:
-            return ApiResult(
-                success=False,
-                error_message=(
-                    "El endpoint de simulacion V1 no admite identificadores de "
-                    "alcance."
-                ),
-            )
-
         return self._post(
             f"/api/v1/financiero/personas/{id_persona}/simular-pago",
             json={
                 "monto": monto,
-                "fecha_corte": fecha_pago or date.today().isoformat(),
+                "fecha_corte": fecha_corte or date.today().isoformat(),
             },
         )
 
