@@ -40,6 +40,31 @@ class ApiClient:
     def get_persona_detalle_integral(self, id_persona: int) -> ApiResult:
         return self._get(f"/api/v1/personas/{id_persona}/detalle-integral")
 
+    def get_estado_cuenta_persona(
+        self,
+        id_persona: int,
+        *,
+        estado: str | None = None,
+        tipo_origen: str | None = None,
+        id_origen: int | None = None,
+        vencidas: bool | None = None,
+        fecha_vencimiento_desde: str | None = None,
+        fecha_vencimiento_hasta: str | None = None,
+        fecha_corte: str | None = None,
+    ) -> ApiResult:
+        return self._get(
+            f"/api/v1/financiero/personas/{id_persona}/estado-cuenta",
+            params={
+                "estado": estado or None,
+                "tipo_origen": tipo_origen or None,
+                "id_origen": id_origen,
+                "vencidas": vencidas,
+                "fecha_vencimiento_desde": fecha_vencimiento_desde or None,
+                "fecha_vencimiento_hasta": fecha_vencimiento_hasta or None,
+                "fecha_corte": fecha_corte or None,
+            },
+        )
+
     def get_inmuebles(
         self,
         *,
