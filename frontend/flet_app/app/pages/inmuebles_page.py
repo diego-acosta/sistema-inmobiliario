@@ -4,6 +4,7 @@ import flet as ft
 
 from app.api_client import ApiClient
 from app.components.detail_section import detail_section, key_value_grid
+from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
 from app.components.status_badge import status_badge
@@ -36,19 +37,14 @@ class InmueblesHub:
         self.on_navigate = on_navigate
 
     def build(self) -> ft.Control:
-        return ft.Tabs(
-            selected_index=0,
-            expand=True,
-            tabs=[
-                ft.Tab(
-                    text="Inmuebles",
-                    content=InmueblesListView(self.api, self.on_navigate).build(),
+        return detail_tabs(
+            [
+                ("Inmuebles", [InmueblesListView(self.api, self.on_navigate).build()]),
+                (
+                    "Unidades funcionales",
+                    [UnidadesListView(self.api, self.on_navigate).build()],
                 ),
-                ft.Tab(
-                    text="Unidades funcionales",
-                    content=UnidadesListView(self.api, self.on_navigate).build(),
-                ),
-            ],
+            ]
         )
 
 
@@ -293,22 +289,87 @@ class InmuebleDetailView:
                         status_badge(_text_or_none(data.get("estado_administrativo"))),
                     ]
                 ),
-                detail_section("Datos base", [_base_inmueble(data)]),
-                detail_section("Resumen operativo", [_dict_grid(data.get("resumen_operativo"))]),
-                detail_section("Disponibilidad / ocupacion actual", [_current_states(data)]),
-                detail_section("Unidades funcionales", [_table_any(data.get("unidades_funcionales"))]),
-                detail_section("Servicios", [_table_any(data.get("servicios"))]),
-                detail_section("Responsables de servicio", [_table_any(data.get("responsables_servicio"))]),
-                detail_section("Reservas de venta", [_table_any(data.get("reservas_venta"))]),
-                detail_section("Ventas", [_table_any(data.get("ventas"))]),
-                detail_section("Reservas locativas", [_table_any(data.get("reservas_locativas"))]),
-                detail_section("Contratos de alquiler", [_table_any(data.get("contratos_alquiler"))]),
-                detail_section("Trazabilidad de integracion", [_traceability(data.get("trazabilidad_integracion"))]),
-                detail_section("Historial de disponibilidad", [_table_any(data.get("disponibilidades"))]),
-                detail_section("Historial de ocupacion", [_table_any(data.get("ocupaciones"))]),
+                _inmueble_header(data),
+                detail_tabs(
+                    [
+                        (
+                            "Resumen",
+                            [
+                                detail_section("Datos base", [_base_inmueble(data)]),
+                                detail_section(
+                                    "Resumen operativo",
+                                    [_dict_grid(data.get("resumen_operativo"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Disponibilidad / ocupacion",
+                            [
+                                detail_section(
+                                    "Disponibilidad / ocupacion actual",
+                                    [_current_states(data)],
+                                ),
+                                detail_section(
+                                    "Historial de disponibilidad",
+                                    [_table_any(data.get("disponibilidades"))],
+                                ),
+                                detail_section(
+                                    "Historial de ocupacion",
+                                    [_table_any(data.get("ocupaciones"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Servicios / responsables",
+                            [
+                                detail_section(
+                                    "Servicios", [_table_any(data.get("servicios"))]
+                                ),
+                                detail_section(
+                                    "Responsables de servicio",
+                                    [_table_any(data.get("responsables_servicio"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Operaciones asociadas",
+                            [
+                                detail_section(
+                                    "Unidades funcionales",
+                                    [_table_any(data.get("unidades_funcionales"))],
+                                ),
+                                detail_section(
+                                    "Reservas de venta",
+                                    [_table_any(data.get("reservas_venta"))],
+                                ),
+                                detail_section("Ventas", [_table_any(data.get("ventas"))]),
+                                detail_section(
+                                    "Reservas locativas",
+                                    [_table_any(data.get("reservas_locativas"))],
+                                ),
+                                detail_section(
+                                    "Contratos de alquiler",
+                                    [_table_any(data.get("contratos_alquiler"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Trazabilidad",
+                            [
+                                detail_section(
+                                    "Trazabilidad de integracion",
+                                    [
+                                        _traceability(
+                                            data.get("trazabilidad_integracion")
+                                        )
+                                    ],
+                                )
+                            ],
+                        ),
+                    ]
+                ),
             ],
             spacing=14,
-            scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
 
@@ -334,22 +395,87 @@ class UnidadDetailView:
                         status_badge(_text_or_none(data.get("estado_operativo"))),
                     ]
                 ),
-                detail_section("Datos base", [_base_unidad(data)]),
-                detail_section("Inmueble padre", [_dict_grid(data.get("inmueble"))]),
-                detail_section("Resumen operativo", [_dict_grid(data.get("resumen_operativo"))]),
-                detail_section("Disponibilidad / ocupacion actual", [_current_states(data)]),
-                detail_section("Servicios", [_table_any(data.get("servicios"))]),
-                detail_section("Responsables de servicio", [_table_any(data.get("responsables_servicio"))]),
-                detail_section("Reservas de venta", [_table_any(data.get("reservas_venta"))]),
-                detail_section("Ventas", [_table_any(data.get("ventas"))]),
-                detail_section("Reservas locativas", [_table_any(data.get("reservas_locativas"))]),
-                detail_section("Contratos de alquiler", [_table_any(data.get("contratos_alquiler"))]),
-                detail_section("Trazabilidad de integracion", [_traceability(data.get("trazabilidad_integracion"))]),
-                detail_section("Historial de disponibilidad", [_table_any(data.get("disponibilidades"))]),
-                detail_section("Historial de ocupacion", [_table_any(data.get("ocupaciones"))]),
+                _unidad_header(data),
+                detail_tabs(
+                    [
+                        (
+                            "Resumen",
+                            [
+                                detail_section("Datos base", [_base_unidad(data)]),
+                                detail_section(
+                                    "Inmueble padre",
+                                    [_dict_grid(data.get("inmueble"))],
+                                ),
+                                detail_section(
+                                    "Resumen operativo",
+                                    [_dict_grid(data.get("resumen_operativo"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Disponibilidad / ocupacion",
+                            [
+                                detail_section(
+                                    "Disponibilidad / ocupacion actual",
+                                    [_current_states(data)],
+                                ),
+                                detail_section(
+                                    "Historial de disponibilidad",
+                                    [_table_any(data.get("disponibilidades"))],
+                                ),
+                                detail_section(
+                                    "Historial de ocupacion",
+                                    [_table_any(data.get("ocupaciones"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Servicios / responsables",
+                            [
+                                detail_section(
+                                    "Servicios", [_table_any(data.get("servicios"))]
+                                ),
+                                detail_section(
+                                    "Responsables de servicio",
+                                    [_table_any(data.get("responsables_servicio"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Operaciones asociadas",
+                            [
+                                detail_section(
+                                    "Reservas de venta",
+                                    [_table_any(data.get("reservas_venta"))],
+                                ),
+                                detail_section("Ventas", [_table_any(data.get("ventas"))]),
+                                detail_section(
+                                    "Reservas locativas",
+                                    [_table_any(data.get("reservas_locativas"))],
+                                ),
+                                detail_section(
+                                    "Contratos de alquiler",
+                                    [_table_any(data.get("contratos_alquiler"))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Trazabilidad",
+                            [
+                                detail_section(
+                                    "Trazabilidad de integracion",
+                                    [
+                                        _traceability(
+                                            data.get("trazabilidad_integracion")
+                                        )
+                                    ],
+                                )
+                            ],
+                        ),
+                    ]
+                ),
             ],
             spacing=14,
-            scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
 
@@ -443,7 +569,6 @@ def _current_states(data: dict[str, Any]) -> ft.Control:
 def _base_inmueble(data: dict[str, Any]) -> ft.Control:
     return key_value_grid(
         [
-            ("ID", data.get("id_inmueble")),
             ("Codigo", data.get("codigo_inmueble")),
             ("Nombre", data.get("nombre_inmueble") or data.get("nombre")),
             ("Tipo", data.get("tipo_inmueble")),
@@ -460,8 +585,6 @@ def _base_inmueble(data: dict[str, Any]) -> ft.Control:
 def _base_unidad(data: dict[str, Any]) -> ft.Control:
     return key_value_grid(
         [
-            ("ID", data.get("id_unidad_funcional")),
-            ("ID inmueble", data.get("id_inmueble")),
             ("Codigo", data.get("codigo_unidad_funcional") or data.get("codigo_unidad")),
             ("Nombre", data.get("nombre_unidad") or data.get("nombre")),
             ("Tipo", data.get("tipo_unidad")),
@@ -470,6 +593,66 @@ def _base_unidad(data: dict[str, Any]) -> ft.Control:
             ("Estado operativo", data.get("estado_operativo")),
             ("Observaciones", data.get("observaciones")),
         ]
+    )
+
+
+def _inmueble_header(data: dict[str, Any]) -> ft.Control:
+    return ft.Container(
+        content=key_value_grid(
+            [
+                ("Inmueble", _inmueble_title(data)),
+                ("Estado administrativo", data.get("estado_administrativo")),
+                ("Estado juridico", data.get("estado_juridico")),
+                (
+                    "Disponibilidad actual",
+                    _validity_label(
+                        data.get("disponibilidad_actual"),
+                        data.get("disponibilidad_ambigua"),
+                    ),
+                ),
+                (
+                    "Ocupacion actual",
+                    _validity_label(
+                        data.get("ocupacion_actual"),
+                        data.get("ocupacion_ambigua"),
+                    ),
+                ),
+                ("Cantidad de unidades", data.get("cantidad_unidades_funcionales")),
+            ]
+        ),
+        padding=16,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=6,
+    )
+
+
+def _unidad_header(data: dict[str, Any]) -> ft.Control:
+    return ft.Container(
+        content=key_value_grid(
+            [
+                ("Unidad", _unidad_title(data)),
+                ("Inmueble padre", _compact(data.get("inmueble"))),
+                ("Estado administrativo", data.get("estado_administrativo")),
+                ("Estado operativo", data.get("estado_operativo")),
+                (
+                    "Disponibilidad actual",
+                    _validity_label(
+                        data.get("disponibilidad_actual"),
+                        data.get("disponibilidad_ambigua"),
+                    ),
+                ),
+                (
+                    "Ocupacion actual",
+                    _validity_label(
+                        data.get("ocupacion_actual"),
+                        data.get("ocupacion_ambigua"),
+                    ),
+                ),
+            ]
+        ),
+        padding=16,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=6,
     )
 
 
@@ -483,7 +666,7 @@ def _table_any(value: object) -> ft.Control:
     rows = _safe_list(value)
     if not rows:
         return ft.Text("Sin registros.")
-    keys = _first_keys(rows, limit=8)
+    keys = _first_visible_keys(rows, limit=8)
     if not keys:
         return ft.Text("Sin campos disponibles.")
     return entity_table(columns=[(key, key) for key in keys], rows=rows)
@@ -510,6 +693,15 @@ def _first_keys(rows: list[dict[str, Any]], limit: int) -> list[str]:
             if len(keys) >= limit:
                 return keys
     return keys
+
+
+def _first_visible_keys(rows: list[dict[str, Any]], limit: int) -> list[str]:
+    keys = [
+        key
+        for key in _first_keys(rows, limit=limit + 8)
+        if not key.startswith("id_") and key not in {"uid_global", "version_registro"}
+    ]
+    return keys[:limit]
 
 
 def _safe_list(value: object) -> list[dict[str, Any]]:

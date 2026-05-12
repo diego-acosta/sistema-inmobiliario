@@ -4,6 +4,7 @@ import flet as ft
 
 from app.api_client import ApiClient
 from app.components.detail_section import detail_section, key_value_grid
+from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
 from app.components.status_badge import status_badge
@@ -185,29 +186,84 @@ class ContratoDetailView:
                         status_badge(_text_or_none(data.get("estado_contrato"))),
                     ]
                 ),
-                detail_section("Datos base", [_base_contrato(data)]),
-                detail_section("Objetos locativos", [_objetos_table(data.get("objetos"))]),
-                detail_section("Partes", [_partes_table(data.get("partes"))]),
-                detail_section(
-                    "Condiciones economicas",
-                    [_condiciones_table(data.get("condiciones_economicas_alquiler"))],
-                ),
-                detail_section("Entrega / restitucion", [_entrega_restitucion(data)]),
-                detail_section(
-                    "Relacion financiera",
-                    [_relacion_financiera(data.get("relacion_financiera"), data.get("resumen_financiero"))],
-                ),
-                detail_section(
-                    "Obligaciones",
-                    [_obligaciones_table(data.get("obligaciones_financieras"))],
-                ),
-                detail_section(
-                    "Resumen financiero",
-                    [_resumen_financiero(data.get("resumen_financiero"))],
+                _contrato_header(data),
+                detail_tabs(
+                    [
+                        (
+                            "Resumen",
+                            [detail_section("Datos base", [_base_contrato(data)])],
+                        ),
+                        (
+                            "Objetos",
+                            [
+                                detail_section(
+                                    "Objetos locativos",
+                                    [_objetos_table(data.get("objetos"))],
+                                )
+                            ],
+                        ),
+                        (
+                            "Partes",
+                            [
+                                detail_section(
+                                    "Partes del contrato",
+                                    [_partes_table(data.get("partes"))],
+                                )
+                            ],
+                        ),
+                        (
+                            "Condiciones economicas",
+                            [
+                                detail_section(
+                                    "Condiciones economicas",
+                                    [
+                                        _condiciones_table(
+                                            data.get(
+                                                "condiciones_economicas_alquiler"
+                                            )
+                                        )
+                                    ],
+                                ),
+                                detail_section(
+                                    "Entrega / restitucion",
+                                    [_entrega_restitucion(data)],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Financiero",
+                            [
+                                detail_section(
+                                    "Relacion financiera",
+                                    [
+                                        _relacion_financiera(
+                                            data.get("relacion_financiera"),
+                                            data.get("resumen_financiero"),
+                                        )
+                                    ],
+                                ),
+                                detail_section(
+                                    "Obligaciones",
+                                    [
+                                        _obligaciones_table(
+                                            data.get("obligaciones_financieras")
+                                        )
+                                    ],
+                                ),
+                                detail_section(
+                                    "Resumen financiero",
+                                    [
+                                        _resumen_financiero(
+                                            data.get("resumen_financiero")
+                                        )
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ]
                 ),
             ],
             spacing=14,
-            scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
 
@@ -231,7 +287,6 @@ def _contrato_row(item: dict[str, Any]) -> dict[str, Any]:
 def _base_contrato(data: dict[str, Any]) -> ft.Control:
     return key_value_grid(
         [
-            ("ID", data.get("id_contrato_alquiler")),
             ("Codigo", data.get("codigo_contrato")),
             ("Estado", data.get("estado_contrato")),
             ("Fecha inicio", data.get("fecha_inicio")),
@@ -241,13 +296,36 @@ def _base_contrato(data: dict[str, Any]) -> ft.Control:
     )
 
 
+def _contrato_header(data: dict[str, Any]) -> ft.Control:
+    resumen = data.get("resumen_financiero")
+    resumen_data = resumen if isinstance(resumen, dict) else {}
+    return ft.Container(
+        content=key_value_grid(
+            [
+                ("Contrato", _contrato_title(data)),
+                ("Estado", data.get("estado_contrato")),
+                ("Fecha inicio", data.get("fecha_inicio")),
+                ("Fecha fin", data.get("fecha_fin")),
+                ("Partes principales", _partes_resumen(data.get("partes"))),
+                ("Objeto principal", _objetos_resumen(data.get("objetos"))),
+                (
+                    "Saldo pendiente",
+                    resumen_data.get("saldo_pendiente")
+                    or resumen_data.get("saldo_pendiente_total"),
+                ),
+            ]
+        ),
+        padding=16,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=6,
+    )
+
+
 def _objetos_table(value: object) -> ft.Control:
     rows = []
     for item in _safe_list(value):
         rows.append(
             {
-                "id_inmueble": item.get("id_inmueble"),
-                "id_unidad_funcional": item.get("id_unidad_funcional"),
                 "codigo_nombre": _object_display(item),
                 "tipo_objeto": item.get("tipo_objeto") or _object_type(item),
             }
@@ -256,8 +334,6 @@ def _objetos_table(value: object) -> ft.Control:
         return ft.Text("Sin objetos locativos registrados.")
     return entity_table(
         columns=[
-            ("ID inmueble", "id_inmueble"),
-            ("ID unidad", "id_unidad_funcional"),
             ("Codigo / nombre", "codigo_nombre"),
             ("Tipo", "tipo_objeto"),
         ],
@@ -270,7 +346,6 @@ def _partes_table(value: object) -> ft.Control:
     for item in _safe_list(value):
         rows.append(
             {
-                "id_persona": item.get("id_persona"),
                 "display_name": item.get("display_name") or _party_display(item),
                 "rol": _join_values(item.get("codigo_rol"), item.get("nombre_rol")),
                 "tipo_relacion": item.get("tipo_relacion") or "contrato_alquiler",
@@ -281,7 +356,6 @@ def _partes_table(value: object) -> ft.Control:
         return ft.Text("Sin partes registradas.")
     return entity_table(
         columns=[
-            ("ID parte", "id_persona"),
             ("Nombre", "display_name"),
             ("Rol", "rol"),
             ("Tipo relacion", "tipo_relacion"),
@@ -357,7 +431,6 @@ def _relacion_financiera(value: object, resumen: object) -> ft.Control:
     resumen_data = resumen if isinstance(resumen, dict) else {}
     return key_value_grid(
         [
-            ("ID relacion", value.get("id_relacion_generadora")),
             ("Tipo origen", value.get("tipo_origen")),
             ("Estado", value.get("estado_relacion_generadora") or value.get("estado")),
             ("Cantidad obligaciones", resumen_data.get("cantidad_obligaciones")),
@@ -372,7 +445,6 @@ def _obligaciones_table(value: object) -> ft.Control:
     for item in _safe_list(value):
         rows.append(
             {
-                "id_obligacion_financiera": item.get("id_obligacion_financiera"),
                 "fecha_emision": item.get("fecha_emision"),
                 "fecha_vencimiento": item.get("fecha_vencimiento"),
                 "estado_obligacion": item.get("estado_obligacion"),
@@ -395,7 +467,6 @@ def _obligaciones_table(value: object) -> ft.Control:
         return ft.Text("Sin obligaciones registradas.")
     return entity_table(
         columns=[
-            ("ID", "id_obligacion_financiera"),
             ("Emision", "fecha_emision"),
             ("Vencimiento", "fecha_vencimiento"),
             ("Estado", "estado_obligacion"),

@@ -5,6 +5,7 @@ import flet as ft
 
 from app.api_client import ApiClient
 from app.components.detail_section import detail_section, key_value_grid
+from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
 from app.components.status_badge import status_badge
@@ -59,40 +60,95 @@ class ParteDetailPage:
                     ]
                 ),
                 ft.Text(self._display_name(data), size=30, weight=ft.FontWeight.W_700),
-                detail_section("Datos base", [self._datos_base(data)]),
-                detail_section(
-                    "Documentos", [self._simple_table(data.get("documentos", []))]
+                self._header_card(data),
+                detail_tabs(
+                    [
+                        (
+                            "Resumen",
+                            [
+                                detail_section(
+                                    "Datos base ampliados", [self._datos_base(data)]
+                                ),
+                                detail_section(
+                                    "Resumen financiero de parte",
+                                    [self._estado_financiero(data)],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Documentacion y contacto",
+                            [
+                                detail_section(
+                                    "Documentos",
+                                    [self._simple_table(data.get("documentos", []))],
+                                ),
+                                detail_section(
+                                    "Contactos",
+                                    [self._simple_table(data.get("contactos", []))],
+                                ),
+                                detail_section(
+                                    "Domicilios",
+                                    [self._simple_table(data.get("domicilios", []))],
+                                ),
+                            ],
+                        ),
+                        (
+                            "Roles / participaciones",
+                            [
+                                detail_section(
+                                    "Roles / participaciones",
+                                    [
+                                        self._participaciones_table(
+                                            data.get("participaciones", [])
+                                        )
+                                    ],
+                                )
+                            ],
+                        ),
+                        (
+                            "Estado de cuenta",
+                            self._estado_cuenta_tab(data, estado_cuenta_result),
+                        ),
+                        (
+                            "Usos transversales",
+                            [
+                                detail_section(
+                                    "Usos transversales",
+                                    [self._usos_transversales(data)],
+                                ),
+                                detail_section(
+                                    "Obligaciones del detalle integral",
+                                    [self._obligaciones_table(data)],
+                                ),
+                            ],
+                        ),
+                    ]
                 ),
-                detail_section(
-                    "Contactos", [self._simple_table(data.get("contactos", []))]
-                ),
-                detail_section(
-                    "Domicilios", [self._simple_table(data.get("domicilios", []))]
-                ),
-                detail_section(
-                    "Roles / participaciones",
-                    [self._participaciones_table(data.get("participaciones", []))],
-                ),
-                detail_section(
-                    "Resumen financiero de parte", [self._estado_financiero(data)]
-                ),
-                detail_section(
-                    "Estado de cuenta",
-                    self._estado_cuenta_controls(estado_cuenta_result),
-                ),
-                detail_section("Simular pago global", [self._simular_pago_section()]),
-                detail_section("Obligaciones", [self._obligaciones_table(data)]),
-                detail_section("Usos transversales", [self._usos_transversales(data)]),
             ],
             spacing=14,
-            scroll=ft.ScrollMode.AUTO,
             expand=True,
+        )
+
+    def _header_card(self, data: dict[str, Any]) -> ft.Control:
+        return ft.Container(
+            content=key_value_grid(
+                [
+                    ("Parte", self._display_name(data)),
+                    ("Tipo de parte", data.get("tipo_persona")),
+                    ("Estado", data.get("estado_persona")),
+                    ("Documento principal", self._documento_principal(data)),
+                    ("CUIT/CUIL", data.get("cuit_cuil")),
+                    ("Contacto principal", self._contacto_principal(data)),
+                ]
+            ),
+            padding=16,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
         )
 
     def _datos_base(self, data: dict[str, Any]) -> ft.Control:
         return key_value_grid(
             [
-                ("ID", data.get("id_persona")),
                 ("Tipo", data.get("tipo_persona")),
                 ("Codigo", data.get("codigo_persona")),
                 ("Nombre", data.get("nombre")),
@@ -126,7 +182,6 @@ class ParteDetailPage:
         return entity_table(
             columns=[
                 ("Origen", "tipo_origen"),
-                ("ID origen", "id_origen"),
                 ("Rol", "rol_obligado"),
                 ("Estado", "estado_obligacion"),
                 ("Vencimiento", "fecha_vencimiento"),
@@ -134,6 +189,44 @@ class ParteDetailPage:
             ],
             rows=obligaciones,
         )
+
+    def _estado_cuenta_tab(self, data: dict[str, Any], result) -> list[ft.Control]:
+        return [
+            detail_tabs(
+                [
+                    (
+                        "General",
+                        [
+                            detail_section(
+                                "Estado de cuenta general",
+                                self._estado_cuenta_controls(result),
+                            ),
+                            self._simular_pago_contextual(),
+                        ],
+                    ),
+                    (
+                        "Contratos",
+                        [
+                            self._estado_cuenta_origen_panel(
+                                "contrato_alquiler",
+                                self._related_origins(data, "contrato_alquiler"),
+                                "Sin contratos asociados",
+                            )
+                        ],
+                    ),
+                    (
+                        "Ventas",
+                        [
+                            self._estado_cuenta_origen_panel(
+                                "venta",
+                                self._related_origins(data, "venta"),
+                                "Sin ventas asociadas",
+                            )
+                        ],
+                    ),
+                ]
+            )
+        ]
 
     def _estado_cuenta_controls(self, result) -> list[ft.Control]:
         if not result.success:
@@ -191,9 +284,7 @@ class ParteDetailPage:
                     entity_table(
                         columns=[
                             ("Grupo", "grupo_origen_deuda"),
-                            ("ID relacion", "id_relacion_generadora"),
                             ("Tipo origen", "tipo_origen"),
-                            ("ID origen", "id_origen"),
                             ("Descripcion", "descripcion_origen"),
                             ("Saldo", "saldo_total"),
                             ("Obligaciones", "cantidad_obligaciones"),
@@ -209,7 +300,6 @@ class ParteDetailPage:
                     ft.Text("Obligaciones", weight=ft.FontWeight.W_600),
                     entity_table(
                         columns=[
-                            ("ID", "id_obligacion_financiera"),
                             ("Origen", "tipo_origen"),
                             ("Estado", "estado_obligacion"),
                             ("Vencimiento", "fecha_vencimiento"),
@@ -228,7 +318,6 @@ class ParteDetailPage:
                     ft.Text("Composiciones", weight=ft.FontWeight.W_600),
                     entity_table(
                         columns=[
-                            ("Obligacion", "id_obligacion_financiera"),
                             ("Concepto", "codigo_concepto_financiero"),
                             ("Importe", "importe_componente"),
                             ("Saldo", "saldo_componente"),
@@ -245,6 +334,26 @@ class ParteDetailPage:
                 controls.append(self._generic_table(extra_rows))
 
         return controls
+
+    def _simular_pago_contextual(self) -> ft.Control:
+        panel = ft.Container(visible=False)
+
+        def toggle(_) -> None:
+            panel.visible = not panel.visible
+            panel.update()
+
+        panel.content = self._simular_pago_section()
+        return detail_section(
+            "Simulacion de pago",
+            [
+                ft.Text(
+                    "Simulacion global por persona: no registra pagos ni modifica saldos.",
+                    size=12,
+                ),
+                ft.OutlinedButton("Simular pago", on_click=toggle),
+                panel,
+            ],
+        )
 
     def _simular_pago_section(self) -> ft.Control:
         monto = ft.TextField(
@@ -283,10 +392,6 @@ class ParteDetailPage:
 
         return ft.Column(
             controls=[
-                ft.Text(
-                    "Simulacion global por persona: no registra pagos ni modifica saldos.",
-                    size=12,
-                ),
                 ft.Row(
                     controls=[monto, fecha_corte],
                     spacing=10,
@@ -330,7 +435,6 @@ class ParteDetailPage:
                     ft.Text("Obligaciones afectadas", weight=ft.FontWeight.W_600),
                     entity_table(
                         columns=[
-                            ("Obligacion", "id_obligacion_financiera"),
                             ("Saldo", "saldo_pendiente"),
                             ("Mora", "mora_calculada"),
                             ("Total a cubrir", "total_a_cubrir"),
@@ -350,7 +454,6 @@ class ParteDetailPage:
                     ft.Text("Composiciones afectadas", weight=ft.FontWeight.W_600),
                     entity_table(
                         columns=[
-                            ("Obligacion", "id_obligacion_financiera"),
                             ("Concepto", "codigo_concepto_financiero"),
                             ("Importe", "importe_componente"),
                             ("Saldo", "saldo_componente"),
@@ -498,13 +601,135 @@ class ParteDetailPage:
         return entity_table(
             columns=[
                 ("Tipo", "tipo_relacion"),
-                ("ID relacion", "id_relacion"),
                 ("Rol", "codigo_rol"),
                 ("Desde", "fecha_desde"),
                 ("Hasta", "fecha_hasta"),
             ],
             rows=rows,
         )
+
+    def _estado_cuenta_origen_panel(
+        self,
+        tipo_origen: str,
+        origins: list[dict[str, Any]],
+        empty_message: str,
+    ) -> ft.Control:
+        result_area = ft.Container(content=ft.Text("Seleccione un origen."))
+
+        def load_origin(row: dict[str, Any]):
+            def handler(_) -> None:
+                id_origen = self._parse_optional_int(row.get("id_origen"))
+                if id_origen is None:
+                    result_area.content = error_state(
+                        "No se pudo identificar el origen seleccionado."
+                    )
+                    result_area.update()
+                    return
+                result = self.api.get_estado_cuenta_persona(
+                    self.id_persona,
+                    tipo_origen=tipo_origen,
+                    id_origen=id_origen,
+                )
+                result_area.content = ft.Column(
+                    controls=self._estado_cuenta_controls(result),
+                    spacing=12,
+                )
+                result_area.update()
+
+            return handler
+
+        if not origins:
+            return ft.Column(controls=[ft.Text(empty_message)], spacing=12)
+
+        rows = [
+            {
+                "id_origen": item.get("id_origen"),
+                "origen": item.get("descripcion_origen")
+                or item.get("codigo")
+                or item.get("codigo_contrato")
+                or item.get("codigo_venta")
+                or item.get("label")
+                or "Origen asociado",
+                "tipo": item.get("tipo_origen") or tipo_origen,
+                "saldo": item.get("saldo_total") or item.get("saldo_pendiente"),
+            }
+            for item in origins
+        ]
+
+        return ft.Column(
+            controls=[
+                entity_table(
+                    columns=[
+                        ("Origen", "origen"),
+                        ("Tipo", "tipo"),
+                        ("Saldo", "saldo"),
+                    ],
+                    rows=rows,
+                    actions=lambda row: [
+                        ft.TextButton("Ver estado", on_click=load_origin(row))
+                    ],
+                ),
+                result_area,
+            ],
+            spacing=14,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
+    def _related_origins(
+        self, data: dict[str, Any], expected_tipo: str
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        usos = (
+            data.get("usos_transversales")
+            if isinstance(data.get("usos_transversales"), dict)
+            else {}
+        )
+
+        if expected_tipo == "contrato_alquiler":
+            for item in self._dict_rows(usos.get("contratos_locativos")):
+                rows.append(self._origin_from_item(item, expected_tipo))
+        if expected_tipo == "venta":
+            for item in self._dict_rows(usos.get("comprador_ventas")):
+                rows.append(self._origin_from_item(item, expected_tipo))
+
+        for item in self._dict_rows(data.get("participaciones")):
+            tipo = item.get("tipo_relacion") or item.get("tipo_origen")
+            if tipo == expected_tipo:
+                rows.append(self._origin_from_item(item, expected_tipo))
+
+        unique: dict[int, dict[str, Any]] = {}
+        fallback: list[dict[str, Any]] = []
+        for row in rows:
+            id_origen = self._parse_optional_int(row.get("id_origen"))
+            if id_origen is None:
+                fallback.append(row)
+            else:
+                unique.setdefault(id_origen, row)
+        return list(unique.values()) + fallback
+
+    def _origin_from_item(
+        self, item: dict[str, Any], expected_tipo: str
+    ) -> dict[str, Any]:
+        id_origen = (
+            item.get("id_origen")
+            or item.get("id_relacion")
+            or item.get("id_contrato_alquiler")
+            or item.get("id_venta")
+        )
+        return {
+            "id_origen": id_origen,
+            "tipo_origen": item.get("tipo_origen")
+            or item.get("tipo_relacion")
+            or expected_tipo,
+            "descripcion_origen": item.get("descripcion_origen")
+            or item.get("codigo_contrato")
+            or item.get("codigo_venta")
+            or item.get("codigo")
+            or item.get("nombre")
+            or item.get("label"),
+            "saldo_total": item.get("saldo_total") or item.get("saldo_pendiente"),
+        }
 
     def _usos_transversales(self, data: dict[str, Any]) -> ft.Control:
         raw_usos = data.get("usos_transversales") or {}
@@ -520,7 +745,9 @@ class ParteDetailPage:
         rows = self._dict_rows(rows)
         if not rows:
             return ft.Text("Sin registros.")
-        keys = list(rows[0].keys())[:6]
+        keys = [key for key in rows[0].keys() if not self._is_technical_id(key)][:6]
+        if not keys:
+            return ft.Text("Sin campos visibles.")
         return entity_table(columns=[(key, key) for key in keys], rows=rows)
 
     def _dict_rows(self, rows: object) -> list[dict[str, Any]]:
@@ -535,4 +762,43 @@ class ParteDetailPage:
             return str(data["razon_social"])
         parts = [data.get("nombre"), data.get("apellido")]
         value = " ".join(part for part in parts if part)
-        return value or f"Ficha de parte #{self.id_persona}"
+        return value or "Ficha de parte"
+
+    def _documento_principal(self, data: dict[str, Any]) -> object:
+        documentos = self._dict_rows(data.get("documentos"))
+        if not documentos:
+            return None
+        principal = next(
+            (
+                item
+                for item in documentos
+                if item.get("es_principal") or item.get("principal")
+            ),
+            documentos[0],
+        )
+        return (
+            principal.get("numero_documento")
+            or principal.get("documento")
+            or principal.get("valor")
+        )
+
+    def _contacto_principal(self, data: dict[str, Any]) -> object:
+        contactos = self._dict_rows(data.get("contactos"))
+        if not contactos:
+            return None
+        principal = next(
+            (
+                item
+                for item in contactos
+                if item.get("es_principal") or item.get("principal")
+            ),
+            contactos[0],
+        )
+        return (
+            principal.get("valor_contacto")
+            or principal.get("valor")
+            or principal.get("contacto")
+        )
+
+    def _is_technical_id(self, key: str) -> bool:
+        return key.startswith("id_") or key in {"uid_global", "version_registro"}
