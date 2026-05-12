@@ -74,7 +74,7 @@ class ContratosListView:
 
     def _on_search(self, _) -> None:
         self.offset = _safe_int(self.offset_field.value)
-        self.limit = _safe_positive_int(self.limit_field.value, default=20)
+        self.limit = _safe_limit_int(self.limit_field.value, default=20)
         self._load()
         self.results.update()
 
@@ -147,6 +147,8 @@ class ContratosListView:
         self.results.update()
 
     def _next(self, _) -> None:
+        if self.limit <= 0:
+            return
         self.offset += self.limit
         self.offset_field.value = str(self.offset)
         self._load()
@@ -577,15 +579,15 @@ def _pagination(
     on_previous: Callable,
     on_next: Callable,
 ) -> ft.Control:
-    start = offset + 1 if total else 0
-    end = min(offset + limit, total)
+    start = offset + 1 if total and limit > 0 else 0
+    end = min(offset + limit, total) if limit > 0 else 0
     return ft.Row(
         controls=[
             ft.OutlinedButton("Anterior", disabled=offset <= 0, on_click=on_previous),
             ft.Text(f"{start}-{end} de {total}"),
             ft.OutlinedButton(
                 "Siguiente",
-                disabled=offset + limit >= total,
+                disabled=limit <= 0 or offset + limit >= total,
                 on_click=on_next,
             ),
         ],
@@ -638,12 +640,12 @@ def _safe_int(value: object) -> int:
         return 0
 
 
-def _safe_positive_int(value: object, default: int) -> int:
+def _safe_limit_int(value: object, default: int) -> int:
     try:
-        number = int(value or default)
+        number = int(value if value not in (None, "") else default)
     except (TypeError, ValueError):
         return default
-    return max(1, number)
+    return min(100, max(0, number))
 
 
 def _safe_int_or_none(value: object) -> int | None:
