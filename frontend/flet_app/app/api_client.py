@@ -100,6 +100,41 @@ class ApiClient:
             f"/api/v1/unidades-funcionales/{id_unidad_funcional}/detalle-integral"
         )
 
+    def get_contratos_alquiler(
+        self,
+        *,
+        q: str | None = None,
+        estado_contrato: str | None = None,
+        id_persona: int | None = None,
+        rol_codigo: str | None = None,
+        id_inmueble: int | None = None,
+        id_unidad_funcional: int | None = None,
+        con_saldo: bool | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/contratos-alquiler",
+            params={
+                "q": q or None,
+                "estado_contrato": estado_contrato or None,
+                "id_persona": id_persona,
+                "rol_codigo": rol_codigo or None,
+                "id_inmueble": id_inmueble,
+                "id_unidad_funcional": id_unidad_funcional,
+                "con_saldo": con_saldo,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+    def get_contrato_alquiler_detalle_integral(
+        self, id_contrato_alquiler: int
+    ) -> ApiResult:
+        return self._get(
+            f"/api/v1/contratos-alquiler/{id_contrato_alquiler}/detalle-integral"
+        )
+
     def _get(self, path: str, params: dict[str, Any] | None = None) -> ApiResult:
         url = f"{self.base_url}{path}"
         try:

@@ -127,6 +127,7 @@ class AppShell:
             "inmueble_detail": 2,
             "unidad_detail": 2,
             "contratos": 3,
+            "contrato_detail": 3,
             "ventas": 4,
             "finanzas": 5,
         }
@@ -169,7 +170,16 @@ class AppShell:
                 detail_id=id_unidad,
             ).build()
         if route.name == "contratos":
-            return ContratosPage().build()
+            return ContratosPage(api=self.api, on_navigate=self.navigate).build()
+        if route.name == "contrato_detail":
+            id_contrato = self._route_int(route, "id_contrato_alquiler")
+            if id_contrato is None:
+                return self._invalid_route("No se indico un contrato valido.")
+            return ContratosPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                detail_id=id_contrato,
+            ).build()
         if route.name == "ventas":
             return VentasPage().build()
         if route.name == "finanzas":
