@@ -7,29 +7,28 @@ TabContent = tuple[str, Sequence[ft.Control]]
 
 
 def detail_tabs(items: Sequence[TabContent]) -> ft.Control:
-    views = [
-        ft.Container(
-            content=ft.Column(
-                controls=list(controls),
-                spacing=14,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True,
-            ),
-            padding=ft.padding.only(top=12),
-            expand=True,
-        )
-        for _, controls in items
-    ]
     return ft.Tabs(
-        content=ft.Column(
-            controls=[
-                ft.TabBar(tabs=[ft.Tab(label=title) for title, _ in items]),
-                ft.TabBarView(controls=views, expand=True),
-            ],
-            expand=True,
-        ),
-        length=len(items),
         selected_index=0,
         expand=True,
-        animation_duration=120,
+        tabs=[
+            ft.Tab(
+                text=title,
+                content=ft.Container(
+                    content=ft.Column(
+                        controls=_controls_list(controls),
+                        spacing=12,
+                        scroll=ft.ScrollMode.AUTO,
+                        expand=True,
+                    ),
+                    padding=8,
+                    expand=True,
+                ),
+            )
+            for title, controls in items
+        ],
     )
+
+
+def _controls_list(controls: Sequence[ft.Control]) -> list[ft.Control]:
+    result = list(controls)
+    return result or [ft.Text("Sin datos.")]
