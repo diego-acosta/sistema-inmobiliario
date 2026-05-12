@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any
 
 import flet as ft
@@ -79,6 +80,7 @@ class ParteDetailPage:
                     "Estado de cuenta",
                     self._estado_cuenta_controls(estado_cuenta_result),
                 ),
+                detail_section("Simular pago", [self._simular_pago_section()]),
                 detail_section("Obligaciones", [self._obligaciones_table(data)]),
                 detail_section("Usos transversales", [self._usos_transversales(data)]),
             ],
@@ -244,6 +246,162 @@ class ParteDetailPage:
 
         return controls
 
+    def _simular_pago_section(self) -> ft.Control:
+        monto = ft.TextField(
+            label="Monto",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            width=180,
+        )
+        fecha_pago = ft.TextField(
+            label="Fecha pago",
+            value=date.today().isoformat(),
+            width=180,
+        )
+        alcance_pago = ft.Dropdown(
+            label="Alcance",
+            value="GLOBAL_PERSONA",
+            width=220,
+            options=[
+                ft.dropdown.Option("GLOBAL_PERSONA"),
+                ft.dropdown.Option("OBLIGACION"),
+                ft.dropdown.Option("RELACION_GENERADORA"),
+                ft.dropdown.Option(""),
+            ],
+        )
+        id_obligacion = ft.TextField(
+            label="ID obligacion",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            width=180,
+        )
+        id_relacion = ft.TextField(
+            label="ID relacion generadora",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            width=220,
+        )
+        result_area = ft.Container(content=ft.Text("Sin simulacion ejecutada."))
+
+        def show_error(message: str) -> None:
+            result_area.content = error_state(message)
+            result_area.update()
+
+        def on_submit(_) -> None:
+            monto_value = self._parse_positive_float(monto.value)
+            if monto_value is None:
+                show_error("El monto es obligatorio y debe ser mayor que cero.")
+                return
+
+            alcance = alcance_pago.value or None
+            id_ob_value = self._parse_optional_int(id_obligacion.value)
+            id_rel_value = self._parse_optional_int(id_relacion.value)
+
+            if alcance == "OBLIGACION" and id_ob_value is None:
+                show_error("Para alcance OBLIGACION indique id_obligacion_financiera.")
+                return
+            if alcance == "RELACION_GENERADORA" and id_rel_value is None:
+                show_error("Para alcance RELACION_GENERADORA indique id_relacion_generadora.")
+                return
+
+            result = self.api.simular_pago_persona(
+                self.id_persona,
+                monto=monto_value,
+                fecha_pago=fecha_pago.value or None,
+                alcance_pago=alcance,
+                id_obligacion_financiera=id_ob_value,
+                id_relacion_generadora=id_rel_value,
+            )
+            if not result.success:
+                show_error(result.error_message or "No se pudo simular el pago.")
+                return
+
+            result_area.content = self._simulacion_result(result.data)
+            result_area.update()
+
+        return ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[monto, fecha_pago, alcance_pago],
+                    spacing=10,
+                    wrap=True,
+                ),
+                ft.Row(
+                    controls=[id_obligacion, id_relacion],
+                    spacing=10,
+                    wrap=True,
+                ),
+                ft.ElevatedButton("Simular", on_click=on_submit),
+                ft.Text("Resultado de simulacion", weight=ft.FontWeight.W_600),
+                result_area,
+            ],
+            spacing=10,
+        )
+
+    def _simulacion_result(self, payload: object) -> ft.Control:
+        if isinstance(payload, list):
+            rows = self._dict_rows(payload)
+            if not rows:
+                return ft.Text("La simulacion no devolvio obligaciones afectadas.")
+            return self._generic_table(rows)
+
+        if not isinstance(payload, dict):
+            return ft.Text("La simulacion devolvio una respuesta inesperada.")
+
+        detalle = self._dict_rows(payload.get("detalle"))
+        composiciones = self._flatten_composiciones(detalle, [])
+        controls: list[ft.Control] = [
+            key_value_grid(
+                [
+                    ("Fecha corte", payload.get("fecha_corte")),
+                    ("Total simulado", payload.get("total_deuda_considerada")),
+                    ("Monto ingresado", payload.get("monto_ingresado")),
+                    ("Monto aplicado", payload.get("monto_aplicado")),
+                    ("Remanente", payload.get("remanente")),
+                    ("Mora / punitorio", self._sum_field(detalle, "mora_calculada")),
+                ]
+            )
+        ]
+
+        if detalle:
+            controls.extend(
+                [
+                    ft.Text("Obligaciones afectadas", weight=ft.FontWeight.W_600),
+                    entity_table(
+                        columns=[
+                            ("Obligacion", "id_obligacion_financiera"),
+                            ("Saldo", "saldo_pendiente"),
+                            ("Mora", "mora_calculada"),
+                            ("Total a cubrir", "total_a_cubrir"),
+                            ("Aplicado", "monto_aplicado"),
+                            ("Saldo simulado", "saldo_restante_simulado"),
+                        ],
+                        rows=detalle,
+                    ),
+                ]
+            )
+        else:
+            controls.append(ft.Text("Sin obligaciones afectadas."))
+
+        if composiciones:
+            controls.extend(
+                [
+                    ft.Text("Composiciones afectadas", weight=ft.FontWeight.W_600),
+                    entity_table(
+                        columns=[
+                            ("Obligacion", "id_obligacion_financiera"),
+                            ("Concepto", "codigo_concepto_financiero"),
+                            ("Importe", "importe_componente"),
+                            ("Saldo", "saldo_componente"),
+                        ],
+                        rows=composiciones,
+                    ),
+                ]
+            )
+
+        if len(controls) == 1 and payload:
+            rows = [payload]
+            return self._generic_table(rows)
+
+        return ft.Column(controls=controls, spacing=10)
+
     def _estado_cuenta_resumen(
         self, payload: dict[str, Any], resumen: dict[str, Any]
     ) -> ft.Control:
@@ -348,6 +506,26 @@ class ParteDetailPage:
             return float(value or 0)
         except (TypeError, ValueError):
             return 0.0
+
+    def _parse_positive_float(self, value: object) -> float | None:
+        try:
+            parsed = float(str(value or "").replace(",", "."))
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+
+    def _parse_optional_int(self, value: object) -> int | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            parsed = int(raw)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+
+    def _sum_field(self, rows: list[dict[str, Any]], key: str) -> float:
+        return sum(self._to_number(row.get(key)) for row in rows)
 
     def _participaciones_table(self, rows: object) -> ft.Control:
         rows = self._dict_rows(rows)

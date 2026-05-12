@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 import httpx
@@ -62,6 +63,40 @@ class ApiClient:
                 "fecha_vencimiento_desde": fecha_vencimiento_desde or None,
                 "fecha_vencimiento_hasta": fecha_vencimiento_hasta or None,
                 "fecha_corte": fecha_corte or None,
+            },
+        )
+
+    def simular_pago_persona(
+        self,
+        id_persona: int,
+        monto: float,
+        fecha_pago: str | None = None,
+        alcance_pago: str | None = None,
+        id_obligacion_financiera: int | None = None,
+        id_relacion_generadora: int | None = None,
+    ) -> ApiResult:
+        if alcance_pago in {"OBLIGACION", "RELACION_GENERADORA"}:
+            return ApiResult(
+                success=False,
+                error_message=(
+                    "El endpoint de simulacion V1 solo admite simulacion global "
+                    "por persona."
+                ),
+            )
+        if id_obligacion_financiera is not None or id_relacion_generadora is not None:
+            return ApiResult(
+                success=False,
+                error_message=(
+                    "El endpoint de simulacion V1 no admite identificadores de "
+                    "alcance."
+                ),
+            )
+
+        return self._post(
+            f"/api/v1/financiero/personas/{id_persona}/simular-pago",
+            json={
+                "monto": monto,
+                "fecha_corte": fecha_pago or date.today().isoformat(),
             },
         )
 
@@ -198,6 +233,55 @@ class ApiClient:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(url, params=self._clean_params(params or {}))
+        except httpx.ConnectError:
+            return ApiResult(
+                success=False,
+                error_message=(
+                    f"No se pudo conectar con el backend en {self.base_url}."
+                ),
+            )
+        except httpx.TimeoutException:
+            return ApiResult(
+                success=False,
+                error_message="La consulta al backend excedio el tiempo de espera.",
+            )
+        except httpx.HTTPError as exc:
+            return ApiResult(success=False, error_message=str(exc))
+
+        if response.status_code >= 400:
+            return ApiResult(
+                success=False,
+                error_message=self._format_error(response),
+                status_code=response.status_code,
+            )
+
+        try:
+            payload = response.json()
+        except ValueError:
+            return ApiResult(
+                success=False,
+                error_message="El backend devolvio una respuesta no JSON.",
+                status_code=response.status_code,
+            )
+
+        if not isinstance(payload, dict) or "data" not in payload:
+            return ApiResult(
+                success=False,
+                error_message="El backend devolvio un formato JSON inesperado.",
+                status_code=response.status_code,
+            )
+
+        return ApiResult(
+            success=True,
+            data=payload.get("data"),
+            status_code=response.status_code,
+        )
+
+    def _post(self, path: str, json: dict[str, Any] | None = None) -> ApiResult:
+        url = f"{self.base_url}{path}"
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(url, json=self._clean_params(json or {}))
         except httpx.ConnectError:
             return ApiResult(
                 success=False,
