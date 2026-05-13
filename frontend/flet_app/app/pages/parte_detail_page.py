@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Any
+from uuid import uuid4
 
 import flet as ft
 
@@ -246,6 +247,39 @@ class ParteDetailPage:
         )
 
     def _estado_cuenta_tab(self, data: dict[str, Any], result) -> list[ft.Control]:
+        estado_area = ft.Container()
+        notice_area = ft.Container()
+
+        def refresh_estado_cuenta(message: str | None = None) -> None:
+            refreshed = self.api.get_estado_cuenta_persona(self.id_persona)
+            estado_area.content = ft.Column(
+                controls=self._estado_cuenta_controls(
+                    refreshed, on_refresh=refresh_estado_cuenta
+                ),
+                spacing=12,
+            )
+            if message:
+                notice_area.content = ft.Container(
+                    content=ft.Text(
+                        message,
+                        color=ft.Colors.GREEN_900,
+                        weight=ft.FontWeight.W_600,
+                    ),
+                    padding=10,
+                    border=ft.border.all(1, ft.Colors.GREEN_100),
+                    border_radius=6,
+                    bgcolor=ft.Colors.GREEN_50,
+                )
+                notice_area.visible = True
+                notice_area.update()
+            estado_area.update()
+
+        estado_area.content = ft.Column(
+            controls=self._estado_cuenta_controls(
+                result, on_refresh=refresh_estado_cuenta
+            ),
+            spacing=12,
+        )
         return [
             detail_tabs(
                 [
@@ -254,7 +288,7 @@ class ParteDetailPage:
                         [
                             detail_section(
                                 "Estado de cuenta general",
-                                self._estado_cuenta_controls(result),
+                                [notice_area, estado_area],
                             ),
                             self._simular_pago_contextual(),
                         ],
@@ -283,7 +317,7 @@ class ParteDetailPage:
             )
         ]
 
-    def _estado_cuenta_controls(self, result) -> list[ft.Control]:
+    def _estado_cuenta_controls(self, result, on_refresh=None) -> list[ft.Control]:
         if not result.success:
             return [
                 error_state(
@@ -297,7 +331,7 @@ class ParteDetailPage:
             rows = self._dedupe_obligaciones(self._dict_rows(payload))
             if not rows:
                 return [ft.Text("Sin deuda registrada")]
-            return [self._deudas_operativas_table(rows)]
+            return [self._deudas_operativas_table(rows, on_refresh=on_refresh)]
 
         if not isinstance(payload, dict):
             return [ft.Text("Sin deuda registrada")]
@@ -320,7 +354,7 @@ class ParteDetailPage:
             controls.extend(
                 [
                     ft.Text("Conceptos a pagar", weight=ft.FontWeight.W_600),
-                    self._deudas_operativas_table(obligaciones),
+                    self._deudas_operativas_table(obligaciones, on_refresh=on_refresh),
                 ]
             )
         elif relaciones:
@@ -334,12 +368,14 @@ class ParteDetailPage:
         if len(controls) == 2:
             extra_rows = self._dedupe_obligaciones(self._dict_rows(payload.get("items")))
             if extra_rows:
-                controls.append(self._deudas_operativas_table(extra_rows))
+                controls.append(
+                    self._deudas_operativas_table(extra_rows, on_refresh=on_refresh)
+                )
 
         return controls
 
     def _deudas_operativas_table(
-        self, obligaciones: list[dict[str, Any]]
+        self, obligaciones: list[dict[str, Any]], on_refresh=None
     ) -> ft.Control:
         detalle_panel = ft.Container(visible=False)
         rows = [
@@ -363,6 +399,30 @@ class ParteDetailPage:
 
             return handler
 
+        def show_payment(row: dict[str, Any]):
+            def handler(_) -> None:
+                deuda = row.get("_deuda")
+
+                def close_payment() -> None:
+                    detalle_panel.visible = False
+                    detalle_panel.content = None
+                    detalle_panel.update()
+
+                detalle_panel.content = detail_section(
+                    "Registrar pago",
+                    [
+                        self._registrar_pago_panel(
+                            deuda,
+                            on_refresh=on_refresh,
+                            on_cancel=close_payment,
+                        )
+                    ],
+                )
+                detalle_panel.visible = True
+                detalle_panel.update()
+
+            return handler
+
         return ft.Column(
             controls=[
                 entity_table(
@@ -377,7 +437,14 @@ class ParteDetailPage:
                     ],
                     rows=rows,
                     actions=lambda row: [
-                        ft.TextButton("Ver detalle", on_click=show_detail(row))
+                        ft.TextButton("Ver detalle", on_click=show_detail(row)),
+                        *(
+                            [
+                                ft.TextButton("Pagar", on_click=show_payment(row)),
+                            ]
+                            if self._deuda_pagable(row.get("_deuda"))
+                            else []
+                        ),
                     ],
                 ),
                 detalle_panel,
@@ -622,6 +689,210 @@ class ParteDetailPage:
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
             border_radius=6,
             bgcolor=ft.Colors.WHITE,
+        )
+
+    def _registrar_pago_panel(
+        self, value: object, on_refresh=None, on_cancel=None
+    ) -> ft.Control:
+        deuda = value if isinstance(value, dict) else {}
+        id_obligacion = self._parse_optional_int(deuda.get("id_obligacion_financiera"))
+        saldo_actual = self._deuda_saldo(deuda)
+        monto = ft.TextField(
+            label="Monto",
+            value=str(saldo_actual) if saldo_actual > 0 else "",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            width=180,
+        )
+        fecha_pago = ft.TextField(
+            label="Fecha de pago",
+            value=date.today().isoformat(),
+            width=180,
+        )
+        confirm_area = ft.Container(visible=False)
+        result_area = ft.Container()
+
+        def show_error(message: str) -> None:
+            result_area.content = error_state(message)
+            result_area.update()
+
+        def reset_confirmation() -> None:
+            confirm_area.visible = False
+            confirm_area.content = None
+            confirm_area.update()
+
+        def validate() -> float | None:
+            if id_obligacion is None:
+                show_error("No se pudo identificar la deuda seleccionada.")
+                return None
+            if saldo_actual <= 0:
+                show_error("La deuda seleccionada no tiene saldo pendiente.")
+                return None
+            monto_value = self._parse_positive_float(monto.value)
+            if monto_value is None:
+                show_error("El monto es obligatorio y debe ser mayor que cero.")
+                return None
+            if self._is_empty_value(fecha_pago.value):
+                show_error("La fecha de pago es obligatoria.")
+                return None
+            return monto_value
+
+        def execute_payment(monto_value: float) -> None:
+            op_id = str(uuid4())
+            result = self.api.registrar_pago_persona(
+                self.id_persona,
+                monto=monto_value,
+                fecha_pago=str(fecha_pago.value),
+                alcance_pago="OBLIGACION",
+                id_obligacion_financiera=id_obligacion,
+                id_relacion_generadora=None,
+                op_id=op_id,
+            )
+            if not result.success:
+                confirm_area.visible = False
+                show_error(result.error_message or "No se pudo registrar el pago.")
+                return
+
+            result_area.content = self._pago_result(result.data)
+            confirm_area.visible = False
+            confirm_area.content = None
+            result_area.update()
+            confirm_area.update()
+            if on_refresh is not None:
+                on_refresh("Pago registrado. Estado de cuenta actualizado.")
+
+        def ask_confirmation(_) -> None:
+            monto_value = validate()
+            if monto_value is None:
+                return
+
+            def confirm_and_execute(_) -> None:
+                current_monto = validate()
+                if current_monto is not None:
+                    execute_payment(current_monto)
+
+            controls: list[ft.Control] = [
+                ft.Text(
+                    "Esta accion registrara un pago real y modificara saldos. Confirmar?",
+                    color=ft.Colors.RED_900,
+                    weight=ft.FontWeight.W_600,
+                )
+            ]
+            if monto_value > saldo_actual:
+                controls.append(
+                    ft.Text(
+                        "El monto supera el saldo visible; el excedente puede quedar como remanente.",
+                        size=12,
+                        color=ft.Colors.ORANGE_900,
+                    )
+                )
+            controls.append(
+                ft.Row(
+                    controls=[
+                        ft.ElevatedButton(
+                            "Confirmar y registrar",
+                            on_click=confirm_and_execute,
+                        ),
+                        ft.TextButton("Cancelar", on_click=lambda _: reset_confirmation()),
+                    ],
+                    spacing=8,
+                    wrap=True,
+                )
+            )
+            confirm_area.content = ft.Container(
+                content=ft.Column(controls=controls, spacing=8),
+                padding=10,
+                border=ft.border.all(1, ft.Colors.RED_100),
+                border_radius=6,
+                bgcolor=ft.Colors.RED_50,
+            )
+            confirm_area.visible = True
+            confirm_area.update()
+
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    self._filtered_key_value_grid(
+                        [
+                            ("Concepto", self._deuda_label(deuda)),
+                            ("Origen", self._origen_label(deuda)),
+                            ("Saldo actual", self._format_money(saldo_actual)),
+                        ]
+                    ),
+                    ft.Row(controls=[monto, fecha_pago], spacing=10, wrap=True),
+                    ft.Row(
+                        controls=[
+                            ft.ElevatedButton(
+                                "Confirmar pago", on_click=ask_confirmation
+                            ),
+                            ft.TextButton(
+                                "Cancelar",
+                                on_click=lambda _: (
+                                    on_cancel() if on_cancel is not None else reset_confirmation()
+                                ),
+                            ),
+                        ],
+                        spacing=8,
+                        wrap=True,
+                    ),
+                    confirm_area,
+                    result_area,
+                ],
+                spacing=10,
+            ),
+            padding=12,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            bgcolor=ft.Colors.WHITE,
+        )
+
+    def _pago_result(self, payload: object) -> ft.Control:
+        data = payload if isinstance(payload, dict) else {}
+        obligaciones = self._dict_rows(data.get("obligaciones_pagadas"))
+        remanente = self._to_number(data.get("remanente"))
+        controls: list[ft.Control] = [
+            ft.Text(
+                "Pago registrado. Estado de cuenta actualizado.",
+                weight=ft.FontWeight.W_700,
+                color=ft.Colors.GREEN_900,
+            ),
+            self._filtered_key_value_grid(
+                [
+                    ("Codigo de pago", data.get("codigo_pago_grupo")),
+                    ("Monto aplicado", self._format_money(data.get("monto_aplicado"))),
+                    ("Remanente", self._format_money(data.get("remanente"))),
+                    ("Aplicaciones", len(obligaciones) if obligaciones else None),
+                ]
+            ),
+        ]
+        if remanente > 0:
+            controls.append(
+                ft.Text(
+                    "El pago dejo remanente no aplicado.",
+                    color=ft.Colors.ORANGE_900,
+                    weight=ft.FontWeight.W_600,
+                )
+            )
+        return ft.Container(
+            content=ft.Column(controls=controls, spacing=8),
+            padding=10,
+            border=ft.border.all(1, ft.Colors.GREEN_100),
+            border_radius=6,
+            bgcolor=ft.Colors.GREEN_50,
+        )
+
+    def _deuda_pagable(self, value: object) -> bool:
+        deuda = value if isinstance(value, dict) else {}
+        return (
+            self._parse_optional_int(deuda.get("id_obligacion_financiera")) is not None
+            and self._deuda_saldo(deuda) > 0
+        )
+
+    def _deuda_saldo(self, deuda: dict[str, Any]) -> float:
+        return self._to_number(
+            deuda.get("saldo_pendiente")
+            or deuda.get("saldo_total")
+            or deuda.get("total_a_cubrir")
+            or deuda.get("total_con_mora")
         )
 
     def _simulacion_result(self, payload: object) -> ft.Control:

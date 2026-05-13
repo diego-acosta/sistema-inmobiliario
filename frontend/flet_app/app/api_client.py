@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
+from uuid import UUID, uuid4
 
 import httpx
 
@@ -77,6 +78,30 @@ class ApiClient:
             json={
                 "monto": monto,
                 "fecha_corte": fecha_corte or date.today().isoformat(),
+            },
+        )
+
+    def registrar_pago_persona(
+        self,
+        id_persona: int,
+        monto: float,
+        fecha_pago: str,
+        alcance_pago: str,
+        id_obligacion_financiera: int | None = None,
+        id_relacion_generadora: int | None = None,
+        op_id: str | None = None,
+    ) -> ApiResult:
+        x_op_id = self._valid_or_new_uuid(op_id)
+        return self._post(
+            "/api/v1/financiero/pagos",
+            params={"id_persona": id_persona},
+            headers={"X-Op-Id": x_op_id},
+            json={
+                "monto": monto,
+                "fecha_pago": fecha_pago,
+                "alcance_pago": alcance_pago,
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "id_relacion_generadora": id_relacion_generadora,
             },
         )
 
@@ -257,11 +282,22 @@ class ApiClient:
             status_code=response.status_code,
         )
 
-    def _post(self, path: str, json: dict[str, Any] | None = None) -> ApiResult:
+    def _post(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> ApiResult:
         url = f"{self.base_url}{path}"
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(url, json=self._clean_params(json or {}))
+                response = client.post(
+                    url,
+                    params=self._clean_params(params or {}),
+                    headers=headers,
+                    json=self._clean_params(json or {}),
+                )
         except httpx.ConnectError:
             return ApiResult(
                 success=False,
@@ -326,3 +362,11 @@ class ApiClient:
             for key, value in params.items()
             if value is not None and value != ""
         }
+
+    def _valid_or_new_uuid(self, value: str | None) -> str:
+        if value:
+            try:
+                return str(UUID(value))
+            except ValueError:
+                pass
+        return str(uuid4())
