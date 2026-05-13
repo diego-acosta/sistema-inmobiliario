@@ -221,29 +221,6 @@ class ParteDetailPage:
             return True
         return False
 
-    def _summary_card(
-        self, title: str, value: object, *, accent: bool = False
-    ) -> ft.Control:
-        return ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Text(title, size=12, color=ft.Colors.BLUE_GREY_700),
-                    ft.Text(
-                        str(value or "-"),
-                        size=20,
-                        weight=ft.FontWeight.W_700,
-                        color=ft.Colors.BLUE_900 if accent else ft.Colors.BLUE_GREY_900,
-                    ),
-                ],
-                spacing=4,
-            ),
-            width=230,
-            padding=14,
-            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
-            border_radius=6,
-            bgcolor=ft.Colors.BLUE_50 if accent else ft.Colors.WHITE,
-        )
-
     def _format_count(self, value: object) -> str:
         if self._is_empty_value(value):
             return "-"
@@ -347,11 +324,11 @@ class ParteDetailPage:
                 ]
             )
         elif relaciones:
-            controls.extend(
-                [
-                    ft.Text("Origen de deuda", weight=ft.FontWeight.W_600),
-                    self._origenes_deuda_table(relaciones),
-                ]
+            controls.append(
+                ft.Text(
+                    "Sin conceptos exigibles detallados para mostrar.",
+                    color=ft.Colors.BLUE_GREY_700,
+                )
             )
 
         if len(controls) == 2:
@@ -435,7 +412,6 @@ class ParteDetailPage:
         deuda = value if isinstance(value, dict) else {}
         composiciones = self._dict_rows(deuda.get("composiciones"))
         obligados = self._dict_rows(deuda.get("obligados"))
-        relacion = self._as_dict(deuda.get("_relacion_context"))
 
         controls: list[ft.Control] = [
             key_value_grid(
@@ -523,24 +499,6 @@ class ParteDetailPage:
                             for item in obligados
                         ],
                     ),
-                ]
-            )
-
-        technical_rows = [
-            ("ID obligacion", deuda.get("id_obligacion_financiera")),
-            (
-                "ID relacion",
-                deuda.get("id_relacion_generadora")
-                or relacion.get("id_relacion_generadora"),
-            ),
-            ("Tipo origen", deuda.get("tipo_origen") or relacion.get("tipo_origen")),
-            ("ID origen", deuda.get("id_origen") or relacion.get("id_origen")),
-        ]
-        if any(value is not None for _, value in technical_rows):
-            controls.extend(
-                [
-                    ft.Text("Datos tecnicos", weight=ft.FontWeight.W_600),
-                    key_value_grid(technical_rows),
                 ]
             )
 
@@ -647,7 +605,7 @@ class ParteDetailPage:
             rows = self._dict_rows(payload)
             if not rows:
                 return ft.Text("La simulacion no devolvio obligaciones afectadas.")
-            return self._generic_table(rows)
+            return self._friendly_generic_table(rows, empty_message="Sin deudas simuladas.")
 
         if not isinstance(payload, dict):
             return ft.Text("La simulacion devolvio una respuesta inesperada.")
@@ -745,7 +703,7 @@ class ParteDetailPage:
 
         if len(controls) == 1 and payload:
             rows = [payload]
-            return self._generic_table(rows)
+            return self._friendly_generic_table(rows)
 
         return ft.Column(controls=controls, spacing=10)
 
@@ -1122,7 +1080,11 @@ class ParteDetailPage:
         keys: list[str] = []
         for row in rows:
             for key in row:
-                if key not in keys and not isinstance(row.get(key), (dict, list)):
+                if (
+                    key not in keys
+                    and not isinstance(row.get(key), (dict, list))
+                    and not self._is_technical_id(key)
+                ):
                     keys.append(key)
                 if len(keys) >= 6:
                     break
@@ -1130,7 +1092,36 @@ class ParteDetailPage:
                 break
         if not keys:
             return ft.Text("Sin deuda registrada")
-        return entity_table(columns=[(key, key) for key in keys], rows=rows)
+        return entity_table(columns=[(self._friendly_label(key), key) for key in keys], rows=rows)
+
+    def _friendly_generic_table(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        empty_message: str = "Sin registros.",
+    ) -> ft.Control:
+        visible_keys: list[str] = []
+        display_rows: list[dict[str, Any]] = []
+        for row in rows:
+            display_row: dict[str, Any] = {}
+            for key, value in row.items():
+                if self._is_technical_id(key) or isinstance(value, (dict, list)):
+                    continue
+                if self._is_empty_value(value):
+                    continue
+                if key not in visible_keys:
+                    visible_keys.append(key)
+                display_row[key] = self._display_generic_value(key, value)
+                if len(visible_keys) >= 6:
+                    break
+            if display_row:
+                display_rows.append(display_row)
+        if not display_rows or not visible_keys:
+            return ft.Text(empty_message)
+        return entity_table(
+            columns=[(self._friendly_label(key), key) for key in visible_keys[:6]],
+            rows=display_rows,
+        )
 
     def _as_dict(self, value: object) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
@@ -1143,12 +1134,14 @@ class ParteDetailPage:
 
     def _to_number(self, value: object) -> float:
         try:
+            if isinstance(value, str) and "," in value:
+                value = value.replace(".", "").replace(",", ".")
             return float(value or 0)
         except (TypeError, ValueError):
             return 0.0
 
     def _format_money(self, value: object) -> str:
-        if value is None or value == "":
+        if self._is_empty_value(value):
             return "-"
         if isinstance(value, (int, float)):
             amount = float(value)
@@ -1163,6 +1156,16 @@ class ParteDetailPage:
         formatted = f"{amount:,.2f}"
         formatted = formatted.replace(",", "_").replace(".", ",").replace("_", ".")
         return f"$ {formatted}"
+
+    def _display_generic_value(self, key: str, value: object) -> object:
+        lowered = key.lower()
+        if isinstance(value, bool):
+            return "Si" if value else "No"
+        if any(token in lowered for token in ("monto", "saldo", "importe", "total", "mora")):
+            return self._format_money(value)
+        if lowered.startswith("fecha_"):
+            return value
+        return value
 
     def _debt_status_badge(self, value: object) -> ft.Control:
         text = str(value or "Sin estado")
