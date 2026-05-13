@@ -540,12 +540,8 @@ class ParteDetailPage:
 
         panel.content = self._simular_pago_section()
         return detail_section(
-            "Simulacion de pago",
+            "Accion de cuenta corriente",
             [
-                ft.Text(
-                    "Simulacion global por persona: no registra pagos ni modifica saldos.",
-                    size=12,
-                ),
                 ft.OutlinedButton("Simular pago", on_click=toggle),
                 panel,
             ],
@@ -558,7 +554,7 @@ class ParteDetailPage:
             width=180,
         )
         fecha_corte = ft.TextField(
-            label="Fecha corte",
+            label="Fecha de calculo",
             value=date.today().isoformat(),
             width=180,
         )
@@ -586,126 +582,137 @@ class ParteDetailPage:
             result_area.content = self._simulacion_result(result.data)
             result_area.update()
 
-        return ft.Column(
-            controls=[
-                ft.Row(
-                    controls=[monto, fecha_corte],
-                    spacing=10,
-                    wrap=True,
-                ),
-                ft.ElevatedButton("Simular", on_click=on_submit),
-                ft.Text("Resultado de simulacion", weight=ft.FontWeight.W_600),
-                result_area,
-            ],
-            spacing=10,
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        "Simulacion global de pago",
+                        size=16,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                    ft.Text(
+                        "No registra pagos ni modifica saldos.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=[
+                            monto,
+                            ft.Column(
+                                controls=[
+                                    fecha_corte,
+                                    ft.Text(
+                                        "Se usa para calcular deuda, mora y vencimientos.",
+                                        size=11,
+                                        color=ft.Colors.BLUE_GREY_600,
+                                    ),
+                                ],
+                                spacing=2,
+                            ),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                    ft.ElevatedButton("Simular", on_click=on_submit),
+                    result_area,
+                ],
+                spacing=10,
+            ),
+            padding=14,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            bgcolor=ft.Colors.WHITE,
         )
 
     def _simulacion_result(self, payload: object) -> ft.Control:
         if isinstance(payload, list):
             rows = self._dict_rows(payload)
             if not rows:
-                return ft.Text("La simulacion no devolvio obligaciones afectadas.")
-            return self._friendly_generic_table(rows, empty_message="Sin deudas simuladas.")
+                return ft.Text("La simulacion no devolvio deudas afectadas.")
+            return self._simulacion_deudas_table(rows)
 
         if not isinstance(payload, dict):
-            return ft.Text("La simulacion devolvio una respuesta inesperada.")
+            return error_state("La simulacion devolvio una respuesta inesperada.")
 
         detalle = self._dict_rows(payload.get("detalle"))
-        composiciones = self._flatten_composiciones(detalle, [])
+        mora = payload.get("mora_calculada")
+        if mora is None:
+            mora = self._sum_field(detalle, "mora_calculada")
         controls: list[ft.Control] = [
-            key_value_grid(
-                [
-                    ("Fecha corte", payload.get("fecha_corte")),
-                    (
-                        "Total simulado",
+            ft.Row(
+                controls=[
+                    self._summary_card(
+                        "Total considerado",
                         self._format_money(payload.get("total_deuda_considerada")),
+                        accent=True,
                     ),
-                    ("Monto ingresado", self._format_money(payload.get("monto_ingresado"))),
-                    ("Monto aplicado", self._format_money(payload.get("monto_aplicado"))),
-                    ("Remanente", self._format_money(payload.get("remanente"))),
-                    (
-                        "Mora / punitorio",
-                        self._format_money(self._sum_field(detalle, "mora_calculada")),
+                    self._summary_card(
+                        "Monto ingresado",
+                        self._format_money(payload.get("monto_ingresado")),
                     ),
-                ]
+                    self._summary_card(
+                        "Monto aplicado",
+                        self._format_money(payload.get("monto_aplicado")),
+                    ),
+                    self._summary_card(
+                        "Remanente",
+                        self._format_money(payload.get("remanente")),
+                    ),
+                    self._summary_card("Mora / punitorio", self._format_money(mora)),
+                ],
+                wrap=True,
+                spacing=10,
+                run_spacing=10,
             )
         ]
 
         if detalle:
             controls.extend(
                 [
-                    ft.Text("Deudas simuladas", weight=ft.FontWeight.W_600),
-                    entity_table(
-                        columns=[
-                            ("Concepto", "concepto"),
-                            ("Origen", "origen"),
-                            ("Saldo", "saldo_pendiente"),
-                            ("Mora", "mora_calculada"),
-                            ("Total a cubrir", "total_a_cubrir"),
-                            ("Aplicado", "monto_aplicado"),
-                            ("Saldo simulado", "saldo_restante_simulado"),
-                        ],
-                        rows=[
-                            {
-                                **item,
-                                "concepto": self._deuda_label(item),
-                                "origen": self._origen_label(item),
-                                "saldo_pendiente": self._format_money(
-                                    item.get("saldo_pendiente")
-                                ),
-                                "mora_calculada": self._format_money(
-                                    item.get("mora_calculada")
-                                ),
-                                "total_a_cubrir": self._format_money(
-                                    item.get("total_a_cubrir")
-                                ),
-                                "monto_aplicado": self._format_money(
-                                    item.get("monto_aplicado")
-                                ),
-                                "saldo_restante_simulado": self._format_money(
-                                    item.get("saldo_restante_simulado")
-                                ),
-                            }
-                            for item in detalle
-                        ],
-                    ),
+                    ft.Text("Deudas afectadas", weight=ft.FontWeight.W_600),
+                    self._simulacion_deudas_table(detalle),
                 ]
             )
         else:
-            controls.append(ft.Text("Sin deudas afectadas."))
-
-        if composiciones:
-            controls.extend(
-                [
-                    ft.Text("Detalle de conceptos afectados", weight=ft.FontWeight.W_600),
-                    entity_table(
-                        columns=[
-                            ("Concepto", "concepto"),
-                            ("Importe", "importe_componente"),
-                            ("Saldo", "saldo_componente"),
-                        ],
-                        rows=[
-                            {
-                                **item,
-                                "concepto": self._concepto_label(item),
-                                "importe_componente": self._format_money(
-                                    item.get("importe_componente")
-                                ),
-                                "saldo_componente": self._format_money(
-                                    item.get("saldo_componente")
-                                ),
-                            }
-                            for item in composiciones
-                        ],
-                    ),
-                ]
-            )
-
-        if len(controls) == 1 and payload:
-            rows = [payload]
-            return self._friendly_generic_table(rows)
+            controls.append(ft.Text("La simulacion no devolvio deudas afectadas."))
 
         return ft.Column(controls=controls, spacing=10)
+
+    def _simulacion_deudas_table(self, rows: list[dict[str, Any]]) -> ft.Control:
+        deudas = self._dict_rows(rows)
+        if not deudas:
+            return ft.Text("La simulacion no devolvio deudas afectadas.")
+        return entity_table(
+            columns=[
+                ("Concepto", "concepto"),
+                ("Origen", "origen"),
+                ("Vencimiento", "vencimiento"),
+                ("Estado", "estado"),
+                ("Total deuda", "total_deuda"),
+                ("Aplicado", "aplicado"),
+                ("Saldo posterior", "saldo_posterior"),
+            ],
+            rows=[
+                {
+                    "concepto": self._deuda_label(item),
+                    "origen": self._origen_label(item),
+                    "vencimiento": item.get("fecha_vencimiento") or "-",
+                    "estado": self._debt_status_badge(
+                        item.get("estado_obligacion") or item.get("estado")
+                    ),
+                    "total_deuda": self._format_money(
+                        item.get("total_a_cubrir")
+                        or item.get("total_con_mora")
+                        or item.get("saldo_pendiente")
+                    ),
+                    "aplicado": self._format_money(item.get("monto_aplicado")),
+                    "saldo_posterior": self._format_money(
+                        item.get("saldo_restante_simulado")
+                    ),
+                }
+                for item in deudas
+            ],
+        )
 
     def _estado_cuenta_resumen(
         self, payload: dict[str, Any], resumen: dict[str, Any]
