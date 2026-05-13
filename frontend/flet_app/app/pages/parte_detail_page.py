@@ -250,7 +250,7 @@ class ParteDetailPage:
         estado_area = ft.Container()
         notice_area = ft.Container()
 
-        def refresh_estado_cuenta(message: str | None = None) -> None:
+        def refresh_estado_cuenta(notice: str | ft.Control | None = None) -> None:
             refreshed = self.api.get_estado_cuenta_persona(self.id_persona)
             estado_area.content = ft.Column(
                 controls=self._estado_cuenta_controls(
@@ -258,17 +258,21 @@ class ParteDetailPage:
                 ),
                 spacing=12,
             )
-            if message:
-                notice_area.content = ft.Container(
-                    content=ft.Text(
-                        message,
-                        color=ft.Colors.GREEN_900,
-                        weight=ft.FontWeight.W_600,
-                    ),
-                    padding=10,
-                    border=ft.border.all(1, ft.Colors.GREEN_100),
-                    border_radius=6,
-                    bgcolor=ft.Colors.GREEN_50,
+            if notice is not None:
+                notice_area.content = (
+                    notice
+                    if isinstance(notice, ft.Control)
+                    else ft.Container(
+                        content=ft.Text(
+                            notice,
+                            color=ft.Colors.GREEN_900,
+                            weight=ft.FontWeight.W_600,
+                        ),
+                        padding=10,
+                        border=ft.border.all(1, ft.Colors.GREEN_100),
+                        border_radius=6,
+                        bgcolor=ft.Colors.GREEN_50,
+                    )
                 )
                 notice_area.visible = True
                 notice_area.update()
@@ -710,6 +714,7 @@ class ParteDetailPage:
         )
         confirm_area = ft.Container(visible=False)
         result_area = ft.Container()
+        sending_payment = False
 
         def show_error(message: str) -> None:
             result_area.content = error_state(message)
@@ -720,7 +725,7 @@ class ParteDetailPage:
             confirm_area.content = None
             confirm_area.update()
 
-        def validate() -> float | None:
+        def validate() -> tuple[float, str] | None:
             if id_obligacion is None:
                 show_error("No se pudo identificar la deuda seleccionada.")
                 return None
@@ -731,44 +736,61 @@ class ParteDetailPage:
             if monto_value is None:
                 show_error("El monto es obligatorio y debe ser mayor que cero.")
                 return None
-            if self._is_empty_value(fecha_pago.value):
-                show_error("La fecha de pago es obligatoria.")
+            fecha_pago_value = self._parse_iso_date(fecha_pago.value)
+            if fecha_pago_value is None:
+                show_error(
+                    "La fecha de pago es obligatoria y debe tener formato AAAA-MM-DD."
+                )
                 return None
-            return monto_value
+            return monto_value, fecha_pago_value
 
-        def execute_payment(monto_value: float) -> None:
+        def execute_payment(
+            monto_value: float, fecha_pago_value: str, submit_button: ft.Control
+        ) -> None:
+            nonlocal sending_payment
+            if sending_payment:
+                return
+            sending_payment = True
+            submit_button.disabled = True
+            submit_button.update()
             op_id = str(uuid4())
             result = self.api.registrar_pago_persona(
                 self.id_persona,
                 monto=monto_value,
-                fecha_pago=str(fecha_pago.value),
+                fecha_pago=fecha_pago_value,
                 alcance_pago="OBLIGACION",
                 id_obligacion_financiera=id_obligacion,
                 id_relacion_generadora=None,
                 op_id=op_id,
             )
             if not result.success:
+                sending_payment = False
+                submit_button.disabled = False
+                submit_button.update()
                 confirm_area.visible = False
                 show_error(result.error_message or "No se pudo registrar el pago.")
                 return
 
-            result_area.content = self._pago_result(result.data)
+            pago_result = self._pago_result(result.data)
+            result_area.content = pago_result
             confirm_area.visible = False
             confirm_area.content = None
             result_area.update()
             confirm_area.update()
             if on_refresh is not None:
-                on_refresh("Pago registrado. Estado de cuenta actualizado.")
+                on_refresh(pago_result)
 
         def ask_confirmation(_) -> None:
-            monto_value = validate()
-            if monto_value is None:
+            validated = validate()
+            if validated is None:
                 return
+            monto_value, _ = validated
 
-            def confirm_and_execute(_) -> None:
-                current_monto = validate()
-                if current_monto is not None:
-                    execute_payment(current_monto)
+            def confirm_and_execute(event) -> None:
+                current_values = validate()
+                if current_values is not None:
+                    current_monto, current_fecha_pago = current_values
+                    execute_payment(current_monto, current_fecha_pago, event.control)
 
             controls: list[ft.Control] = [
                 ft.Text(
@@ -780,7 +802,10 @@ class ParteDetailPage:
             if monto_value > saldo_actual:
                 controls.append(
                     ft.Text(
-                        "El monto supera el saldo visible; el excedente puede quedar como remanente.",
+                        (
+                            "El monto supera el saldo visible; el excedente "
+                            "puede quedar como remanente."
+                        ),
                         size=12,
                         color=ft.Colors.ORANGE_900,
                     )
@@ -864,6 +889,29 @@ class ParteDetailPage:
                 ]
             ),
         ]
+        if obligaciones:
+            controls.extend(
+                [
+                    ft.Text("Aplicaciones", weight=ft.FontWeight.W_600),
+                    entity_table(
+                        columns=[
+                            ("Obligacion", "id_obligacion_financiera"),
+                            ("Movimiento", "id_movimiento_financiero"),
+                            ("Aplicado", "monto_aplicado"),
+                            ("Estado", "estado_resultante"),
+                        ],
+                        rows=[
+                            {
+                                "id_obligacion_financiera": item.get("id_obligacion_financiera"),
+                                "id_movimiento_financiero": item.get("id_movimiento_financiero"),
+                                "monto_aplicado": self._format_money(item.get("monto_aplicado")),
+                                "estado_resultante": item.get("estado_resultante"),
+                            }
+                            for item in obligaciones
+                        ],
+                    ),
+                ]
+            )
         if remanente > 0:
             controls.append(
                 ft.Text(
@@ -1468,6 +1516,14 @@ class ParteDetailPage:
             border_radius=6,
             padding=ft.padding.symmetric(horizontal=8, vertical=4),
         )
+
+    def _parse_iso_date(self, value: object) -> str | None:
+        if self._is_empty_value(value):
+            return None
+        try:
+            return datetime.strptime(str(value).strip(), "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            return None
 
     def _parse_positive_float(self, value: object) -> float | None:
         try:
