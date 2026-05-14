@@ -180,6 +180,17 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleRequest(BaseModel):
     regla_redondeo: str = "ULTIMA_CUOTA"
 
 
+class GeneratePlanPagoVentaAnticipoMasCuotasIgualesRequest(BaseModel):
+    monto_total_plan: Decimal
+    moneda: str = "ARS"
+    importe_anticipo: Decimal
+    fecha_vencimiento_anticipo: date
+    cantidad_cuotas: int
+    fecha_primer_vencimiento: date
+    periodicidad: str = "MENSUAL"
+    regla_redondeo: str = "ULTIMA_CUOTA"
+
+
 class ConfirmVentaRequest(BaseModel):
     observaciones: str | None = None
 
@@ -317,6 +328,17 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleData(BaseModel):
 class GeneratePlanPagoVentaCuotasIgualesSimpleResponse(BaseModel):
     ok: Literal[True] = True
     data: GeneratePlanPagoVentaCuotasIgualesSimpleData
+
+
+class GeneratePlanPagoVentaAnticipoMasCuotasIgualesData(
+    GeneratePlanPagoVentaCuotasIgualesSimpleData
+):
+    pass
+
+
+class GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse(BaseModel):
+    ok: Literal[True] = True
+    data: GeneratePlanPagoVentaAnticipoMasCuotasIgualesData
 
 
 class ConfirmVentaData(GenerateVentaFromReservaVentaData):
