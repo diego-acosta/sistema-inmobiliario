@@ -10,9 +10,25 @@ modelo V2 documentado en `MODELO-PLANES-PAGO-VENTA.md`.
 
 Esta auditoria es documental y de lectura de implementacion existente.
 
-No implementa cambios SQL ni backend, no migra datos, no elimina
-`venta_plan_cuota`, no crea `plan_pago_venta`, no crea tablas de cuotas o
-tramos, y no asume como implementados campos no presentes en SQL/codigo/tests.
+Este documento no implementa cambios SQL ni backend, no migra datos y no
+elimina `venta_plan_cuota`. La version original de la auditoria analizaba
+brechas antes de materializar V2; la actualizacion 2026-05-14 registra el
+estado ya implementado en SQL/codigo/tests para el minimo
+`CUOTAS_IGUALES_SIMPLE`.
+
+Actualizacion 2026-05-14:
+
+- el backend minimo para `CUOTAS_IGUALES_SIMPLE V2` ya esta implementado
+- existe `plan_pago_venta` como cabecera/regla comercial
+- existe `generacion_cronograma_financiero` como corrida tecnica/idempotente
+- `obligacion_financiera` ya materializa los campos minimos V2:
+  `id_generacion_cronograma_financiero`, `numero_obligacion`,
+  `tipo_item_cronograma`, `etiqueta_obligacion` y `clave_funcional_origen`
+- el endpoint implementado es
+  `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
+- esta actualizacion no cambia el alcance historico de la auditoria; deja
+  documentado que varias brechas senaladas abajo fueron resueltas para el caso
+  V2 inicial
 
 Clasificacion arquitectonica:
 
@@ -56,10 +72,14 @@ vencimiento, estado, relacion generadora, composiciones y obligados. Tambien ya
 acepta `PROYECTADA` en SQL y el flujo de venta confirmada crea obligaciones de
 venta en estado `PROYECTADA`.
 
-Sin embargo, la estructura actual todavia no es suficiente como cronograma V2
-robusto para nuevos metodos sin `venta_plan_cuota`, porque faltan tres piezas
-funcionales: orden estable del item de cronograma, etiqueta estable para UI y
-reportes, y clave funcional/idempotente que identifique cada item regenerable.
+Para `CUOTAS_IGUALES_SIMPLE V2`, la estructura actual ya incorpora el minimo
+requerido: orden estable del item de cronograma, etiqueta estable para UI y
+reportes, clave funcional/idempotente por item y referencia a la corrida en
+`generacion_cronograma_financiero`.
+
+Para metodos futuros como `ANTICIPO_MAS_CUOTAS_IGUALES` o
+`CRONOGRAMA_DEFINIDO`, siguen pendientes reglas especificas de negocio,
+validacion, reemplazo y distribucion de obligados.
 
 La unicidad vigente `(id_relacion_generadora, periodo_desde, periodo_hasta)` es
 util para cronogramas periodicos locativos, pero no alcanza para venta V2: en
@@ -109,6 +129,11 @@ Columnas reales en SQL:
 | `id_obligacion_reemplazante` | `bigint` | trazabilidad de reemplazo |
 | `motivo_reemplazo` | `text` | motivo libre de reemplazo |
 | `observaciones` | `text` | texto libre |
+| `id_generacion_cronograma_financiero` | `bigint` | referencia tecnica a la corrida V2 |
+| `numero_obligacion` | `integer` | orden funcional del item de cronograma V2 |
+| `tipo_item_cronograma` | `varchar` | tipo funcional del hito, por ejemplo `CUOTA` |
+| `etiqueta_obligacion` | `varchar` | etiqueta estable para UI/reportes |
+| `clave_funcional_origen` | `varchar` | clave idempotente por item de cronograma |
 
 Tablas relacionadas relevantes:
 
@@ -172,15 +197,19 @@ El orden actual depende del contexto de consulta:
 - tests de cuotas fijas/anticipo y saldo: ordenan por `fecha_vencimiento ASC`
 - regeneracion locativa: usa `periodo_desde ASC, id_obligacion_financiera ASC`
 
-No existe `numero_obligacion`, `numero_cuota` ni equivalente funcional en
-`obligacion_financiera`. `orden_composicion` ordena componentes dentro de una
-obligacion, no items del cronograma.
+Para cronogramas V2 ya existen `numero_obligacion`, `tipo_item_cronograma`,
+`etiqueta_obligacion` y `clave_funcional_origen` en `obligacion_financiera`.
+`orden_composicion` sigue ordenando componentes dentro de una obligacion, no
+items del cronograma.
 
 ## Etiqueta estable para UI/reportes
 
-No existe `etiqueta_obligacion`. `descripcion_operativa` existe, pero en los
-flujos revisados no se carga como etiqueta estable del cronograma y la respuesta
-documentada del alta generica puede devolverla en `null`.
+Existe `etiqueta_obligacion` para cronogramas V2. En
+`CUOTAS_IGUALES_SIMPLE`, el servicio carga `Cuota N`.
+
+`descripcion_operativa` existe, pero no se usa como etiqueta estable del
+cronograma y la respuesta documentada del alta generica puede devolverla en
+`null`.
 
 `codigo_obligacion_financiera` tambien existe, pero el insert comun de
 obligaciones no lo recibe ni lo persiste desde venta confirmada. Hoy no hay una
@@ -188,8 +217,8 @@ convencion implementada que permita mostrar de forma estable `Anticipo`,
 `Cuota 1`, `Cuota 2`, `Saldo de venta` sin inferir desde concepto/fecha/orden.
 
 Conclusion: `descripcion_operativa` debe considerarse descripcion libre/no
-funcional en el estado actual. No debe usarse como unica clave de orden,
-idempotencia o UI contractual sin una decision SQL/API explicita.
+funcional. Para cronogramas V2, la etiqueta contractual es
+`etiqueta_obligacion` y la clave idempotente es `clave_funcional_origen`.
 
 ## Concepto: obligacion, composicion o ambos
 
@@ -219,10 +248,12 @@ En cronogramas periodicos existe unicidad parcial
 `(id_relacion_generadora, periodo_desde, periodo_hasta) WHERE deleted_at IS NULL`
 y algunos inserts usan `ON CONFLICT` con esa clave.
 
-Brecha para venta V2: no hay clave por item funcional del cronograma. Para
-`CUOTAS_IGUALES_SIMPLE` o `ANTICIPO_MAS_CUOTAS_IGUALES`, regenerar o recalcular
-necesita identificar `ANTICIPO`, `CUOTA_N`, `SALDO`, version/corrida y origen
-funcional sin depender de texto libre, importe o fecha.
+Para venta V2 inicial ya existe clave por item funcional del cronograma:
+`clave_funcional_origen`. En `CUOTAS_IGUALES_SIMPLE`, la convencion actual es
+`PLAN_PAGO_VENTA:{id_plan_pago_venta}:CUOTA:{N}`.
+
+Sigue pendiente definir claves para metodos futuros que involucren `ANTICIPO`,
+`SALDO`, items manuales, reemplazos o versionados complejos.
 
 ## Respuestas a las preguntas de auditoria
 
@@ -233,16 +264,13 @@ funcional sin depender de texto libre, importe o fecha.
 3. **Estados permitidos actualmente:** `PROYECTADA`, `EMITIDA`, `EXIGIBLE`,
    `PARCIALMENTE_CANCELADA`, `CANCELADA`, `VENCIDA`, `ANULADA`, `REEMPLAZADA`,
    `PENDIENTE_AJUSTE`.
-4. **Campo de orden funcional:** no existe en `obligacion_financiera`; solo hay
-   orden por fecha/id/periodo en consultas y `orden_composicion` dentro del
-   desglose.
-5. **Etiqueta estable UI/reportes:** no existe campo especifico; existen
-   `descripcion_operativa` y `codigo_obligacion_financiera`, pero no tienen uso
-   funcional implementado para cronograma de venta.
+4. **Campo de orden funcional:** existe `numero_obligacion` para cronogramas V2.
+5. **Etiqueta estable UI/reportes:** existe `etiqueta_obligacion` para
+   cronogramas V2; en `CUOTAS_IGUALES_SIMPLE` se carga como `Cuota N`.
 6. **Uso de `descripcion_operativa`:** actualmente debe tratarse como descripcion
    libre/nula, no como dato funcional contractual.
-7. **Clave funcional/idempotente:** no existe para item de cronograma de venta
-   V2. La unicidad por periodo no cubre el caso.
+7. **Clave funcional/idempotente:** existe `clave_funcional_origen` para item de
+   cronograma de venta V2. La unicidad por periodo no se usa para este caso.
 8. **Vinculo obligacion-origen venta/cuota:** venta por `relacion_generadora`;
    cuota V1 solo como fuente leida antes de generar, sin FK persistida en la
    obligacion.
@@ -258,9 +286,11 @@ funcional sin depender de texto libre, importe o fecha.
 12. **Concepto:** naturaleza economica en composicion; identidad funcional del
     hito deberia estar en obligacion o trazabilidad tecnica, no solo en
     composicion.
-13. **Faltantes para `CUOTAS_IGUALES_SIMPLE`:** metodo/regla comercial fuente,
-    numero/orden funcional, etiqueta estable, clave idempotente por cuota,
-    corrida/version de generacion y convencion de redondeo/trazabilidad.
+13. **Faltantes para `CUOTAS_IGUALES_SIMPLE`:** resueltos para el V2 inicial:
+    metodo/regla comercial fuente, numero/orden funcional, etiqueta estable,
+    clave idempotente por cuota, corrida de generacion y convencion de redondeo.
+    Quedan pendientes validacion estricta contra monto/moneda de venta,
+    multiples compradores y regeneracion avanzada.
 14. **Faltantes para `ANTICIPO_MAS_CUOTAS_IGUALES`:** lo anterior mas tipo de
     hito (`ANTICIPO` vs `CUOTA`), numero de cuota para saldo, y forma estable de
     asociar anticipo y cuotas al mismo plan/corrida.
@@ -285,44 +315,44 @@ funcional sin depender de texto libre, importe o fecha.
 
 ### Brechas SQL
 
-- Falta orden funcional del item: candidato `numero_obligacion` o
-  `numero_item_cronograma`.
-- Falta tipo funcional del hito: candidato `tipo_item_cronograma` con valores
-  controlados como `ANTICIPO`, `CUOTA`, `SALDO`, `REFUERZO`, `AJUSTE`.
-- Falta etiqueta estable: candidato `etiqueta_obligacion`.
-- Falta clave idempotente por item: candidato `clave_funcional_origen` o
-  combinacion formal equivalente.
-- Falta referencia de corrida/generacion/version del cronograma.
+- Resuelto para V2 inicial: `numero_obligacion`.
+- Resuelto para V2 inicial: `tipo_item_cronograma`.
+- Resuelto para V2 inicial: `etiqueta_obligacion`.
+- Resuelto para V2 inicial: `clave_funcional_origen`.
+- Resuelto para V2 inicial: referencia a
+  `id_generacion_cronograma_financiero`.
 - Falta trazabilidad explicita de migracion V1 sin depender permanentemente de
   `venta_plan_cuota`.
 
 ### Brechas backend
 
-- `HandleVentaConfirmadaEventService` no soporta metodos V2 nuevos.
-- El payload interno `VentaObligacionPlan` no transporta numero funcional,
-  etiqueta, tipo de hito ni clave idempotente.
-- La creacion comun de obligaciones no recibe `codigo_obligacion_financiera`,
-  `descripcion_operativa`, `periodo_desde/hasta` ni campos V2 equivalentes.
+- `HandleVentaConfirmadaEventService` no soporta metodos V2 nuevos; el V2
+  inicial se genera por endpoint explicito.
+- `GeneratePlanPagoVentaCuotasIgualesSimpleService` transporta numero
+  funcional, etiqueta, tipo de hito y clave idempotente.
+- La creacion comun de obligaciones sigue sin recibir campos V2; el servicio V2
+  usa repositorio especifico de cronograma.
 - La idempotencia de venta confirmada es de relacion completa, no de item de
   cronograma.
-- Las consultas de estado de cuenta no ordenan por un numero funcional de
-  cronograma porque no existe.
+- Las consultas generales de estado de cuenta no dependen aun de
+  `numero_obligacion` como orden principal.
 
 ### Brechas tests
 
 - Los tests actuales validan `CONTADO`, `ANTICIPO_Y_SALDO` y `CUOTAS_FIJAS` V1.
 - Los tests de cuotas fijas dependen de `venta_plan_cuota` como fuente.
-- No hay cobertura para `CUOTAS_IGUALES_SIMPLE`,
-  `ANTICIPO_MAS_CUOTAS_IGUALES` ni `CRONOGRAMA_DEFINIDO` sin
-  `venta_plan_cuota`.
-- No hay cobertura de idempotencia por item, orden funcional, etiqueta estable o
-  migracion V1 con trazabilidad formal.
+- Hay cobertura para `CUOTAS_IGUALES_SIMPLE` sin `venta_plan_cuota`,
+  incluyendo plan, corrida, obligaciones, idempotencia, redondeo, vencimientos
+  mensuales, orden funcional, etiqueta estable y comprador unico.
+- No hay cobertura para `ANTICIPO_MAS_CUOTAS_IGUALES` ni
+  `CRONOGRAMA_DEFINIDO` sin `venta_plan_cuota`.
+- No hay cobertura de migracion V1 con trazabilidad formal.
 
 ## Recomendacion de campos minimos
 
-Sin implementarlos todavia, la recomendacion minima para diseno SQL es agregar a
-`obligacion_financiera` o a una estructura tecnica estrictamente financiera de
-trazabilidad de generacion:
+La recomendacion minima ya fue implementada para el V2 inicial mediante campos
+en `obligacion_financiera` y la tabla tecnica
+`generacion_cronograma_financiero`:
 
 1. `numero_obligacion` o `numero_item_cronograma`: entero positivo, orden
    funcional dentro de `id_relacion_generadora`/plan/corrida.
@@ -332,16 +362,13 @@ trazabilidad de generacion:
    numero pero persistido para contrato de lectura.
 4. `clave_funcional_origen`: clave deterministica idempotente por item, por
    ejemplo `VENTA:{id_venta}:PLAN:{id_plan_o_version}:CUOTA:{n}`.
-5. `id_corrida_generacion` o equivalente: identificador de corrida/version del
-   cronograma para reemplazo, auditoria y regeneracion.
+5. `id_generacion_cronograma_financiero`: identificador de corrida/version del
+   cronograma para auditoria e idempotencia.
 6. `origen_legacy_tipo` / `origen_legacy_id` o tabla tecnica equivalente para
    migrar desde `venta_plan_cuota` sin convertirla en dependencia permanente del
    modelo V2.
 
-Si se prefiere no ensanchar `obligacion_financiera`, la alternativa valida es
-una tabla tecnica financiera de metadatos de cronograma 1:1 con la obligacion,
-siempre que no represente cuotas como entidad de negocio ni contradiga la
-prohibicion de `plan_pago_venta_cuota`/`plan_pago_venta_tramo`.
+No se creo `plan_pago_venta_cuota` ni `plan_pago_venta_tramo`.
 
 ## Recomendacion de idempotencia
 
@@ -382,29 +409,23 @@ Docs a alinear antes o junto con SQL V2:
 - DER financiero/comercial: reflejar clave de idempotencia/trazabilidad si se
   agrega.
 
-Tests a crear/ajustar en una etapa posterior:
+Tests pendientes o a ampliar en una etapa posterior:
 
-- venta confirmada con `CUOTAS_IGUALES_SIMPLE` sin filas en `venta_plan_cuota`.
 - venta confirmada con `ANTICIPO_MAS_CUOTAS_IGUALES` sin filas en
   `venta_plan_cuota`.
 - `CRONOGRAMA_DEFINIDO` con items de importes y conceptos distintos.
-- idempotencia por item: reejecutar generacion no duplica obligaciones.
-- orden funcional estable aunque dos obligaciones tengan la misma fecha o monto.
-- etiqueta estable para UI/reportes.
 - migracion V1: `venta_plan_cuota.numero_cuota` preservado en campo nuevo o
   trazabilidad tecnica.
 - pagos: no reemplazar obligaciones con aplicaciones sin regla explicita.
 
 ## Proximo prompt recomendado
 
-Disenar SQL V2 minimo para cronograma financiero de venta sin modificar todavia
-backend productivo:
+Extender el modelo V2 mas alla de `CUOTAS_IGUALES_SIMPLE` sin modificar reglas
+financieras vigentes:
 
-- validar si los campos nuevos van en `obligacion_financiera` o en una tabla
-  tecnica financiera 1:1 de metadatos de cronograma;
-- definir checks/enums para `tipo_item_cronograma`;
-- definir indice unico parcial de idempotencia;
-- definir migracion conceptual de `venta_plan_cuota` a los nuevos campos;
-- actualizar documentacion DEV-SRV/DEV-API antes de implementar servicios;
-- proponer tests esperados para `CUOTAS_IGUALES_SIMPLE`,
-  `ANTICIPO_MAS_CUOTAS_IGUALES` y `CRONOGRAMA_DEFINIDO`.
+- definir reglas para `ANTICIPO_MAS_CUOTAS_IGUALES`;
+- definir reglas para `CRONOGRAMA_DEFINIDO`;
+- decidir validacion estricta de `monto_total_plan` y `moneda` contra venta;
+- decidir politica transversal para `X-Op-Id` invalido;
+- definir migracion conceptual de `venta_plan_cuota` legacy V1 a campos V2;
+- ampliar tests para multiples compradores, regeneracion y pagos existentes.

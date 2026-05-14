@@ -5,9 +5,10 @@
 Definir el modelo formal V2 para planes de pago de venta, preservando la
 separacion de ownership entre `comercial` y `financiero`.
 
-Este documento no implementa SQL ni backend. Congela la decision conceptual
-para orientar la evolucion desde `venta_plan_cuota` V1 hacia un cronograma
-basado en `obligacion_financiera`.
+Este documento congela la decision conceptual y documenta el primer bloque V2
+ya materializado para `CUOTAS_IGUALES_SIMPLE`, orientando la evolucion desde
+`venta_plan_cuota` V1 hacia un cronograma basado en
+`obligacion_financiera`.
 
 ## Alcance
 
@@ -25,10 +26,10 @@ Incluye:
 No incluye:
 
 - migracion SQL
-- cambios de endpoints
-- implementacion de servicios
 - eliminacion de estructuras V1
 - recalculo de deuda desde consultas comerciales
+- pagos, caja, recibos, mora o tesoreria
+- soporte de metodos V2 distintos de `CUOTAS_IGUALES_SIMPLE`
 
 ## Diagnostico actual
 
@@ -218,7 +219,7 @@ obligado requieren reglas explicitas antes de implementarse.
 - estado: segun servicio financiero vigente
 - clasificacion: compatibilidad heredada
 
-### V2 propuesto
+### V2 implementado inicial
 
 #### CUOTAS_IGUALES_SIMPLE
 
@@ -229,8 +230,18 @@ Regla:
 - no usa tabla de cuotas comercial
 - cada cuota se materializa como `obligacion_financiera`
 - cada obligacion tiene composicion `CAPITAL_VENTA`
+- cada obligacion nace `PROYECTADA`
+- cada obligacion tiene obligado comprador unico al 100%
 
-Parametros minimos esperados en `plan_pago_venta`:
+Endpoint implementado:
+
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
+
+Servicio implementado:
+
+- `GeneratePlanPagoVentaCuotasIgualesSimpleService`
+
+Parametros persistidos en `plan_pago_venta`:
 
 - `id_venta`
 - metodo `CUOTAS_IGUALES_SIMPLE`
@@ -239,6 +250,33 @@ Parametros minimos esperados en `plan_pago_venta`:
 - periodicidad
 - moneda
 - regla de redondeo
+- monto total del plan
+
+Reglas implementadas:
+
+- periodicidad soportada: `MENSUAL`
+- regla de redondeo soportada: `ULTIMA_CUOTA`
+- las cuotas se calculan por division simple del monto total
+- la ultima cuota absorbe diferencias de redondeo a centavos
+- los vencimientos se generan mes a mes desde `fecha_primer_vencimiento`
+- si el dia no existe en un mes posterior, se usa el ultimo dia del mes
+- `fecha_emision = fecha_vencimiento` para cada obligacion `PROYECTADA`
+- `numero_obligacion` es secuencial desde 1
+- `tipo_item_cronograma = CUOTA`
+- `etiqueta_obligacion = Cuota N`
+- `clave_funcional_origen = PLAN_PAGO_VENTA:{id_plan_pago_venta}:CUOTA:{N}`
+- no se escribe `venta_plan_cuota`
+- no se registran pagos, recibos, caja ni tesoreria
+
+Restricciones implementadas:
+
+- requiere comprador financiero unico resoluble
+- si existe plan vivo, debe ser compatible con el request
+- no valida estrictamente `monto_total_plan` y `moneda` contra
+  `venta.monto_total` y `venta.moneda`; queda pendiente decision
+- no reemplaza obligaciones con pagos o aplicaciones
+- `X-Op-Id` invalido se acepta y se ignora como UUID; queda pendiente
+  endurecimiento transversal
 
 #### ANTICIPO_MAS_CUOTAS_IGUALES
 
@@ -517,17 +555,18 @@ Decision pendiente:
 
 ### Paso 1 - Documentacion
 
-- crear este documento
-- alinear DEV-SRV financiero y comercial con la decision V2
-- marcar `venta_plan_cuota` como legacy V1 en documentos afectados
-- documentar cualquier drift entre estado implementado y estado documentado
+- estado: completado para decision conceptual V2 y documentacion de
+  `CUOTAS_IGUALES_SIMPLE` inicial
+- `venta_plan_cuota` queda marcado como legacy V1 en documentos afectados
+- el drift actual documentado queda limitado a pendientes explicitados:
+  validacion estricta contra venta, politica de `X-Op-Id` invalido y metodos V2
+  no implementados
 
 ### Paso 2 - SQL de cabecera comercial
 
-Crear `plan_pago_venta` solo si el caso de uso requiere persistir regla
-comercial del plan.
+Estado: implementado para V2 inicial.
 
-Debe contener cabecera y parametros, no cuotas.
+`plan_pago_venta` contiene cabecera y parametros, no cuotas.
 
 Campos candidatos:
 
@@ -548,12 +587,11 @@ Campos candidatos:
 - `regla_redondeo`
 - `observaciones`
 
-Los campos exactos deben validarse contra SQL, DEV-API, DEV-SRV y tests antes
-de implementarse.
+Los campos exactos deben mantenerse alineados con SQL, DEV-API, DEV-SRV y tests.
 
 ### Paso 3 - Campos minimos en financiero
 
-Auditar si `obligacion_financiera` necesita campos nuevos para cronogramas V2.
+Estado: implementado para el minimo V2 inicial.
 
 Prioridad:
 
@@ -562,20 +600,28 @@ Prioridad:
 3. referencia funcional de origen/corrida
 4. clave de idempotencia
 
-No avanzar a generacion V2 sin resolver duplicados e idempotencia.
+El backend actual materializa `numero_obligacion`, `tipo_item_cronograma`,
+`etiqueta_obligacion`, `clave_funcional_origen` e
+`id_generacion_cronograma_financiero` para el caso
+`CUOTAS_IGUALES_SIMPLE`.
 
 ### Paso 4 - Servicio de liquidacion/generacion V2
 
-Crear servicio que:
+Estado: implementado para `CUOTAS_IGUALES_SIMPLE` inicial mediante
+`GeneratePlanPagoVentaCuotasIgualesSimpleService`.
+
+El servicio:
 
 - reciba venta y regla comercial del plan
-- valide condiciones comerciales
+- valide parametros minimos del plan
 - resuelva comprador
 - asegure `relacion_generadora`
-- genere obligaciones proyectadas o emitidas
+- genere obligaciones proyectadas
 - cree composiciones y obligados
 - sea idempotente
 - no use `venta_plan_cuota` para metodos V2
+
+Pendiente: extender o crear servicios especificos para otros metodos V2.
 
 ### Paso 5 - Migracion de CUOTAS_FIJAS
 
@@ -612,7 +658,8 @@ Durante la transicion:
 
 ## Estado del documento
 
-Estado: propuesta formal V2, sin implementacion.
+Estado: modelo V2 con primer bloque implementado para
+`CUOTAS_IGUALES_SIMPLE`.
 
 Restricciones vigentes:
 
@@ -621,4 +668,5 @@ Restricciones vigentes:
 - no eliminar `venta_plan_cuota`
 - no crear tablas de cuotas o tramos de plan de pago de venta
 - no asumir campos inexistentes como implementados
+- metodos V2 no implementados siguen fuera de contrato productivo
 

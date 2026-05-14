@@ -2,10 +2,10 @@
 
 ## Estado del documento
 
-- version: `1.3`
+- version: `1.4`
 - estado: `contrato oficial vigente (v1)`
 - fuente: `DER comercial adaptado + SQL real + convenciones vigentes del backend`
-- ultima actualizacion: `2026-04-23`
+- ultima actualizacion: `2026-05-14`
 - caracter: `normativo para el surface publico actual del dominio comercial`
 
 ## 1. Alcance
@@ -129,6 +129,7 @@ Headers write observables:
   - `POST /api/v1/ventas/{id_venta}/cesiones`
   - `POST /api/v1/ventas/{id_venta}/escrituraciones`
 - `POST /api/v1/reservas-venta` no exige hoy `X-Instalacion-Id`
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple` acepta estos headers tecnicos para trazabilidad, pero no exige `X-Instalacion-Id`
 - `If-Match-Version` es requerido en:
   - `PUT /api/v1/reservas-venta/{id_reserva_venta}`
   - `PATCH /api/v1/reservas-venta/{id_reserva_venta}/baja`
@@ -136,6 +137,7 @@ Headers write observables:
   - `POST /api/v1/reservas-venta/{id_reserva_venta}/generar-venta`
   - `POST /api/v1/ventas/{id_venta}/definir-condiciones-comerciales`
   - `PATCH /api/v1/ventas/{id_venta}/confirmar`
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple` no requiere hoy `If-Match-Version`
 
 ### Reglas operativas transaccionales
 
@@ -559,6 +561,143 @@ Reglas de negocio:
 - la operacion no dispara logica financiera ni `relacion_generadora`
 - no implementa intereses, indexacion, refinanciacion, cancelacion anticipada ni multiples compradores
 - la actualizacion de `venta` y de todos sus objetos debe ejecutarse de forma transaccional; si falla un solo objeto, debe hacerse rollback completo
+
+#### `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
+
+Objetivo:
+- generar el plan de pago V2 inicial `CUOTAS_IGUALES_SIMPLE` para una venta
+- persistir la cabecera/regla comercial en `plan_pago_venta`
+- registrar una corrida tecnica en `generacion_cronograma_financiero`
+- materializar el cronograma como obligaciones financieras `PROYECTADA`
+
+Headers tecnicos:
+- acepta `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`
+- `X-Op-Id` valido se persiste como `op_id_*`
+- `X-Op-Id` invalido hoy se acepta y se ignora como UUID; queda pendiente endurecimiento transversal
+- `X-Instalacion-Id` invalido hoy se acepta y se ignora como entero; queda pendiente endurecimiento transversal
+- no requiere `If-Match-Version`
+
+Request:
+
+```json
+{
+  "monto_total_plan": 12000000.00,
+  "moneda": "ARS",
+  "cantidad_cuotas": 12,
+  "fecha_primer_vencimiento": "2026-06-10",
+  "periodicidad": "MENSUAL",
+  "regla_redondeo": "ULTIMA_CUOTA"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_venta": 1,
+    "id_relacion_generadora": 10,
+    "plan_pago_venta": {
+      "id_plan_pago_venta": 20,
+      "id_venta": 1,
+      "metodo_plan_pago": "CUOTAS_IGUALES_SIMPLE",
+      "estado_plan_pago": "GENERADO",
+      "moneda": "ARS",
+      "monto_total_plan": 12000000.00,
+      "cantidad_cuotas": 12,
+      "periodicidad": "MENSUAL",
+      "fecha_primer_vencimiento": "2026-06-10",
+      "importe_anticipo": null,
+      "fecha_vencimiento_anticipo": null,
+      "regla_redondeo": "ULTIMA_CUOTA",
+      "observaciones": null
+    },
+    "generacion_cronograma_financiero": {
+      "id_generacion_cronograma_financiero": 30,
+      "id_relacion_generadora": 10,
+      "id_plan_pago_venta": 20,
+      "tipo_generacion": "PLAN_PAGO_VENTA_V2",
+      "clave_generacion": "PLAN_PAGO_VENTA:20:CUOTAS_IGUALES_SIMPLE",
+      "estado_generacion": "GENERADA",
+      "fecha_generacion": "2026-05-14T12:00:00Z"
+    },
+    "obligaciones": [
+      {
+        "id_obligacion_financiera": 100,
+        "id_relacion_generadora": 10,
+        "id_generacion_cronograma_financiero": 30,
+        "numero_obligacion": 1,
+        "tipo_item_cronograma": "CUOTA",
+        "etiqueta_obligacion": "Cuota 1",
+        "clave_funcional_origen": "PLAN_PAGO_VENTA:20:CUOTA:1",
+        "fecha_vencimiento": "2026-06-10",
+        "importe_total": 1000000.00,
+        "saldo_pendiente": 1000000.00,
+        "moneda": "ARS",
+        "estado_obligacion": "PROYECTADA"
+      }
+    ]
+  }
+}
+```
+
+Validaciones:
+
+- `id_venta` debe ser positivo
+- la venta debe existir y no estar dada de baja
+- `monto_total_plan > 0`
+- `cantidad_cuotas > 0`
+- `moneda` requerida
+- `periodicidad` debe ser `MENSUAL`
+- `regla_redondeo` debe ser `ULTIMA_CUOTA`
+- debe existir el concepto financiero `CAPITAL_VENTA`
+- la venta debe tener exactamente un comprador financiero resoluble
+- si existe un `plan_pago_venta` vivo para la venta, debe ser compatible con el request; si no, se rechaza por conflicto
+
+Reglas de negocio:
+
+- pertenece al dominio `comercial` como definicion/generacion de regla comercial de plan de pago de venta
+- usa `plan_pago_venta` como cabecera/regla comercial
+- usa `generacion_cronograma_financiero` como corrida tecnica idempotente
+- asegura o reutiliza `relacion_generadora` con `tipo_origen = venta`
+- divide `monto_total_plan` en `cantidad_cuotas` iguales con redondeo a centavos
+- `regla_redondeo = ULTIMA_CUOTA` ajusta la ultima cuota para que la suma coincida exactamente con `monto_total_plan`
+- genera vencimientos mensuales desde `fecha_primer_vencimiento`; si el dia no existe en un mes posterior, usa el ultimo dia de ese mes
+- genera una obligacion financiera por cuota, con `estado_obligacion = PROYECTADA`
+- cada obligacion tiene `fecha_emision = fecha_vencimiento` en la implementacion actual
+- cada obligacion tiene una composicion `CAPITAL_VENTA`
+- cada obligacion tiene obligado `COMPRADOR` al 100% para el comprador unico resoluble
+- cada obligacion se identifica por `numero_obligacion`, `tipo_item_cronograma = CUOTA`, `etiqueta_obligacion` y `clave_funcional_origen`
+- la idempotencia funcional por item usa `(id_relacion_generadora, clave_funcional_origen)` sobre obligaciones activas
+- la idempotencia de corrida usa `generacion_cronograma_financiero.clave_generacion`
+- no usa `venta_plan_cuota`
+- no registra pagos
+- no emite recibos
+- no crea movimientos de caja/tesoreria
+- no crea aplicaciones financieras
+- no ejecuta mora ni punitorios
+- no recalcula deuda
+- no confirma ni rescinde la venta
+- no modifica UI
+
+Errores posibles:
+
+- `404 NOT_FOUND`: la venta indicada no existe
+- `409 CONFLICT`: la venta ya posee un plan de pago vivo incompatible
+- `400 APPLICATION_ERROR`: comprador no resoluble, comprador multiple no soportado, concepto financiero requerido inexistente o validacion de negocio fallida
+- `422`: validacion de schema del request
+- `500 INTERNAL_ERROR`: error inesperado
+
+Restricciones y pendientes documentados:
+
+- `monto_total_plan` y `moneda` hoy no se validan estrictamente contra `venta.monto_total` y `venta.moneda`; queda pendiente decision de endurecimiento
+- V2 inicial exige comprador unico resoluble; multiples compradores quedan fuera de alcance
+- `fecha_emision = fecha_vencimiento` para obligaciones `PROYECTADA` es el comportamiento actual documentado
+- no soporta `ANTICIPO_MAS_CUOTAS_IGUALES`
+- no soporta `CRONOGRAMA_DEFINIDO`
+- no soporta indexacion, interes financiero, sistema frances ni sistema aleman
+- no reemplaza obligaciones con pagos o aplicaciones; regeneracion avanzada queda fuera de este endpoint inicial
 
 #### `PATCH /api/v1/ventas/{id_venta}/confirmar`
 

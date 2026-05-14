@@ -16,6 +16,7 @@ Organizar los servicios y catálogos del dominio financiero en formato modular y
 - [[CIERRE-EMPRESA-PAGA-Y-RECUPERA-V1]]
 - [[../inmobiliario/CIERRE-SERVICIO-TRASLADADO-V1]]
 - [[TIPO-OBLIGACION-FIN]]
+- [[AUDITORIA-OBLIGACION-FINANCIERA-CRONOGRAMA-V2]]
 
 ## Servicios del dominio
 - [[SRV-FIN-001-gestion-relacion-generadora]]
