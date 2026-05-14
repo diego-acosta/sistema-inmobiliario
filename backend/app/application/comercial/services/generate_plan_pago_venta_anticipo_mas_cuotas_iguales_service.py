@@ -24,10 +24,9 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     TIPO_GENERACION_PLAN_PAGO_VENTA_V2,
     TIPO_ITEM_CUOTA,
     TIPO_ORIGEN_VENTA,
-    GeneratePlanPagoVentaCuotasIgualesSimpleService,
+    build_cuotas_iguales_mensuales,
 )
 from app.application.common.results import AppResult
-
 
 METODO_ANTICIPO_MAS_CUOTAS_IGUALES = "ANTICIPO_MAS_CUOTAS_IGUALES"
 CONCEPTO_ANTICIPO_VENTA = "ANTICIPO_VENTA"
@@ -154,9 +153,7 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
 
         comprador = self._resolve_comprador(command.id_venta)
         saldo_financiado = command.monto_total_plan - command.importe_anticipo
-        cuotas = GeneratePlanPagoVentaCuotasIgualesSimpleService(
-            repository=self.repository
-        )._build_cuotas(
+        cuotas = build_cuotas_iguales_mensuales(
             monto_total=saldo_financiado,
             cantidad_cuotas=command.cantidad_cuotas,
             fecha_primer_vencimiento=command.fecha_primer_vencimiento,
@@ -258,12 +255,20 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
             return "INVALID_VENTA"
         if command.monto_total_plan <= 0:
             return "INVALID_MONTO_TOTAL_PLAN"
+        if not self._has_cent_precision(command.monto_total_plan):
+            return "INVALID_MONTO_TOTAL_PLAN"
         if command.importe_anticipo <= 0:
+            return "INVALID_IMPORTE_ANTICIPO"
+        if not self._has_cent_precision(command.importe_anticipo):
             return "INVALID_IMPORTE_ANTICIPO"
         if command.importe_anticipo >= command.monto_total_plan:
             return "INVALID_IMPORTE_ANTICIPO"
         if command.cantidad_cuotas <= 0:
             return "INVALID_CANTIDAD_CUOTAS"
+        if command.fecha_vencimiento_anticipo is None:
+            return "INVALID_FECHA_VENCIMIENTO_ANTICIPO"
+        if command.fecha_primer_vencimiento is None:
+            return "INVALID_FECHA_PRIMER_VENCIMIENTO"
         if not command.moneda or not command.moneda.strip():
             return "INVALID_MONEDA"
         if command.periodicidad.strip().upper() != PERIODICIDAD_MENSUAL:
@@ -271,6 +276,10 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
         if command.regla_redondeo.strip().upper() != REGLA_REDONDEO_ULTIMA_CUOTA:
             return "INVALID_REGLA_REDONDEO"
         return None
+
+    @staticmethod
+    def _has_cent_precision(value: Decimal) -> bool:
+        return value == value.quantize(Decimal("0.01"))
 
     def _resolve_comprador(self, id_venta: int) -> dict[str, Any]:
         compradores = self.repository.get_compradores_financieros_venta(id_venta)
@@ -299,8 +308,7 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
         return (
             Decimal(str(plan_vivo["monto_total_plan"])) == command.monto_total_plan
             and plan_vivo["moneda"] == moneda
-            and Decimal(str(plan_vivo["importe_anticipo"]))
-            == command.importe_anticipo
+            and Decimal(str(plan_vivo["importe_anticipo"])) == command.importe_anticipo
             and plan_vivo["fecha_vencimiento_anticipo"]
             == command.fecha_vencimiento_anticipo
             and plan_vivo["cantidad_cuotas"] == command.cantidad_cuotas

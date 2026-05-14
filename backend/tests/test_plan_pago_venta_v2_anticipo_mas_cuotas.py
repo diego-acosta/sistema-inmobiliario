@@ -1,7 +1,16 @@
+from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 from sqlalchemy import text
 
+from app.application.comercial.commands.generate_plan_pago_venta_anticipo_mas_cuotas_iguales import (
+    GeneratePlanPagoVentaAnticipoMasCuotasIgualesCommand,
+)
+from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cuotas_iguales_service import (
+    GeneratePlanPagoVentaAnticipoMasCuotasIgualesService,
+)
+from app.application.common.commands import CommandContext
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_event_venta_confirmada import (
     _crear_persona_minima,
@@ -11,7 +20,6 @@ from tests.test_plan_pago_venta_v2_cuotas_iguales import (
     _count_venta_plan_cuota,
     _insertar_venta_minima,
 )
-
 
 URL = "/api/v1/ventas/{id_venta}/plan-pago-v2/anticipo-mas-cuotas-iguales"
 URL_CUOTAS_IGUALES = "/api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple"
@@ -54,9 +62,9 @@ def _payload_cuotas_iguales(
 
 
 def _obligaciones_v2(db_session, *, id_venta: int) -> list[dict]:
-    rows = db_session.execute(
-        text(
-            """
+    rows = (
+        db_session.execute(
+            text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.numero_obligacion,
@@ -88,17 +96,18 @@ def _obligaciones_v2(db_session, *, id_venta: int) -> list[dict]:
               AND rg.id_origen = :id_venta
               AND rg.deleted_at IS NULL
             ORDER BY o.numero_obligacion ASC
-            """
-        ),
-        {"id_venta": id_venta},
-    ).mappings().all()
+            """),
+            {"id_venta": id_venta},
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
 def _count_generaciones(db_session, *, id_venta: int) -> int:
     return db_session.execute(
-        text(
-            """
+        text("""
             SELECT COUNT(*)
             FROM generacion_cronograma_financiero gcf
             JOIN relacion_generadora rg
@@ -106,10 +115,61 @@ def _count_generaciones(db_session, *, id_venta: int) -> int:
             WHERE rg.tipo_origen = 'venta'
               AND rg.id_origen = :id_venta
               AND gcf.deleted_at IS NULL
-            """
-        ),
+            """),
         {"id_venta": id_venta},
     ).scalar_one()
+
+
+def _command(
+    *,
+    monto_total_plan: Decimal = Decimal("12000000.00"),
+    importe_anticipo: Decimal = Decimal("2000000.00"),
+    fecha_vencimiento_anticipo: date | None = date(2026, 5, 10),
+    cantidad_cuotas: int = 10,
+    fecha_primer_vencimiento: date | None = date(2026, 6, 10),
+) -> GeneratePlanPagoVentaAnticipoMasCuotasIgualesCommand:
+    return GeneratePlanPagoVentaAnticipoMasCuotasIgualesCommand(
+        context=CommandContext(),
+        id_venta=1,
+        monto_total_plan=monto_total_plan,
+        moneda="ARS",
+        importe_anticipo=importe_anticipo,
+        fecha_vencimiento_anticipo=fecha_vencimiento_anticipo,
+        cantidad_cuotas=cantidad_cuotas,
+        fecha_primer_vencimiento=fecha_primer_vencimiento,
+        periodicidad="MENSUAL",
+        regla_redondeo="ULTIMA_CUOTA",
+    )
+
+
+def test_anticipo_mas_cuotas_v2_valida_fechas_obligatorias_en_servicio() -> None:
+    service = GeneratePlanPagoVentaAnticipoMasCuotasIgualesService(
+        repository=SimpleNamespace(db=None)
+    )
+
+    assert (
+        service._validate(_command(fecha_vencimiento_anticipo=None))
+        == "INVALID_FECHA_VENCIMIENTO_ANTICIPO"
+    )
+    assert (
+        service._validate(_command(fecha_primer_vencimiento=None))
+        == "INVALID_FECHA_PRIMER_VENCIMIENTO"
+    )
+
+
+def test_anticipo_mas_cuotas_v2_rechaza_importes_con_mas_de_dos_decimales() -> None:
+    service = GeneratePlanPagoVentaAnticipoMasCuotasIgualesService(
+        repository=SimpleNamespace(db=None)
+    )
+
+    assert (
+        service._validate(_command(monto_total_plan=Decimal("12000000.001")))
+        == "INVALID_MONTO_TOTAL_PLAN"
+    )
+    assert (
+        service._validate(_command(importe_anticipo=Decimal("2000000.001")))
+        == "INVALID_IMPORTE_ANTICIPO"
+    )
 
 
 def test_anticipo_mas_cuotas_v2_crea_plan_generacion_anticipo_y_cuotas(
@@ -118,7 +178,9 @@ def test_anticipo_mas_cuotas_v2_crea_plan_generacion_anticipo_y_cuotas(
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-AMCI-001")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
 
-    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=_payload())
+    response = client.post(
+        URL.format(id_venta=id_venta), headers=HEADERS, json=_payload()
+    )
 
     assert response.status_code == 200, response.text
     data = response.json()["data"]
@@ -129,7 +191,10 @@ def test_anticipo_mas_cuotas_v2_crea_plan_generacion_anticipo_y_cuotas(
     )
     assert data["plan_pago_venta"]["fecha_vencimiento_anticipo"] == "2026-05-10"
     assert data["plan_pago_venta"]["cantidad_cuotas"] == 10
-    assert data["generacion_cronograma_financiero"]["tipo_generacion"] == "PLAN_PAGO_VENTA_V2"
+    assert (
+        data["generacion_cronograma_financiero"]["tipo_generacion"]
+        == "PLAN_PAGO_VENTA_V2"
+    )
     assert data["generacion_cronograma_financiero"]["clave_generacion"].endswith(
         ":ANTICIPO_MAS_CUOTAS_IGUALES"
     )
@@ -156,9 +221,7 @@ def test_anticipo_mas_cuotas_v2_crea_plan_generacion_anticipo_y_cuotas(
     assert {ob["codigo_concepto_financiero"] for ob in cuotas} == {"CAPITAL_VENTA"}
     assert {ob["estado_obligacion"] for ob in obligaciones} == {"PROYECTADA"}
     assert {ob["rol_obligado"] for ob in obligaciones} == {"COMPRADOR"}
-    assert {str(ob["porcentaje_responsabilidad"]) for ob in obligaciones} == {
-        "100.00"
-    }
+    assert {str(ob["porcentaje_responsabilidad"]) for ob in obligaciones} == {"100.00"}
     assert sum(
         (ob["importe_total"] for ob in obligaciones),
         start=Decimal("0"),
@@ -174,7 +237,9 @@ def test_anticipo_mas_cuotas_v2_redondea_ultima_cuota_y_suma_total(
     response = client.post(
         URL.format(id_venta=id_venta),
         headers=HEADERS,
-        json=_payload(monto_total_plan=100.00, importe_anticipo=10.00, cantidad_cuotas=4),
+        json=_payload(
+            monto_total_plan=100.00, importe_anticipo=10.00, cantidad_cuotas=4
+        ),
     )
 
     assert response.status_code == 200, response.text
@@ -198,7 +263,9 @@ def test_anticipo_mas_cuotas_v2_reejecutar_mismo_payload_no_duplica(
     _vincular_comprador_venta(db_session, id_venta=id_venta)
 
     first = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=_payload())
-    second = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=_payload())
+    second = client.post(
+        URL.format(id_venta=id_venta), headers=HEADERS, json=_payload()
+    )
 
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text

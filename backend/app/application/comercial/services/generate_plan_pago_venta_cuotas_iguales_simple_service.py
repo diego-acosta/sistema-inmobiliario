@@ -13,7 +13,6 @@ from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_
 )
 from app.application.common.results import AppResult
 
-
 METODO_CUOTAS_IGUALES_SIMPLE = "CUOTAS_IGUALES_SIMPLE"
 PERIODICIDAD_MENSUAL = "MENSUAL"
 REGLA_REDONDEO_ULTIMA_CUOTA = "ULTIMA_CUOTA"
@@ -23,6 +22,40 @@ CONCEPTO_CAPITAL_VENTA = "CAPITAL_VENTA"
 ROL_OBLIGADO_COMPRADOR = "COMPRADOR"
 ESTADO_OBLIGACION_PROYECTADA = "PROYECTADA"
 TIPO_ITEM_CUOTA = "CUOTA"
+
+
+def add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def build_cuotas_iguales_mensuales(
+    *,
+    monto_total: Decimal,
+    cantidad_cuotas: int,
+    fecha_primer_vencimiento: date,
+) -> list[tuple[int, Decimal, date]]:
+    base = (monto_total / Decimal(cantidad_cuotas)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    cuotas: list[tuple[int, Decimal, date]] = []
+    acumulado = Decimal("0.00")
+    for numero in range(1, cantidad_cuotas + 1):
+        importe = (
+            monto_total - acumulado if numero == cantidad_cuotas else base
+        ).quantize(Decimal("0.01"))
+        cuotas.append(
+            (
+                numero,
+                importe,
+                add_months(fecha_primer_vencimiento, numero - 1),
+            )
+        )
+        acumulado += importe
+    return cuotas
 
 
 @dataclass(slots=True)
@@ -105,16 +138,13 @@ class ObligacionCronogramaV2CreatePayload:
 class PlanPagoVentaV2Repository(Protocol):
     db: Any
 
-    def get_venta_minima(self, id_venta: int) -> dict[str, Any] | None:
-        ...
+    def get_venta_minima(self, id_venta: int) -> dict[str, Any] | None: ...
 
-    def get_plan_pago_venta_vivo(self, id_venta: int) -> dict[str, Any] | None:
-        ...
+    def get_plan_pago_venta_vivo(self, id_venta: int) -> dict[str, Any] | None: ...
 
     def upsert_plan_pago_venta_borrador(
         self, payload: PlanPagoVentaUpsertPayload
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def mark_plan_pago_venta_generado(
         self,
@@ -123,41 +153,34 @@ class PlanPagoVentaV2Repository(Protocol):
         updated_at: datetime,
         id_instalacion_ultima_modificacion: int | None,
         op_id_ultima_modificacion: UUID | None,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def get_or_create_relacion_generadora(
         self, payload: RelacionGeneradoraUpsertPayload
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def get_or_create_generacion_cronograma(
         self, payload: GeneracionCronogramaCreatePayload
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def get_concepto_financiero_by_codigo(
         self, codigo: str
-    ) -> dict[str, Any] | None:
-        ...
+    ) -> dict[str, Any] | None: ...
 
     def get_compradores_financieros_venta(
         self, id_venta: int
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
     def create_obligacion_cronograma_v2_if_not_exists(
         self, payload: ObligacionCronogramaV2CreatePayload
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def get_obligaciones_cronograma_by_claves(
         self,
         *,
         id_relacion_generadora: int,
         claves_funcionales: list[str],
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
 
 class GeneratePlanPagoVentaCuotasIgualesSimpleService:
@@ -395,34 +418,11 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleService:
         cantidad_cuotas: int,
         fecha_primer_vencimiento: date,
     ) -> list[tuple[int, Decimal, date]]:
-        base = (monto_total / Decimal(cantidad_cuotas)).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
+        return build_cuotas_iguales_mensuales(
+            monto_total=monto_total,
+            cantidad_cuotas=cantidad_cuotas,
+            fecha_primer_vencimiento=fecha_primer_vencimiento,
         )
-        cuotas: list[tuple[int, Decimal, date]] = []
-        acumulado = Decimal("0.00")
-        for numero in range(1, cantidad_cuotas + 1):
-            importe = (
-                monto_total - acumulado
-                if numero == cantidad_cuotas
-                else base
-            ).quantize(Decimal("0.01"))
-            cuotas.append(
-                (
-                    numero,
-                    importe,
-                    self._add_months(fecha_primer_vencimiento, numero - 1),
-                )
-            )
-            acumulado += importe
-        return cuotas
-
-    @staticmethod
-    def _add_months(value: date, months: int) -> date:
-        month_index = value.month - 1 + months
-        year = value.year + month_index // 12
-        month = month_index % 12 + 1
-        day = min(value.day, calendar.monthrange(year, month)[1])
-        return date(year, month, day)
 
     def _transaction(self) -> AbstractContextManager[Any]:
         if self.db.in_transaction():
