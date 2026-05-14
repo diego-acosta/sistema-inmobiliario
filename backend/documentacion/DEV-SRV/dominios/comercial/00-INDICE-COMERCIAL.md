@@ -60,6 +60,7 @@ Backlog fuera de `v1`:
 
 ## Servicios del dominio
 
+- [[MODELO-PLANES-PAGO-VENTA]]
 - [[SRV-COM-001-gestion-de-reserva-de-venta]]
 - [[SRV-COM-002-gestion-de-venta]]
 - [[SRV-COM-003-gestion-de-condiciones-comerciales-de-venta]]
