@@ -1,9 +1,10 @@
 """
 Tests de integración para GET /api/v1/financiero/deuda/consolidado.
 """
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
+from sqlalchemy import text
 
 from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 from tests.test_disponibilidades_create import HEADERS
@@ -16,21 +17,53 @@ TASA_DIARIA_MORA = float(TASA_DIARIA_MORA_DEFAULT)
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _crear_ob(client, *, id_relacion_generadora: int, importe: float,
+def _fecha_emision_para_vencimiento(fecha_vencimiento: date) -> date:
+    return fecha_vencimiento - timedelta(days=1)
+
+
+def _fecha_vencimiento_creacion_segura(fecha_vencimiento: date) -> date:
+    return max(fecha_vencimiento, datetime.now(UTC).date() + timedelta(days=1))
+
+
+def _crear_ob(client, db_session, *, id_relacion_generadora: int, importe: float,
               fecha_vencimiento: str = "2026-12-31") -> dict:
+    vencimiento = date.fromisoformat(fecha_vencimiento)
     resp = client.post(
         URL_OBLIGACIONES,
         headers=HEADERS,
         json={
             "id_relacion_generadora": id_relacion_generadora,
-            "fecha_vencimiento": fecha_vencimiento,
+            "fecha_vencimiento": _fecha_vencimiento_creacion_segura(
+                vencimiento
+            ).isoformat(),
             "composiciones": [
                 {"codigo_concepto_financiero": "CANON_LOCATIVO", "importe_componente": importe}
             ],
         },
     )
     assert resp.status_code == 201
-    return resp.json()["data"]
+    obligacion = resp.json()["data"]
+    db_session.execute(
+        text(
+            """
+            UPDATE obligacion_financiera
+            SET fecha_emision = :fecha_emision,
+                fecha_vencimiento = :fecha_vencimiento,
+                updated_at = now()
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+            """
+        ),
+        {
+            "fecha_emision": _fecha_emision_para_vencimiento(vencimiento),
+            "fecha_vencimiento": vencimiento,
+            "id_obligacion_financiera": obligacion["id_obligacion_financiera"],
+        },
+    )
+    obligacion["fecha_emision"] = _fecha_emision_para_vencimiento(
+        vencimiento
+    ).isoformat()
+    obligacion["fecha_vencimiento"] = vencimiento.isoformat()
+    return obligacion
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
@@ -53,8 +86,8 @@ def test_consolidado_resumen_correcto(client, db_session) -> None:
     """Una relacion con dos obligaciones → resumen suma correctamente."""
     rg = _crear_rg(client, codigo="DC-SUM-001")
     id_rg = rg["id_relacion_generadora"]
-    _crear_ob(client, id_relacion_generadora=id_rg, importe=30000.00)
-    _crear_ob(client, id_relacion_generadora=id_rg, importe=20000.00)
+    _crear_ob(client, db_session, id_relacion_generadora=id_rg, importe=30000.00)
+    _crear_ob(client, db_session, id_relacion_generadora=id_rg, importe=20000.00)
 
     resp = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-12-01"})
 
@@ -82,9 +115,9 @@ def test_consolidado_separacion_vencida_futura(client, db_session) -> None:
     vencida = hoy
     futura = hoy + timedelta(days=60)
     fecha_corte = hoy + timedelta(days=20)
-    _crear_ob(client, id_relacion_generadora=id_rg, importe=10000.00,
+    _crear_ob(client, db_session, id_relacion_generadora=id_rg, importe=10000.00,
               fecha_vencimiento=vencida.isoformat())
-    _crear_ob(client, id_relacion_generadora=id_rg, importe=20000.00,
+    _crear_ob(client, db_session, id_relacion_generadora=id_rg, importe=20000.00,
               fecha_vencimiento=futura.isoformat())
 
     resp = client.get(URL, headers=HEADERS, params={"fecha_corte": fecha_corte.isoformat()})
@@ -108,7 +141,7 @@ def test_consolidado_mora_calculada(client, db_session) -> None:
     id_rg = rg["id_relacion_generadora"]
     fecha_vencimiento = date.today()
     fecha_corte = fecha_vencimiento + timedelta(days=10)
-    _crear_ob(client, id_relacion_generadora=id_rg, importe=50000.00,
+    _crear_ob(client, db_session, id_relacion_generadora=id_rg, importe=50000.00,
               fecha_vencimiento=fecha_vencimiento.isoformat())
 
     resp = client.get(URL, headers=HEADERS, params={"fecha_corte": fecha_corte.isoformat()})
@@ -131,6 +164,7 @@ def test_consolidado_mora_respeta_dias_gracia(client, db_session) -> None:
     fecha_vencimiento = date.today()
     _crear_ob(
         client,
+        db_session,
         id_relacion_generadora=id_rg,
         importe=10000.00,
         fecha_vencimiento=fecha_vencimiento.isoformat(),
@@ -171,8 +205,8 @@ def test_consolidado_agrupacion_por_relacion(client, db_session) -> None:
     """Dos relaciones distintas aparecen como ítems separados en 'relaciones'."""
     rg1 = _crear_rg(client, codigo="DC-GRP-001")
     rg2 = _crear_rg(client, codigo="DC-GRP-002")
-    _crear_ob(client, id_relacion_generadora=rg1["id_relacion_generadora"], importe=10000.00)
-    _crear_ob(client, id_relacion_generadora=rg2["id_relacion_generadora"], importe=15000.00)
+    _crear_ob(client, db_session, id_relacion_generadora=rg1["id_relacion_generadora"], importe=10000.00)
+    _crear_ob(client, db_session, id_relacion_generadora=rg2["id_relacion_generadora"], importe=15000.00)
 
     resp = client.get(URL, headers=HEADERS)
 
@@ -193,7 +227,7 @@ def test_consolidado_agrupacion_por_relacion(client, db_session) -> None:
 def test_consolidado_por_tipo_origen_contrato_alquiler(client, db_session) -> None:
     """Obligaciones de tipo CONTRATO_ALQUILER aparecen en por_tipo_origen."""
     rg = _crear_rg(client, codigo="DC-TIP-001")
-    _crear_ob(client, id_relacion_generadora=rg["id_relacion_generadora"], importe=25000.00)
+    _crear_ob(client, db_session, id_relacion_generadora=rg["id_relacion_generadora"], importe=25000.00)
 
     resp = client.get(URL, headers=HEADERS, params={"tipo_origen": "CONTRATO_ALQUILER"})
 
@@ -222,7 +256,7 @@ def test_consolidado_filtro_tipo_origen_inexistente_devuelve_vacio(client, db_se
 def test_consolidado_mora_cero_sin_vencidas(client, db_session) -> None:
     """Con fecha_corte antes de todos los vencimientos → mora = 0."""
     rg = _crear_rg(client, codigo="DC-MOCERO-001")
-    _crear_ob(client, id_relacion_generadora=rg["id_relacion_generadora"], importe=10000.00,
+    _crear_ob(client, db_session, id_relacion_generadora=rg["id_relacion_generadora"], importe=10000.00,
               fecha_vencimiento="2026-12-31")
 
     resp = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-01-01"})
@@ -242,7 +276,7 @@ def test_consolidado_mora_cero_sin_vencidas(client, db_session) -> None:
 def test_consolidado_fecha_corte_en_respuesta(client, db_session) -> None:
     """fecha_corte enviada aparece en la respuesta; sin ella usa today."""
     rg = _crear_rg(client, codigo="DC-FC-001")
-    _crear_ob(client, id_relacion_generadora=rg["id_relacion_generadora"], importe=5000.00)
+    _crear_ob(client, db_session, id_relacion_generadora=rg["id_relacion_generadora"], importe=5000.00)
 
     resp_con = client.get(URL, headers=HEADERS, params={"fecha_corte": "2026-06-15"})
     resp_sin = client.get(URL, headers=HEADERS)

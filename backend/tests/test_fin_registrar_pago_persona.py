@@ -1,7 +1,7 @@
 """
 Tests de integración para POST /api/v1/financiero/pagos.
 """
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -263,6 +263,14 @@ def _crear_persona_pago(client, *, codigo: str) -> int:
     return resp.json()["data"]["id_persona"]
 
 
+def _fecha_emision_para_vencimiento(fecha_vencimiento: date) -> date:
+    return fecha_vencimiento - timedelta(days=1)
+
+
+def _fecha_vencimiento_creacion_segura(fecha_vencimiento: date) -> date:
+    return max(fecha_vencimiento, datetime.now(UTC).date() + timedelta(days=1))
+
+
 def _crear_obligacion_para_persona(
     client,
     db_session,
@@ -273,7 +281,9 @@ def _crear_obligacion_para_persona(
     fecha_vencimiento: str = "2026-05-10",
 ) -> dict:
     vencimiento = date.fromisoformat(fecha_vencimiento)
-    fecha_vencimiento_segura = max(vencimiento, date.today()).isoformat()
+    fecha_vencimiento_segura = _fecha_vencimiento_creacion_segura(
+        vencimiento
+    ).isoformat()
     resp = client.post(
         "/api/v1/financiero/obligaciones",
         headers=HEADERS,
@@ -285,6 +295,23 @@ def _crear_obligacion_para_persona(
     )
     assert resp.status_code == 201, resp.text
     obligacion = resp.json()["data"]
+    fecha_emision = _fecha_emision_para_vencimiento(vencimiento)
+    db_session.execute(
+        text(
+            """
+            UPDATE obligacion_financiera
+            SET fecha_emision = :fecha_emision,
+                fecha_vencimiento = :fecha_vencimiento,
+                updated_at = now()
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+            """
+        ),
+        {
+            "fecha_emision": fecha_emision,
+            "fecha_vencimiento": vencimiento,
+            "id_obligacion_financiera": obligacion["id_obligacion_financiera"],
+        },
+    )
     db_session.execute(
         text(
             """
@@ -307,6 +334,8 @@ def _crear_obligacion_para_persona(
             "id_persona": id_persona,
         },
     )
+    obligacion["fecha_emision"] = fecha_emision.isoformat()
+    obligacion["fecha_vencimiento"] = vencimiento.isoformat()
     return obligacion
 
 
