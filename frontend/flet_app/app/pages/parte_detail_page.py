@@ -250,7 +250,7 @@ class ParteDetailPage:
         estado_area = ft.Container()
         notice_area = ft.Container()
 
-        def refresh_estado_cuenta(notice: str | ft.Control | None = None) -> None:
+        def refresh_estado_cuenta(payment_payload: object | None = None) -> None:
             refreshed = self.api.get_estado_cuenta_persona(self.id_persona)
             estado_area.content = ft.Column(
                 controls=self._estado_cuenta_controls(
@@ -258,22 +258,8 @@ class ParteDetailPage:
                 ),
                 spacing=12,
             )
-            if notice is not None:
-                notice_area.content = (
-                    notice
-                    if isinstance(notice, ft.Control)
-                    else ft.Container(
-                        content=ft.Text(
-                            notice,
-                            color=ft.Colors.GREEN_900,
-                            weight=ft.FontWeight.W_600,
-                        ),
-                        padding=10,
-                        border=ft.border.all(1, ft.Colors.GREEN_100),
-                        border_radius=6,
-                        bgcolor=ft.Colors.GREEN_50,
-                    )
-                )
+            if payment_payload is not None:
+                notice_area.content = self._pago_result(payment_payload)
                 notice_area.visible = True
                 notice_area.update()
             estado_area.update()
@@ -771,14 +757,16 @@ class ParteDetailPage:
                 show_error(result.error_message or "No se pudo registrar el pago.")
                 return
 
-            pago_result = self._pago_result(result.data)
-            result_area.content = pago_result
             confirm_area.visible = False
             confirm_area.content = None
-            result_area.update()
             confirm_area.update()
             if on_refresh is not None:
-                on_refresh(pago_result)
+                if on_cancel is not None:
+                    on_cancel()
+                on_refresh(result.data)
+                return
+            result_area.content = self._pago_result(result.data)
+            result_area.update()
 
         def ask_confirmation(_) -> None:
             validated = validate()
@@ -902,9 +890,15 @@ class ParteDetailPage:
                         ],
                         rows=[
                             {
-                                "id_obligacion_financiera": item.get("id_obligacion_financiera"),
-                                "id_movimiento_financiero": item.get("id_movimiento_financiero"),
-                                "monto_aplicado": self._format_money(item.get("monto_aplicado")),
+                                "id_obligacion_financiera": item.get(
+                                    "id_obligacion_financiera"
+                                ),
+                                "id_movimiento_financiero": item.get(
+                                    "id_movimiento_financiero"
+                                ),
+                                "monto_aplicado": self._format_money(
+                                    item.get("monto_aplicado")
+                                ),
                                 "estado_resultante": item.get("estado_resultante"),
                             }
                             for item in obligaciones
