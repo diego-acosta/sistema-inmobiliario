@@ -79,7 +79,10 @@ CREATE TABLE IF NOT EXISTS public.plan_pago_venta (
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fk_plan_pago_venta_venta'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_plan_pago_venta_venta'
+          AND conrelid = 'public.plan_pago_venta'::regclass
     ) THEN
         ALTER TABLE public.plan_pago_venta
         ADD CONSTRAINT fk_plan_pago_venta_venta
@@ -89,7 +92,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_plan_pago_venta_deleted_at'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_plan_pago_venta_deleted_at'
+          AND conrelid = 'public.plan_pago_venta'::regclass
     ) THEN
         ALTER TABLE public.plan_pago_venta
         ADD CONSTRAINT chk_plan_pago_venta_deleted_at
@@ -97,7 +103,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_plan_pago_venta_metodo'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_plan_pago_venta_metodo'
+          AND conrelid = 'public.plan_pago_venta'::regclass
     ) THEN
         ALTER TABLE public.plan_pago_venta
         ADD CONSTRAINT chk_plan_pago_venta_metodo
@@ -109,7 +118,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_plan_pago_venta_estado'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_plan_pago_venta_estado'
+          AND conrelid = 'public.plan_pago_venta'::regclass
     ) THEN
         ALTER TABLE public.plan_pago_venta
         ADD CONSTRAINT chk_plan_pago_venta_estado
@@ -123,7 +135,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_plan_pago_venta_monto'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_plan_pago_venta_monto'
+          AND conrelid = 'public.plan_pago_venta'::regclass
     ) THEN
         ALTER TABLE public.plan_pago_venta
         ADD CONSTRAINT chk_plan_pago_venta_monto
@@ -131,7 +146,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_plan_pago_venta_cantidad'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_plan_pago_venta_cantidad'
+          AND conrelid = 'public.plan_pago_venta'::regclass
     ) THEN
         ALTER TABLE public.plan_pago_venta
         ADD CONSTRAINT chk_plan_pago_venta_cantidad
@@ -139,7 +157,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_plan_pago_venta_importe_anticipo'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_plan_pago_venta_importe_anticipo'
+          AND conrelid = 'public.plan_pago_venta'::regclass
     ) THEN
         ALTER TABLE public.plan_pago_venta
         ADD CONSTRAINT chk_plan_pago_venta_importe_anticipo
@@ -213,7 +234,10 @@ CREATE TABLE IF NOT EXISTS public.generacion_cronograma_financiero (
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fk_gcf_relacion_generadora'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_gcf_relacion_generadora'
+          AND conrelid = 'public.generacion_cronograma_financiero'::regclass
     ) THEN
         ALTER TABLE public.generacion_cronograma_financiero
         ADD CONSTRAINT fk_gcf_relacion_generadora
@@ -223,7 +247,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fk_gcf_plan_pago_venta'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_gcf_plan_pago_venta'
+          AND conrelid = 'public.generacion_cronograma_financiero'::regclass
     ) THEN
         ALTER TABLE public.generacion_cronograma_financiero
         ADD CONSTRAINT fk_gcf_plan_pago_venta
@@ -233,7 +260,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_gcf_deleted_at'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_gcf_deleted_at'
+          AND conrelid = 'public.generacion_cronograma_financiero'::regclass
     ) THEN
         ALTER TABLE public.generacion_cronograma_financiero
         ADD CONSTRAINT chk_gcf_deleted_at
@@ -241,7 +271,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_gcf_tipo'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_gcf_tipo'
+          AND conrelid = 'public.generacion_cronograma_financiero'::regclass
     ) THEN
         ALTER TABLE public.generacion_cronograma_financiero
         ADD CONSTRAINT chk_gcf_tipo
@@ -252,7 +285,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_gcf_estado'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_gcf_estado'
+          AND conrelid = 'public.generacion_cronograma_financiero'::regclass
     ) THEN
         ALTER TABLE public.generacion_cronograma_financiero
         ADD CONSTRAINT chk_gcf_estado
@@ -325,7 +361,10 @@ ADD COLUMN IF NOT EXISTS clave_funcional_origen character varying(160);
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fk_obl_generacion_cronograma'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_obl_generacion_cronograma'
+          AND conrelid = 'public.obligacion_financiera'::regclass
     ) THEN
         ALTER TABLE public.obligacion_financiera
         ADD CONSTRAINT fk_obl_generacion_cronograma
@@ -335,7 +374,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_obl_numero_obligacion'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_obl_numero_obligacion'
+          AND conrelid = 'public.obligacion_financiera'::regclass
     ) THEN
         ALTER TABLE public.obligacion_financiera
         ADD CONSTRAINT chk_obl_numero_obligacion
@@ -343,7 +385,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'chk_obl_tipo_item_cronograma'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_obl_tipo_item_cronograma'
+          AND conrelid = 'public.obligacion_financiera'::regclass
     ) THEN
         ALTER TABLE public.obligacion_financiera
         ADD CONSTRAINT chk_obl_tipo_item_cronograma
