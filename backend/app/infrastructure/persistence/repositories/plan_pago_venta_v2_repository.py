@@ -1,0 +1,581 @@
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+
+class PlanPagoVentaV2Repository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    @staticmethod
+    def _values(payload: Any) -> dict[str, Any]:
+        if hasattr(payload, "__dataclass_fields__"):
+            return {field: getattr(payload, field) for field in payload.__dataclass_fields__}
+        if isinstance(payload, dict):
+            return payload
+        return vars(payload)
+
+    def get_venta_minima(self, id_venta: int) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_venta,
+                estado_venta,
+                monto_total,
+                moneda,
+                deleted_at
+            FROM venta
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def get_plan_pago_venta_vivo(self, id_venta: int) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_plan_pago_venta,
+                id_venta,
+                metodo_plan_pago,
+                estado_plan_pago,
+                moneda,
+                monto_total_plan,
+                cantidad_cuotas,
+                periodicidad,
+                fecha_primer_vencimiento,
+                importe_anticipo,
+                fecha_vencimiento_anticipo,
+                regla_redondeo,
+                observaciones
+            FROM plan_pago_venta
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+              AND estado_plan_pago IN ('BORRADOR', 'ACTIVO', 'GENERADO')
+            ORDER BY id_plan_pago_venta ASC
+            LIMIT 1
+            """
+        )
+        row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def upsert_plan_pago_venta_borrador(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        existing = self.get_plan_pago_venta_vivo(values["id_venta"])
+        if existing is not None:
+            stmt = text(
+                """
+                UPDATE plan_pago_venta
+                SET
+                    metodo_plan_pago = :metodo_plan_pago,
+                    estado_plan_pago = 'BORRADOR',
+                    moneda = :moneda,
+                    monto_total_plan = :monto_total_plan,
+                    cantidad_cuotas = :cantidad_cuotas,
+                    periodicidad = :periodicidad,
+                    fecha_primer_vencimiento = :fecha_primer_vencimiento,
+                    importe_anticipo = :importe_anticipo,
+                    fecha_vencimiento_anticipo = :fecha_vencimiento_anticipo,
+                    regla_redondeo = :regla_redondeo,
+                    observaciones = :observaciones,
+                    updated_at = :updated_at,
+                    id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                    op_id_ultima_modificacion = :op_id_ultima_modificacion
+                WHERE id_plan_pago_venta = :id_plan_pago_venta
+                  AND deleted_at IS NULL
+                RETURNING
+                    id_plan_pago_venta,
+                    id_venta,
+                    metodo_plan_pago,
+                    estado_plan_pago,
+                    moneda,
+                    monto_total_plan,
+                    cantidad_cuotas,
+                    periodicidad,
+                    fecha_primer_vencimiento,
+                    importe_anticipo,
+                    fecha_vencimiento_anticipo,
+                    regla_redondeo,
+                    observaciones
+                """
+            )
+            row = self.db.execute(
+                stmt, {**values, "id_plan_pago_venta": existing["id_plan_pago_venta"]}
+            ).mappings().one()
+            return dict(row)
+
+        stmt = text(
+            """
+            INSERT INTO plan_pago_venta (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_venta,
+                metodo_plan_pago,
+                estado_plan_pago,
+                moneda,
+                monto_total_plan,
+                cantidad_cuotas,
+                periodicidad,
+                fecha_primer_vencimiento,
+                importe_anticipo,
+                fecha_vencimiento_anticipo,
+                regla_redondeo,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_venta,
+                :metodo_plan_pago,
+                :estado_plan_pago,
+                :moneda,
+                :monto_total_plan,
+                :cantidad_cuotas,
+                :periodicidad,
+                :fecha_primer_vencimiento,
+                :importe_anticipo,
+                :fecha_vencimiento_anticipo,
+                :regla_redondeo,
+                :observaciones
+            )
+            RETURNING
+                id_plan_pago_venta,
+                id_venta,
+                metodo_plan_pago,
+                estado_plan_pago,
+                moneda,
+                monto_total_plan,
+                cantidad_cuotas,
+                periodicidad,
+                fecha_primer_vencimiento,
+                importe_anticipo,
+                fecha_vencimiento_anticipo,
+                regla_redondeo,
+                observaciones
+            """
+        )
+        row = self.db.execute(stmt, values).mappings().one()
+        return dict(row)
+
+    def mark_plan_pago_venta_generado(
+        self,
+        *,
+        id_plan_pago_venta: int,
+        updated_at: Any,
+        id_instalacion_ultima_modificacion: int | None,
+        op_id_ultima_modificacion: Any,
+    ) -> dict[str, Any]:
+        stmt = text(
+            """
+            UPDATE plan_pago_venta
+            SET
+                estado_plan_pago = 'GENERADO',
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_plan_pago_venta = :id_plan_pago_venta
+              AND deleted_at IS NULL
+            RETURNING
+                id_plan_pago_venta,
+                id_venta,
+                metodo_plan_pago,
+                estado_plan_pago,
+                moneda,
+                monto_total_plan,
+                cantidad_cuotas,
+                periodicidad,
+                fecha_primer_vencimiento,
+                importe_anticipo,
+                fecha_vencimiento_anticipo,
+                regla_redondeo,
+                observaciones
+            """
+        )
+        row = self.db.execute(
+            stmt,
+            {
+                "id_plan_pago_venta": id_plan_pago_venta,
+                "updated_at": updated_at,
+                "id_instalacion_ultima_modificacion": id_instalacion_ultima_modificacion,
+                "op_id_ultima_modificacion": op_id_ultima_modificacion,
+            },
+        ).mappings().one()
+        return dict(row)
+
+    def get_or_create_relacion_generadora(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO relacion_generadora (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                tipo_origen,
+                id_origen,
+                descripcion
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :tipo_origen,
+                :id_origen,
+                :descripcion
+            )
+            ON CONFLICT (tipo_origen, id_origen) WHERE (deleted_at IS NULL)
+            DO UPDATE SET updated_at = relacion_generadora.updated_at
+            RETURNING
+                id_relacion_generadora,
+                tipo_origen,
+                id_origen,
+                descripcion,
+                estado_relacion_generadora
+            """
+        )
+        row = self.db.execute(stmt, values).mappings().one()
+        return dict(row)
+
+    def get_or_create_generacion_cronograma(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO generacion_cronograma_financiero (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_relacion_generadora,
+                id_plan_pago_venta,
+                tipo_generacion,
+                clave_generacion,
+                estado_generacion,
+                fecha_generacion,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_relacion_generadora,
+                :id_plan_pago_venta,
+                :tipo_generacion,
+                :clave_generacion,
+                :estado_generacion,
+                :fecha_generacion,
+                :observaciones
+            )
+            ON CONFLICT (id_relacion_generadora, clave_generacion)
+            WHERE deleted_at IS NULL
+              AND estado_generacion <> 'ANULADA'
+            DO UPDATE SET updated_at = generacion_cronograma_financiero.updated_at
+            RETURNING
+                id_generacion_cronograma_financiero,
+                id_relacion_generadora,
+                id_plan_pago_venta,
+                tipo_generacion,
+                clave_generacion,
+                estado_generacion,
+                fecha_generacion
+            """
+        )
+        row = self.db.execute(stmt, values).mappings().one()
+        return dict(row)
+
+    def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT id_concepto_financiero, codigo_concepto_financiero
+            FROM concepto_financiero
+            WHERE codigo_concepto_financiero = :codigo
+              AND estado_concepto_financiero = 'ACTIVO'
+              AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(stmt, {"codigo": codigo}).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def get_compradores_financieros_venta(
+        self, id_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                rpr.id_relacion_persona_rol,
+                rpr.id_persona,
+                rp.codigo_rol
+            FROM relacion_persona_rol rpr
+            JOIN rol_participacion rp
+              ON rp.id_rol_participacion = rpr.id_rol_participacion
+             AND rp.deleted_at IS NULL
+             AND rp.estado_rol = 'ACTIVO'
+            JOIN persona p
+              ON p.id_persona = rpr.id_persona
+             AND p.deleted_at IS NULL
+            WHERE rpr.tipo_relacion = 'venta'
+              AND rpr.id_relacion = :id_venta
+              AND rpr.deleted_at IS NULL
+              AND rpr.fecha_desde <= CURRENT_TIMESTAMP
+              AND (rpr.fecha_hasta IS NULL OR rpr.fecha_hasta >= CURRENT_TIMESTAMP)
+              AND UPPER(rp.codigo_rol) = 'COMPRADOR'
+            ORDER BY rpr.fecha_desde ASC, rpr.id_relacion_persona_rol ASC
+            """
+        )
+        rows = self.db.execute(stmt, {"id_venta": id_venta}).mappings().all()
+        return [dict(row) for row in rows]
+
+    def create_obligacion_cronograma_v2_if_not_exists(
+        self, payload: Any
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+        ob_stmt = text(
+            """
+            INSERT INTO obligacion_financiera (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_relacion_generadora,
+                id_generacion_cronograma_financiero,
+                numero_obligacion,
+                tipo_item_cronograma,
+                etiqueta_obligacion,
+                clave_funcional_origen,
+                fecha_emision,
+                fecha_vencimiento,
+                importe_total,
+                saldo_pendiente,
+                moneda,
+                estado_obligacion
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_relacion_generadora,
+                :id_generacion_cronograma_financiero,
+                :numero_obligacion,
+                :tipo_item_cronograma,
+                :etiqueta_obligacion,
+                :clave_funcional_origen,
+                :fecha_emision,
+                :fecha_vencimiento,
+                :importe_total,
+                :importe_total,
+                :moneda,
+                :estado_obligacion
+            )
+            ON CONFLICT (id_relacion_generadora, clave_funcional_origen)
+            WHERE deleted_at IS NULL
+              AND clave_funcional_origen IS NOT NULL
+            DO NOTHING
+            RETURNING
+                id_obligacion_financiera,
+                id_relacion_generadora,
+                id_generacion_cronograma_financiero,
+                numero_obligacion,
+                tipo_item_cronograma,
+                etiqueta_obligacion,
+                clave_funcional_origen,
+                fecha_vencimiento,
+                importe_total,
+                saldo_pendiente,
+                moneda,
+                estado_obligacion
+            """
+        )
+        ob_row = self.db.execute(ob_stmt, values).mappings().one_or_none()
+        if ob_row is None:
+            return self._get_obligacion_by_clave(
+                id_relacion_generadora=values["id_relacion_generadora"],
+                clave_funcional_origen=values["clave_funcional_origen"],
+            )
+
+        obligacion = dict(ob_row)
+        self._create_composicion(values, obligacion["id_obligacion_financiera"])
+        self._create_obligado(values, obligacion["id_obligacion_financiera"])
+        return obligacion
+
+    def get_obligaciones_cronograma_by_claves(
+        self,
+        *,
+        id_relacion_generadora: int,
+        claves_funcionales: list[str],
+    ) -> list[dict[str, Any]]:
+        if not claves_funcionales:
+            return []
+        stmt = text(
+            """
+            SELECT
+                o.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                o.id_generacion_cronograma_financiero,
+                o.numero_obligacion,
+                o.tipo_item_cronograma,
+                o.etiqueta_obligacion,
+                o.clave_funcional_origen,
+                o.fecha_vencimiento,
+                o.importe_total,
+                o.saldo_pendiente,
+                o.moneda,
+                o.estado_obligacion
+            FROM obligacion_financiera o
+            WHERE o.id_relacion_generadora = :id_relacion_generadora
+              AND o.clave_funcional_origen = ANY(:claves_funcionales)
+              AND o.deleted_at IS NULL
+            ORDER BY o.numero_obligacion ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt,
+            {
+                "id_relacion_generadora": id_relacion_generadora,
+                "claves_funcionales": claves_funcionales,
+            },
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def _get_obligacion_by_clave(
+        self,
+        *,
+        id_relacion_generadora: int,
+        clave_funcional_origen: str,
+    ) -> dict[str, Any]:
+        rows = self.get_obligaciones_cronograma_by_claves(
+            id_relacion_generadora=id_relacion_generadora,
+            claves_funcionales=[clave_funcional_origen],
+        )
+        return rows[0]
+
+    def _create_composicion(
+        self, values: dict[str, Any], id_obligacion_financiera: int
+    ) -> None:
+        stmt = text(
+            """
+            INSERT INTO composicion_obligacion (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_obligacion_financiera,
+                id_concepto_financiero,
+                orden_composicion,
+                importe_componente,
+                saldo_componente,
+                moneda_componente
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_obligacion_financiera,
+                :id_concepto_financiero,
+                1,
+                :importe_total,
+                :importe_total,
+                :moneda
+            )
+            """
+        )
+        self.db.execute(
+            stmt,
+            {
+                **values,
+                "id_obligacion_financiera": id_obligacion_financiera,
+            },
+        )
+
+    def _create_obligado(
+        self, values: dict[str, Any], id_obligacion_financiera: int
+    ) -> None:
+        stmt = text(
+            """
+            INSERT INTO obligacion_obligado (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_obligacion_financiera,
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_obligacion_financiera,
+                :id_persona_obligado,
+                :rol_obligado,
+                100.00
+            )
+            """
+        )
+        self.db.execute(
+            stmt,
+            {
+                **values,
+                "id_obligacion_financiera": id_obligacion_financiera,
+            },
+        )

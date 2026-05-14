@@ -171,6 +171,15 @@ class DefineCondicionesComercialesVentaRequest(BaseModel):
     objetos: list[DefineCondicionesComercialesVentaObjetoRequest]
 
 
+class GeneratePlanPagoVentaCuotasIgualesSimpleRequest(BaseModel):
+    monto_total_plan: Decimal
+    moneda: str = "ARS"
+    cantidad_cuotas: int
+    fecha_primer_vencimiento: date
+    periodicidad: str = "MENSUAL"
+    regla_redondeo: str = "ULTIMA_CUOTA"
+
+
 class ConfirmVentaRequest(BaseModel):
     observaciones: str | None = None
 
@@ -254,6 +263,60 @@ class DefineCondicionesComercialesVentaData(GenerateVentaFromReservaVentaData):
 class DefineCondicionesComercialesVentaResponse(BaseModel):
     ok: Literal[True] = True
     data: DefineCondicionesComercialesVentaData
+
+
+class PlanPagoVentaV2Data(BaseModel):
+    id_plan_pago_venta: int
+    id_venta: int
+    metodo_plan_pago: str
+    estado_plan_pago: str
+    moneda: str
+    monto_total_plan: Decimal
+    cantidad_cuotas: int | None
+    periodicidad: str | None
+    fecha_primer_vencimiento: date | None
+    importe_anticipo: Decimal | None
+    fecha_vencimiento_anticipo: date | None
+    regla_redondeo: str | None
+    observaciones: str | None
+
+
+class GeneracionCronogramaFinancieroData(BaseModel):
+    id_generacion_cronograma_financiero: int
+    id_relacion_generadora: int
+    id_plan_pago_venta: int | None
+    tipo_generacion: str
+    clave_generacion: str
+    estado_generacion: str
+    fecha_generacion: datetime
+
+
+class ObligacionCronogramaVentaV2Data(BaseModel):
+    id_obligacion_financiera: int
+    id_relacion_generadora: int
+    id_generacion_cronograma_financiero: int | None
+    numero_obligacion: int | None
+    tipo_item_cronograma: str | None
+    etiqueta_obligacion: str | None
+    clave_funcional_origen: str | None
+    fecha_vencimiento: date | None
+    importe_total: Decimal
+    saldo_pendiente: Decimal
+    moneda: str
+    estado_obligacion: str
+
+
+class GeneratePlanPagoVentaCuotasIgualesSimpleData(BaseModel):
+    id_venta: int
+    id_relacion_generadora: int
+    plan_pago_venta: PlanPagoVentaV2Data
+    generacion_cronograma_financiero: GeneracionCronogramaFinancieroData
+    obligaciones: list[ObligacionCronogramaVentaV2Data]
+
+
+class GeneratePlanPagoVentaCuotasIgualesSimpleResponse(BaseModel):
+    ok: Literal[True] = True
+    data: GeneratePlanPagoVentaCuotasIgualesSimpleData
 
 
 class ConfirmVentaData(GenerateVentaFromReservaVentaData):

@@ -30,6 +30,8 @@ from app.api.schemas.comercial import (
     GenerateVentaFromReservaVentaData,
     GenerateVentaFromReservaVentaRequest,
     GenerateVentaFromReservaVentaResponse,
+    GeneratePlanPagoVentaCuotasIgualesSimpleRequest,
+    GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
     InstrumentoCompraventaData,
     InstrumentoCompraventaListData,
     InstrumentoCompraventaListResponse,
@@ -102,6 +104,9 @@ from app.application.comercial.commands.expire_reserva_venta import (
 from app.application.comercial.commands.generate_venta_from_reserva_venta import (
     GenerateVentaFromReservaVentaCommand,
 )
+from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_simple import (
+    GeneratePlanPagoVentaCuotasIgualesSimpleCommand,
+)
 from app.application.comercial.commands.update_reserva_venta import (
     UpdateReservaVentaCommand,
 )
@@ -139,6 +144,9 @@ from app.application.comercial.services.expire_reserva_venta_service import (
 from app.application.comercial.services.generate_venta_from_reserva_venta_service import (
     GenerateVentaFromReservaVentaService,
 )
+from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
+    GeneratePlanPagoVentaCuotasIgualesSimpleService,
+)
 from app.application.comercial.services.get_reserva_venta_service import (
     GetReservaVentaService,
 )
@@ -165,6 +173,9 @@ from app.application.comercial.services.get_venta_detalle_integral_service impor
 from app.application.common.commands import CommandContext
 from app.infrastructure.persistence.repositories.comercial_repository import (
     ComercialRepository,
+)
+from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
+    PlanPagoVentaV2Repository,
 )
 
 
@@ -1961,6 +1972,125 @@ def define_condiciones_comerciales_venta(
     return DefineCondicionesComercialesVentaResponse(
         data=DefineCondicionesComercialesVentaData(**data)
     )
+
+
+@router.post(
+    "/api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple",
+    response_model=GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def generate_plan_pago_venta_cuotas_iguales_simple(
+    id_venta: int,
+    request: GeneratePlanPagoVentaCuotasIgualesSimpleRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> GeneratePlanPagoVentaCuotasIgualesSimpleResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = ComercialCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
+    command = GeneratePlanPagoVentaCuotasIgualesSimpleCommand(
+        context=context,
+        id_venta=id_venta,
+        monto_total_plan=request.monto_total_plan,
+        moneda=request.moneda,
+        cantidad_cuotas=request.cantidad_cuotas,
+        fecha_primer_vencimiento=request.fecha_primer_vencimiento,
+        periodicidad=request.periodicidad,
+        regla_redondeo=request.regla_redondeo,
+    )
+    service = GeneratePlanPagoVentaCuotasIgualesSimpleService(
+        repository=PlanPagoVentaV2Repository(db)
+    )
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_VENTA" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La venta indicada no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        if "PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE" in result.errors:
+            error = ErrorResponse(
+                error_code="CONFLICT",
+                error_message="La venta ya posee un plan de pago vivo incompatible.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+
+        if (
+            "COMPRADOR_VENTA_NO_RESUELTO" in result.errors
+            or "COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO" in result.errors
+        ):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="La venta debe tener exactamente un comprador financiero resoluble.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if any(error.startswith("NOT_FOUND_CONCEPTO") for error in result.errors):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No existe un concepto financiero requerido para generar el cronograma.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo generar el plan de pago V2 de cuotas iguales.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return GeneratePlanPagoVentaCuotasIgualesSimpleResponse(data=result.data)
 
 
 @router.patch(
