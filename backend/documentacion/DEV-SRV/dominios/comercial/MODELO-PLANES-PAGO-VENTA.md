@@ -5,8 +5,9 @@
 Definir el modelo formal V2 para planes de pago de venta, preservando la
 separacion de ownership entre `comercial` y `financiero`.
 
-Este documento congela la decision conceptual y documenta el primer bloque V2
-ya materializado para `CUOTAS_IGUALES_SIMPLE`, orientando la evolucion desde
+Este documento congela la decision conceptual y documenta los metodos V2
+iniciales ya materializados para `CUOTAS_IGUALES_SIMPLE` y
+`ANTICIPO_MAS_CUOTAS_IGUALES`, orientando la evolucion desde
 `venta_plan_cuota` V1 hacia un cronograma basado en
 `obligacion_financiera`.
 
@@ -33,7 +34,8 @@ No incluye:
 - eliminacion de estructuras V1
 - recalculo de deuda desde consultas comerciales
 - pagos, caja, recibos, mora o tesoreria
-- soporte de metodos V2 distintos de `CUOTAS_IGUALES_SIMPLE`
+- soporte de metodos V2 distintos de `CUOTAS_IGUALES_SIMPLE` y
+  `ANTICIPO_MAS_CUOTAS_IGUALES`
 - implementacion de `plan_pago_venta_bloque`
 
 ## Diagnostico actual
@@ -313,16 +315,44 @@ Regla:
 - no usa tabla de cuotas comercial
 - el anticipo usa `ANTICIPO_VENTA`
 - las cuotas usan `CAPITAL_VENTA`
+- cada obligacion nace `PROYECTADA`
+- cada obligacion tiene obligado comprador unico al 100%
 
-Parametros minimos esperados:
+Endpoint implementado:
 
-- importe o porcentaje de anticipo
-- fecha de vencimiento del anticipo
-- cantidad de cuotas de saldo
-- fecha de primer vencimiento de saldo
-- periodicidad
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/anticipo-mas-cuotas-iguales`
+
+Servicio implementado:
+
+- `GeneratePlanPagoVentaAnticipoMasCuotasIgualesService`
+
+Parametros persistidos en `plan_pago_venta`:
+
+- `id_venta`
+- metodo `ANTICIPO_MAS_CUOTAS_IGUALES`
+- monto total del plan
 - moneda
+- importe de anticipo
+- fecha de vencimiento del anticipo
+- cantidad de cuotas del saldo
+- fecha de primer vencimiento de cuotas
+- periodicidad
 - regla de redondeo
+
+Reglas implementadas:
+
+- periodicidad soportada: `MENSUAL`
+- regla de redondeo soportada: `ULTIMA_CUOTA`
+- el saldo se calcula como `monto_total_plan - importe_anticipo`
+- la primera obligacion tiene `tipo_item_cronograma = ANTICIPO` y
+  `etiqueta_obligacion = Anticipo`
+- las cuotas tienen `tipo_item_cronograma = CUOTA` y
+  `etiqueta_obligacion = Cuota N`
+- la clave funcional usa la forma
+  `PLAN_PAGO_VENTA:{id_plan_pago_venta}:ANTICIPO:1` para el anticipo y
+  `PLAN_PAGO_VENTA:{id_plan_pago_venta}:CUOTA:{N}` para cuotas
+- no se escribe `venta_plan_cuota`
+- no se registran pagos, recibos, caja ni tesoreria
 
 #### CRONOGRAMA_DEFINIDO
 
@@ -582,7 +612,7 @@ Decision pendiente:
 ### Paso 1 - Documentacion
 
 - estado: completado para decision conceptual V2 y documentacion de
-  `CUOTAS_IGUALES_SIMPLE` inicial
+  `CUOTAS_IGUALES_SIMPLE` y `ANTICIPO_MAS_CUOTAS_IGUALES` iniciales
 - `venta_plan_cuota` queda marcado como legacy V1 en documentos afectados
 - el drift actual documentado queda limitado a pendientes explicitados:
   validacion estricta contra venta, politica de `X-Op-Id` invalido y metodos V2
@@ -628,13 +658,15 @@ Prioridad:
 
 El backend actual materializa `numero_obligacion`, `tipo_item_cronograma`,
 `etiqueta_obligacion`, `clave_funcional_origen` e
-`id_generacion_cronograma_financiero` para el caso
-`CUOTAS_IGUALES_SIMPLE`.
+`id_generacion_cronograma_financiero` para los casos
+`CUOTAS_IGUALES_SIMPLE` y `ANTICIPO_MAS_CUOTAS_IGUALES`.
 
 ### Paso 4 - Servicio de liquidacion/generacion V2
 
-Estado: implementado para `CUOTAS_IGUALES_SIMPLE` inicial mediante
-`GeneratePlanPagoVentaCuotasIgualesSimpleService`.
+Estado: implementado para `CUOTAS_IGUALES_SIMPLE` y
+`ANTICIPO_MAS_CUOTAS_IGUALES` iniciales mediante
+`GeneratePlanPagoVentaCuotasIgualesSimpleService` y
+`GeneratePlanPagoVentaAnticipoMasCuotasIgualesService`.
 
 El servicio:
 
@@ -647,7 +679,8 @@ El servicio:
 - sea idempotente
 - no use `venta_plan_cuota` para metodos V2
 
-Pendiente: extender o crear servicios especificos para otros metodos V2.
+Pendiente: extender o crear servicios especificos para metodos V2 distintos de
+`CUOTAS_IGUALES_SIMPLE` y `ANTICIPO_MAS_CUOTAS_IGUALES`.
 
 ### Paso 4b - Modelo por bloques
 
@@ -700,8 +733,8 @@ Durante la transicion:
 
 ## Estado del documento
 
-Estado: modelo V2 con primer bloque implementado para
-`CUOTAS_IGUALES_SIMPLE`.
+Estado: modelo V2 con metodos iniciales implementados para
+`CUOTAS_IGUALES_SIMPLE` y `ANTICIPO_MAS_CUOTAS_IGUALES`.
 
 Restricciones vigentes:
 
