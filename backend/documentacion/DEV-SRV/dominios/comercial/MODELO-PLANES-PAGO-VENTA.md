@@ -369,7 +369,7 @@ Uso esperado:
 
 - pago contado estructurado como bloque `CONTADO`
 - pago financiado con anticipo, tramos de cuotas, refuerzos y saldo
-- endpoint unificado futuro `plan-pago-v2/generar`
+- endpoint unificado implementado `plan-pago-v2/generar`
 - servicio interno `GeneratePlanPagoVentaV2PorBloquesService`
 
 Restriccion:
@@ -708,7 +708,7 @@ Pendiente: extender o crear servicios especificos para metodos V2 distintos de
 
 ### Paso 4b - Modelo por bloques
 
-Estado: base tecnica implementada para bloques; endpoint unificado futuro.
+Estado: base tecnica implementada para bloques; endpoint unificado implementado.
 
 Estado actual:
 
@@ -719,12 +719,12 @@ Estado actual:
 - `obligacion_financiera` mantiene la semantica financiera y `clave_funcional_origen` mantiene la idempotencia;
 - `plan_pago_venta_bloque` no es deuda, no es cuota financiera y no recibe pagos.
 
-Pendiente/futuro:
+Estado implementado adicional:
 
-- implementar un endpoint unificado que reciba bloques desde el cliente:
+- existe un endpoint unificado que recibe bloques desde el cliente:
   `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`;
-- mantener los endpoints especificos actuales como wrappers o compatibilidad
-  mientras dure la transicion.
+- los endpoints especificos actuales se mantienen vigentes como contratos
+  publicos V2.
 
 Referencia: `MODELO-PLANES-PAGO-VENTA-BLOQUES.md`.
 
