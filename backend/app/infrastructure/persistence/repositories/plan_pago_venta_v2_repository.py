@@ -434,6 +434,38 @@ class PlanPagoVentaV2Repository:
             return value.isoformat()
         return value
 
+    def get_plan_pago_venta_bloques(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text(
+            """
+            SELECT
+                id_plan_pago_venta_bloque,
+                id_plan_pago_venta,
+                numero_bloque,
+                tipo_bloque,
+                etiqueta_bloque,
+                clave_bloque,
+                cantidad_cuotas,
+                importe_total_bloque,
+                importe_cuota,
+                fecha_vencimiento,
+                fecha_primer_vencimiento,
+                periodicidad,
+                regla_redondeo,
+                concepto_financiero_codigo,
+                observaciones
+            FROM plan_pago_venta_bloque
+            WHERE id_plan_pago_venta = :id_plan_pago_venta
+              AND deleted_at IS NULL
+            ORDER BY numero_bloque ASC
+            """
+        )
+        rows = self.db.execute(
+            stmt, {"id_plan_pago_venta": id_plan_pago_venta}
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
     def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
         stmt = text(
             """
