@@ -16,6 +16,7 @@ set SCHEMA_FILE=%BACKEND_DIR%\database\schema_inmobiliaria_20260418.sql
 set SEED_FILE=%BACKEND_DIR%\database\seed_minimo.sql
 set TECHNICAL_BASELINE_FILE=%BACKEND_DIR%\database\seed_test_baseline.sql
 set PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_cronograma_v2_20260514.sql
+set PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloques_v2_20260515.sql
 
 echo ============================
 echo Reset DB - Sistema Inmobiliario
@@ -27,6 +28,7 @@ echo Schema: %SCHEMA_FILE%
 echo Seed: %SEED_FILE%
 echo Technical baseline: %TECHNICAL_BASELINE_FILE%
 echo Patch plan pago venta cronograma V2: %PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_FILE%
+echo Patch plan pago venta bloques V2: %PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE%
 
 if not exist "%SCHEMA_FILE%" (
   echo ERROR: No existe el schema: %SCHEMA_FILE%
@@ -48,6 +50,12 @@ if not exist "%TECHNICAL_BASELINE_FILE%" (
 
 if not exist "%PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_FILE%" (
   echo ERROR: No existe el patch de cronograma V2: %PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE%" (
+  echo ERROR: No existe el patch de bloques V2: %PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE%
   pause
   exit /b 1
 )
@@ -87,6 +95,15 @@ echo Aplicando patch plan pago venta cronograma V2 en %DEV_DB%...
 %PGBIN%\psql -d %DEV_DB% -f "%PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch plan pago venta cronograma V2 en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch plan pago venta bloques V2 en %DEV_DB%...
+%PGBIN%\psql -d %DEV_DB% -f "%PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch plan pago venta bloques V2 en %DEV_DB%
   pause
   exit /b 1
 )
@@ -135,6 +152,15 @@ echo Aplicando patch plan pago venta cronograma V2 en %TEST_DB%...
 %PGBIN%\psql -d %TEST_DB% -f "%PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch plan pago venta cronograma V2 en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch plan pago venta bloques V2 en %TEST_DB%...
+%PGBIN%\psql -d %TEST_DB% -f "%PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch plan pago venta bloques V2 en %TEST_DB%
   pause
   exit /b 1
 )
