@@ -10,12 +10,16 @@ ya materializado para `CUOTAS_IGUALES_SIMPLE`, orientando la evolucion desde
 `venta_plan_cuota` V1 hacia un cronograma basado en
 `obligacion_financiera`.
 
+Para el diseno siguiente basado en formas de pago compuestas por bloques
+comerciales, ver `MODELO-PLANES-PAGO-VENTA-BLOQUES.md`.
+
 ## Alcance
 
 Incluye:
 
 - diagnostico de `venta_plan_cuota`
 - decision de arquitectura para planes V2
+- referencia al modelo de bloques comerciales como evolucion conceptual
 - modelo conceptual comercial-financiero
 - metodos soportados por etapas
 - reglas de generacion de obligaciones
@@ -30,6 +34,7 @@ No incluye:
 - recalculo de deuda desde consultas comerciales
 - pagos, caja, recibos, mora o tesoreria
 - soporte de metodos V2 distintos de `CUOTAS_IGUALES_SIMPLE`
+- implementacion de `plan_pago_venta_bloque`
 
 ## Diagnostico actual
 
@@ -126,6 +131,27 @@ Restricciones:
 - no reemplaza `obligacion_financiera`
 - no define saldo ni estado financiero
 - no debe duplicar el cronograma
+
+### plan_pago_venta_bloque
+
+Evolucion conceptual recomendada para describir formas de pago compuestas.
+
+Responsabilidades:
+
+- describir bloques comerciales ordenados de un plan
+- representar anticipo, tramos de cuotas, refuerzos, saldo o contado como
+  reglas de generacion
+- explicar el origen comercial de obligaciones generadas
+
+Restricciones:
+
+- no es deuda
+- no es cuota financiera
+- no guarda saldo ni pagos
+- no reemplaza `obligacion_financiera`
+- no debe expandirse como tabla de cuotas financieras
+
+Detalle normativo: `MODELO-PLANES-PAGO-VENTA-BLOQUES.md`.
 
 ### relacion_generadora
 
@@ -622,6 +648,22 @@ El servicio:
 - no use `venta_plan_cuota` para metodos V2
 
 Pendiente: extender o crear servicios especificos para otros metodos V2.
+
+### Paso 4b - Modelo por bloques
+
+Estado: documentado como diseno, no implementado.
+
+El modelo por bloques propone:
+
+- crear `plan_pago_venta_bloque`
+- mantener `obligacion_financiera` como unico cronograma financiero
+- usar los bloques como reglas comerciales de generacion
+- implementar un endpoint futuro unificado
+  `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
+- mantener los endpoints especificos actuales como wrappers o compatibilidad
+  mientras dure la transicion
+
+Referencia: `MODELO-PLANES-PAGO-VENTA-BLOQUES.md`.
 
 ### Paso 5 - Migracion de CUOTAS_FIJAS
 

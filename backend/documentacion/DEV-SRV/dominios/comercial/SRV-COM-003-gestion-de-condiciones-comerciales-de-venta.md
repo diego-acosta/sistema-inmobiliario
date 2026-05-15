@@ -258,8 +258,9 @@ Idempotencia:
 
 Limitaciones V2 iniciales:
 
-- solo soporta `CUOTAS_IGUALES_SIMPLE`
-- no soporta `ANTICIPO_MAS_CUOTAS_IGUALES`
+- soporta endpoints incrementales para `CUOTAS_IGUALES_SIMPLE` y
+  `ANTICIPO_MAS_CUOTAS_IGUALES`
+- no soporta todavia planes compuestos por bloques comerciales arbitrarios
 - no soporta `CRONOGRAMA_DEFINIDO`
 - no soporta indexacion
 - no soporta interes financiero

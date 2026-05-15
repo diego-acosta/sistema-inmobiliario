@@ -24,7 +24,7 @@ Alcance implementado real del `v1`:
   - detalle enriquecido
   - detalle integral read-only con partes y estado financiero asociado
   - definir condiciones comerciales
-  - generar plan de pago V2 `CUOTAS_IGUALES_SIMPLE`
+  - generar planes de pago V2 iniciales `CUOTAS_IGUALES_SIMPLE` y `ANTICIPO_MAS_CUOTAS_IGUALES`
   - confirmar
 - recursos hijos de `venta`
   - alta y listado de `instrumento_compraventa`
@@ -36,7 +36,7 @@ Alcance implementado real del `v1`:
   - lectura de estado de integracion por venta
 - integracion `comercial -> financiero`
   - lectura read-only de `relacion_generadora` y obligaciones asociadas a una venta
-  - generacion inicial de cronograma `CUOTAS_IGUALES_SIMPLE V2` desde `plan_pago_venta`
+  - generacion inicial de cronogramas V2 desde `plan_pago_venta`
   - sin recalculo de deuda, sin mora y sin generacion de obligaciones desde la consulta
 
 Backlog fuera de `v1`:
@@ -48,7 +48,7 @@ Backlog fuera de `v1`:
 - detalle individual de recursos hijos
 - reportes amplios o analiticos
 - documental comercial propia
-- plan financiero avanzado de venta fuera de `CUOTAS_IGUALES_SIMPLE V2`
+- plan financiero avanzado de venta fuera de los metodos V2 iniciales
 - rescision financiera/comercial de venta
 - cesion real con cambio de comprador y ajuste de obligados
 
@@ -63,6 +63,7 @@ Backlog fuera de `v1`:
 ## Servicios del dominio
 
 - [[MODELO-PLANES-PAGO-VENTA]]
+- [[MODELO-PLANES-PAGO-VENTA-BLOQUES]]
 - [[SRV-COM-001-gestion-de-reserva-de-venta]]
 - [[SRV-COM-002-gestion-de-venta]]
 - [[SRV-COM-003-gestion-de-condiciones-comerciales-de-venta]]
