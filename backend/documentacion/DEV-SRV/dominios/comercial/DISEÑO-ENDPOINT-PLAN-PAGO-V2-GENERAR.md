@@ -2,18 +2,17 @@
 
 ## Estado
 
-Documento de diseno futuro para el endpoint publico. No implementado como
-endpoint HTTP.
+Endpoint publico implementado como wrapper HTTP del servicio interno
+unificado por bloques.
 
 El servicio interno unificado por bloques usa `metodo_plan_pago =
 PLAN_POR_BLOQUES`.
 
-Este documento es exclusivamente documental: no modifica ni promete modificar
-SQL, backend productivo, UI, pagos, caja, recibos ni endpoints publicos
-vigentes. Cualquier cambio futuro en SQL, backend o UI requiere issue, diseno,
-patch y tests propios.
+Este alcance no modifica SQL, UI, pagos, caja, recibos ni endpoints publicos
+especificos vigentes. Cualquier cambio futuro en SQL, backend o UI requiere
+issue, diseno, patch y tests propios.
 
-Endpoint futuro:
+Endpoint:
 
 ```text
 POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar
@@ -446,12 +445,9 @@ Motivo:
 - no crear `plan_pago_venta_cuota`
 - no crear `plan_pago_venta_tramo`
 
-## Persistencia conceptual esperada
+## Persistencia esperada
 
-El siguiente flujo es conceptual y no habilita implementacion en este issue.
-Solo podria aplicarse cuando existan decisiones SQL/backend/tests especificas.
-
-El flujo transaccional futuro, si se aprueba, deberia:
+El flujo transaccional implementado:
 
 1. validar request y venta
 2. resolver comprador unico
@@ -478,7 +474,6 @@ El flujo transaccional futuro, si se aprueba, deberia:
       "id_venta": 1,
       "metodo_plan_pago": "PLAN_POR_BLOQUES",
       "estado_plan_pago": "GENERADO",
-      "tipo_pago": "FINANCIADO",
       "moneda": "ARS",
       "monto_total_plan": 12700000.00
     },
@@ -524,10 +519,8 @@ El flujo transaccional futuro, si se aprueba, deberia:
 }
 ```
 
-Nota: `tipo_pago` hoy no existe confirmado como columna en `plan_pago_venta`.
-Si no se agrega SQL, el response puede derivarlo del metodo o devolverlo solo
-como dato calculado del servicio. La implementacion futura debe confirmar esta
-decision contra SQL vigente.
+Nota: `tipo_pago` no existe como columna en `plan_pago_venta`; la cabecera
+persistida expone `metodo_plan_pago = PLAN_POR_BLOQUES`.
 
 `PLAN_POR_BLOQUES` es el valor formal de `plan_pago_venta.metodo_plan_pago`
 para el motor estructurado por bloques. `CRONOGRAMA_DEFINIDO` queda reservado
@@ -562,20 +555,19 @@ Decision:
 - no se eliminan
 - no cambian su contrato publico
 - no deben crecer para soportar combinaciones nuevas
-- a futuro pueden convertirse en wrappers del endpoint unificado
+- pueden convertirse en wrappers internos del endpoint unificado en un alcance futuro
 
-Traduccion futura:
+Traduccion posible futura:
 
 | Endpoint especifico | Traduccion a bloques |
 | --- | --- |
 | `cuotas-iguales-simple` | un bloque `TRAMO_CUOTAS` |
 | `anticipo-mas-cuotas-iguales` | bloque `ANTICIPO` + bloque `TRAMO_CUOTAS` |
 
-## Tests necesarios para una implementacion futura
+## Tests implementados
 
-No existen tests nuevos asociados a este documento porque el endpoint no se
-implementa en este alcance. Si se implementa en una etapa posterior, la
-cobertura minima deberia incluir:
+Existe cobertura backend para servicio interno y endpoint HTTP del flujo
+unificado por bloques.
 
 Tests de contrato:
 
@@ -625,7 +617,7 @@ Tests de compatibilidad:
 - `CUOTAS_FIJAS V1` sigue usando `venta_plan_cuota`
 - tests de schema de cronograma V2 siguen pasando
 
-## Fuera del primer endpoint unificado
+## Fuera del endpoint unificado
 
 No implementar en el primer alcance:
 
@@ -649,7 +641,7 @@ No implementar en el primer alcance:
 - endpoint de previsualizacion
 - migracion de `venta_plan_cuota`
 
-## Decisiones cerradas para implementacion futura
+## Decisiones cerradas para la implementacion
 
 - El endpoint recibe bloques, no metodos tecnicos aislados.
 - La cabecera usa `metodo_plan_pago = PLAN_POR_BLOQUES`.
@@ -666,9 +658,6 @@ No implementar en el primer alcance:
 
 ## Proximo paso recomendado
 
-No implementar el endpoint en este issue.
-
-Antes de cualquier implementacion futura corresponde abrir un alcance separado
-para validar SQL vigente, confirmar contratos backend, definir migraciones si
-aplican y agregar tests de contrato, idempotencia, trazabilidad y no uso de
-`venta_plan_cuota`.
+Mantener los endpoints especificos vigentes y evaluar en un issue separado si
+conviene convertirlos en wrappers internos del endpoint unificado sin cambiar
+su contrato publico.

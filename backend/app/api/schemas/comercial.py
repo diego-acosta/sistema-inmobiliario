@@ -191,6 +191,27 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesRequest(BaseModel):
     regla_redondeo: str = "ULTIMA_CUOTA"
 
 
+class PlanPagoVentaBloqueV2Request(BaseModel):
+    tipo_bloque: str
+    etiqueta_bloque: str | None = None
+    importe_total_bloque: Decimal | None = None
+    fecha_vencimiento: date | None = None
+    cantidad_cuotas: int | None = None
+    importe_cuota: Decimal | None = None
+    fecha_primer_vencimiento: date | None = None
+    periodicidad: str | None = None
+    regla_redondeo: str | None = None
+    observaciones: str | None = None
+
+
+class GeneratePlanPagoVentaV2PorBloquesRequest(BaseModel):
+    tipo_pago: str
+    monto_total_plan: Decimal
+    moneda: str = "ARS"
+    bloques: list[PlanPagoVentaBloqueV2Request]
+    observaciones: str | None = None
+
+
 class ConfirmVentaRequest(BaseModel):
     observaciones: str | None = None
 
@@ -317,6 +338,27 @@ class ObligacionCronogramaVentaV2Data(BaseModel):
     estado_obligacion: str
 
 
+class ObligacionCronogramaVentaPorBloquesV2Data(ObligacionCronogramaVentaV2Data):
+    id_plan_pago_venta_bloque: int | None
+
+
+class PlanPagoVentaBloqueV2Data(BaseModel):
+    id_plan_pago_venta_bloque: int
+    id_plan_pago_venta: int
+    numero_bloque: int
+    tipo_bloque: str
+    etiqueta_bloque: str
+    clave_bloque: str
+    cantidad_cuotas: int | None
+    importe_total_bloque: Decimal | None
+    importe_cuota: Decimal | None
+    fecha_vencimiento: date | None
+    fecha_primer_vencimiento: date | None
+    periodicidad: str | None
+    regla_redondeo: str | None
+    concepto_financiero_codigo: str
+
+
 class GeneratePlanPagoVentaCuotasIgualesSimpleData(BaseModel):
     id_venta: int
     id_relacion_generadora: int
@@ -339,6 +381,20 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesData(
 class GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse(BaseModel):
     ok: Literal[True] = True
     data: GeneratePlanPagoVentaAnticipoMasCuotasIgualesData
+
+
+class GeneratePlanPagoVentaV2PorBloquesData(BaseModel):
+    id_venta: int
+    id_relacion_generadora: int
+    plan_pago_venta: PlanPagoVentaV2Data
+    bloques: list[PlanPagoVentaBloqueV2Data]
+    generacion_cronograma_financiero: GeneracionCronogramaFinancieroData
+    obligaciones: list[ObligacionCronogramaVentaPorBloquesV2Data]
+
+
+class GeneratePlanPagoVentaV2PorBloquesResponse(BaseModel):
+    ok: Literal[True] = True
+    data: GeneratePlanPagoVentaV2PorBloquesData
 
 
 class ConfirmVentaData(GenerateVentaFromReservaVentaData):

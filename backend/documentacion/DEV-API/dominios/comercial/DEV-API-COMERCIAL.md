@@ -568,9 +568,6 @@ Implementado y disponible hoy:
 
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/anticipo-mas-cuotas-iguales`
-
-Diseñado/futuro, no implementado como contrato publico:
-
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
 
 Alineacion con bloques V2:
@@ -582,7 +579,7 @@ Alineacion con bloques V2:
 - Las obligaciones financieras generadas se vinculan al bloque por `obligacion_financiera.id_plan_pago_venta_bloque`.
 - `id_plan_pago_venta_bloque` es trazabilidad de origen comercial-financiero; no es clave idempotente.
 - `clave_funcional_origen` sigue siendo la clave idempotente financiera por obligacion.
-- El endpoint unificado futuro recibira bloques desde el cliente, pero todavia no esta disponible y no debe confundirse con un contrato publico vigente.
+- El endpoint unificado recibe bloques desde el cliente y reutiliza el motor interno `PLAN_POR_BLOQUES`.
 
 #### `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
 
@@ -792,26 +789,25 @@ Errores posibles:
 - `422`: validacion de schema del request
 - `500 INTERNAL_ERROR`: error inesperado
 
-#### Futuro `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
+#### `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
 
 Estado:
-- diseno documentado
-- no implementado en el surface HTTP vigente
-- no debe ser invocado por clientes hasta que exista implementacion y tests
-- el servicio interno por bloques usa `metodo_plan_pago = PLAN_POR_BLOQUES`
-- no modifica ni promete cambios de SQL, backend productivo o UI en este alcance
+- implementado como wrapper HTTP del servicio interno por bloques
+- usa `metodo_plan_pago = PLAN_POR_BLOQUES`
+- no modifica SQL, UI, pagos, caja ni recibos
+- conserva sin cambios los endpoints especificos actuales
 
 Documento de diseno:
 - `backend/documentacion/DEV-SRV/dominios/comercial/DISEÑO-ENDPOINT-PLAN-PAGO-V2-GENERAR.md`
 
-Objetivo futuro:
+Objetivo:
 - recibir una forma de pago por bloques comerciales
 - crear/reutilizar `plan_pago_venta`
 - crear/reutilizar `plan_pago_venta_bloque`
 - generar obligaciones financieras V2 vinculadas por `id_plan_pago_venta_bloque`
 - mantener `clave_funcional_origen` como idempotencia financiera
 
-Request conceptual futuro:
+Request:
 
 ```json
 {
@@ -875,8 +871,8 @@ Decisiones de diseno:
 Compatibilidad:
 
 - los endpoints especificos actuales quedan vigentes
-- a futuro pueden convertirse en wrappers del endpoint unificado
-- no deben eliminarse en la primera implementacion del endpoint unificado
+- no se convierten en wrappers en este alcance
+- no se elimina ningun contrato publico existente
 
 #### `PATCH /api/v1/ventas/{id_venta}/confirmar`
 

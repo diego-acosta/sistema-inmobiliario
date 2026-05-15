@@ -29,6 +29,8 @@ from app.api.schemas.comercial import (
     EscrituracionListResponse,
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesRequest,
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse,
+    GeneratePlanPagoVentaV2PorBloquesRequest,
+    GeneratePlanPagoVentaV2PorBloquesResponse,
     GenerateVentaFromReservaVentaData,
     GenerateVentaFromReservaVentaRequest,
     GenerateVentaFromReservaVentaResponse,
@@ -112,6 +114,10 @@ from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_
 from app.application.comercial.commands.generate_plan_pago_venta_anticipo_mas_cuotas_iguales import (
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesCommand,
 )
+from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
+    GeneratePlanPagoVentaV2PorBloquesCommand,
+    PlanPagoVentaBloqueInput,
+)
 from app.application.comercial.commands.update_reserva_venta import (
     UpdateReservaVentaCommand,
 )
@@ -154,6 +160,9 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
 )
 from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cuotas_iguales_service import (
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesService,
+)
+from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
+    GeneratePlanPagoVentaV2PorBloquesService,
 )
 from app.application.comercial.services.get_reserva_venta_service import (
     GetReservaVentaService,
@@ -1980,6 +1989,143 @@ def define_condiciones_comerciales_venta(
     return DefineCondicionesComercialesVentaResponse(
         data=DefineCondicionesComercialesVentaData(**data)
     )
+
+
+@router.post(
+    "/api/v1/ventas/{id_venta}/plan-pago-v2/generar",
+    response_model=GeneratePlanPagoVentaV2PorBloquesResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def generate_plan_pago_venta_v2_por_bloques(
+    id_venta: int,
+    request: GeneratePlanPagoVentaV2PorBloquesRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> GeneratePlanPagoVentaV2PorBloquesResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = ComercialCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
+    command = GeneratePlanPagoVentaV2PorBloquesCommand(
+        context=context,
+        id_venta=id_venta,
+        tipo_pago=request.tipo_pago,
+        monto_total_plan=request.monto_total_plan,
+        moneda=request.moneda,
+        bloques=[
+            PlanPagoVentaBloqueInput(
+                tipo_bloque=bloque.tipo_bloque,
+                etiqueta_bloque=bloque.etiqueta_bloque,
+                importe_total_bloque=bloque.importe_total_bloque,
+                fecha_vencimiento=bloque.fecha_vencimiento,
+                cantidad_cuotas=bloque.cantidad_cuotas,
+                importe_cuota=bloque.importe_cuota,
+                fecha_primer_vencimiento=bloque.fecha_primer_vencimiento,
+                periodicidad=bloque.periodicidad,
+                regla_redondeo=bloque.regla_redondeo,
+                observaciones=bloque.observaciones,
+            )
+            for bloque in request.bloques
+        ],
+        observaciones=request.observaciones,
+    )
+    service = GeneratePlanPagoVentaV2PorBloquesService(
+        repository=PlanPagoVentaV2Repository(db)
+    )
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_VENTA" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La venta indicada no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        if any(
+            error.startswith("PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE")
+            or error.startswith("PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
+            or error.startswith("OBLIGACION_PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
+            for error in result.errors
+        ):
+            error = ErrorResponse(
+                error_code="CONFLICT",
+                error_message="La venta ya posee un plan de pago vivo incompatible.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+
+        if (
+            "COMPRADOR_VENTA_NO_RESUELTO" in result.errors
+            or "COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO" in result.errors
+        ):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="La venta debe tener exactamente un comprador financiero resoluble.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if any(error.startswith("NOT_FOUND_CONCEPTO") for error in result.errors):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="No existe un concepto financiero requerido para generar el cronograma.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo generar el plan de pago V2 por bloques.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return GeneratePlanPagoVentaV2PorBloquesResponse(data=result.data)
 
 
 @router.post(

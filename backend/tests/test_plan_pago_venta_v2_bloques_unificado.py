@@ -20,6 +20,10 @@ from tests.test_plan_pago_venta_v2_cuotas_iguales import (
     _count_venta_plan_cuota,
     _insertar_venta_minima,
 )
+from tests.test_disponibilidades_create import HEADERS
+
+
+URL = "/api/v1/ventas/{id_venta}/plan-pago-v2/generar"
 
 
 def _service(db_session) -> GeneratePlanPagoVentaV2PorBloquesService:
@@ -81,6 +85,65 @@ def _bloques_financiado() -> list[PlanPagoVentaBloqueInput]:
     ]
 
 
+def _payload_financiado() -> dict[str, object]:
+    return {
+        "tipo_pago": "FINANCIADO",
+        "monto_total_plan": 12700000.00,
+        "moneda": "ARS",
+        "bloques": [
+            {
+                "tipo_bloque": "ANTICIPO",
+                "etiqueta_bloque": "Anticipo",
+                "importe_total_bloque": 2000000.00,
+                "fecha_vencimiento": "2026-05-10",
+            },
+            {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "etiqueta_bloque": "Primer tramo",
+                "cantidad_cuotas": 6,
+                "importe_cuota": 500000.00,
+                "fecha_primer_vencimiento": "2026-06-10",
+                "periodicidad": "MENSUAL",
+            },
+            {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "etiqueta_bloque": "Segundo tramo",
+                "cantidad_cuotas": 6,
+                "importe_cuota": 700000.00,
+                "fecha_primer_vencimiento": "2026-12-10",
+                "periodicidad": "MENSUAL",
+            },
+            {
+                "tipo_bloque": "REFUERZO",
+                "etiqueta_bloque": "Refuerzo diciembre",
+                "importe_total_bloque": 1500000.00,
+                "fecha_vencimiento": "2026-12-20",
+            },
+            {
+                "tipo_bloque": "SALDO",
+                "etiqueta_bloque": "Saldo contra escritura",
+                "importe_total_bloque": 2000000.00,
+                "fecha_vencimiento": "2027-03-10",
+            },
+        ],
+    }
+
+
+def _payload_contado() -> dict[str, object]:
+    return {
+        "tipo_pago": "CONTADO",
+        "monto_total_plan": 12000000.00,
+        "moneda": "ARS",
+        "bloques": [
+            {
+                "tipo_bloque": "CONTADO",
+                "importe_total_bloque": 12000000.00,
+                "fecha_vencimiento": "2026-05-10",
+            }
+        ],
+    }
+
+
 def _obligaciones_unificadas(db_session, *, id_venta: int) -> list[dict]:
     rows = db_session.execute(
         text(
@@ -121,6 +184,128 @@ def _obligaciones_unificadas(db_session, *, id_venta: int) -> list[dict]:
         {"id_venta": id_venta},
     ).mappings().all()
     return [dict(row) for row in rows]
+
+
+def test_endpoint_unificado_genera_contado_como_saldo_con_capital(
+    client, db_session
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-001")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+
+    response = client.post(
+        URL.format(id_venta=id_venta),
+        headers=HEADERS,
+        json=_payload_contado(),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["plan_pago_venta"]["metodo_plan_pago"] == "PLAN_POR_BLOQUES"
+    assert data["plan_pago_venta"]["estado_plan_pago"] == "GENERADO"
+    assert len(data["bloques"]) == 1
+    assert data["bloques"][0]["numero_bloque"] == 1
+    assert data["bloques"][0]["tipo_bloque"] == "CONTADO"
+    assert data["bloques"][0]["clave_bloque"].endswith(":BLOQUE:CONTADO:1")
+    assert len(data["obligaciones"]) == 1
+    assert data["obligaciones"][0]["numero_obligacion"] == 1
+    assert data["obligaciones"][0]["tipo_item_cronograma"] == "SALDO"
+    assert data["obligaciones"][0]["clave_funcional_origen"].endswith(":SALDO:1")
+    assert data["obligaciones"][0]["id_plan_pago_venta_bloque"] == data["bloques"][0][
+        "id_plan_pago_venta_bloque"
+    ]
+    assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
+
+
+def test_endpoint_unificado_genera_financiado_con_bloques_y_obligaciones(
+    client, db_session
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-002")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+
+    response = client.post(
+        URL.format(id_venta=id_venta),
+        headers=HEADERS,
+        json=_payload_financiado(),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["id_venta"] == id_venta
+    assert data["plan_pago_venta"]["metodo_plan_pago"] == "PLAN_POR_BLOQUES"
+    assert data["generacion_cronograma_financiero"]["tipo_generacion"] == (
+        "PLAN_PAGO_VENTA_V2"
+    )
+    assert [bloque["numero_bloque"] for bloque in data["bloques"]] == [1, 2, 3, 4, 5]
+    assert [bloque["tipo_bloque"] for bloque in data["bloques"]] == [
+        "ANTICIPO",
+        "TRAMO_CUOTAS",
+        "TRAMO_CUOTAS",
+        "REFUERZO",
+        "SALDO",
+    ]
+    assert len(data["obligaciones"]) == 15
+    assert [obligacion["numero_obligacion"] for obligacion in data["obligaciones"]] == (
+        list(range(1, 16))
+    )
+    assert [obligacion["tipo_item_cronograma"] for obligacion in data["obligaciones"]] == [
+        "ANTICIPO",
+        *["CUOTA"] * 6,
+        *["CUOTA"] * 6,
+        "REFUERZO",
+        "SALDO",
+    ]
+    assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
+
+
+def test_endpoint_unificado_rechaza_suma_invalida(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-003")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = {**_payload_financiado(), "monto_total_plan": 12700001.00}
+
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["details"]["errors"] == ["SUMA_BLOQUES_INVALIDA"]
+
+
+def test_endpoint_unificado_rechaza_contado_mezclado(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-004")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = _payload_contado()
+    payload["bloques"] = [
+        {
+            "tipo_bloque": "CONTADO",
+            "importe_total_bloque": 10000000.00,
+            "fecha_vencimiento": "2026-05-10",
+        },
+        {
+            "tipo_bloque": "SALDO",
+            "importe_total_bloque": 2000000.00,
+            "fecha_vencimiento": "2026-06-10",
+        },
+    ]
+
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["details"]["errors"] == ["CONTADO_BLOQUES_INVALIDOS"]
+
+
+def test_endpoint_unificado_reejecutar_mismo_payload_no_duplica(
+    client, db_session
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-005")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = _payload_financiado()
+
+    first = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+    second = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 5
+    assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 15
+    assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
 
 def test_servicio_unificado_genera_contado_como_saldo_con_capital(db_session) -> None:
