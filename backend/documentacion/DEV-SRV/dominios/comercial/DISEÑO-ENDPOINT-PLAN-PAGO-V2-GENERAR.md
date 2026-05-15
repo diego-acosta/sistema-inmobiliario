@@ -4,8 +4,10 @@
 
 Documento de diseno futuro. No implementado.
 
-Este documento no modifica SQL, backend productivo, UI, pagos, caja, recibos ni
-endpoints publicos vigentes.
+Este documento es exclusivamente documental: no modifica ni promete modificar
+SQL, backend productivo, UI, pagos, caja, recibos ni endpoints publicos
+vigentes. Cualquier cambio futuro en SQL, backend o UI requiere issue, diseno,
+patch y tests propios.
 
 Endpoint futuro:
 
@@ -222,6 +224,15 @@ Reglas:
   permitan `importe_total_bloque` distribuido; con `importe_cuota` explicito la
   suma es aritmetica directa
 
+
+Ejemplo de control para el request de $ 12.700.000:
+
+```text
+2.000.000 + (6 * 500.000) + (6 * 700.000) + 1.500.000 + 2.000.000
+= 2.000.000 + 3.000.000 + 4.200.000 + 1.500.000 + 2.000.000
+= 12.700.000
+```
+
 Error recomendado:
 
 ```text
@@ -431,9 +442,12 @@ Motivo:
 - no crear `plan_pago_venta_cuota`
 - no crear `plan_pago_venta_tramo`
 
-## Persistencia esperada
+## Persistencia conceptual esperada
 
-El flujo transaccional futuro debe:
+El siguiente flujo es conceptual y no habilita implementacion en este issue.
+Solo podria aplicarse cuando existan decisiones SQL/backend/tests especificas.
+
+El flujo transaccional futuro, si se aprueba, deberia:
 
 1. validar request y venta
 2. resolver comprador unico
@@ -549,7 +563,11 @@ Traduccion futura:
 | `cuotas-iguales-simple` | un bloque `TRAMO_CUOTAS` |
 | `anticipo-mas-cuotas-iguales` | bloque `ANTICIPO` + bloque `TRAMO_CUOTAS` |
 
-## Tests necesarios
+## Tests necesarios para una implementacion futura
+
+No existen tests nuevos asociados a este documento porque el endpoint no se
+implementa en este alcance. Si se implementa en una etapa posterior, la
+cobertura minima deberia incluir:
 
 Tests de contrato:
 
@@ -637,11 +655,11 @@ No implementar en el primer alcance:
 - V2 unificado no usa `venta_plan_cuota`.
 - Los endpoints especificos se conservan como compatibilidad.
 
-## Proximo prompt recomendado
+## Proximo paso recomendado
 
-Implementar `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar` segun
-`backend/documentacion/DEV-SRV/dominios/comercial/DISEÑO-ENDPOINT-PLAN-PAGO-V2-GENERAR.md`,
-sin modificar SQL ni UI, reutilizando `plan_pago_venta`,
-`plan_pago_venta_bloque` y `obligacion_financiera.id_plan_pago_venta_bloque`,
-manteniendo los endpoints especificos actuales como compatibilidad y agregando
-tests de contrato, idempotencia, trazabilidad y no uso de `venta_plan_cuota`.
+No implementar el endpoint en este issue.
+
+Antes de cualquier implementacion futura corresponde abrir un alcance separado
+para validar SQL vigente, confirmar contratos backend, definir migraciones si
+aplican y agregar tests de contrato, idempotencia, trazabilidad y no uso de
+`venta_plan_cuota`.
