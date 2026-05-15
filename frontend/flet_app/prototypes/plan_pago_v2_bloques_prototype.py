@@ -102,8 +102,8 @@ class PlanPagoV2BloquesPrototype:
 
         self.summary = ft.Column(spacing=4)
         self.validation_banner = ft.Container(visible=False)
-        self.blocks_column = ft.Column(spacing=10)
-        self.preview_column = ft.Column(spacing=8)
+        self.blocks_column = ft.ListView(spacing=10, expand=True)
+        self.preview_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
         self.response_column = ft.Column(spacing=10)
         self.detail_column = ft.Column(spacing=10)
 
@@ -130,6 +130,24 @@ class PlanPagoV2BloquesPrototype:
     def _build_layout(self) -> ft.Control:
         return ft.Column(
             controls=[
+                self._build_header(),
+                ft.Row(
+                    controls=[
+                        self._build_editor_panel(),
+                        self._build_preview_panel(),
+                    ],
+                    spacing=16,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                    expand=True,
+                ),
+            ],
+            spacing=14,
+            expand=True,
+        )
+
+    def _build_header(self) -> ft.Control:
+        return ft.Column(
+            controls=[
                 ft.Text(
                     "Plan de pago V2 por bloques",
                     size=26,
@@ -139,62 +157,91 @@ class PlanPagoV2BloquesPrototype:
                     "Prototipo aislado para carga y visualizacion. No forma parte del flujo productivo.",
                     color=ft.Colors.BLUE_GREY_700,
                 ),
-                ft.Container(
-                    content=ft.Column(
-                        controls=[
-                            ft.Row(
-                                controls=[
-                                    self.base_url,
-                                    self.id_venta,
-                                    self.moneda,
-                                    self.monto_total_plan,
-                                ],
-                                wrap=True,
-                                spacing=10,
-                            ),
-                            ft.Row(
-                                controls=[
-                                    ft.Text("Tipo de pago", weight=ft.FontWeight.W_600),
-                                    self.tipo_pago,
-                                ],
-                                wrap=True,
-                                spacing=12,
-                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            ),
-                        ],
-                        spacing=12,
+            ],
+            spacing=4,
+        )
+
+    def _build_editor_panel(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Datos y bloques", size=18, weight=ft.FontWeight.W_700),
+                    self._build_general_inputs(),
+                    self.validation_banner,
+                    ft.Row(
+                        controls=self._add_block_buttons(),
+                        wrap=True,
+                        spacing=8,
                     ),
-                    padding=14,
-                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
-                    border_radius=6,
-                ),
-                self.validation_banner,
-                ft.Container(
-                    content=self.summary,
-                    padding=14,
-                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
-                    border_radius=6,
-                ),
+                    ft.Text("Bloques", weight=ft.FontWeight.W_700),
+                    self.blocks_column,
+                ],
+                spacing=12,
+                expand=True,
+            ),
+            padding=14,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            expand=3,
+            height=720,
+        )
+
+    def _build_general_inputs(self) -> ft.Control:
+        return ft.Column(
+            controls=[
                 ft.Row(
-                    controls=self._add_block_buttons(),
-                    wrap=True,
-                    spacing=8,
-                ),
-                ft.Text("Bloques", size=18, weight=ft.FontWeight.W_700),
-                self.blocks_column,
-                ft.Text("Preview de cronograma", size=18, weight=ft.FontWeight.W_700),
-                self.preview_column,
-                ft.Row(
-                    controls=[self.generate_button, self.detail_button],
+                    controls=[
+                        self.base_url,
+                        self.id_venta,
+                        self.moneda,
+                        self.monto_total_plan,
+                    ],
                     wrap=True,
                     spacing=10,
                 ),
-                ft.Text("Respuesta de generacion", size=18, weight=ft.FontWeight.W_700),
-                self.response_column,
-                ft.Text("Detalle integral", size=18, weight=ft.FontWeight.W_700),
-                self.detail_column,
+                ft.Row(
+                    controls=[
+                        ft.Text("Tipo de pago", weight=ft.FontWeight.W_600),
+                        self.tipo_pago,
+                    ],
+                    wrap=True,
+                    spacing=12,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
             ],
-            spacing=14,
+            spacing=12,
+        )
+
+    def _build_preview_panel(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Container(
+                        content=self.summary,
+                        padding=12,
+                        border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                        border_radius=6,
+                    ),
+                    ft.Text("Preview de cronograma", size=18, weight=ft.FontWeight.W_700),
+                    self.preview_column,
+                    ft.Row(
+                        controls=[self.generate_button, self.detail_button],
+                        wrap=True,
+                        spacing=10,
+                    ),
+                    ft.Text("Respuesta de generacion", weight=ft.FontWeight.W_700),
+                    self.response_column,
+                    ft.Text("Detalle integral", weight=ft.FontWeight.W_700),
+                    self.detail_column,
+                ],
+                spacing=12,
+                expand=True,
+            ),
+            padding=14,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            expand=2,
+            height=720,
         )
 
     def _add_block_buttons(self) -> list[ft.Control]:
