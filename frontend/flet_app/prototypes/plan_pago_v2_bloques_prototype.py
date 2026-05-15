@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 import json
 from typing import Any, Callable
 from uuid import uuid4
@@ -84,6 +84,8 @@ class PlanPagoV2BloquesPrototype:
         self.id_venta = ft.TextField(label="ID venta", width=120)
         self.tipo_pago = ft.SegmentedButton(
             selected=["CONTADO"],
+            allow_empty_selection=False,
+            allow_multiple_selection=False,
             segments=[
                 ft.Segment(value="CONTADO", label=ft.Text("CONTADO")),
                 ft.Segment(value="FINANCIADO", label=ft.Text("FINANCIADO")),
@@ -220,31 +222,52 @@ class PlanPagoV2BloquesPrototype:
         ]
 
     def _selected_tipo_pago(self) -> str:
-        selected = list(self.tipo_pago.selected or ["CONTADO"])
-        return str(selected[0]) if selected else "CONTADO"
+        selected = self.tipo_pago.selected or ["CONTADO"]
+        if isinstance(selected, str):
+            value = selected
+        else:
+            values = list(selected)
+            value = str(values[0]) if values else "CONTADO"
+        return value if value in ("CONTADO", "FINANCIADO") else "CONTADO"
 
     def _on_tipo_pago_change(self, _: ft.ControlEvent) -> None:
-        self._reset_blocks_for_tipo(self._selected_tipo_pago())
+        tipo_pago = self._selected_tipo_pago()
+        self.tipo_pago.selected = [tipo_pago]
+        self.state.error_message = None
+        self.state.last_response = None
+        self.state.detail_response = None
+        self.state.status_code = None
+        self.response_column.controls = []
+        self.detail_column.controls = []
+        self._reset_blocks_for_tipo(tipo_pago)
         self._refresh()
 
     def _reset_blocks_for_tipo(self, tipo_pago: str) -> None:
+        monto_total = _decimal_or_zero(self.monto_total_plan.value)
         if tipo_pago == "CONTADO":
             self.state.bloques = [
                 BloqueDraft(
                     uid=str(uuid4()),
                     tipo_bloque="CONTADO",
                     etiqueta_bloque="Pago contado",
-                    importe_total_bloque=self.monto_total_plan.value or "12000000.00",
+                    importe_total_bloque=_money(monto_total),
                     fecha_vencimiento=date.today().isoformat(),
                 )
             ]
             return
-        self.state.bloques = [
+        anticipo = min(Decimal("2000000.00"), monto_total)
+        cuotas = 6
+        total_cuotas = max(monto_total - anticipo, Decimal("0"))
+        importe_cuota = (total_cuotas / Decimal(cuotas)).quantize(
+            Decimal("0.01"), rounding=ROUND_DOWN
+        )
+        saldo = monto_total - anticipo - (importe_cuota * Decimal(cuotas))
+        bloques = [
             BloqueDraft(
                 uid=str(uuid4()),
                 tipo_bloque="ANTICIPO",
                 etiqueta_bloque="Anticipo",
-                importe_total_bloque="2000000.00",
+                importe_total_bloque=_money(anticipo),
                 fecha_vencimiento=date.today().isoformat(),
             ),
             BloqueDraft(
@@ -252,11 +275,22 @@ class PlanPagoV2BloquesPrototype:
                 tipo_bloque="TRAMO_CUOTAS",
                 etiqueta_bloque="Primer tramo",
                 cantidad_cuotas="6",
-                importe_cuota="500000.00",
+                importe_cuota=_money(importe_cuota),
                 fecha_primer_vencimiento=date.today().isoformat(),
                 periodicidad="MENSUAL",
             ),
         ]
+        if saldo > 0:
+            bloques.append(
+                BloqueDraft(
+                    uid=str(uuid4()),
+                    tipo_bloque="SALDO",
+                    etiqueta_bloque="Ajuste saldo",
+                    importe_total_bloque=_money(saldo),
+                    fecha_vencimiento=date.today().isoformat(),
+                )
+            )
+        self.state.bloques = bloques
 
     def _add_block(self, tipo_bloque: str) -> None:
         if self._selected_tipo_pago() == "CONTADO":
@@ -397,7 +431,7 @@ class PlanPagoV2BloquesPrototype:
                                 value=bloque.periodicidad,
                                 width=150,
                                 options=[ft.dropdown.Option("MENSUAL")],
-                                on_change=lambda e, b=bloque: self._update_block(
+                                on_select=lambda e, b=bloque: self._update_block(
                                     b, "periodicidad", e.control.value
                                 ),
                             ),
