@@ -128,7 +128,9 @@ Datos minimos:
 Materializacion:
 
 - 1 obligacion
-- `tipo_item_cronograma = CONTADO` o `SALDO` segun decision de catalogo
+- `tipo_item_cronograma = SALDO` con el catalogo SQL vigente; `CONTADO`
+  como item de cronograma solo podria usarse si una decision futura lo agrega al
+  catalogo/SQL
 - composicion `CAPITAL_VENTA`
 
 ### ANTICIPO
@@ -269,7 +271,8 @@ Campos candidatos:
 - `observaciones`
 
 No todos los campos aplican a todos los tipos de bloque. Deben existir checks
-por tipo para evitar combinaciones ambiguas.
+por tipo para evitar combinaciones ambiguas. Los importes guardados en el bloque
+son parametros de regla comercial, no saldo financiero ni deuda exigible.
 
 ## Datos que NO debe guardar
 
@@ -467,6 +470,10 @@ Request conceptual:
   "regla_validacion_total": "SUMA_BLOQUES_IGUAL_TOTAL"
 }
 ```
+
+Este ejemplo suma exactamente `12.700.000`: anticipo `2.000.000`, primer tramo
+`3.000.000`, segundo tramo `4.200.000`, refuerzo `1.500.000` y saldo
+`2.000.000`.
 
 Response conceptual:
 

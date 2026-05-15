@@ -694,10 +694,74 @@ Restricciones y pendientes documentados:
 - `monto_total_plan` y `moneda` hoy no se validan estrictamente contra `venta.monto_total` y `venta.moneda`; queda pendiente decision de endurecimiento
 - V2 inicial exige comprador unico resoluble; multiples compradores quedan fuera de alcance
 - `fecha_emision = fecha_vencimiento` para obligaciones `PROYECTADA` es el comportamiento actual documentado
-- no soporta `ANTICIPO_MAS_CUOTAS_IGUALES`
+- `ANTICIPO_MAS_CUOTAS_IGUALES` se soporta mediante endpoint especifico propio
 - no soporta `CRONOGRAMA_DEFINIDO`
 - no soporta indexacion, interes financiero, sistema frances ni sistema aleman
 - no reemplaza obligaciones con pagos o aplicaciones; regeneracion avanzada queda fuera de este endpoint inicial
+
+
+#### `POST /api/v1/ventas/{id_venta}/plan-pago-v2/anticipo-mas-cuotas-iguales`
+
+Objetivo:
+- generar el plan de pago V2 inicial `ANTICIPO_MAS_CUOTAS_IGUALES` para una venta
+- persistir la cabecera/regla comercial en `plan_pago_venta`
+- registrar una corrida tecnica en `generacion_cronograma_financiero`
+- materializar anticipo y cuotas del saldo como obligaciones financieras `PROYECTADA`
+
+Headers tecnicos:
+- acepta los mismos headers que `cuotas-iguales-simple`
+- no requiere `If-Match-Version`
+
+Request:
+
+```json
+{
+  "monto_total_plan": 12000000.00,
+  "moneda": "ARS",
+  "importe_anticipo": 2000000.00,
+  "fecha_vencimiento_anticipo": "2026-05-10",
+  "cantidad_cuotas": 10,
+  "fecha_primer_vencimiento": "2026-06-10",
+  "periodicidad": "MENSUAL",
+  "regla_redondeo": "ULTIMA_CUOTA"
+}
+```
+
+Reglas de negocio:
+
+- usa `plan_pago_venta` como cabecera/regla comercial con metodo `ANTICIPO_MAS_CUOTAS_IGUALES`
+- asegura o reutiliza `relacion_generadora` con `tipo_origen = venta`
+- registra una corrida `PLAN_PAGO_VENTA_V2` en `generacion_cronograma_financiero`
+- genera una obligacion `ANTICIPO` con composicion `ANTICIPO_VENTA`
+- calcula el saldo como `monto_total_plan - importe_anticipo`
+- divide el saldo en `cantidad_cuotas` obligaciones `CUOTA` con composicion `CAPITAL_VENTA`
+- cada obligacion nace con `estado_obligacion = PROYECTADA`
+- cada obligacion tiene obligado `COMPRADOR` al 100% para el comprador unico resoluble
+- no usa `venta_plan_cuota`
+- no registra pagos, recibos, caja, tesoreria, aplicaciones financieras, mora ni punitorios
+
+Validaciones:
+
+- `id_venta` debe ser positivo
+- la venta debe existir y no estar dada de baja
+- `monto_total_plan > 0`
+- `importe_anticipo > 0` y menor que `monto_total_plan`
+- `cantidad_cuotas > 0`
+- `moneda` requerida
+- `fecha_vencimiento_anticipo` requerida
+- `periodicidad` debe ser `MENSUAL`
+- `regla_redondeo` debe ser `ULTIMA_CUOTA`
+- deben existir los conceptos financieros `ANTICIPO_VENTA` y `CAPITAL_VENTA`
+- la venta debe tener exactamente un comprador financiero resoluble
+- si existe un `plan_pago_venta` vivo para la venta, debe ser compatible con el request; si no, se rechaza por conflicto
+
+Errores posibles:
+
+- `404 NOT_FOUND`: la venta indicada no existe
+- `409 CONFLICT`: la venta ya posee un plan de pago vivo incompatible
+- `400 APPLICATION_ERROR`: comprador no resoluble, comprador multiple no soportado, concepto financiero requerido inexistente o validacion de negocio fallida
+- `422`: validacion de schema del request
+- `500 INTERNAL_ERROR`: error inesperado
 
 #### `PATCH /api/v1/ventas/{id_venta}/confirmar`
 

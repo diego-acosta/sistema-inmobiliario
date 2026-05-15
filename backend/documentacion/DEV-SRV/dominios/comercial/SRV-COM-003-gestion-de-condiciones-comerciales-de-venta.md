@@ -22,6 +22,9 @@ Excepcion implementada V2:
 - `GeneratePlanPagoVentaCuotasIgualesSimpleService` genera el cronograma inicial
   `CUOTAS_IGUALES_SIMPLE` como plan comercial V2 y materializa obligaciones
   financieras `PROYECTADA` sin registrar pagos ni ejecutar deuda/mora.
+- `GeneratePlanPagoVentaAnticipoMasCuotasIgualesService` genera el cronograma
+  inicial `ANTICIPO_MAS_CUOTAS_IGUALES` como anticipo mas saldo en cuotas,
+  tambien sin usar `venta_plan_cuota` ni registrar pagos.
 
 ## Estado actual materializado
 - el SQL vigente materializa las condiciones comerciales basicas en `venta.monto_total`, `venta.moneda`, columnas minimas de plan financiero y `venta_objeto_inmobiliario.precio_asignado`
@@ -46,6 +49,9 @@ El plan V2 inicial materializado es:
 - `CUOTAS_IGUALES_SIMPLE`: N obligaciones `PROYECTADA` con composicion
   `CAPITAL_VENTA`, una por cada cuota igual calculada desde `plan_pago_venta`,
   sin usar `venta_plan_cuota`.
+- `ANTICIPO_MAS_CUOTAS_IGUALES`: 1 obligacion `PROYECTADA` de anticipo con
+  composicion `ANTICIPO_VENTA` y N obligaciones `PROYECTADA` de cuotas con
+  composicion `CAPITAL_VENTA`, sin usar `venta_plan_cuota`.
 
 ## Entidades principales
 - venta
@@ -66,8 +72,9 @@ Permite actualizar las condiciones comerciales basicas mientras la venta siga en
 Permite visualizar `monto_total` y precios por objeto desde la propia `venta`.
 
 ### Generacion V2 inicial
-Permite generar el plan `CUOTAS_IGUALES_SIMPLE` desde una venta, dejando
-persistida la regla comercial y el cronograma financiero proyectado.
+Permite generar los planes `CUOTAS_IGUALES_SIMPLE` y
+`ANTICIPO_MAS_CUOTAS_IGUALES` desde una venta, dejando persistida la regla
+comercial y el cronograma financiero proyectado.
 
 ## Entradas conceptuales
 
@@ -94,6 +101,16 @@ persistida la regla comercial y el cronograma financiero proyectado.
 - periodicidad
 - regla de redondeo
 
+### Datos de negocio para `ANTICIPO_MAS_CUOTAS_IGUALES V2`
+- monto total del plan
+- moneda
+- importe del anticipo
+- fecha de vencimiento del anticipo
+- cantidad de cuotas del saldo
+- fecha del primer vencimiento de cuotas
+- periodicidad
+- regla de redondeo
+
 ### Parametros de consulta
 - identificador de venta
 
@@ -113,11 +130,13 @@ persistida la regla comercial y el cronograma financiero proyectado.
 - precio total
 - precios por objeto
 
-### Para `CUOTAS_IGUALES_SIMPLE V2`
+### Para planes V2 iniciales
 - `plan_pago_venta` generado
 - `generacion_cronograma_financiero` de la corrida
 - `id_relacion_generadora`
 - obligaciones financieras proyectadas generadas o recuperadas por idempotencia
+- para `ANTICIPO_MAS_CUOTAS_IGUALES`, una obligacion de anticipo y las cuotas
+  del saldo
 
 ## Flujo de alto nivel
 
@@ -158,6 +177,24 @@ persistida la regla comercial y el cronograma financiero proyectado.
 11. marcar el plan como `GENERADO`
 12. devolver plan, corrida y obligaciones
 
+### Generacion `ANTICIPO_MAS_CUOTAS_IGUALES V2`
+1. validar request y contexto tecnico
+2. cargar venta existente
+3. verificar que no exista un plan vivo incompatible
+4. persistir o reutilizar `plan_pago_venta` con metodo
+   `ANTICIPO_MAS_CUOTAS_IGUALES`
+5. asegurar `relacion_generadora` de venta
+6. persistir o reutilizar `generacion_cronograma_financiero`
+7. resolver comprador financiero unico
+8. calcular saldo como `monto_total_plan - importe_anticipo`
+9. generar una obligacion `PROYECTADA` de anticipo
+10. calcular cuotas iguales del saldo y vencimientos mensuales
+11. generar obligaciones financieras `PROYECTADA` idempotentes por cuota
+12. crear composiciones `ANTICIPO_VENTA` y `CAPITAL_VENTA` segun corresponda,
+    y obligado `COMPRADOR`
+13. marcar el plan como `GENERADO`
+14. devolver plan, corrida y obligaciones
+
 ## Validaciones clave
 - venta existente
 - venta no eliminada
@@ -171,15 +208,20 @@ persistida la regla comercial y el cronograma financiero proyectado.
 - control de versionado
 - coherencia multiobjeto persistida
 
-Validaciones de `CUOTAS_IGUALES_SIMPLE V2`:
+Validaciones de planes V2 iniciales:
 
 - venta existente y no eliminada
 - `monto_total_plan > 0`
 - moneda requerida
 - `cantidad_cuotas > 0`
+- para `ANTICIPO_MAS_CUOTAS_IGUALES`, `importe_anticipo > 0` y menor que
+  `monto_total_plan`
+- para `ANTICIPO_MAS_CUOTAS_IGUALES`, fecha de vencimiento de anticipo requerida
 - periodicidad unica soportada: `MENSUAL`
 - regla de redondeo unica soportada: `ULTIMA_CUOTA`
 - concepto financiero `CAPITAL_VENTA` existente
+- para `ANTICIPO_MAS_CUOTAS_IGUALES`, concepto financiero `ANTICIPO_VENTA`
+  existente
 - comprador financiero unico resoluble
 - plan vivo compatible o inexistente
 
@@ -198,20 +240,27 @@ Pendientes documentados:
 - actualizacion de metadatos transversales
 - rollback completo si falla cualquier actualizacion parcial
 
-Efectos transaccionales de `CUOTAS_IGUALES_SIMPLE V2`:
+Efectos transaccionales de planes V2 iniciales:
 
 - upsert de `plan_pago_venta`
 - upsert o reutilizacion de `relacion_generadora`
 - alta o reutilizacion de `generacion_cronograma_financiero`
 - alta idempotente de obligaciones financieras `PROYECTADA`
 - alta de composicion `CAPITAL_VENTA`
+- alta de composicion `ANTICIPO_VENTA` para el anticipo de
+  `ANTICIPO_MAS_CUOTAS_IGUALES`
 - alta de obligado `COMPRADOR` al 100%
 - no escribe `venta_plan_cuota`
 - no registra pagos, recibos, caja ni tesoreria
 - no crea aplicaciones financieras
 - no ejecuta mora ni recalcula deuda
 
-## Servicio implementado: GeneratePlanPagoVentaCuotasIgualesSimpleService
+## Servicios implementados V2 iniciales
+
+Servicios:
+
+- `GeneratePlanPagoVentaCuotasIgualesSimpleService`
+- `GeneratePlanPagoVentaAnticipoMasCuotasIgualesService`
 
 Ownership:
 
@@ -223,7 +272,7 @@ Ownership:
 - el servicio comercial coordina la generacion inicial, pero no absorbe reglas
   de pagos, saldos, mora, caja ni recibos
 
-Reglas de calculo:
+Reglas de calculo para `CUOTAS_IGUALES_SIMPLE`:
 
 - divide `monto_total_plan` por `cantidad_cuotas`
 - redondea cada cuota a centavos con criterio decimal
@@ -233,7 +282,7 @@ Reglas de calculo:
 - si el dia del vencimiento no existe en un mes posterior, usa el ultimo dia de
   ese mes
 
-Reglas de cronograma:
+Reglas de cronograma para `CUOTAS_IGUALES_SIMPLE`:
 
 - cada cuota genera una obligacion `PROYECTADA`
 - cada obligacion usa `fecha_emision = fecha_vencimiento` en la implementacion
@@ -246,6 +295,17 @@ Reglas de cronograma:
 - la composicion unica inicial es `CAPITAL_VENTA`
 - el obligado inicial es el comprador unico de la venta, con
   `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00`
+
+Reglas diferenciales para `ANTICIPO_MAS_CUOTAS_IGUALES`:
+
+- calcula el saldo como `monto_total_plan - importe_anticipo`
+- genera primero una obligacion `PROYECTADA` con
+  `tipo_item_cronograma = ANTICIPO`, `etiqueta_obligacion = Anticipo` y
+  composicion `ANTICIPO_VENTA`
+- genera luego N cuotas del saldo con `tipo_item_cronograma = CUOTA`,
+  `etiqueta_obligacion = Cuota N` y composicion `CAPITAL_VENTA`
+- numera las obligaciones de forma secuencial desde el anticipo
+- no escribe `venta_plan_cuota` ni registra pagos
 
 Idempotencia:
 
@@ -299,5 +359,6 @@ Limitaciones V2 iniciales:
 - definicion futura de si las condiciones comerciales deben materializarse en una entidad propia
 - catalogo final de formas de pago
 - reglas de modificacion segun estado de venta
-- integracion completa con generacion de obligaciones para metodos distintos de `CUOTAS_IGUALES_SIMPLE V2`
+- integracion completa con generacion de obligaciones para metodos distintos de
+  `CUOTAS_IGUALES_SIMPLE V2` y `ANTICIPO_MAS_CUOTAS_IGUALES V2`
 - tratamiento de ajustes, intereses, indexacion, refinanciacion y cancelacion anticipada
