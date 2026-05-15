@@ -23,8 +23,23 @@ def _crear_rol_participacion_activo(
     *,
     id_rol_participacion: int,
     codigo_rol: str | None = None,
-) -> None:
+) -> int:
     codigo = codigo_rol or f"ROL-COM-{id_rol_participacion}"
+    existing = db_session.execute(
+        text(
+            """
+            SELECT id_rol_participacion
+            FROM rol_participacion
+            WHERE codigo_rol = :codigo_rol
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {"codigo_rol": codigo},
+    ).mappings().one_or_none()
+    if existing is not None:
+        return existing["id_rol_participacion"]
+
     db_session.execute(
         text(
             """
@@ -67,6 +82,7 @@ def _crear_rol_participacion_activo(
             "nombre_rol": f"Rol Comercial {codigo}",
         },
     )
+    return id_rol_participacion
 
 
 def _crear_persona(client, *, nombre: str, apellido: str) -> int:

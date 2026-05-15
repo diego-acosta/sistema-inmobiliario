@@ -694,6 +694,43 @@ class VentaObligacionFinancieraData(BaseModel):
     obligados: list[VentaObligacionObligadoData]
 
 
+class VentaPlanPagoV2ObligacionData(BaseModel):
+    id_obligacion_financiera: int
+    numero_obligacion: int | None
+    tipo_item_cronograma: str | None
+    etiqueta_obligacion: str | None
+    fecha_vencimiento: date | None
+    importe_total: Decimal
+    saldo_pendiente: Decimal
+    estado_obligacion: str
+    composiciones: list[VentaObligacionComposicionData]
+
+
+class VentaPlanPagoV2BloqueData(BaseModel):
+    id_plan_pago_venta_bloque: int
+    numero_bloque: int
+    tipo_bloque: str
+    etiqueta_bloque: str
+    clave_bloque: str
+    cantidad_cuotas: int | None
+    importe_total_bloque: Decimal | None
+    importe_cuota: Decimal | None
+    fecha_vencimiento: date | None
+    fecha_primer_vencimiento: date | None
+    periodicidad: str | None
+    regla_redondeo: str | None
+    obligaciones: list[VentaPlanPagoV2ObligacionData]
+
+
+class VentaPlanPagoV2Data(BaseModel):
+    id_plan_pago_venta: int
+    metodo_plan_pago: str
+    estado_plan_pago: str
+    monto_total_plan: Decimal
+    moneda: str
+    bloques: list[VentaPlanPagoV2BloqueData]
+
+
 class VentaResumenFinancieroData(BaseModel):
     cantidad_obligaciones: int
     saldo_total: Decimal
@@ -715,6 +752,7 @@ class VentaDetalleIntegralData(VentaDetailData):
     partes: list[VentaParteData]
     relacion_financiera: VentaRelacionFinancieraData | None
     obligaciones_financieras: list[VentaObligacionFinancieraData]
+    plan_pago_v2: VentaPlanPagoV2Data | None
     resumen_financiero: VentaResumenFinancieroData
 
 

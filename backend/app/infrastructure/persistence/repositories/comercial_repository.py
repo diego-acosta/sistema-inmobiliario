@@ -532,6 +532,7 @@ class ComercialRepository:
             obligaciones = self._get_obligaciones_financieras_for_relacion(
                 relacion["id_relacion_generadora"]
             )
+        plan_pago_v2 = self._get_plan_pago_v2_for_venta(id_venta)
 
         return {
             **detalle,
@@ -567,6 +568,7 @@ class ComercialRepository:
             "partes": partes,
             "relacion_financiera": relacion,
             "obligaciones_financieras": obligaciones,
+            "plan_pago_v2": plan_pago_v2,
             "resumen_financiero": self._build_resumen_financiero(obligaciones),
         }
 
@@ -730,6 +732,144 @@ class ComercialRepository:
             item["obligados"] = obligados_by_ob[item["id_obligacion_financiera"]]
             obligaciones.append(item)
         return obligaciones
+
+    def _get_plan_pago_v2_for_venta(self, id_venta: int) -> dict[str, Any] | None:
+        plan_stmt = text(
+            """
+            SELECT
+                id_plan_pago_venta,
+                metodo_plan_pago,
+                estado_plan_pago,
+                monto_total_plan,
+                moneda
+            FROM plan_pago_venta
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY id_plan_pago_venta DESC
+            LIMIT 1
+            """
+        )
+        plan_row = self.db.execute(plan_stmt, {"id_venta": id_venta}).mappings().one_or_none()
+        if plan_row is None:
+            return None
+
+        plan = dict(plan_row)
+        bloques_stmt = text(
+            """
+            SELECT
+                id_plan_pago_venta_bloque,
+                numero_bloque,
+                tipo_bloque,
+                etiqueta_bloque,
+                clave_bloque,
+                cantidad_cuotas,
+                importe_total_bloque,
+                importe_cuota,
+                fecha_vencimiento,
+                fecha_primer_vencimiento,
+                periodicidad,
+                regla_redondeo
+            FROM plan_pago_venta_bloque
+            WHERE id_plan_pago_venta = :id_plan_pago_venta
+              AND deleted_at IS NULL
+            ORDER BY numero_bloque ASC, id_plan_pago_venta_bloque ASC
+            """
+        )
+        bloques = [
+            dict(row)
+            for row in self.db.execute(
+                bloques_stmt,
+                {"id_plan_pago_venta": plan["id_plan_pago_venta"]},
+            ).mappings().all()
+        ]
+        bloque_ids = [bloque["id_plan_pago_venta_bloque"] for bloque in bloques]
+        obligaciones_by_bloque: dict[int, list[dict[str, Any]]] = {
+            id_bloque: [] for id_bloque in bloque_ids
+        }
+
+        if bloque_ids:
+            obligaciones_stmt = text(
+                """
+                SELECT
+                    id_obligacion_financiera,
+                    id_plan_pago_venta_bloque,
+                    numero_obligacion,
+                    tipo_item_cronograma,
+                    etiqueta_obligacion,
+                    fecha_vencimiento,
+                    importe_total,
+                    saldo_pendiente,
+                    estado_obligacion
+                FROM obligacion_financiera
+                WHERE id_plan_pago_venta_bloque IN :bloque_ids
+                  AND deleted_at IS NULL
+                ORDER BY numero_obligacion ASC NULLS LAST, id_obligacion_financiera ASC
+                """
+            ).bindparams(bindparam("bloque_ids", expanding=True))
+            obligacion_rows = self.db.execute(
+                obligaciones_stmt,
+                {"bloque_ids": tuple(bloque_ids)},
+            ).mappings().all()
+            obligacion_ids = [
+                row["id_obligacion_financiera"] for row in obligacion_rows
+            ]
+            composiciones_by_obligacion: dict[int, list[dict[str, Any]]] = {
+                id_obligacion: [] for id_obligacion in obligacion_ids
+            }
+
+            if obligacion_ids:
+                composiciones_stmt = text(
+                    """
+                    SELECT
+                        co.id_obligacion_financiera,
+                        co.id_composicion_obligacion,
+                        co.id_concepto_financiero,
+                        cf.codigo_concepto_financiero,
+                        cf.nombre_concepto_financiero,
+                        cf.tipo_concepto_financiero,
+                        cf.naturaleza_concepto,
+                        co.orden_composicion,
+                        co.estado_composicion_obligacion,
+                        co.importe_componente,
+                        co.saldo_componente,
+                        co.moneda_componente,
+                        co.observaciones
+                    FROM composicion_obligacion co
+                    JOIN concepto_financiero cf
+                      ON cf.id_concepto_financiero = co.id_concepto_financiero
+                     AND cf.deleted_at IS NULL
+                    WHERE co.id_obligacion_financiera IN :obligacion_ids
+                      AND co.deleted_at IS NULL
+                    ORDER BY co.id_obligacion_financiera ASC,
+                             co.orden_composicion ASC,
+                             co.id_composicion_obligacion ASC
+                    """
+                ).bindparams(bindparam("obligacion_ids", expanding=True))
+                for row in self.db.execute(
+                    composiciones_stmt,
+                    {"obligacion_ids": tuple(obligacion_ids)},
+                ).mappings().all():
+                    item = dict(row)
+                    id_obligacion = item.pop("id_obligacion_financiera")
+                    composiciones_by_obligacion[id_obligacion].append(item)
+
+            for row in obligacion_rows:
+                obligacion = dict(row)
+                id_bloque = obligacion.pop("id_plan_pago_venta_bloque")
+                obligacion["composiciones"] = composiciones_by_obligacion[
+                    obligacion["id_obligacion_financiera"]
+                ]
+                obligaciones_by_bloque[id_bloque].append(obligacion)
+
+        for bloque in bloques:
+            bloque["obligaciones"] = obligaciones_by_bloque[
+                bloque["id_plan_pago_venta_bloque"]
+            ]
+
+        return {
+            **plan,
+            "bloques": bloques,
+        }
 
     def _build_resumen_financiero(
         self, obligaciones: list[dict[str, Any]]

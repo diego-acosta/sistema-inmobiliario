@@ -96,6 +96,50 @@ def _id_persona_parte_venta(db_session, *, id_venta: int) -> int:
     ).mappings().one()["id_persona"]
 
 
+def _payload_plan_pago_v2_bloques() -> dict:
+    return {
+        "tipo_pago": "FINANCIADO",
+        "monto_total_plan": 12700000.00,
+        "moneda": "ARS",
+        "bloques": [
+            {
+                "tipo_bloque": "ANTICIPO",
+                "etiqueta_bloque": "Anticipo",
+                "importe_total_bloque": 2000000.00,
+                "fecha_vencimiento": "2026-05-10",
+            },
+            {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "etiqueta_bloque": "Primer tramo",
+                "cantidad_cuotas": 6,
+                "importe_cuota": 500000.00,
+                "fecha_primer_vencimiento": "2026-06-10",
+                "periodicidad": "MENSUAL",
+            },
+            {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "etiqueta_bloque": "Segundo tramo",
+                "cantidad_cuotas": 6,
+                "importe_cuota": 700000.00,
+                "fecha_primer_vencimiento": "2026-12-10",
+                "periodicidad": "MENSUAL",
+            },
+            {
+                "tipo_bloque": "REFUERZO",
+                "etiqueta_bloque": "Refuerzo diciembre",
+                "importe_total_bloque": 1500000.00,
+                "fecha_vencimiento": "2026-12-20",
+            },
+            {
+                "tipo_bloque": "SALDO",
+                "etiqueta_bloque": "Saldo contra escritura",
+                "importe_total_bloque": 2000000.00,
+                "fecha_vencimiento": "2027-03-10",
+            },
+        ],
+    }
+
+
 def test_detalle_integral_venta_sin_financiero_devuelve_relacion_null_y_obligaciones_vacias(
     client, db_session
 ) -> None:
@@ -109,6 +153,7 @@ def test_detalle_integral_venta_sin_financiero_devuelve_relacion_null_y_obligaci
     assert data["estado_venta"] == "borrador"
     assert data["relacion_financiera"] is None
     assert data["obligaciones_financieras"] == []
+    assert data["plan_pago_v2"] is None
     assert data["resumen_financiero"] == {
         "cantidad_obligaciones": 0,
         "saldo_total": "0",
@@ -251,6 +296,7 @@ def test_detalle_integral_anticipo_y_saldo_muestra_plan_y_dos_obligaciones(
 
     obligaciones = data["obligaciones_financieras"]
     assert len(obligaciones) == 2
+    assert data["plan_pago_v2"] is None
     conceptos = [
         obligacion["composiciones"][0]["codigo_concepto_financiero"]
         for obligacion in obligaciones
@@ -318,6 +364,7 @@ def test_detalle_integral_cuotas_fijas_muestra_cuotas_y_obligaciones(
 
     obligaciones = data["obligaciones_financieras"]
     assert len(obligaciones) == 2
+    assert data["plan_pago_v2"] is None
     assert [
         obligacion["composiciones"][0]["codigo_concepto_financiero"]
         for obligacion in obligaciones
@@ -328,6 +375,78 @@ def test_detalle_integral_cuotas_fijas_muestra_cuotas_y_obligaciones(
     ]
     assert data["resumen_financiero"]["cantidad_obligaciones"] == 2
     assert float(data["resumen_financiero"]["saldo_pendiente"]) == 150000.00
+
+
+def test_detalle_integral_plan_pago_v2_por_bloques_agrupa_bloques_obligaciones_y_composiciones(
+    client, db_session
+) -> None:
+    venta = _crear_venta_desde_reserva_publica(client, db_session)
+    response_plan = client.post(
+        f"/api/v1/ventas/{venta['id_venta']}/plan-pago-v2/generar",
+        headers=HEADERS,
+        json=_payload_plan_pago_v2_bloques(),
+    )
+    assert response_plan.status_code == 200, response_plan.text
+
+    response = _detalle(client, venta["id_venta"])
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    plan = data["plan_pago_v2"]
+    assert plan["id_plan_pago_venta"] == response_plan.json()["data"]["plan_pago_venta"][
+        "id_plan_pago_venta"
+    ]
+    assert plan["metodo_plan_pago"] == "PLAN_POR_BLOQUES"
+    assert plan["estado_plan_pago"] == "GENERADO"
+    assert plan["monto_total_plan"] == "12700000.00"
+    assert plan["moneda"] == "ARS"
+    assert [bloque["tipo_bloque"] for bloque in plan["bloques"]] == [
+        "ANTICIPO",
+        "TRAMO_CUOTAS",
+        "TRAMO_CUOTAS",
+        "REFUERZO",
+        "SALDO",
+    ]
+    assert [bloque["numero_bloque"] for bloque in plan["bloques"]] == [1, 2, 3, 4, 5]
+    assert [len(bloque["obligaciones"]) for bloque in plan["bloques"]] == [
+        1,
+        6,
+        6,
+        1,
+        1,
+    ]
+
+    obligaciones_agrupadas = [
+        obligacion
+        for bloque in plan["bloques"]
+        for obligacion in bloque["obligaciones"]
+    ]
+    assert len(obligaciones_agrupadas) == 15
+    assert len({ob["id_obligacion_financiera"] for ob in obligaciones_agrupadas}) == 15
+    assert [ob["numero_obligacion"] for ob in obligaciones_agrupadas] == list(
+        range(1, 16)
+    )
+    assert [ob["tipo_item_cronograma"] for ob in obligaciones_agrupadas] == [
+        "ANTICIPO",
+        *["CUOTA"] * 6,
+        *["CUOTA"] * 6,
+        "REFUERZO",
+        "SALDO",
+    ]
+    assert all(ob["composiciones"] for ob in obligaciones_agrupadas)
+    assert obligaciones_agrupadas[0]["composiciones"][0][
+        "codigo_concepto_financiero"
+    ] == "ANTICIPO_VENTA"
+    assert {
+        composicion["codigo_concepto_financiero"]
+        for ob in obligaciones_agrupadas[1:]
+        for composicion in ob["composiciones"]
+    } == {"CAPITAL_VENTA"}
+    assert len(data["obligaciones_financieras"]) == 15
+    assert {ob["id_obligacion_financiera"] for ob in data["obligaciones_financieras"]} == {
+        ob["id_obligacion_financiera"] for ob in obligaciones_agrupadas
+    }
+    assert data["resumen_financiero"]["cantidad_obligaciones"] == 15
 
 
 def test_detalle_integral_no_crea_efectos_ni_ejecuta_mora(client, db_session) -> None:
