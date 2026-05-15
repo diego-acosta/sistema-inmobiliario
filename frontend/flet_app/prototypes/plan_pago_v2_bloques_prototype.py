@@ -29,7 +29,7 @@ import httpx
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_MONEDA = "ARS"
-UNIQUE_BLOCKS = {"CONTADO", "ANTICIPO", "REFUERZO", "SALDO"}
+UNIQUE_BLOCKS = ("CONTADO", "ANTICIPO", "REFUERZO", "SALDO")
 
 
 @dataclass
@@ -78,7 +78,7 @@ class PlanPagoV2BloquesPrototype:
         )
         self.id_venta = ft.TextField(label="ID venta", width=120)
         self.tipo_pago = ft.SegmentedButton(
-            selected={"CONTADO"},
+            selected=["CONTADO"],
             segments=[
                 ft.Segment(value="CONTADO", label=ft.Text("CONTADO")),
                 ft.Segment(value="FINANCIADO", label=ft.Text("FINANCIADO")),
@@ -215,7 +215,7 @@ class PlanPagoV2BloquesPrototype:
         ]
 
     def _selected_tipo_pago(self) -> str:
-        selected = list(self.tipo_pago.selected or {"CONTADO"})
+        selected = list(self.tipo_pago.selected or ["CONTADO"])
         return str(selected[0]) if selected else "CONTADO"
 
     def _on_tipo_pago_change(self, _: ft.ControlEvent) -> None:
@@ -564,7 +564,7 @@ class PlanPagoV2BloquesPrototype:
                             concepto="CAPITAL_VENTA",
                         )
                     )
-            elif bloque.tipo_bloque in {"REFUERZO", "SALDO"}:
+            elif bloque.tipo_bloque in ("REFUERZO", "SALDO"):
                 rows.append(
                     CronogramaRow(
                         numero=len(rows) + 1,
@@ -725,15 +725,19 @@ def _plan_summary(data: dict[str, Any]) -> ft.Control:
     for bloque in bloques:
         obligaciones.extend(_list_or_empty(bloque.get("obligaciones")))
     tipos_bloque = ", ".join(
-        sorted({str(b.get("tipo_bloque")) for b in bloques if b.get("tipo_bloque")})
+        sorted(
+            dict.fromkeys(
+                str(b.get("tipo_bloque")) for b in bloques if b.get("tipo_bloque")
+            )
+        )
     )
     tipos_obligacion = ", ".join(
         sorted(
-            {
+            dict.fromkeys(
                 str(o.get("tipo_item_cronograma") or o.get("tipo_obligacion"))
                 for o in obligaciones
                 if o.get("tipo_item_cronograma") or o.get("tipo_obligacion")
-            }
+            )
         )
     )
     return ft.Container(
@@ -794,7 +798,7 @@ def _plan_readonly(plan: dict[str, Any]) -> ft.Control:
                         {
                             key: value
                             for key, value in bloque.items()
-                            if key not in {"obligaciones", "clave_bloque"}
+                            if key not in ("obligaciones", "clave_bloque")
                         }
                     ),
                 ],
