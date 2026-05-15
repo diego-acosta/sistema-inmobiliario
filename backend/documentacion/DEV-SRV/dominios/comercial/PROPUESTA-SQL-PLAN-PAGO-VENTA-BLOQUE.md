@@ -1,5 +1,15 @@
 # PROPUESTA-SQL-PLAN-PAGO-VENTA-BLOQUE - SQL minimo para bloques de plan de pago de venta
 
+## Estado posterior
+
+Esta propuesta ya fue materializada por `backend/database/patch_plan_pago_venta_bloques_v2_20260515.sql`. Se conserva como trazabilidad de decision. Para el estado vigente, considerar:
+
+- `plan_pago_venta_bloque` existe en SQL y pertenece al dominio `comercial`;
+- `obligacion_financiera.id_plan_pago_venta_bloque` existe como trazabilidad de origen hacia el bloque;
+- `id_plan_pago_venta_bloque` no es idempotencia financiera;
+- `clave_funcional_origen` sigue siendo la clave idempotente de `obligacion_financiera`;
+- el endpoint unificado `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar` sigue futuro/no implementado.
+
 ## 1. Diagnostico
 
 Issue: #27 — Disenar SQL minimo para `plan_pago_venta_bloque`.
@@ -13,9 +23,9 @@ Clasificacion arquitectonica:
 - `obligacion_obligado`: soporte financiero de responsables.
 - `venta_plan_cuota`: compatibilidad heredada V1 para `CUOTAS_FIJAS`.
 
-El SQL vigente ya separa la cabecera comercial `plan_pago_venta`, la corrida tecnica `generacion_cronograma_financiero` y los items financieros V2 en `obligacion_financiera`. La proxima evolucion debe agregar bloques comerciales sin crear cuotas comerciales ni tramos separados, y sin mover deuda, saldos, pagos, mora, caja, recibos o imputaciones al dominio comercial.
+El SQL vigente separa la cabecera comercial `plan_pago_venta`, los bloques comerciales `plan_pago_venta_bloque`, la corrida tecnica `generacion_cronograma_financiero` y los items financieros V2 en `obligacion_financiera`. Esta separacion no crea cuotas comerciales ni tramos separados, y no mueve deuda, saldos, pagos, mora, caja, recibos o imputaciones al dominio comercial.
 
-La tabla de bloques debe ser minima porque todavia no se implementa backend unificado. Su objetivo es persistir reglas comerciales ordenadas que puedan expandirse luego a obligaciones financieras mediante la generacion vigente.
+La tabla de bloques persiste reglas comerciales ordenadas que pueden expandirse a obligaciones financieras mediante la generacion vigente. Los endpoints especificos actuales ya la usan; el backend unificado por bloques todavia no esta implementado.
 
 ## 2. Respuestas de diseno
 

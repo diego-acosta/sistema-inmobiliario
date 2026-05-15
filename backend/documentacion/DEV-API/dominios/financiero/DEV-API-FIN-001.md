@@ -413,6 +413,13 @@ Filtros:
 - `limit`
 - `offset`
 
+Nota de trazabilidad V2 por bloques:
+
+- cuando una obligacion proviene de `plan_pago_venta_bloque`, la lectura financiera puede exponer `id_plan_pago_venta_bloque` como trazabilidad de origen comercial;
+- futuras ampliaciones de response podrian enriquecer ese dato con `numero_bloque`, `tipo_bloque`, `etiqueta_bloque` y `clave_bloque`;
+- `id_plan_pago_venta_bloque` no es idempotencia y no convierte el bloque en deuda;
+- `clave_funcional_origen` sigue siendo la clave idempotente financiera.
+
 Reglas:
 
 - lista obligaciones no dadas de baja
@@ -495,6 +502,12 @@ Response:
 }
 ```
 
+Nota de trazabilidad V2 por bloques:
+
+- para venta V2, las obligaciones pueden estar vinculadas a `plan_pago_venta_bloque` por `id_plan_pago_venta_bloque`;
+- el estado de cuenta puede exponer ese identificador y, en futuras ampliaciones, `numero_bloque`, `tipo_bloque`, `etiqueta_bloque` y `clave_bloque`;
+- la semantica financiera permanece en `obligacion_financiera`; el bloque solo explica la regla comercial de origen.
+
 Reglas:
 
 - no recalcula saldos en backend
@@ -525,6 +538,11 @@ Query params:
 - `fecha_vencimiento_desde` date, opcional
 - `fecha_vencimiento_hasta` date, opcional
 - `fecha_corte` date, opcional
+
+Nota de trazabilidad V2 por bloques:
+
+- las obligaciones de venta pueden informar `id_plan_pago_venta_bloque` para explicar de que bloque comercial vinieron; futuras lecturas pueden sumar `numero_bloque`, `tipo_bloque`, `etiqueta_bloque` y `clave_bloque`;
+- el bloque no es deuda ni cuota financiera y no reemplaza `clave_funcional_origen`.
 
 Reglas:
 

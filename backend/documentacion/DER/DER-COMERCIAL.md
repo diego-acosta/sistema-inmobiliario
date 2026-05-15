@@ -144,6 +144,66 @@ Observaciones:
 - no debe leerse como entidad base de `personas`
 - su semantica pertenece a `comercial`, aunque su persistencia actual sea heredada y referencie a `persona`
 
+### `plan_pago_venta`
+
+Descripcion:
+- cabecera/regla comercial V2 del plan de pago pactado para una `venta`
+
+Atributos clave:
+- `id_plan_pago_venta`
+- `id_venta`
+- `metodo_plan_pago`
+- `estado_plan_pago`
+- `moneda`
+- `monto_total_plan`
+- `cantidad_cuotas`
+- `periodicidad`
+- `fecha_primer_vencimiento`
+- `importe_anticipo`
+- `fecha_vencimiento_anticipo`
+- `regla_redondeo`
+- `observaciones`
+
+Observaciones:
+- pertenece al dominio `comercial`
+- es cabecera/regla comercial; no representa deuda, cuota financiera, saldo ni pago
+- los montos exigibles o proyectados se materializan en `obligacion_financiera`
+- puede generar uno o mas bloques comerciales en `plan_pago_venta_bloque`
+- la unicidad activa por venta esta materializada en SQL para estados vivos del plan
+
+### `plan_pago_venta_bloque`
+
+Descripcion:
+- bloque comercial ordenado que estructura una parte de la forma de pago pactada
+
+Atributos clave:
+- `id_plan_pago_venta_bloque`
+- `id_plan_pago_venta`
+- `numero_bloque`
+- `tipo_bloque`
+- `etiqueta_bloque`
+- `clave_bloque`
+- `cantidad_cuotas`
+- `importe_total_bloque`
+- `importe_cuota`
+- `fecha_vencimiento`
+- `fecha_primer_vencimiento`
+- `periodicidad`
+- `regla_redondeo`
+- `concepto_financiero_codigo`
+- `observaciones`
+
+Observaciones:
+- pertenece al dominio `comercial` como nucleo de negociacion del plan de pago de venta
+- no representa deuda
+- no representa cuota financiera
+- no tiene saldo financiero propio y no recibe pagos, imputaciones, mora, caja ni recibos
+- es estructura/regla comercial del plan y puede explicar por que se generaron obligaciones
+- puede generar una o varias `obligacion_financiera`
+- `clave_bloque` es una clave estable del bloque dentro del plan; no reemplaza a `obligacion_financiera.clave_funcional_origen`
+- los endpoints V2 especificos actuales ya crean bloques para `CUOTAS_IGUALES_SIMPLE` y `ANTICIPO_MAS_CUOTAS_IGUALES`
+- el endpoint unificado por bloques esta diseñado, pero no implementado como contrato publico disponible
+
 ### `documento_logico`
 
 Descripcion:
@@ -197,6 +257,18 @@ Observaciones:
 
 - `venta` `1 -> 0..N` `rescision_venta`
   Cardinalidad inversa: cada `rescision_venta` pertenece a exactamente `1` `venta`.
+
+- `venta` `1 -> 0..1` `plan_pago_venta` activo
+  Cardinalidad inversa: cada `plan_pago_venta` pertenece a exactamente `1` `venta`.
+  Nota: el SQL permite historico por baja logica y restringe planes vivos por venta.
+
+- `plan_pago_venta` `1 -> 0..N` `plan_pago_venta_bloque`
+  Cardinalidad inversa: cada `plan_pago_venta_bloque` pertenece a exactamente `1` `plan_pago_venta`.
+  Nota: los bloques son estructura comercial y no deuda.
+
+- `plan_pago_venta_bloque` `1 -> 0..N` `obligacion_financiera`
+  Cardinalidad inversa: una `obligacion_financiera` puede referenciar `0..1` bloque comercial por `id_plan_pago_venta_bloque`.
+  Nota: esta relacion es trazabilidad de origen comercial-financiero; la idempotencia financiera sigue estando en `obligacion_financiera.clave_funcional_origen`.
 
 ### Relaciones materializadas con Inmobiliario
 

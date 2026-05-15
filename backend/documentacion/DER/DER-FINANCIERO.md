@@ -133,6 +133,27 @@ Definida en:
 #### Nota estructural
 La obligacion no codifica rigidamente el tipo economico. El significado de sus importes surge de `composicion_obligacion` y `concepto_financiero`.
 
+#### Trazabilidad con bloques comerciales de venta V2
+
+`obligacion_financiera.id_plan_pago_venta_bloque` es una referencia nullable hacia `plan_pago_venta_bloque` cuando la obligacion nace desde un bloque comercial de plan de pago de venta V2.
+
+Reglas de lectura:
+
+- `obligacion_financiera` conserva la semantica financiera: deuda/proyeccion, vencimiento, saldo, estado, composiciones, obligados, pagos, imputaciones y mora.
+- `plan_pago_venta_bloque` pertenece al dominio `comercial`; no es deuda, no es cuota financiera y no recibe pagos.
+- `id_plan_pago_venta_bloque` permite explicar de que bloque comercial provino la obligacion.
+- `id_plan_pago_venta_bloque` es trazabilidad de origen, no idempotencia.
+- la idempotencia funcional financiera sigue estando en `(id_relacion_generadora, clave_funcional_origen)` para obligaciones activas.
+- una obligacion puede no tener bloque asociado cuando proviene de flujos legacy V1 o de otros dominios.
+
+Campos de bloque que pueden enriquecer futuras consultas financieras sin mover ownership al dominio financiero:
+
+- `id_plan_pago_venta_bloque`
+- `numero_bloque`
+- `tipo_bloque`
+- `etiqueta_bloque`
+- `clave_bloque`
+
 Para cronogramas periodicos, la DB impide duplicar obligaciones activas con la
 misma `(id_relacion_generadora, periodo_desde, periodo_hasta)`.
 

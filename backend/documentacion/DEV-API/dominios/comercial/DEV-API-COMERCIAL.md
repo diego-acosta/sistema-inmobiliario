@@ -562,6 +562,28 @@ Reglas de negocio:
 - no implementa intereses, indexacion, refinanciacion, cancelacion anticipada ni multiples compradores
 - la actualizacion de `venta` y de todos sus objetos debe ejecutarse de forma transaccional; si falla un solo objeto, debe hacerse rollback completo
 
+#### Estado de contratos Plan de pago V2
+
+Implementado y disponible hoy:
+
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/anticipo-mas-cuotas-iguales`
+
+Diseñado/futuro, no implementado como contrato publico:
+
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
+
+Alineacion con bloques V2:
+
+- `plan_pago_venta_bloque` ya existe en schema como estructura comercial del plan.
+- Los endpoints especificos actuales ya generan/reutilizan bloques comerciales.
+- `cuotas-iguales-simple` genera un bloque `TRAMO_CUOTAS`.
+- `anticipo-mas-cuotas-iguales` genera un bloque `ANTICIPO` y un bloque `TRAMO_CUOTAS`.
+- Las obligaciones financieras generadas se vinculan al bloque por `obligacion_financiera.id_plan_pago_venta_bloque`.
+- `id_plan_pago_venta_bloque` es trazabilidad de origen comercial-financiero; no es clave idempotente.
+- `clave_funcional_origen` sigue siendo la clave idempotente financiera por obligacion.
+- El endpoint unificado futuro recibira bloques desde el cliente, pero todavia no esta disponible y no debe confundirse con un contrato publico vigente.
+
 #### `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
 
 Objetivo:
@@ -627,6 +649,7 @@ Response `200`:
         "id_obligacion_financiera": 100,
         "id_relacion_generadora": 10,
         "id_generacion_cronograma_financiero": 30,
+        "id_plan_pago_venta_bloque": 40,
         "numero_obligacion": 1,
         "tipo_item_cronograma": "CUOTA",
         "etiqueta_obligacion": "Cuota 1",
@@ -659,6 +682,9 @@ Reglas de negocio:
 
 - pertenece al dominio `comercial` como definicion/generacion de regla comercial de plan de pago de venta
 - usa `plan_pago_venta` como cabecera/regla comercial
+- crea o reutiliza un `plan_pago_venta_bloque` de tipo `TRAMO_CUOTAS` como estructura comercial del acuerdo
+- vincula cada obligacion generada al bloque mediante `obligacion_financiera.id_plan_pago_venta_bloque`
+- `id_plan_pago_venta_bloque` es trazabilidad de origen; la idempotencia de obligacion sigue en `clave_funcional_origen`
 - usa `generacion_cronograma_financiero` como corrida tecnica idempotente
 - asegura o reutiliza `relacion_generadora` con `tipo_origen = venta`
 - divide `monto_total_plan` en `cantidad_cuotas` iguales con redondeo a centavos
@@ -730,6 +756,9 @@ Request:
 Reglas de negocio:
 
 - usa `plan_pago_venta` como cabecera/regla comercial con metodo `ANTICIPO_MAS_CUOTAS_IGUALES`
+- crea o reutiliza un bloque `ANTICIPO` y un bloque `TRAMO_CUOTAS` en `plan_pago_venta_bloque`
+- vincula la obligacion de anticipo al bloque `ANTICIPO` y las cuotas al bloque `TRAMO_CUOTAS` por `obligacion_financiera.id_plan_pago_venta_bloque`
+- `id_plan_pago_venta_bloque` es trazabilidad de origen; la idempotencia de obligacion sigue en `clave_funcional_origen`
 - asegura o reutiliza `relacion_generadora` con `tipo_origen = venta`
 - registra una corrida `PLAN_PAGO_VENTA_V2` en `generacion_cronograma_financiero`
 - genera una obligacion `ANTICIPO` con composicion `ANTICIPO_VENTA`
@@ -1422,6 +1451,7 @@ Datos incluidos:
 - `integracion_inmobiliaria` en el mismo criterio que el detalle enriquecido existente
 - `relacion_financiera` cuando exista `relacion_generadora` para `tipo_origen = venta` e `id_origen = id_venta`, tolerando casing por normalizacion `LOWER(tipo_origen)`
 - `obligaciones_financieras` asociadas a la relacion, con composiciones, conceptos y obligados si existen
+- cuando las obligaciones provienen de planes de pago V2 por bloques, pueden exponer trazabilidad de bloque ya persistida: `id_plan_pago_venta_bloque` y, en futuras ampliaciones de lectura, `numero_bloque`, `tipo_bloque`, `etiqueta_bloque` y `clave_bloque`
 - `resumen_financiero` construido solo con saldos persistidos
 
 Comportamiento financiero:
@@ -1430,6 +1460,7 @@ Comportamiento financiero:
 - si la venta no tiene estructura financiera explicita persistida, financiero la trata como plan `CONTADO V1`: una unica obligacion `CAPITAL_VENTA` por `venta.monto_total`, con `fecha_vencimiento = venta.fecha_venta`
 - si `tipo_plan_financiero = ANTICIPO_Y_SALDO`, financiero materializa dos obligaciones: `ANTICIPO_VENTA` por `importe_anticipo` y `CAPITAL_VENTA` por `importe_saldo`
 - si `tipo_plan_financiero = CUOTAS_FIJAS`, financiero materializa una obligacion por cada fila activa de `venta_plan_cuota`, todas con composicion `CAPITAL_VENTA`, vencimiento propio y obligado `COMPRADOR` al 100%
+- para planes V2 por bloques, las obligaciones conservan la semantica financiera y pueden indicar el bloque comercial de origen con `id_plan_pago_venta_bloque`; el bloque no es deuda ni cuota financiera
 - si financiero ya materializo el comprador V1, la obligacion incluye `obligados` con `rol_obligado = COMPRADOR` y `porcentaje_responsabilidad = 100.00`
 - el endpoint no materializa el plan financiero de venta, no crea obligaciones y no resuelve obligados; solo expone los obligados persistidos por financiero
 - el endpoint no implementa intereses, indexacion, saldo extraordinario, refinanciacion, cancelacion anticipada, rescision ni cesion real con cambio de comprador

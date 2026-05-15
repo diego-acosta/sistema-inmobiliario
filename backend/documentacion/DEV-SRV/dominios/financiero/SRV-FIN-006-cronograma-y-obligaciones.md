@@ -63,6 +63,24 @@ No cubre:
 - obligados asociados cuando se solicite
 - resumen visible de saldo, vencido, exigible y cancelado cuando corresponda
 
+### Trazabilidad comercial-financiera para venta V2 por bloques
+
+Cuando una obligacion proviene de un bloque comercial de `plan_pago_venta`, la lectura financiera puede explicar su origen mediante `obligacion_financiera.id_plan_pago_venta_bloque`. Esta referencia no cambia el ownership:
+
+- `plan_pago_venta_bloque` pertenece al dominio `comercial` y describe estructura/regla comercial.
+- `plan_pago_venta_bloque` no representa deuda ni cuota financiera.
+- `obligacion_financiera` conserva la semantica financiera de deuda/proyeccion, saldo, estado y vencimiento.
+- `id_plan_pago_venta_bloque` es trazabilidad, no idempotencia.
+- `clave_funcional_origen` sigue siendo la clave idempotente financiera.
+
+Futuras respuestas de cronograma o detalle podrian exponer, sin implementar aun en este documento:
+
+- `id_plan_pago_venta_bloque`
+- `numero_bloque`
+- `tipo_bloque`
+- `etiqueta_bloque`
+- `clave_bloque`
+
 ## Flujo de alto nivel
 1. validar entrada y permisos de lectura
 2. resolver el criterio de consulta
