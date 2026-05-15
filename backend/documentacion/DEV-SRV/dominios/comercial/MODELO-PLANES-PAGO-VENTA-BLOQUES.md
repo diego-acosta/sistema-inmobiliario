@@ -10,10 +10,12 @@ contado o financiado, anticipo opcional, tramos de cuotas, refuerzos, saldo
 final y, en etapas posteriores, indexacion o interes.
 
 Este documento conserva el diseno funcional del modelo por bloques y lo alinea
-con el estado implementado actual: `plan_pago_venta_bloque` ya existe en SQL y
-los endpoints V2 especificos actuales ya crean bloques. El endpoint unificado
-por bloques sigue siendo futuro/no implementado. Cualquier ampliacion de SQL,
-backend, UI o migracion requiere issue, patch y tests propios.
+con el estado implementado actual: `plan_pago_venta_bloque` ya existe en SQL,
+los endpoints V2 especificos actuales ya crean bloques y el endpoint unificado
+por bloques `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar` ya esta
+implementado como wrapper HTTP del servicio interno
+`GeneratePlanPagoVentaV2PorBloquesService`. Cualquier ampliacion adicional de
+SQL, backend, UI o migracion requiere issue, patch y tests propios.
 
 ## Principio rector
 
@@ -420,9 +422,9 @@ Motivo:
 La FK responde trazabilidad y consulta. `clave_funcional_origen` responde
 idempotencia. Son problemas distintos.
 
-## Endpoint unificado propuesto
+## Endpoint unificado implementado
 
-Endpoint futuro:
+Endpoint implementado:
 
 ```text
 POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar
@@ -456,9 +458,8 @@ Endpoints existentes:
 Decision de transicion:
 
 - mantenerlos funcionando
-- tratarlos como wrappers de compatibilidad V2 inicial
-- no eliminarlos hasta que el endpoint unificado este implementado, documentado
-  y cubierto por tests
+- tratarlos como contratos de compatibilidad V2 inicial
+- no eliminarlos; siguen vigentes como contratos publicos especificos V2
 - actualmente ya persisten bloques:
   - `CUOTAS_IGUALES_SIMPLE` -> un bloque `TRAMO_CUOTAS`
   - `ANTICIPO_MAS_CUOTAS_IGUALES` -> bloque `ANTICIPO` + bloque
@@ -477,12 +478,12 @@ Estado implementado:
 - los endpoints especificos actuales generan bloques y vinculan obligaciones a esos bloques
 - `venta_plan_cuota` permanece como compatibilidad heredada V1 para `CUOTAS_FIJAS`
 
-Pendiente/futuro:
+Estado implementado adicional:
 
-- implementar endpoint unificado por bloques
-- agregar generador unificado que reciba bloques desde el cliente
-- conservar endpoints especificos como adaptadores
-- no tocar `venta_plan_cuota`
+- el endpoint unificado por bloques recibe bloques desde el cliente
+- el endpoint unificado usa el generador interno por bloques
+- los endpoints especificos se conservan como contratos publicos vigentes
+- no se toca `venta_plan_cuota` para V2
 
 Fase UI futura si se aprueba en otro alcance:
 
@@ -498,8 +499,7 @@ Fase 5, migracion/control:
 
 ## Impacto en tests
 
-Este cambio documental no agrega ni exige tests nuevos. Una implementacion
-futura del endpoint unificado deberia agregar, en su propio alcance, tests para:
+La implementacion del endpoint unificado agrega cobertura para:
 
 - crear plan contado como un bloque
 - crear plan financiado sin anticipo como un bloque `TRAMO_CUOTAS`
@@ -599,10 +599,9 @@ PLAN_PAGO_VENTA:10:BLOQUE:5:SALDO:1
 
 ## Limitaciones explicitas
 
-Este modelo no implementa:
+Este modelo no implementa en este alcance adicional:
 
-- SQL
-- endpoint unificado
+- SQL nuevo
 - refactor de servicios existentes
 - UI
 - pagos
@@ -617,9 +616,8 @@ Este modelo no implementa:
 
 ## Proximo paso recomendado
 
-Cerrar este alcance como diseno documental, sin implementar el endpoint.
+Cerrar el alcance del endpoint unificado si la suite backend permanece verde.
 
-Antes de cualquier implementacion futura corresponde abrir un alcance separado
-para validar SQL vigente, confirmar si se requieren migraciones adicionales,
-definir la convencion final de `clave_funcional_origen`, agregar tests de schema
-y recien despues implementar el endpoint unificado.
+Cualquier evolucion futura debe abrir un alcance separado para validar SQL
+vigente, confirmar si se requieren migraciones adicionales, ajustar tests y
+recien despues ampliar comportamiento.

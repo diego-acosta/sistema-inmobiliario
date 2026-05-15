@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ReservaVentaParticipacionCreateRequest(BaseModel):
@@ -192,6 +192,8 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesRequest(BaseModel):
 
 
 class PlanPagoVentaBloqueV2Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tipo_bloque: str
     etiqueta_bloque: str | None = None
     importe_total_bloque: Decimal | None = None
@@ -205,6 +207,8 @@ class PlanPagoVentaBloqueV2Request(BaseModel):
 
 
 class GeneratePlanPagoVentaV2PorBloquesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tipo_pago: str
     monto_total_plan: Decimal
     moneda: str = "ARS"

@@ -22,7 +22,6 @@ from tests.test_plan_pago_venta_v2_cuotas_iguales import (
 )
 from tests.test_disponibilidades_create import HEADERS
 
-
 URL = "/api/v1/ventas/{id_venta}/plan-pago-v2/generar"
 
 
@@ -145,9 +144,9 @@ def _payload_contado() -> dict[str, object]:
 
 
 def _obligaciones_unificadas(db_session, *, id_venta: int) -> list[dict]:
-    rows = db_session.execute(
-        text(
-            """
+    rows = (
+        db_session.execute(
+            text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_plan_pago_venta_bloque,
@@ -179,10 +178,12 @@ def _obligaciones_unificadas(db_session, *, id_venta: int) -> list[dict]:
               AND rg.id_origen = :id_venta
               AND rg.deleted_at IS NULL
             ORDER BY o.numero_obligacion ASC
-            """
-        ),
-        {"id_venta": id_venta},
-    ).mappings().all()
+            """),
+            {"id_venta": id_venta},
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
@@ -210,9 +211,10 @@ def test_endpoint_unificado_genera_contado_como_saldo_con_capital(
     assert data["obligaciones"][0]["numero_obligacion"] == 1
     assert data["obligaciones"][0]["tipo_item_cronograma"] == "SALDO"
     assert data["obligaciones"][0]["clave_funcional_origen"].endswith(":SALDO:1")
-    assert data["obligaciones"][0]["id_plan_pago_venta_bloque"] == data["bloques"][0][
-        "id_plan_pago_venta_bloque"
-    ]
+    assert (
+        data["obligaciones"][0]["id_plan_pago_venta_bloque"]
+        == data["bloques"][0]["id_plan_pago_venta_bloque"]
+    )
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
 
@@ -247,7 +249,9 @@ def test_endpoint_unificado_genera_financiado_con_bloques_y_obligaciones(
     assert [obligacion["numero_obligacion"] for obligacion in data["obligaciones"]] == (
         list(range(1, 16))
     )
-    assert [obligacion["tipo_item_cronograma"] for obligacion in data["obligaciones"]] == [
+    assert [
+        obligacion["tipo_item_cronograma"] for obligacion in data["obligaciones"]
+    ] == [
         "ANTICIPO",
         *["CUOTA"] * 6,
         *["CUOTA"] * 6,
@@ -308,6 +312,29 @@ def test_endpoint_unificado_reejecutar_mismo_payload_no_duplica(
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
 
+def test_endpoint_unificado_schema_rechaza_campos_internos_del_cliente(
+    client, db_session
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-006")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = _payload_contado()
+    payload["numero_obligacion"] = 1
+    payload["clave_funcional_origen"] = "CLIENTE:NO:DEBE:ENVIAR"
+    payload["bloques"][0]["numero_bloque"] = 1
+    payload["bloques"][0]["clave_bloque"] = "CLIENTE:NO:DEBE:ENVIAR"
+
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+
+    assert response.status_code == 422, response.text
+    errors = response.json()["detail"]
+    locations = {tuple(error["loc"]) for error in errors}
+    assert ("body", "numero_obligacion") in locations
+    assert ("body", "clave_funcional_origen") in locations
+    assert ("body", "bloques", 0, "numero_bloque") in locations
+    assert ("body", "bloques", 0, "clave_bloque") in locations
+    assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
+
+
 def test_servicio_unificado_genera_contado_como_saldo_con_capital(db_session) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-001")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
@@ -336,9 +363,10 @@ def test_servicio_unificado_genera_contado_como_saldo_con_capital(db_session) ->
     assert len(obligaciones) == 1
     assert obligaciones[0]["tipo_item_cronograma"] == "SALDO"
     assert obligaciones[0]["codigo_concepto_financiero"] == "CAPITAL_VENTA"
-    assert obligaciones[0]["id_plan_pago_venta_bloque"] == bloques[0][
-        "id_plan_pago_venta_bloque"
-    ]
+    assert (
+        obligaciones[0]["id_plan_pago_venta_bloque"]
+        == bloques[0]["id_plan_pago_venta_bloque"]
+    )
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
 
@@ -382,21 +410,24 @@ def test_servicio_unificado_genera_financiado_con_bloques_y_trazabilidad(
     assert {ob["codigo_concepto_financiero"] for ob in obligaciones[1:]} == {
         "CAPITAL_VENTA"
     }
-    assert obligaciones[0]["id_plan_pago_venta_bloque"] == bloques[0][
-        "id_plan_pago_venta_bloque"
-    ]
+    assert (
+        obligaciones[0]["id_plan_pago_venta_bloque"]
+        == bloques[0]["id_plan_pago_venta_bloque"]
+    )
     assert {ob["id_plan_pago_venta_bloque"] for ob in obligaciones[1:7]} == {
         bloques[1]["id_plan_pago_venta_bloque"]
     }
     assert {ob["id_plan_pago_venta_bloque"] for ob in obligaciones[7:13]} == {
         bloques[2]["id_plan_pago_venta_bloque"]
     }
-    assert obligaciones[13]["id_plan_pago_venta_bloque"] == bloques[3][
-        "id_plan_pago_venta_bloque"
-    ]
-    assert obligaciones[14]["id_plan_pago_venta_bloque"] == bloques[4][
-        "id_plan_pago_venta_bloque"
-    ]
+    assert (
+        obligaciones[13]["id_plan_pago_venta_bloque"]
+        == bloques[3]["id_plan_pago_venta_bloque"]
+    )
+    assert (
+        obligaciones[14]["id_plan_pago_venta_bloque"]
+        == bloques[4]["id_plan_pago_venta_bloque"]
+    )
     assert sum((ob["importe_total"] for ob in obligaciones), Decimal("0")) == Decimal(
         "12700000.00"
     )
