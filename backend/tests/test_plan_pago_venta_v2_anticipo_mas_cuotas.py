@@ -304,6 +304,41 @@ def test_anticipo_mas_cuotas_v2_reejecutar_mismo_payload_no_duplica(
     assert _count_generaciones(db_session, id_venta=id_venta) == 1
 
 
+def test_anticipo_mas_cuotas_v2_no_oculta_bloque_existente_incompatible(
+    client, db_session
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-AMCI-006")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+
+    first = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=_payload())
+    assert first.status_code == 200, first.text
+
+    db_session.execute(
+        text(
+            """
+            UPDATE plan_pago_venta_bloque b
+            SET importe_cuota = 999999.99
+            FROM plan_pago_venta ppv
+            WHERE ppv.id_plan_pago_venta = b.id_plan_pago_venta
+              AND ppv.id_venta = :id_venta
+              AND b.tipo_bloque = 'TRAMO_CUOTAS'
+              AND b.deleted_at IS NULL
+            """
+        ),
+        {"id_venta": id_venta},
+    )
+
+    second = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=_payload())
+
+    assert second.status_code == 400, second.text
+    assert any(
+        error.startswith("PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
+        for error in second.json()["details"]["errors"]
+    )
+    assert len(_obligaciones_v2(db_session, id_venta=id_venta)) == 11
+    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 2
+
+
 def test_anticipo_mas_cuotas_v2_payload_distinto_con_plan_vivo_devuelve_409(
     client, db_session
 ) -> None:

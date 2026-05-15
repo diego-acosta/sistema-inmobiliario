@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
@@ -389,7 +391,48 @@ class PlanPagoVentaV2Repository:
             """
         )
         row = self.db.execute(stmt, values).mappings().one()
-        return dict(row)
+        bloque = dict(row)
+        self._ensure_plan_pago_venta_bloque_compatible(bloque, values)
+        return bloque
+
+    def _ensure_plan_pago_venta_bloque_compatible(
+        self, bloque: dict[str, Any], expected: dict[str, Any]
+    ) -> None:
+        fields = (
+            "id_plan_pago_venta",
+            "numero_bloque",
+            "tipo_bloque",
+            "etiqueta_bloque",
+            "clave_bloque",
+            "cantidad_cuotas",
+            "importe_total_bloque",
+            "importe_cuota",
+            "fecha_vencimiento",
+            "fecha_primer_vencimiento",
+            "periodicidad",
+            "regla_redondeo",
+            "concepto_financiero_codigo",
+        )
+        incompatible = [
+            field
+            for field in fields
+            if self._normalize_bloque_value(bloque.get(field))
+            != self._normalize_bloque_value(expected.get(field))
+        ]
+        if incompatible:
+            clave = expected.get("clave_bloque") or bloque.get("clave_bloque")
+            raise ValueError(
+                "PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE:"
+                f"{clave}:{','.join(incompatible)}"
+            )
+
+    @staticmethod
+    def _normalize_bloque_value(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return value.quantize(Decimal("0.01"))
+        if isinstance(value, date):
+            return value.isoformat()
+        return value
 
     def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
         stmt = text(
@@ -442,18 +485,26 @@ class PlanPagoVentaV2Repository:
             clave_funcional_origen=values["clave_funcional_origen"],
         )
         if existing is not None:
-            if (
-                existing["id_plan_pago_venta_bloque"] is None
-                and values["id_plan_pago_venta_bloque"] is not None
-            ):
+            existing_bloque = existing["id_plan_pago_venta_bloque"]
+            expected_bloque = values["id_plan_pago_venta_bloque"]
+            if existing_bloque is None and expected_bloque is not None:
                 return self._set_obligacion_plan_pago_venta_bloque(
                     id_obligacion_financiera=existing["id_obligacion_financiera"],
-                    id_plan_pago_venta_bloque=values["id_plan_pago_venta_bloque"],
+                    id_plan_pago_venta_bloque=expected_bloque,
                     updated_at=values["updated_at"],
                     id_instalacion_ultima_modificacion=values[
                         "id_instalacion_ultima_modificacion"
                     ],
                     op_id_ultima_modificacion=values["op_id_ultima_modificacion"],
+                )
+            if (
+                existing_bloque is not None
+                and expected_bloque is not None
+                and existing_bloque != expected_bloque
+            ):
+                raise ValueError(
+                    "OBLIGACION_PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE:"
+                    f"{values['clave_funcional_origen']}"
                 )
             return existing
 
