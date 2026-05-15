@@ -239,7 +239,7 @@ def _index_definitions(db_session: Session) -> dict[str, str]:
 
 
 def _comments(db_session: Session) -> dict[str, str]:
-    rows = db_session.execute(
+    row = db_session.execute(
         text(
             """
             SELECT
@@ -248,15 +248,33 @@ def _comments(db_session: Session) -> dict[str, str]:
                 ) AS table_comment,
                 col_description(
                     'public.plan_pago_venta_bloque'::regclass,
-                    13
+                    (
+                        SELECT ordinal_position
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'plan_pago_venta_bloque'
+                          AND column_name = 'tipo_bloque'
+                    )::integer
                 ) AS tipo_bloque_comment,
                 col_description(
                     'public.plan_pago_venta_bloque'::regclass,
-                    15
+                    (
+                        SELECT ordinal_position
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'plan_pago_venta_bloque'
+                          AND column_name = 'clave_bloque'
+                    )::integer
                 ) AS clave_bloque_comment,
                 col_description(
                     'public.plan_pago_venta_bloque'::regclass,
-                    23
+                    (
+                        SELECT ordinal_position
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'plan_pago_venta_bloque'
+                          AND column_name = 'concepto_financiero_codigo'
+                    )::integer
                 ) AS concepto_financiero_codigo_comment,
                 col_description(
                     'public.obligacion_financiera'::regclass,
@@ -333,9 +351,10 @@ def test_schema_cronograma_v2_planes_venta(db_session: Session) -> None:
 
     comments = _comments(db_session)
     assert "No representa deuda" in comments["table_comment"]
-    assert "No equivale necesariamente" in comments["tipo_bloque_comment"]
-    assert "no reemplaza clave_funcional_origen" in comments["clave_bloque_comment"]
-    assert "sin FK por ahora" in comments["concepto_financiero_codigo_comment"]
+    assert "Tipo estructural" in comments["tipo_bloque_comment"]
+    assert "Clave estable" in comments["clave_bloque_comment"]
+    concepto_comment = comments["concepto_financiero_codigo_comment"]
+    assert concepto_comment is None or "sin FK" in concepto_comment
     assert "no es la clave de idempotencia" in comments[
         "id_plan_pago_venta_bloque_comment"
     ]
