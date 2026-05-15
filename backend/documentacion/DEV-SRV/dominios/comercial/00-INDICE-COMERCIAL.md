@@ -64,6 +64,7 @@ Backlog fuera de `v1`:
 
 - [[MODELO-PLANES-PAGO-VENTA]]
 - [[MODELO-PLANES-PAGO-VENTA-BLOQUES]]
+- [[DISEÑO-ENDPOINT-PLAN-PAGO-V2-GENERAR]]
 - [[SRV-COM-001-gestion-de-reserva-de-venta]]
 - [[SRV-COM-002-gestion-de-venta]]
 - [[SRV-COM-003-gestion-de-condiciones-comerciales-de-venta]]

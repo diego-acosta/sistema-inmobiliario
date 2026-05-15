@@ -422,83 +422,23 @@ Endpoint futuro:
 POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar
 ```
 
-Request conceptual:
+El contrato detallado queda separado en:
 
-```json
-{
-  "moneda": "ARS",
-  "monto_total_plan": 12700000.00,
-  "bloques": [
-    {
-      "orden_bloque": 1,
-      "tipo_bloque": "ANTICIPO",
-      "monto_bloque": 2000000.00,
-      "fecha_vencimiento": "2026-05-10"
-    },
-    {
-      "orden_bloque": 2,
-      "tipo_bloque": "TRAMO_CUOTAS",
-      "cantidad_cuotas": 6,
-      "importe_cuota": 500000.00,
-      "fecha_primer_vencimiento": "2026-06-10",
-      "periodicidad": "MENSUAL",
-      "regla_redondeo": "ULTIMA_CUOTA"
-    },
-    {
-      "orden_bloque": 3,
-      "tipo_bloque": "TRAMO_CUOTAS",
-      "cantidad_cuotas": 6,
-      "importe_cuota": 700000.00,
-      "fecha_primer_vencimiento": "2026-12-10",
-      "periodicidad": "MENSUAL",
-      "regla_redondeo": "ULTIMA_CUOTA"
-    },
-    {
-      "orden_bloque": 4,
-      "tipo_bloque": "REFUERZO",
-      "monto_bloque": 1500000.00,
-      "fecha_vencimiento": "2026-12-20",
-      "etiqueta_bloque": "Refuerzo diciembre"
-    },
-    {
-      "orden_bloque": 5,
-      "tipo_bloque": "SALDO",
-      "monto_bloque": 2000000.00,
-      "hito_vencimiento": "ESCRITURA"
-    }
-  ],
-  "regla_validacion_total": "SUMA_BLOQUES_IGUAL_TOTAL"
-}
-```
+- `DISEÑO-ENDPOINT-PLAN-PAGO-V2-GENERAR.md`
 
-Este ejemplo suma exactamente `12.700.000`: anticipo `2.000.000`, primer tramo
-`3.000.000`, segundo tramo `4.200.000`, refuerzo `1.500.000` y saldo
-`2.000.000`.
+Decisiones principales:
 
-Response conceptual:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id_venta": 1,
-    "plan_pago_venta": {},
-    "bloques": [],
-    "generacion_cronograma_financiero": {},
-    "obligaciones": []
-  }
-}
-```
-
-Reglas del endpoint:
-
-- valida suma de bloques contra `monto_total_plan`
-- valida orden unico y consecutivo de bloques
-- valida cada bloque segun su tipo
-- no crea `venta_plan_cuota`
-- no registra pagos
-- no reemplaza obligaciones con pagos sin regla explicita
-- debe ser idempotente por bloque e item generado
+- el request recibe `tipo_pago = CONTADO | FINANCIADO`
+- el request recibe bloques comerciales, no metodos tecnicos aislados
+- `numero_bloque` se asigna por orden del array
+- `clave_bloque` se genera por plan, tipo de bloque y ordinal del tipo
+- `clave_funcional_origen` sigue siendo la clave idempotente de obligacion
+- `id_plan_pago_venta_bloque` es trazabilidad, no idempotencia
+- `CONTADO` se materializa como `tipo_item_cronograma = SALDO` mientras SQL no
+  soporte un item `CONTADO`
+- el endpoint unificado no usa `venta_plan_cuota`
+- no implementa pagos, caja, recibos, indexacion, interes, sistema frances ni
+  sistema aleman
 
 ## Endpoints especificos actuales
 

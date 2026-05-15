@@ -763,6 +763,86 @@ Errores posibles:
 - `422`: validacion de schema del request
 - `500 INTERNAL_ERROR`: error inesperado
 
+#### Futuro `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
+
+Estado:
+- diseno documentado
+- no implementado en el surface HTTP vigente
+- no debe ser invocado por clientes hasta que exista implementacion y tests
+
+Documento de diseno:
+- `backend/documentacion/DEV-SRV/dominios/comercial/DISEÑO-ENDPOINT-PLAN-PAGO-V2-GENERAR.md`
+
+Objetivo futuro:
+- recibir una forma de pago por bloques comerciales
+- crear/reutilizar `plan_pago_venta`
+- crear/reutilizar `plan_pago_venta_bloque`
+- generar obligaciones financieras V2 vinculadas por `id_plan_pago_venta_bloque`
+- mantener `clave_funcional_origen` como idempotencia financiera
+
+Request conceptual futuro:
+
+```json
+{
+  "tipo_pago": "FINANCIADO",
+  "monto_total_plan": 12700000.00,
+  "moneda": "ARS",
+  "bloques": [
+    {
+      "tipo_bloque": "ANTICIPO",
+      "importe_total_bloque": 2000000.00,
+      "fecha_vencimiento": "2026-05-10"
+    },
+    {
+      "tipo_bloque": "TRAMO_CUOTAS",
+      "cantidad_cuotas": 6,
+      "importe_cuota": 500000.00,
+      "fecha_primer_vencimiento": "2026-06-10",
+      "periodicidad": "MENSUAL"
+    },
+    {
+      "tipo_bloque": "TRAMO_CUOTAS",
+      "cantidad_cuotas": 6,
+      "importe_cuota": 700000.00,
+      "fecha_primer_vencimiento": "2026-12-10",
+      "periodicidad": "MENSUAL"
+    },
+    {
+      "tipo_bloque": "REFUERZO",
+      "etiqueta_bloque": "Refuerzo diciembre",
+      "importe_total_bloque": 1500000.00,
+      "fecha_vencimiento": "2026-12-20"
+    },
+    {
+      "tipo_bloque": "SALDO",
+      "etiqueta_bloque": "Saldo contra escritura",
+      "importe_total_bloque": 2000000.00,
+      "fecha_vencimiento": "2027-03-10"
+    }
+  ]
+}
+```
+
+Decisiones de diseno:
+
+- `tipo_pago` debe ser `CONTADO` o `FINANCIADO`
+- `CONTADO` solo admite un bloque `CONTADO`
+- `FINANCIADO` admite `ANTICIPO`, uno o mas `TRAMO_CUOTAS`, `REFUERZO` y `SALDO`
+- la suma de bloques debe coincidir con `monto_total_plan`
+- `numero_bloque` se asigna por orden del array
+- `clave_bloque` se genera por plan, tipo de bloque y ordinal por tipo
+- `numero_obligacion` es secuencial global sobre las obligaciones resultantes
+- `CONTADO` se materializa como `tipo_item_cronograma = SALDO` mientras SQL no soporte `CONTADO` como item de cronograma
+- el endpoint unificado no usa `venta_plan_cuota`
+- no crea `plan_pago_venta_cuota` ni `plan_pago_venta_tramo`
+- no implementa pagos, caja, recibos, indexacion, interes, sistema frances ni sistema aleman
+
+Compatibilidad:
+
+- los endpoints especificos actuales quedan vigentes
+- a futuro pueden convertirse en wrappers del endpoint unificado
+- no deben eliminarse en la primera implementacion del endpoint unificado
+
 #### `PATCH /api/v1/ventas/{id_venta}/confirmar`
 
 Objetivo:
