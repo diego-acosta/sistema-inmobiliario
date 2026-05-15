@@ -684,17 +684,23 @@ Pendiente: extender o crear servicios especificos para metodos V2 distintos de
 
 ### Paso 4b - Modelo por bloques
 
-Estado: documentado como diseno, no implementado.
+Estado: base tecnica implementada para bloques; endpoint unificado futuro.
 
-El modelo por bloques propone:
+Estado actual:
 
-- crear `plan_pago_venta_bloque`
-- mantener `obligacion_financiera` como unico cronograma financiero
-- usar los bloques como reglas comerciales de generacion
-- implementar un endpoint futuro unificado
-  `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
+- `plan_pago_venta_bloque` existe como estructura/regla comercial del plan;
+- `obligacion_financiera.id_plan_pago_venta_bloque` existe como trazabilidad de origen hacia el bloque;
+- `CUOTAS_IGUALES_SIMPLE` ya genera un bloque `TRAMO_CUOTAS`;
+- `ANTICIPO_MAS_CUOTAS_IGUALES` ya genera un bloque `ANTICIPO` y un bloque `TRAMO_CUOTAS`;
+- `obligacion_financiera` mantiene la semantica financiera y `clave_funcional_origen` mantiene la idempotencia;
+- `plan_pago_venta_bloque` no es deuda, no es cuota financiera y no recibe pagos.
+
+Pendiente/futuro:
+
+- implementar un endpoint unificado que reciba bloques desde el cliente:
+  `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`;
 - mantener los endpoints especificos actuales como wrappers o compatibilidad
-  mientras dure la transicion
+  mientras dure la transicion.
 
 Referencia: `MODELO-PLANES-PAGO-VENTA-BLOQUES.md`.
 

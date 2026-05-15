@@ -9,8 +9,11 @@ El objetivo es representar como el usuario negocia y carga una forma de pago:
 contado o financiado, anticipo opcional, tramos de cuotas, refuerzos, saldo
 final y, en etapas posteriores, indexacion o interes.
 
-Este documento es de diseno. No implementa ni promete cambios de SQL, backend,
-UI ni migracion. Cualquier cambio futuro requiere issue, patch y tests propios.
+Este documento conserva el diseno funcional del modelo por bloques y lo alinea
+con el estado implementado actual: `plan_pago_venta_bloque` ya existe en SQL y
+los endpoints V2 especificos actuales ya crean bloques. El endpoint unificado
+por bloques sigue siendo futuro/no implementado. Cualquier ampliacion de SQL,
+backend, UI o migracion requiere issue, patch y tests propios.
 
 ## Principio rector
 
@@ -36,10 +39,9 @@ La materializacion financiera sigue siendo:
 
 ## Decision de diseno: estructura de bloques
 
-El modelo conceptual requiere una estructura `plan_pago_venta_bloque` para
-representar bloques comerciales. Este documento no crea ni modifica esa
-estructura en SQL; solo fija su semantica esperada si existe o si se aprueba en
-un cambio futuro.
+El modelo requiere la estructura `plan_pago_venta_bloque` para representar
+bloques comerciales. En el estado actual, esa estructura ya existe en SQL como
+nucleo comercial del plan de pago V2 por bloques.
 
 Razon:
 
@@ -457,7 +459,7 @@ Decision de transicion:
 - tratarlos como wrappers de compatibilidad V2 inicial
 - no eliminarlos hasta que el endpoint unificado este implementado, documentado
   y cubierto por tests
-- internamente, en una etapa futura, pueden traducirse a bloques:
+- actualmente ya persisten bloques:
   - `CUOTAS_IGUALES_SIMPLE` -> un bloque `TRAMO_CUOTAS`
   - `ANTICIPO_MAS_CUOTAS_IGUALES` -> bloque `ANTICIPO` + bloque
     `TRAMO_CUOTAS`
@@ -466,30 +468,23 @@ No deben seguir creciendo para cubrir combinaciones nuevas.
 
 ## Transicion sin romper lo implementado
 
-La siguiente transicion es una guia condicionada, no una promesa de cambios en
-SQL, backend o UI dentro de este alcance.
+La siguiente transicion distingue lo implementado de lo pendiente.
 
-Fase 1, documentacion:
+Estado implementado:
 
-- crear este modelo de bloques
-- mantener servicios existentes sin cambios
+- `plan_pago_venta_bloque` existe en SQL
+- `obligacion_financiera.id_plan_pago_venta_bloque` existe como FK nullable de trazabilidad
+- los endpoints especificos actuales generan bloques y vinculan obligaciones a esos bloques
+- `venta_plan_cuota` permanece como compatibilidad heredada V1 para `CUOTAS_FIJAS`
 
-Fase 2, SQL futuro si se aprueba en otro alcance:
+Pendiente/futuro:
 
-- crear `plan_pago_venta_bloque`
-- opcional recomendado: agregar
-  `obligacion_financiera.id_plan_pago_venta_bloque`
-- agregar constraints por tipo de bloque
-- agregar indices de orden e idempotencia
-
-Fase 3, backend futuro si se aprueba en otro alcance:
-
-- implementar endpoint unificado
-- agregar generador por bloques
+- implementar endpoint unificado por bloques
+- agregar generador unificado que reciba bloques desde el cliente
 - conservar endpoints especificos como adaptadores
 - no tocar `venta_plan_cuota`
 
-Fase 4, UI futura si se aprueba en otro alcance:
+Fase UI futura si se aprueba en otro alcance:
 
 - construir editor visual de bloques
 - mostrar previsualizacion de obligaciones antes de generar
@@ -519,18 +514,19 @@ futura del endpoint unificado deberia agregar, en su propio alcance, tests para:
 - validar que endpoints especificos actuales siguen pasando
 - validar que `CUOTAS_FIJAS V1` sigue usando `venta_plan_cuota`
 
-## Consideraciones SQL para un alcance futuro
+## Consideraciones SQL actuales
 
-No se modifica SQL en este documento. Si se aprueba un alcance tecnico posterior,
-las consideraciones a validar contra SQL vigente serian:
+No se modifica SQL en este documento. El SQL vigente ya materializa:
 
 - tabla `plan_pago_venta_bloque`
 - constraints por `tipo_bloque`
-- indice unico por `(id_plan_pago_venta, orden_bloque)` para bloques activos
-- indice por `(id_plan_pago_venta, tipo_bloque)`
+- indices por plan, numero y clave de bloque activo
 - FK desde `plan_pago_venta_bloque` a `plan_pago_venta`
-- FK opcional recomendada desde `obligacion_financiera` a
+- FK nullable desde `obligacion_financiera.id_plan_pago_venta_bloque` a
   `plan_pago_venta_bloque`
+
+La FK en `obligacion_financiera` es trazabilidad; no es idempotencia. La clave
+idempotente financiera sigue siendo `clave_funcional_origen`.
 
 No crear:
 

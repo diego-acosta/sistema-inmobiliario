@@ -86,6 +86,14 @@ Cada relacion incluye:
 - `cantidad_obligaciones`
 - `obligaciones`
 
+
+Trazabilidad V2 por bloques:
+
+- si la obligacion de venta fue generada desde `plan_pago_venta_bloque`, la consulta puede exponer `id_plan_pago_venta_bloque` como origen comercial del item financiero;
+- el bloque no es deuda, no es cuota financiera y no tiene saldo propio;
+- futuras ampliaciones de lectura podrian sumar `numero_bloque`, `tipo_bloque`, `etiqueta_bloque` y `clave_bloque`;
+- la idempotencia financiera permanece en `clave_funcional_origen`, no en `id_plan_pago_venta_bloque`.
+
 Cada obligacion del bloque incluye:
 
 - `id_obligacion_financiera`, `estado_obligacion`

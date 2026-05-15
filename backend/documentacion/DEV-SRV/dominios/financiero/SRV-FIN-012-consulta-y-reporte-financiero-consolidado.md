@@ -70,6 +70,27 @@ Permite seguir la relación entre deuda, pago, imputación, mora, emisión y tes
 - trazabilidad completa entre entidades
 - vistas agregadas cuando corresponda
 
+## Impacto de planes de pago V2 por bloques
+
+Para obligaciones de venta generadas desde `plan_pago_venta_bloque`, los reportes financieros pueden reconstruir la trazabilidad comercial-financiera usando `obligacion_financiera.id_plan_pago_venta_bloque`.
+
+Criterios:
+
+- la deuda, saldo, estado, vencimiento, composiciones, obligados, pagos e imputaciones siguen perteneciendo a `obligacion_financiera` y tablas financieras relacionadas;
+- el bloque pertenece a `comercial` y solo explica la estructura del acuerdo que originó la obligación;
+- `id_plan_pago_venta_bloque` no es idempotencia ni reemplaza `clave_funcional_origen`;
+- `clave_funcional_origen` sigue siendo la clave idempotente financiera.
+
+Futuras consultas/reportes podrian exponer metadatos del bloque para lectura:
+
+- `id_plan_pago_venta_bloque`
+- `numero_bloque`
+- `tipo_bloque`
+- `etiqueta_bloque`
+- `clave_bloque`
+
+Esto no implica implementar nuevos endpoints ni modificar SQL en este alcance.
+
 ## Flujo de alto nivel
 
 ### Consulta

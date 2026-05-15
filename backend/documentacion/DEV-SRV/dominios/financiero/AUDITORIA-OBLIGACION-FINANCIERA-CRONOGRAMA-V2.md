@@ -364,7 +364,10 @@ en `obligacion_financiera` y la tabla tecnica
    ejemplo `VENTA:{id_venta}:PLAN:{id_plan_o_version}:CUOTA:{n}`.
 5. `id_generacion_cronograma_financiero`: identificador de corrida/version del
    cronograma para auditoria e idempotencia.
-6. `origen_legacy_tipo` / `origen_legacy_id` o tabla tecnica equivalente para
+6. `id_plan_pago_venta_bloque`: trazabilidad nullable hacia el bloque comercial
+   de origen cuando la obligacion proviene de plan de pago de venta V2 por
+   bloques; no es idempotencia.
+7. `origen_legacy_tipo` / `origen_legacy_id` o tabla tecnica equivalente para
    migrar desde `venta_plan_cuota` sin convertirla en dependencia permanente del
    modelo V2.
 
@@ -378,6 +381,7 @@ fecha de vencimiento ni `id_obligacion_financiera`.
 Debe depender de:
 
 - origen financiero: `id_relacion_generadora`
+- clave deterministica de item: `clave_funcional_origen`
 - plan/regla/corrida vigente
 - tipo de hito (`ANTICIPO`, `CUOTA`, `SALDO`, `REFUERZO`, `AJUSTE`)
 - numero funcional cuando aplique
@@ -406,8 +410,7 @@ Docs a alinear antes o junto con SQL V2:
   respuesta cuando existan.
 - DEV-API comercial: marcar `venta_plan_cuota` como V1 legacy para
   `CUOTAS_FIJAS` y documentar que metodos V2 no lo usan.
-- DER financiero/comercial: reflejar clave de idempotencia/trazabilidad si se
-  agrega.
+- DER financiero/comercial: reflejar que `obligacion_financiera.id_plan_pago_venta_bloque` es trazabilidad de origen comercial y que `clave_funcional_origen` conserva la idempotencia financiera.
 
 Tests pendientes o a ampliar en una etapa posterior:
 
