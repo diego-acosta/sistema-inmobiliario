@@ -336,9 +336,9 @@ def test_schema_cronograma_v2_planes_venta(db_session: Session) -> None:
         assert expected_triggers <= _triggers(db_session, table_name)
 
     ppvb_constraints = _constraint_definitions(db_session, "plan_pago_venta_bloque")
-    assert "importe_total_bloque >" in ppvb_constraints[
-        "chk_ppvb_importe_total_bloque"
-    ]
+    importe_total_definition = ppvb_constraints["chk_ppvb_importe_total_bloque"]
+    assert "importe_total_bloque >=" not in importe_total_definition
+    assert "importe_total_bloque >" in importe_total_definition
 
     index_definitions = _index_definitions(db_session)
     assert "UNIQUE" in index_definitions["uq_ppvb_plan_numero"]

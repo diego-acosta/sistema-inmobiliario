@@ -108,7 +108,10 @@ BEGIN
         FROM pg_constraint
         WHERE conname = 'chk_ppvb_importe_total_bloque'
           AND conrelid = 'public.plan_pago_venta_bloque'::regclass
-          AND pg_get_constraintdef(oid) NOT LIKE '%importe_total_bloque >%'
+          AND (
+              pg_get_constraintdef(oid) ~ 'importe_total_bloque\s*>=\s*\(?0'
+              OR pg_get_constraintdef(oid) !~ 'importe_total_bloque\s*>\s*\(?0'
+          )
     ) THEN
         ALTER TABLE public.plan_pago_venta_bloque
             DROP CONSTRAINT chk_ppvb_importe_total_bloque;
