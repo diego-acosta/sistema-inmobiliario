@@ -22,6 +22,8 @@ CONCEPTO_CAPITAL_VENTA = "CAPITAL_VENTA"
 ROL_OBLIGADO_COMPRADOR = "COMPRADOR"
 ESTADO_OBLIGACION_PROYECTADA = "PROYECTADA"
 TIPO_ITEM_CUOTA = "CUOTA"
+TIPO_BLOQUE_TRAMO_CUOTAS = "TRAMO_CUOTAS"
+ETIQUETA_BLOQUE_CUOTAS_IGUALES = "Cuotas iguales"
 
 
 def add_months(value: date, months: int) -> date:
@@ -111,9 +113,34 @@ class GeneracionCronogramaCreatePayload:
 
 
 @dataclass(slots=True)
+class PlanPagoVentaBloqueUpsertPayload:
+    id_plan_pago_venta: int
+    numero_bloque: int
+    tipo_bloque: str
+    etiqueta_bloque: str
+    clave_bloque: str
+    cantidad_cuotas: int | None
+    importe_total_bloque: Decimal | None
+    importe_cuota: Decimal | None
+    fecha_vencimiento: date | None
+    fecha_primer_vencimiento: date | None
+    periodicidad: str | None
+    regla_redondeo: str | None
+    concepto_financiero_codigo: str | None
+    observaciones: str | None
+    created_at: datetime
+    updated_at: datetime
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: UUID | None
+    op_id_ultima_modificacion: UUID | None
+
+
+@dataclass(slots=True)
 class ObligacionCronogramaV2CreatePayload:
     id_relacion_generadora: int
     id_generacion_cronograma_financiero: int
+    id_plan_pago_venta_bloque: int | None
     numero_obligacion: int
     tipo_item_cronograma: str
     etiqueta_obligacion: str
@@ -161,6 +188,10 @@ class PlanPagoVentaV2Repository(Protocol):
 
     def get_or_create_generacion_cronograma(
         self, payload: GeneracionCronogramaCreatePayload
+    ) -> dict[str, Any]: ...
+
+    def get_or_create_plan_pago_venta_bloque(
+        self, payload: PlanPagoVentaBloqueUpsertPayload
     ) -> dict[str, Any]: ...
 
     def get_concepto_financiero_by_codigo(
@@ -301,6 +332,33 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleService:
             cantidad_cuotas=command.cantidad_cuotas,
             fecha_primer_vencimiento=command.fecha_primer_vencimiento,
         )
+        bloque_cuotas = self.repository.get_or_create_plan_pago_venta_bloque(
+            PlanPagoVentaBloqueUpsertPayload(
+                id_plan_pago_venta=plan["id_plan_pago_venta"],
+                numero_bloque=1,
+                tipo_bloque=TIPO_BLOQUE_TRAMO_CUOTAS,
+                etiqueta_bloque=ETIQUETA_BLOQUE_CUOTAS_IGUALES,
+                clave_bloque=(
+                    f"PLAN_PAGO_VENTA:{plan['id_plan_pago_venta']}:"
+                    "BLOQUE:TRAMO_CUOTAS:1"
+                ),
+                cantidad_cuotas=command.cantidad_cuotas,
+                importe_total_bloque=None,
+                importe_cuota=cuotas[0][1],
+                fecha_vencimiento=None,
+                fecha_primer_vencimiento=command.fecha_primer_vencimiento,
+                periodicidad=periodicidad,
+                regla_redondeo=regla_redondeo,
+                concepto_financiero_codigo=CONCEPTO_CAPITAL_VENTA,
+                observaciones=None,
+                created_at=now,
+                updated_at=now,
+                id_instalacion_origen=id_instalacion,
+                id_instalacion_ultima_modificacion=id_instalacion,
+                op_id_alta=op_id,
+                op_id_ultima_modificacion=op_id,
+            )
+        )
         claves = [
             f"PLAN_PAGO_VENTA:{plan['id_plan_pago_venta']}:CUOTA:{numero}"
             for numero, _, _ in cuotas
@@ -317,6 +375,9 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleService:
                         id_relacion_generadora=relacion["id_relacion_generadora"],
                         id_generacion_cronograma_financiero=generacion[
                             "id_generacion_cronograma_financiero"
+                        ],
+                        id_plan_pago_venta_bloque=bloque_cuotas[
+                            "id_plan_pago_venta_bloque"
                         ],
                         numero_obligacion=numero,
                         tipo_item_cronograma=TIPO_ITEM_CUOTA,

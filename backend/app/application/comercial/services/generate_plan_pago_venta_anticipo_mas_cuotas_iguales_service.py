@@ -16,11 +16,13 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     METODO_CUOTAS_IGUALES_SIMPLE,
     ObligacionCronogramaV2CreatePayload,
     PERIODICIDAD_MENSUAL,
+    PlanPagoVentaBloqueUpsertPayload,
     PlanPagoVentaUpsertPayload,
     PlanPagoVentaV2Repository,
     REGLA_REDONDEO_ULTIMA_CUOTA,
     ROL_OBLIGADO_COMPRADOR,
     RelacionGeneradoraUpsertPayload,
+    TIPO_BLOQUE_TRAMO_CUOTAS,
     TIPO_GENERACION_PLAN_PAGO_VENTA_V2,
     TIPO_ITEM_CUOTA,
     TIPO_ORIGEN_VENTA,
@@ -31,6 +33,7 @@ from app.application.common.results import AppResult
 METODO_ANTICIPO_MAS_CUOTAS_IGUALES = "ANTICIPO_MAS_CUOTAS_IGUALES"
 CONCEPTO_ANTICIPO_VENTA = "ANTICIPO_VENTA"
 TIPO_ITEM_ANTICIPO = "ANTICIPO"
+TIPO_BLOQUE_ANTICIPO = "ANTICIPO"
 
 
 class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
@@ -158,6 +161,60 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
             cantidad_cuotas=command.cantidad_cuotas,
             fecha_primer_vencimiento=command.fecha_primer_vencimiento,
         )
+        bloque_anticipo = self.repository.get_or_create_plan_pago_venta_bloque(
+            PlanPagoVentaBloqueUpsertPayload(
+                id_plan_pago_venta=plan["id_plan_pago_venta"],
+                numero_bloque=1,
+                tipo_bloque=TIPO_BLOQUE_ANTICIPO,
+                etiqueta_bloque="Anticipo",
+                clave_bloque=(
+                    f"PLAN_PAGO_VENTA:{plan['id_plan_pago_venta']}:"
+                    "BLOQUE:ANTICIPO:1"
+                ),
+                cantidad_cuotas=None,
+                importe_total_bloque=command.importe_anticipo,
+                importe_cuota=None,
+                fecha_vencimiento=command.fecha_vencimiento_anticipo,
+                fecha_primer_vencimiento=None,
+                periodicidad=None,
+                regla_redondeo=None,
+                concepto_financiero_codigo=CONCEPTO_ANTICIPO_VENTA,
+                observaciones=None,
+                created_at=now,
+                updated_at=now,
+                id_instalacion_origen=id_instalacion,
+                id_instalacion_ultima_modificacion=id_instalacion,
+                op_id_alta=op_id,
+                op_id_ultima_modificacion=op_id,
+            )
+        )
+        bloque_cuotas = self.repository.get_or_create_plan_pago_venta_bloque(
+            PlanPagoVentaBloqueUpsertPayload(
+                id_plan_pago_venta=plan["id_plan_pago_venta"],
+                numero_bloque=2,
+                tipo_bloque=TIPO_BLOQUE_TRAMO_CUOTAS,
+                etiqueta_bloque="Cuotas saldo",
+                clave_bloque=(
+                    f"PLAN_PAGO_VENTA:{plan['id_plan_pago_venta']}:"
+                    "BLOQUE:TRAMO_CUOTAS:1"
+                ),
+                cantidad_cuotas=command.cantidad_cuotas,
+                importe_total_bloque=None,
+                importe_cuota=cuotas[0][1],
+                fecha_vencimiento=None,
+                fecha_primer_vencimiento=command.fecha_primer_vencimiento,
+                periodicidad=periodicidad,
+                regla_redondeo=regla_redondeo,
+                concepto_financiero_codigo=CONCEPTO_CAPITAL_VENTA,
+                observaciones=None,
+                created_at=now,
+                updated_at=now,
+                id_instalacion_origen=id_instalacion,
+                id_instalacion_ultima_modificacion=id_instalacion,
+                op_id_alta=op_id,
+                op_id_ultima_modificacion=op_id,
+            )
+        )
 
         claves = [
             f"PLAN_PAGO_VENTA:{plan['id_plan_pago_venta']}:ANTICIPO:1",
@@ -172,6 +229,9 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
                 id_relacion_generadora=relacion["id_relacion_generadora"],
                 id_generacion_cronograma_financiero=generacion[
                     "id_generacion_cronograma_financiero"
+                ],
+                id_plan_pago_venta_bloque=bloque_anticipo[
+                    "id_plan_pago_venta_bloque"
                 ],
                 numero_obligacion=1,
                 tipo_item_cronograma=TIPO_ITEM_ANTICIPO,
@@ -201,6 +261,9 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
                     id_relacion_generadora=relacion["id_relacion_generadora"],
                     id_generacion_cronograma_financiero=generacion[
                         "id_generacion_cronograma_financiero"
+                    ],
+                    id_plan_pago_venta_bloque=bloque_cuotas[
+                        "id_plan_pago_venta_bloque"
                     ],
                     numero_obligacion=numero_cuota + 1,
                     tipo_item_cronograma=TIPO_ITEM_CUOTA,

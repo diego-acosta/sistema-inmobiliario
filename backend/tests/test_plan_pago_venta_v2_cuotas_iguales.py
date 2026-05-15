@@ -95,6 +95,7 @@ def _obligaciones_v2(db_session, *, id_venta: int) -> list[dict]:
             """
             SELECT
                 o.id_obligacion_financiera,
+                o.id_plan_pago_venta_bloque,
                 o.numero_obligacion,
                 o.tipo_item_cronograma,
                 o.etiqueta_obligacion,
@@ -130,6 +131,39 @@ def _obligaciones_v2(db_session, *, id_venta: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def _bloques_plan_pago_venta_v2(db_session, *, id_venta: int) -> list[dict]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT
+                b.id_plan_pago_venta_bloque,
+                b.id_plan_pago_venta,
+                b.numero_bloque,
+                b.tipo_bloque,
+                b.etiqueta_bloque,
+                b.clave_bloque,
+                b.cantidad_cuotas,
+                b.importe_total_bloque,
+                b.importe_cuota,
+                b.fecha_vencimiento,
+                b.fecha_primer_vencimiento,
+                b.periodicidad,
+                b.regla_redondeo,
+                b.concepto_financiero_codigo
+            FROM plan_pago_venta ppv
+            JOIN plan_pago_venta_bloque b
+              ON b.id_plan_pago_venta = ppv.id_plan_pago_venta
+             AND b.deleted_at IS NULL
+            WHERE ppv.id_venta = :id_venta
+              AND ppv.deleted_at IS NULL
+            ORDER BY b.numero_bloque ASC
+            """
+        ),
+        {"id_venta": id_venta},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def test_cuotas_iguales_v2_crea_plan_generacion_obligaciones_y_no_usa_venta_plan_cuota(
     client, db_session
 ) -> None:
@@ -146,8 +180,25 @@ def test_cuotas_iguales_v2_crea_plan_generacion_obligaciones_y_no_usa_venta_plan
     assert len(data["obligaciones"]) == 12
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
+    bloques = _bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)
+    assert len(bloques) == 1
+    bloque = bloques[0]
+    assert bloque["numero_bloque"] == 1
+    assert bloque["tipo_bloque"] == "TRAMO_CUOTAS"
+    assert bloque["etiqueta_bloque"] == "Cuotas iguales"
+    assert bloque["clave_bloque"].endswith(":BLOQUE:TRAMO_CUOTAS:1")
+    assert bloque["cantidad_cuotas"] == 12
+    assert bloque["importe_cuota"] == Decimal("1000000.00")
+    assert bloque["fecha_primer_vencimiento"].isoformat() == "2026-06-10"
+    assert bloque["periodicidad"] == "MENSUAL"
+    assert bloque["regla_redondeo"] == "ULTIMA_CUOTA"
+    assert bloque["concepto_financiero_codigo"] == "CAPITAL_VENTA"
+
     obligaciones = _obligaciones_v2(db_session, id_venta=id_venta)
     assert len(obligaciones) == 12
+    assert {ob["id_plan_pago_venta_bloque"] for ob in obligaciones} == {
+        bloque["id_plan_pago_venta_bloque"]
+    }
     assert sum(
         (obligacion["importe_total"] for obligacion in obligaciones),
         start=Decimal("0"),
@@ -229,6 +280,7 @@ def test_cuotas_iguales_v2_reejecutar_no_duplica_obligaciones(client, db_session
 
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
+    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 1
     obligaciones = _obligaciones_v2(db_session, id_venta=id_venta)
     assert len(obligaciones) == 12
     assert db_session.execute(

@@ -17,6 +17,7 @@ from tests.test_fin_event_venta_confirmada import (
     _vincular_comprador_venta,
 )
 from tests.test_plan_pago_venta_v2_cuotas_iguales import (
+    _bloques_plan_pago_venta_v2,
     _count_venta_plan_cuota,
     _insertar_venta_minima,
 )
@@ -67,6 +68,7 @@ def _obligaciones_v2(db_session, *, id_venta: int) -> list[dict]:
             text("""
             SELECT
                 o.id_obligacion_financiera,
+                o.id_plan_pago_venta_bloque,
                 o.numero_obligacion,
                 o.tipo_item_cronograma,
                 o.etiqueta_obligacion,
@@ -201,10 +203,35 @@ def test_anticipo_mas_cuotas_v2_crea_plan_generacion_anticipo_y_cuotas(
     assert len(data["obligaciones"]) == 11
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
+    bloques = _bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)
+    assert len(bloques) == 2
+    bloque_anticipo = bloques[0]
+    bloque_cuotas = bloques[1]
+    assert bloque_anticipo["numero_bloque"] == 1
+    assert bloque_anticipo["tipo_bloque"] == "ANTICIPO"
+    assert bloque_anticipo["etiqueta_bloque"] == "Anticipo"
+    assert bloque_anticipo["clave_bloque"].endswith(":BLOQUE:ANTICIPO:1")
+    assert bloque_anticipo["importe_total_bloque"] == Decimal("2000000.00")
+    assert bloque_anticipo["fecha_vencimiento"].isoformat() == "2026-05-10"
+    assert bloque_anticipo["concepto_financiero_codigo"] == "ANTICIPO_VENTA"
+    assert bloque_cuotas["numero_bloque"] == 2
+    assert bloque_cuotas["tipo_bloque"] == "TRAMO_CUOTAS"
+    assert bloque_cuotas["etiqueta_bloque"] == "Cuotas saldo"
+    assert bloque_cuotas["clave_bloque"].endswith(":BLOQUE:TRAMO_CUOTAS:1")
+    assert bloque_cuotas["cantidad_cuotas"] == 10
+    assert bloque_cuotas["importe_cuota"] == Decimal("1000000.00")
+    assert bloque_cuotas["fecha_primer_vencimiento"].isoformat() == "2026-06-10"
+    assert bloque_cuotas["periodicidad"] == "MENSUAL"
+    assert bloque_cuotas["regla_redondeo"] == "ULTIMA_CUOTA"
+    assert bloque_cuotas["concepto_financiero_codigo"] == "CAPITAL_VENTA"
+
     obligaciones = _obligaciones_v2(db_session, id_venta=id_venta)
     assert len(obligaciones) == 11
     assert [ob["numero_obligacion"] for ob in obligaciones] == list(range(1, 12))
     assert obligaciones[0]["tipo_item_cronograma"] == "ANTICIPO"
+    assert obligaciones[0]["id_plan_pago_venta_bloque"] == bloque_anticipo[
+        "id_plan_pago_venta_bloque"
+    ]
     assert obligaciones[0]["etiqueta_obligacion"] == "Anticipo"
     assert obligaciones[0]["clave_funcional_origen"].endswith(":ANTICIPO:1")
     assert obligaciones[0]["fecha_emision"].isoformat() == "2026-05-10"
@@ -214,6 +241,9 @@ def test_anticipo_mas_cuotas_v2_crea_plan_generacion_anticipo_y_cuotas(
     assert obligaciones[0]["codigo_concepto_financiero"] == "ANTICIPO_VENTA"
 
     cuotas = obligaciones[1:]
+    assert {ob["id_plan_pago_venta_bloque"] for ob in cuotas} == {
+        bloque_cuotas["id_plan_pago_venta_bloque"]
+    }
     assert {ob["tipo_item_cronograma"] for ob in cuotas} == {"CUOTA"}
     assert [ob["etiqueta_obligacion"] for ob in cuotas[:2]] == ["Cuota 1", "Cuota 2"]
     assert cuotas[0]["clave_funcional_origen"].endswith(":CUOTA:1")
@@ -270,6 +300,7 @@ def test_anticipo_mas_cuotas_v2_reejecutar_mismo_payload_no_duplica(
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
     assert len(_obligaciones_v2(db_session, id_venta=id_venta)) == 11
+    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 2
     assert _count_generaciones(db_session, id_venta=id_venta) == 1
 
 

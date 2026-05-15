@@ -316,6 +316,81 @@ class PlanPagoVentaV2Repository:
         row = self.db.execute(stmt, values).mappings().one()
         return dict(row)
 
+    def get_or_create_plan_pago_venta_bloque(self, payload: Any) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO plan_pago_venta_bloque (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_plan_pago_venta,
+                numero_bloque,
+                tipo_bloque,
+                etiqueta_bloque,
+                clave_bloque,
+                cantidad_cuotas,
+                importe_total_bloque,
+                importe_cuota,
+                fecha_vencimiento,
+                fecha_primer_vencimiento,
+                periodicidad,
+                regla_redondeo,
+                concepto_financiero_codigo,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_plan_pago_venta,
+                :numero_bloque,
+                :tipo_bloque,
+                :etiqueta_bloque,
+                :clave_bloque,
+                :cantidad_cuotas,
+                :importe_total_bloque,
+                :importe_cuota,
+                :fecha_vencimiento,
+                :fecha_primer_vencimiento,
+                :periodicidad,
+                :regla_redondeo,
+                :concepto_financiero_codigo,
+                :observaciones
+            )
+            ON CONFLICT (id_plan_pago_venta, clave_bloque)
+            WHERE deleted_at IS NULL
+            DO UPDATE SET updated_at = plan_pago_venta_bloque.updated_at
+            RETURNING
+                id_plan_pago_venta_bloque,
+                id_plan_pago_venta,
+                numero_bloque,
+                tipo_bloque,
+                etiqueta_bloque,
+                clave_bloque,
+                cantidad_cuotas,
+                importe_total_bloque,
+                importe_cuota,
+                fecha_vencimiento,
+                fecha_primer_vencimiento,
+                periodicidad,
+                regla_redondeo,
+                concepto_financiero_codigo
+            """
+        )
+        row = self.db.execute(stmt, values).mappings().one()
+        return dict(row)
+
     def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
         stmt = text(
             """
@@ -362,6 +437,26 @@ class PlanPagoVentaV2Repository:
         self, payload: Any
     ) -> dict[str, Any]:
         values = self._values(payload)
+        existing = self._get_obligacion_by_clave_or_none(
+            id_relacion_generadora=values["id_relacion_generadora"],
+            clave_funcional_origen=values["clave_funcional_origen"],
+        )
+        if existing is not None:
+            if (
+                existing["id_plan_pago_venta_bloque"] is None
+                and values["id_plan_pago_venta_bloque"] is not None
+            ):
+                return self._set_obligacion_plan_pago_venta_bloque(
+                    id_obligacion_financiera=existing["id_obligacion_financiera"],
+                    id_plan_pago_venta_bloque=values["id_plan_pago_venta_bloque"],
+                    updated_at=values["updated_at"],
+                    id_instalacion_ultima_modificacion=values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    op_id_ultima_modificacion=values["op_id_ultima_modificacion"],
+                )
+            return existing
+
         ob_stmt = text(
             """
             INSERT INTO obligacion_financiera (
@@ -375,6 +470,7 @@ class PlanPagoVentaV2Repository:
                 op_id_ultima_modificacion,
                 id_relacion_generadora,
                 id_generacion_cronograma_financiero,
+                id_plan_pago_venta_bloque,
                 numero_obligacion,
                 tipo_item_cronograma,
                 etiqueta_obligacion,
@@ -397,6 +493,7 @@ class PlanPagoVentaV2Repository:
                 :op_id_ultima_modificacion,
                 :id_relacion_generadora,
                 :id_generacion_cronograma_financiero,
+                :id_plan_pago_venta_bloque,
                 :numero_obligacion,
                 :tipo_item_cronograma,
                 :etiqueta_obligacion,
@@ -416,6 +513,7 @@ class PlanPagoVentaV2Repository:
                 id_obligacion_financiera,
                 id_relacion_generadora,
                 id_generacion_cronograma_financiero,
+                id_plan_pago_venta_bloque,
                 numero_obligacion,
                 tipo_item_cronograma,
                 etiqueta_obligacion,
@@ -453,6 +551,7 @@ class PlanPagoVentaV2Repository:
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
                 o.id_generacion_cronograma_financiero,
+                o.id_plan_pago_venta_bloque,
                 o.numero_obligacion,
                 o.tipo_item_cronograma,
                 o.etiqueta_obligacion,
@@ -484,11 +583,83 @@ class PlanPagoVentaV2Repository:
         id_relacion_generadora: int,
         clave_funcional_origen: str,
     ) -> dict[str, Any]:
+        row = self._get_obligacion_by_clave_or_none(
+            id_relacion_generadora=id_relacion_generadora,
+            clave_funcional_origen=clave_funcional_origen,
+        )
+        if row is None:
+            raise LookupError("OBLIGACION_CRONOGRAMA_NOT_FOUND")
+        return row
+
+    def _get_obligacion_by_clave_or_none(
+        self,
+        *,
+        id_relacion_generadora: int,
+        clave_funcional_origen: str,
+    ) -> dict[str, Any] | None:
         rows = self.get_obligaciones_cronograma_by_claves(
             id_relacion_generadora=id_relacion_generadora,
             claves_funcionales=[clave_funcional_origen],
         )
-        return rows[0]
+        return rows[0] if rows else None
+
+    def _set_obligacion_plan_pago_venta_bloque(
+        self,
+        *,
+        id_obligacion_financiera: int,
+        id_plan_pago_venta_bloque: int,
+        updated_at: Any,
+        id_instalacion_ultima_modificacion: int | None,
+        op_id_ultima_modificacion: Any,
+    ) -> dict[str, Any]:
+        stmt = text(
+            """
+            UPDATE obligacion_financiera
+            SET
+                id_plan_pago_venta_bloque = :id_plan_pago_venta_bloque,
+                updated_at = :updated_at,
+                id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                op_id_ultima_modificacion = :op_id_ultima_modificacion
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND deleted_at IS NULL
+              AND id_plan_pago_venta_bloque IS NULL
+            """
+        )
+        self.db.execute(
+            stmt,
+            {
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "id_plan_pago_venta_bloque": id_plan_pago_venta_bloque,
+                "updated_at": updated_at,
+                "id_instalacion_ultima_modificacion": id_instalacion_ultima_modificacion,
+                "op_id_ultima_modificacion": op_id_ultima_modificacion,
+            },
+        )
+        stmt = text(
+            """
+            SELECT
+                o.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                o.id_generacion_cronograma_financiero,
+                o.id_plan_pago_venta_bloque,
+                o.numero_obligacion,
+                o.tipo_item_cronograma,
+                o.etiqueta_obligacion,
+                o.clave_funcional_origen,
+                o.fecha_vencimiento,
+                o.importe_total,
+                o.saldo_pendiente,
+                o.moneda,
+                o.estado_obligacion
+            FROM obligacion_financiera o
+            WHERE o.id_obligacion_financiera = :id_obligacion_financiera
+              AND o.deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+        ).mappings().one()
+        return dict(row)
 
     def _create_composicion(
         self, values: dict[str, Any], id_obligacion_financiera: int
