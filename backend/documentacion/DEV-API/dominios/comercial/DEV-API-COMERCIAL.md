@@ -798,6 +798,7 @@ Estado:
 - diseno documentado
 - no implementado en el surface HTTP vigente
 - no debe ser invocado por clientes hasta que exista implementacion y tests
+- el servicio interno por bloques usa `metodo_plan_pago = PLAN_POR_BLOQUES`
 - no modifica ni promete cambios de SQL, backend productivo o UI en este alcance
 
 Documento de diseno:
@@ -856,6 +857,7 @@ Request conceptual futuro:
 Decisiones de diseno:
 
 - `tipo_pago` debe ser `CONTADO` o `FINANCIADO`
+- la cabecera persistida usa `metodo_plan_pago = PLAN_POR_BLOQUES`
 - `CONTADO` solo admite un bloque `CONTADO`
 - `FINANCIADO` admite `ANTICIPO`, uno o mas `TRAMO_CUOTAS`, `REFUERZO` y `SALDO`
 - la suma de bloques debe coincidir con `monto_total_plan`

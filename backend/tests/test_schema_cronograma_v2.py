@@ -336,6 +336,13 @@ def test_schema_cronograma_v2_planes_venta(db_session: Session) -> None:
         assert expected_triggers <= _triggers(db_session, table_name)
 
     ppvb_constraints = _constraint_definitions(db_session, "plan_pago_venta_bloque")
+    ppv_constraints = _constraint_definitions(db_session, "plan_pago_venta")
+    metodo_definition = ppv_constraints["chk_plan_pago_venta_metodo"]
+    assert "CUOTAS_IGUALES_SIMPLE" in metodo_definition
+    assert "ANTICIPO_MAS_CUOTAS_IGUALES" in metodo_definition
+    assert "CRONOGRAMA_DEFINIDO" in metodo_definition
+    assert "PLAN_POR_BLOQUES" in metodo_definition
+
     importe_total_definition = ppvb_constraints["chk_ppvb_importe_total_bloque"]
     assert "importe_total_bloque >=" not in importe_total_definition
     assert "importe_total_bloque >" in importe_total_definition

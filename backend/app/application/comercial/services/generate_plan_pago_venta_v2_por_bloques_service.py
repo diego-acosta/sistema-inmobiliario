@@ -33,7 +33,7 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
 )
 from app.application.common.results import AppResult
 
-METODO_CRONOGRAMA_DEFINIDO = "CRONOGRAMA_DEFINIDO"
+METODO_PLAN_POR_BLOQUES = "PLAN_POR_BLOQUES"
 TIPO_PAGO_CONTADO = "CONTADO"
 TIPO_PAGO_FINANCIADO = "FINANCIADO"
 TIPO_BLOQUE_CONTADO = "CONTADO"
@@ -129,7 +129,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         plan = self.repository.upsert_plan_pago_venta_borrador(
             PlanPagoVentaUpsertPayload(
                 id_venta=command.id_venta,
-                metodo_plan_pago=METODO_CRONOGRAMA_DEFINIDO,
+                metodo_plan_pago=METODO_PLAN_POR_BLOQUES,
                 estado_plan_pago="BORRADOR",
                 moneda=moneda,
                 monto_total_plan=command.monto_total_plan,
@@ -191,7 +191,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
 
         clave_generacion = (
             f"PLAN_PAGO_VENTA:{plan['id_plan_pago_venta']}:"
-            f"{METODO_CRONOGRAMA_DEFINIDO}"
+            f"{METODO_PLAN_POR_BLOQUES}"
         )
         generacion = self.repository.get_or_create_generacion_cronograma(
             GeneracionCronogramaCreatePayload(
@@ -544,7 +544,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         tipo_pago: str,
         moneda: str,
     ) -> bool:
-        if plan_vivo["metodo_plan_pago"] != METODO_CRONOGRAMA_DEFINIDO:
+        if plan_vivo["metodo_plan_pago"] != METODO_PLAN_POR_BLOQUES:
             return False
         if plan_vivo["estado_plan_pago"] not in {"BORRADOR", "GENERADO"}:
             return False

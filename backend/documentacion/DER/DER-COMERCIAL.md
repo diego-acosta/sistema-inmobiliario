@@ -169,6 +169,8 @@ Observaciones:
 - es cabecera/regla comercial; no representa deuda, cuota financiera, saldo ni pago
 - los montos exigibles o proyectados se materializan en `obligacion_financiera`
 - puede generar uno o mas bloques comerciales en `plan_pago_venta_bloque`
+- `PLAN_POR_BLOQUES` es el metodo formal para planes V2 estructurados por bloques
+- `CRONOGRAMA_DEFINIDO` queda reservado para cronogramas manuales/libres
 - la unicidad activa por venta esta materializada en SQL para estados vivos del plan
 
 ### `plan_pago_venta_bloque`

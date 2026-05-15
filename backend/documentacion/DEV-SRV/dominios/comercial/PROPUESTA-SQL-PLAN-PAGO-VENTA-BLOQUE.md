@@ -199,7 +199,7 @@ Estrategia de compatibilidad:
 
 1. Crear la tabla sin exigir que los endpoints existentes la usen.
 2. No hacer `NOT NULL` en `obligacion_financiera.id_plan_pago_venta_bloque`, porque las obligaciones V2 actuales ya pueden existir sin bloque.
-3. No alterar `plan_pago_venta.metodo_plan_pago` en este patch salvo decision explicita posterior para un metodo `BLOQUES` o `CRONOGRAMA_DEFINIDO` alimentado por bloques.
+3. No alterar `plan_pago_venta.metodo_plan_pago` en este patch salvo decision explicita posterior para un metodo `PLAN_POR_BLOQUES`.
 4. Mantener `CUOTAS_IGUALES_SIMPLE` y `ANTICIPO_MAS_CUOTAS_IGUALES` como flujos V2 vigentes hasta que exista endpoint unificado.
 5. Si luego se implementa backend de bloques, debe crear bloques y expandirlos a obligaciones, pero no reinterpretar automaticamente planes V2 historicos.
 

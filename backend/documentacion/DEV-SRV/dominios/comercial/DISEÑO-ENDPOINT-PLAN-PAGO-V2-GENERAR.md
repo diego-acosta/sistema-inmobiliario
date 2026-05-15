@@ -2,7 +2,11 @@
 
 ## Estado
 
-Documento de diseno futuro. No implementado.
+Documento de diseno futuro para el endpoint publico. No implementado como
+endpoint HTTP.
+
+El servicio interno unificado por bloques usa `metodo_plan_pago =
+PLAN_POR_BLOQUES`.
 
 Este documento es exclusivamente documental: no modifica ni promete modificar
 SQL, backend productivo, UI, pagos, caja, recibos ni endpoints publicos
@@ -472,7 +476,7 @@ El flujo transaccional futuro, si se aprueba, deberia:
     "plan_pago_venta": {
       "id_plan_pago_venta": 20,
       "id_venta": 1,
-      "metodo_plan_pago": "BLOQUES",
+      "metodo_plan_pago": "PLAN_POR_BLOQUES",
       "estado_plan_pago": "GENERADO",
       "tipo_pago": "FINANCIADO",
       "moneda": "ARS",
@@ -496,7 +500,7 @@ El flujo transaccional futuro, si se aprueba, deberia:
       "id_relacion_generadora": 10,
       "id_plan_pago_venta": 20,
       "tipo_generacion": "PLAN_PAGO_VENTA_V2",
-      "clave_generacion": "PLAN_PAGO_VENTA:20:BLOQUES",
+      "clave_generacion": "PLAN_PAGO_VENTA:20:PLAN_POR_BLOQUES",
       "estado_generacion": "GENERADA"
     },
     "obligaciones": [
@@ -524,6 +528,10 @@ Nota: `tipo_pago` hoy no existe confirmado como columna en `plan_pago_venta`.
 Si no se agrega SQL, el response puede derivarlo del metodo o devolverlo solo
 como dato calculado del servicio. La implementacion futura debe confirmar esta
 decision contra SQL vigente.
+
+`PLAN_POR_BLOQUES` es el valor formal de `plan_pago_venta.metodo_plan_pago`
+para el motor estructurado por bloques. `CRONOGRAMA_DEFINIDO` queda reservado
+para cronogramas manuales/libres.
 
 ## Errores esperados
 
@@ -644,6 +652,7 @@ No implementar en el primer alcance:
 ## Decisiones cerradas para implementacion futura
 
 - El endpoint recibe bloques, no metodos tecnicos aislados.
+- La cabecera usa `metodo_plan_pago = PLAN_POR_BLOQUES`.
 - `tipo_pago` debe existir en el request.
 - `numero_bloque` lo asigna backend por orden del array.
 - `clave_bloque` se genera por plan, tipo de bloque y ordinal por tipo.

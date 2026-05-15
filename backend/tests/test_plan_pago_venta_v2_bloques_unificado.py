@@ -143,7 +143,7 @@ def test_servicio_unificado_genera_contado_como_saldo_con_capital(db_session) ->
     )
 
     assert result.success, result.errors
-    assert result.data["plan_pago_venta"]["metodo_plan_pago"] == "CRONOGRAMA_DEFINIDO"
+    assert result.data["plan_pago_venta"]["metodo_plan_pago"] == "PLAN_POR_BLOQUES"
     bloques = _bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)
     assert len(bloques) == 1
     assert bloques[0]["tipo_bloque"] == "CONTADO"

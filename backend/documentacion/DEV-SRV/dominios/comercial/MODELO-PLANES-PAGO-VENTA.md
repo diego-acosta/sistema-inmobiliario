@@ -354,11 +354,35 @@ Reglas implementadas:
 - no se escribe `venta_plan_cuota`
 - no se registran pagos, recibos, caja ni tesoreria
 
+#### PLAN_POR_BLOQUES
+
+Regla:
+
+- identifica el motor V2 estructurado por `plan_pago_venta_bloque`
+- la cabecera `plan_pago_venta` describe el plan comercial general
+- cada bloque comercial describe una parte pactada de la forma de pago
+- las obligaciones financieras se generan desde esos bloques
+- cada obligacion conserva `id_plan_pago_venta_bloque` como trazabilidad
+- `clave_funcional_origen` sigue siendo la idempotencia financiera
+
+Uso esperado:
+
+- pago contado estructurado como bloque `CONTADO`
+- pago financiado con anticipo, tramos de cuotas, refuerzos y saldo
+- endpoint unificado futuro `plan-pago-v2/generar`
+- servicio interno `GeneratePlanPagoVentaV2PorBloquesService`
+
+Restriccion:
+
+- no debe usarse para cronogramas manuales/libres sin estructura de bloques
+- no usa `venta_plan_cuota`
+- no crea `plan_pago_venta_cuota` ni `plan_pago_venta_tramo`
+
 #### CRONOGRAMA_DEFINIDO
 
 Regla:
 
-- permite cargar un cronograma definido por el usuario
+- queda reservado para cargar un cronograma manual/libre definido por el usuario
 - el cronograma se persiste como obligaciones financieras
 - no se crea `plan_pago_venta_cuota`
 - no se crea `plan_pago_venta_tramo`
