@@ -32,6 +32,11 @@ DEFAULT_MONEDA = "ARS"
 UNIQUE_BLOCKS = ("CONTADO", "ANTICIPO", "REFUERZO", "SALDO")
 
 
+def _border_all(width: int | float, color: ft.ColorValue) -> ft.Border:
+    side = ft.BorderSide(width, color)
+    return ft.Border(top=side, right=side, bottom=side, left=side)
+
+
 @dataclass
 class BloqueDraft:
     uid: str
@@ -158,14 +163,14 @@ class PlanPagoV2BloquesPrototype:
                         spacing=12,
                     ),
                     padding=14,
-                    border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
                     border_radius=6,
                 ),
                 self.validation_banner,
                 ft.Container(
                     content=self.summary,
                     padding=14,
-                    border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
                     border_radius=6,
                 ),
                 ft.Row(
@@ -323,7 +328,7 @@ class PlanPagoV2BloquesPrototype:
             spacing=4,
         )
         self.validation_banner.padding = 12
-        self.validation_banner.border = ft.border.all(1, ft.Colors.RED_200)
+        self.validation_banner.border = _border_all(1, ft.Colors.RED_200)
         self.validation_banner.border_radius = 6
 
     def _render_blocks(self) -> None:
@@ -432,7 +437,7 @@ class PlanPagoV2BloquesPrototype:
         return ft.Container(
             content=ft.Column(controls=controls, spacing=10),
             padding=12,
-            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
             border_radius=6,
         )
 
@@ -759,7 +764,7 @@ def _plan_summary(data: dict[str, Any]) -> ft.Control:
             spacing=8,
         ),
         padding=12,
-        border=ft.border.all(1, ft.Colors.GREEN_200),
+        border=_border_all(1, ft.Colors.GREEN_200),
         border_radius=6,
     )
 
@@ -807,7 +812,7 @@ def _plan_readonly(plan: dict[str, Any]) -> ft.Control:
     return ft.Container(
         content=ft.Column(controls=controls, spacing=8),
         padding=12,
-        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border=_border_all(1, ft.Colors.BLUE_GREY_100),
         border_radius=6,
     )
 
