@@ -103,6 +103,17 @@ END $$;
 
 DO $$
 BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_ppvb_importe_total_bloque'
+          AND conrelid = 'public.plan_pago_venta_bloque'::regclass
+          AND pg_get_constraintdef(oid) NOT LIKE '%importe_total_bloque >%'
+    ) THEN
+        ALTER TABLE public.plan_pago_venta_bloque
+            DROP CONSTRAINT chk_ppvb_importe_total_bloque;
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
@@ -111,7 +122,7 @@ BEGIN
     ) THEN
         ALTER TABLE public.plan_pago_venta_bloque
             ADD CONSTRAINT chk_ppvb_importe_total_bloque
-            CHECK (importe_total_bloque IS NULL OR importe_total_bloque >= 0);
+            CHECK (importe_total_bloque IS NULL OR importe_total_bloque > 0);
     END IF;
 END $$;
 
@@ -238,13 +249,16 @@ BEGIN
 END $$;
 
 COMMENT ON TABLE public.plan_pago_venta_bloque IS
-    'Estructura comercial/regla de un plan de pago de venta. No representa deuda ni cuota financiera; la deuda se materializa en obligacion_financiera.';
+    'Estructura/regla comercial de un plan de pago de venta. No representa deuda, cuota financiera ni obligacion exigible; la deuda se materializa exclusivamente en obligacion_financiera.';
 
 COMMENT ON COLUMN public.plan_pago_venta_bloque.clave_bloque IS
-    'Clave estable del bloque dentro del plan de pago de venta.';
+    'Clave estable del bloque dentro del plan de pago de venta; no reemplaza clave_funcional_origen de obligacion_financiera.';
 
 COMMENT ON COLUMN public.plan_pago_venta_bloque.tipo_bloque IS
-    'Tipo estructural inicial: CONTADO, ANTICIPO, TRAMO_CUOTAS, REFUERZO o SALDO.';
+    'Tipo estructural comercial inicial: CONTADO, ANTICIPO, TRAMO_CUOTAS, REFUERZO o SALDO. No equivale necesariamente a obligacion_financiera.tipo_item_cronograma.';
+
+COMMENT ON COLUMN public.plan_pago_venta_bloque.concepto_financiero_codigo IS
+    'Codigo conceptual sugerido para la futura materializacion financiera; queda libre y sin FK por ahora hasta confirmar el mapeo definitivo.';
 
 COMMENT ON COLUMN public.obligacion_financiera.id_plan_pago_venta_bloque IS
     'Trazabilidad hacia el bloque comercial que origino la obligacion; no es la clave de idempotencia.';

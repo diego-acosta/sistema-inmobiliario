@@ -198,6 +198,20 @@ def _constraints(db_session: Session, table_name: str) -> set[str]:
     return set(rows)
 
 
+def _constraint_definitions(db_session: Session, table_name: str) -> dict[str, str]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT conname, pg_get_constraintdef(oid) AS definition
+            FROM pg_constraint
+            WHERE conrelid = (:qualified_name)::regclass
+            """
+        ),
+        {"qualified_name": f"public.{table_name}"},
+    ).mappings()
+    return {row["conname"]: row["definition"] for row in rows}
+
+
 def _indexes(db_session: Session) -> set[str]:
     rows = db_session.execute(
         text(
@@ -209,6 +223,55 @@ def _indexes(db_session: Session) -> set[str]:
         )
     ).scalars()
     return set(rows)
+
+
+def _index_definitions(db_session: Session) -> dict[str, str]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+            """
+        )
+    ).mappings()
+    return {row["indexname"]: row["indexdef"] for row in rows}
+
+
+def _comments(db_session: Session) -> dict[str, str]:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT
+                obj_description(
+                    'public.plan_pago_venta_bloque'::regclass
+                ) AS table_comment,
+                col_description(
+                    'public.plan_pago_venta_bloque'::regclass,
+                    13
+                ) AS tipo_bloque_comment,
+                col_description(
+                    'public.plan_pago_venta_bloque'::regclass,
+                    15
+                ) AS clave_bloque_comment,
+                col_description(
+                    'public.plan_pago_venta_bloque'::regclass,
+                    23
+                ) AS concepto_financiero_codigo_comment,
+                col_description(
+                    'public.obligacion_financiera'::regclass,
+                    (
+                        SELECT ordinal_position
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'obligacion_financiera'
+                          AND column_name = 'id_plan_pago_venta_bloque'
+                    )::integer
+                ) AS id_plan_pago_venta_bloque_comment
+            """
+        )
+    ).mappings().one()
+    return dict(row)
 
 
 def _triggers(db_session: Session, table_name: str) -> set[str]:
@@ -253,3 +316,26 @@ def test_schema_cronograma_v2_planes_venta(db_session: Session) -> None:
 
     for table_name, expected_triggers in EXPECTED_TRIGGERS_BY_TABLE.items():
         assert expected_triggers <= _triggers(db_session, table_name)
+
+    ppvb_constraints = _constraint_definitions(db_session, "plan_pago_venta_bloque")
+    assert "importe_total_bloque >" in ppvb_constraints[
+        "chk_ppvb_importe_total_bloque"
+    ]
+
+    index_definitions = _index_definitions(db_session)
+    assert "UNIQUE" in index_definitions["uq_ppvb_plan_numero"]
+    assert "WHERE (deleted_at IS NULL)" in index_definitions["uq_ppvb_plan_numero"]
+    assert "UNIQUE" in index_definitions["uq_ppvb_plan_clave"]
+    assert "WHERE (deleted_at IS NULL)" in index_definitions["uq_ppvb_plan_clave"]
+    assert "WHERE (deleted_at IS NULL)" in index_definitions[
+        "idx_obl_plan_pago_venta_bloque"
+    ]
+
+    comments = _comments(db_session)
+    assert "No representa deuda" in comments["table_comment"]
+    assert "No equivale necesariamente" in comments["tipo_bloque_comment"]
+    assert "no reemplaza clave_funcional_origen" in comments["clave_bloque_comment"]
+    assert "sin FK por ahora" in comments["concepto_financiero_codigo_comment"]
+    assert "no es la clave de idempotencia" in comments[
+        "id_plan_pago_venta_bloque_comment"
+    ]
