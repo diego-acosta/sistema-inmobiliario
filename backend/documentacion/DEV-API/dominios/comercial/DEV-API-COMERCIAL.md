@@ -769,6 +769,7 @@ Estado:
 - diseno documentado
 - no implementado en el surface HTTP vigente
 - no debe ser invocado por clientes hasta que exista implementacion y tests
+- no modifica ni promete cambios de SQL, backend productivo o UI en este alcance
 
 Documento de diseno:
 - `backend/documentacion/DEV-SRV/dominios/comercial/DISEÑO-ENDPOINT-PLAN-PAGO-V2-GENERAR.md`
@@ -830,7 +831,10 @@ Decisiones de diseno:
 - `FINANCIADO` admite `ANTICIPO`, uno o mas `TRAMO_CUOTAS`, `REFUERZO` y `SALDO`
 - la suma de bloques debe coincidir con `monto_total_plan`
 - `numero_bloque` se asigna por orden del array
+- el request no recibe `numero_bloque`, `clave_bloque`, `numero_obligacion`, `clave_funcional_origen` ni ids tecnicos
 - `clave_bloque` se genera por plan, tipo de bloque y ordinal por tipo
+- `clave_funcional_origen` se mantiene como idempotencia financiera de la obligacion
+- `id_plan_pago_venta_bloque` es trazabilidad bloque-obligacion, no idempotencia
 - `numero_obligacion` es secuencial global sobre las obligaciones resultantes
 - `CONTADO` se materializa como `tipo_item_cronograma = SALDO` mientras SQL no soporte `CONTADO` como item de cronograma
 - el endpoint unificado no usa `venta_plan_cuota`

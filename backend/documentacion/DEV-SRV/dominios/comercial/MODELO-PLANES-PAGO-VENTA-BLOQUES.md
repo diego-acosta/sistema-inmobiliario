@@ -9,7 +9,8 @@ El objetivo es representar como el usuario negocia y carga una forma de pago:
 contado o financiado, anticipo opcional, tramos de cuotas, refuerzos, saldo
 final y, en etapas posteriores, indexacion o interes.
 
-Este documento es de diseno. No implementa SQL, backend, UI ni migracion.
+Este documento es de diseno. No implementa ni promete cambios de SQL, backend,
+UI ni migracion. Cualquier cambio futuro requiere issue, patch y tests propios.
 
 ## Principio rector
 
@@ -33,9 +34,12 @@ La materializacion financiera sigue siendo:
 - `composicion_obligacion`
 - `obligacion_obligado`
 
-## Decision: tabla de bloques
+## Decision de diseno: estructura de bloques
 
-Conviene crear una tabla `plan_pago_venta_bloque`.
+El modelo conceptual requiere una estructura `plan_pago_venta_bloque` para
+representar bloques comerciales. Este documento no crea ni modifica esa
+estructura en SQL; solo fija su semantica esperada si existe o si se aprueba en
+un cambio futuro.
 
 Razon:
 
@@ -462,12 +466,15 @@ No deben seguir creciendo para cubrir combinaciones nuevas.
 
 ## Transicion sin romper lo implementado
 
+La siguiente transicion es una guia condicionada, no una promesa de cambios en
+SQL, backend o UI dentro de este alcance.
+
 Fase 1, documentacion:
 
 - crear este modelo de bloques
 - mantener servicios existentes sin cambios
 
-Fase 2, SQL futuro:
+Fase 2, SQL futuro si se aprueba en otro alcance:
 
 - crear `plan_pago_venta_bloque`
 - opcional recomendado: agregar
@@ -475,14 +482,14 @@ Fase 2, SQL futuro:
 - agregar constraints por tipo de bloque
 - agregar indices de orden e idempotencia
 
-Fase 3, backend futuro:
+Fase 3, backend futuro si se aprueba en otro alcance:
 
 - implementar endpoint unificado
 - agregar generador por bloques
 - conservar endpoints especificos como adaptadores
 - no tocar `venta_plan_cuota`
 
-Fase 4, UI futura:
+Fase 4, UI futura si se aprueba en otro alcance:
 
 - construir editor visual de bloques
 - mostrar previsualizacion de obligaciones antes de generar
@@ -496,7 +503,8 @@ Fase 5, migracion/control:
 
 ## Impacto en tests
 
-Tests futuros esperados:
+Este cambio documental no agrega ni exige tests nuevos. Una implementacion
+futura del endpoint unificado deberia agregar, en su propio alcance, tests para:
 
 - crear plan contado como un bloque
 - crear plan financiado sin anticipo como un bloque `TRAMO_CUOTAS`
@@ -511,9 +519,10 @@ Tests futuros esperados:
 - validar que endpoints especificos actuales siguen pasando
 - validar que `CUOTAS_FIJAS V1` sigue usando `venta_plan_cuota`
 
-## Impacto en SQL futuro
+## Consideraciones SQL para un alcance futuro
 
-SQL futuro probable:
+No se modifica SQL en este documento. Si se aprueba un alcance tecnico posterior,
+las consideraciones a validar contra SQL vigente serian:
 
 - tabla `plan_pago_venta_bloque`
 - constraints por `tipo_bloque`
@@ -529,9 +538,10 @@ No crear:
 - `plan_pago_venta_tramo` como entidad separada
 - tablas financieras paralelas de cuotas
 
-## Impacto en UI futura
+## Consideraciones UI para un alcance futuro
 
-La UI deberia permitir armar bloques, no elegir solo un metodo tecnico.
+No se modifica UI en este documento. Si se aprueba un alcance tecnico posterior,
+la UI podria permitir armar bloques, no elegir solo un metodo tecnico.
 
 Flujos:
 
@@ -609,13 +619,11 @@ Este modelo no implementa:
 - sistema aleman
 - migracion de `venta_plan_cuota`
 
-## Proximo paso tecnico recomendado
+## Proximo paso recomendado
 
-Disenar SQL minimo para `plan_pago_venta_bloque`:
+Cerrar este alcance como diseno documental, sin implementar el endpoint.
 
-1. definir columnas y checks por tipo de bloque
-2. definir si `obligacion_financiera.id_plan_pago_venta_bloque` se agrega en el
-   mismo cambio
-3. definir convencion final de `clave_funcional_origen`
-4. agregar tests de schema
-5. recien despues implementar el endpoint unificado
+Antes de cualquier implementacion futura corresponde abrir un alcance separado
+para validar SQL vigente, confirmar si se requieren migraciones adicionales,
+definir la convencion final de `clave_funcional_origen`, agregar tests de schema
+y recien despues implementar el endpoint unificado.
