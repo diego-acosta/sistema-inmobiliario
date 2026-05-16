@@ -65,6 +65,7 @@ class CronogramaRow:
 class PrototypeState:
     bloques: list[BloqueDraft] = field(default_factory=list)
     loading: bool = False
+    validation_requested: bool = False
     last_response: dict[str, Any] | None = None
     detail_response: dict[str, Any] | None = None
     error_message: str | None = None
@@ -97,7 +98,7 @@ class PlanPagoV2BloquesPrototype:
             label="Monto total del plan",
             value="12000000.00",
             width=180,
-            on_change=self._refresh,
+            on_change=self._on_input_change,
         )
 
         self.summary = ft.Column(spacing=4)
@@ -107,10 +108,15 @@ class PlanPagoV2BloquesPrototype:
         self.response_column = ft.Column(spacing=10)
         self.detail_column = ft.Column(spacing=10)
 
-        self.generate_button = ft.ElevatedButton(
+        self.generate_button = ft.Button(
             "Generar plan",
             icon=ft.Icons.SEND,
             on_click=self._generate_plan,
+        )
+        self.validate_button = ft.OutlinedButton(
+            "Validar",
+            icon=ft.Icons.CHECK_CIRCLE_OUTLINE,
+            on_click=self._validate_current,
         )
         self.detail_button = ft.OutlinedButton(
             "Cargar detalle integral",
@@ -225,7 +231,11 @@ class PlanPagoV2BloquesPrototype:
                     ft.Text("Preview de cronograma", size=18, weight=ft.FontWeight.W_700),
                     self.preview_column,
                     ft.Row(
-                        controls=[self.generate_button, self.detail_button],
+                        controls=[
+                            self.validate_button,
+                            self.generate_button,
+                            self.detail_button,
+                        ],
                         wrap=True,
                         spacing=10,
                     ),
@@ -281,6 +291,7 @@ class PlanPagoV2BloquesPrototype:
         tipo_pago = self._selected_tipo_pago()
         self.tipo_pago.selected = [tipo_pago]
         self.state.error_message = None
+        self.state.validation_requested = False
         self.state.last_response = None
         self.state.detail_response = None
         self.state.status_code = None
@@ -357,10 +368,19 @@ class PlanPagoV2BloquesPrototype:
                 periodicidad="MENSUAL",
             )
         )
+        self.state.validation_requested = False
+        self.state.error_message = None
         self._refresh()
 
     def _remove_block(self, uid: str) -> None:
         self.state.bloques = [b for b in self.state.bloques if b.uid != uid]
+        self.state.validation_requested = False
+        self.state.error_message = None
+        self._refresh()
+
+    def _on_input_change(self, _: ft.ControlEvent) -> None:
+        self.state.validation_requested = False
+        self.state.error_message = None
         self._refresh()
 
     def _refresh(self, _: ft.ControlEvent | None = None) -> None:
@@ -370,7 +390,8 @@ class PlanPagoV2BloquesPrototype:
         self._render_validation(errors)
         self._render_blocks()
         self._render_preview(preview)
-        self.generate_button.disabled = self.state.loading or bool(errors)
+        self.validate_button.disabled = self.state.loading
+        self.generate_button.disabled = self.state.loading
         self.detail_button.disabled = self.state.loading
         self.page.update()
 
@@ -380,28 +401,42 @@ class PlanPagoV2BloquesPrototype:
         monto_total = _decimal_or_zero(self.monto_total_plan.value)
         suma = self._blocks_total()
         diff = monto_total - suma
-        color = ft.Colors.GREEN_700 if diff == Decimal("0") else ft.Colors.RED_700
+        has_errors = bool(errors) and self.state.validation_requested
+        if diff == Decimal("0"):
+            diff_color = ft.Colors.GREEN_700
+        else:
+            diff_color = ft.Colors.AMBER_800
+        if has_errors:
+            status_text = "Revisar validaciones."
+            status_color = ft.Colors.RED_700
+        elif diff != Decimal("0"):
+            status_text = "Diferencia pendiente de ajustar."
+            status_color = ft.Colors.AMBER_800
+        else:
+            status_text = "Listo para generar."
+            status_color = ft.Colors.GREEN_700
         self.summary.controls = [
             ft.Text("Resumen", weight=ft.FontWeight.W_700),
             ft.Row(
                 controls=[
                     _kv("Monto total", _money(monto_total)),
                     _kv("Suma bloques", _money(suma)),
-                    _kv("Diferencia", _money(diff), color=color),
+                    _kv("Diferencia", _money(diff), color=diff_color),
                     _kv("Obligaciones estimadas", str(len(preview))),
                 ],
                 wrap=True,
                 spacing=18,
             ),
             ft.Text(
-                "Listo para generar." if not errors else "Revisar validaciones.",
-                color=ft.Colors.GREEN_700 if not errors else ft.Colors.RED_700,
+                status_text,
+                color=status_color,
             ),
         ]
 
     def _render_validation(self, errors: list[str]) -> None:
-        self.validation_banner.visible = bool(errors) or bool(self.state.error_message)
-        messages = list(errors)
+        show_errors = self.state.validation_requested and bool(errors)
+        self.validation_banner.visible = show_errors or bool(self.state.error_message)
+        messages = list(errors) if show_errors else []
         if self.state.error_message:
             messages.append(self.state.error_message)
         self.validation_banner.content = ft.Column(
@@ -527,6 +562,7 @@ class PlanPagoV2BloquesPrototype:
     ) -> None:
         setattr(bloque, field_name, value or "")
         self.state.error_message = None
+        self.state.validation_requested = False
         self._refresh()
 
     def _render_preview(self, preview: list[CronogramaRow]) -> None:
@@ -612,8 +648,8 @@ class PlanPagoV2BloquesPrototype:
                 ],
                 spacing=2,
             ),
-            padding=ft.padding.symmetric(horizontal=4, vertical=6),
-            border=ft.border.only(
+            padding=ft.Padding.symmetric(horizontal=4, vertical=6),
+            border=ft.Border.only(
                 bottom=ft.BorderSide(1, ft.Colors.BLUE_GREY_50),
             ),
         )
@@ -652,6 +688,11 @@ class PlanPagoV2BloquesPrototype:
         if monto_total is not None and self._blocks_total() != monto_total:
             errors.append("La suma de bloques no coincide con el monto total del plan.")
         return _dedupe(errors)
+
+    def _validate_current(self, _: ft.ControlEvent) -> None:
+        self.state.validation_requested = True
+        self.state.error_message = None
+        self._refresh()
 
     def _blocks_total(self) -> Decimal:
         total = Decimal("0")
@@ -755,6 +796,8 @@ class PlanPagoV2BloquesPrototype:
         return payload
 
     def _generate_plan(self, _: ft.ControlEvent) -> None:
+        self.state.validation_requested = True
+        self.state.error_message = None
         errors = self._validate()
         if errors:
             self._refresh()
@@ -831,6 +874,7 @@ class PlanPagoV2BloquesPrototype:
 
     def _set_error(self, message: str) -> None:
         self.state.error_message = message
+        self.state.validation_requested = True
         self._refresh()
 
     def _render_response(self) -> None:
@@ -1117,4 +1161,4 @@ def main(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)
