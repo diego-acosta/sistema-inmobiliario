@@ -102,7 +102,9 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             }
         )
 
-    def _validate(self, command: GeneratePlanPagoVentaV2PorBloquesCommand) -> str | None:
+    def _validate(
+        self, command: GeneratePlanPagoVentaV2PorBloquesCommand
+    ) -> str | None:
         if command.id_venta <= 0:
             return "INVALID_VENTA"
         if command.monto_total_plan <= 0:
@@ -175,8 +177,8 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             if periodicidad != PERIODICIDAD_MENSUAL:
                 return "INVALID_PERIODICIDAD"
             regla_redondeo = (
-                bloque.regla_redondeo or REGLA_REDONDEO_ULTIMA_CUOTA
-            ).strip().upper()
+                (bloque.regla_redondeo or REGLA_REDONDEO_ULTIMA_CUOTA).strip().upper()
+            )
             if regla_redondeo != REGLA_REDONDEO_ULTIMA_CUOTA:
                 return "INVALID_REGLA_REDONDEO"
             return None
@@ -314,9 +316,7 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
     @staticmethod
     def _tramo_usa_capital_total(bloque: PlanPagoVentaBloqueInput) -> bool:
         return (
-            bloque.importe_total_bloque is not None
-            and bloque.importe_total_bloque > 0
-            and bloque.importe_cuota is None
+            bloque.importe_total_bloque is not None and bloque.importe_total_bloque > 0
         )
 
     @staticmethod

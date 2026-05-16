@@ -24,17 +24,19 @@ def _command(
         tipo_pago="FINANCIADO",
         monto_total_plan=monto_total_plan,
         moneda="ARS",
-        bloques=bloques
-        if bloques is not None
-        else [
-            PlanPagoVentaBloqueInput(
-                tipo_bloque="TRAMO_CUOTAS",
-                importe_total_bloque=Decimal("10000000.00"),
-                cantidad_cuotas=6,
-                fecha_primer_vencimiento=date(2026, 6, 10),
-                periodicidad="MENSUAL",
-            )
-        ],
+        bloques=(
+            bloques
+            if bloques is not None
+            else [
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                )
+            ]
+        ),
     )
 
 
@@ -96,6 +98,39 @@ def test_preview_contrato_legacy_por_importe_cuota_sigue_funcionando() -> None:
         Decimal("500000.00")
     ] * 6
     assert result.data["total_calculado"] == Decimal("3000000.00")
+
+
+def test_preview_tramo_prioriza_importe_total_bloque_si_importe_cuota_viene_presente() -> (
+    None
+):
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(
+            monto_total_plan=Decimal("10000000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    importe_cuota=Decimal("1.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                )
+            ],
+        )
+    )
+
+    assert result.success, result.errors
+    bloque = result.data["bloques"][0]
+    obligaciones = result.data["obligaciones"]
+    assert bloque.importe_total_bloque == Decimal("10000000.00")
+    assert bloque.importe_cuota == Decimal("1666666.67")
+    assert [obligacion.importe_total for obligacion in obligaciones[:5]] == [
+        Decimal("1666666.67")
+    ] * 5
+    assert obligaciones[-1].importe_total == Decimal("1666666.65")
+    assert sum(
+        (obligacion.importe_total for obligacion in obligaciones), Decimal("0.00")
+    ) == Decimal("10000000.00")
 
 
 def test_preview_valida_suma_general_con_tramo_por_capital_total() -> None:
