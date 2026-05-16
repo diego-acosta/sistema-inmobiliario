@@ -64,6 +64,7 @@ class CronogramaRow:
 @dataclass
 class PrototypeState:
     bloques: list[BloqueDraft] = field(default_factory=list)
+    current_step: int = 1
     loading: bool = False
     validation_requested: bool = False
     response_json_visible: bool = False
@@ -116,12 +117,10 @@ class PlanPagoV2BloquesPrototype:
         )
 
         self.summary = ft.Column(spacing=4)
+        self.main_column = ft.Column(expand=True)
         self.validation_banner = ft.Container(visible=False)
         self.blocks_column = ft.ListView(spacing=10, expand=True)
         self.preview_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
-        self.backend_preview_column = ft.Column(
-            spacing=8, scroll=ft.ScrollMode.AUTO, expand=True
-        )
         self.response_column = ft.Column(spacing=10)
         self.detail_column = ft.Column(spacing=10)
         self.tramo_cuota_texts: dict[str, ft.Text] = {}
@@ -129,14 +128,19 @@ class PlanPagoV2BloquesPrototype:
         self.tramo_due_fields: dict[str, ft.TextField] = {}
 
         self.generate_button = ft.Button(
-            "Generar plan",
+            "Generar plan definitivo",
             icon=ft.Icons.SEND,
             on_click=self._generate_plan,
         )
         self.backend_preview_button = ft.OutlinedButton(
-            "Actualizar preview backend",
+            "Vista previa del plan",
             icon=ft.Icons.CLOUD_SYNC,
             on_click=self._load_backend_preview,
+        )
+        self.back_button = ft.OutlinedButton(
+            "Volver y modificar",
+            icon=ft.Icons.ARROW_BACK,
+            on_click=self._back_to_edit,
         )
         self.validate_button = ft.OutlinedButton(
             "Validar",
@@ -162,15 +166,7 @@ class PlanPagoV2BloquesPrototype:
         return ft.Column(
             controls=[
                 self._build_header(),
-                ft.Row(
-                    controls=[
-                        self._build_editor_panel(),
-                        self._build_preview_panel(),
-                    ],
-                    spacing=16,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
-                    expand=True,
-                ),
+                self.main_column,
             ],
             spacing=14,
             expand=True,
@@ -243,38 +239,36 @@ class PlanPagoV2BloquesPrototype:
             spacing=12,
         )
 
-    def _build_preview_panel(self) -> ft.Control:
+    def _build_step1_view(self) -> ft.Control:
+        return ft.Row(
+            controls=[
+                self._build_editor_panel(),
+                self._build_step1_side_panel(),
+            ],
+            spacing=16,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+            expand=True,
+        )
+
+    def _build_step1_side_panel(self) -> ft.Control:
         return ft.Container(
             content=ft.Column(
                 controls=[
+                    ft.Text("Paso 1", size=18, weight=ft.FontWeight.W_700),
                     ft.Container(
                         content=self.summary,
                         padding=12,
                         border=_border_all(1, ft.Colors.BLUE_GREY_100),
                         border_radius=6,
                     ),
-                    ft.Text("Preview backend", size=18, weight=ft.FontWeight.W_700),
-                    self.backend_preview_column,
-                    ft.Text(
-                        "Preview local estimado",
-                        size=16,
-                        weight=ft.FontWeight.W_700,
-                    ),
-                    self.preview_column,
                     ft.Row(
                         controls=[
                             self.backend_preview_button,
                             self.validate_button,
-                            self.generate_button,
-                            self.detail_button,
                         ],
                         wrap=True,
                         spacing=10,
                     ),
-                    ft.Text("Respuesta de generacion", weight=ft.FontWeight.W_700),
-                    self.response_column,
-                    ft.Text("Detalle integral", weight=ft.FontWeight.W_700),
-                    self.detail_column,
                 ],
                 spacing=12,
                 expand=True,
@@ -283,6 +277,33 @@ class PlanPagoV2BloquesPrototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             border_radius=6,
             expand=2,
+            height=720,
+        )
+
+    def _build_step2_view(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Paso 2", size=18, weight=ft.FontWeight.W_700),
+                    ft.Text("Vista previa del plan", size=22, weight=ft.FontWeight.W_700),
+                    self.preview_column,
+                    ft.Row(
+                        controls=[
+                            self.back_button,
+                            self.generate_button,
+                        ],
+                        wrap=True,
+                        spacing=10,
+                    ),
+                    ft.Text("Resultado de generacion", weight=ft.FontWeight.W_700),
+                    self.response_column,
+                ],
+                spacing=12,
+                expand=True,
+            ),
+            padding=14,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
             height=720,
         )
 
@@ -322,6 +343,7 @@ class PlanPagoV2BloquesPrototype:
     def _on_tipo_pago_change(self, _: ft.ControlEvent) -> None:
         tipo_pago = self._selected_tipo_pago()
         self.tipo_pago.selected = [tipo_pago]
+        self.state.current_step = 1
         self.state.error_message = None
         self.state.validation_requested = False
         self.state.response_json_visible = False
@@ -334,7 +356,6 @@ class PlanPagoV2BloquesPrototype:
         self.state.backend_preview_status_code = None
         self.state.backend_preview_stale = True
         self.response_column.controls = []
-        self.backend_preview_column.controls = []
         self.detail_column.controls = []
         self._reset_blocks_for_tipo(tipo_pago)
         self._refresh()
@@ -404,6 +425,7 @@ class PlanPagoV2BloquesPrototype:
         )
         self._recalculate_tramo_dates()
         self.state.validation_requested = False
+        self.state.current_step = 1
         self.state.error_message = None
         self._mark_backend_preview_stale()
         self._refresh()
@@ -412,6 +434,7 @@ class PlanPagoV2BloquesPrototype:
         self.state.bloques = [b for b in self.state.bloques if b.uid != uid]
         self._recalculate_tramo_dates()
         self.state.validation_requested = False
+        self.state.current_step = 1
         self.state.error_message = None
         self._mark_backend_preview_stale()
         self._refresh()
@@ -433,6 +456,7 @@ class PlanPagoV2BloquesPrototype:
 
     def _on_input_change(self, _: ft.ControlEvent) -> None:
         self.state.validation_requested = False
+        self.state.current_step = 1
         self.state.error_message = None
         self._mark_backend_preview_stale()
         self._refresh_summary_and_preview()
@@ -440,6 +464,7 @@ class PlanPagoV2BloquesPrototype:
     def _refresh(self, _: ft.ControlEvent | None = None) -> None:
         self._render_blocks()
         self._refresh_summary_and_preview(update_page=False)
+        self._render_current_step()
         self.page.update()
 
     def _refresh_summary_and_preview(self, update_page: bool = True) -> None:
@@ -448,19 +473,27 @@ class PlanPagoV2BloquesPrototype:
         self._refresh_tramo_calculated_labels()
         self._render_summary(preview, errors)
         self._render_validation(errors)
-        self._render_backend_preview()
-        self._render_preview(preview)
+        self._render_preview()
         self.validate_button.disabled = self.state.loading
         self.backend_preview_button.disabled = self.state.loading
         self.generate_button.disabled = (
             self.state.loading
             or bool(errors)
+            or self.state.current_step != 2
             or not self._backend_preview_ready()
             or self.state.backend_preview_stale
         )
         self.detail_button.disabled = self.state.loading
+        self.back_button.disabled = self.state.loading
+        self._render_current_step()
         if update_page:
             self.page.update()
+
+    def _render_current_step(self) -> None:
+        if self.state.current_step == 2:
+            self.main_column.controls = [self._build_step2_view()]
+        else:
+            self.main_column.controls = [self._build_step1_view()]
 
     def _render_summary(
         self, preview: list[CronogramaRow], errors: list[str]
@@ -490,10 +523,10 @@ class PlanPagoV2BloquesPrototype:
             status_text = "Listo para generar."
             status_color = ft.Colors.GREEN_700
         if not self._backend_preview_ready():
-            status_text = "Actualizar preview backend para habilitar generacion."
+            status_text = "Genera la vista previa para habilitar la generacion."
             status_color = ft.Colors.BLUE_GREY_700
         elif self.state.backend_preview_stale:
-            status_text = "Preview backend desactualizado."
+            status_text = "Vista previa desactualizada."
             status_color = ft.Colors.AMBER_800
         self.summary.controls = [
             ft.Text("Resumen", weight=ft.FontWeight.W_700),
@@ -521,7 +554,7 @@ class PlanPagoV2BloquesPrototype:
         if diff_backend != Decimal("0"):
             self.summary.controls.append(
                 ft.Text(
-                    "El preview backend oficial ajusta la ultima cuota cuando el "
+                    "La vista previa oficial ajusta la ultima cuota cuando el "
                     "tramo se envia por capital total.",
                     size=12,
                     color=ft.Colors.AMBER_800,
@@ -717,6 +750,7 @@ class PlanPagoV2BloquesPrototype:
             self._recalculate_tramo_dates()
         self.state.error_message = None
         self.state.validation_requested = False
+        self.state.current_step = 1
         self._mark_backend_preview_stale()
         self._refresh_summary_and_preview()
 
@@ -774,6 +808,7 @@ class PlanPagoV2BloquesPrototype:
                     self._recalculate_tramo_dates()
                 self.state.error_message = None
                 self.state.validation_requested = False
+                self.state.current_step = 1
                 self._mark_backend_preview_stale()
                 self._refresh()
 
@@ -790,43 +825,56 @@ class PlanPagoV2BloquesPrototype:
         )
         self.page.show_dialog(picker)
 
-    def _render_preview(self, preview: list[CronogramaRow]) -> None:
-        if not preview:
-            self.preview_column.controls = [ft.Text("Sin filas para previsualizar.")]
+    def _render_preview(self) -> None:
+        self.preview_column.controls = []
+        if self.state.backend_preview_response is None:
+            self.preview_column.controls = [
+                ft.Container(
+                    content=ft.Text(
+                        "Actualiza el preview para ver el cronograma oficial.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    padding=10,
+                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                    border_radius=6,
+                )
+            ]
             return
-        header_style = {
-            "size": 11,
-            "weight": ft.FontWeight.W_700,
-            "color": ft.Colors.BLUE_GREY_700,
-        }
-        self.preview_column.controls = [
-            ft.Container(
-                content=ft.Column(
-                    controls=[
-                        ft.Row(
-                            controls=[
-                                ft.Container(ft.Text("N", **header_style), width=34),
-                                ft.Container(ft.Text("Bloque", **header_style), expand=2),
-                                ft.Container(ft.Text("Etiqueta", **header_style), expand=2),
-                                ft.Container(
-                                    ft.Text("Vencimiento", **header_style), width=92
-                                ),
-                                ft.Container(
-                                    ft.Text("Importe", **header_style), width=96
-                                ),
-                            ],
-                            spacing=8,
-                        ),
-                        *[self._preview_row(row) for row in preview],
-                    ],
-                    spacing=6,
-                ),
-                padding=8,
-                border=_border_all(1, ft.Colors.BLUE_GREY_100),
-                border_radius=6,
-                expand=True,
+
+        if self.state.backend_preview_status_code is not None:
+            self.preview_column.controls.append(
+                ft.Text(f"Status HTTP: {self.state.backend_preview_status_code}")
             )
-        ]
+        if self.state.backend_preview_stale:
+            self.preview_column.controls.append(
+                ft.Text(
+                    "Preview desactualizado por cambios locales. Actualizalo de nuevo.",
+                    color=ft.Colors.AMBER_800,
+                    weight=ft.FontWeight.W_600,
+                )
+            )
+
+        data = _data_envelope(self.state.backend_preview_response)
+        if (
+            self.state.backend_preview_status_code is not None
+            and self.state.backend_preview_status_code >= 400
+        ):
+            self.preview_column.controls.append(
+                _backend_error_panel(
+                    status_code=self.state.backend_preview_status_code,
+                    payload=self.state.backend_preview_response,
+                )
+            )
+        elif isinstance(data, dict):
+            self.preview_column.controls.append(_backend_preview_panel(data))
+
+        self.preview_column.controls.append(
+            self._technical_json_toggle(
+                value=self.state.backend_preview_response,
+                visible=self.state.backend_preview_json_visible,
+                on_click=self._toggle_backend_preview_json,
+            )
+        )
 
     def _preview_row(self, row: CronogramaRow) -> ft.Control:
         secondary = f"{row.tipo_obligacion} · {row.concepto}"
@@ -1115,9 +1163,16 @@ class PlanPagoV2BloquesPrototype:
         self.state.backend_preview_stale = not response.get("ok")
         if response.get("ok"):
             self.state.error_message = None
+            self.state.current_step = 2
         else:
-            self.state.error_message = response.get("error") or "Error en preview backend."
+            self.state.current_step = 1
+            self.state.error_message = response.get("error") or "Error en vista previa."
         self._refresh_summary_and_preview()
+
+    def _back_to_edit(self, _: ft.ControlEvent) -> None:
+        self.state.current_step = 1
+        self.state.error_message = None
+        self._refresh()
 
     def _generate_plan(self, _: ft.ControlEvent) -> None:
         self.state.validation_requested = True
@@ -1127,7 +1182,7 @@ class PlanPagoV2BloquesPrototype:
             self._refresh_summary_and_preview()
             return
         if not self._backend_preview_ready() or self.state.backend_preview_stale:
-            self._set_error("Actualizar preview backend antes de generar.")
+            self._set_error("Genera la vista previa antes de generar el plan definitivo.")
             return
         id_venta = _int_or_none(self.id_venta.value)
         if id_venta is None:
@@ -1263,57 +1318,6 @@ class PlanPagoV2BloquesPrototype:
                 )
             )
 
-    def _render_backend_preview(self) -> None:
-        self.backend_preview_column.controls = []
-        if self.state.backend_preview_response is None:
-            self.backend_preview_column.controls = [
-                ft.Container(
-                    content=ft.Text(
-                        "Sin preview backend. Actualizar para usar el calculo oficial.",
-                        color=ft.Colors.BLUE_GREY_700,
-                    ),
-                    padding=10,
-                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
-                    border_radius=6,
-                )
-            ]
-            return
-
-        if self.state.backend_preview_status_code is not None:
-            self.backend_preview_column.controls.append(
-                ft.Text(f"Status HTTP: {self.state.backend_preview_status_code}")
-            )
-        if self.state.backend_preview_stale:
-            self.backend_preview_column.controls.append(
-                ft.Text(
-                    "Preview backend desactualizado por cambios locales.",
-                    color=ft.Colors.AMBER_800,
-                    weight=ft.FontWeight.W_600,
-                )
-            )
-
-        data = _data_envelope(self.state.backend_preview_response)
-        if (
-            self.state.backend_preview_status_code is not None
-            and self.state.backend_preview_status_code >= 400
-        ):
-            self.backend_preview_column.controls.append(
-                _backend_error_panel(
-                    status_code=self.state.backend_preview_status_code,
-                    payload=self.state.backend_preview_response,
-                )
-            )
-        elif isinstance(data, dict):
-            self.backend_preview_column.controls.append(_backend_preview_panel(data))
-
-        self.backend_preview_column.controls.append(
-            self._technical_json_toggle(
-                value=self.state.backend_preview_response,
-                visible=self.state.backend_preview_json_visible,
-                on_click=self._toggle_backend_preview_json,
-            )
-        )
-
     def _toggle_response_json(self, _: ft.ControlEvent) -> None:
         self.state.response_json_visible = not self.state.response_json_visible
         self._render_response()
@@ -1323,7 +1327,7 @@ class PlanPagoV2BloquesPrototype:
         self.state.backend_preview_json_visible = (
             not self.state.backend_preview_json_visible
         )
-        self._render_backend_preview()
+        self._render_preview()
         self.page.update()
 
     def _toggle_detail_json(self, _: ft.ControlEvent) -> None:
