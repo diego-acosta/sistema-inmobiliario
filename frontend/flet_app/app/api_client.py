@@ -233,6 +233,28 @@ class ApiClient:
     def get_venta_detalle_integral(self, id_venta: int) -> ApiResult:
         return self._get(f"/api/v1/ventas/{id_venta}/detalle-integral")
 
+    def preview_plan_pago_venta_v2_por_bloques(
+        self, id_venta: int, payload: dict[str, Any]
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/ventas/{id_venta}/plan-pago-v2/preview",
+            json=payload,
+        )
+
+    def generar_plan_pago_venta_v2_por_bloques(
+        self, id_venta: int, payload: dict[str, Any]
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/ventas/{id_venta}/plan-pago-v2/generar",
+            headers={
+                "X-Op-Id": str(uuid4()),
+                "X-Usuario-Id": "1",
+                "X-Sucursal-Id": "1",
+                "X-Instalacion-Id": "1",
+            },
+            json=payload,
+        )
+
     def _get(self, path: str, params: dict[str, Any] | None = None) -> ApiResult:
         url = f"{self.base_url}{path}"
         try:

@@ -8,6 +8,7 @@ from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
 from app.components.status_badge import status_badge
+from app.pages.plan_pago_v2_bloques import PlanPagoV2BloquesPanel
 
 
 class VentasPage:
@@ -234,6 +235,18 @@ class VentaDetailView:
                         (
                             "Financiero",
                             [
+                                detail_section(
+                                    "Plan Pago V2 por bloques",
+                                    [
+                                        PlanPagoV2BloquesPanel(
+                                            api=self.api,
+                                            id_venta=self.id_venta,
+                                            monto_total=data.get("monto_total"),
+                                            moneda=data.get("moneda"),
+                                            existing_plan=data.get("plan_pago_v2"),
+                                        ).build()
+                                    ],
+                                ),
                                 detail_section(
                                     "Relacion financiera",
                                     [
