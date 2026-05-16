@@ -68,8 +68,12 @@ class PrototypeState:
     validation_requested: bool = False
     response_json_visible: bool = False
     detail_json_visible: bool = False
+    backend_preview_json_visible: bool = False
     last_response: dict[str, Any] | None = None
+    backend_preview_response: dict[str, Any] | None = None
     detail_response: dict[str, Any] | None = None
+    backend_preview_status_code: int | None = None
+    backend_preview_stale: bool = True
     error_message: str | None = None
     status_code: int | None = None
 
@@ -83,8 +87,11 @@ class PlanPagoV2BloquesPrototype:
             label="Base URL",
             value=DEFAULT_BASE_URL,
             width=280,
+            on_change=self._on_input_change,
         )
-        self.id_venta = ft.TextField(label="ID venta", width=120)
+        self.id_venta = ft.TextField(
+            label="ID venta", width=120, on_change=self._on_input_change
+        )
         self.tipo_pago = ft.SegmentedButton(
             selected=["CONTADO"],
             allow_empty_selection=False,
@@ -95,7 +102,12 @@ class PlanPagoV2BloquesPrototype:
             ],
             on_change=self._on_tipo_pago_change,
         )
-        self.moneda = ft.TextField(label="Moneda", value=DEFAULT_MONEDA, width=110)
+        self.moneda = ft.TextField(
+            label="Moneda",
+            value=DEFAULT_MONEDA,
+            width=110,
+            on_change=self._on_input_change,
+        )
         self.monto_total_plan = ft.TextField(
             label="Monto total del plan",
             value="12000000.00",
@@ -107,6 +119,9 @@ class PlanPagoV2BloquesPrototype:
         self.validation_banner = ft.Container(visible=False)
         self.blocks_column = ft.ListView(spacing=10, expand=True)
         self.preview_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
+        self.backend_preview_column = ft.Column(
+            spacing=8, scroll=ft.ScrollMode.AUTO, expand=True
+        )
         self.response_column = ft.Column(spacing=10)
         self.detail_column = ft.Column(spacing=10)
         self.tramo_cuota_texts: dict[str, ft.Text] = {}
@@ -117,6 +132,11 @@ class PlanPagoV2BloquesPrototype:
             "Generar plan",
             icon=ft.Icons.SEND,
             on_click=self._generate_plan,
+        )
+        self.backend_preview_button = ft.OutlinedButton(
+            "Actualizar preview backend",
+            icon=ft.Icons.CLOUD_SYNC,
+            on_click=self._load_backend_preview,
         )
         self.validate_button = ft.OutlinedButton(
             "Validar",
@@ -233,10 +253,17 @@ class PlanPagoV2BloquesPrototype:
                         border=_border_all(1, ft.Colors.BLUE_GREY_100),
                         border_radius=6,
                     ),
-                    ft.Text("Preview de cronograma", size=18, weight=ft.FontWeight.W_700),
+                    ft.Text("Preview backend", size=18, weight=ft.FontWeight.W_700),
+                    self.backend_preview_column,
+                    ft.Text(
+                        "Preview local estimado",
+                        size=16,
+                        weight=ft.FontWeight.W_700,
+                    ),
                     self.preview_column,
                     ft.Row(
                         controls=[
+                            self.backend_preview_button,
                             self.validate_button,
                             self.generate_button,
                             self.detail_button,
@@ -299,10 +326,15 @@ class PlanPagoV2BloquesPrototype:
         self.state.validation_requested = False
         self.state.response_json_visible = False
         self.state.detail_json_visible = False
+        self.state.backend_preview_json_visible = False
         self.state.last_response = None
+        self.state.backend_preview_response = None
         self.state.detail_response = None
         self.state.status_code = None
+        self.state.backend_preview_status_code = None
+        self.state.backend_preview_stale = True
         self.response_column.controls = []
+        self.backend_preview_column.controls = []
         self.detail_column.controls = []
         self._reset_blocks_for_tipo(tipo_pago)
         self._refresh()
@@ -373,6 +405,7 @@ class PlanPagoV2BloquesPrototype:
         self._recalculate_tramo_dates()
         self.state.validation_requested = False
         self.state.error_message = None
+        self._mark_backend_preview_stale()
         self._refresh()
 
     def _remove_block(self, uid: str) -> None:
@@ -380,6 +413,7 @@ class PlanPagoV2BloquesPrototype:
         self._recalculate_tramo_dates()
         self.state.validation_requested = False
         self.state.error_message = None
+        self._mark_backend_preview_stale()
         self._refresh()
 
     def _new_block(self, tipo_bloque: str, label: str) -> BloqueDraft:
@@ -400,6 +434,7 @@ class PlanPagoV2BloquesPrototype:
     def _on_input_change(self, _: ft.ControlEvent) -> None:
         self.state.validation_requested = False
         self.state.error_message = None
+        self._mark_backend_preview_stale()
         self._refresh_summary_and_preview()
 
     def _refresh(self, _: ft.ControlEvent | None = None) -> None:
@@ -413,9 +448,16 @@ class PlanPagoV2BloquesPrototype:
         self._refresh_tramo_calculated_labels()
         self._render_summary(preview, errors)
         self._render_validation(errors)
+        self._render_backend_preview()
         self._render_preview(preview)
         self.validate_button.disabled = self.state.loading
-        self.generate_button.disabled = self.state.loading or bool(errors)
+        self.backend_preview_button.disabled = self.state.loading
+        self.generate_button.disabled = (
+            self.state.loading
+            or bool(errors)
+            or not self._backend_preview_ready()
+            or self.state.backend_preview_stale
+        )
         self.detail_button.disabled = self.state.loading
         if update_page:
             self.page.update()
@@ -447,6 +489,12 @@ class PlanPagoV2BloquesPrototype:
         else:
             status_text = "Listo para generar."
             status_color = ft.Colors.GREEN_700
+        if not self._backend_preview_ready():
+            status_text = "Actualizar preview backend para habilitar generacion."
+            status_color = ft.Colors.BLUE_GREY_700
+        elif self.state.backend_preview_stale:
+            status_text = "Preview backend desactualizado."
+            status_color = ft.Colors.AMBER_800
         self.summary.controls = [
             ft.Text("Resumen", weight=ft.FontWeight.W_700),
             ft.Row(
@@ -473,8 +521,8 @@ class PlanPagoV2BloquesPrototype:
         if diff_backend != Decimal("0"):
             self.summary.controls.append(
                 ft.Text(
-                    "El cierre exacto de capital_tramo con ajuste de ultima cuota "
-                    "esta pendiente del Issue #46.",
+                    "El preview backend oficial ajusta la ultima cuota cuando el "
+                    "tramo se envia por capital total.",
                     size=12,
                     color=ft.Colors.AMBER_800,
                 )
@@ -661,12 +709,15 @@ class PlanPagoV2BloquesPrototype:
     ) -> None:
         setattr(bloque, field_name, value or "")
         if bloque.tipo_bloque == "TRAMO_CUOTAS" and field_name in (
+            "capital_tramo",
             "cantidad_cuotas",
             "fecha_primer_vencimiento",
+            "periodicidad",
         ):
             self._recalculate_tramo_dates()
         self.state.error_message = None
         self.state.validation_requested = False
+        self._mark_backend_preview_stale()
         self._refresh_summary_and_preview()
 
     def _is_first_tramo(self, bloque: BloqueDraft) -> bool:
@@ -723,6 +774,7 @@ class PlanPagoV2BloquesPrototype:
                     self._recalculate_tramo_dates()
                 self.state.error_message = None
                 self.state.validation_requested = False
+                self._mark_backend_preview_stale()
                 self._refresh()
 
         picker = ft.DatePicker(
@@ -926,9 +978,7 @@ class PlanPagoV2BloquesPrototype:
         total = Decimal("0")
         for bloque in self.state.bloques:
             if bloque.tipo_bloque == "TRAMO_CUOTAS":
-                qty = _int_or_none(bloque.cantidad_cuotas) or 0
-                cuota = self._calculated_importe_cuota(bloque) or Decimal("0.00")
-                total += cuota * Decimal(qty)
+                total += _decimal_or_zero(bloque.capital_tramo)
             else:
                 total += _decimal_or_zero(bloque.importe_total_bloque)
         return total.quantize(Decimal("0.01"))
@@ -1009,8 +1059,8 @@ class PlanPagoV2BloquesPrototype:
             payload.update(
                 {
                     "cantidad_cuotas": _int_or_none(bloque.cantidad_cuotas),
-                    "importe_cuota": float(
-                        self._calculated_importe_cuota(bloque) or Decimal("0.00")
+                    "importe_total_bloque": float(
+                        _decimal_or_zero(bloque.capital_tramo)
                     ),
                     "fecha_primer_vencimiento": _iso_date_or_empty(
                         bloque.fecha_primer_vencimiento
@@ -1029,12 +1079,55 @@ class PlanPagoV2BloquesPrototype:
             )
         return payload
 
+    def _mark_backend_preview_stale(self) -> None:
+        if self.state.backend_preview_response is not None:
+            self.state.backend_preview_stale = True
+
+    def _backend_preview_ready(self) -> bool:
+        data = _data_envelope(self.state.backend_preview_response)
+        return (
+            self.state.backend_preview_response is not None
+            and self.state.backend_preview_status_code is not None
+            and self.state.backend_preview_status_code < 400
+            and isinstance(data, dict)
+        )
+
+    def _load_backend_preview(self, _: ft.ControlEvent) -> None:
+        self.state.validation_requested = True
+        self.state.error_message = None
+        errors = self._validate()
+        if errors:
+            self._refresh_summary_and_preview()
+            return
+        id_venta = _int_or_none(self.id_venta.value)
+        if id_venta is None:
+            self._set_error("ID venta requerido.")
+            return
+
+        self.state.loading = True
+        self._refresh_summary_and_preview()
+        path = f"/api/v1/ventas/{id_venta}/plan-pago-v2/preview"
+        response = self._post(path, self._payload())
+        self.state.loading = False
+        self.state.backend_preview_status_code = response.get("status_code")
+        self.state.backend_preview_response = response.get("json")
+        self.state.backend_preview_json_visible = False
+        self.state.backend_preview_stale = not response.get("ok")
+        if response.get("ok"):
+            self.state.error_message = None
+        else:
+            self.state.error_message = response.get("error") or "Error en preview backend."
+        self._refresh_summary_and_preview()
+
     def _generate_plan(self, _: ft.ControlEvent) -> None:
         self.state.validation_requested = True
         self.state.error_message = None
         errors = self._validate()
         if errors:
             self._refresh_summary_and_preview()
+            return
+        if not self._backend_preview_ready() or self.state.backend_preview_stale:
+            self._set_error("Actualizar preview backend antes de generar.")
             return
         id_venta = _int_or_none(self.id_venta.value)
         if id_venta is None:
@@ -1170,9 +1263,67 @@ class PlanPagoV2BloquesPrototype:
                 )
             )
 
+    def _render_backend_preview(self) -> None:
+        self.backend_preview_column.controls = []
+        if self.state.backend_preview_response is None:
+            self.backend_preview_column.controls = [
+                ft.Container(
+                    content=ft.Text(
+                        "Sin preview backend. Actualizar para usar el calculo oficial.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    padding=10,
+                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                    border_radius=6,
+                )
+            ]
+            return
+
+        if self.state.backend_preview_status_code is not None:
+            self.backend_preview_column.controls.append(
+                ft.Text(f"Status HTTP: {self.state.backend_preview_status_code}")
+            )
+        if self.state.backend_preview_stale:
+            self.backend_preview_column.controls.append(
+                ft.Text(
+                    "Preview backend desactualizado por cambios locales.",
+                    color=ft.Colors.AMBER_800,
+                    weight=ft.FontWeight.W_600,
+                )
+            )
+
+        data = _data_envelope(self.state.backend_preview_response)
+        if (
+            self.state.backend_preview_status_code is not None
+            and self.state.backend_preview_status_code >= 400
+        ):
+            self.backend_preview_column.controls.append(
+                _backend_error_panel(
+                    status_code=self.state.backend_preview_status_code,
+                    payload=self.state.backend_preview_response,
+                )
+            )
+        elif isinstance(data, dict):
+            self.backend_preview_column.controls.append(_backend_preview_panel(data))
+
+        self.backend_preview_column.controls.append(
+            self._technical_json_toggle(
+                value=self.state.backend_preview_response,
+                visible=self.state.backend_preview_json_visible,
+                on_click=self._toggle_backend_preview_json,
+            )
+        )
+
     def _toggle_response_json(self, _: ft.ControlEvent) -> None:
         self.state.response_json_visible = not self.state.response_json_visible
         self._render_response()
+        self.page.update()
+
+    def _toggle_backend_preview_json(self, _: ft.ControlEvent) -> None:
+        self.state.backend_preview_json_visible = (
+            not self.state.backend_preview_json_visible
+        )
+        self._render_backend_preview()
         self.page.update()
 
     def _toggle_detail_json(self, _: ft.ControlEvent) -> None:
@@ -1206,6 +1357,166 @@ class PlanPagoV2BloquesPrototype:
                 ]
             )
         return ft.Column(controls=controls, spacing=6)
+
+
+def _backend_preview_panel(data: dict[str, Any]) -> ft.Control:
+    bloques = _list_or_empty(data.get("bloques"))
+    obligaciones = _list_or_empty(data.get("obligaciones"))
+    redondeos = _list_or_empty(data.get("redondeos"))
+    diff = _decimal_or_zero(str(data.get("diferencia") or "0"))
+    diff_color = ft.Colors.GREEN_700 if diff == Decimal("0") else ft.Colors.RED_700
+    controls: list[ft.Control] = [
+        ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Calculo oficial backend", weight=ft.FontWeight.W_700),
+                    ft.Row(
+                        controls=[
+                            _kv(
+                                "Total calculado",
+                                str(data.get("total_calculado") or "-"),
+                            ),
+                            _kv(
+                                "Diferencia",
+                                str(data.get("diferencia") or "-"),
+                                color=diff_color,
+                            ),
+                            _kv("Bloques", str(len(bloques))),
+                            _kv("Obligaciones", str(len(obligaciones))),
+                        ],
+                        wrap=True,
+                        spacing=16,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=10,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            border_radius=6,
+        )
+    ]
+    if redondeos:
+        controls.append(
+            ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Text("Redondeos", weight=ft.FontWeight.W_700),
+                        *[
+                            ft.Text(
+                                f"Bloque {item.get('numero_bloque')} "
+                                f"{item.get('tipo_bloque')}: "
+                                f"ajuste ultima cuota "
+                                f"{item.get('ajuste_ultima_cuota')}",
+                                size=12,
+                            )
+                            for item in redondeos
+                        ],
+                    ],
+                    spacing=4,
+                ),
+                padding=10,
+                border=_border_all(1, ft.Colors.AMBER_200),
+                border_radius=6,
+            )
+        )
+    controls.append(_backend_blocks_preview(bloques))
+    controls.append(_backend_obligaciones_preview(obligaciones))
+    return ft.Column(controls=controls, spacing=8)
+
+
+def _backend_blocks_preview(bloques: list[dict[str, Any]]) -> ft.Control:
+    rows: list[ft.Control] = [
+        ft.Text("Bloques normalizados", weight=ft.FontWeight.W_700)
+    ]
+    if not bloques:
+        rows.append(ft.Text("Sin bloques."))
+    for bloque in bloques:
+        importe = bloque.get("importe_total_bloque") or bloque.get("importe_cuota") or "-"
+        detalle = (
+            f"{bloque.get('tipo_bloque', '-')} | "
+            f"{bloque.get('etiqueta_bloque', '-')} | "
+            f"importe {importe}"
+        )
+        if bloque.get("cantidad_cuotas"):
+            detalle += f" | cuotas {bloque.get('cantidad_cuotas')}"
+        rows.append(ft.Text(detalle, size=12))
+    return ft.Container(
+        content=ft.Column(controls=rows, spacing=4),
+        padding=10,
+        border=_border_all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=6,
+    )
+
+
+def _backend_obligaciones_preview(obligaciones: list[dict[str, Any]]) -> ft.Control:
+    header_style = {
+        "size": 11,
+        "weight": ft.FontWeight.W_700,
+        "color": ft.Colors.BLUE_GREY_700,
+    }
+    rows: list[ft.Control] = [
+        ft.Text("Obligaciones preview", weight=ft.FontWeight.W_700)
+    ]
+    if not obligaciones:
+        rows.append(ft.Text("Sin obligaciones."))
+    else:
+        rows.append(
+            ft.Row(
+                controls=[
+                    ft.Container(ft.Text("N", **header_style), width=34),
+                    ft.Container(ft.Text("Bloque", **header_style), width=70),
+                    ft.Container(ft.Text("Tipo", **header_style), width=76),
+                    ft.Container(ft.Text("Vencimiento", **header_style), width=92),
+                    ft.Container(ft.Text("Importe", **header_style), width=96),
+                ],
+                spacing=8,
+            )
+        )
+    for obligacion in obligaciones:
+        rows.append(
+            ft.Row(
+                controls=[
+                    ft.Container(
+                        ft.Text(str(obligacion.get("numero_obligacion") or "-"), size=12),
+                        width=34,
+                    ),
+                    ft.Container(
+                        ft.Text(str(obligacion.get("numero_bloque") or "-"), size=12),
+                        width=70,
+                    ),
+                    ft.Container(
+                        ft.Text(str(obligacion.get("tipo_item_cronograma") or "-"), size=12),
+                        width=76,
+                    ),
+                    ft.Container(
+                        ft.Text(
+                            _format_display_date(
+                                str(obligacion.get("fecha_vencimiento") or "")
+                            ),
+                            size=12,
+                        ),
+                        width=92,
+                    ),
+                    ft.Container(
+                        ft.Text(
+                            str(obligacion.get("importe_total") or "-"),
+                            size=12,
+                            weight=ft.FontWeight.W_600,
+                            text_align=ft.TextAlign.RIGHT,
+                        ),
+                        width=96,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            )
+        )
+    return ft.Container(
+        content=ft.Column(controls=rows, spacing=5),
+        padding=10,
+        border=_border_all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=6,
+    )
 
 
 def _plan_summary(data: dict[str, Any]) -> ft.Control:
