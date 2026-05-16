@@ -435,6 +435,43 @@ def test_servicio_unificado_genera_financiado_con_bloques_y_trazabilidad(
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
 
+def test_servicio_unificado_genera_tramo_por_capital_total_con_ultima_cuota_ajustada(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-007")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("10000000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                )
+            ],
+        )
+    )
+
+    assert result.success, result.errors
+    bloques = _bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)
+    assert len(bloques) == 1
+    assert bloques[0]["tipo_bloque"] == "TRAMO_CUOTAS"
+    assert bloques[0]["importe_total_bloque"] == Decimal("10000000.00")
+    assert bloques[0]["importe_cuota"] == Decimal("1666666.67")
+
+    obligaciones = _obligaciones_unificadas(db_session, id_venta=id_venta)
+    importes = [ob["importe_total"] for ob in obligaciones]
+    assert importes[:5] == [Decimal("1666666.67")] * 5
+    assert importes[-1] == Decimal("1666666.65")
+    assert sum(importes, Decimal("0.00")) == Decimal("10000000.00")
+    assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
+
+
 def test_servicio_unificado_rechaza_suma_de_bloques_invalida(db_session) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-003")
     _vincular_comprador_venta(db_session, id_venta=id_venta)

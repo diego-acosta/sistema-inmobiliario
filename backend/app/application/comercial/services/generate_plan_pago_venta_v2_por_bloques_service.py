@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
     GeneratePlanPagoVentaV2PorBloquesCommand,
-    PlanPagoVentaBloqueInput,
 )
-from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cuotas_iguales_service import (
-    CONCEPTO_ANTICIPO_VENTA,
+from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    BuildPlanPagoVentaV2PorBloquesPreviewService,
+    METODO_PLAN_POR_BLOQUES,
+    TIPO_BLOQUE_ANTICIPO,
+    TIPO_BLOQUE_TRAMO_CUOTAS,
+    PlanPagoVentaV2BloquePreview,
+    PlanPagoVentaV2ObligacionPreview,
 )
 from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
-    CONCEPTO_CAPITAL_VENTA,
     ESTADO_OBLIGACION_PROYECTADA,
     GeneracionCronogramaCreatePayload,
     ObligacionCronogramaV2CreatePayload,
@@ -27,35 +29,9 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     ROL_OBLIGADO_COMPRADOR,
     RelacionGeneradoraUpsertPayload,
     TIPO_GENERACION_PLAN_PAGO_VENTA_V2,
-    TIPO_ITEM_CUOTA,
     TIPO_ORIGEN_VENTA,
-    add_months,
 )
 from app.application.common.results import AppResult
-
-METODO_PLAN_POR_BLOQUES = "PLAN_POR_BLOQUES"
-TIPO_PAGO_CONTADO = "CONTADO"
-TIPO_PAGO_FINANCIADO = "FINANCIADO"
-TIPO_BLOQUE_CONTADO = "CONTADO"
-TIPO_BLOQUE_ANTICIPO = "ANTICIPO"
-TIPO_BLOQUE_TRAMO_CUOTAS = "TRAMO_CUOTAS"
-TIPO_BLOQUE_REFUERZO = "REFUERZO"
-TIPO_BLOQUE_SALDO = "SALDO"
-TIPO_ITEM_ANTICIPO = "ANTICIPO"
-TIPO_ITEM_REFUERZO = "REFUERZO"
-TIPO_ITEM_SALDO = "SALDO"
-
-
-@dataclass(slots=True)
-class _PreparedBloque:
-    input: PlanPagoVentaBloqueInput
-    numero_bloque: int
-    tipo_bloque: str
-    etiqueta_bloque: str
-    clave_bloque: str
-    ordinal_tipo: int
-    total_bloque: Decimal
-    concepto_financiero_codigo: str
 
 
 class GeneratePlanPagoVentaV2PorBloquesService:
@@ -63,26 +39,34 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         self,
         repository: PlanPagoVentaV2Repository,
         uuid_generator=None,
+        preview_service: BuildPlanPagoVentaV2PorBloquesPreviewService | None = None,
     ) -> None:
         self.repository = repository
         self.db = repository.db
         self.uuid_generator = uuid_generator or uuid4
+        self.preview_service = (
+            preview_service or BuildPlanPagoVentaV2PorBloquesPreviewService()
+        )
 
     def execute(
         self, command: GeneratePlanPagoVentaV2PorBloquesCommand
     ) -> AppResult[dict[str, Any]]:
-        validation_error = self._validate(command)
-        if validation_error is not None:
-            return AppResult.fail(validation_error)
+        preview_without_plan = self.preview_service.execute(command)
+        if not preview_without_plan.success:
+            return AppResult.fail(preview_without_plan.errors[0])
 
         try:
             with self._transaction():
-                return self._execute_in_transaction(command)
+                return self._execute_in_transaction(
+                    command, preview_without_plan.data["bloques"]
+                )
         except ValueError as exc:
             return AppResult.fail(str(exc))
 
     def _execute_in_transaction(
-        self, command: GeneratePlanPagoVentaV2PorBloquesCommand
+        self,
+        command: GeneratePlanPagoVentaV2PorBloquesCommand,
+        prepared_without_plan: list[PlanPagoVentaV2BloquePreview],
     ) -> AppResult[dict[str, Any]]:
         venta = self.repository.get_venta_minima(command.id_venta)
         if venta is None:
@@ -93,8 +77,6 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         now = datetime.now(UTC)
         tipo_pago = command.tipo_pago.strip().upper()
         moneda = command.moneda.strip().upper()
-        prepared_without_plan = self._prepare_bloques(command, id_plan_pago_venta=0)
-
         plan_vivo = self.repository.get_plan_pago_venta_vivo(command.id_venta)
         if plan_vivo is not None and not self._plan_vivo_compatible(
             plan_vivo=plan_vivo,
@@ -159,9 +141,13 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             )
         )
 
-        prepared_bloques = self._prepare_bloques(
+        preview = self.preview_service.execute(
             command, id_plan_pago_venta=plan["id_plan_pago_venta"]
         )
+        if not preview.success:
+            return AppResult.fail(preview.errors[0])
+        prepared_bloques = preview.data["bloques"]
+        obligaciones_preview = preview.data["obligaciones"]
         bloques = [
             self.repository.get_or_create_plan_pago_venta_bloque(
                 self._build_bloque_payload(
@@ -214,28 +200,29 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         conceptos = self._resolve_conceptos(prepared_bloques)
         comprador = self._resolve_comprador(command.id_venta)
 
+        bloques_by_numero = {
+            prepared.numero_bloque: bloque
+            for prepared, bloque in zip(prepared_bloques, bloques, strict=True)
+        }
         clave_funcionales: list[str] = []
-        numero_obligacion = 1
-        for prepared, bloque in zip(prepared_bloques, bloques, strict=True):
-            obligaciones_bloque = self._build_obligaciones_bloque(
-                prepared=prepared,
+        for obligacion_preview in obligaciones_preview:
+            bloque = bloques_by_numero[obligacion_preview.bloque.numero_bloque]
+            payload = self._obligacion_payload(
+                obligacion_preview=obligacion_preview,
                 bloque=bloque,
-                numero_obligacion_inicial=numero_obligacion,
                 id_relacion_generadora=relacion["id_relacion_generadora"],
                 id_generacion_cronograma_financiero=generacion[
                     "id_generacion_cronograma_financiero"
                 ],
-                concepto=conceptos[prepared.concepto_financiero_codigo],
+                concepto=conceptos[obligacion_preview.concepto_financiero_codigo],
                 comprador=comprador,
                 moneda=moneda,
                 now=now,
                 id_instalacion=id_instalacion,
                 op_id=op_id,
             )
-            for payload in obligaciones_bloque:
-                clave_funcionales.append(payload.clave_funcional_origen)
-                self.repository.create_obligacion_cronograma_v2_if_not_exists(payload)
-                numero_obligacion += 1
+            clave_funcionales.append(payload.clave_funcional_origen)
+            self.repository.create_obligacion_cronograma_v2_if_not_exists(payload)
 
         plan = self.repository.mark_plan_pago_venta_generado(
             id_plan_pago_venta=plan["id_plan_pago_venta"],
@@ -259,126 +246,10 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             }
         )
 
-    def _validate(self, command: GeneratePlanPagoVentaV2PorBloquesCommand) -> str | None:
-        if command.id_venta <= 0:
-            return "INVALID_VENTA"
-        if command.monto_total_plan <= 0:
-            return "INVALID_MONTO_TOTAL_PLAN"
-        if not self._has_cent_precision(command.monto_total_plan):
-            return "INVALID_MONTO_TOTAL_PLAN"
-        if not command.moneda or not command.moneda.strip():
-            return "INVALID_MONEDA"
-        tipo_pago = command.tipo_pago.strip().upper() if command.tipo_pago else ""
-        if tipo_pago not in {TIPO_PAGO_CONTADO, TIPO_PAGO_FINANCIADO}:
-            return "INVALID_TIPO_PAGO"
-        if not command.bloques:
-            return "INVALID_BLOQUES"
-
-        tipos = [bloque.tipo_bloque.strip().upper() for bloque in command.bloques]
-        if tipo_pago == TIPO_PAGO_CONTADO:
-            if len(command.bloques) != 1 or tipos[0] != TIPO_BLOQUE_CONTADO:
-                return "CONTADO_BLOQUES_INVALIDOS"
-        if tipo_pago == TIPO_PAGO_FINANCIADO:
-            if TIPO_BLOQUE_CONTADO in tipos:
-                return "FINANCIADO_NO_PERMITE_CONTADO"
-
-        total = Decimal("0.00")
-        for bloque in command.bloques:
-            error = self._validate_bloque(bloque, tipo_pago=tipo_pago)
-            if error is not None:
-                return error
-            total += self._bloque_total(bloque)
-
-        if total.quantize(Decimal("0.01")) != command.monto_total_plan:
-            return "SUMA_BLOQUES_INVALIDA"
-        return None
-
-    def _validate_bloque(
-        self, bloque: PlanPagoVentaBloqueInput, *, tipo_pago: str
-    ) -> str | None:
-        tipo_bloque = bloque.tipo_bloque.strip().upper() if bloque.tipo_bloque else ""
-        if tipo_bloque not in {
-            TIPO_BLOQUE_CONTADO,
-            TIPO_BLOQUE_ANTICIPO,
-            TIPO_BLOQUE_TRAMO_CUOTAS,
-            TIPO_BLOQUE_REFUERZO,
-            TIPO_BLOQUE_SALDO,
-        }:
-            return "BLOQUE_INVALIDO"
-
-        if tipo_bloque == TIPO_BLOQUE_CONTADO:
-            if tipo_pago != TIPO_PAGO_CONTADO:
-                return "BLOQUE_INVALIDO"
-            return self._validate_pago_unico(bloque)
-
-        if tipo_bloque == TIPO_BLOQUE_ANTICIPO:
-            if tipo_pago != TIPO_PAGO_FINANCIADO:
-                return "BLOQUE_INVALIDO"
-            return self._validate_pago_unico(bloque)
-
-        if tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
-            if (bloque.cantidad_cuotas or 0) <= 0:
-                return "BLOQUE_INVALIDO"
-            if bloque.importe_cuota is None or bloque.importe_cuota <= 0:
-                return "BLOQUE_INVALIDO"
-            if not self._has_cent_precision(bloque.importe_cuota):
-                return "BLOQUE_INVALIDO"
-            if bloque.fecha_primer_vencimiento is None:
-                return "BLOQUE_INVALIDO"
-            periodicidad = (bloque.periodicidad or "").strip().upper()
-            if periodicidad != PERIODICIDAD_MENSUAL:
-                return "INVALID_PERIODICIDAD"
-            regla_redondeo = (bloque.regla_redondeo or REGLA_REDONDEO_ULTIMA_CUOTA).strip().upper()
-            if regla_redondeo != REGLA_REDONDEO_ULTIMA_CUOTA:
-                return "INVALID_REGLA_REDONDEO"
-            return None
-
-        return self._validate_pago_unico(bloque)
-
-    def _validate_pago_unico(self, bloque: PlanPagoVentaBloqueInput) -> str | None:
-        if bloque.importe_total_bloque is None or bloque.importe_total_bloque <= 0:
-            return "BLOQUE_INVALIDO"
-        if not self._has_cent_precision(bloque.importe_total_bloque):
-            return "BLOQUE_INVALIDO"
-        if bloque.fecha_vencimiento is None:
-            return "BLOQUE_INVALIDO"
-        return None
-
-    def _prepare_bloques(
-        self,
-        command: GeneratePlanPagoVentaV2PorBloquesCommand,
-        *,
-        id_plan_pago_venta: int,
-    ) -> list[_PreparedBloque]:
-        counts: dict[str, int] = {}
-        prepared: list[_PreparedBloque] = []
-        for index, bloque in enumerate(command.bloques, start=1):
-            tipo_bloque = bloque.tipo_bloque.strip().upper()
-            counts[tipo_bloque] = counts.get(tipo_bloque, 0) + 1
-            ordinal_tipo = counts[tipo_bloque]
-            clave_bloque = (
-                f"PLAN_PAGO_VENTA:{id_plan_pago_venta}:"
-                f"BLOQUE:{tipo_bloque}:{ordinal_tipo}"
-            )
-            prepared.append(
-                _PreparedBloque(
-                    input=bloque,
-                    numero_bloque=index,
-                    tipo_bloque=tipo_bloque,
-                    etiqueta_bloque=bloque.etiqueta_bloque
-                    or self._default_etiqueta_bloque(tipo_bloque),
-                    clave_bloque=clave_bloque,
-                    ordinal_tipo=ordinal_tipo,
-                    total_bloque=self._bloque_total(bloque),
-                    concepto_financiero_codigo=self._concepto_codigo(tipo_bloque),
-                )
-            )
-        return prepared
-
     def _build_bloque_payload(
         self,
         *,
-        bloque: _PreparedBloque,
+        bloque: PlanPagoVentaV2BloquePreview,
         id_plan_pago_venta: int,
         now: datetime,
         id_instalacion: int | None,
@@ -402,12 +273,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             etiqueta_bloque=bloque.etiqueta_bloque,
             clave_bloque=bloque.clave_bloque,
             cantidad_cuotas=input_bloque.cantidad_cuotas,
-            importe_total_bloque=(
-                input_bloque.importe_total_bloque
-                if bloque.tipo_bloque != TIPO_BLOQUE_TRAMO_CUOTAS
-                else None
-            ),
-            importe_cuota=input_bloque.importe_cuota,
+            importe_total_bloque=bloque.importe_total_bloque,
+            importe_cuota=bloque.importe_cuota,
             fecha_vencimiento=input_bloque.fecha_vencimiento,
             fecha_primer_vencimiento=input_bloque.fecha_primer_vencimiento,
             periodicidad=periodicidad,
@@ -422,82 +289,11 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             op_id_ultima_modificacion=op_id,
         )
 
-    def _build_obligaciones_bloque(
-        self,
-        *,
-        prepared: _PreparedBloque,
-        bloque: dict[str, Any],
-        numero_obligacion_inicial: int,
-        id_relacion_generadora: int,
-        id_generacion_cronograma_financiero: int,
-        concepto: dict[str, Any],
-        comprador: dict[str, Any],
-        moneda: str,
-        now: datetime,
-        id_instalacion: int | None,
-        op_id: Any,
-    ) -> list[ObligacionCronogramaV2CreatePayload]:
-        if prepared.tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
-            payloads: list[ObligacionCronogramaV2CreatePayload] = []
-            for cuota_numero in range(1, (prepared.input.cantidad_cuotas or 0) + 1):
-                fecha_vencimiento = add_months(
-                    prepared.input.fecha_primer_vencimiento, cuota_numero - 1
-                )
-                payloads.append(
-                    self._obligacion_payload(
-                        prepared=prepared,
-                        bloque=bloque,
-                        numero_obligacion=numero_obligacion_inicial + cuota_numero - 1,
-                        tipo_item_cronograma=TIPO_ITEM_CUOTA,
-                        etiqueta_obligacion=f"Cuota {cuota_numero}",
-                        item_numero=cuota_numero,
-                        fecha_vencimiento=fecha_vencimiento,
-                        importe_total=prepared.input.importe_cuota,
-                        id_relacion_generadora=id_relacion_generadora,
-                        id_generacion_cronograma_financiero=id_generacion_cronograma_financiero,
-                        concepto=concepto,
-                        comprador=comprador,
-                        moneda=moneda,
-                        now=now,
-                        id_instalacion=id_instalacion,
-                        op_id=op_id,
-                    )
-                )
-            return payloads
-
-        tipo_item = self._tipo_item_cronograma(prepared.tipo_bloque)
-        return [
-            self._obligacion_payload(
-                prepared=prepared,
-                bloque=bloque,
-                numero_obligacion=numero_obligacion_inicial,
-                tipo_item_cronograma=tipo_item,
-                etiqueta_obligacion=prepared.etiqueta_bloque,
-                item_numero=1,
-                fecha_vencimiento=prepared.input.fecha_vencimiento,
-                importe_total=prepared.input.importe_total_bloque,
-                id_relacion_generadora=id_relacion_generadora,
-                id_generacion_cronograma_financiero=id_generacion_cronograma_financiero,
-                concepto=concepto,
-                comprador=comprador,
-                moneda=moneda,
-                now=now,
-                id_instalacion=id_instalacion,
-                op_id=op_id,
-            )
-        ]
-
     def _obligacion_payload(
         self,
         *,
-        prepared: _PreparedBloque,
+        obligacion_preview: PlanPagoVentaV2ObligacionPreview,
         bloque: dict[str, Any],
-        numero_obligacion: int,
-        tipo_item_cronograma: str,
-        etiqueta_obligacion: str,
-        item_numero: int,
-        fecha_vencimiento: date,
-        importe_total: Decimal,
         id_relacion_generadora: int,
         id_generacion_cronograma_financiero: int,
         concepto: dict[str, Any],
@@ -509,19 +305,21 @@ class GeneratePlanPagoVentaV2PorBloquesService:
     ) -> ObligacionCronogramaV2CreatePayload:
         clave_funcional = (
             f"PLAN_PAGO_VENTA:{bloque['id_plan_pago_venta']}:"
-            f"BLOQUE:{prepared.numero_bloque}:{tipo_item_cronograma}:{item_numero}"
+            f"BLOQUE:{obligacion_preview.bloque.numero_bloque}:"
+            f"{obligacion_preview.tipo_item_cronograma}:"
+            f"{obligacion_preview.item_numero}"
         )
         return ObligacionCronogramaV2CreatePayload(
             id_relacion_generadora=id_relacion_generadora,
             id_generacion_cronograma_financiero=id_generacion_cronograma_financiero,
             id_plan_pago_venta_bloque=bloque["id_plan_pago_venta_bloque"],
-            numero_obligacion=numero_obligacion,
-            tipo_item_cronograma=tipo_item_cronograma,
-            etiqueta_obligacion=etiqueta_obligacion,
+            numero_obligacion=obligacion_preview.numero_obligacion,
+            tipo_item_cronograma=obligacion_preview.tipo_item_cronograma,
+            etiqueta_obligacion=obligacion_preview.etiqueta_obligacion,
             clave_funcional_origen=clave_funcional,
-            fecha_emision=fecha_vencimiento,
-            fecha_vencimiento=fecha_vencimiento,
-            importe_total=importe_total,
+            fecha_emision=obligacion_preview.fecha_vencimiento,
+            fecha_vencimiento=obligacion_preview.fecha_vencimiento,
+            importe_total=obligacion_preview.importe_total,
             moneda=moneda,
             estado_obligacion=ESTADO_OBLIGACION_PROYECTADA,
             id_concepto_financiero=concepto["id_concepto_financiero"],
@@ -552,9 +350,12 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             return False
         if plan_vivo["moneda"] != moneda:
             return False
-        expected = self._prepare_bloques(
+        expected_result = self.preview_service.execute(
             command, id_plan_pago_venta=plan_vivo["id_plan_pago_venta"]
         )
+        if not expected_result.success:
+            return False
+        expected = expected_result.data["bloques"]
         existing = self.repository.get_plan_pago_venta_bloques(
             plan_vivo["id_plan_pago_venta"]
         )
@@ -566,7 +367,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         )
 
     def _bloque_compatible(
-        self, existing: dict[str, Any], expected: _PreparedBloque
+        self, existing: dict[str, Any], expected: PlanPagoVentaV2BloquePreview
     ) -> bool:
         return (
             existing["numero_bloque"] == expected.numero_bloque
@@ -575,9 +376,9 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             and existing["clave_bloque"] == expected.clave_bloque
             and existing["cantidad_cuotas"] == expected.input.cantidad_cuotas
             and self._decimal_or_none(existing["importe_total_bloque"])
-            == self._decimal_or_none(expected.input.importe_total_bloque)
+            == self._decimal_or_none(expected.importe_total_bloque)
             and self._decimal_or_none(existing["importe_cuota"])
-            == self._decimal_or_none(expected.input.importe_cuota)
+            == self._decimal_or_none(expected.importe_cuota)
             and existing["fecha_vencimiento"] == expected.input.fecha_vencimiento
             and existing["fecha_primer_vencimiento"]
             == expected.input.fecha_primer_vencimiento
@@ -598,7 +399,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         )
 
     def _resolve_conceptos(
-        self, bloques: list[_PreparedBloque]
+        self, bloques: list[PlanPagoVentaV2BloquePreview]
     ) -> dict[str, dict[str, Any]]:
         conceptos: dict[str, dict[str, Any]] = {}
         for codigo in {bloque.concepto_financiero_codigo for bloque in bloques}:
@@ -618,50 +419,10 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         return compradores[0]
 
     @staticmethod
-    def _has_cent_precision(value: Decimal) -> bool:
-        return value == value.quantize(Decimal("0.01"))
-
-    @staticmethod
     def _decimal_or_none(value: Any) -> Decimal | None:
         if value is None:
             return None
         return Decimal(str(value)).quantize(Decimal("0.01"))
-
-    def _bloque_total(self, bloque: PlanPagoVentaBloqueInput) -> Decimal:
-        tipo_bloque = bloque.tipo_bloque.strip().upper()
-        if tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
-            return (bloque.importe_cuota or Decimal("0.00")) * Decimal(
-                bloque.cantidad_cuotas or 0
-            )
-        return bloque.importe_total_bloque or Decimal("0.00")
-
-    @staticmethod
-    def _default_etiqueta_bloque(tipo_bloque: str) -> str:
-        return {
-            TIPO_BLOQUE_CONTADO: "Contado",
-            TIPO_BLOQUE_ANTICIPO: "Anticipo",
-            TIPO_BLOQUE_TRAMO_CUOTAS: "Cuotas",
-            TIPO_BLOQUE_REFUERZO: "Refuerzo",
-            TIPO_BLOQUE_SALDO: "Saldo",
-        }[tipo_bloque]
-
-    @staticmethod
-    def _concepto_codigo(tipo_bloque: str) -> str:
-        if tipo_bloque == TIPO_BLOQUE_ANTICIPO:
-            return CONCEPTO_ANTICIPO_VENTA
-        return CONCEPTO_CAPITAL_VENTA
-
-    @staticmethod
-    def _tipo_item_cronograma(tipo_bloque: str) -> str:
-        if tipo_bloque == TIPO_BLOQUE_CONTADO:
-            return TIPO_ITEM_SALDO
-        if tipo_bloque == TIPO_BLOQUE_ANTICIPO:
-            return TIPO_ITEM_ANTICIPO
-        if tipo_bloque == TIPO_BLOQUE_REFUERZO:
-            return TIPO_ITEM_REFUERZO
-        if tipo_bloque == TIPO_BLOQUE_SALDO:
-            return TIPO_ITEM_SALDO
-        raise ValueError("BLOQUE_INVALIDO")
 
     def _transaction(self) -> AbstractContextManager[Any]:
         if self.db.in_transaction():
