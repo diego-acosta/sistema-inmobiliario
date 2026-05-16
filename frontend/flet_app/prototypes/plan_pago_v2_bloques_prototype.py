@@ -533,33 +533,90 @@ class PlanPagoV2BloquesPrototype:
         if not preview:
             self.preview_column.controls = [ft.Text("Sin filas para previsualizar.")]
             return
+        header_style = {
+            "size": 11,
+            "weight": ft.FontWeight.W_700,
+            "color": ft.Colors.BLUE_GREY_700,
+        }
         self.preview_column.controls = [
-            ft.DataTable(
-                columns=[
-                    ft.DataColumn(ft.Text("N")),
-                    ft.DataColumn(ft.Text("Bloque")),
-                    ft.DataColumn(ft.Text("Tipo obligacion")),
-                    ft.DataColumn(ft.Text("Etiqueta")),
-                    ft.DataColumn(ft.Text("Vencimiento")),
-                    ft.DataColumn(ft.Text("Importe")),
-                    ft.DataColumn(ft.Text("Concepto")),
-                ],
-                rows=[
-                    ft.DataRow(
-                        cells=[
-                            ft.DataCell(ft.Text(str(row.numero))),
-                            ft.DataCell(ft.Text(row.bloque)),
-                            ft.DataCell(ft.Text(row.tipo_obligacion)),
-                            ft.DataCell(ft.Text(row.etiqueta)),
-                            ft.DataCell(ft.Text(row.vencimiento)),
-                            ft.DataCell(ft.Text(_money(row.importe))),
-                            ft.DataCell(ft.Text(row.concepto)),
-                        ]
-                    )
-                    for row in preview
-                ],
+            ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Container(ft.Text("N", **header_style), width=34),
+                                ft.Container(ft.Text("Bloque", **header_style), expand=2),
+                                ft.Container(ft.Text("Etiqueta", **header_style), expand=2),
+                                ft.Container(
+                                    ft.Text("Vencimiento", **header_style), width=92
+                                ),
+                                ft.Container(
+                                    ft.Text("Importe", **header_style), width=96
+                                ),
+                            ],
+                            spacing=8,
+                        ),
+                        *[self._preview_row(row) for row in preview],
+                    ],
+                    spacing=6,
+                ),
+                padding=8,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                border_radius=6,
+                expand=True,
             )
         ]
+
+    def _preview_row(self, row: CronogramaRow) -> ft.Control:
+        secondary = f"{row.tipo_obligacion} · {row.concepto}"
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Container(
+                                ft.Text(
+                                    str(row.numero),
+                                    size=12,
+                                    weight=ft.FontWeight.W_600,
+                                ),
+                                width=34,
+                            ),
+                            ft.Container(
+                                ft.Text(row.bloque, size=12),
+                                expand=2,
+                            ),
+                            ft.Container(
+                                ft.Text(row.etiqueta, size=12),
+                                expand=2,
+                            ),
+                            ft.Container(ft.Text(row.vencimiento, size=12), width=92),
+                            ft.Container(
+                                ft.Text(
+                                    _money(row.importe),
+                                    size=12,
+                                    weight=ft.FontWeight.W_600,
+                                    text_align=ft.TextAlign.RIGHT,
+                                ),
+                                width=96,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    ft.Text(
+                        secondary,
+                        size=11,
+                        color=ft.Colors.BLUE_GREY_600,
+                    ),
+                ],
+                spacing=2,
+            ),
+            padding=ft.padding.symmetric(horizontal=4, vertical=6),
+            border=ft.border.only(
+                bottom=ft.BorderSide(1, ft.Colors.BLUE_GREY_50),
+            ),
+        )
 
     def _validate(self) -> list[str]:
         errors: list[str] = []
