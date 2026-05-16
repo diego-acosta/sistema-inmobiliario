@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, InvalidOperation, ROUND_DOWN
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import json
 from typing import Any, Callable
 from uuid import uuid4
@@ -44,8 +44,8 @@ class BloqueDraft:
     etiqueta_bloque: str = ""
     importe_total_bloque: str = ""
     fecha_vencimiento: str = ""
+    capital_tramo: str = ""
     cantidad_cuotas: str = ""
-    importe_cuota: str = ""
     fecha_primer_vencimiento: str = ""
     periodicidad: str = "MENSUAL"
 
@@ -107,6 +107,8 @@ class PlanPagoV2BloquesPrototype:
         self.preview_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
         self.response_column = ft.Column(spacing=10)
         self.detail_column = ft.Column(spacing=10)
+        self.tramo_cuota_texts: dict[str, ft.Text] = {}
+        self.tramo_rounding_texts: dict[str, ft.Text] = {}
 
         self.generate_button = ft.Button(
             "Generar plan",
@@ -316,10 +318,7 @@ class PlanPagoV2BloquesPrototype:
         anticipo = min(Decimal("2000000.00"), monto_total)
         cuotas = 6
         total_cuotas = max(monto_total - anticipo, Decimal("0"))
-        importe_cuota = (total_cuotas / Decimal(cuotas)).quantize(
-            Decimal("0.01"), rounding=ROUND_DOWN
-        )
-        saldo = monto_total - anticipo - (importe_cuota * Decimal(cuotas))
+        saldo = monto_total - anticipo - total_cuotas
         bloques = [
             BloqueDraft(
                 uid=str(uuid4()),
@@ -332,8 +331,8 @@ class PlanPagoV2BloquesPrototype:
                 uid=str(uuid4()),
                 tipo_bloque="TRAMO_CUOTAS",
                 etiqueta_bloque="Primer tramo",
+                capital_tramo=_money(total_cuotas),
                 cantidad_cuotas="6",
-                importe_cuota=_money(importe_cuota),
                 fecha_primer_vencimiento=date.today().isoformat(),
                 periodicidad="MENSUAL",
             ),
@@ -391,6 +390,7 @@ class PlanPagoV2BloquesPrototype:
     def _refresh_summary_and_preview(self, update_page: bool = True) -> None:
         errors = self._validate()
         preview = self._build_preview()
+        self._refresh_tramo_calculated_labels()
         self._render_summary(preview, errors)
         self._render_validation(errors)
         self._render_preview(preview)
@@ -453,6 +453,8 @@ class PlanPagoV2BloquesPrototype:
         self.validation_banner.border_radius = 6
 
     def _render_blocks(self) -> None:
+        self.tramo_cuota_texts = {}
+        self.tramo_rounding_texts = {}
         self.blocks_column.controls = [
             self._block_card(index, bloque)
             for index, bloque in enumerate(self.state.bloques, start=1)
@@ -485,10 +487,30 @@ class PlanPagoV2BloquesPrototype:
             ),
         ]
         if bloque.tipo_bloque == "TRAMO_CUOTAS":
+            calculated_text = ft.Text(
+                self._calculated_cuota_label(bloque),
+                weight=ft.FontWeight.W_600,
+            )
+            rounding_text = ft.Text(
+                self._tramo_rounding_warning(bloque) or "",
+                size=12,
+                color=ft.Colors.AMBER_800,
+                visible=bool(self._tramo_rounding_warning(bloque)),
+            )
+            self.tramo_cuota_texts[bloque.uid] = calculated_text
+            self.tramo_rounding_texts[bloque.uid] = rounding_text
             controls.extend(
                 [
                     ft.Row(
                         controls=[
+                            ft.TextField(
+                                label="Capital del tramo",
+                                value=bloque.capital_tramo,
+                                width=170,
+                                on_change=lambda e, b=bloque: self._update_block(
+                                    b, "capital_tramo", e.control.value
+                                ),
+                            ),
                             ft.TextField(
                                 label="Cantidad cuotas",
                                 value=bloque.cantidad_cuotas,
@@ -498,20 +520,25 @@ class PlanPagoV2BloquesPrototype:
                                 ),
                             ),
                             ft.TextField(
-                                label="Importe cuota",
-                                value=bloque.importe_cuota,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_block(
-                                    b, "importe_cuota", e.control.value
-                                ),
-                            ),
-                            ft.TextField(
                                 label="Primer vencimiento",
                                 value=bloque.fecha_primer_vencimiento,
                                 width=170,
                                 on_change=lambda e, b=bloque: self._update_block(
                                     b, "fecha_primer_vencimiento", e.control.value
                                 ),
+                            ),
+                            ft.Column(
+                                controls=[
+                                    ft.Text(
+                                        "Importe de cuota calculado",
+                                        size=12,
+                                        color=ft.Colors.BLUE_GREY_700,
+                                    ),
+                                    calculated_text,
+                                    rounding_text,
+                                ],
+                                spacing=2,
+                                tight=True,
                             ),
                             ft.Dropdown(
                                 label="Periodicidad",
@@ -684,8 +711,9 @@ class PlanPagoV2BloquesPrototype:
             if bloque.tipo_bloque == "TRAMO_CUOTAS":
                 if _int_or_none(bloque.cantidad_cuotas) is None:
                     errors.append("TRAMO_CUOTAS: cantidad de cuotas requerida.")
-                if _decimal_or_none(bloque.importe_cuota) is None:
-                    errors.append("TRAMO_CUOTAS: importe de cuota requerido.")
+                capital = _decimal_or_none(bloque.capital_tramo)
+                if capital is None or capital <= 0:
+                    errors.append("TRAMO_CUOTAS: capital del tramo requerido.")
                 if not _valid_iso_date(bloque.fecha_primer_vencimiento):
                     errors.append("TRAMO_CUOTAS: primer vencimiento requerido.")
                 if bloque.periodicidad != "MENSUAL":
@@ -699,12 +727,49 @@ class PlanPagoV2BloquesPrototype:
         self.state.error_message = None
         self._refresh_summary_and_preview()
 
+    def _refresh_tramo_calculated_labels(self) -> None:
+        for bloque in self.state.bloques:
+            if bloque.tipo_bloque != "TRAMO_CUOTAS":
+                continue
+            cuota_text = self.tramo_cuota_texts.get(bloque.uid)
+            if cuota_text is not None:
+                cuota_text.value = self._calculated_cuota_label(bloque)
+            rounding_text = self.tramo_rounding_texts.get(bloque.uid)
+            if rounding_text is not None:
+                warning = self._tramo_rounding_warning(bloque)
+                rounding_text.value = warning or ""
+                rounding_text.visible = bool(warning)
+
+    def _calculated_cuota_label(self, bloque: BloqueDraft) -> str:
+        cuota = self._calculated_importe_cuota(bloque)
+        return _money(cuota) if cuota is not None else "-"
+
+    def _calculated_importe_cuota(self, bloque: BloqueDraft) -> Decimal | None:
+        capital = _decimal_or_none(bloque.capital_tramo)
+        qty = _int_or_none(bloque.cantidad_cuotas)
+        if capital is None or capital <= 0 or qty is None:
+            return None
+        return (capital / Decimal(qty)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+    def _tramo_rounding_warning(self, bloque: BloqueDraft) -> str | None:
+        capital = _decimal_or_none(bloque.capital_tramo)
+        qty = _int_or_none(bloque.cantidad_cuotas)
+        cuota = self._calculated_importe_cuota(bloque)
+        if capital is None or qty is None or cuota is None:
+            return None
+        total_calculado = (cuota * Decimal(qty)).quantize(Decimal("0.01"))
+        diferencia = (capital - total_calculado).quantize(Decimal("0.01"))
+        if diferencia == Decimal("0.00"):
+            return None
+        return f"Redondeo: total cuotas difiere {_money(diferencia)} del capital."
+
     def _blocks_total(self) -> Decimal:
         total = Decimal("0")
         for bloque in self.state.bloques:
             if bloque.tipo_bloque == "TRAMO_CUOTAS":
-                qty = _int_or_none(bloque.cantidad_cuotas) or 0
-                total += _decimal_or_zero(bloque.importe_cuota) * Decimal(qty)
+                total += _decimal_or_zero(bloque.capital_tramo)
             else:
                 total += _decimal_or_zero(bloque.importe_total_bloque)
         return total.quantize(Decimal("0.01"))
@@ -740,6 +805,7 @@ class PlanPagoV2BloquesPrototype:
             elif bloque.tipo_bloque == "TRAMO_CUOTAS":
                 qty = _int_or_none(bloque.cantidad_cuotas) or 0
                 first_due = _date_or_none(bloque.fecha_primer_vencimiento)
+                importe_cuota = self._calculated_importe_cuota(bloque) or Decimal("0.00")
                 for index in range(qty):
                     due = _add_months(first_due, index) if first_due else ""
                     rows.append(
@@ -749,7 +815,7 @@ class PlanPagoV2BloquesPrototype:
                             tipo_obligacion="CUOTA",
                             etiqueta=f"{label} {index + 1}",
                             vencimiento=due,
-                            importe=_decimal_or_zero(bloque.importe_cuota),
+                            importe=importe_cuota,
                             concepto="CAPITAL_VENTA",
                         )
                     )
@@ -784,7 +850,9 @@ class PlanPagoV2BloquesPrototype:
             payload.update(
                 {
                     "cantidad_cuotas": _int_or_none(bloque.cantidad_cuotas),
-                    "importe_cuota": float(_decimal_or_zero(bloque.importe_cuota)),
+                    "importe_cuota": float(
+                        self._calculated_importe_cuota(bloque) or Decimal("0.00")
+                    ),
                     "fecha_primer_vencimiento": bloque.fecha_primer_vencimiento,
                     "periodicidad": bloque.periodicidad,
                 }
