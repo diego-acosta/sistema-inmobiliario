@@ -12,6 +12,8 @@ from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_pre
 )
 from app.application.common.commands import CommandContext
 
+URL = "/api/v1/ventas/{id_venta}/plan-pago-v2/preview"
+
 
 def _command(
     *,
@@ -42,6 +44,23 @@ def _command(
 
 def _count(db_session, table: str) -> int:
     return db_session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one()
+
+
+def _payload_tramo_por_capital_total() -> dict:
+    return {
+        "tipo_pago": "FINANCIADO",
+        "monto_total_plan": 10000000.00,
+        "moneda": "ARS",
+        "bloques": [
+            {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "importe_total_bloque": 10000000.00,
+                "cantidad_cuotas": 6,
+                "fecha_primer_vencimiento": "2026-06-10",
+                "periodicidad": "MENSUAL",
+            }
+        ],
+    }
 
 
 def test_preview_tramo_por_capital_total_ajusta_ultima_cuota_y_suma_exacta() -> None:
@@ -140,3 +159,83 @@ def test_preview_valida_suma_general_con_tramo_por_capital_total() -> None:
 
     assert not result.success
     assert result.errors == ["SUMA_BLOQUES_INVALIDA"]
+
+
+def test_endpoint_preview_tramo_por_capital_total_devuelve_ultima_cuota_ajustada(
+    client,
+) -> None:
+    response = client.post(URL.format(id_venta=1), json=_payload_tramo_por_capital_total())
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["metodo_plan_pago"] == "PLAN_POR_BLOQUES"
+    assert data["total_calculado"] == "10000000.00"
+    assert data["diferencia"] == "0.00"
+    assert len(data["bloques"]) == 1
+    assert data["bloques"][0]["importe_total_bloque"] == "10000000.00"
+    assert data["bloques"][0]["importe_cuota"] == "1666666.67"
+
+    importes = [obligacion["importe_total"] for obligacion in data["obligaciones"]]
+    assert len(importes) == 6
+    assert importes[:5] == ["1666666.67"] * 5
+    assert importes[-1] == "1666666.65"
+
+
+def test_endpoint_preview_no_persiste_filas(db_session, client) -> None:
+    tables = [
+        "plan_pago_venta",
+        "plan_pago_venta_bloque",
+        "generacion_cronograma_financiero",
+        "obligacion_financiera",
+        "composicion_obligacion",
+        "obligacion_obligado",
+    ]
+    before = {table: _count(db_session, table) for table in tables}
+
+    response = client.post(URL.format(id_venta=1), json=_payload_tramo_por_capital_total())
+
+    assert response.status_code == 200, response.text
+    after = {table: _count(db_session, table) for table in tables}
+    assert after == before
+
+
+def test_endpoint_preview_legacy_por_importe_cuota_sigue_funcionando(client) -> None:
+    payload = {
+        "tipo_pago": "FINANCIADO",
+        "monto_total_plan": 3000000.00,
+        "moneda": "ARS",
+        "bloques": [
+            {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "importe_cuota": 500000.00,
+                "cantidad_cuotas": 6,
+                "fecha_primer_vencimiento": "2026-06-10",
+                "periodicidad": "MENSUAL",
+            }
+        ],
+    }
+
+    response = client.post(URL.format(id_venta=1), json=payload)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["total_calculado"] == "3000000.00"
+    assert [obligacion["importe_total"] for obligacion in data["obligaciones"]] == [
+        "500000.00"
+    ] * 6
+
+
+def test_endpoint_preview_rechaza_campos_extra_internos(client) -> None:
+    payload = _payload_tramo_por_capital_total()
+    payload["id_plan_pago_venta"] = 1
+    payload["bloques"][0]["id_plan_pago_venta_bloque"] = 1
+    payload["bloques"][0]["clave_bloque"] = "CLIENTE:NO:DEBE:ENVIAR"
+
+    response = client.post(URL.format(id_venta=1), json=payload)
+
+    assert response.status_code == 422, response.text
+    errors = response.json()["detail"]
+    locations = {tuple(error["loc"]) for error in errors}
+    assert ("body", "id_plan_pago_venta") in locations
+    assert ("body", "bloques", 0, "id_plan_pago_venta_bloque") in locations
+    assert ("body", "bloques", 0, "clave_bloque") in locations

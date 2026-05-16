@@ -216,6 +216,10 @@ class GeneratePlanPagoVentaV2PorBloquesRequest(BaseModel):
     observaciones: str | None = None
 
 
+class PreviewPlanPagoVentaV2PorBloquesRequest(GeneratePlanPagoVentaV2PorBloquesRequest):
+    pass
+
+
 class ConfirmVentaRequest(BaseModel):
     observaciones: str | None = None
 
@@ -399,6 +403,57 @@ class GeneratePlanPagoVentaV2PorBloquesData(BaseModel):
 class GeneratePlanPagoVentaV2PorBloquesResponse(BaseModel):
     ok: Literal[True] = True
     data: GeneratePlanPagoVentaV2PorBloquesData
+
+
+class PlanPagoVentaBloqueV2PreviewData(BaseModel):
+    numero_bloque: int
+    tipo_bloque: str
+    etiqueta_bloque: str
+    cantidad_cuotas: int | None
+    importe_total_bloque: Decimal | None
+    importe_cuota: Decimal | None
+    fecha_vencimiento: date | None
+    fecha_primer_vencimiento: date | None
+    periodicidad: str | None
+    regla_redondeo: str | None
+    concepto_financiero_codigo: str
+
+
+class ObligacionPlanPagoVentaV2PreviewData(BaseModel):
+    numero_obligacion: int
+    numero_bloque: int
+    tipo_bloque: str
+    tipo_item_cronograma: str
+    etiqueta_obligacion: str
+    item_numero: int
+    fecha_vencimiento: date
+    importe_total: Decimal
+    moneda: str
+    concepto_financiero_codigo: str
+
+
+class RedondeoPlanPagoVentaV2PreviewData(BaseModel):
+    numero_bloque: int
+    tipo_bloque: str
+    ajuste_ultima_cuota: Decimal
+
+
+class PreviewPlanPagoVentaV2PorBloquesData(BaseModel):
+    id_venta: int
+    metodo_plan_pago: str
+    tipo_pago: str
+    moneda: str
+    monto_total_plan: Decimal
+    total_calculado: Decimal
+    diferencia: Decimal
+    bloques: list[PlanPagoVentaBloqueV2PreviewData]
+    obligaciones: list[ObligacionPlanPagoVentaV2PreviewData]
+    redondeos: list[RedondeoPlanPagoVentaV2PreviewData]
+
+
+class PreviewPlanPagoVentaV2PorBloquesResponse(BaseModel):
+    ok: Literal[True] = True
+    data: PreviewPlanPagoVentaV2PorBloquesData
 
 
 class ConfirmVentaData(GenerateVentaFromReservaVentaData):

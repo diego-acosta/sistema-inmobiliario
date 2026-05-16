@@ -36,6 +36,8 @@ from app.api.schemas.comercial import (
     GenerateVentaFromReservaVentaResponse,
     GeneratePlanPagoVentaCuotasIgualesSimpleRequest,
     GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
+    PreviewPlanPagoVentaV2PorBloquesRequest,
+    PreviewPlanPagoVentaV2PorBloquesResponse,
     InstrumentoCompraventaData,
     InstrumentoCompraventaListData,
     InstrumentoCompraventaListResponse,
@@ -160,6 +162,10 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
 )
 from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cuotas_iguales_service import (
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesService,
+)
+from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    BuildPlanPagoVentaV2PorBloquesPreviewService,
+    METODO_PLAN_POR_BLOQUES,
 )
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
@@ -1991,6 +1997,126 @@ def define_condiciones_comerciales_venta(
     )
 
 
+def _build_plan_pago_v2_por_bloques_command(
+    *,
+    id_venta: int,
+    request: GeneratePlanPagoVentaV2PorBloquesRequest,
+    context: CommandContext,
+) -> GeneratePlanPagoVentaV2PorBloquesCommand:
+    return GeneratePlanPagoVentaV2PorBloquesCommand(
+        context=context,
+        id_venta=id_venta,
+        tipo_pago=request.tipo_pago,
+        monto_total_plan=request.monto_total_plan,
+        moneda=request.moneda,
+        bloques=[
+            PlanPagoVentaBloqueInput(
+                tipo_bloque=bloque.tipo_bloque,
+                etiqueta_bloque=bloque.etiqueta_bloque,
+                importe_total_bloque=bloque.importe_total_bloque,
+                fecha_vencimiento=bloque.fecha_vencimiento,
+                cantidad_cuotas=bloque.cantidad_cuotas,
+                importe_cuota=bloque.importe_cuota,
+                fecha_primer_vencimiento=bloque.fecha_primer_vencimiento,
+                periodicidad=bloque.periodicidad,
+                regla_redondeo=bloque.regla_redondeo,
+                observaciones=bloque.observaciones,
+            )
+            for bloque in request.bloques
+        ],
+        observaciones=request.observaciones,
+    )
+
+
+def _plan_pago_v2_preview_response_data(
+    *,
+    command: GeneratePlanPagoVentaV2PorBloquesCommand,
+    preview: dict,
+) -> dict:
+    return {
+        "id_venta": command.id_venta,
+        "metodo_plan_pago": METODO_PLAN_POR_BLOQUES,
+        "tipo_pago": command.tipo_pago.strip().upper(),
+        "moneda": command.moneda.strip().upper(),
+        "monto_total_plan": command.monto_total_plan,
+        "total_calculado": preview["total_calculado"],
+        "diferencia": preview["diferencia"],
+        "redondeos": preview["redondeos"],
+        "bloques": [
+            {
+                "numero_bloque": bloque.numero_bloque,
+                "tipo_bloque": bloque.tipo_bloque,
+                "etiqueta_bloque": bloque.etiqueta_bloque,
+                "cantidad_cuotas": bloque.input.cantidad_cuotas,
+                "importe_total_bloque": bloque.importe_total_bloque,
+                "importe_cuota": bloque.importe_cuota,
+                "fecha_vencimiento": bloque.input.fecha_vencimiento,
+                "fecha_primer_vencimiento": bloque.input.fecha_primer_vencimiento,
+                "periodicidad": bloque.input.periodicidad,
+                "regla_redondeo": bloque.input.regla_redondeo,
+                "concepto_financiero_codigo": bloque.concepto_financiero_codigo,
+            }
+            for bloque in preview["bloques"]
+        ],
+        "obligaciones": [
+            {
+                "numero_obligacion": obligacion.numero_obligacion,
+                "numero_bloque": obligacion.bloque.numero_bloque,
+                "tipo_bloque": obligacion.bloque.tipo_bloque,
+                "tipo_item_cronograma": obligacion.tipo_item_cronograma,
+                "etiqueta_obligacion": obligacion.etiqueta_obligacion,
+                "item_numero": obligacion.item_numero,
+                "fecha_vencimiento": obligacion.fecha_vencimiento,
+                "importe_total": obligacion.importe_total,
+                "moneda": command.moneda.strip().upper(),
+                "concepto_financiero_codigo": obligacion.concepto_financiero_codigo,
+            }
+            for obligacion in preview["obligaciones"]
+        ],
+    }
+
+
+@router.post(
+    "/api/v1/ventas/{id_venta}/plan-pago-v2/preview",
+    response_model=PreviewPlanPagoVentaV2PorBloquesResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def preview_plan_pago_venta_v2_por_bloques(
+    id_venta: int,
+    request: PreviewPlanPagoVentaV2PorBloquesRequest,
+) -> PreviewPlanPagoVentaV2PorBloquesResponse | JSONResponse:
+    command = _build_plan_pago_v2_por_bloques_command(
+        id_venta=id_venta,
+        request=request,
+        context=CommandContext(),
+    )
+    service = BuildPlanPagoVentaV2PorBloquesPreviewService()
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo previsualizar el plan de pago V2 por bloques.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return PreviewPlanPagoVentaV2PorBloquesResponse(
+        data=_plan_pago_v2_preview_response_data(command=command, preview=result.data)
+    )
+
+
 @router.post(
     "/api/v1/ventas/{id_venta}/plan-pago-v2/generar",
     response_model=GeneratePlanPagoVentaV2PorBloquesResponse,
@@ -2041,28 +2167,10 @@ def generate_plan_pago_venta_v2_por_bloques(
         op_id=op_id,
         **context_kwargs,
     )
-    command = GeneratePlanPagoVentaV2PorBloquesCommand(
-        context=context,
+    command = _build_plan_pago_v2_por_bloques_command(
         id_venta=id_venta,
-        tipo_pago=request.tipo_pago,
-        monto_total_plan=request.monto_total_plan,
-        moneda=request.moneda,
-        bloques=[
-            PlanPagoVentaBloqueInput(
-                tipo_bloque=bloque.tipo_bloque,
-                etiqueta_bloque=bloque.etiqueta_bloque,
-                importe_total_bloque=bloque.importe_total_bloque,
-                fecha_vencimiento=bloque.fecha_vencimiento,
-                cantidad_cuotas=bloque.cantidad_cuotas,
-                importe_cuota=bloque.importe_cuota,
-                fecha_primer_vencimiento=bloque.fecha_primer_vencimiento,
-                periodicidad=bloque.periodicidad,
-                regla_redondeo=bloque.regla_redondeo,
-                observaciones=bloque.observaciones,
-            )
-            for bloque in request.bloques
-        ],
-        observaciones=request.observaciones,
+        request=request,
+        context=context,
     )
     service = GeneratePlanPagoVentaV2PorBloquesService(
         repository=PlanPagoVentaV2Repository(db)
