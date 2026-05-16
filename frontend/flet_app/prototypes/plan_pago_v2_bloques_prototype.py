@@ -381,19 +381,24 @@ class PlanPagoV2BloquesPrototype:
     def _on_input_change(self, _: ft.ControlEvent) -> None:
         self.state.validation_requested = False
         self.state.error_message = None
-        self._refresh()
+        self._refresh_summary_and_preview()
 
     def _refresh(self, _: ft.ControlEvent | None = None) -> None:
+        self._render_blocks()
+        self._refresh_summary_and_preview(update_page=False)
+        self.page.update()
+
+    def _refresh_summary_and_preview(self, update_page: bool = True) -> None:
         errors = self._validate()
         preview = self._build_preview()
         self._render_summary(preview, errors)
         self._render_validation(errors)
-        self._render_blocks()
         self._render_preview(preview)
         self.validate_button.disabled = self.state.loading
         self.generate_button.disabled = self.state.loading
         self.detail_button.disabled = self.state.loading
-        self.page.update()
+        if update_page:
+            self.page.update()
 
     def _render_summary(
         self, preview: list[CronogramaRow], errors: list[str]
@@ -563,7 +568,7 @@ class PlanPagoV2BloquesPrototype:
         setattr(bloque, field_name, value or "")
         self.state.error_message = None
         self.state.validation_requested = False
-        self._refresh()
+        self._refresh_summary_and_preview()
 
     def _render_preview(self, preview: list[CronogramaRow]) -> None:
         if not preview:
@@ -692,7 +697,7 @@ class PlanPagoV2BloquesPrototype:
     def _validate_current(self, _: ft.ControlEvent) -> None:
         self.state.validation_requested = True
         self.state.error_message = None
-        self._refresh()
+        self._refresh_summary_and_preview()
 
     def _blocks_total(self) -> Decimal:
         total = Decimal("0")
@@ -800,7 +805,7 @@ class PlanPagoV2BloquesPrototype:
         self.state.error_message = None
         errors = self._validate()
         if errors:
-            self._refresh()
+            self._refresh_summary_and_preview()
             return
         id_venta = _int_or_none(self.id_venta.value)
         if id_venta is None:
@@ -809,7 +814,7 @@ class PlanPagoV2BloquesPrototype:
 
         self.state.loading = True
         self.state.error_message = None
-        self._refresh()
+        self._refresh_summary_and_preview()
         path = f"/api/v1/ventas/{id_venta}/plan-pago-v2/generar"
         response = self._post(path, self._payload())
         self.state.loading = False
@@ -820,7 +825,7 @@ class PlanPagoV2BloquesPrototype:
         else:
             self.state.error_message = response.get("error") or "Error al generar plan."
         self._render_response()
-        self._refresh()
+        self._refresh_summary_and_preview()
 
     def _load_detail(self, _: ft.ControlEvent) -> None:
         id_venta = _int_or_none(self.id_venta.value)
@@ -829,7 +834,7 @@ class PlanPagoV2BloquesPrototype:
             return
         self.state.loading = True
         self.state.error_message = None
-        self._refresh()
+        self._refresh_summary_and_preview()
         path = f"/api/v1/ventas/{id_venta}/detalle-integral"
         response = self._get(path)
         self.state.loading = False
@@ -840,7 +845,7 @@ class PlanPagoV2BloquesPrototype:
         else:
             self.state.error_message = response.get("error") or "Error al cargar detalle."
         self._render_detail()
-        self._refresh()
+        self._refresh_summary_and_preview()
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url()}{path}"
@@ -875,7 +880,7 @@ class PlanPagoV2BloquesPrototype:
     def _set_error(self, message: str) -> None:
         self.state.error_message = message
         self.state.validation_requested = True
-        self._refresh()
+        self._refresh_summary_and_preview()
 
     def _render_response(self) -> None:
         self.response_column.controls = []
