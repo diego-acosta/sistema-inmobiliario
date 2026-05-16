@@ -109,6 +109,7 @@ class PlanPagoV2BloquesPrototype:
         self.detail_column = ft.Column(spacing=10)
         self.tramo_cuota_texts: dict[str, ft.Text] = {}
         self.tramo_rounding_texts: dict[str, ft.Text] = {}
+        self.tramo_due_fields: dict[str, ft.TextField] = {}
 
         self.generate_button = ft.Button(
             "Generar plan",
@@ -311,7 +312,7 @@ class PlanPagoV2BloquesPrototype:
                     tipo_bloque="CONTADO",
                     etiqueta_bloque="Pago contado",
                     importe_total_bloque=_money(monto_total),
-                    fecha_vencimiento=date.today().isoformat(),
+                    fecha_vencimiento=_format_ar_date(date.today()),
                 )
             ]
             return
@@ -325,7 +326,7 @@ class PlanPagoV2BloquesPrototype:
                 tipo_bloque="ANTICIPO",
                 etiqueta_bloque="Anticipo",
                 importe_total_bloque=_money(anticipo),
-                fecha_vencimiento=date.today().isoformat(),
+                fecha_vencimiento=_format_ar_date(date.today()),
             ),
             BloqueDraft(
                 uid=str(uuid4()),
@@ -333,7 +334,7 @@ class PlanPagoV2BloquesPrototype:
                 etiqueta_bloque="Primer tramo",
                 capital_tramo=_money(total_cuotas),
                 cantidad_cuotas="6",
-                fecha_primer_vencimiento=date.today().isoformat(),
+                fecha_primer_vencimiento=_format_ar_date(date.today()),
                 periodicidad="MENSUAL",
             ),
         ]
@@ -344,7 +345,7 @@ class PlanPagoV2BloquesPrototype:
                     tipo_bloque="SALDO",
                     etiqueta_bloque="Ajuste saldo",
                     importe_total_bloque=_money(saldo),
-                    fecha_vencimiento=date.today().isoformat(),
+                    fecha_vencimiento=_format_ar_date(date.today()),
                 )
             )
         self.state.bloques = bloques
@@ -360,22 +361,37 @@ class PlanPagoV2BloquesPrototype:
             "SALDO": "Saldo final",
         }
         self.state.bloques.append(
-            BloqueDraft(
-                uid=str(uuid4()),
-                tipo_bloque=tipo_bloque,
-                etiqueta_bloque=labels.get(tipo_bloque, tipo_bloque),
-                periodicidad="MENSUAL",
+            self._new_block(
+                tipo_bloque,
+                labels.get(tipo_bloque, tipo_bloque),
             )
         )
+        self._recalculate_tramo_dates()
         self.state.validation_requested = False
         self.state.error_message = None
         self._refresh()
 
     def _remove_block(self, uid: str) -> None:
         self.state.bloques = [b for b in self.state.bloques if b.uid != uid]
+        self._recalculate_tramo_dates()
         self.state.validation_requested = False
         self.state.error_message = None
         self._refresh()
+
+    def _new_block(self, tipo_bloque: str, label: str) -> BloqueDraft:
+        bloque = BloqueDraft(
+            uid=str(uuid4()),
+            tipo_bloque=tipo_bloque,
+            etiqueta_bloque=label,
+            periodicidad="MENSUAL",
+        )
+        if tipo_bloque == "TRAMO_CUOTAS":
+            bloque.fecha_primer_vencimiento = self._next_tramo_first_due() or _format_ar_date(
+                date.today()
+            )
+        elif tipo_bloque in UNIQUE_BLOCKS:
+            bloque.fecha_vencimiento = _format_ar_date(date.today())
+        return bloque
 
     def _on_input_change(self, _: ft.ControlEvent) -> None:
         self.state.validation_requested = False
@@ -455,6 +471,7 @@ class PlanPagoV2BloquesPrototype:
     def _render_blocks(self) -> None:
         self.tramo_cuota_texts = {}
         self.tramo_rounding_texts = {}
+        self.tramo_due_fields = {}
         self.blocks_column.controls = [
             self._block_card(index, bloque)
             for index, bloque in enumerate(self.state.bloques, start=1)
@@ -487,6 +504,7 @@ class PlanPagoV2BloquesPrototype:
             ),
         ]
         if bloque.tipo_bloque == "TRAMO_CUOTAS":
+            first_tramo = self._is_first_tramo(bloque)
             calculated_text = ft.Text(
                 self._calculated_cuota_label(bloque),
                 weight=ft.FontWeight.W_600,
@@ -497,8 +515,18 @@ class PlanPagoV2BloquesPrototype:
                 color=ft.Colors.AMBER_800,
                 visible=bool(self._tramo_rounding_warning(bloque)),
             )
+            due_field = ft.TextField(
+                label="Primer vencimiento",
+                value=bloque.fecha_primer_vencimiento,
+                width=170,
+                read_only=not first_tramo,
+                on_change=lambda e, b=bloque: self._update_block(
+                    b, "fecha_primer_vencimiento", e.control.value
+                ),
+            )
             self.tramo_cuota_texts[bloque.uid] = calculated_text
             self.tramo_rounding_texts[bloque.uid] = rounding_text
+            self.tramo_due_fields[bloque.uid] = due_field
             controls.extend(
                 [
                     ft.Row(
@@ -519,13 +547,19 @@ class PlanPagoV2BloquesPrototype:
                                     b, "cantidad_cuotas", e.control.value
                                 ),
                             ),
-                            ft.TextField(
-                                label="Primer vencimiento",
-                                value=bloque.fecha_primer_vencimiento,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_block(
-                                    b, "fecha_primer_vencimiento", e.control.value
-                                ),
+                            ft.Row(
+                                controls=[
+                                    due_field,
+                                    ft.IconButton(
+                                        icon=ft.Icons.CALENDAR_MONTH,
+                                        tooltip="Seleccionar fecha",
+                                        disabled=not first_tramo,
+                                        on_click=lambda _, b=bloque: self._open_date_picker(
+                                            b, "fecha_primer_vencimiento"
+                                        ),
+                                    ),
+                                ],
+                                spacing=2,
                             ),
                             ft.Column(
                                 controls=[
@@ -576,6 +610,13 @@ class PlanPagoV2BloquesPrototype:
                                     b, "fecha_vencimiento", e.control.value
                                 ),
                             ),
+                            ft.IconButton(
+                                icon=ft.Icons.CALENDAR_MONTH,
+                                tooltip="Seleccionar fecha",
+                                on_click=lambda _, b=bloque: self._open_date_picker(
+                                    b, "fecha_vencimiento"
+                                ),
+                            ),
                         ],
                         wrap=True,
                         spacing=10,
@@ -593,9 +634,83 @@ class PlanPagoV2BloquesPrototype:
         self, bloque: BloqueDraft, field_name: str, value: str | None
     ) -> None:
         setattr(bloque, field_name, value or "")
+        if bloque.tipo_bloque == "TRAMO_CUOTAS" and field_name in (
+            "cantidad_cuotas",
+            "fecha_primer_vencimiento",
+        ):
+            self._recalculate_tramo_dates()
         self.state.error_message = None
         self.state.validation_requested = False
         self._refresh_summary_and_preview()
+
+    def _is_first_tramo(self, bloque: BloqueDraft) -> bool:
+        for item in self.state.bloques:
+            if item.tipo_bloque == "TRAMO_CUOTAS":
+                return item.uid == bloque.uid
+        return False
+
+    def _next_tramo_first_due(self) -> str | None:
+        previous_due: date | None = None
+        for bloque in self.state.bloques:
+            if bloque.tipo_bloque != "TRAMO_CUOTAS":
+                continue
+            previous_due = self._last_due_for_tramo(bloque)
+        if previous_due is None:
+            return None
+        return _format_ar_date(_add_months(previous_due, 1))
+
+    def _recalculate_tramo_dates(self) -> None:
+        previous_due: date | None = None
+        first_tramo_seen = False
+        for bloque in self.state.bloques:
+            if bloque.tipo_bloque != "TRAMO_CUOTAS":
+                continue
+            if not first_tramo_seen:
+                first_tramo_seen = True
+                previous_due = self._last_due_for_tramo(bloque)
+                continue
+            if previous_due is None:
+                continue
+            bloque.fecha_primer_vencimiento = _format_ar_date(
+                _add_months(previous_due, 1)
+            )
+            field = self.tramo_due_fields.get(bloque.uid)
+            if field is not None:
+                field.value = bloque.fecha_primer_vencimiento
+            previous_due = self._last_due_for_tramo(bloque)
+
+    def _last_due_for_tramo(self, bloque: BloqueDraft) -> date | None:
+        first_due = _date_or_none(bloque.fecha_primer_vencimiento)
+        qty = _int_or_none(bloque.cantidad_cuotas)
+        if first_due is None or qty is None:
+            return None
+        return _add_months(first_due, qty - 1)
+
+    def _open_date_picker(self, bloque: BloqueDraft, field_name: str) -> None:
+        current = _date_or_none(getattr(bloque, field_name, ""))
+
+        def on_change(event: ft.ControlEvent) -> None:
+            selected = event.control.value
+            if isinstance(selected, date):
+                setattr(bloque, field_name, _format_ar_date(selected))
+                if bloque.tipo_bloque == "TRAMO_CUOTAS":
+                    self._recalculate_tramo_dates()
+                self.state.error_message = None
+                self.state.validation_requested = False
+                self._refresh()
+
+        picker = ft.DatePicker(
+            value=current,
+            modal=True,
+            locale=ft.Locale("es", "AR"),
+            help_text="Seleccionar fecha",
+            cancel_text="Cancelar",
+            confirm_text="Aceptar",
+            field_label_text="Fecha",
+            field_hint_text="dd/mm/aaaa",
+            on_change=on_change,
+        )
+        self.page.show_dialog(picker)
 
     def _render_preview(self, preview: list[CronogramaRow]) -> None:
         if not preview:
@@ -706,7 +821,7 @@ class PlanPagoV2BloquesPrototype:
             if bloque.tipo_bloque in UNIQUE_BLOCKS:
                 if _decimal_or_none(bloque.importe_total_bloque) is None:
                     errors.append(f"{bloque.tipo_bloque}: importe total requerido.")
-                if not _valid_iso_date(bloque.fecha_vencimiento):
+                if not _valid_date(bloque.fecha_vencimiento):
                     errors.append(f"{bloque.tipo_bloque}: vencimiento requerido.")
             if bloque.tipo_bloque == "TRAMO_CUOTAS":
                 if _int_or_none(bloque.cantidad_cuotas) is None:
@@ -714,7 +829,7 @@ class PlanPagoV2BloquesPrototype:
                 capital = _decimal_or_none(bloque.capital_tramo)
                 if capital is None or capital <= 0:
                     errors.append("TRAMO_CUOTAS: capital del tramo requerido.")
-                if not _valid_iso_date(bloque.fecha_primer_vencimiento):
+                if not _valid_date(bloque.fecha_primer_vencimiento):
                     errors.append("TRAMO_CUOTAS: primer vencimiento requerido.")
                 if bloque.periodicidad != "MENSUAL":
                     errors.append("TRAMO_CUOTAS: periodicidad debe ser MENSUAL.")
@@ -739,6 +854,9 @@ class PlanPagoV2BloquesPrototype:
                 warning = self._tramo_rounding_warning(bloque)
                 rounding_text.value = warning or ""
                 rounding_text.visible = bool(warning)
+            due_field = self.tramo_due_fields.get(bloque.uid)
+            if due_field is not None and not self._is_first_tramo(bloque):
+                due_field.value = bloque.fecha_primer_vencimiento
 
     def _calculated_cuota_label(self, bloque: BloqueDraft) -> str:
         cuota = self._calculated_importe_cuota(bloque)
@@ -785,7 +903,7 @@ class PlanPagoV2BloquesPrototype:
                         bloque=label,
                         tipo_obligacion="SALDO",
                         etiqueta=label,
-                        vencimiento=bloque.fecha_vencimiento,
+                        vencimiento=_format_display_date(bloque.fecha_vencimiento),
                         importe=_decimal_or_zero(bloque.importe_total_bloque),
                         concepto="CAPITAL_VENTA",
                     )
@@ -797,7 +915,7 @@ class PlanPagoV2BloquesPrototype:
                         bloque=label,
                         tipo_obligacion="ANTICIPO",
                         etiqueta=label,
-                        vencimiento=bloque.fecha_vencimiento,
+                        vencimiento=_format_display_date(bloque.fecha_vencimiento),
                         importe=_decimal_or_zero(bloque.importe_total_bloque),
                         concepto="ANTICIPO_VENTA",
                     )
@@ -807,7 +925,7 @@ class PlanPagoV2BloquesPrototype:
                 first_due = _date_or_none(bloque.fecha_primer_vencimiento)
                 importe_cuota = self._calculated_importe_cuota(bloque) or Decimal("0.00")
                 for index in range(qty):
-                    due = _add_months(first_due, index) if first_due else ""
+                    due = _format_ar_date(_add_months(first_due, index)) if first_due else ""
                     rows.append(
                         CronogramaRow(
                             numero=len(rows) + 1,
@@ -826,7 +944,7 @@ class PlanPagoV2BloquesPrototype:
                         bloque=label,
                         tipo_obligacion=bloque.tipo_bloque,
                         etiqueta=label,
-                        vencimiento=bloque.fecha_vencimiento,
+                        vencimiento=_format_display_date(bloque.fecha_vencimiento),
                         importe=_decimal_or_zero(bloque.importe_total_bloque),
                         concepto="CAPITAL_VENTA",
                     )
@@ -853,7 +971,9 @@ class PlanPagoV2BloquesPrototype:
                     "importe_cuota": float(
                         self._calculated_importe_cuota(bloque) or Decimal("0.00")
                     ),
-                    "fecha_primer_vencimiento": bloque.fecha_primer_vencimiento,
+                    "fecha_primer_vencimiento": _iso_date_or_empty(
+                        bloque.fecha_primer_vencimiento
+                    ),
                     "periodicidad": bloque.periodicidad,
                 }
             )
@@ -863,7 +983,7 @@ class PlanPagoV2BloquesPrototype:
                     "importe_total_bloque": float(
                         _decimal_or_zero(bloque.importe_total_bloque)
                     ),
-                    "fecha_vencimiento": bloque.fecha_vencimiento,
+                    "fecha_vencimiento": _iso_date_or_empty(bloque.fecha_vencimiento),
                 }
             )
         return payload
@@ -1184,23 +1304,45 @@ def _int_or_none(value: str | None) -> int | None:
     return number if number > 0 else None
 
 
-def _valid_iso_date(value: str | None) -> bool:
+def _valid_date(value: str | None) -> bool:
     return _date_or_none(value) is not None
 
 
 def _date_or_none(value: str | None) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
     try:
-        return date.fromisoformat(str(value or "").strip())
+        return date.fromisoformat(text)
     except ValueError:
+        pass
+    try:
+        day, month, year = text.split("/")
+        return date(int(year), int(month), int(day))
+    except (TypeError, ValueError):
         return None
 
 
-def _add_months(value: date, months: int) -> str:
+def _format_ar_date(value: date) -> str:
+    return value.strftime("%d/%m/%Y")
+
+
+def _format_display_date(value: str | None) -> str:
+    parsed = _date_or_none(value)
+    return _format_ar_date(parsed) if parsed else str(value or "")
+
+
+def _iso_date_or_empty(value: str | None) -> str:
+    parsed = _date_or_none(value)
+    return parsed.isoformat() if parsed else ""
+
+
+def _add_months(value: date, months: int) -> date:
     month_index = value.month - 1 + months
     year = value.year + month_index // 12
     month = month_index % 12 + 1
     day = min(value.day, _days_in_month(year, month))
-    return date(year, month, day).isoformat()
+    return date(year, month, day)
 
 
 def _days_in_month(year: int, month: int) -> int:
