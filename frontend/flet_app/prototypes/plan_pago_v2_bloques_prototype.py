@@ -459,7 +459,7 @@ class PlanPagoV2BloquesPrototype:
         self.state.current_step = 1
         self.state.error_message = None
         self._mark_backend_preview_stale()
-        self._refresh_summary_and_preview()
+        self._refresh_summary_and_preview(rebuild_step=False)
 
     def _refresh(self, _: ft.ControlEvent | None = None) -> None:
         self._render_blocks()
@@ -467,7 +467,11 @@ class PlanPagoV2BloquesPrototype:
         self._render_current_step()
         self.page.update()
 
-    def _refresh_summary_and_preview(self, update_page: bool = True) -> None:
+    def _refresh_summary_and_preview(
+        self,
+        update_page: bool = True,
+        rebuild_step: bool = True,
+    ) -> None:
         errors = self._validate()
         preview = self._build_preview()
         self._refresh_tramo_calculated_labels()
@@ -485,7 +489,8 @@ class PlanPagoV2BloquesPrototype:
         )
         self.detail_button.disabled = self.state.loading
         self.back_button.disabled = self.state.loading
-        self._render_current_step()
+        if rebuild_step:
+            self._render_current_step()
         if update_page:
             self.page.update()
 
@@ -752,7 +757,7 @@ class PlanPagoV2BloquesPrototype:
         self.state.validation_requested = False
         self.state.current_step = 1
         self._mark_backend_preview_stale()
-        self._refresh_summary_and_preview()
+        self._refresh_summary_and_preview(rebuild_step=False)
 
     def _is_first_tramo(self, bloque: BloqueDraft) -> bool:
         for item in self.state.bloques:
