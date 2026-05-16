@@ -66,6 +66,8 @@ class PrototypeState:
     bloques: list[BloqueDraft] = field(default_factory=list)
     loading: bool = False
     validation_requested: bool = False
+    response_json_visible: bool = False
+    detail_json_visible: bool = False
     last_response: dict[str, Any] | None = None
     detail_response: dict[str, Any] | None = None
     error_message: str | None = None
@@ -295,6 +297,8 @@ class PlanPagoV2BloquesPrototype:
         self.tipo_pago.selected = [tipo_pago]
         self.state.error_message = None
         self.state.validation_requested = False
+        self.state.response_json_visible = False
+        self.state.detail_json_visible = False
         self.state.last_response = None
         self.state.detail_response = None
         self.state.status_code = None
@@ -411,7 +415,7 @@ class PlanPagoV2BloquesPrototype:
         self._render_validation(errors)
         self._render_preview(preview)
         self.validate_button.disabled = self.state.loading
-        self.generate_button.disabled = self.state.loading
+        self.generate_button.disabled = self.state.loading or bool(errors)
         self.detail_button.disabled = self.state.loading
         if update_page:
             self.page.update()
@@ -420,18 +424,25 @@ class PlanPagoV2BloquesPrototype:
         self, preview: list[CronogramaRow], errors: list[str]
     ) -> None:
         monto_total = _decimal_or_zero(self.monto_total_plan.value)
-        suma = self._blocks_total()
-        diff = monto_total - suma
+        suma_ux = self._blocks_total()
+        suma_backend = self._backend_payload_total()
+        diff_ux = monto_total - suma_ux
+        diff_backend = monto_total - suma_backend
         has_errors = bool(errors) and self.state.validation_requested
-        if diff == Decimal("0"):
-            diff_color = ft.Colors.GREEN_700
-        else:
-            diff_color = ft.Colors.AMBER_800
+        diff_ux_color = (
+            ft.Colors.GREEN_700 if diff_ux == Decimal("0") else ft.Colors.AMBER_800
+        )
+        diff_backend_color = (
+            ft.Colors.GREEN_700 if diff_backend == Decimal("0") else ft.Colors.RED_700
+        )
         if has_errors:
             status_text = "Revisar validaciones."
             status_color = ft.Colors.RED_700
-        elif diff != Decimal("0"):
-            status_text = "Diferencia pendiente de ajustar."
+        elif diff_backend != Decimal("0"):
+            status_text = "La suma enviada al backend no cierra."
+            status_color = ft.Colors.RED_700
+        elif diff_ux != Decimal("0"):
+            status_text = "Diferencia UX pendiente de ajustar."
             status_color = ft.Colors.AMBER_800
         else:
             status_text = "Listo para generar."
@@ -441,8 +452,14 @@ class PlanPagoV2BloquesPrototype:
             ft.Row(
                 controls=[
                     _kv("Monto total", _money(monto_total)),
-                    _kv("Suma bloques", _money(suma)),
-                    _kv("Diferencia", _money(diff), color=diff_color),
+                    _kv("Suma bloques UX", _money(suma_ux)),
+                    _kv("Suma enviada backend", _money(suma_backend)),
+                    _kv("Diferencia UX", _money(diff_ux), color=diff_ux_color),
+                    _kv(
+                        "Diferencia backend",
+                        _money(diff_backend),
+                        color=diff_backend_color,
+                    ),
                     _kv("Obligaciones estimadas", str(len(preview))),
                 ],
                 wrap=True,
@@ -453,6 +470,15 @@ class PlanPagoV2BloquesPrototype:
                 color=status_color,
             ),
         ]
+        if diff_backend != Decimal("0"):
+            self.summary.controls.append(
+                ft.Text(
+                    "El cierre exacto de capital_tramo con ajuste de ultima cuota "
+                    "esta pendiente del Issue #46.",
+                    size=12,
+                    color=ft.Colors.AMBER_800,
+                )
+            )
 
     def _render_validation(self, errors: list[str]) -> None:
         show_errors = self.state.validation_requested and bool(errors)
@@ -834,7 +860,11 @@ class PlanPagoV2BloquesPrototype:
                 if bloque.periodicidad != "MENSUAL":
                     errors.append("TRAMO_CUOTAS: periodicidad debe ser MENSUAL.")
         if monto_total is not None and self._blocks_total() != monto_total:
-            errors.append("La suma de bloques no coincide con el monto total del plan.")
+            errors.append("La suma UX de bloques no coincide con el monto total del plan.")
+        if monto_total is not None and self._backend_payload_total() != monto_total:
+            errors.append(
+                "La suma enviada al backend no coincide con el monto total del plan."
+            )
         return _dedupe(errors)
 
     def _validate_current(self, _: ft.ControlEvent) -> None:
@@ -888,6 +918,17 @@ class PlanPagoV2BloquesPrototype:
         for bloque in self.state.bloques:
             if bloque.tipo_bloque == "TRAMO_CUOTAS":
                 total += _decimal_or_zero(bloque.capital_tramo)
+            else:
+                total += _decimal_or_zero(bloque.importe_total_bloque)
+        return total.quantize(Decimal("0.01"))
+
+    def _backend_payload_total(self) -> Decimal:
+        total = Decimal("0")
+        for bloque in self.state.bloques:
+            if bloque.tipo_bloque == "TRAMO_CUOTAS":
+                qty = _int_or_none(bloque.cantidad_cuotas) or 0
+                cuota = self._calculated_importe_cuota(bloque) or Decimal("0.00")
+                total += cuota * Decimal(qty)
             else:
                 total += _decimal_or_zero(bloque.importe_total_bloque)
         return total.quantize(Decimal("0.01"))
@@ -1010,7 +1051,10 @@ class PlanPagoV2BloquesPrototype:
         if response.get("ok"):
             self.state.last_response = response.get("json")
             self.state.error_message = None
+            self.state.response_json_visible = False
         else:
+            self.state.last_response = response.get("json")
+            self.state.response_json_visible = False
             self.state.error_message = response.get("error") or "Error al generar plan."
         self._render_response()
         self._refresh_summary_and_preview()
@@ -1030,7 +1074,10 @@ class PlanPagoV2BloquesPrototype:
         if response.get("ok"):
             self.state.detail_response = response.get("json")
             self.state.error_message = None
+            self.state.detail_json_visible = False
         else:
+            self.state.detail_response = response.get("json")
+            self.state.detail_json_visible = False
             self.state.error_message = response.get("error") or "Error al cargar detalle."
         self._render_detail()
         self._refresh_summary_and_preview()
@@ -1077,10 +1124,23 @@ class PlanPagoV2BloquesPrototype:
                 ft.Text(f"Status HTTP: {self.state.status_code}")
             )
         data = _data_envelope(self.state.last_response)
-        if isinstance(data, dict):
+        if self.state.status_code is not None and self.state.status_code >= 400:
+            self.response_column.controls.append(
+                _backend_error_panel(
+                    status_code=self.state.status_code,
+                    payload=self.state.last_response,
+                )
+            )
+        elif isinstance(data, dict):
             self.response_column.controls.append(_plan_summary(data))
         if self.state.last_response is not None:
-            self.response_column.controls.append(_json_view(self.state.last_response))
+            self.response_column.controls.append(
+                self._technical_json_toggle(
+                    value=self.state.last_response,
+                    visible=self.state.response_json_visible,
+                    on_click=self._toggle_response_json,
+                )
+            )
 
     def _render_detail(self) -> None:
         self.detail_column.controls = []
@@ -1088,14 +1148,64 @@ class PlanPagoV2BloquesPrototype:
             self.detail_column.controls.append(ft.Text(f"Status HTTP: {self.state.status_code}"))
         data = _data_envelope(self.state.detail_response)
         plan = data.get("plan_pago_v2") if isinstance(data, dict) else None
-        if isinstance(plan, dict):
+        if self.state.status_code is not None and self.state.status_code >= 400:
+            self.detail_column.controls.append(
+                _backend_error_panel(
+                    status_code=self.state.status_code,
+                    payload=self.state.detail_response,
+                )
+            )
+        elif isinstance(plan, dict):
             self.detail_column.controls.append(_plan_readonly(plan))
         elif self.state.detail_response is not None:
             self.detail_column.controls.append(
                 ft.Text("El detalle integral no devolvio plan_pago_v2.")
             )
         if self.state.detail_response is not None:
-            self.detail_column.controls.append(_json_view(self.state.detail_response))
+            self.detail_column.controls.append(
+                self._technical_json_toggle(
+                    value=self.state.detail_response,
+                    visible=self.state.detail_json_visible,
+                    on_click=self._toggle_detail_json,
+                )
+            )
+
+    def _toggle_response_json(self, _: ft.ControlEvent) -> None:
+        self.state.response_json_visible = not self.state.response_json_visible
+        self._render_response()
+        self.page.update()
+
+    def _toggle_detail_json(self, _: ft.ControlEvent) -> None:
+        self.state.detail_json_visible = not self.state.detail_json_visible
+        self._render_detail()
+        self.page.update()
+
+    def _technical_json_toggle(
+        self,
+        *,
+        value: Any,
+        visible: bool,
+        on_click: Callable[[ft.ControlEvent], None],
+    ) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.OutlinedButton(
+                "Ocultar JSON tecnico" if visible else "Ver JSON tecnico",
+                icon=ft.Icons.CODE,
+                on_click=on_click,
+            )
+        ]
+        if visible:
+            controls.extend(
+                [
+                    ft.Text(
+                        "Solo para depuracion",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    _json_view(value),
+                ]
+            )
+        return ft.Column(controls=controls, spacing=6)
 
 
 def _plan_summary(data: dict[str, Any]) -> ft.Control:
@@ -1224,6 +1334,51 @@ def _obligaciones_table(obligaciones: list[dict[str, Any]]) -> ft.Control:
             for item in obligaciones
         ],
     )
+
+
+def _backend_error_panel(status_code: int, payload: Any) -> ft.Control:
+    error = payload if isinstance(payload, dict) else {}
+    details = error.get("details") if isinstance(error.get("details"), dict) else {}
+    errors = details.get("errors") if isinstance(details, dict) else None
+    controls: list[ft.Control] = [
+        ft.Text("Error backend", weight=ft.FontWeight.W_700, color=ft.Colors.RED_700),
+        _kv("Status HTTP", str(status_code), color=ft.Colors.RED_700),
+        _kv("error_code", str(error.get("error_code") or "-")),
+        _kv(
+            "error_message",
+            str(error.get("error_message") or error.get("detail") or "-"),
+        ),
+    ]
+    error_lines = _backend_error_lines(errors)
+    if error_lines:
+        controls.append(ft.Text("details.errors", weight=ft.FontWeight.W_600))
+        controls.extend(
+            ft.Text(f"- {line}", color=ft.Colors.RED_700) for line in error_lines
+        )
+    return ft.Container(
+        content=ft.Column(controls=controls, spacing=6),
+        padding=12,
+        border=_border_all(1, ft.Colors.RED_200),
+        border_radius=6,
+    )
+
+
+def _backend_error_lines(errors: Any) -> list[str]:
+    if isinstance(errors, list):
+        return [_format_backend_error_item(error) for error in errors]
+    if errors:
+        return [_format_backend_error_item(errors)]
+    return []
+
+
+def _format_backend_error_item(error: Any) -> str:
+    if isinstance(error, dict):
+        for key in ("code", "error_code", "message", "error_message", "detail"):
+            value = error.get(key)
+            if value:
+                return str(value)
+        return json.dumps(error, ensure_ascii=True, default=str)
+    return str(error)
 
 
 def _response_payload(response: httpx.Response) -> dict[str, Any]:
