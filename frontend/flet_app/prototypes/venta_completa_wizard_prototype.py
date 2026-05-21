@@ -295,7 +295,7 @@ class VentaCompletaWizardPrototype:
         )
 
     def _step_revision(self) -> ft.Control:
-        errors = self._all_errors()
+        errors = self._flow_errors_before_review()
         preview = self._preview_cronograma_local()
         return self._card(
             "Paso 6 — Revisión y confirmación final",
@@ -405,9 +405,11 @@ class VentaCompletaWizardPrototype:
                 errors.append("La suma de bloques debe coincidir con el monto total.")
             if not self.state.preview_generado:
                 errors.append("Debe generarse preview antes de confirmar.")
+        elif step == 5:
+            errors.extend(self._flow_errors_before_review())
         return (not errors, errors)
 
-    def _all_errors(self) -> list[str]:
+    def _flow_errors_before_review(self) -> list[str]:
         errors: list[str] = []
         for step in range(len(STEPS) - 1):
             errors.extend(self._step_status(step)[1])
