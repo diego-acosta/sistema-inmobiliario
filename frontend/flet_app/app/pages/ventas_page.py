@@ -51,7 +51,18 @@ class VentasListView:
         self._load()
         return ft.Column(
             controls=[
-                ft.Text("Ventas", size=28, weight=ft.FontWeight.W_700),
+                ft.Row(
+                    controls=[
+                        ft.Text("Ventas", size=28, weight=ft.FontWeight.W_700),
+                        ft.Container(expand=True),
+                        ft.Button(
+                            "Nueva venta",
+                            icon=ft.Icons.ADD,
+                            on_click=lambda _: self.on_navigate("venta_create_wizard"),
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
                 ft.Row(
                     controls=[
                         self.q,
