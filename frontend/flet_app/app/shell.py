@@ -9,6 +9,7 @@ from app.pages.home_page import HomePage
 from app.pages.inmuebles_page import InmueblesPage
 from app.pages.parte_detail_page import ParteDetailPage
 from app.pages.partes_list_page import PartesListPage
+from app.pages.venta_create_wizard_page import VentaCreateWizardPage
 from app.pages.ventas_page import VentasPage
 
 
@@ -130,6 +131,7 @@ class AppShell:
             "contrato_detail": 3,
             "ventas": 4,
             "venta_detail": 4,
+            "venta_create_wizard": 4,
             "finanzas": 5,
         }
         self.rail.selected_index = index_by_route.get(route.name, 0)
@@ -192,6 +194,8 @@ class AppShell:
                 on_navigate=self.navigate,
                 detail_id=id_venta,
             ).build()
+        if route.name == "venta_create_wizard":
+            return VentaCreateWizardPage(on_navigate=self.navigate).build()
         if route.name == "finanzas":
             return FinanzasPage().build()
         return HomePage(on_navigate=self.navigate).build()
