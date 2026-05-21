@@ -244,6 +244,13 @@ class VentaCompletaWizardPrototype:
         total_bloques = self._suma_bloques()
         monto_total = _decimal_or_zero(self.state.monto_total)
         preview = self._preview_cronograma_local()
+        tipo_pago_dropdown = ft.Dropdown(
+            label="Tipo de pago",
+            value=self.state.tipo_pago,
+            width=180,
+            options=[ft.dropdown.Option("CONTADO"), ft.dropdown.Option("FINANCIADO")],
+        )
+        tipo_pago_dropdown.on_change = lambda e: self._set_tipo_pago(e.control.value)
         return self._card(
             "Paso 5 — Plan Pago V2 por bloques",
             [
@@ -251,13 +258,7 @@ class VentaCompletaWizardPrototype:
                     "Prototipo visual. En productivo este paso debe consumir preview backend oficial y reutilizar PlanPagoV2BloquesPanel.",
                     color=ft.Colors.BLUE_GREY_700,
                 ),
-                ft.Dropdown(
-                    label="Tipo de pago",
-                    value=self.state.tipo_pago,
-                    width=180,
-                    options=[ft.dropdown.Option("CONTADO"), ft.dropdown.Option("FINANCIADO")],
-                    on_change=lambda e: self._set_tipo_pago(e.control.value),
-                ),
+                tipo_pago_dropdown,
                 _simple_table(
                     ["Tipo", "Etiqueta", "Importe/capital", "Cuotas", "Vencimiento"],
                     [[b.tipo_bloque, b.etiqueta, b.importe, b.cantidad_cuotas or "-", b.primer_vencimiento or b.vencimiento] for b in self.state.bloques],
@@ -571,4 +572,4 @@ def main(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(target=main)
