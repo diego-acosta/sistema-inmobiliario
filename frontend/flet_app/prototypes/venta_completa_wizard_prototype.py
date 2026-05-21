@@ -94,7 +94,7 @@ class VentaCompletaWizardPrototype:
                 ),
             ],
         )
-        self.root = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=14)
+        self.root = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=10)
 
     def build(self) -> ft.Control:
         self._render()
@@ -131,17 +131,25 @@ class VentaCompletaWizardPrototype:
                 ft.Container(
                     content=ft.Row(
                         controls=[
-                            ft.Icon(icon, size=18, color=color),
-                            ft.Text(label, weight=ft.FontWeight.W_700 if is_current else ft.FontWeight.W_400),
+                            ft.Icon(icon, size=14, color=color),
+                            ft.Text(
+                                label,
+                                size=12,
+                                weight=ft.FontWeight.W_700 if is_current else ft.FontWeight.W_400,
+                            ),
                         ],
-                        spacing=6,
+                        spacing=4,
+                        tight=True,
                     ),
-                    padding=8,
-                    border=_border_all(2 if is_current else 1, ft.Colors.BLUE_300 if is_current else ft.Colors.BLUE_GREY_100),
-                    border_radius=20,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    border=_border_all(1.5 if is_current else 1, ft.Colors.BLUE_300 if is_current else ft.Colors.BLUE_GREY_100),
+                    border_radius=14,
                 )
             )
-        return ft.Row(controls=controls, wrap=True, spacing=8)
+        return ft.Container(
+            content=ft.Row(controls=controls, wrap=True, spacing=6, run_spacing=4),
+            padding=ft.padding.only(bottom=4),
+        )
 
     def _step_content(self) -> ft.Control:
         step = self.state.current_step
