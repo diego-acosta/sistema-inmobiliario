@@ -141,14 +141,14 @@ class VentaCompletaWizardPrototype:
                         spacing=4,
                         tight=True,
                     ),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    padding=ft.Padding(left=8, top=4, right=8, bottom=4),
                     border=_border_all(1.5 if is_current else 1, ft.Colors.BLUE_300 if is_current else ft.Colors.BLUE_GREY_100),
                     border_radius=14,
                 )
             )
         return ft.Container(
             content=ft.Row(controls=controls, wrap=True, spacing=6, run_spacing=4),
-            padding=ft.padding.only(bottom=4),
+            padding=ft.Padding(left=0, top=0, right=0, bottom=4),
         )
 
     def _step_content(self) -> ft.Control:
