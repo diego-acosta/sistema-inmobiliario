@@ -91,10 +91,10 @@ class VentaCreateWizardPage:
         self.root = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=10)
 
     def build(self) -> ft.Control:
-        self._render()
+        self._render(update=False)
         return self.root
 
-    def _render(self) -> None:
+    def _render(self, *, update: bool = True) -> None:
         self.root.controls = [
             ft.Row(
                 controls=[
@@ -128,7 +128,8 @@ class VentaCreateWizardPage:
             ),
             self._nav_buttons(),
         ]
-        self.root.update()
+        if update and self.root.page is not None:
+            self.root.update()
 
     def _progress_header(self) -> ft.Control:
         controls: list[ft.Control] = []
