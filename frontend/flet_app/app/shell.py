@@ -44,7 +44,7 @@ class AppShell:
                                 ft.Container(
                                     content=self.rail,
                                     expand=True,
-                                    alignment=ft.alignment.top_left,
+                                    alignment=ft.Alignment(-1, -1),
                                 ),
                                 ft.Container(
                                     content=ft.Text(
