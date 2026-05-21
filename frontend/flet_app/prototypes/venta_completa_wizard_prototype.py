@@ -104,7 +104,7 @@ class VentaCompletaWizardPrototype:
         self.root.controls = [
             ft.Text("Prototipo — Alta guiada de venta completa", size=28, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Flujo incremental con venta en BORRADOR. Este prototipo no persiste datos ni modifica backend.",
+                "Entrada productiva esperada: Ventas → Nueva venta. Flujo incremental con venta en BORRADOR.",
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._progress_header(),
@@ -181,10 +181,7 @@ class VentaCompletaWizardPrototype:
             "Paso 2 — Objetos inmobiliarios",
             [
                 ft.Text("En productivo este paso debería validar disponibilidad, modalidad de comercialización y coherencia multiobjeto."),
-                _simple_table(
-                    ["Tipo", "ID", "Descripción", "Precio"],
-                    rows,
-                ),
+                _simple_table(["Tipo", "ID", "Descripción", "Precio"], rows),
                 ft.Row(
                     controls=[
                         ft.OutlinedButton("Agregar objeto demo", icon=ft.Icons.ADD, on_click=self._add_objeto_demo),
@@ -201,10 +198,7 @@ class VentaCompletaWizardPrototype:
             "Paso 3 — Compradores / partes",
             [
                 ft.Text("Regla inicial: exactamente un comprador financiero resoluble para generar Plan Pago V2."),
-                _simple_table(
-                    ["ID persona", "Nombre", "Rol"],
-                    [[c.id_persona, c.nombre, c.rol] for c in self.state.compradores],
-                ),
+                _simple_table(["ID persona", "Nombre", "Rol"], [[c.id_persona, c.nombre, c.rol] for c in self.state.compradores]),
                 ft.Row(
                     controls=[
                         ft.OutlinedButton("Agregar comprador demo", icon=ft.Icons.ADD, on_click=self._add_comprador_demo),
@@ -223,6 +217,10 @@ class VentaCompletaWizardPrototype:
         return self._card(
             "Paso 4 — Condiciones comerciales",
             [
+                ft.Text(
+                    "Define el acuerdo comercial base. El modo de pago se carga en el paso siguiente.",
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
                 ft.Row(
                     controls=[
                         ft.TextField(label="Monto total", value=self.state.monto_total, width=180, on_change=lambda e: self._set("monto_total", e.control.value)),
@@ -243,7 +241,6 @@ class VentaCompletaWizardPrototype:
     def _step_plan_pago(self) -> ft.Control:
         total_bloques = self._suma_bloques()
         monto_total = _decimal_or_zero(self.state.monto_total)
-        preview = self._preview_cronograma_local()
         tipo_pago_dropdown = ft.Dropdown(
             label="Tipo de pago",
             value=self.state.tipo_pago,
@@ -255,7 +252,7 @@ class VentaCompletaWizardPrototype:
             "Paso 5 — Plan Pago V2 por bloques",
             [
                 ft.Text(
-                    "Prototipo visual. En productivo este paso debe consumir preview backend oficial y reutilizar PlanPagoV2BloquesPanel.",
+                    "Carga la estructura del plan. El cronograma se revisa en la pestaña siguiente antes de confirmar.",
                     color=ft.Colors.BLUE_GREY_700,
                 ),
                 tipo_pago_dropdown,
@@ -280,23 +277,22 @@ class VentaCompletaWizardPrototype:
                 ]),
                 ft.Row(
                     controls=[
-                        ft.Button("Generar preview simulado", icon=ft.Icons.PREVIEW, on_click=self._generate_preview),
-                        ft.Text("Preview generado" if self.state.preview_generado else "Preview pendiente", color=ft.Colors.GREEN_700 if self.state.preview_generado else ft.Colors.AMBER_800),
+                        ft.Button("Generar preview para revisión", icon=ft.Icons.PREVIEW, on_click=self._generate_preview),
+                        ft.Text("Preview listo para revisión" if self.state.preview_generado else "Preview pendiente", color=ft.Colors.GREEN_700 if self.state.preview_generado else ft.Colors.AMBER_800),
                     ],
                     spacing=10,
                 ),
-                ft.Text("Cronograma preview", weight=ft.FontWeight.W_700),
-                _simple_table(["Bloque", "Etiqueta", "Vencimiento", "Importe"], preview),
                 self._validation_box(4),
             ],
         )
 
     def _step_revision(self) -> ft.Control:
         errors = self._all_errors()
+        preview = self._preview_cronograma_local()
         return self._card(
             "Paso 6 — Revisión y confirmación final",
             [
-                ft.Text("La confirmación está simulada en este prototipo. La implementación productiva debe orquestar servicios reales."),
+                ft.Text("Revisá toda la venta y el cronograma antes de confirmar. La confirmación está simulada en este prototipo."),
                 _kv_grid([
                     ("Código", self.state.codigo_venta or "-"),
                     ("Estado", self.state.estado_venta),
@@ -308,6 +304,13 @@ class VentaCompletaWizardPrototype:
                     ("Tipo pago", self.state.tipo_pago),
                     ("Bloques", str(len(self.state.bloques))),
                 ]),
+                ft.Text("Estructura del plan", weight=ft.FontWeight.W_700),
+                _simple_table(
+                    ["Tipo", "Etiqueta", "Importe/capital", "Cuotas", "Vencimiento"],
+                    [[b.tipo_bloque, b.etiqueta, b.importe, b.cantidad_cuotas or "-", b.primer_vencimiento or b.vencimiento] for b in self.state.bloques],
+                ),
+                ft.Text("Cronograma preview", weight=ft.FontWeight.W_700),
+                _simple_table(["Bloque", "Etiqueta", "Vencimiento", "Importe"], preview),
                 ft.Text("Alertas", weight=ft.FontWeight.W_700),
                 ft.Column([ft.Text(error, color=ft.Colors.RED_700) for error in errors] or [ft.Text("Sin alertas bloqueantes.", color=ft.Colors.GREEN_700)]),
                 ft.Button("Confirmar venta completa (simulado)", icon=ft.Icons.CHECK_CIRCLE, disabled=bool(errors), on_click=self._confirm_simulated),
@@ -320,6 +323,7 @@ class VentaCompletaWizardPrototype:
             "Resumen",
             [
                 _kv_grid([
+                    ("Entrada futura", "Ventas → Nueva venta"),
                     ("Estado", self.state.estado_venta),
                     ("Paso", f"{self.state.current_step + 1}/{len(STEPS)}"),
                     ("Objetos", str(len(self.state.objetos))),
@@ -331,6 +335,7 @@ class VentaCompletaWizardPrototype:
                 ]),
                 ft.Divider(),
                 ft.Text("Brechas esperadas a validar", weight=ft.FontWeight.W_700),
+                ft.Text("• botón Nueva venta en Ventas"),
                 ft.Text("• crear/retomar venta BORRADOR"),
                 ft.Text("• asociar objetos en borrador"),
                 ft.Text("• asociar comprador financiero"),
