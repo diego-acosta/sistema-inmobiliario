@@ -11,6 +11,8 @@ from app.api.schemas.comercial import (
     CesionListData,
     CesionListResponse,
     CesionData,
+    ConfirmVentaCompletaDesdeReservaRequest,
+    ConfirmVentaCompletaDesdeReservaResponse,
     ConfirmVentaData,
     ConfirmVentaRequest,
     ConfirmVentaResponse,
@@ -83,6 +85,16 @@ from app.application.comercial.commands.confirm_reserva_venta import (
     ConfirmReservaVentaCommand,
 )
 from app.application.comercial.commands.confirm_venta import ConfirmVentaCommand
+from app.application.comercial.commands.confirm_venta_completa_desde_reserva import (
+    ConfirmVentaCompletaCondicionCuotaInput,
+    ConfirmVentaCompletaCondicionObjetoInput,
+    ConfirmVentaCompletaCondicionesComercialesInput,
+    ConfirmVentaCompletaConfirmacionInput,
+    ConfirmVentaCompletaDesdeReservaCommand,
+    ConfirmVentaCompletaGenerarVentaInput,
+    ConfirmVentaCompletaPlanPagoBloqueInput,
+    ConfirmVentaCompletaPlanPagoV2Input,
+)
 from app.application.comercial.commands.create_cesion import CreateCesionCommand
 from app.application.comercial.commands.create_escrituracion import (
     CreateEscrituracionCommand,
@@ -133,6 +145,9 @@ from app.application.comercial.services.confirm_reserva_venta_service import (
     ConfirmReservaVentaService,
 )
 from app.application.comercial.services.confirm_venta_service import ConfirmVentaService
+from app.application.comercial.services.confirm_venta_completa_desde_reserva_service import (
+    ConfirmVentaCompletaDesdeReservaService,
+)
 from app.application.comercial.services.create_cesion_service import (
     CreateCesionService,
 )
@@ -1417,6 +1432,176 @@ def confirm_reserva_venta(
         ],
     }
     return ReservaVentaConfirmResponse(data=ReservaVentaConfirmData(**data))
+
+
+@router.post(
+    "/api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa",
+    response_model=ConfirmVentaCompletaDesdeReservaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        501: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def confirmar_venta_completa_desde_reserva(
+    id_reserva_venta: int,
+    request: ConfirmVentaCompletaDesdeReservaRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ConfirmVentaCompletaDesdeReservaResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+    parsed_if_match_version: int | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    if if_match_version is not None:
+        try:
+            parsed_if_match_version = int(if_match_version)
+        except ValueError:
+            parsed_if_match_version = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+            "if_match_version": if_match_version,
+        },
+    }
+
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = ComercialCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
+
+    command = ConfirmVentaCompletaDesdeReservaCommand(
+        context=context,
+        id_reserva_venta=id_reserva_venta,
+        if_match_version_reserva=parsed_if_match_version,
+        generar_venta=ConfirmVentaCompletaGenerarVentaInput(
+            codigo_venta=request.generar_venta.codigo_venta,
+            fecha_venta=request.generar_venta.fecha_venta,
+            monto_total=request.generar_venta.monto_total,
+            observaciones=request.generar_venta.observaciones,
+        ),
+        condiciones_comerciales=ConfirmVentaCompletaCondicionesComercialesInput(
+            monto_total=request.condiciones_comerciales.monto_total,
+            tipo_plan_financiero=request.condiciones_comerciales.tipo_plan_financiero,
+            moneda=request.condiciones_comerciales.moneda,
+            importe_anticipo=request.condiciones_comerciales.importe_anticipo,
+            fecha_vencimiento_anticipo=request.condiciones_comerciales.fecha_vencimiento_anticipo,
+            importe_saldo=request.condiciones_comerciales.importe_saldo,
+            fecha_vencimiento_saldo=request.condiciones_comerciales.fecha_vencimiento_saldo,
+            cuotas=[
+                ConfirmVentaCompletaCondicionCuotaInput(
+                    numero_cuota=item.numero_cuota,
+                    importe_cuota=item.importe_cuota,
+                    fecha_vencimiento=item.fecha_vencimiento,
+                    moneda=item.moneda,
+                    observaciones=item.observaciones,
+                )
+                for item in request.condiciones_comerciales.cuotas
+            ],
+            objetos=[
+                ConfirmVentaCompletaCondicionObjetoInput(
+                    id_inmueble=item.id_inmueble,
+                    id_unidad_funcional=item.id_unidad_funcional,
+                    precio_asignado=item.precio_asignado,
+                )
+                for item in request.condiciones_comerciales.objetos
+            ],
+        ),
+        plan_pago_v2=ConfirmVentaCompletaPlanPagoV2Input(
+            tipo_pago=request.plan_pago_v2.tipo_pago,
+            monto_total_plan=request.plan_pago_v2.monto_total_plan,
+            moneda=request.plan_pago_v2.moneda,
+            bloques=[
+                ConfirmVentaCompletaPlanPagoBloqueInput(
+                    tipo_bloque=item.tipo_bloque,
+                    etiqueta_bloque=item.etiqueta_bloque,
+                    importe_total_bloque=item.importe_total_bloque,
+                    fecha_vencimiento=item.fecha_vencimiento,
+                    cantidad_cuotas=item.cantidad_cuotas,
+                    importe_cuota=item.importe_cuota,
+                    fecha_primer_vencimiento=item.fecha_primer_vencimiento,
+                    periodicidad=item.periodicidad,
+                    regla_redondeo=item.regla_redondeo,
+                    observaciones=item.observaciones,
+                )
+                for item in request.plan_pago_v2.bloques
+            ],
+            observaciones=request.plan_pago_v2.observaciones,
+        ),
+        confirmacion=ConfirmVentaCompletaConfirmacionInput(
+            observaciones=request.confirmacion.observaciones,
+        ),
+    )
+
+    service = ConfirmVentaCompletaDesdeReservaService()
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "CONCURRENCY_ERROR" in result.errors:
+            error = ErrorResponse(
+                error_code="CONCURRENCY_ERROR",
+                error_message="If-Match-Version es requerido y debe coincidir con version_registro de reserva_venta.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=409, content=error.model_dump())
+
+        if "MONTO_TOTAL_PLAN_MISMATCH" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="monto_total de condiciones_comerciales debe coincidir con monto_total_plan.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if "NOT_IMPLEMENTED" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_IMPLEMENTED",
+                error_message="confirmar-venta-completa desde reserva aun no ejecuta orquestacion ni persistencia.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=501, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo confirmar la venta completa desde la reserva.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ConfirmVentaCompletaDesdeReservaResponse(**result.data)
 
 
 @router.post(

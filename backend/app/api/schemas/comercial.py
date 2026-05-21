@@ -224,6 +224,55 @@ class ConfirmVentaRequest(BaseModel):
     observaciones: str | None = None
 
 
+class ConfirmVentaCompletaDesdeReservaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generar_venta: GenerateVentaFromReservaVentaRequest
+    condiciones_comerciales: DefineCondicionesComercialesVentaRequest
+    plan_pago_v2: GeneratePlanPagoVentaV2PorBloquesRequest
+    confirmacion: ConfirmVentaRequest
+
+
+class ConfirmVentaCompletaReservaResumenData(BaseModel):
+    id_reserva_venta: int
+    estado_reserva: str
+    version_registro: int
+
+
+class ConfirmVentaCompletaVentaResumenData(BaseModel):
+    id_venta: int
+    estado_venta: str
+    version_registro: int
+
+
+class ConfirmVentaCompletaPlanPagoV2ResumenData(BaseModel):
+    id_plan_pago_venta: int
+    estado_plan_pago: str
+
+
+class ConfirmVentaCompletaGeneracionCronogramaResumenData(BaseModel):
+    id_generacion_cronograma_financiero: int
+    estado_generacion: str
+
+
+class ConfirmVentaCompletaObligacionesResumenData(BaseModel):
+    cantidad: int
+    ids: list[int]
+
+
+class ConfirmVentaCompletaDesdeReservaData(BaseModel):
+    reserva_venta: ConfirmVentaCompletaReservaResumenData
+    venta: ConfirmVentaCompletaVentaResumenData
+    plan_pago_v2: ConfirmVentaCompletaPlanPagoV2ResumenData
+    generacion_cronograma_financiero: ConfirmVentaCompletaGeneracionCronogramaResumenData
+    obligaciones: ConfirmVentaCompletaObligacionesResumenData
+
+
+class ConfirmVentaCompletaDesdeReservaResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ConfirmVentaCompletaDesdeReservaData
+
+
 class InstrumentoCompraventaObjetoRequest(BaseModel):
     id_inmueble: int | None = None
     id_unidad_funcional: int | None = None
