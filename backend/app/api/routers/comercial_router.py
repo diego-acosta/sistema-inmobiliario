@@ -1629,12 +1629,12 @@ def confirmar_venta_completa_desde_reserva(
     response_model=ConfirmVentaDirectaCompletaResponse,
     responses={
         400: {"model": ErrorResponse},
-        501: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
 )
 def confirmar_venta_directa_completa(
     request: ConfirmVentaDirectaCompletaRequest,
+    db: Session = Depends(get_db),
     x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
     x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
@@ -1745,7 +1745,12 @@ def confirmar_venta_directa_completa(
         ),
     )
 
-    service = ConfirmVentaDirectaCompletaService()
+    service = ConfirmVentaDirectaCompletaService(
+        comercial_repository=ComercialRepository(db),
+        plan_pago_v2_service=GeneratePlanPagoVentaV2PorBloquesService(
+            repository=PlanPagoVentaV2Repository(db)
+        ),
+    )
 
     try:
         result = service.execute(command)
@@ -1757,13 +1762,21 @@ def confirmar_venta_directa_completa(
         return JSONResponse(status_code=500, content=error.model_dump())
 
     if not result.success or result.data is None:
-        if "NOT_IMPLEMENTED" in result.errors:
+        if "MONTO_TOTAL_PLAN_MISMATCH" in result.errors:
             error = ErrorResponse(
-                error_code="NOT_IMPLEMENTED",
-                error_message="Confirmar venta directa completa sin reserva aun no esta implementado.",
+                error_code="APPLICATION_ERROR",
+                error_message="monto_total de condiciones_comerciales debe coincidir con monto_total_plan.",
                 details={"errors": result.errors},
             )
-            return JSONResponse(status_code=501, content=error.model_dump())
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+        if any(error.startswith("NOT_FOUND") for error in result.errors):
+            error = ErrorResponse(
+                error_code=result.errors[0],
+                error_message="No se encontro el recurso requerido para confirmar la venta directa completa.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
 
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",

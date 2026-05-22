@@ -149,7 +149,7 @@ def test_confirmar_venta_directa_completa_rechaza_objetos_duplicados_en_condicio
     assert response.status_code == 422
 
 
-def test_confirmar_venta_directa_completa_request_valido_devuelve_not_implemented(
+def test_confirmar_venta_directa_completa_request_valido_no_devuelve_not_implemented(
     client,
 ) -> None:
     response = client.post(
@@ -158,8 +158,8 @@ def test_confirmar_venta_directa_completa_request_valido_devuelve_not_implemente
         json=_payload_confirmar_venta_directa_completa(),
     )
 
-    assert response.status_code == 501
+    assert response.status_code in {400, 404}
     body = response.json()
     assert body["ok"] is False
-    assert body["error_code"] == "NOT_IMPLEMENTED"
-    assert body["details"]["errors"] == ["NOT_IMPLEMENTED"]
+    assert body["error_code"] != "NOT_IMPLEMENTED"
+    assert "errors" in body["details"]
