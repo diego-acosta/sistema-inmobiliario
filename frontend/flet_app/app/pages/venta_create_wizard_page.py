@@ -284,6 +284,25 @@ class VentaCreateWizardPage:
         self._clear_backend_status()
         self._render()
 
+    def _add_objeto_manual_reserva(self, _: Any) -> None:
+        self.state.objetos.append(
+            ObjetoVentaDraft(
+                tipo_objeto="TERRENO",
+                id_objeto="",
+                descripcion="Objeto manual desde reserva",
+                precio_asignado=self.state.monto_total,
+            )
+        )
+        self._clear_backend_status()
+        self._render()
+
+    def _set_objeto_draft(self, index: int, field_name: str, value: str) -> None:
+        if index < 0 or index >= len(self.state.objetos):
+            return
+        setattr(self.state.objetos[index], field_name, value or "")
+        self._clear_backend_status()
+        self._render()
+
     def _add_comprador_demo(self, _: Any) -> None:
         next_id = len(self.state.compradores) + 1
         self.state.compradores.append(CompradorDraft(id_persona=str(next_id), nombre=f"Comprador demo {next_id}"))
@@ -352,8 +371,35 @@ class VentaCreateWizardPage:
         self.state.reserva_seleccionada = reserva
         self.state.id_reserva_venta = str(reserva.get("id_reserva_venta") or "")
         self.state.if_match_version_reserva = str(reserva.get("version_registro") or "")
+        self._sync_objetos_desde_reserva(reserva)
         self._clear_backend_status()
         self._render()
+
+    def _sync_objetos_desde_reserva(self, reserva: dict[str, Any]) -> None:
+        objetos = reserva.get("objetos") or []
+        if not objetos:
+            self.state.objetos = []
+            return
+
+        precio_default = _money(_decimal_or_zero(self.state.monto_total))
+        precio_por_objeto = precio_default if len(objetos) == 1 else ""
+        self.state.objetos = [
+            ObjetoVentaDraft(
+                tipo_objeto=(
+                    "UNIDAD_FUNCIONAL"
+                    if objeto.get("id_unidad_funcional") is not None
+                    else "TERRENO"
+                ),
+                id_objeto=str(
+                    objeto.get("id_unidad_funcional")
+                    or objeto.get("id_inmueble")
+                    or ""
+                ),
+                descripcion=str(objeto.get("observaciones") or "Objeto de reserva"),
+                precio_asignado=str(objeto.get("precio_asignado") or precio_por_objeto),
+            )
+            for objeto in objetos
+        ]
 
     def _suma_objetos(self) -> Decimal:
         return sum((_decimal_or_zero(obj.precio_asignado) for obj in self.state.objetos), Decimal("0.00")).quantize(Decimal("0.01"))
@@ -409,6 +455,7 @@ class VentaCreateWizardPage:
         saldo = (_decimal_or_zero(self.state.monto_total) - anticipo).quantize(Decimal("0.01"))
         anticipo_fecha = self._primer_bloque_fecha("ANTICIPO")
         saldo_fecha = self._primer_fecha_saldo()
+        objetos_payload = self._condiciones_objetos_payload()
         return {
             "generar_venta": {
                 "codigo_venta": self.state.codigo_venta.strip(),
@@ -425,7 +472,7 @@ class VentaCreateWizardPage:
                 "importe_saldo": _money(saldo) if anticipo > 0 and saldo > 0 else None,
                 "fecha_vencimiento_saldo": saldo_fecha if anticipo > 0 and saldo > 0 else None,
                 "cuotas": [],
-                "objetos": [self._objeto_payload(objeto) for objeto in self.state.objetos],
+                "objetos": objetos_payload,
             },
             "plan_pago_v2": {
                 "tipo_pago": self.state.tipo_pago,
@@ -438,6 +485,17 @@ class VentaCreateWizardPage:
                 "observaciones": self.state.observaciones or self.state.condiciones_generales or None,
             },
         }
+
+    def _condiciones_objetos_payload(self) -> list[dict[str, Any]]:
+        return [
+            payload
+            for payload in (self._objeto_payload(objeto) for objeto in self.state.objetos)
+            if (
+                (payload["id_inmueble"] is not None)
+                != (payload["id_unidad_funcional"] is not None)
+            )
+            and _decimal_or_zero(payload["precio_asignado"]) > 0
+        ]
 
     def _objeto_payload(self, objeto: ObjetoVentaDraft) -> dict[str, Any]:
         id_objeto = _int_or_zero(objeto.id_objeto)
@@ -654,6 +712,19 @@ class VentaCreateWizardPage:
 
     def _step_objetos(self) -> ft.Control:
         desde_reserva = self.state.origen_venta == ORIGEN_RESERVA
+        actions = (
+            [self._objetos_reserva_editor()]
+            if desde_reserva
+            else [
+                ft.Row(
+                    controls=[
+                        ft.OutlinedButton("Agregar objeto demo", icon=ft.Icons.ADD, disabled=desde_reserva, on_click=self._add_objeto_demo),
+                        ft.OutlinedButton("Quitar ultimo", icon=ft.Icons.DELETE_OUTLINE, disabled=desde_reserva, on_click=self._remove_objeto),
+                    ],
+                    spacing=10,
+                )
+            ]
+        )
         return self._card(
             "Paso 3 - Objetos inmobiliarios",
             [
@@ -664,15 +735,56 @@ class VentaCreateWizardPage:
                     color=ft.Colors.BLUE_GREY_700 if desde_reserva else None,
                 ),
                 _simple_table(["Tipo", "ID", "Descripcion", "Precio"], [_objeto_row(obj) for obj in self.state.objetos]),
+                *actions,
+                self._validation_box(2),
+            ],
+        )
+
+    def _objetos_reserva_editor(self) -> ft.Control:
+        rows: list[ft.Control] = []
+        for index, objeto in enumerate(self.state.objetos):
+            rows.append(
                 ft.Row(
                     controls=[
-                        ft.OutlinedButton("Agregar objeto demo", icon=ft.Icons.ADD, disabled=desde_reserva, on_click=self._add_objeto_demo),
-                        ft.OutlinedButton("Quitar ultimo", icon=ft.Icons.DELETE_OUTLINE, disabled=desde_reserva, on_click=self._remove_objeto),
+                        ft.TextField(
+                            label="Tipo",
+                            value=objeto.tipo_objeto,
+                            width=170,
+                            on_change=lambda e, i=index: self._set_objeto_draft(i, "tipo_objeto", e.control.value.upper()),
+                        ),
+                        ft.TextField(
+                            label="ID inmueble/UF",
+                            value=objeto.id_objeto,
+                            width=140,
+                            on_change=lambda e, i=index: self._set_objeto_draft(i, "id_objeto", e.control.value),
+                        ),
+                        ft.TextField(
+                            label="Precio asignado",
+                            value=objeto.precio_asignado,
+                            width=180,
+                            on_change=lambda e, i=index: self._set_objeto_draft(i, "precio_asignado", e.control.value),
+                        ),
+                    ],
+                    wrap=True,
+                    spacing=8,
+                )
+            )
+        return ft.Column(
+            controls=[
+                ft.Text(
+                    "Para TERRENO se envia id_inmueble. Para UNIDAD_FUNCIONAL se envia id_unidad_funcional.",
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
+                *rows,
+                ft.Row(
+                    controls=[
+                        ft.OutlinedButton("Agregar objeto manual", icon=ft.Icons.ADD, on_click=self._add_objeto_manual_reserva),
+                        ft.OutlinedButton("Quitar ultimo", icon=ft.Icons.DELETE_OUTLINE, on_click=self._remove_objeto),
                     ],
                     spacing=10,
                 ),
-                self._validation_box(2),
             ],
+            spacing=8,
         )
 
     def _step_compradores(self) -> ft.Control:
@@ -808,6 +920,18 @@ class VentaCreateWizardPage:
                 ]),
                 ft.Text("Estructura del plan", weight=ft.FontWeight.W_700),
                 _simple_table(["Tipo", "Etiqueta", "Importe/capital", "Cuotas", "Vencimiento"], [[b.tipo_bloque, b.etiqueta, b.importe, b.cantidad_cuotas or "-", b.primer_vencimiento or b.vencimiento] for b in self.state.bloques]),
+                ft.Text("Objetos que se enviaran a condiciones_comerciales", weight=ft.FontWeight.W_700),
+                _simple_table(
+                    ["Inmueble", "Unidad funcional", "Precio asignado"],
+                    [
+                        [
+                            str(objeto["id_inmueble"] or "-"),
+                            str(objeto["id_unidad_funcional"] or "-"),
+                            str(objeto["precio_asignado"]),
+                        ]
+                        for objeto in self._condiciones_objetos_payload()
+                    ],
+                ),
                 ft.Text("Cronograma preview", weight=ft.FontWeight.W_700),
                 _simple_table(["Bloque", "Etiqueta", "Vencimiento", "Importe"], preview),
                 ft.Text("Alertas", weight=ft.FontWeight.W_700),
@@ -920,6 +1044,11 @@ class VentaCreateWizardPage:
                 errors.append("El monto total debe ser mayor a cero.")
             if monto != self._suma_objetos():
                 errors.append("El monto total debe coincidir con la suma de objetos.")
+            if (
+                self.state.origen_venta == ORIGEN_RESERVA
+                and not self._condiciones_objetos_payload()
+            ):
+                errors.append("Debe existir al menos un objeto valido para condiciones_comerciales.objetos.")
         elif step == 5:
             if not self.state.bloques:
                 errors.append("Debe existir al menos un bloque de plan de pago.")
