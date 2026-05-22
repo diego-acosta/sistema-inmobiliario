@@ -23,6 +23,17 @@ VENTA_INMOBILIARIO_EFFECTS_BY_EVENT = {
         "ocupacion": "SIN_CAMBIO",
     },
 }
+VENTA_DIRECTA_ESTADOS_RESERVA_CONFLICTIVOS = {
+    "borrador",
+    "activa",
+    "confirmada",
+}
+VENTA_DIRECTA_ESTADOS_VENTA_CONFLICTIVOS = {
+    "activa",
+    "confirmada",
+    "en_proceso",
+    "finalizada",
+}
 
 
 class ComercialRepository:
@@ -212,6 +223,25 @@ class ComercialRepository:
             ).scalar_one_or_none()
             is not None
         )
+
+    def get_rol_participacion_codigo(
+        self, id_rol_participacion: int
+    ) -> str | None:
+        statement = text(
+            """
+            SELECT UPPER(codigo_rol) AS codigo_rol
+            FROM rol_participacion
+            WHERE id_rol_participacion = :id_rol_participacion
+              AND deleted_at IS NULL
+              AND estado_rol = 'ACTIVO'
+            """
+        )
+        row = self.db.execute(
+            statement, {"id_rol_participacion": id_rol_participacion}
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+        return row["codigo_rol"]
 
     def get_reserva_venta(self, id_reserva_venta: int) -> dict[str, Any] | None:
         reserva_statement = text(
@@ -2657,6 +2687,196 @@ class ComercialRepository:
             },
         }
 
+    def _create_venta_directa_tx(
+        self,
+        payload: Any,
+        objetos: list[Any],
+        compradores: list[Any],
+    ) -> dict[str, Any]:
+        venta_values = self._values(payload)
+        objetos_values = [self._values(objeto) for objeto in objetos]
+        compradores_values = [self._values(comprador) for comprador in compradores]
+
+        validation_status = self._validate_venta_directa_payload(
+            venta_values=venta_values,
+            objetos_values=objetos_values,
+            compradores_values=compradores_values,
+        )
+        if validation_status is not None:
+            return {"status": validation_status}
+
+        venta_statement = text(
+            """
+            INSERT INTO venta (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_reserva_venta,
+                codigo_venta,
+                fecha_venta,
+                estado_venta,
+                monto_total,
+                observaciones
+            )
+            VALUES (
+                :uid_global,
+                :version_registro,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                NULL,
+                :codigo_venta,
+                :fecha_venta,
+                :estado_venta,
+                :monto_total,
+                :observaciones
+            )
+            RETURNING id_venta
+            """
+        )
+
+        objeto_statement = text(
+            """
+            INSERT INTO venta_objeto_inmobiliario (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_venta,
+                id_inmueble,
+                id_unidad_funcional,
+                precio_asignado,
+                observaciones
+            )
+            VALUES (
+                :uid_global,
+                :version_registro,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_venta,
+                :id_inmueble,
+                :id_unidad_funcional,
+                :precio_asignado,
+                :observaciones
+            )
+            """
+        )
+
+        comprador_statement = text(
+            """
+            INSERT INTO relacion_persona_rol (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_persona,
+                id_rol_participacion,
+                tipo_relacion,
+                id_relacion,
+                fecha_desde,
+                fecha_hasta,
+                observaciones
+            )
+            VALUES (
+                :uid_global,
+                :version_registro,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_persona,
+                :id_rol_participacion,
+                'venta',
+                :id_relacion,
+                :fecha_desde,
+                :fecha_hasta,
+                :observaciones
+            )
+            """
+        )
+
+        venta_row = self.db.execute(venta_statement, venta_values).mappings().one()
+        id_venta = venta_row["id_venta"]
+
+        for values in objetos_values:
+            self.db.execute(
+                objeto_statement,
+                {
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_venta": id_venta,
+                    "id_inmueble": values["id_inmueble"],
+                    "id_unidad_funcional": values["id_unidad_funcional"],
+                    "precio_asignado": values["precio_asignado"],
+                    "observaciones": values["observaciones"],
+                },
+            )
+
+        comprador_values = compradores_values[0]
+        self.db.execute(
+            comprador_statement,
+            {
+                "uid_global": comprador_values["uid_global"],
+                "version_registro": comprador_values["version_registro"],
+                "created_at": comprador_values["created_at"],
+                "updated_at": comprador_values["updated_at"],
+                "id_instalacion_origen": comprador_values["id_instalacion_origen"],
+                "id_instalacion_ultima_modificacion": comprador_values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_alta": comprador_values["op_id_alta"],
+                "op_id_ultima_modificacion": comprador_values[
+                    "op_id_ultima_modificacion"
+                ],
+                "id_persona": comprador_values["id_persona"],
+                "id_rol_participacion": comprador_values["id_rol_participacion"],
+                "id_relacion": id_venta,
+                "fecha_desde": comprador_values["fecha_desde"],
+                "fecha_hasta": comprador_values["fecha_hasta"],
+                "observaciones": comprador_values["observaciones"],
+            },
+        )
+
+        return {
+            "status": "OK",
+            "data": {
+                "id_venta": id_venta,
+                "codigo_venta": venta_values["codigo_venta"],
+                "estado_venta": venta_values["estado_venta"],
+                "version_registro": venta_values["version_registro"],
+            },
+        }
+
     def define_condiciones_comerciales_venta(
         self,
         payload: Any,
@@ -3414,6 +3634,104 @@ class ComercialRepository:
         if is_dataclass(payload):
             return asdict(payload)
         return vars(payload)
+
+    def _validate_venta_directa_payload(
+        self,
+        *,
+        venta_values: dict[str, Any],
+        objetos_values: list[dict[str, Any]],
+        compradores_values: list[dict[str, Any]],
+    ) -> str | None:
+        if self.venta_codigo_exists(venta_values["codigo_venta"]):
+            return "DUPLICATE_CODIGO_VENTA"
+
+        if not objetos_values:
+            return "VENTA_WITHOUT_OBJECTS"
+
+        seen_objects: set[tuple[str, int]] = set()
+        total_objetos = Decimal("0")
+        at_datetime = venta_values["fecha_venta"]
+
+        for values in objetos_values:
+            id_inmueble = values["id_inmueble"]
+            id_unidad_funcional = values["id_unidad_funcional"]
+
+            if (id_inmueble is None) == (id_unidad_funcional is None):
+                return "INVALID_VENTA_OBJECTS"
+
+            object_key = (
+                ("inmueble", id_inmueble)
+                if id_inmueble is not None
+                else ("unidad_funcional", id_unidad_funcional)
+            )
+            if object_key in seen_objects:
+                return "DUPLICATE_VENTA_OBJECTS"
+            seen_objects.add(object_key)
+
+            if id_inmueble is not None and not self.inmueble_exists(id_inmueble):
+                return "NOT_FOUND_INMUEBLE"
+
+            if (
+                id_unidad_funcional is not None
+                and not self.unidad_funcional_exists(id_unidad_funcional)
+            ):
+                return "NOT_FOUND_UNIDAD_FUNCIONAL"
+
+            current_disponibilidad = self.get_current_disponibilidad_state(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=id_unidad_funcional,
+                at_datetime=at_datetime,
+            )
+            if current_disponibilidad != "DISPONIBLE":
+                return "INVALID_DISPONIBILIDAD_STATE"
+
+            if self.has_current_ocupacion_conflict(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=id_unidad_funcional,
+                at_datetime=at_datetime,
+            ):
+                return "CONFLICTING_OCUPACION"
+
+            if self.has_conflicting_active_venta(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=id_unidad_funcional,
+                conflict_states=VENTA_DIRECTA_ESTADOS_VENTA_CONFLICTIVOS,
+            ):
+                return "CONFLICTING_VENTA"
+
+            if self.has_conflicting_active_reserva(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=id_unidad_funcional,
+                conflict_states=VENTA_DIRECTA_ESTADOS_RESERVA_CONFLICTIVOS,
+            ):
+                return "CONFLICTING_RESERVA"
+
+            precio_asignado = values["precio_asignado"]
+            if precio_asignado is None:
+                return "INVALID_MONTO_TOTAL"
+            total_objetos += Decimal(str(precio_asignado))
+
+        if total_objetos <= 0:
+            return "INVALID_MONTO_TOTAL"
+
+        monto_total = venta_values.get("monto_total")
+        if monto_total is not None and Decimal(str(monto_total)) != total_objetos:
+            return "MONTO_TOTAL_OBJECTS_MISMATCH"
+
+        if len(compradores_values) != 1:
+            return "INVALID_COMPRADOR_COUNT"
+
+        comprador_values = compradores_values[0]
+        if not self.persona_exists(comprador_values["id_persona"]):
+            return "NOT_FOUND_PERSONA"
+
+        rol_codigo = self.get_rol_participacion_codigo(
+            comprador_values["id_rol_participacion"]
+        )
+        if rol_codigo != "COMPRADOR":
+            return "INVALID_ROL_COMPRADOR"
+
+        return None
 
     def _get_reserva_venta_origin(self, id_reserva_venta: int) -> dict[str, Any] | None:
         statement = text(
