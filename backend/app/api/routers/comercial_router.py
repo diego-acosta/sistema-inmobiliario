@@ -1629,6 +1629,7 @@ def confirmar_venta_completa_desde_reserva(
     response_model=ConfirmVentaDirectaCompletaResponse,
     responses={
         400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
 )
