@@ -22,6 +22,7 @@ DECLARE
     v_inm_casa bigint;
     v_inm_edificio bigint;
     v_inm_lote bigint;
+    v_inm_wizard bigint;
     v_uf_1a bigint;
     v_uf_1b bigint;
     v_uf_2a bigint;
@@ -38,6 +39,7 @@ DECLARE
     v_reserva_contado bigint;
     v_reserva_anticipo bigint;
     v_reserva_cuotas bigint;
+    v_reserva_wizard bigint;
     v_venta_contado bigint;
     v_venta_anticipo bigint;
     v_venta_cuotas bigint;
@@ -191,7 +193,8 @@ BEGIN
     VALUES
         (1, 1, v_op_id, v_op_id, 'DEMO-INM-CASA-001', 'Casa Demo Palermo', 220.00, 'ACTIVO', 'REGULAR', DATE '2026-01-01', 'DEMO UI inmueble con disponibilidad normal'),
         (1, 1, v_op_id, v_op_id, 'DEMO-INM-EDIF-001', 'Edificio Demo Centro', 980.00, 'ACTIVO', 'REGULAR', DATE '2026-01-01', 'DEMO UI inmueble con estados ambiguos'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-INM-LOTE-001', 'Lote Demo Costa', 500.00, 'ACTIVO', 'EN_TRAMITE', DATE '2026-01-01', 'DEMO UI inmueble sin vigencia abierta')
+        (1, 1, v_op_id, v_op_id, 'DEMO-INM-LOTE-001', 'Lote Demo Costa', 500.00, 'ACTIVO', 'EN_TRAMITE', DATE '2026-01-01', 'DEMO UI inmueble sin vigencia abierta'),
+        (1, 1, v_op_id, v_op_id, 'DEMO-INM-WIZARD-001', 'Lote Demo Wizard Reserva', 360.00, 'ACTIVO', 'REGULAR', DATE '2026-01-01', 'DEMO UI inmueble reservado para wizard desde reserva')
     ON CONFLICT (codigo_inmueble) DO UPDATE SET
         nombre_inmueble = EXCLUDED.nombre_inmueble,
         superficie = EXCLUDED.superficie,
@@ -203,6 +206,7 @@ BEGIN
     SELECT id_inmueble INTO v_inm_casa FROM public.inmueble WHERE codigo_inmueble = 'DEMO-INM-CASA-001';
     SELECT id_inmueble INTO v_inm_edificio FROM public.inmueble WHERE codigo_inmueble = 'DEMO-INM-EDIF-001';
     SELECT id_inmueble INTO v_inm_lote FROM public.inmueble WHERE codigo_inmueble = 'DEMO-INM-LOTE-001';
+    SELECT id_inmueble INTO v_inm_wizard FROM public.inmueble WHERE codigo_inmueble = 'DEMO-INM-WIZARD-001';
 
     INSERT INTO public.unidad_funcional (
         id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -323,6 +327,7 @@ BEGIN
         (v_inm_edificio, NULL::bigint, 'DISPONIBLE', TIMESTAMP '2026-01-01 00:00:00', NULL::timestamp, 'demo', 'DEMO_UI:DISP-EDIF-AMB-1'),
         (v_inm_edificio, NULL::bigint, 'RESERVADA', TIMESTAMP '2026-02-01 00:00:00', NULL::timestamp, 'demo', 'DEMO_UI:DISP-EDIF-AMB-2'),
         (v_inm_lote, NULL::bigint, 'DISPONIBLE', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-03-31 23:59:59', 'demo', 'DEMO_UI:DISP-LOTE-CERRADA'),
+        (v_inm_wizard, NULL::bigint, 'RESERVADA', TIMESTAMP '2026-04-21 10:00:00', NULL::timestamp, 'demo', 'DEMO_UI:DISP-WIZARD-RESERVADA'),
         (NULL::bigint, v_uf_1a, 'NO_DISPONIBLE', TIMESTAMP '2026-01-01 00:00:00', NULL::timestamp, 'demo', 'DEMO_UI:DISP-UF1A-ACTUAL'),
         (NULL::bigint, v_uf_1b, 'DISPONIBLE', TIMESTAMP '2026-01-01 00:00:00', NULL::timestamp, 'demo', 'DEMO_UI:DISP-UF1B-AMB-1'),
         (NULL::bigint, v_uf_1b, 'RESERVADA', TIMESTAMP '2026-02-01 00:00:00', NULL::timestamp, 'demo', 'DEMO_UI:DISP-UF1B-AMB-2'),
@@ -446,7 +451,8 @@ BEGIN
     VALUES
         (1, 1, v_op_id, v_op_id, 'DEMO-RES-VTA-CONTADO', TIMESTAMP '2026-01-10 10:00:00', 'confirmada', TIMESTAMP '2026-02-10 10:00:00', 'DEMO UI reserva venta contado'),
         (1, 1, v_op_id, v_op_id, 'DEMO-RES-VTA-ANTICIPO', TIMESTAMP '2026-02-10 10:00:00', 'confirmada', TIMESTAMP '2026-03-10 10:00:00', 'DEMO UI reserva venta anticipo y saldo'),
-        (1, 1, v_op_id, v_op_id, 'DEMO-RES-VTA-CUOTAS', TIMESTAMP '2026-03-10 10:00:00', 'confirmada', TIMESTAMP '2026-04-10 10:00:00', 'DEMO UI reserva venta cuotas')
+        (1, 1, v_op_id, v_op_id, 'DEMO-RES-VTA-CUOTAS', TIMESTAMP '2026-03-10 10:00:00', 'confirmada', TIMESTAMP '2026-04-10 10:00:00', 'DEMO UI reserva venta cuotas'),
+        (1, 1, v_op_id, v_op_id, 'RV-SEED-WIZARD-001', TIMESTAMP '2026-04-21 10:00:00', 'confirmada', TIMESTAMP '2026-06-30 10:00:00', 'DEMO UI reserva confirmada para wizard desde reserva')
     ON CONFLICT (codigo_reserva) DO UPDATE SET
         fecha_reserva = EXCLUDED.fecha_reserva,
         estado_reserva = EXCLUDED.estado_reserva,
@@ -457,6 +463,18 @@ BEGIN
     SELECT id_reserva_venta INTO v_reserva_contado FROM public.reserva_venta WHERE codigo_reserva = 'DEMO-RES-VTA-CONTADO';
     SELECT id_reserva_venta INTO v_reserva_anticipo FROM public.reserva_venta WHERE codigo_reserva = 'DEMO-RES-VTA-ANTICIPO';
     SELECT id_reserva_venta INTO v_reserva_cuotas FROM public.reserva_venta WHERE codigo_reserva = 'DEMO-RES-VTA-CUOTAS';
+    SELECT id_reserva_venta INTO v_reserva_wizard FROM public.reserva_venta WHERE codigo_reserva = 'RV-SEED-WIZARD-001';
+
+    UPDATE public.reserva_venta_objeto_inmobiliario
+       SET deleted_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP,
+           op_id_ultima_modificacion = v_op_id
+     WHERE id_reserva_venta = v_reserva_wizard
+       AND deleted_at IS NULL
+       AND NOT (
+           id_inmueble = v_inm_wizard
+           AND id_unidad_funcional IS NULL
+       );
 
     INSERT INTO public.reserva_venta_objeto_inmobiliario (
         id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -467,7 +485,8 @@ BEGIN
     FROM (VALUES
         (v_reserva_contado, v_inm_casa, NULL::bigint),
         (v_reserva_anticipo, v_inm_lote, NULL::bigint),
-        (v_reserva_cuotas, NULL::bigint, v_uf_2a)
+        (v_reserva_cuotas, NULL::bigint, v_uf_2a),
+        (v_reserva_wizard, v_inm_wizard, NULL::bigint)
     ) AS x(id_reserva_venta, id_inmueble, id_unidad_funcional)
     WHERE NOT EXISTS (
         SELECT 1 FROM public.reserva_venta_objeto_inmobiliario rvo
@@ -556,6 +575,7 @@ BEGIN
         (v_locatario, v_rol_locatario, 'contrato_alquiler', v_contrato),
         (v_locador, v_rol_locador, 'contrato_alquiler', v_contrato),
         (v_garante, v_rol_garante, 'contrato_alquiler', v_contrato),
+        (v_comprador, v_rol_comprador, 'reserva_venta', v_reserva_wizard),
         (v_comprador, v_rol_comprador, 'venta', v_venta_contado),
         (v_persona_juridica, v_rol_comprador, 'venta', v_venta_anticipo),
         (v_comprador, v_rol_comprador, 'venta', v_venta_cuotas)
@@ -736,4 +756,14 @@ BEGIN
            op_id_ultima_modificacion = v_op_id
      WHERE codigo_obligacion_financiera = 'DEMO-OBL-VTA-CONTADO-CANCELADA'
        AND deleted_at IS NULL;
+
+    RAISE NOTICE 'Reserva demo wizard: codigo=%, id=%, version_registro=%, inmueble=%',
+        'RV-SEED-WIZARD-001',
+        v_reserva_wizard,
+        (
+            SELECT version_registro
+            FROM public.reserva_venta
+            WHERE id_reserva_venta = v_reserva_wizard
+        ),
+        'DEMO-INM-WIZARD-001';
 END $$;

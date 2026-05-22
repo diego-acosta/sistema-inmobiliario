@@ -13,12 +13,10 @@ DECLARE
     v_id_desarrollo bigint;
     v_id_inmueble_base bigint;
     v_id_unidad_base bigint;
-    v_id_inmueble_wizard bigint;
     v_id_inmueble_confirm bigint;
     v_id_inmueble_escrituracion bigint;
     v_id_persona bigint;
     v_id_rol bigint;
-    v_id_reserva_wizard bigint;
     v_id_reserva_confirm bigint;
     v_id_reserva_escrituracion bigint;
     v_id_venta_confirm bigint;
@@ -340,168 +338,6 @@ BEGIN
             NULL,
             'seed_minimo',
             'Disponibilidad abierta base para pruebas'
-        );
-    END IF;
-
-    INSERT INTO public.inmueble (
-        id_instalacion_origen,
-        id_instalacion_ultima_modificacion,
-        op_id_alta,
-        op_id_ultima_modificacion,
-        id_desarrollo,
-        codigo_inmueble,
-        nombre_inmueble,
-        superficie,
-        estado_administrativo,
-        estado_juridico,
-        observaciones
-    )
-    VALUES (
-        1,
-        1,
-        v_op_id,
-        v_op_id,
-        v_id_desarrollo,
-        'INM-SEED-WIZARD-001',
-        'Inmueble seed wizard reserva confirmada',
-        120.00,
-        'ACTIVO',
-        'REGULAR',
-        'Activo reservado para probar confirmar venta completa desde reserva'
-    )
-    ON CONFLICT (codigo_inmueble) DO NOTHING;
-
-    SELECT id_inmueble
-    INTO v_id_inmueble_wizard
-    FROM public.inmueble
-    WHERE codigo_inmueble = 'INM-SEED-WIZARD-001';
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM public.disponibilidad
-        WHERE id_inmueble = v_id_inmueble_wizard
-          AND deleted_at IS NULL
-    ) THEN
-        INSERT INTO public.disponibilidad (
-            id_instalacion_origen,
-            id_instalacion_ultima_modificacion,
-            op_id_alta,
-            op_id_ultima_modificacion,
-            id_inmueble,
-            id_unidad_funcional,
-            estado_disponibilidad,
-            fecha_desde,
-            fecha_hasta,
-            motivo,
-            observaciones
-        )
-        VALUES (
-            1,
-            1,
-            v_op_id,
-            v_op_id,
-            v_id_inmueble_wizard,
-            NULL,
-            'RESERVADA',
-            TIMESTAMP '2026-04-21 10:00:00',
-            NULL,
-            'seed_minimo',
-            'Disponibilidad vigente para wizard confirmar venta completa desde reserva'
-        );
-    END IF;
-
-    INSERT INTO public.reserva_venta (
-        id_instalacion_origen,
-        id_instalacion_ultima_modificacion,
-        op_id_alta,
-        op_id_ultima_modificacion,
-        codigo_reserva,
-        fecha_reserva,
-        estado_reserva,
-        fecha_vencimiento,
-        observaciones
-    )
-    VALUES (
-        1,
-        1,
-        v_op_id,
-        v_op_id,
-        'RV-SEED-WIZARD-001',
-        TIMESTAMP '2026-04-21 10:00:00',
-        'confirmada',
-        TIMESTAMP '2026-06-30 10:00:00',
-        'Reserva confirmada seed para probar wizard confirmar venta completa'
-    )
-    ON CONFLICT (codigo_reserva) DO NOTHING;
-
-    SELECT id_reserva_venta
-    INTO v_id_reserva_wizard
-    FROM public.reserva_venta
-    WHERE codigo_reserva = 'RV-SEED-WIZARD-001';
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM public.reserva_venta_objeto_inmobiliario
-        WHERE id_reserva_venta = v_id_reserva_wizard
-          AND id_inmueble = v_id_inmueble_wizard
-          AND deleted_at IS NULL
-    ) THEN
-        INSERT INTO public.reserva_venta_objeto_inmobiliario (
-            id_instalacion_origen,
-            id_instalacion_ultima_modificacion,
-            op_id_alta,
-            op_id_ultima_modificacion,
-            id_reserva_venta,
-            id_inmueble,
-            id_unidad_funcional,
-            observaciones
-        )
-        VALUES (
-            1,
-            1,
-            v_op_id,
-            v_op_id,
-            v_id_reserva_wizard,
-            v_id_inmueble_wizard,
-            NULL,
-            'Objeto seed reserva wizard'
-        );
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM public.relacion_persona_rol
-        WHERE id_persona = v_id_persona
-          AND id_rol_participacion = v_id_rol
-          AND tipo_relacion = 'reserva_venta'
-          AND id_relacion = v_id_reserva_wizard
-          AND deleted_at IS NULL
-    ) THEN
-        INSERT INTO public.relacion_persona_rol (
-            id_instalacion_origen,
-            id_instalacion_ultima_modificacion,
-            op_id_alta,
-            op_id_ultima_modificacion,
-            id_persona,
-            id_rol_participacion,
-            tipo_relacion,
-            id_relacion,
-            fecha_desde,
-            fecha_hasta,
-            observaciones
-        )
-        VALUES (
-            1,
-            1,
-            v_op_id,
-            v_op_id,
-            v_id_persona,
-            v_id_rol,
-            'reserva_venta',
-            v_id_reserva_wizard,
-            TIMESTAMP '2026-04-21 10:00:00',
-            NULL,
-            'Participacion seed comprador para wizard desde reserva'
         );
     END IF;
 
@@ -1191,14 +1027,5 @@ BEGIN
         );
     END IF;
 
-    RAISE NOTICE 'Reserva demo wizard: codigo=%, id=%, version_registro=%, inmueble=%',
-        'RV-SEED-WIZARD-001',
-        v_id_reserva_wizard,
-        (
-            SELECT version_registro
-            FROM public.reserva_venta
-            WHERE id_reserva_venta = v_id_reserva_wizard
-        ),
-        'INM-SEED-WIZARD-001';
 END
 $$;
