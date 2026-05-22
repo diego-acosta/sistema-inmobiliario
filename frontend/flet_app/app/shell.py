@@ -195,7 +195,7 @@ class AppShell:
                 detail_id=id_venta,
             ).build()
         if route.name == "venta_create_wizard":
-            return VentaCreateWizardPage(on_navigate=self.navigate).build()
+            return VentaCreateWizardPage(api=self.api, on_navigate=self.navigate).build()
         if route.name == "finanzas":
             return FinanzasPage().build()
         return HomePage(on_navigate=self.navigate).build()

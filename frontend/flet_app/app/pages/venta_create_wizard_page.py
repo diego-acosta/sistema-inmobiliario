@@ -7,6 +7,8 @@ from typing import Any, Callable
 
 import flet as ft
 
+from app.api_client import ApiClient
+
 
 ORIGEN_DIRECTA = "VENTA_DIRECTA"
 ORIGEN_RESERVA = "DESDE_RESERVA"
@@ -42,6 +44,7 @@ class WizardState:
     current_step: int = 0
     origen_venta: str = ORIGEN_DIRECTA
     id_reserva_venta: str = ""
+    if_match_version_reserva: str = ""
     codigo_venta: str = "VTA-BORRADOR-001"
     fecha_venta: str = field(default_factory=lambda: _format_ar_date(date.today()))
     estado_venta: str = "BORRADOR"
@@ -78,6 +81,10 @@ class WizardState:
     ])
     preview_generado: bool = False
     confirmacion_simulada: bool = False
+    backend_resultado: dict[str, Any] | None = None
+    backend_error: str = ""
+    id_venta_generada: int | None = None
+    confirmando_backend: bool = False
 
 
 STEPS = [
@@ -92,7 +99,8 @@ STEPS = [
 
 
 class VentaCreateWizardPage:
-    def __init__(self, on_navigate: Callable[..., None]) -> None:
+    def __init__(self, api: ApiClient, on_navigate: Callable[..., None]) -> None:
+        self.api = api
         self.on_navigate = on_navigate
         self.state = WizardState()
         self.root = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=10)
@@ -244,11 +252,13 @@ class VentaCreateWizardPage:
         setattr(self.state, field_name, value or "")
         if field_name in {"monto_total", "moneda"}:
             self.state.preview_generado = False
+        self._clear_backend_status()
         self._render()
 
     def _set_tipo_pago(self, value: str | None) -> None:
         self.state.tipo_pago = value or "FINANCIADO"
         self.state.preview_generado = False
+        self._clear_backend_status()
         self._render()
 
     def _go(self, delta: int) -> None:
@@ -258,33 +268,39 @@ class VentaCreateWizardPage:
     def _add_objeto_demo(self, _: Any) -> None:
         next_id = len(self.state.objetos) + 1
         self.state.objetos.append(ObjetoVentaDraft(tipo_objeto="UNIDAD_FUNCIONAL" if next_id % 2 == 0 else "TERRENO", id_objeto=str(next_id), descripcion=f"Objeto demo {next_id}", precio_asignado="1000000.00"))
+        self._clear_backend_status()
         self._render()
 
     def _remove_objeto(self, _: Any) -> None:
         if self.state.objetos:
             self.state.objetos.pop()
+        self._clear_backend_status()
         self._render()
 
     def _add_comprador_demo(self, _: Any) -> None:
         next_id = len(self.state.compradores) + 1
         self.state.compradores.append(CompradorDraft(id_persona=str(next_id), nombre=f"Comprador demo {next_id}"))
+        self._clear_backend_status()
         self._render()
 
     def _remove_comprador(self, _: Any) -> None:
         if self.state.compradores:
             self.state.compradores.pop()
+        self._clear_backend_status()
         self._render()
 
     def _add_bloque(self, tipo: str) -> None:
         label = {"ANTICIPO": "Anticipo", "TRAMO_CUOTAS": "Tramo", "REFUERZO": "Refuerzo"}.get(tipo, tipo)
         self.state.bloques.append(BloquePlanDraft(tipo_bloque=tipo, etiqueta=label, importe="1000000.00", vencimiento=_format_ar_date(date.today()), cantidad_cuotas="6" if tipo == "TRAMO_CUOTAS" else "", primer_vencimiento=_format_ar_date(date.today()) if tipo == "TRAMO_CUOTAS" else ""))
         self.state.preview_generado = False
+        self._clear_backend_status()
         self._render()
 
     def _remove_bloque(self, _: Any) -> None:
         if self.state.bloques:
             self.state.bloques.pop()
         self.state.preview_generado = False
+        self._clear_backend_status()
         self._render()
 
     def _generate_preview(self, _: Any) -> None:
@@ -294,6 +310,11 @@ class VentaCreateWizardPage:
     def _confirm_simulated(self, _: Any) -> None:
         self.state.confirmacion_simulada = True
         self._render()
+
+    def _clear_backend_status(self) -> None:
+        self.state.backend_resultado = None
+        self.state.backend_error = ""
+        self.state.id_venta_generada = None
 
     def _suma_objetos(self) -> Decimal:
         return sum((_decimal_or_zero(obj.precio_asignado) for obj in self.state.objetos), Decimal("0.00")).quantize(Decimal("0.01"))
@@ -314,9 +335,118 @@ class VentaCreateWizardPage:
                 rows.append([bloque.tipo_bloque, bloque.etiqueta or bloque.tipo_bloque, bloque.vencimiento or "-", _money(total)])
         return rows
 
+    def _confirmar_desde_reserva_backend(self, _: Any) -> None:
+        reserva_id = _int_or_zero(self.state.id_reserva_venta)
+        if_match = _int_or_zero(self.state.if_match_version_reserva)
+        if reserva_id <= 0 or if_match <= 0:
+            self.state.backend_error = "Debe indicarse ID de reserva e If-Match-Version validos."
+            self._render()
+            return
+
+        self.state.confirmando_backend = True
+        self.state.backend_error = ""
+        self.state.backend_resultado = None
+        self.state.id_venta_generada = None
+        self._render()
+
+        result = self.api.confirmar_venta_completa_desde_reserva(
+            reserva_id,
+            if_match,
+            self._build_confirmar_desde_reserva_payload(),
+        )
+        self.state.confirmando_backend = False
+        if not result.success:
+            self.state.backend_error = result.error_message or "No se pudo confirmar la venta completa desde la reserva."
+            self._render()
+            return
+
+        self.state.backend_resultado = result.data if isinstance(result.data, dict) else {}
+        venta_data = self.state.backend_resultado.get("venta", {})
+        self.state.id_venta_generada = venta_data.get("id_venta")
+        self._render()
+
+    def _build_confirmar_desde_reserva_payload(self) -> dict[str, Any]:
+        anticipo = self._primer_bloque_importe("ANTICIPO")
+        saldo = (_decimal_or_zero(self.state.monto_total) - anticipo).quantize(Decimal("0.01"))
+        anticipo_fecha = self._primer_bloque_fecha("ANTICIPO")
+        saldo_fecha = self._primer_fecha_saldo()
+        return {
+            "generar_venta": {
+                "codigo_venta": self.state.codigo_venta.strip(),
+                "fecha_venta": _datetime_iso_or_raw(self.state.fecha_venta),
+                "monto_total": _money(_decimal_or_zero(self.state.monto_total)),
+                "observaciones": self.state.observaciones or None,
+            },
+            "condiciones_comerciales": {
+                "monto_total": _money(_decimal_or_zero(self.state.monto_total)),
+                "tipo_plan_financiero": "ANTICIPO_Y_SALDO" if anticipo > 0 and saldo > 0 else "CONTADO",
+                "moneda": self.state.moneda.strip().upper() or "ARS",
+                "importe_anticipo": _money(anticipo) if anticipo > 0 and saldo > 0 else None,
+                "fecha_vencimiento_anticipo": anticipo_fecha if anticipo > 0 and saldo > 0 else None,
+                "importe_saldo": _money(saldo) if anticipo > 0 and saldo > 0 else None,
+                "fecha_vencimiento_saldo": saldo_fecha if anticipo > 0 and saldo > 0 else None,
+                "cuotas": [],
+                "objetos": [self._objeto_payload(objeto) for objeto in self.state.objetos],
+            },
+            "plan_pago_v2": {
+                "tipo_pago": self.state.tipo_pago,
+                "monto_total_plan": _money(_decimal_or_zero(self.state.monto_total)),
+                "moneda": self.state.moneda.strip().upper() or "ARS",
+                "bloques": [self._bloque_payload(bloque) for bloque in self.state.bloques],
+                "observaciones": self.state.condiciones_generales or None,
+            },
+            "confirmacion": {
+                "observaciones": self.state.observaciones or self.state.condiciones_generales or None,
+            },
+        }
+
+    def _objeto_payload(self, objeto: ObjetoVentaDraft) -> dict[str, Any]:
+        id_objeto = _int_or_zero(objeto.id_objeto)
+        tipo = objeto.tipo_objeto.strip().upper()
+        is_unidad = tipo in {"UNIDAD_FUNCIONAL", "UF"}
+        return {
+            "id_inmueble": None if is_unidad else id_objeto,
+            "id_unidad_funcional": id_objeto if is_unidad else None,
+            "precio_asignado": _money(_decimal_or_zero(objeto.precio_asignado)),
+        }
+
+    def _bloque_payload(self, bloque: BloquePlanDraft) -> dict[str, Any]:
+        tipo = bloque.tipo_bloque.strip().upper()
+        return {
+            "tipo_bloque": tipo,
+            "etiqueta_bloque": bloque.etiqueta or None,
+            "importe_total_bloque": _money(_decimal_or_zero(bloque.importe)),
+            "fecha_vencimiento": _date_iso_or_none(bloque.vencimiento),
+            "cantidad_cuotas": _int_or_none(bloque.cantidad_cuotas),
+            "importe_cuota": None,
+            "fecha_primer_vencimiento": _date_iso_or_none(bloque.primer_vencimiento),
+            "periodicidad": "MENSUAL" if tipo == "TRAMO_CUOTAS" else None,
+            "regla_redondeo": "ULTIMA_CUOTA" if tipo == "TRAMO_CUOTAS" else None,
+            "observaciones": None,
+        }
+
+    def _primer_bloque_importe(self, tipo_bloque: str) -> Decimal:
+        for bloque in self.state.bloques:
+            if bloque.tipo_bloque.strip().upper() == tipo_bloque:
+                return _decimal_or_zero(bloque.importe)
+        return Decimal("0.00")
+
+    def _primer_bloque_fecha(self, tipo_bloque: str) -> str | None:
+        for bloque in self.state.bloques:
+            if bloque.tipo_bloque.strip().upper() == tipo_bloque:
+                return _date_iso_or_none(bloque.vencimiento)
+        return None
+
+    def _primer_fecha_saldo(self) -> str | None:
+        for bloque in self.state.bloques:
+            if bloque.tipo_bloque.strip().upper() != "ANTICIPO":
+                return _date_iso_or_none(bloque.primer_vencimiento) or _date_iso_or_none(bloque.vencimiento)
+        return _date_iso_or_none(self.state.fecha_venta)
+
     def _set_origen(self, value: str | None) -> None:
         self.state.origen_venta = value if value in {ORIGEN_DIRECTA, ORIGEN_RESERVA} else ORIGEN_DIRECTA
         self.state.confirmacion_simulada = False
+        self._clear_backend_status()
         self._render()
 
     def _origen_label(self) -> str:
@@ -348,7 +478,7 @@ class VentaCreateWizardPage:
             "Paso 2 - Reserva existente",
             [
                 ft.Text(
-                    "Selecciona la reserva de venta origen. Por ahora el control queda visual, sin conexion backend.",
+                    "Ingresa la reserva confirmada y su version actual para ejecutar la confirmacion completa.",
                     color=ft.Colors.BLUE_GREY_700,
                 ),
                 ft.Row(
@@ -359,12 +489,26 @@ class VentaCreateWizardPage:
                             width=220,
                             on_change=lambda e: self._set("id_reserva_venta", e.control.value),
                         ),
-                        ft.OutlinedButton("Buscar reserva (pendiente)", icon=ft.Icons.SEARCH, disabled=True),
+                        ft.TextField(
+                            label="If-Match-Version reserva",
+                            value=self.state.if_match_version_reserva,
+                            width=220,
+                            on_change=lambda e: self._set("if_match_version_reserva", e.control.value),
+                        ),
                     ],
                     wrap=True,
                     spacing=10,
                 ),
-                ft.Text("Los objetos y compradores se tomaran de la reserva seleccionada cuando exista integracion backend."),
+                ft.Row(
+                    controls=[
+                        ft.TextField(label="Codigo / referencia", value=self.state.codigo_venta, width=220, on_change=lambda e: self._set("codigo_venta", e.control.value)),
+                        ft.TextField(label="Fecha venta", value=self.state.fecha_venta, width=160, on_change=lambda e: self._set("fecha_venta", e.control.value)),
+                        ft.TextField(label="Moneda", value=self.state.moneda, width=110, on_change=lambda e: self._set("moneda", e.control.value.upper())),
+                    ],
+                    wrap=True,
+                    spacing=10,
+                ),
+                ft.Text("Los objetos cargados en el wizard se enviaran como condiciones comerciales de la venta generada."),
                 self._validation_box(1),
             ],
         )
@@ -489,13 +633,30 @@ class VentaCreateWizardPage:
         errors = self._flow_errors_before_review()
         preview = self._preview_cronograma_local()
         reserva_value = self.state.id_reserva_venta or "-" if self.state.origen_venta == ORIGEN_RESERVA else "-"
+        actions: list[ft.Control]
+        if self.state.origen_venta == ORIGEN_RESERVA:
+            actions = [
+                ft.Button(
+                    "Confirmar venta completa desde reserva",
+                    icon=ft.Icons.CHECK_CIRCLE,
+                    disabled=bool(errors) or self.state.confirmando_backend,
+                    on_click=self._confirmar_desde_reserva_backend,
+                ),
+                self._backend_result_box(),
+            ]
+        else:
+            actions = [
+                ft.Button("Confirmar venta completa (simulado)", icon=ft.Icons.CHECK_CIRCLE, disabled=bool(errors), on_click=self._confirm_simulated),
+                ft.Text("Venta directa sin reserva todavia no tiene backend real. Confirmacion simulada." if self.state.confirmacion_simulada else ""),
+            ]
         return self._card(
             "Paso 7 - Revision y confirmacion final",
             [
-                ft.Text("Revisa toda la venta y el cronograma antes de confirmar. La confirmacion esta simulada hasta tener orquestacion backend."),
+                ft.Text("Revisa toda la venta y el cronograma antes de confirmar."),
                 _kv_grid([
                     ("Origen", self._origen_label()),
                     ("ID reserva", reserva_value),
+                    ("If-Match reserva", self.state.if_match_version_reserva or "-" if self.state.origen_venta == ORIGEN_RESERVA else "-"),
                     ("Codigo", self.state.codigo_venta or "-"),
                     ("Estado", self.state.estado_venta),
                     ("Fecha", self.state.fecha_venta or "-"),
@@ -512,9 +673,45 @@ class VentaCreateWizardPage:
                 _simple_table(["Bloque", "Etiqueta", "Vencimiento", "Importe"], preview),
                 ft.Text("Alertas", weight=ft.FontWeight.W_700),
                 ft.Column([ft.Text(error, color=ft.Colors.RED_700) for error in errors] or [ft.Text("Sin alertas bloqueantes.", color=ft.Colors.GREEN_700)]),
-                ft.Button("Confirmar venta completa (simulado)", icon=ft.Icons.CHECK_CIRCLE, disabled=bool(errors), on_click=self._confirm_simulated),
-                ft.Text("Venta completa confirmada en modo simulado." if self.state.confirmacion_simulada else ""),
+                *actions,
             ],
+        )
+
+    def _backend_result_box(self) -> ft.Control:
+        if self.state.confirmando_backend:
+            return ft.Row(
+                controls=[
+                    ft.ProgressRing(width=18, height=18),
+                    ft.Text("Confirmando venta completa..."),
+                ],
+                spacing=10,
+            )
+        if self.state.backend_error:
+            return ft.Text(self.state.backend_error, color=ft.Colors.RED_700)
+        if not self.state.backend_resultado:
+            return ft.Text("")
+
+        reserva = self.state.backend_resultado.get("reserva_venta", {})
+        venta = self.state.backend_resultado.get("venta", {})
+        plan = self.state.backend_resultado.get("plan_pago_v2", {})
+        obligaciones = self.state.backend_resultado.get("obligaciones", {})
+        return ft.Column(
+            controls=[
+                ft.Text("Venta completa confirmada.", color=ft.Colors.GREEN_700, weight=ft.FontWeight.W_700),
+                _kv_grid([
+                    ("Venta", f"{venta.get('id_venta', '-')}, {venta.get('estado_venta', '-')}"),
+                    ("Reserva", f"{reserva.get('id_reserva_venta', '-')}, {reserva.get('estado_reserva', '-')}"),
+                    ("Plan", f"{plan.get('id_plan_pago_venta', '-')}, {plan.get('estado_plan_pago', '-')}"),
+                    ("Obligaciones", str(obligaciones.get("cantidad", "-"))),
+                ]),
+                ft.Button(
+                    "Abrir ficha de venta",
+                    icon=ft.Icons.OPEN_IN_NEW,
+                    disabled=self.state.id_venta_generada is None,
+                    on_click=lambda _: self.on_navigate("venta_detail", id_venta=self.state.id_venta_generada),
+                ),
+            ],
+            spacing=10,
         )
 
     def _summary_panel(self) -> ft.Control:
@@ -526,6 +723,7 @@ class VentaCreateWizardPage:
                     ("Entrada", "Ventas -> Nueva venta"),
                     ("Origen", self._origen_label()),
                     ("ID reserva", reserva_value),
+                    ("If-Match reserva", self.state.if_match_version_reserva or "-" if self.state.origen_venta == ORIGEN_RESERVA else "-"),
                     ("Estado", self.state.estado_venta),
                     ("Paso", f"{self.state.current_step + 1}/{len(STEPS)}"),
                     ("Objetos", str(len(self.state.objetos))),
@@ -537,12 +735,10 @@ class VentaCreateWizardPage:
                 ]),
                 ft.Divider(),
                 ft.Text("Brechas detectadas", weight=ft.FontWeight.W_700),
-                ft.Text("- crear venta BORRADOR real"),
-                ft.Text("- asociar objetos en borrador"),
-                ft.Text("- asociar comprador financiero"),
-                ft.Text("- modo preview-only backend"),
-                ft.Text("- confirmar venta completa"),
-                ft.Text("- integrar origen desde reserva"),
+                ft.Text("- venta directa sin reserva sigue sin backend real"),
+                ft.Text("- objetos desde reserva se cargan manualmente como referencia"),
+                ft.Text("- el preview local no es cronograma oficial"),
+                ft.Text("- el backend genera el Plan Pago V2 definitivo"),
             ],
         )
 
@@ -554,6 +750,16 @@ class VentaCreateWizardPage:
         elif step == 1 and self.state.origen_venta == ORIGEN_RESERVA:
             if not self.state.id_reserva_venta.strip():
                 errors.append("Debe indicarse el ID de reserva de venta.")
+            if _int_or_zero(self.state.id_reserva_venta) <= 0:
+                errors.append("El ID de reserva debe ser numerico y mayor a cero.")
+            if _int_or_zero(self.state.if_match_version_reserva) <= 0:
+                errors.append("Debe indicarse If-Match-Version numerico de la reserva.")
+            if not self.state.codigo_venta.strip():
+                errors.append("El codigo/referencia es requerido.")
+            if _date_or_none(self.state.fecha_venta) is None:
+                errors.append("La fecha debe tener formato dd/mm/aaaa o ISO.")
+            if not self.state.moneda.strip():
+                errors.append("La moneda es requerida.")
         elif step == 1:
             if not self.state.codigo_venta.strip():
                 errors.append("El codigo/referencia es requerido.")
@@ -622,6 +828,11 @@ def _int_or_zero(value: object) -> int:
     return max(parsed, 0)
 
 
+def _int_or_none(value: object) -> int | None:
+    parsed = _int_or_zero(value)
+    return parsed if parsed > 0 else None
+
+
 def _date_or_none(value: object) -> date | None:
     text = str(value or "").strip()
     if not text:
@@ -635,6 +846,21 @@ def _date_or_none(value: object) -> date | None:
         return date(int(year), int(month), int(day))
     except (TypeError, ValueError):
         return None
+
+
+def _date_iso_or_none(value: object) -> str | None:
+    parsed = _date_or_none(value)
+    return parsed.isoformat() if parsed is not None else None
+
+
+def _date_iso_or_raw(value: object) -> str:
+    parsed = _date_or_none(value)
+    return parsed.isoformat() if parsed is not None else str(value or "").strip()
+
+
+def _datetime_iso_or_raw(value: object) -> str:
+    parsed = _date_or_none(value)
+    return f"{parsed.isoformat()}T00:00:00" if parsed is not None else str(value or "").strip()
 
 
 def _format_ar_date(value: date) -> str:

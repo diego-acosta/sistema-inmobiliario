@@ -255,6 +255,26 @@ class ApiClient:
             json=payload,
         )
 
+    def confirmar_venta_completa_desde_reserva(
+        self,
+        id_reserva_venta: int,
+        if_match_version: int,
+        payload: dict[str, Any],
+        op_id: str | None = None,
+    ) -> ApiResult:
+        x_op_id = self._valid_or_new_uuid(op_id)
+        return self._post(
+            f"/api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa",
+            headers={
+                "X-Op-Id": x_op_id,
+                "X-Usuario-Id": "1",
+                "X-Sucursal-Id": "1",
+                "X-Instalacion-Id": "1",
+                "If-Match-Version": str(if_match_version),
+            },
+            json=payload,
+        )
+
     def _get(self, path: str, params: dict[str, Any] | None = None) -> ApiResult:
         url = f"{self.base_url}{path}"
         try:
