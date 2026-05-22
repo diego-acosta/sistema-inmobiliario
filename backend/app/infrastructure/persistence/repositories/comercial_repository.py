@@ -2399,6 +2399,29 @@ class ComercialRepository:
         participaciones: list[Any],
         reserva_payload: Any,
     ) -> dict[str, Any]:
+        try:
+            result = self._generate_venta_from_reserva_tx(
+                payload,
+                objetos,
+                participaciones,
+                reserva_payload,
+            )
+            if result.get("status") == "OK":
+                self.db.commit()
+            else:
+                self.db.rollback()
+            return result
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _generate_venta_from_reserva_tx(
+        self,
+        payload: Any,
+        objetos: list[Any],
+        participaciones: list[Any],
+        reserva_payload: Any,
+    ) -> dict[str, Any]:
         venta_values = self._values(payload)
         reserva_values = self._values(reserva_payload)
 
@@ -2531,116 +2554,131 @@ class ComercialRepository:
             """
         )
 
-        try:
-            venta_row = self.db.execute(venta_statement, venta_values).mappings().one()
-            id_venta = venta_row["id_venta"]
-            created_objetos: list[dict[str, Any]] = []
+        venta_row = self.db.execute(venta_statement, venta_values).mappings().one()
+        id_venta = venta_row["id_venta"]
+        created_objetos: list[dict[str, Any]] = []
 
-            for objeto in objetos:
-                values = self._values(objeto)
-                objeto_row = self.db.execute(
-                    objeto_statement,
-                    {
-                        "uid_global": values["uid_global"],
-                        "version_registro": values["version_registro"],
-                        "created_at": values["created_at"],
-                        "updated_at": values["updated_at"],
-                        "id_instalacion_origen": values["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_alta": values["op_id_alta"],
-                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                        "id_venta": id_venta,
-                        "id_inmueble": values["id_inmueble"],
-                        "id_unidad_funcional": values["id_unidad_funcional"],
-                        "precio_asignado": values["precio_asignado"],
-                        "observaciones": values["observaciones"],
-                    },
-                ).mappings().one()
-                created_objetos.append(
-                    {
-                        "id_venta_objeto": objeto_row["id_venta_objeto"],
-                        "id_inmueble": values["id_inmueble"],
-                        "id_unidad_funcional": values["id_unidad_funcional"],
-                        "precio_asignado": values["precio_asignado"],
-                        "observaciones": values["observaciones"],
-                    }
-                )
-
-            for participacion in participaciones:
-                values = self._values(participacion)
-                self.db.execute(
-                    participacion_statement,
-                    {
-                        "uid_global": values["uid_global"],
-                        "version_registro": values["version_registro"],
-                        "created_at": values["created_at"],
-                        "updated_at": values["updated_at"],
-                        "id_instalacion_origen": values["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_alta": values["op_id_alta"],
-                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                        "id_persona": values["id_persona"],
-                        "id_rol_participacion": values["id_rol_participacion"],
-                        "tipo_relacion": values["tipo_relacion"],
-                        "id_relacion": id_venta,
-                        "fecha_desde": values["fecha_desde"],
-                        "fecha_hasta": values["fecha_hasta"],
-                        "observaciones": values["observaciones"],
-                    },
-                )
-
-            updated = self.db.execute(
-                reserva_statement,
+        for objeto in objetos:
+            values = self._values(objeto)
+            objeto_row = self.db.execute(
+                objeto_statement,
                 {
-                    "id_reserva_venta": reserva_values["id_reserva_venta"],
-                    "estado_reserva": reserva_values["estado_reserva"],
-                    "version_registro_actual": reserva_values["version_registro_actual"],
-                    "version_registro_nueva": reserva_values["version_registro_nueva"],
-                    "updated_at": reserva_values["updated_at"],
-                    "id_instalacion_ultima_modificacion": reserva_values[
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
                         "id_instalacion_ultima_modificacion"
                     ],
-                    "op_id_ultima_modificacion": reserva_values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
-            if updated is None:
-                self.db.rollback()
-                return {"status": "CONCURRENCY_ERROR"}
-
-            self.db.commit()
-            return {
-                "status": "OK",
-                "data": {
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
                     "id_venta": id_venta,
-                    "uid_global": venta_values["uid_global"],
-                    "version_registro": venta_values["version_registro"],
-                    "id_reserva_venta": venta_values["id_reserva_venta"],
-                    "codigo_venta": venta_values["codigo_venta"],
-                    "fecha_venta": venta_values["fecha_venta"],
-                    "estado_venta": venta_values["estado_venta"],
-                    "monto_total": venta_values["monto_total"],
-                    "tipo_plan_financiero": "CONTADO",
-                    "moneda": "ARS",
-                    "importe_anticipo": None,
-                    "fecha_vencimiento_anticipo": None,
-                    "importe_saldo": None,
-                    "fecha_vencimiento_saldo": None,
-                    "observaciones": venta_values["observaciones"],
-                    "objetos": created_objetos,
-                    "created_at": venta_values["created_at"],
-                    "updated_at": venta_values["updated_at"],
-                    "deleted_at": None,
+                    "id_inmueble": values["id_inmueble"],
+                    "id_unidad_funcional": values["id_unidad_funcional"],
+                    "precio_asignado": values["precio_asignado"],
+                    "observaciones": values["observaciones"],
                 },
-            }
+            ).mappings().one()
+            created_objetos.append(
+                {
+                    "id_venta_objeto": objeto_row["id_venta_objeto"],
+                    "id_inmueble": values["id_inmueble"],
+                    "id_unidad_funcional": values["id_unidad_funcional"],
+                    "precio_asignado": values["precio_asignado"],
+                    "observaciones": values["observaciones"],
+                }
+            )
+
+        for participacion in participaciones:
+            values = self._values(participacion)
+            self.db.execute(
+                participacion_statement,
+                {
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_persona": values["id_persona"],
+                    "id_rol_participacion": values["id_rol_participacion"],
+                    "tipo_relacion": values["tipo_relacion"],
+                    "id_relacion": id_venta,
+                    "fecha_desde": values["fecha_desde"],
+                    "fecha_hasta": values["fecha_hasta"],
+                    "observaciones": values["observaciones"],
+                },
+            )
+
+        updated = self.db.execute(
+            reserva_statement,
+            {
+                "id_reserva_venta": reserva_values["id_reserva_venta"],
+                "estado_reserva": reserva_values["estado_reserva"],
+                "version_registro_actual": reserva_values["version_registro_actual"],
+                "version_registro_nueva": reserva_values["version_registro_nueva"],
+                "updated_at": reserva_values["updated_at"],
+                "id_instalacion_ultima_modificacion": reserva_values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_ultima_modificacion": reserva_values["op_id_ultima_modificacion"],
+            },
+        ).mappings().one_or_none()
+        if updated is None:
+            return {"status": "CONCURRENCY_ERROR"}
+
+        return {
+            "status": "OK",
+            "data": {
+                "id_venta": id_venta,
+                "uid_global": venta_values["uid_global"],
+                "version_registro": venta_values["version_registro"],
+                "id_reserva_venta": venta_values["id_reserva_venta"],
+                "codigo_venta": venta_values["codigo_venta"],
+                "fecha_venta": venta_values["fecha_venta"],
+                "estado_venta": venta_values["estado_venta"],
+                "monto_total": venta_values["monto_total"],
+                "tipo_plan_financiero": "CONTADO",
+                "moneda": "ARS",
+                "importe_anticipo": None,
+                "fecha_vencimiento_anticipo": None,
+                "importe_saldo": None,
+                "fecha_vencimiento_saldo": None,
+                "observaciones": venta_values["observaciones"],
+                "objetos": created_objetos,
+                "created_at": venta_values["created_at"],
+                "updated_at": venta_values["updated_at"],
+                "deleted_at": None,
+            },
+        }
+
+    def define_condiciones_comerciales_venta(
+        self,
+        payload: Any,
+        objetos: list[Any],
+        cuotas: list[Any],
+    ) -> dict[str, Any]:
+        try:
+            result = self._define_condiciones_comerciales_venta_tx(
+                payload,
+                objetos,
+                cuotas,
+            )
+            if result.get("status") == "OK":
+                self.db.commit()
+            else:
+                self.db.rollback()
+            return result
         except Exception:
             self.db.rollback()
             raise
 
-    def define_condiciones_comerciales_venta(
+    def _define_condiciones_comerciales_venta_tx(
         self,
         payload: Any,
         objetos: list[Any],
@@ -2765,121 +2803,131 @@ class ComercialRepository:
             """
         )
 
-        try:
-            venta_row = self.db.execute(
-                venta_statement,
+        venta_row = self.db.execute(
+            venta_statement,
+            {
+                "id_venta": venta_values["id_venta"],
+                "monto_total": venta_values["monto_total"],
+                "tipo_plan_financiero": venta_values["tipo_plan_financiero"],
+                "moneda": venta_values["moneda"],
+                "importe_anticipo": venta_values["importe_anticipo"],
+                "fecha_vencimiento_anticipo": venta_values[
+                    "fecha_vencimiento_anticipo"
+                ],
+                "importe_saldo": venta_values["importe_saldo"],
+                "fecha_vencimiento_saldo": venta_values[
+                    "fecha_vencimiento_saldo"
+                ],
+                "version_registro_actual": venta_values["version_registro_actual"],
+                "version_registro_nueva": venta_values["version_registro_nueva"],
+                "updated_at": venta_values["updated_at"],
+                "id_instalacion_ultima_modificacion": venta_values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_ultima_modificacion": venta_values["op_id_ultima_modificacion"],
+            },
+        ).mappings().one_or_none()
+        if venta_row is None:
+            return {"status": "CONCURRENCY_ERROR"}
+
+        updated_objetos: list[dict[str, Any]] = []
+        for objeto in objetos:
+            values = self._values(objeto)
+            objeto_row = self.db.execute(
+                objeto_statement,
                 {
-                    "id_venta": venta_values["id_venta"],
-                    "monto_total": venta_values["monto_total"],
-                    "tipo_plan_financiero": venta_values["tipo_plan_financiero"],
-                    "moneda": venta_values["moneda"],
-                    "importe_anticipo": venta_values["importe_anticipo"],
-                    "fecha_vencimiento_anticipo": venta_values[
-                        "fecha_vencimiento_anticipo"
-                    ],
-                    "importe_saldo": venta_values["importe_saldo"],
-                    "fecha_vencimiento_saldo": venta_values[
-                        "fecha_vencimiento_saldo"
-                    ],
-                    "version_registro_actual": venta_values["version_registro_actual"],
-                    "version_registro_nueva": venta_values["version_registro_nueva"],
-                    "updated_at": venta_values["updated_at"],
-                    "id_instalacion_ultima_modificacion": venta_values[
+                    "id_venta_objeto": values["id_venta_objeto"],
+                    "precio_asignado": values["precio_asignado"],
+                    "version_registro_actual": values["version_registro_actual"],
+                    "version_registro_nueva": values["version_registro_nueva"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_ultima_modificacion": values[
                         "id_instalacion_ultima_modificacion"
                     ],
-                    "op_id_ultima_modificacion": venta_values["op_id_ultima_modificacion"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
                 },
             ).mappings().one_or_none()
-            if venta_row is None:
-                self.db.rollback()
-                return {"status": "CONCURRENCY_ERROR"}
+            if objeto_row is None:
+                return {"status": "OBJECT_UPDATE_FAILED"}
 
-            updated_objetos: list[dict[str, Any]] = []
-            for objeto in objetos:
-                values = self._values(objeto)
-                objeto_row = self.db.execute(
-                    objeto_statement,
-                    {
-                        "id_venta_objeto": values["id_venta_objeto"],
-                        "precio_asignado": values["precio_asignado"],
-                        "version_registro_actual": values["version_registro_actual"],
-                        "version_registro_nueva": values["version_registro_nueva"],
-                        "updated_at": values["updated_at"],
-                        "id_instalacion_ultima_modificacion": values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                    },
-                ).mappings().one_or_none()
-                if objeto_row is None:
-                    self.db.rollback()
-                    return {"status": "OBJECT_UPDATE_FAILED"}
-
-                updated_objetos.append(
-                    {
-                        "id_venta_objeto": objeto_row["id_venta_objeto"],
-                        "id_inmueble": objeto_row["id_inmueble"],
-                        "id_unidad_funcional": objeto_row["id_unidad_funcional"],
-                        "precio_asignado": objeto_row["precio_asignado"],
-                        "observaciones": objeto_row["observaciones"],
-                    }
-                )
-
-            self.db.execute(
-                delete_cuotas_statement,
+            updated_objetos.append(
                 {
-                    "id_venta": venta_values["id_venta"],
-                    "updated_at": venta_values["updated_at"],
-                    "id_instalacion_ultima_modificacion": venta_values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": venta_values[
-                        "op_id_ultima_modificacion"
-                    ],
-                },
+                    "id_venta_objeto": objeto_row["id_venta_objeto"],
+                    "id_inmueble": objeto_row["id_inmueble"],
+                    "id_unidad_funcional": objeto_row["id_unidad_funcional"],
+                    "precio_asignado": objeto_row["precio_asignado"],
+                    "observaciones": objeto_row["observaciones"],
+                }
             )
-            updated_cuotas: list[dict[str, Any]] = []
-            for cuota in cuotas:
-                cuota_values = self._values(cuota)
-                cuota_row = self.db.execute(
-                    insert_cuota_statement,
-                    cuota_values,
-                ).mappings().one()
-                updated_cuotas.append(dict(cuota_row))
 
-            self.db.commit()
-            return {
-                "status": "OK",
-                "data": {
-                    "id_venta": venta_row["id_venta"],
-                    "uid_global": str(venta_row["uid_global"]),
-                    "version_registro": venta_row["version_registro"],
-                    "id_reserva_venta": venta_row["id_reserva_venta"],
-                    "codigo_venta": venta_row["codigo_venta"],
-                    "fecha_venta": venta_row["fecha_venta"],
-                    "estado_venta": venta_row["estado_venta"],
-                    "monto_total": venta_row["monto_total"],
-                    "tipo_plan_financiero": venta_row["tipo_plan_financiero"],
-                    "moneda": venta_row["moneda"],
-                    "importe_anticipo": venta_row["importe_anticipo"],
-                    "fecha_vencimiento_anticipo": venta_row[
-                        "fecha_vencimiento_anticipo"
-                    ],
-                    "importe_saldo": venta_row["importe_saldo"],
-                    "fecha_vencimiento_saldo": venta_row["fecha_vencimiento_saldo"],
-                    "cuotas": updated_cuotas,
-                    "observaciones": venta_row["observaciones"],
-                    "objetos": updated_objetos,
-                    "created_at": venta_row["created_at"],
-                    "updated_at": venta_row["updated_at"],
-                    "deleted_at": venta_row["deleted_at"],
-                },
-            }
+        self.db.execute(
+            delete_cuotas_statement,
+            {
+                "id_venta": venta_values["id_venta"],
+                "updated_at": venta_values["updated_at"],
+                "id_instalacion_ultima_modificacion": venta_values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_ultima_modificacion": venta_values[
+                    "op_id_ultima_modificacion"
+                ],
+            },
+        )
+        updated_cuotas: list[dict[str, Any]] = []
+        for cuota in cuotas:
+            cuota_values = self._values(cuota)
+            cuota_row = self.db.execute(
+                insert_cuota_statement,
+                cuota_values,
+            ).mappings().one()
+            updated_cuotas.append(dict(cuota_row))
+
+        return {
+            "status": "OK",
+            "data": {
+                "id_venta": venta_row["id_venta"],
+                "uid_global": str(venta_row["uid_global"]),
+                "version_registro": venta_row["version_registro"],
+                "id_reserva_venta": venta_row["id_reserva_venta"],
+                "codigo_venta": venta_row["codigo_venta"],
+                "fecha_venta": venta_row["fecha_venta"],
+                "estado_venta": venta_row["estado_venta"],
+                "monto_total": venta_row["monto_total"],
+                "tipo_plan_financiero": venta_row["tipo_plan_financiero"],
+                "moneda": venta_row["moneda"],
+                "importe_anticipo": venta_row["importe_anticipo"],
+                "fecha_vencimiento_anticipo": venta_row[
+                    "fecha_vencimiento_anticipo"
+                ],
+                "importe_saldo": venta_row["importe_saldo"],
+                "fecha_vencimiento_saldo": venta_row["fecha_vencimiento_saldo"],
+                "cuotas": updated_cuotas,
+                "observaciones": venta_row["observaciones"],
+                "objetos": updated_objetos,
+                "created_at": venta_row["created_at"],
+                "updated_at": venta_row["updated_at"],
+                "deleted_at": venta_row["deleted_at"],
+            },
+        }
+
+    def confirm_venta(self, payload: Any, *, outbox_event: Any | None = None) -> dict[str, Any]:
+        try:
+            result = self._confirm_venta_tx(payload, outbox_event=outbox_event)
+            if result.get("status") == "OK":
+                self.db.commit()
+            else:
+                self.db.rollback()
+            return result
         except Exception:
             self.db.rollback()
             raise
 
-    def confirm_venta(self, payload: Any, *, outbox_event: Any | None = None) -> dict[str, Any]:
+    def _confirm_venta_tx(
+        self,
+        payload: Any,
+        *,
+        outbox_event: Any | None = None,
+    ) -> dict[str, Any]:
         values = self._values(payload)
         outbox_repository = OutboxRepository(self.db)
 
@@ -2933,82 +2981,76 @@ class ComercialRepository:
             """
         )
 
-        try:
-            venta_row = self.db.execute(
-                venta_statement,
-                {
-                    "id_venta": values["id_venta"],
-                    "estado_venta": values["estado_venta"],
-                    "observaciones": values["observaciones"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
-            if venta_row is None:
-                self.db.rollback()
-                return {"status": "CONCURRENCY_ERROR"}
+        venta_row = self.db.execute(
+            venta_statement,
+            {
+                "id_venta": values["id_venta"],
+                "estado_venta": values["estado_venta"],
+                "observaciones": values["observaciones"],
+                "version_registro_actual": values["version_registro_actual"],
+                "version_registro_nueva": values["version_registro_nueva"],
+                "updated_at": values["updated_at"],
+                "id_instalacion_ultima_modificacion": values[
+                    "id_instalacion_ultima_modificacion"
+                ],
+                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+            },
+        ).mappings().one_or_none()
+        if venta_row is None:
+            return {"status": "CONCURRENCY_ERROR"}
 
-            objetos = self.db.execute(
-                objeto_statement,
-                {"id_venta": values["id_venta"]},
-            ).mappings().all()
+        objetos = self.db.execute(
+            objeto_statement,
+            {"id_venta": values["id_venta"]},
+        ).mappings().all()
 
-            if outbox_event is not None:
-                outbox_values = self._values(outbox_event)
-                outbox_repository.add_event(
-                    event_type=outbox_values["event_type"],
-                    aggregate_type=outbox_values["aggregate_type"],
-                    aggregate_id=outbox_values["aggregate_id"],
-                    payload=outbox_values["payload"],
-                    occurred_at=outbox_values["occurred_at"],
-                    published_at=outbox_values.get("published_at"),
-                    status=outbox_values["status"],
-                )
+        if outbox_event is not None:
+            outbox_values = self._values(outbox_event)
+            outbox_repository.add_event(
+                event_type=outbox_values["event_type"],
+                aggregate_type=outbox_values["aggregate_type"],
+                aggregate_id=outbox_values["aggregate_id"],
+                payload=outbox_values["payload"],
+                occurred_at=outbox_values["occurred_at"],
+                published_at=outbox_values.get("published_at"),
+                status=outbox_values["status"],
+            )
 
-            self.db.commit()
-            return {
-                "status": "OK",
-                "data": {
-                    "id_venta": venta_row["id_venta"],
-                    "uid_global": str(venta_row["uid_global"]),
-                    "version_registro": venta_row["version_registro"],
-                    "id_reserva_venta": venta_row["id_reserva_venta"],
-                    "codigo_venta": venta_row["codigo_venta"],
-                    "fecha_venta": venta_row["fecha_venta"],
-                    "estado_venta": venta_row["estado_venta"],
-                    "monto_total": venta_row["monto_total"],
-                    "tipo_plan_financiero": venta_row["tipo_plan_financiero"],
-                    "moneda": venta_row["moneda"],
-                    "importe_anticipo": venta_row["importe_anticipo"],
-                    "fecha_vencimiento_anticipo": venta_row[
-                        "fecha_vencimiento_anticipo"
-                    ],
-                    "importe_saldo": venta_row["importe_saldo"],
-                    "fecha_vencimiento_saldo": venta_row["fecha_vencimiento_saldo"],
-                    "observaciones": venta_row["observaciones"],
-                    "objetos": [
-                        {
-                            "id_venta_objeto": row["id_venta_objeto"],
-                            "id_inmueble": row["id_inmueble"],
-                            "id_unidad_funcional": row["id_unidad_funcional"],
-                            "precio_asignado": row["precio_asignado"],
-                            "observaciones": row["observaciones"],
-                        }
-                        for row in objetos
-                    ],
-                    "created_at": venta_row["created_at"],
-                    "updated_at": venta_row["updated_at"],
-                    "deleted_at": venta_row["deleted_at"],
-                },
-            }
-        except Exception:
-            self.db.rollback()
-            raise
+        return {
+            "status": "OK",
+            "data": {
+                "id_venta": venta_row["id_venta"],
+                "uid_global": str(venta_row["uid_global"]),
+                "version_registro": venta_row["version_registro"],
+                "id_reserva_venta": venta_row["id_reserva_venta"],
+                "codigo_venta": venta_row["codigo_venta"],
+                "fecha_venta": venta_row["fecha_venta"],
+                "estado_venta": venta_row["estado_venta"],
+                "monto_total": venta_row["monto_total"],
+                "tipo_plan_financiero": venta_row["tipo_plan_financiero"],
+                "moneda": venta_row["moneda"],
+                "importe_anticipo": venta_row["importe_anticipo"],
+                "fecha_vencimiento_anticipo": venta_row[
+                    "fecha_vencimiento_anticipo"
+                ],
+                "importe_saldo": venta_row["importe_saldo"],
+                "fecha_vencimiento_saldo": venta_row["fecha_vencimiento_saldo"],
+                "observaciones": venta_row["observaciones"],
+                "objetos": [
+                    {
+                        "id_venta_objeto": row["id_venta_objeto"],
+                        "id_inmueble": row["id_inmueble"],
+                        "id_unidad_funcional": row["id_unidad_funcional"],
+                        "precio_asignado": row["precio_asignado"],
+                        "observaciones": row["observaciones"],
+                    }
+                    for row in objetos
+                ],
+                "created_at": venta_row["created_at"],
+                "updated_at": venta_row["updated_at"],
+                "deleted_at": venta_row["deleted_at"],
+            },
+        }
 
     def create_instrumento_compraventa(
         self,

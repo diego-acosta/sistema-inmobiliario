@@ -63,6 +63,21 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         except ValueError as exc:
             return AppResult.fail(str(exc))
 
+    def execute_in_existing_transaction(
+        self, command: GeneratePlanPagoVentaV2PorBloquesCommand
+    ) -> AppResult[dict[str, Any]]:
+        preview_without_plan = self.preview_service.execute(command)
+        if not preview_without_plan.success:
+            return AppResult.fail(preview_without_plan.errors[0])
+
+        try:
+            return self._execute_in_transaction(
+                command,
+                preview_without_plan.data["bloques"],
+            )
+        except ValueError as exc:
+            return AppResult.fail(str(exc))
+
     def _execute_in_transaction(
         self,
         command: GeneratePlanPagoVentaV2PorBloquesCommand,

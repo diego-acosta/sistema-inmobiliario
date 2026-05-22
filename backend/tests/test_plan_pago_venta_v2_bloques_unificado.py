@@ -370,6 +370,38 @@ def test_servicio_unificado_genera_contado_como_saldo_con_capital(db_session) ->
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
 
+def test_servicio_unificado_execute_in_existing_transaction_no_abre_transaccion_propia(
+    db_session,
+    monkeypatch,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-EXT-TX")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    service = _service(db_session)
+
+    def fail_if_transaction_is_opened():
+        raise AssertionError("execute_in_existing_transaction no debe abrir transaccion")
+
+    monkeypatch.setattr(service, "_transaction", fail_if_transaction_is_opened)
+
+    result = service.execute_in_existing_transaction(
+        _command(
+            id_venta=id_venta,
+            tipo_pago="CONTADO",
+            monto_total_plan=Decimal("12000000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="CONTADO",
+                    importe_total_bloque=Decimal("12000000.00"),
+                    fecha_vencimiento=date(2026, 5, 10),
+                )
+            ],
+        )
+    )
+
+    assert result.success, result.errors
+    assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 1
+
+
 def test_servicio_unificado_genera_financiado_con_bloques_y_trazabilidad(
     db_session,
 ) -> None:
