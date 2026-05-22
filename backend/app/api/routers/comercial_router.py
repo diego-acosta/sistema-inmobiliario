@@ -1440,7 +1440,6 @@ def confirm_reserva_venta(
     responses={
         400: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
-        501: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
 )
@@ -1558,7 +1557,12 @@ def confirmar_venta_completa_desde_reserva(
         ),
     )
 
-    service = ConfirmVentaCompletaDesdeReservaService()
+    service = ConfirmVentaCompletaDesdeReservaService(
+        comercial_repository=ComercialRepository(db),
+        plan_pago_v2_service=GeneratePlanPagoVentaV2PorBloquesService(
+            repository=PlanPagoVentaV2Repository(db)
+        ),
+    )
 
     try:
         result = service.execute(command)
@@ -1586,13 +1590,13 @@ def confirmar_venta_completa_desde_reserva(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "NOT_IMPLEMENTED" in result.errors:
+        if any(error.startswith("NOT_FOUND") for error in result.errors):
             error = ErrorResponse(
-                error_code="NOT_IMPLEMENTED",
-                error_message="confirmar-venta-completa desde reserva aun no ejecuta orquestacion ni persistencia.",
+                error_code=result.errors[0],
+                error_message="No se encontro el recurso requerido para confirmar la venta completa desde la reserva.",
                 details={"errors": result.errors},
             )
-            return JSONResponse(status_code=501, content=error.model_dump())
+            return JSONResponse(status_code=404, content=error.model_dump())
 
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",

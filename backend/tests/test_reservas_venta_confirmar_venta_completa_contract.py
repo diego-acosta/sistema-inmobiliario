@@ -78,7 +78,7 @@ def test_confirmar_venta_completa_desde_reserva_request_invalido_falla_validacio
     assert response.status_code == 422
 
 
-def test_confirmar_venta_completa_desde_reserva_request_valido_devuelve_skeleton(
+def test_confirmar_venta_completa_desde_reserva_request_valido_para_reserva_inexistente_devuelve_404(
     client,
 ) -> None:
     response = client.post(
@@ -87,8 +87,8 @@ def test_confirmar_venta_completa_desde_reserva_request_valido_devuelve_skeleton
         json=_payload_confirmar_venta_completa(),
     )
 
-    assert response.status_code == 501
+    assert response.status_code == 404
     body = response.json()
     assert body["ok"] is False
-    assert body["error_code"] == "NOT_IMPLEMENTED"
-    assert body["details"]["errors"] == ["NOT_IMPLEMENTED"]
+    assert body["error_code"] == "NOT_FOUND_RESERVA_VENTA"
+    assert body["details"]["errors"] == ["NOT_FOUND_RESERVA_VENTA"]
