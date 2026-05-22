@@ -395,7 +395,7 @@ class VentaCreateWizardPage:
         )
         self.state.confirmando_backend = False
         if not result.success:
-            self.state.backend_error = result.error_message or "No se pudo confirmar la venta completa desde la reserva."
+            self.state.backend_error = _api_error_text(result)
             self._render()
             return
 
@@ -1015,3 +1015,27 @@ def _format_ar_date(value: date) -> str:
 
 def _money(value: Decimal) -> str:
     return f"{value:.2f}"
+
+
+def _api_error_text(result: Any) -> str:
+    lines = ["No se pudo confirmar la venta completa desde la reserva."]
+    if getattr(result, "status_code", None) is not None:
+        lines.append(f"status_code: {result.status_code}")
+    if getattr(result, "error_code", None):
+        lines.append(f"error_code: {result.error_code}")
+    if getattr(result, "error_message", None):
+        lines.append(f"error_message: {result.error_message}")
+    details = getattr(result, "error_details", None)
+    if isinstance(details, dict):
+        errors = details.get("errors")
+        if errors:
+            if isinstance(errors, list):
+                lines.append("details.errors: " + ", ".join(str(error) for error in errors))
+            else:
+                lines.append(f"details.errors: {errors}")
+        extra = {key: value for key, value in details.items() if key != "errors"}
+        if extra:
+            lines.append(f"details: {extra}")
+    elif details is not None:
+        lines.append(f"details: {details}")
+    return "\n".join(lines)

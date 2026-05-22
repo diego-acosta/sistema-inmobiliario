@@ -14,6 +14,8 @@ class ApiResult:
     data: Any = None
     error_message: str | None = None
     status_code: int | None = None
+    error_code: str | None = None
+    error_details: Any = None
 
 
 class ApiClient:
@@ -320,10 +322,13 @@ class ApiClient:
             return ApiResult(success=False, error_message=str(exc))
 
         if response.status_code >= 400:
+            error_payload = self._parse_error(response)
             return ApiResult(
                 success=False,
-                error_message=self._format_error(response),
+                error_message=error_payload["message"],
                 status_code=response.status_code,
+                error_code=error_payload["code"],
+                error_details=error_payload["details"],
             )
 
         try:
@@ -380,10 +385,13 @@ class ApiClient:
             return ApiResult(success=False, error_message=str(exc))
 
         if response.status_code >= 400:
+            error_payload = self._parse_error(response)
             return ApiResult(
                 success=False,
-                error_message=self._format_error(response),
+                error_message=error_payload["message"],
                 status_code=response.status_code,
+                error_code=error_payload["code"],
+                error_details=error_payload["details"],
             )
 
         try:
@@ -409,18 +417,52 @@ class ApiClient:
         )
 
     def _format_error(self, response: httpx.Response) -> str:
+        return self._parse_error(response)["message"]
+
+    def _parse_error(self, response: httpx.Response) -> dict[str, Any]:
         default = f"Error HTTP {response.status_code}."
         try:
             payload = response.json()
         except ValueError:
-            return default
+            return {"code": None, "message": default, "details": None}
 
         if not isinstance(payload, dict):
-            return default
+            return {"code": None, "message": default, "details": None}
 
         code = payload.get("error_code")
         message = payload.get("error_message") or default
-        return f"{code}: {message}" if code else message
+        details = payload.get("details")
+        parts = [f"HTTP {response.status_code}"]
+        if code:
+            parts.append(str(code))
+        parts.append(str(message))
+
+        detail_text = self._format_details(details)
+        if detail_text:
+            parts.append(detail_text)
+
+        return {
+            "code": str(code) if code else None,
+            "message": " | ".join(parts),
+            "details": details,
+        }
+
+    def _format_details(self, details: Any) -> str:
+        if details is None:
+            return ""
+        if isinstance(details, dict):
+            errors = details.get("errors")
+            extra = {key: value for key, value in details.items() if key != "errors"}
+            parts: list[str] = []
+            if errors:
+                if isinstance(errors, list):
+                    parts.append("errors=" + ", ".join(str(error) for error in errors))
+                else:
+                    parts.append(f"errors={errors}")
+            if extra:
+                parts.append(f"details={extra}")
+            return " | ".join(parts)
+        return f"details={details}"
 
     def _clean_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {
