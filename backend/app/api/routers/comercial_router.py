@@ -11,6 +11,8 @@ from app.api.schemas.comercial import (
     CesionListData,
     CesionListResponse,
     CesionData,
+    ConfirmVentaDirectaCompletaRequest,
+    ConfirmVentaDirectaCompletaResponse,
     ConfirmVentaCompletaDesdeReservaRequest,
     ConfirmVentaCompletaDesdeReservaResponse,
     ConfirmVentaData,
@@ -95,6 +97,17 @@ from app.application.comercial.commands.confirm_venta_completa_desde_reserva imp
     ConfirmVentaCompletaPlanPagoBloqueInput,
     ConfirmVentaCompletaPlanPagoV2Input,
 )
+from app.application.comercial.commands.confirm_venta_directa_completa import (
+    ConfirmVentaDirectaCompletaCommand,
+    ConfirmVentaDirectaCompletaCompradorInput,
+    ConfirmVentaDirectaCompletaCondicionCuotaInput,
+    ConfirmVentaDirectaCompletaCondicionesComercialesInput,
+    ConfirmVentaDirectaCompletaConfirmacionInput,
+    ConfirmVentaDirectaCompletaGenerarVentaInput,
+    ConfirmVentaDirectaCompletaObjetoInput,
+    ConfirmVentaDirectaCompletaPlanPagoBloqueInput,
+    ConfirmVentaDirectaCompletaPlanPagoV2Input,
+)
 from app.application.comercial.commands.create_cesion import CreateCesionCommand
 from app.application.comercial.commands.create_escrituracion import (
     CreateEscrituracionCommand,
@@ -147,6 +160,9 @@ from app.application.comercial.services.confirm_reserva_venta_service import (
 from app.application.comercial.services.confirm_venta_service import ConfirmVentaService
 from app.application.comercial.services.confirm_venta_completa_desde_reserva_service import (
     ConfirmVentaCompletaDesdeReservaService,
+)
+from app.application.comercial.services.confirm_venta_directa_completa_service import (
+    ConfirmVentaDirectaCompletaService,
 )
 from app.application.comercial.services.create_cesion_service import (
     CreateCesionService,
@@ -1606,6 +1622,157 @@ def confirmar_venta_completa_desde_reserva(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return ConfirmVentaCompletaDesdeReservaResponse(**result.data)
+
+
+@router.post(
+    "/api/v1/ventas/directa/confirmar-venta-completa",
+    response_model=ConfirmVentaDirectaCompletaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        501: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def confirmar_venta_directa_completa(
+    request: ConfirmVentaDirectaCompletaRequest,
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ConfirmVentaDirectaCompletaResponse | JSONResponse:
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+        },
+    }
+
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = ComercialCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
+
+    command = ConfirmVentaDirectaCompletaCommand(
+        context=context,
+        generar_venta=ConfirmVentaDirectaCompletaGenerarVentaInput(
+            codigo_venta=request.generar_venta.codigo_venta,
+            fecha_venta=request.generar_venta.fecha_venta,
+            monto_total=request.generar_venta.monto_total,
+            observaciones=request.generar_venta.observaciones,
+        ),
+        objetos=[
+            ConfirmVentaDirectaCompletaObjetoInput(
+                id_inmueble=item.id_inmueble,
+                id_unidad_funcional=item.id_unidad_funcional,
+                precio_asignado=item.precio_asignado,
+                observaciones=item.observaciones,
+            )
+            for item in request.objetos
+        ],
+        compradores=[
+            ConfirmVentaDirectaCompletaCompradorInput(
+                id_persona=item.id_persona,
+                id_rol_participacion=item.id_rol_participacion,
+                fecha_desde=item.fecha_desde,
+                fecha_hasta=item.fecha_hasta,
+                observaciones=item.observaciones,
+            )
+            for item in request.compradores
+        ],
+        condiciones_comerciales=ConfirmVentaDirectaCompletaCondicionesComercialesInput(
+            monto_total=request.condiciones_comerciales.monto_total,
+            tipo_plan_financiero=request.condiciones_comerciales.tipo_plan_financiero,
+            moneda=request.condiciones_comerciales.moneda,
+            importe_anticipo=request.condiciones_comerciales.importe_anticipo,
+            fecha_vencimiento_anticipo=request.condiciones_comerciales.fecha_vencimiento_anticipo,
+            importe_saldo=request.condiciones_comerciales.importe_saldo,
+            fecha_vencimiento_saldo=request.condiciones_comerciales.fecha_vencimiento_saldo,
+            cuotas=[
+                ConfirmVentaDirectaCompletaCondicionCuotaInput(
+                    numero_cuota=item.numero_cuota,
+                    importe_cuota=item.importe_cuota,
+                    fecha_vencimiento=item.fecha_vencimiento,
+                    moneda=item.moneda,
+                    observaciones=item.observaciones,
+                )
+                for item in request.condiciones_comerciales.cuotas
+            ],
+        ),
+        plan_pago_v2=ConfirmVentaDirectaCompletaPlanPagoV2Input(
+            tipo_pago=request.plan_pago_v2.tipo_pago,
+            monto_total_plan=request.plan_pago_v2.monto_total_plan,
+            moneda=request.plan_pago_v2.moneda,
+            bloques=[
+                ConfirmVentaDirectaCompletaPlanPagoBloqueInput(
+                    tipo_bloque=item.tipo_bloque,
+                    etiqueta_bloque=item.etiqueta_bloque,
+                    importe_total_bloque=item.importe_total_bloque,
+                    fecha_vencimiento=item.fecha_vencimiento,
+                    cantidad_cuotas=item.cantidad_cuotas,
+                    importe_cuota=item.importe_cuota,
+                    fecha_primer_vencimiento=item.fecha_primer_vencimiento,
+                    periodicidad=item.periodicidad,
+                    regla_redondeo=item.regla_redondeo,
+                    observaciones=item.observaciones,
+                )
+                for item in request.plan_pago_v2.bloques
+            ],
+            observaciones=request.plan_pago_v2.observaciones,
+        ),
+        confirmacion=ConfirmVentaDirectaCompletaConfirmacionInput(
+            observaciones=request.confirmacion.observaciones,
+        ),
+    )
+
+    service = ConfirmVentaDirectaCompletaService()
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_IMPLEMENTED" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_IMPLEMENTED",
+                error_message="Confirmar venta directa completa sin reserva aun no esta implementado.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=501, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo confirmar la venta directa completa.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return ConfirmVentaDirectaCompletaResponse(**result.data)
 
 
 @router.post(

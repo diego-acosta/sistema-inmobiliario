@@ -273,6 +273,57 @@ class ConfirmVentaCompletaDesdeReservaResponse(BaseModel):
     data: ConfirmVentaCompletaDesdeReservaData
 
 
+class ConfirmVentaDirectaCompletaObjetoRequest(BaseModel):
+    id_inmueble: int | None = None
+    id_unidad_funcional: int | None = None
+    precio_asignado: Decimal
+    observaciones: str | None = None
+
+
+class ConfirmVentaDirectaCompletaCompradorRequest(BaseModel):
+    id_persona: int
+    id_rol_participacion: int
+    fecha_desde: date | None = None
+    fecha_hasta: date | None = None
+    observaciones: str | None = None
+
+
+class ConfirmVentaDirectaCompletaCondicionesComercialesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    monto_total: Decimal
+    tipo_plan_financiero: str | None = None
+    moneda: str | None = None
+    importe_anticipo: Decimal | None = None
+    fecha_vencimiento_anticipo: date | None = None
+    importe_saldo: Decimal | None = None
+    fecha_vencimiento_saldo: date | None = None
+    cuotas: list[DefineCondicionesComercialesVentaCuotaRequest] = []
+
+
+class ConfirmVentaDirectaCompletaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generar_venta: GenerateVentaFromReservaVentaRequest
+    objetos: list[ConfirmVentaDirectaCompletaObjetoRequest]
+    compradores: list[ConfirmVentaDirectaCompletaCompradorRequest]
+    condiciones_comerciales: ConfirmVentaDirectaCompletaCondicionesComercialesRequest
+    plan_pago_v2: GeneratePlanPagoVentaV2PorBloquesRequest
+    confirmacion: ConfirmVentaRequest
+
+
+class ConfirmVentaDirectaCompletaData(BaseModel):
+    venta: ConfirmVentaCompletaVentaResumenData
+    plan_pago_v2: ConfirmVentaCompletaPlanPagoV2ResumenData
+    generacion_cronograma_financiero: ConfirmVentaCompletaGeneracionCronogramaResumenData
+    obligaciones: ConfirmVentaCompletaObligacionesResumenData
+
+
+class ConfirmVentaDirectaCompletaResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ConfirmVentaDirectaCompletaData
+
+
 class InstrumentoCompraventaObjetoRequest(BaseModel):
     id_inmueble: int | None = None
     id_unidad_funcional: int | None = None
