@@ -45,6 +45,11 @@ class WizardState:
     origen_venta: str = ORIGEN_DIRECTA
     id_reserva_venta: str = ""
     if_match_version_reserva: str = ""
+    reserva_search_codigo: str = ""
+    reserva_search_results: list[dict[str, Any]] = field(default_factory=list)
+    reserva_search_error: str = ""
+    reserva_search_total: int = 0
+    reserva_seleccionada: dict[str, Any] | None = None
     codigo_venta: str = "VTA-BORRADOR-001"
     fecha_venta: str = field(default_factory=lambda: _format_ar_date(date.today()))
     estado_venta: str = "BORRADOR"
@@ -252,6 +257,8 @@ class VentaCreateWizardPage:
         setattr(self.state, field_name, value or "")
         if field_name in {"monto_total", "moneda"}:
             self.state.preview_generado = False
+        if field_name in {"id_reserva_venta", "if_match_version_reserva"}:
+            self.state.reserva_seleccionada = None
         self._clear_backend_status()
         self._render()
 
@@ -315,6 +322,38 @@ class VentaCreateWizardPage:
         self.state.backend_resultado = None
         self.state.backend_error = ""
         self.state.id_venta_generada = None
+
+    def _buscar_reservas(self, _: Any) -> None:
+        self.state.reserva_search_error = ""
+        self.state.reserva_search_results = []
+        self.state.reserva_search_total = 0
+        codigo = self.state.reserva_search_codigo.strip()
+        result = self.api.get_reservas_venta(
+            codigo_reserva=codigo or None,
+            estado_reserva="confirmada",
+            limit=20,
+            offset=0,
+        )
+        if not result.success:
+            self.state.reserva_search_error = (
+                result.error_message or "No se pudieron buscar reservas."
+            )
+            self._render()
+            return
+
+        data = result.data if isinstance(result.data, dict) else {}
+        self.state.reserva_search_results = data.get("items", []) or []
+        self.state.reserva_search_total = int(data.get("total") or 0)
+        if not self.state.reserva_search_results:
+            self.state.reserva_search_error = "No se encontraron reservas confirmadas."
+        self._render()
+
+    def _seleccionar_reserva(self, reserva: dict[str, Any]) -> None:
+        self.state.reserva_seleccionada = reserva
+        self.state.id_reserva_venta = str(reserva.get("id_reserva_venta") or "")
+        self.state.if_match_version_reserva = str(reserva.get("version_registro") or "")
+        self._clear_backend_status()
+        self._render()
 
     def _suma_objetos(self) -> Decimal:
         return sum((_decimal_or_zero(obj.precio_asignado) for obj in self.state.objetos), Decimal("0.00")).quantize(Decimal("0.01"))
@@ -484,6 +523,25 @@ class VentaCreateWizardPage:
                 ft.Row(
                     controls=[
                         ft.TextField(
+                            label="Buscar por codigo de reserva",
+                            value=self.state.reserva_search_codigo,
+                            width=280,
+                            on_change=lambda e: self._set("reserva_search_codigo", e.control.value),
+                        ),
+                        ft.Button(
+                            "Buscar reservas",
+                            icon=ft.Icons.SEARCH,
+                            on_click=self._buscar_reservas,
+                        ),
+                    ],
+                    wrap=True,
+                    spacing=10,
+                ),
+                self._reservas_resultados(),
+                self._reserva_seleccionada_box(),
+                ft.Row(
+                    controls=[
+                        ft.TextField(
                             label="ID reserva de venta",
                             value=self.state.id_reserva_venta,
                             width=220,
@@ -511,6 +569,87 @@ class VentaCreateWizardPage:
                 ft.Text("Los objetos cargados en el wizard se enviaran como condiciones comerciales de la venta generada."),
                 self._validation_box(1),
             ],
+        )
+
+    def _reservas_resultados(self) -> ft.Control:
+        if self.state.reserva_search_error:
+            return ft.Text(self.state.reserva_search_error, color=ft.Colors.RED_700)
+        if not self.state.reserva_search_results:
+            return ft.Text("Busca por codigo o lista las reservas confirmadas disponibles.", color=ft.Colors.BLUE_GREY_700)
+
+        rows: list[ft.DataRow] = []
+        for reserva in self.state.reserva_search_results:
+            objetos = reserva.get("objetos") or []
+            rows.append(
+                ft.DataRow(
+                    cells=[
+                        ft.DataCell(ft.Text(str(reserva.get("id_reserva_venta", "-")))),
+                        ft.DataCell(ft.Text(str(reserva.get("codigo_reserva", "-")))),
+                        ft.DataCell(ft.Text(str(reserva.get("estado_reserva", "-")))),
+                        ft.DataCell(ft.Text(str(reserva.get("version_registro", "-")))),
+                        ft.DataCell(ft.Text(_short_date(reserva.get("fecha_reserva")))),
+                        ft.DataCell(ft.Text(str(len(objetos)))),
+                        ft.DataCell(
+                            ft.TextButton(
+                                "Seleccionar",
+                                on_click=lambda _, item=reserva: self._seleccionar_reserva(item),
+                            )
+                        ),
+                    ]
+                )
+            )
+        return ft.Column(
+            controls=[
+                ft.Text(f"Reservas encontradas: {len(rows)} de {self.state.reserva_search_total}"),
+                ft.DataTable(
+                    columns=[
+                        ft.DataColumn(ft.Text("ID")),
+                        ft.DataColumn(ft.Text("Codigo")),
+                        ft.DataColumn(ft.Text("Estado")),
+                        ft.DataColumn(ft.Text("Version")),
+                        ft.DataColumn(ft.Text("Fecha")),
+                        ft.DataColumn(ft.Text("Objetos")),
+                        ft.DataColumn(ft.Text("Accion")),
+                    ],
+                    rows=rows,
+                ),
+            ],
+            spacing=8,
+        )
+
+    def _reserva_seleccionada_box(self) -> ft.Control:
+        reserva = self.state.reserva_seleccionada
+        if not reserva:
+            return ft.Text("")
+
+        objetos = reserva.get("objetos") or []
+        return ft.Column(
+            controls=[
+                ft.Text("Reserva seleccionada", weight=ft.FontWeight.W_700),
+                _kv_grid([
+                    ("Codigo", str(reserva.get("codigo_reserva") or "-")),
+                    ("Estado", str(reserva.get("estado_reserva") or "-")),
+                    ("Fecha", _short_date(reserva.get("fecha_reserva"))),
+                    ("Vencimiento", _short_date(reserva.get("fecha_vencimiento"))),
+                    ("Version", str(reserva.get("version_registro") or "-")),
+                    ("Objetos", str(len(objetos))),
+                    ("Comprador", "No incluido en listado backend"),
+                ]),
+                _simple_table(
+                    ["Inmueble", "Unidad funcional", "Observaciones"],
+                    [
+                        [
+                            str(objeto.get("id_inmueble") or "-"),
+                            str(objeto.get("id_unidad_funcional") or "-"),
+                            str(objeto.get("observaciones") or "-"),
+                        ]
+                        for objeto in objetos
+                    ],
+                )
+                if objetos
+                else ft.Text("La reserva seleccionada no trajo objetos en el listado."),
+            ],
+            spacing=8,
         )
 
     def _step_objetos(self) -> ft.Control:
@@ -861,6 +1000,13 @@ def _date_iso_or_raw(value: object) -> str:
 def _datetime_iso_or_raw(value: object) -> str:
     parsed = _date_or_none(value)
     return f"{parsed.isoformat()}T00:00:00" if parsed is not None else str(value or "").strip()
+
+
+def _short_date(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+    return text[:10]
 
 
 def _format_ar_date(value: date) -> str:

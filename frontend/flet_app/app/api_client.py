@@ -230,6 +230,30 @@ class ApiClient:
             },
         )
 
+    def get_reservas_venta(
+        self,
+        *,
+        codigo_reserva: str | None = None,
+        estado_reserva: str | None = None,
+        fecha_desde: str | None = None,
+        fecha_hasta: str | None = None,
+        vigente: bool | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/reservas-venta",
+            params={
+                "codigo_reserva": codigo_reserva or None,
+                "estado_reserva": estado_reserva or None,
+                "fecha_desde": fecha_desde or None,
+                "fecha_hasta": fecha_hasta or None,
+                "vigente": vigente,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
     def get_venta_detalle_integral(self, id_venta: int) -> ApiResult:
         return self._get(f"/api/v1/ventas/{id_venta}/detalle-integral")
 
