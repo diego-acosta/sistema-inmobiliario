@@ -1,5 +1,36 @@
 # ISSUE-67 — Diseño técnico: venta directa completa sin reserva
 
+## Estado de implementación actual (backend)
+
+> **Actualizado al estado real del repositorio:** este diseño base ya fue implementado en backend y el flujo está operativo.
+
+- Endpoint implementado: `POST /api/v1/ventas/directa/confirmar-venta-completa`.
+- Ya no es skeleton ni retorna `501`.
+- El orquestador implementado es `ConfirmVentaDirectaCompletaService`.
+- La creación inicial de venta directa en borrador dentro de la transacción se realiza con `_create_venta_directa_tx`.
+- El flujo real implementado en una única transacción física integra: crear venta directa (`_create_venta_directa_tx`) → definir condiciones comerciales → generar Plan Pago V2 → confirmar venta.
+- Ante cualquier falla funcional o técnica, el flujo aplica rollback transaccional total.
+- Validaciones relevantes implementadas:
+  - disponibilidad actual `DISPONIBLE`
+  - ocupación conflictiva
+  - venta conflictiva
+  - reserva conflictiva
+  - comprador válido
+  - rol comprador (`COMPRADOR`)
+  - coherencia de monto total entre objetos, condiciones comerciales y plan
+  - validación jerárquica inmueble ↔ unidad funcional (agregada en PR #74).
+
+**Aclaración:** este endpoint no representa un “alta directa simple de venta”; implementa una orquestación completa transaccional de punta a punta.
+
+**Pendientes fuera de este documento**
+
+- Actualizar DEV-API comercial para reflejar el estado implementado.
+- Evaluar regla jerárquica equivalente para reservas de venta.
+- Definir política documental para documentos históricos / `_tmp`.
+- Cerrar decisión de transición de disponibilidad post confirmación, si aún no está formalizada.
+
+---
+
 ## 1) Contexto
 
 Ya existe y funciona el flujo completo desde reserva existente:
@@ -240,7 +271,9 @@ Plan Pago V2 resuelve comprador desde la venta. Si la relación comprador/venta 
 
 ---
 
-## 8) Archivos a tocar en implementación futura
+## 8) Archivos tocados en la implementación
+
+> Esta sección se conserva como traza histórica del diseño base.
 
 Backend:
 
@@ -250,8 +283,9 @@ Backend:
 - `backend/app/application/comercial/services/confirm_venta_directa_completa_service.py`
 - `backend/app/infrastructure/persistence/repositories/comercial_repository.py`
 - `backend/tests/test_ventas_directa_confirmar_venta_completa.py`
+- `backend/tests/test_ventas_directa_create_tx.py`
 
-Frontend posterior:
+Frontend posterior (si aplica):
 
 - `frontend/flet_app/app/api_client.py`
 - `frontend/flet_app/app/pages/venta_create_wizard_page.py`
@@ -259,6 +293,7 @@ Frontend posterior:
 ---
 
 ## 9) Tests mínimos
+
 
 Casos mínimos para backend:
 
@@ -285,7 +320,7 @@ Los casos de falla deben verificar rollback total:
 
 ---
 
-## 10) Subissues recomendados
+## 10) Subissues recomendados (traza histórica)
 
 1. Contrato backend y skeleton del endpoint.
 2. Repository `_create_venta_directa_tx` y validaciones asociadas.
