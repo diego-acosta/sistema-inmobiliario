@@ -39,10 +39,26 @@ Alcance implementado real del `v1`:
   - generacion inicial de cronogramas V2 desde `plan_pago_venta`
   - sin recalculo de deuda, sin mora y sin generacion de obligaciones desde la consulta
 
+
+Estado real implementado (nota DOCSYNC):
+
+- Venta directa completa sin reserva previa implementada en backend mediante orquestacion transaccional completa (no alta directa simple).
+- Endpoint: `POST /api/v1/ventas/directa/confirmar-venta-completa`.
+- Orquestador: `ConfirmVentaDirectaCompletaService`.
+- Creacion interna: `_create_venta_directa_tx`.
+- Integraciones incluidas en el flujo: condiciones comerciales + Plan Pago V2 + confirmacion de venta, con rollback transaccional.
+- `PR #74`: validacion jerarquica `inmueble <-> unidad funcional` incorporada para venta directa.
+
+Pendientes documentales fuera de este PR:
+
+- actualizar `DEV-API` comercial
+- actualizar `ISSUE-67` como diseno implementado
+- definir politica para docs historicas / `_tmp`
+- evaluar regla jerarquica equivalente para reservas de venta
+
 Backlog fuera de `v1`:
 
 - `rescision_venta`
-- venta directa fuera de reserva
 - cancelacion propia de `venta`
 - mutaciones y bajas de instrumentos, cesiones y escrituraciones
 - detalle individual de recursos hijos
