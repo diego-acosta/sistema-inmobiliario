@@ -7,8 +7,10 @@ from tests.test_reservas_venta_create import (
     _crear_disponibilidad,
     _crear_inmueble,
     _crear_persona,
+    _crear_unidad_funcional,
     _crear_rol_participacion_activo,
     _insertar_reserva_conflictiva,
+    _insertar_reserva_conflictiva_objeto,
     _insertar_venta_conflictiva,
     _payload_base,
 )
@@ -324,3 +326,59 @@ def test_activate_reserva_venta_devuelve_error_si_hay_conflicto_con_reserva_acti
     assert response.json()["error_message"] == (
         "El objeto inmobiliario indicado ya participa en una reserva vigente incompatible."
     )
+
+
+def test_activate_reserva_multiobjeto_inmueble_y_uf_propia_no_conflicta_con_si_misma(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-HIER-SELF-001")
+    id_uf = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble, codigo="UF-RV-ACT-HIER-SELF-001"
+    )
+    _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
+    _crear_disponibilidad(client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE")
+    reserva = _insertar_reserva_para_confirmar(
+        db_session,
+        codigo_reserva="RV-ACT-HIER-SELF-001",
+        estado_reserva="borrador",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None},
+            {"id_inmueble": None, "id_unidad_funcional": id_uf},
+        ],
+    )
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/activar",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["estado_reserva"] == "activa"
+
+
+def test_activate_reserva_multiobjeto_falla_si_hay_conflicto_jerarquico_externo(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-HIER-EXT-001")
+    id_uf = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble, codigo="UF-RV-ACT-HIER-EXT-001"
+    )
+    _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
+    _crear_disponibilidad(client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE")
+    _insertar_reserva_conflictiva_objeto(
+        db_session,
+        codigo_reserva="RV-ACT-HIER-EXT-CONFLICT-001",
+        id_unidad_funcional=id_uf,
+    )
+    reserva = _insertar_reserva_para_confirmar(
+        db_session,
+        codigo_reserva="RV-ACT-HIER-EXT-001",
+        estado_reserva="borrador",
+        objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None}],
+    )
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/activar",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+    )
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["CONFLICTING_JERARQUIA_INMOBILIARIA"]

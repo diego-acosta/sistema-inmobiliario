@@ -3750,6 +3750,7 @@ class ComercialRepository:
         at_datetime: datetime,
         venta_conflict_states: set[str],
         reserva_conflict_states: set[str],
+        exclude_id_reserva_venta: int | None = None,
     ) -> bool:
         if id_inmueble is not None:
             child_ids = self._get_unidades_funcionales_by_inmueble(id_inmueble)
@@ -3770,6 +3771,7 @@ class ComercialRepository:
                     id_inmueble=None,
                     id_unidad_funcional=child_id,
                     conflict_states=reserva_conflict_states,
+                    exclude_id_reserva_venta=exclude_id_reserva_venta,
                 ):
                     return True
             return False
@@ -3793,6 +3795,7 @@ class ComercialRepository:
                 id_inmueble=parent_id,
                 id_unidad_funcional=None,
                 conflict_states=reserva_conflict_states,
+                exclude_id_reserva_venta=exclude_id_reserva_venta,
             )
         )
 

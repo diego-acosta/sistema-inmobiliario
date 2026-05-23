@@ -5,8 +5,10 @@ from tests.test_reservas_venta_create import (
     _apply_reserva_multiobjeto_patch,
     _crear_disponibilidad,
     _crear_inmueble,
+    _crear_unidad_funcional,
     _crear_rol_participacion_activo,
     _insertar_reserva_conflictiva,
+    _insertar_reserva_conflictiva_objeto,
     _insertar_venta_conflictiva,
 )
 
@@ -158,6 +160,76 @@ def test_confirm_reserva_venta_confirma_y_reemplaza_disponibilidad(client, db_se
         f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar",
         headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
     )
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["error_code"] == "INTERNAL_ERROR"
+
+    reserva_row = db_session.execute(
+        text(
+            """
+            SELECT estado_reserva, version_registro
+            FROM reserva_venta
+            WHERE id_reserva_venta = :id_reserva_venta
+            """
+        ),
+        {"id_reserva_venta": reserva["id_reserva_venta"]},
+    ).mappings().one()
+    assert reserva_row["estado_reserva"] == "activa"
+    assert reserva_row["version_registro"] == 1
+
+    for id_inmueble in (id_inmueble_1, id_inmueble_2):
+        disponibilidades = db_session.execute(
+            text(
+                """
+                SELECT estado_disponibilidad, fecha_hasta
+                FROM disponibilidad
+                WHERE id_inmueble = :id_inmueble
+                  AND id_unidad_funcional IS NULL
+                  AND deleted_at IS NULL
+                ORDER BY id_disponibilidad
+                """
+            ),
+            {"id_inmueble": id_inmueble},
+        ).mappings().all()
+        assert len(disponibilidades) == 1
+        assert disponibilidades[0]["estado_disponibilidad"] == "DISPONIBLE"
+        assert disponibilidades[0]["fecha_hasta"] is None
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["error_code"] == "INTERNAL_ERROR"
+
+    reserva_row = db_session.execute(
+        text(
+            """
+            SELECT estado_reserva, version_registro
+            FROM reserva_venta
+            WHERE id_reserva_venta = :id_reserva_venta
+            """
+        ),
+        {"id_reserva_venta": reserva["id_reserva_venta"]},
+    ).mappings().one()
+    assert reserva_row["estado_reserva"] == "activa"
+    assert reserva_row["version_registro"] == 1
+
+    for id_inmueble in (id_inmueble_1, id_inmueble_2):
+        disponibilidades = db_session.execute(
+            text(
+                """
+                SELECT estado_disponibilidad, fecha_hasta
+                FROM disponibilidad
+                WHERE id_inmueble = :id_inmueble
+                  AND id_unidad_funcional IS NULL
+                  AND deleted_at IS NULL
+                ORDER BY id_disponibilidad
+                """
+            ),
+            {"id_inmueble": id_inmueble},
+        ).mappings().all()
+        assert len(disponibilidades) == 1
+        assert disponibilidades[0]["estado_disponibilidad"] == "DISPONIBLE"
+        assert disponibilidades[0]["fecha_hasta"] is None
 
     assert response.status_code == 200
     body = response.json()
@@ -439,37 +511,58 @@ def test_confirm_reserva_venta_hace_rollback_completo_si_falla_un_objeto(
         headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
     )
 
-    assert response.status_code == 500
-    body = response.json()
-    assert body["error_code"] == "INTERNAL_ERROR"
 
-    reserva_row = db_session.execute(
-        text(
-            """
-            SELECT estado_reserva, version_registro
-            FROM reserva_venta
-            WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
-        {"id_reserva_venta": reserva["id_reserva_venta"]},
-    ).mappings().one()
-    assert reserva_row["estado_reserva"] == "activa"
-    assert reserva_row["version_registro"] == 1
+def test_confirm_reserva_multiobjeto_inmueble_y_uf_propia_no_conflicta_con_si_misma(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-CONF-HIER-SELF-001")
+    id_uf = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble, codigo="UF-RV-CONF-HIER-SELF-001"
+    )
+    _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
+    _crear_disponibilidad(client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE")
+    reserva = _insertar_reserva_para_confirmar(
+        db_session,
+        codigo_reserva="RV-CONF-HIER-SELF-001",
+        estado_reserva="activa",
+        objetos=[
+            {"id_inmueble": id_inmueble, "id_unidad_funcional": None},
+            {"id_inmueble": None, "id_unidad_funcional": id_uf},
+        ],
+    )
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["estado_reserva"] == "confirmada"
 
-    for id_inmueble in (id_inmueble_1, id_inmueble_2):
-        disponibilidades = db_session.execute(
-            text(
-                """
-                SELECT estado_disponibilidad, fecha_hasta
-                FROM disponibilidad
-                WHERE id_inmueble = :id_inmueble
-                  AND id_unidad_funcional IS NULL
-                  AND deleted_at IS NULL
-                ORDER BY id_disponibilidad
-                """
-            ),
-            {"id_inmueble": id_inmueble},
-        ).mappings().all()
-        assert len(disponibilidades) == 1
-        assert disponibilidades[0]["estado_disponibilidad"] == "DISPONIBLE"
-        assert disponibilidades[0]["fecha_hasta"] is None
+
+def test_confirm_reserva_multiobjeto_falla_si_hay_conflicto_jerarquico_externo(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-CONF-HIER-EXT-001")
+    id_uf = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble, codigo="UF-RV-CONF-HIER-EXT-001"
+    )
+    _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
+    _crear_disponibilidad(client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE")
+    _insertar_reserva_conflictiva_objeto(
+        db_session,
+        codigo_reserva="RV-CONF-HIER-EXT-CONFLICT-001",
+        id_unidad_funcional=id_uf,
+    )
+    reserva = _insertar_reserva_para_confirmar(
+        db_session,
+        codigo_reserva="RV-CONF-HIER-EXT-001",
+        estado_reserva="activa",
+        objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None}],
+    )
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+    )
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["CONFLICTING_JERARQUIA_INMOBILIARIA"]
