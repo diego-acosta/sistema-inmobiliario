@@ -427,6 +427,13 @@ def create_reserva_venta(
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
+        if "CONFLICTING_JERARQUIA_INMOBILIARIA" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Existe un conflicto jerarquico entre inmueble y unidad funcional para reservar.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
 
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
@@ -988,6 +995,13 @@ def activate_reserva_venta(
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
+        if "CONFLICTING_JERARQUIA_INMOBILIARIA" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Existe un conflicto jerarquico entre inmueble y unidad funcional para activar la reserva.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
 
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
@@ -1429,6 +1443,13 @@ def confirm_reserva_venta(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="El objeto inmobiliario indicado ya participa en una reserva vigente incompatible.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+        if "CONFLICTING_JERARQUIA_INMOBILIARIA" in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Existe un conflicto jerarquico entre inmueble y unidad funcional para confirmar la reserva.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
