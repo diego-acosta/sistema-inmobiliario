@@ -158,7 +158,6 @@ Eso no significa dominio completo al 100% del modelo SQL. Significa dominio cerr
 Queda explicitamente fuera de `v1` y no debe reintroducirse como drift contractual:
 
 - `rescision_venta`
-- venta directa fuera de `reserva_venta`
 - cancelacion propia de `venta`
 - mutaciones y bajas de instrumentos, cesiones y escrituraciones
 - detalle individual de instrumentos, cesiones y escrituraciones
@@ -168,6 +167,22 @@ Queda explicitamente fuera de `v1` y no debe reintroducirse como drift contractu
 - integracion financiera derivada
 
 Todo eso debe tratarse como backlog de un bloque posterior, no como deuda oculta dentro del `v1` vigente.
+
+Nota de estado real (alineacion DOCSYNC):
+
+- La venta directa completa **sin reserva previa** ya esta implementada en backend como orquestacion transaccional completa, no como alta directa simple.
+- Endpoint materializado: `POST /api/v1/ventas/directa/confirmar-venta-completa`.
+- Orquestador materializado: `ConfirmVentaDirectaCompletaService`.
+- Creacion interna transaccional: `_create_venta_directa_tx`.
+- Flujo integrado: alta transaccional de venta directa + definicion de condiciones comerciales + generacion de Plan Pago V2 + confirmacion de venta + rollback transaccional ante fallo.
+- `PR #74` agrego validacion jerarquica `inmueble <-> unidad funcional` para venta directa.
+
+Pendientes documentales fuera de este PR:
+
+- actualizar `DEV-API` comercial para reflejar el endpoint de venta directa completa implementado
+- actualizar `ISSUE-67` para dejarlo como diseno implementado
+- definir politica de documentacion historica y artefactos `_tmp`
+- evaluar extension de la regla jerarquica `inmueble <-> unidad funcional` al flujo de reservas de venta
 
 ## 7. Proximo bloque de trabajo
 
