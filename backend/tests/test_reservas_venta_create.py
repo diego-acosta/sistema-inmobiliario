@@ -252,6 +252,79 @@ def _insertar_venta_conflictiva(db_session, *, id_inmueble: int, codigo_venta: s
     )
 
 
+def _insertar_venta_conflictiva_objeto(
+    db_session, *, codigo_venta: str, id_inmueble: int | None = None, id_unidad_funcional: int | None = None
+) -> None:
+    venta_row = db_session.execute(
+        text(
+            """
+            INSERT INTO venta (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion, id_reserva_venta,
+                codigo_venta, fecha_venta, estado_venta, monto_total, observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id, NULL,
+                :codigo_venta, TIMESTAMP '2026-04-10 10:00:00', 'activa', 1000.00, NULL
+            ) RETURNING id_venta
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "codigo_venta": codigo_venta},
+    ).mappings().one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO venta_objeto_inmobiliario (
+                uid_global, version_registro, created_at, updated_at, id_instalacion_origen,
+                id_instalacion_ultima_modificacion, op_id_alta, op_id_ultima_modificacion,
+                id_venta, id_inmueble, id_unidad_funcional, precio_asignado, observaciones
+            ) VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+                :op_id, :op_id, :id_venta, :id_inmueble, :id_unidad_funcional, 1000.00, NULL
+            )
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "id_venta": venta_row["id_venta"], "id_inmueble": id_inmueble, "id_unidad_funcional": id_unidad_funcional},
+    )
+
+
+def _insertar_reserva_conflictiva_objeto(
+    db_session, *, codigo_reserva: str, id_inmueble: int | None = None, id_unidad_funcional: int | None = None
+) -> None:
+    reserva_row = db_session.execute(
+        text(
+            """
+            INSERT INTO reserva_venta (
+                uid_global, version_registro, created_at, updated_at, id_instalacion_origen,
+                id_instalacion_ultima_modificacion, op_id_alta, op_id_ultima_modificacion,
+                codigo_reserva, fecha_reserva, estado_reserva, fecha_vencimiento, observaciones
+            ) VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+                :op_id, :op_id, :codigo_reserva, TIMESTAMP '2026-04-10 10:00:00', 'activa',
+                TIMESTAMP '2026-04-30 10:00:00', NULL
+            ) RETURNING id_reserva_venta
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "codigo_reserva": codigo_reserva},
+    ).mappings().one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO reserva_venta_objeto_inmobiliario (
+                uid_global, version_registro, created_at, updated_at, id_instalacion_origen,
+                id_instalacion_ultima_modificacion, op_id_alta, op_id_ultima_modificacion,
+                id_reserva_venta, id_inmueble, id_unidad_funcional, observaciones
+            ) VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+                :op_id, :op_id, :id_reserva_venta, :id_inmueble, :id_unidad_funcional, NULL
+            )
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "id_reserva_venta": reserva_row["id_reserva_venta"], "id_inmueble": id_inmueble, "id_unidad_funcional": id_unidad_funcional},
+    )
+
 def _insertar_reserva_conflictiva(db_session, *, id_inmueble: int, codigo_reserva: str) -> None:
     reserva_row = db_session.execute(
         text(
@@ -819,3 +892,40 @@ def test_patch_multiobjeto_crea_indices_minimos_en_tabla_relacion(db_session) ->
         "idx_rvo_reserva",
         "idx_rvo_unidad",
     ]
+
+
+def test_create_reserva_venta_falla_por_conflicto_jerarquico_inmueble_vs_uf_reserva(client, db_session) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre="Ada", apellido="Lovelace")
+    id_inmueble = _crear_inmueble(client, codigo="INM-HIER-RES-001")
+    id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo="UF-HIER-RES-001")
+    _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
+    _insertar_reserva_conflictiva_objeto(db_session, codigo_reserva="RV-HIER-UF-001", id_unidad_funcional=id_uf)
+    _crear_rol_participacion_activo(db_session, id_rol_participacion=9201)
+    response = client.post("/api/v1/reservas-venta", headers=HEADERS, json=_payload_base(codigo_reserva="RV-HIER-ROOT-001", objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None, "observaciones": None}], id_persona=id_persona, id_rol=9201))
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["CONFLICTING_JERARQUIA_INMOBILIARIA"]
+
+
+def test_create_reserva_venta_falla_por_conflicto_jerarquico_uf_vs_inmueble_venta(client, db_session) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre="Linus", apellido="Torvalds")
+    id_inmueble = _crear_inmueble(client, codigo="INM-HIER-VTA-001")
+    id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo="UF-HIER-VTA-001")
+    _crear_disponibilidad(client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE")
+    _insertar_venta_conflictiva_objeto(db_session, codigo_venta="V-HIER-ROOT-001", id_inmueble=id_inmueble)
+    _crear_rol_participacion_activo(db_session, id_rol_participacion=9202)
+    response = client.post("/api/v1/reservas-venta", headers=HEADERS, json=_payload_base(codigo_reserva="RV-HIER-UF-002", objetos=[{"id_inmueble": None, "id_unidad_funcional": id_uf, "observaciones": None}], id_persona=id_persona, id_rol=9202))
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["CONFLICTING_JERARQUIA_INMOBILIARIA"]
+
+
+def test_create_reserva_venta_uf_valida_sin_conflicto_jerarquico(client, db_session) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre="Grace", apellido="Hopper")
+    id_inmueble = _crear_inmueble(client, codigo="INM-HIER-OK-001")
+    id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo="UF-HIER-OK-001")
+    _crear_disponibilidad(client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE")
+    _crear_rol_participacion_activo(db_session, id_rol_participacion=9203)
+    response = client.post("/api/v1/reservas-venta", headers=HEADERS, json=_payload_base(codigo_reserva="RV-HIER-OK-001", objetos=[{"id_inmueble": None, "id_unidad_funcional": id_uf, "observaciones": None}], id_persona=id_persona, id_rol=9203))
+    assert response.status_code == 201

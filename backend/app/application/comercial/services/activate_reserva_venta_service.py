@@ -84,6 +84,18 @@ class ComercialRepository(Protocol):
     ) -> bool:
         ...
 
+    def has_conflicting_hierarchical_occupancy_or_sale_or_reserva(
+        self,
+        *,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        at_datetime: datetime,
+        venta_conflict_states: set[str],
+        reserva_conflict_states: set[str],
+        exclude_id_reserva_venta: int | None = None,
+    ) -> bool:
+        ...
+
     def activate_reserva_venta(
         self, payload: ReservaVentaActivatePayload
     ) -> dict[str, Any]:
@@ -170,6 +182,16 @@ class ActivateReservaVentaService:
                 exclude_id_reserva_venta=command.id_reserva_venta,
             ):
                 return AppResult.fail("CONFLICTING_RESERVA")
+
+            if self.repository.has_conflicting_hierarchical_occupancy_or_sale_or_reserva(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=id_unidad_funcional,
+                at_datetime=now,
+                venta_conflict_states=ESTADOS_VENTA_CONFLICTIVOS,
+                reserva_conflict_states=ESTADOS_RESERVA_CONFLICTIVOS,
+                exclude_id_reserva_venta=command.id_reserva_venta,
+            ):
+                return AppResult.fail("CONFLICTING_JERARQUIA_INMOBILIARIA")
 
         payload = ReservaVentaActivatePayload(
             id_reserva_venta=command.id_reserva_venta,
