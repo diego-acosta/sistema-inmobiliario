@@ -14,6 +14,7 @@ from tests.test_reservas_venta_create import (
     _crear_inmueble,
     _crear_persona,
     _crear_rol_participacion_activo,
+    _crear_unidad_funcional,
     _insertar_reserva_conflictiva,
 )
 
@@ -100,6 +101,230 @@ def _crear_base_venta_directa(client, db_session, *, codigo_inmueble: str):
         estado_disponibilidad="DISPONIBLE",
     )
     return id_inmueble, id_persona, id_rol
+
+
+def _insertar_venta_conflictiva(
+    db_session,
+    *,
+    codigo_venta: str,
+    id_inmueble: int | None = None,
+    id_unidad_funcional: int | None = None,
+) -> None:
+    venta_row = db_session.execute(
+        text(
+            """
+            INSERT INTO venta (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion, id_reserva_venta,
+                codigo_venta, fecha_venta, estado_venta, monto_total, observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id, NULL,
+                :codigo_venta, TIMESTAMP '2026-05-20 10:00:00', 'activa', 1000.00, NULL
+            )
+            RETURNING id_venta
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "codigo_venta": codigo_venta},
+    ).mappings().one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO venta_objeto_inmobiliario (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion, id_venta,
+                id_inmueble, id_unidad_funcional, precio_asignado, observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id, :id_venta,
+                :id_inmueble, :id_unidad_funcional, 1000.00, NULL
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_venta": venta_row["id_venta"],
+            "id_inmueble": id_inmueble,
+            "id_unidad_funcional": id_unidad_funcional,
+        },
+    )
+
+
+def _insertar_ocupacion_activa(
+    db_session, *, id_inmueble: int | None = None, id_unidad_funcional: int | None = None
+) -> None:
+    db_session.execute(
+        text(
+            """
+            INSERT INTO ocupacion (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                id_inmueble, id_unidad_funcional, tipo_ocupacion, fecha_desde, fecha_hasta,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id,
+                :id_inmueble, :id_unidad_funcional, 'ALQUILER',
+                TIMESTAMP '2026-05-01 00:00:00', NULL, NULL
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_inmueble": id_inmueble,
+            "id_unidad_funcional": id_unidad_funcional,
+        },
+    )
+
+
+def _insertar_reserva_conflictiva_objeto(
+    db_session,
+    *,
+    codigo_reserva: str,
+    id_inmueble: int | None = None,
+    id_unidad_funcional: int | None = None,
+) -> None:
+    reserva_row = db_session.execute(
+        text(
+            """
+            INSERT INTO reserva_venta (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion,
+                codigo_reserva, fecha_reserva, estado_reserva, fecha_vencimiento, observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id,
+                :codigo_reserva, TIMESTAMP '2026-05-20 10:00:00', 'activa',
+                TIMESTAMP '2026-05-30 10:00:00', NULL
+            )
+            RETURNING id_reserva_venta
+            """
+        ),
+        {"op_id": HEADERS["X-Op-Id"], "codigo_reserva": codigo_reserva},
+    ).mappings().one()
+    db_session.execute(
+        text(
+            """
+            INSERT INTO reserva_venta_objeto_inmobiliario (
+                uid_global, version_registro, created_at, updated_at,
+                id_instalacion_origen, id_instalacion_ultima_modificacion,
+                op_id_alta, op_id_ultima_modificacion, id_reserva_venta,
+                id_inmueble, id_unidad_funcional, observaciones
+            )
+            VALUES (
+                gen_random_uuid(), 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                1, 1, :op_id, :op_id, :id_reserva_venta,
+                :id_inmueble, :id_unidad_funcional, NULL
+            )
+            """
+        ),
+        {
+            "op_id": HEADERS["X-Op-Id"],
+            "id_reserva_venta": reserva_row["id_reserva_venta"],
+            "id_inmueble": id_inmueble,
+            "id_unidad_funcional": id_unidad_funcional,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("conflicto", "esperado"),
+    [
+        ("venta", "CONFLICTING_JERARQUIA_INMOBILIARIA"),
+        ("reserva", "CONFLICTING_JERARQUIA_INMOBILIARIA"),
+        ("ocupacion", "CONFLICTING_JERARQUIA_INMOBILIARIA"),
+    ],
+)
+def test_create_venta_directa_tx_falla_venta_inmueble_por_conflicto_en_uf_hija(
+    client, db_session, conflicto: str, esperado: str
+) -> None:
+    id_inmueble, id_persona, id_rol = _crear_base_venta_directa(
+        client, db_session, codigo_inmueble=f"INM-VD-HIJAS-{conflicto}"
+    )
+    id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo=f"UF-{conflicto}")
+    _crear_disponibilidad(
+        client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE"
+    )
+
+    if conflicto == "venta":
+        _insertar_venta_conflictiva(
+            db_session,
+            codigo_venta="VD-CONFLICT-UF-VENTA",
+            id_unidad_funcional=id_uf,
+        )
+    elif conflicto == "reserva":
+        _insertar_reserva_conflictiva_objeto(
+            db_session,
+            codigo_reserva="RV-CONFLICT-UF-RESERVA",
+            id_unidad_funcional=id_uf,
+        )
+    else:
+        _insertar_ocupacion_activa(db_session, id_unidad_funcional=id_uf)
+
+    result = ComercialRepository(db_session)._create_venta_directa_tx(
+        _payload_venta_directa(codigo_venta=f"VD-TX-HIJA-{conflicto}"),
+        [_payload_objeto(id_inmueble=id_inmueble)],
+        [_payload_comprador(id_persona=id_persona, id_rol_participacion=id_rol)],
+    )
+    assert result == {"status": esperado}
+
+
+@pytest.mark.parametrize(("conflicto",), [("venta",), ("reserva",), ("ocupacion",)])
+def test_create_venta_directa_tx_falla_venta_uf_por_conflicto_en_inmueble_padre(
+    client, db_session, conflicto: str
+) -> None:
+    id_inmueble, id_persona, id_rol = _crear_base_venta_directa(
+        client, db_session, codigo_inmueble=f"INM-VD-PADRE-{conflicto}"
+    )
+    id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo=f"UF-P-{conflicto}")
+    _crear_disponibilidad(
+        client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE"
+    )
+
+    if conflicto == "venta":
+        _insertar_venta_conflictiva(
+            db_session, codigo_venta="VD-CONFLICT-PADRE-VENTA", id_inmueble=id_inmueble
+        )
+    elif conflicto == "reserva":
+        _insertar_reserva_conflictiva(
+            db_session, id_inmueble=id_inmueble, codigo_reserva="RV-CONFLICT-PADRE-RES"
+        )
+    else:
+        _insertar_ocupacion_activa(db_session, id_inmueble=id_inmueble)
+
+    result = ComercialRepository(db_session)._create_venta_directa_tx(
+        _payload_venta_directa(codigo_venta=f"VD-TX-PADRE-{conflicto}"),
+        [_payload_objeto(id_inmueble=None, id_unidad_funcional=id_uf)],
+        [_payload_comprador(id_persona=id_persona, id_rol_participacion=id_rol)],
+    )
+    assert result == {"status": "CONFLICTING_JERARQUIA_INMOBILIARIA"}
+
+
+def test_create_venta_directa_tx_crea_uf_si_no_hay_conflicto_jerarquico(
+    client, db_session
+) -> None:
+    id_inmueble, id_persona, id_rol = _crear_base_venta_directa(
+        client, db_session, codigo_inmueble="INM-VD-UF-SIN-CONFLICTO"
+    )
+    id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo="UF-OK")
+    _crear_disponibilidad(
+        client, id_unidad_funcional=id_uf, estado_disponibilidad="DISPONIBLE"
+    )
+
+    result = ComercialRepository(db_session)._create_venta_directa_tx(
+        _payload_venta_directa(codigo_venta="VD-TX-UF-SIN-CONFLICTO"),
+        [_payload_objeto(id_inmueble=None, id_unidad_funcional=id_uf)],
+        [_payload_comprador(id_persona=id_persona, id_rol_participacion=id_rol)],
+    )
+    assert result["status"] == "OK"
 
 
 def test_create_venta_directa_tx_crea_borrador_objeto_y_comprador(
