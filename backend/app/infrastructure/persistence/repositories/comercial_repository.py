@@ -3706,6 +3706,15 @@ class ComercialRepository:
             ):
                 return "CONFLICTING_RESERVA"
 
+            if self.has_conflicting_hierarchical_occupancy_or_sale_or_reserva(
+                id_inmueble=id_inmueble,
+                id_unidad_funcional=id_unidad_funcional,
+                at_datetime=at_datetime,
+                venta_conflict_states=VENTA_DIRECTA_ESTADOS_VENTA_CONFLICTIVOS,
+                reserva_conflict_states=VENTA_DIRECTA_ESTADOS_RESERVA_CONFLICTIVOS,
+            ):
+                return "CONFLICTING_JERARQUIA_INMOBILIARIA"
+
             precio_asignado = values["precio_asignado"]
             if precio_asignado is None:
                 return "INVALID_MONTO_TOTAL"
@@ -3732,6 +3741,93 @@ class ComercialRepository:
             return "INVALID_ROL_COMPRADOR"
 
         return None
+
+    def has_conflicting_hierarchical_occupancy_or_sale_or_reserva(
+        self,
+        *,
+        id_inmueble: int | None,
+        id_unidad_funcional: int | None,
+        at_datetime: datetime,
+        venta_conflict_states: set[str],
+        reserva_conflict_states: set[str],
+    ) -> bool:
+        if id_inmueble is not None:
+            child_ids = self._get_unidades_funcionales_by_inmueble(id_inmueble)
+            for child_id in child_ids:
+                if self.has_current_ocupacion_conflict(
+                    id_inmueble=None,
+                    id_unidad_funcional=child_id,
+                    at_datetime=at_datetime,
+                ):
+                    return True
+                if self.has_conflicting_active_venta(
+                    id_inmueble=None,
+                    id_unidad_funcional=child_id,
+                    conflict_states=venta_conflict_states,
+                ):
+                    return True
+                if self.has_conflicting_active_reserva(
+                    id_inmueble=None,
+                    id_unidad_funcional=child_id,
+                    conflict_states=reserva_conflict_states,
+                ):
+                    return True
+            return False
+
+        parent_id = self._get_parent_inmueble_for_unidad_funcional(id_unidad_funcional)
+        if parent_id is None:
+            return False
+
+        return (
+            self.has_current_ocupacion_conflict(
+                id_inmueble=parent_id,
+                id_unidad_funcional=None,
+                at_datetime=at_datetime,
+            )
+            or self.has_conflicting_active_venta(
+                id_inmueble=parent_id,
+                id_unidad_funcional=None,
+                conflict_states=venta_conflict_states,
+            )
+            or self.has_conflicting_active_reserva(
+                id_inmueble=parent_id,
+                id_unidad_funcional=None,
+                conflict_states=reserva_conflict_states,
+            )
+        )
+
+    def _get_unidades_funcionales_by_inmueble(self, id_inmueble: int) -> list[int]:
+        statement = text(
+            """
+            SELECT id_unidad_funcional
+            FROM unidad_funcional
+            WHERE id_inmueble = :id_inmueble
+              AND deleted_at IS NULL
+            ORDER BY id_unidad_funcional
+            """
+        )
+        rows = self.db.execute(statement, {"id_inmueble": id_inmueble}).mappings().all()
+        return [row["id_unidad_funcional"] for row in rows]
+
+    def _get_parent_inmueble_for_unidad_funcional(
+        self, id_unidad_funcional: int | None
+    ) -> int | None:
+        if id_unidad_funcional is None:
+            return None
+        statement = text(
+            """
+            SELECT id_inmueble
+            FROM unidad_funcional
+            WHERE id_unidad_funcional = :id_unidad_funcional
+              AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            statement, {"id_unidad_funcional": id_unidad_funcional}
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+        return row["id_inmueble"]
 
     def _get_reserva_venta_origin(self, id_reserva_venta: int) -> dict[str, Any] | None:
         statement = text(
