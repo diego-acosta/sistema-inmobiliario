@@ -128,3 +128,8 @@
 2. Consolidar evidencia de `version_registro`, `deleted_at`, `op_id`, outbox e idempotencia con referencias a SQL y repositorios concretos.
 3. Definir criterio uniforme de lock lógico por familia de endpoints (especialmente operaciones financieras y estados de contrato).
 4. Vincular cada fila con tests concretos (unit/integration/API) y abrir brechas de cobertura donde aplique.
+
+## Nota de implementación #72 (incremento inicial)
+- Se incorporó un helper/dependency común para parseo y validación de headers CORE-EF en `backend/app/api/core_ef_headers.py`.
+- Este incremento migra solo un endpoint write de demostración (`POST /api/v1/personas`) al helper común.
+- La migración masiva del resto de endpoints write queda pendiente para `#72-D`.

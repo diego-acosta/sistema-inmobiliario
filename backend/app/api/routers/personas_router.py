@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
+from app.api.core_ef_headers import CoreEFHeaders, get_core_ef_headers_write
 from app.api.schemas.personas import (
     ErrorResponse,
     PersonaCreateData,
@@ -322,42 +323,18 @@ def list_personas(
 def create_persona(
     request: PersonaCreateRequest,
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    core_ef_headers: CoreEFHeaders = Depends(get_core_ef_headers_write),
 ) -> PersonaCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
     context = PersonaCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+        id_instalacion=core_ef_headers.x_instalacion_id,
+        op_id=core_ef_headers.x_op_id,
+        request_id=core_ef_headers.x_op_id,
+        actor_id=str(core_ef_headers.x_usuario_id),
+        metadata={
+            "x_op_id": str(core_ef_headers.x_op_id),
+            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
+            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
+        },
     )
 
     command = CreatePersonaCommand(
