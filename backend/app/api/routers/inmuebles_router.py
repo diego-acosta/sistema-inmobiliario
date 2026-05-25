@@ -251,6 +251,35 @@ from app.infrastructure.persistence.repositories.inmueble_repository import (
 
 router = APIRouter(tags=["Inmobiliario"])
 
+_CORE_EF_REQUIRED_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": "X-Op-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Usuario-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Sucursal-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Instalacion-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+    ]
+}
+
 
 class InmuebleCommandContext(CommandContext):
     __slots__ = ("id_instalacion", "op_id")
@@ -315,6 +344,7 @@ def _build_inmueble_command_context(
     "/api/v1/inmuebles",
     status_code=201,
     response_model=InmuebleCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -377,6 +407,7 @@ def create_inmueble(
     "/api/v1/inmuebles/{id_inmueble}/unidades-funcionales",
     status_code=201,
     response_model=UnidadFuncionalCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -451,6 +482,7 @@ def create_unidad_funcional(
     "/api/v1/unidades-funcionales/{id_unidad_funcional}/servicios",
     status_code=201,
     response_model=UnidadFuncionalServicioCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -2087,6 +2119,7 @@ def get_unidad_funcional_ocupaciones(
     "/api/v1/inmuebles/{id_inmueble}/servicios",
     status_code=201,
     response_model=InmuebleServicioCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
