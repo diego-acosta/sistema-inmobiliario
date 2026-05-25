@@ -244,8 +244,9 @@ def test_update_inmueble_devuelve_409_si_falta_if_match_version(client) -> None:
         },
     )
 
-    assert response.status_code == 409
-    assert response.json()["error_code"] == "CONCURRENCY_ERROR"
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"]["header"] == "If-Match-Version"
 
 
 def test_update_inmueble_devuelve_409_si_if_match_version_es_invalido(client) -> None:
@@ -278,8 +279,9 @@ def test_update_inmueble_devuelve_409_si_if_match_version_es_invalido(client) ->
         },
     )
 
-    assert response.status_code == 409
-    assert response.json()["error_code"] == "CONCURRENCY_ERROR"
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"]["header"] == "If-Match-Version"
 
 
 def test_update_inmueble_devuelve_409_si_update_no_afecta_filas_por_version(
