@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import Header, HTTPException
+from fastapi import Header
 
 
 @dataclass(frozen=True)
@@ -13,12 +13,23 @@ class CoreEFHeaders:
     if_match_version: int | None = None
 
 
-def _missing_header_error(header_name: str) -> HTTPException:
-    return HTTPException(status_code=400, detail=f"Header requerido faltante: {header_name}.")
+class CoreEFHeaderValidationError(ValueError):
+    def __init__(self, *, header_name: str, reason: str) -> None:
+        self.header_name = header_name
+        self.reason = reason
+        super().__init__(f"Header {reason}: {header_name}.")
+
+    @property
+    def message(self) -> str:
+        return f"Header {self.reason}: {self.header_name}."
 
 
-def _invalid_header_error(header_name: str) -> HTTPException:
-    return HTTPException(status_code=400, detail=f"Header inválido: {header_name}.")
+def _missing_header_error(header_name: str) -> CoreEFHeaderValidationError:
+    return CoreEFHeaderValidationError(header_name=header_name, reason="requerido faltante")
+
+
+def _invalid_header_error(header_name: str) -> CoreEFHeaderValidationError:
+    return CoreEFHeaderValidationError(header_name=header_name, reason="inválido")
 
 
 def _parse_required_int(header_name: str, header_value: str | None) -> int:

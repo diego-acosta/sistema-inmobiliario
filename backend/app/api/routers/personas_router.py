@@ -5,7 +5,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.api.core_ef_headers import CoreEFHeaders, get_core_ef_headers_write
+from app.api.core_ef_headers import (
+    CoreEFHeaderValidationError,
+    CoreEFHeaders,
+    get_core_ef_headers_write,
+)
 from app.api.schemas.personas import (
     ErrorResponse,
     PersonaCreateData,
@@ -323,8 +327,26 @@ def list_personas(
 def create_persona(
     request: PersonaCreateRequest,
     db: Session = Depends(get_db),
-    core_ef_headers: CoreEFHeaders = Depends(get_core_ef_headers_write),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PersonaCreateResponse | JSONResponse:
+    try:
+        core_ef_headers = get_core_ef_headers_write(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+        )
+    except CoreEFHeaderValidationError as exc:
+        error = ErrorResponse(
+            error_code="VALIDATION_ERROR",
+            error_message=exc.message,
+            details={"header": exc.header_name},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
     context = PersonaCommandContext(
         id_instalacion=core_ef_headers.x_instalacion_id,
         op_id=core_ef_headers.x_op_id,
