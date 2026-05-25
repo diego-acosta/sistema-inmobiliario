@@ -8,7 +8,7 @@ from app.api.dependencies import get_db
 from app.api.core_ef_headers import (
     CoreEFHeaderValidationError,
     CoreEFHeaders,
-    get_core_ef_headers_write,
+    parse_core_ef_headers,
 )
 from app.api.schemas.personas import (
     ErrorResponse,
@@ -333,11 +333,12 @@ def create_persona(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PersonaCreateResponse | JSONResponse:
     try:
-        core_ef_headers = get_core_ef_headers_write(
+        core_ef_headers = parse_core_ef_headers(
             x_op_id=x_op_id,
             x_usuario_id=x_usuario_id,
             x_sucursal_id=x_sucursal_id,
             x_instalacion_id=x_instalacion_id,
+            if_match_version=None,
         )
     except CoreEFHeaderValidationError as exc:
         error = ErrorResponse(
