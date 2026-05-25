@@ -82,3 +82,52 @@ def test_create_inmueble_inserta_en_postgresql(client, db_session) -> None:
     assert row["estado_administrativo"] == "ACTIVO"
     assert row["estado_juridico"] == "REGULAR"
     assert row["observaciones"] == "alta desde test automatizado"
+
+
+def test_create_inmueble_rechaza_header_x_op_id_faltante(client) -> None:
+    headers = {**HEADERS}
+    headers.pop("X-Op-Id")
+
+    response = client.post(
+        "/api/v1/inmuebles",
+        headers=headers,
+        json={
+            "id_desarrollo": None,
+            "codigo_inmueble": "INM-HEAD-001",
+            "nombre_inmueble": "Inmueble Header",
+            "superficie": "100.00",
+            "estado_administrativo": "ACTIVO",
+            "estado_juridico": "REGULAR",
+            "observaciones": None,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["error_message"] == "Header requerido faltante: X-Op-Id."
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_create_inmueble_rechaza_header_x_op_id_invalido(client) -> None:
+    headers = {**HEADERS, "X-Op-Id": "invalido"}
+
+    response = client.post(
+        "/api/v1/inmuebles",
+        headers=headers,
+        json={
+            "id_desarrollo": None,
+            "codigo_inmueble": "INM-HEAD-002",
+            "nombre_inmueble": "Inmueble Header",
+            "superficie": "100.00",
+            "estado_administrativo": "ACTIVO",
+            "estado_juridico": "REGULAR",
+            "observaciones": None,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["error_message"] == "Header inválido: X-Op-Id."
+    assert body["details"] == {"header": "X-Op-Id"}

@@ -5,6 +5,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
+from app.api.core_ef_headers import (
+    CoreEFHeaderValidationError,
+    CoreEFHeaders,
+    parse_core_ef_headers,
+)
 from app.api.schemas.inmuebles import (
     ActivoIntegracionTraceResponse,
     ActivoIntegracionVentaItem,
@@ -246,6 +251,35 @@ from app.infrastructure.persistence.repositories.inmueble_repository import (
 
 router = APIRouter(tags=["Inmobiliario"])
 
+_CORE_EF_REQUIRED_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": "X-Op-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Usuario-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Sucursal-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Instalacion-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+    ]
+}
+
 
 class InmuebleCommandContext(CommandContext):
     __slots__ = ("id_instalacion", "op_id")
@@ -262,10 +296,55 @@ class InmuebleCommandContext(CommandContext):
         self.op_id = op_id
 
 
+def _core_ef_error_response(exc: CoreEFHeaderValidationError) -> JSONResponse:
+    error = ErrorResponse(
+        error_code="VALIDATION_ERROR",
+        error_message=exc.message,
+        details={"header": exc.header_name},
+    )
+    return JSONResponse(status_code=400, content=error.model_dump())
+
+
+def _parse_core_ef_headers_or_error(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=None,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _core_ef_error_response(exc)
+
+
+def _build_inmueble_command_context(
+    core_ef_headers: CoreEFHeaders,
+) -> InmuebleCommandContext:
+    return InmuebleCommandContext(
+        id_instalacion=core_ef_headers.x_instalacion_id,
+        op_id=core_ef_headers.x_op_id,
+        request_id=core_ef_headers.x_op_id,
+        actor_id=str(core_ef_headers.x_usuario_id),
+        metadata={
+            "x_op_id": str(core_ef_headers.x_op_id),
+            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
+            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
+        },
+    )
+
+
 @router.post(
     "/api/v1/inmuebles",
     status_code=201,
     response_model=InmuebleCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -279,38 +358,16 @@ def create_inmueble(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> InmuebleCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CreateInmuebleCommand(
         context=context,
@@ -350,6 +407,7 @@ def create_inmueble(
     "/api/v1/inmuebles/{id_inmueble}/unidades-funcionales",
     status_code=201,
     response_model=UnidadFuncionalCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -365,38 +423,16 @@ def create_unidad_funcional(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> UnidadFuncionalCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CreateUnidadFuncionalCommand(
         context=context,
@@ -446,6 +482,7 @@ def create_unidad_funcional(
     "/api/v1/unidades-funcionales/{id_unidad_funcional}/servicios",
     status_code=201,
     response_model=UnidadFuncionalServicioCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -461,38 +498,16 @@ def create_unidad_funcional_servicio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> UnidadFuncionalServicioCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CreateUnidadFuncionalServicioCommand(
         context=context,
@@ -2104,6 +2119,7 @@ def get_unidad_funcional_ocupaciones(
     "/api/v1/inmuebles/{id_inmueble}/servicios",
     status_code=201,
     response_model=InmuebleServicioCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -2119,38 +2135,16 @@ def create_inmueble_servicio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> InmuebleServicioCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CreateInmuebleServicioCommand(
         context=context,
