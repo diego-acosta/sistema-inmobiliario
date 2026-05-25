@@ -89,3 +89,71 @@ def test_create_persona_documento_inserta_en_postgresql(client, db_session) -> N
     assert row["tipo_documento_persona"] == "DNI"
     assert row["numero_documento"] == numero_documento
     assert row["es_principal"] is True
+
+
+def test_create_persona_documento_devuelve_envelope_estandar_si_falta_x_op_id(client) -> None:
+    persona_response = client.post(
+        "/api/v1/personas",
+        headers=HEADERS,
+        json={
+            "tipo_persona": "FISICA",
+            "nombre": "Test",
+            "apellido": "Headers",
+            "razon_social": None,
+            "fecha_nacimiento": "1990-01-01",
+            "estado_persona": "ACTIVA",
+            "observaciones": "persona creada para test de headers",
+        },
+    )
+    assert persona_response.status_code == 201
+    id_persona = persona_response.json()["data"]["id_persona"]
+
+    headers = dict(HEADERS)
+    headers.pop("X-Op-Id")
+
+    response = client.post(
+        f"/api/v1/personas/{id_persona}/documentos",
+        headers=headers,
+        json={"tipo_documento": "DNI", "numero_documento": "12345678", "pais_emision": "AR", "es_principal": True, "fecha_desde": "2020-01-01", "fecha_hasta": None, "observaciones": "documento principal desde test"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["error_message"] == "Header requerido faltante: X-Op-Id."
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_create_persona_documento_devuelve_envelope_estandar_si_x_op_id_es_invalido(client) -> None:
+    persona_response = client.post(
+        "/api/v1/personas",
+        headers=HEADERS,
+        json={
+            "tipo_persona": "FISICA",
+            "nombre": "Test",
+            "apellido": "Headers",
+            "razon_social": None,
+            "fecha_nacimiento": "1990-01-01",
+            "estado_persona": "ACTIVA",
+            "observaciones": "persona creada para test de headers",
+        },
+    )
+    assert persona_response.status_code == 201
+    id_persona = persona_response.json()["data"]["id_persona"]
+
+    headers = dict(HEADERS)
+    headers["X-Op-Id"] = "invalido"
+
+    response = client.post(
+        f"/api/v1/personas/{id_persona}/documentos",
+        headers=headers,
+        json={"tipo_documento": "DNI", "numero_documento": "12345678", "pais_emision": "AR", "es_principal": True, "fecha_desde": "2020-01-01", "fecha_hasta": None, "observaciones": "documento principal desde test"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["error_message"] == "Header inválido: X-Op-Id."
+    assert body["details"] == {"header": "X-Op-Id"}
