@@ -253,6 +253,48 @@ class PersonaCommandContext(CommandContext):
         self.op_id = op_id
 
 
+def _core_ef_error_response(exc: CoreEFHeaderValidationError) -> JSONResponse:
+    error = ErrorResponse(
+        error_code="VALIDATION_ERROR",
+        error_message=exc.message,
+        details={"header": exc.header_name},
+    )
+    return JSONResponse(status_code=400, content=error.model_dump())
+
+
+def _parse_core_ef_headers_or_error(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=None,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _core_ef_error_response(exc)
+
+
+def _build_persona_command_context(core_ef_headers: CoreEFHeaders) -> PersonaCommandContext:
+    return PersonaCommandContext(
+        id_instalacion=core_ef_headers.x_instalacion_id,
+        op_id=core_ef_headers.x_op_id,
+        request_id=core_ef_headers.x_op_id,
+        actor_id=str(core_ef_headers.x_usuario_id),
+        metadata={
+            "x_op_id": str(core_ef_headers.x_op_id),
+            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
+            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
+        },
+    )
+
+
 @router.get(
     "/api/v1/personas",
     response_model=PersonaListResponse,
@@ -332,33 +374,16 @@ def create_persona(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PersonaCreateResponse | JSONResponse:
-    try:
-        core_ef_headers = parse_core_ef_headers(
-            x_op_id=x_op_id,
-            x_usuario_id=x_usuario_id,
-            x_sucursal_id=x_sucursal_id,
-            x_instalacion_id=x_instalacion_id,
-            if_match_version=None,
-        )
-    except CoreEFHeaderValidationError as exc:
-        error = ErrorResponse(
-            error_code="VALIDATION_ERROR",
-            error_message=exc.message,
-            details={"header": exc.header_name},
-        )
-        return JSONResponse(status_code=400, content=error.model_dump())
-
-    context = PersonaCommandContext(
-        id_instalacion=core_ef_headers.x_instalacion_id,
-        op_id=core_ef_headers.x_op_id,
-        request_id=core_ef_headers.x_op_id,
-        actor_id=str(core_ef_headers.x_usuario_id),
-        metadata={
-            "x_op_id": str(core_ef_headers.x_op_id),
-            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
-            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
-        },
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_persona_command_context(core_ef_headers)
 
     command = CreatePersonaCommand(
         context=context,
@@ -412,33 +437,16 @@ def create_persona_documento(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PersonaDocumentoCreateResponse | JSONResponse:
-    try:
-        core_ef_headers = parse_core_ef_headers(
-            x_op_id=x_op_id,
-            x_usuario_id=x_usuario_id,
-            x_sucursal_id=x_sucursal_id,
-            x_instalacion_id=x_instalacion_id,
-            if_match_version=None,
-        )
-    except CoreEFHeaderValidationError as exc:
-        error = ErrorResponse(
-            error_code="VALIDATION_ERROR",
-            error_message=exc.message,
-            details={"header": exc.header_name},
-        )
-        return JSONResponse(status_code=400, content=error.model_dump())
-
-    context = PersonaCommandContext(
-        id_instalacion=core_ef_headers.x_instalacion_id,
-        op_id=core_ef_headers.x_op_id,
-        request_id=core_ef_headers.x_op_id,
-        actor_id=str(core_ef_headers.x_usuario_id),
-        metadata={
-            "x_op_id": str(core_ef_headers.x_op_id),
-            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
-            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
-        },
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_persona_command_context(core_ef_headers)
 
     command = CreatePersonaDocumentoCommand(
         context=context,
@@ -495,33 +503,16 @@ def create_persona_domicilio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PersonaDomicilioCreateResponse | JSONResponse:
-    try:
-        core_ef_headers = parse_core_ef_headers(
-            x_op_id=x_op_id,
-            x_usuario_id=x_usuario_id,
-            x_sucursal_id=x_sucursal_id,
-            x_instalacion_id=x_instalacion_id,
-            if_match_version=None,
-        )
-    except CoreEFHeaderValidationError as exc:
-        error = ErrorResponse(
-            error_code="VALIDATION_ERROR",
-            error_message=exc.message,
-            details={"header": exc.header_name},
-        )
-        return JSONResponse(status_code=400, content=error.model_dump())
-
-    context = PersonaCommandContext(
-        id_instalacion=core_ef_headers.x_instalacion_id,
-        op_id=core_ef_headers.x_op_id,
-        request_id=core_ef_headers.x_op_id,
-        actor_id=str(core_ef_headers.x_usuario_id),
-        metadata={
-            "x_op_id": str(core_ef_headers.x_op_id),
-            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
-            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
-        },
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_persona_command_context(core_ef_headers)
 
     command = CreatePersonaDomicilioCommand(
         context=context,
@@ -581,33 +572,16 @@ def create_persona_contacto(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PersonaContactoCreateResponse | JSONResponse:
-    try:
-        core_ef_headers = parse_core_ef_headers(
-            x_op_id=x_op_id,
-            x_usuario_id=x_usuario_id,
-            x_sucursal_id=x_sucursal_id,
-            x_instalacion_id=x_instalacion_id,
-            if_match_version=None,
-        )
-    except CoreEFHeaderValidationError as exc:
-        error = ErrorResponse(
-            error_code="VALIDATION_ERROR",
-            error_message=exc.message,
-            details={"header": exc.header_name},
-        )
-        return JSONResponse(status_code=400, content=error.model_dump())
-
-    context = PersonaCommandContext(
-        id_instalacion=core_ef_headers.x_instalacion_id,
-        op_id=core_ef_headers.x_op_id,
-        request_id=core_ef_headers.x_op_id,
-        actor_id=str(core_ef_headers.x_usuario_id),
-        metadata={
-            "x_op_id": str(core_ef_headers.x_op_id),
-            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
-            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
-        },
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_persona_command_context(core_ef_headers)
 
     command = CreatePersonaContactoCommand(
         context=context,
