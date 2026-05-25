@@ -133,3 +133,11 @@
 - Se incorporó un helper/dependency común para parseo y validación de headers CORE-EF en `backend/app/api/core_ef_headers.py`.
 - Este incremento migra solo un endpoint write de demostración (`POST /api/v1/personas`) al helper común.
 - La migración masiva del resto de endpoints write queda pendiente para `#72-D`.
+
+## Nota de implementación #72-D (migración progresiva Personas)
+- Se migraron al helper común CORE-EF tres endpoints write secundarios del dominio Personas:
+  - `POST /api/v1/personas/{id_persona}/documentos`
+  - `POST /api/v1/personas/{id_persona}/contactos`
+  - `POST /api/v1/personas/{id_persona}/domicilios`
+- Se preservó el envelope estándar `ErrorResponse` para errores de headers (`VALIDATION_ERROR`).
+- La migración del resto de endpoints write queda pendiente para incrementos posteriores de `#72`.
