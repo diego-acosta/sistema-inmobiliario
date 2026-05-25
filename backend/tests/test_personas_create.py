@@ -48,3 +48,58 @@ def test_create_persona_inserta_en_postgresql(client, db_session) -> None:
     assert row["version_registro"] == 1
     assert row["nombre"] == "Ada"
     assert row["apellido"] == "Lovelace"
+
+
+def test_create_persona_devuelve_envelope_estandar_si_falta_x_op_id(client) -> None:
+    response = client.post(
+        "/api/v1/personas",
+        headers={
+            "X-Usuario-Id": "1",
+            "X-Sucursal-Id": "1",
+            "X-Instalacion-Id": "1",
+        },
+        json={
+            "tipo_persona": "FISICA",
+            "nombre": "Ada",
+            "apellido": "Lovelace",
+            "razon_social": None,
+            "fecha_nacimiento": "1815-12-10",
+            "estado_persona": "ACTIVA",
+            "observaciones": "alta desde test automatizado",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["error_message"] == "Header requerido faltante: X-Op-Id."
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_create_persona_devuelve_envelope_estandar_si_x_op_id_es_invalido(client) -> None:
+    response = client.post(
+        "/api/v1/personas",
+        headers={
+            "X-Op-Id": "invalido",
+            "X-Usuario-Id": "1",
+            "X-Sucursal-Id": "1",
+            "X-Instalacion-Id": "1",
+        },
+        json={
+            "tipo_persona": "FISICA",
+            "nombre": "Ada",
+            "apellido": "Lovelace",
+            "razon_social": None,
+            "fecha_nacimiento": "1815-12-10",
+            "estado_persona": "ACTIVA",
+            "observaciones": "alta desde test automatizado",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["error_message"] == "Header inválido: X-Op-Id."
+    assert body["details"] == {"header": "X-Op-Id"}
