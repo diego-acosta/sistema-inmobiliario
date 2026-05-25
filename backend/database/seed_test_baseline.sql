@@ -49,6 +49,59 @@ VALUES (
 )
 ON CONFLICT (id_instalacion) DO NOTHING;
 
+INSERT INTO public.usuario (
+    id_usuario,
+    codigo_usuario,
+    login,
+    estado_usuario,
+    fecha_alta,
+    usuario_sistema_interno,
+    observaciones
+)
+VALUES (
+    1,
+    'USR-TEST-001',
+    'test.admin',
+    'ACTIVO',
+    TIMESTAMP '2026-01-01 00:00:00',
+    true,
+    'Usuario tecnico baseline para headers CORE-EF'
+)
+ON CONFLICT (id_usuario) DO NOTHING;
+
+INSERT INTO public.usuario_sucursal (
+    id_usuario,
+    id_sucursal,
+    tipo_habilitacion_sucursal,
+    es_sucursal_predeterminada,
+    puede_operar,
+    puede_consultar,
+    puede_administrar,
+    fecha_desde,
+    fecha_hasta,
+    estado_vinculo,
+    observaciones
+)
+SELECT
+    1,
+    1,
+    'OPERATIVA',
+    true,
+    true,
+    true,
+    true,
+    TIMESTAMP '2026-01-01 00:00:00',
+    NULL,
+    'ACTIVO',
+    'Vinculo tecnico baseline para headers CORE-EF'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.usuario_sucursal us
+    WHERE us.id_usuario = 1
+      AND us.id_sucursal = 1
+      AND us.fecha_hasta IS NULL
+);
+
 INSERT INTO public.concepto_financiero (
     codigo_concepto_financiero,
     nombre_concepto_financiero,
@@ -133,5 +186,17 @@ SELECT setval(
 SELECT setval(
     'public.instalacion_id_instalacion_seq',
     GREATEST((SELECT COALESCE(MAX(id_instalacion), 1) FROM public.instalacion), 1),
+    true
+);
+
+SELECT setval(
+    'public.usuario_id_usuario_seq',
+    GREATEST((SELECT COALESCE(MAX(id_usuario), 1) FROM public.usuario), 1),
+    true
+);
+
+SELECT setval(
+    'public.usuario_sucursal_id_usuario_sucursal_seq',
+    GREATEST((SELECT COALESCE(MAX(id_usuario_sucursal), 1) FROM public.usuario_sucursal), 1),
     true
 );
