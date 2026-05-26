@@ -50,6 +50,21 @@ def test_create_solicitud_alquiler_sin_codigo_devuelve_400(client) -> None:
     assert body["details"]["errors"] == ["INVALID_REQUIRED_FIELDS"]
 
 
+def test_create_solicitud_alquiler_sin_x_op_id_devuelve_400_validation_error(client) -> None:
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    response = client.post(
+        "/api/v1/solicitudes-alquiler",
+        headers=headers,
+        json=_payload(codigo="SOL-HEAD-001"),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
 def test_get_solicitud_alquiler_devuelve_detalle(client) -> None:
     create = client.post(
         "/api/v1/solicitudes-alquiler",

@@ -203,3 +203,25 @@ def test_update_contrato_alquiler_devuelve_409_si_version_no_coincide(client) ->
     assert body["ok"] is False
     assert body["error_code"] == "CONCURRENCY_ERROR"
     assert "If-Match-Version" in body["error_message"]
+
+
+def test_update_contrato_alquiler_sin_if_match_version_devuelve_400_validation_error(
+    client,
+) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="CA-UPD-HEAD-001")
+    id_inmueble_nuevo = _crear_inmueble(client, codigo="INM-CA-UPD-HEAD-001-NEW")
+
+    response = client.put(
+        f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}",
+        headers=HEADERS,
+        json=_payload_base(
+            codigo_contrato="CA-UPD-HEAD-001-MOD",
+            objetos=[{"id_inmueble": id_inmueble_nuevo, "id_unidad_funcional": None, "observaciones": None}],
+        ),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
