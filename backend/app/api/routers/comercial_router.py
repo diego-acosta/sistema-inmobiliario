@@ -1373,6 +1373,10 @@ def confirm_reserva_venta(
 @router.post(
     "/api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa",
     response_model=ConfirmVentaCompletaDesdeReservaResponse,
+    # Nota: no usar openapi_extra con headers CORE-EF aqui porque FastAPI ya
+    # genera estos parametros desde Header(...) y se duplicaria name+in.
+    # Se mantiene Header(default=None) para preservar el contrato runtime:
+    # faltante/invalido => 400 VALIDATION_ERROR (no 422 nativo).
     responses={
         400: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
