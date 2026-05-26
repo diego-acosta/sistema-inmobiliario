@@ -1,6 +1,6 @@
 # MATRIZ VIVA DE CUMPLIMIENTO CORE-EF POR ENDPOINT WRITE
 ## Resumen ejecutivo
-- Incremento #72A de carácter **documental** (sin cambios de código/SQL/tests).
+- Incremento **AGENTE-CORE-72-FINAL** de carácter **documental** (sin cambios de código/SQL/tests).
 - Relevamiento de endpoints write (POST/PUT/PATCH y acciones de negocio explícitas) en dominios prioritarios: comercial, financiero, inmobiliario y locativo.
 - Regla explícita de este incremento: **no todo POST es automáticamente write sincronizable CORE-EF**; la clasificación depende de si materializa efectos persistentes.
 - Evidencia primaria validada en routers y tests; cuando no se verificó hasta repository/SQL se marca **no confirmado**.
@@ -141,3 +141,69 @@
   - `POST /api/v1/personas/{id_persona}/domicilios`
 - Se preservó el envelope estándar `ErrorResponse` para errores de headers (`VALIDATION_ERROR`).
 - La migración del resto de endpoints write queda pendiente para incrementos posteriores de `#72`.
+
+
+## Estado posterior a migración CORE-EF masiva
+
+Fecha de corte de esta auditoría: **2026-05-26**.
+
+Esta sección consolida el estado posterior a los PRs **#80 a #101** y separa explícitamente el alcance en cinco grupos:
+
+### 1) Write con migración de headers CORE-EF aplicada en router/tests
+Se consideran migrados/actualizados en alcance **HTTP/headers y contrato de errores** los endpoints write de los bloques ya ejecutados en la migración masiva:
+- **Personas (write de dominio personas)**.
+- **Inmobiliario** (inmuebles, unidades funcionales, disponibilidades, ocupaciones y acciones asociadas).
+- **Disponibilidad/Ocupación** (altas, reemplazos, cierres, bajas y actualizaciones de vigencia).
+- **Comercial principal** (reservas de venta, confirmaciones/activaciones/cancelaciones, generación y confirmación de venta principal).
+- **Locativo no financiero** (contratos, reservas locativas, solicitudes y conversiones no financieras).
+- **Financiero no-pagos** (obligaciones, mora, imputaciones, impuestos, facturas de servicio, recuperos no caja).
+- **Pagos financieros sin caja** (`/api/v1/financiero/pagos`, reversión de pago agrupado sin caja operativa).
+- **Egresos / pago externo / liquidaciones no-caja** (flujos financieros externos sin módulo de caja operativa).
+
+> Nota de auditoría (alcance real de PRs #80–#101): el avance documentado corresponde principalmente a normalización de headers técnicos en routers, envelope `ErrorResponse`, separación de `400 VALIDATION_ERROR` vs `409 CONCURRENCY_ERROR` y cobertura de tests en endpoints migrados. **No implica cierre integral de cumplimiento CORE-EF por endpoint** (outbox, idempotencia, locks lógicos, sincronización distribuida, trazabilidad repository/SQL ni evidencia profunda service/repository/SQL).
+
+### 2) Read-like / simulación (no write de negocio)
+Quedan explícitamente fuera del grupo de migración HTTP/headers de write de negocio:
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview` → **PREVIEW_READLIKE**.
+- `POST /api/v1/financiero/personas/{id_persona}/simular-pago` → **SIMULACION_READLIKE**.
+- **Recibo de pago agrupado**: actualmente se trata como salida **read-like**/consulta; **no** constituye comprobante fiscal persistido.
+
+### 3) Técnico parcial
+- `POST /api/v1/financiero/inbox` → **COMMAND_WRITE_TECNICO** con implementación técnica parcial/acotada.
+- El inbox financiero **no** se considera cierre funcional de dominio financiero; requiere endurecimiento y alcance explícito por issue separado.
+
+### 4) No implementado
+- **Caja operativa**: no existe implementación backend madura del módulo (comandos, persistencia y contrato de negocio completos).
+- En consecuencia, no corresponde exigir migración CORE-EF final de caja en esta fase.
+
+### 5) Fuera de alcance por falta de módulo real
+- Flujos de **comprobante/recibo fiscal persistido** de pagos agrupados quedan fuera de alcance hasta contar con diseño y módulo documental/fiscal real.
+- Integración completa de **caja + recibo fiscal + conciliación** queda diferida a fase posterior.
+
+## Pendientes reales
+
+1. **Caja operativa (bloqueante funcional):** diseñar e implementar módulo real antes de cualquier “migración CORE-EF de caja”.
+2. **Recibos/documental fiscal:** definir modelo persistido de comprobante (no read-like), trazabilidad y reglas fiscales.
+3. **Inbox técnico financiero:** cerrar brechas de robustez (idempotencia técnica, reintentos, observabilidad, contratos de error).
+4. **Auditoría profunda de cumplimiento CORE-EF por endpoint hasta service/repository/SQL:** reemplazar “no confirmado” por evidencia concreta en services/repositories/SQL por endpoint crítico.
+5. **Cierre por dominio:** ejecutar auditoría final formal por dominio (personas, comercial, operativo/inmobiliario, locativo, financiero).
+
+## Próximos issues propuestos
+
+1. **CORE-EF inbox técnico financiero**
+   - Objetivo: completar endurecimiento técnico del inbox y criterios de operación/observabilidad.
+2. **Diseño e implementación de caja operativa**
+   - Objetivo: definir bounded context, contratos write y persistencia real antes de migrar CORE-EF.
+3. **Recibos / documental fiscal**
+   - Objetivo: modelar comprobante persistido y circuito fiscal; eliminar dependencia de salidas read-like para constancia documental.
+4. **Auditoría final por dominio**
+   - Objetivo: checklist de cierre por dominio con evidencia en router/service/repository/SQL/tests.
+
+## Recomendación de cierre de fase
+
+- **Se recomienda cerrar la fase de normalización HTTP/headers CORE-EF de los dominios ya alcanzados** (PRs #80–#101), dejando explícito que:
+  - caja operativa permanece **no implementada** (no migrar todavía);
+  - recibo de pago agrupado permanece **read-like** (sin comprobante persistido);
+  - inbox financiero permanece **técnico parcial** con issue dedicado.
+- La siguiente fase debe enfocarse en módulos faltantes reales (caja y documental fiscal) y en auditoría de cierre con evidencia profunda por endpoint.
+- Este cierre de fase **no** debe interpretarse como cierre integral de cumplimiento CORE-EF por endpoint mientras la matriz mantenga estados `PARCIAL`, `NO_CONFIRMADO` o `NO CUMPLE` en controles de profundidad.
