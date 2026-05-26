@@ -125,3 +125,38 @@ def test_cerrar_vigencia_devuelve_400_si_fecha_hasta_anterior_a_fecha_desde(clie
     body = response.json()
     assert body["ok"] is False
     assert body["details"]["errors"] == ["INVALID_DATE_RANGE"]
+
+
+def test_cerrar_vigencia_devuelve_400_si_falta_if_match_version(client) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="CEA-CIE-005")
+    id_contrato = contrato["id_contrato_alquiler"]
+    condicion = _crear_condicion(client, id_contrato, monto="100.00", fecha_desde="2026-05-01")
+
+    headers = {k: v for k, v in HEADERS.items() if k != "If-Match-Version"}
+    response = client.patch(
+        _url_cerrar(id_contrato, condicion["id_condicion_economica"]),
+        headers=headers,
+        json={"fecha_hasta": "2026-10-31"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
+
+
+def test_cerrar_vigencia_devuelve_400_si_if_match_version_invalido(client) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="CEA-CIE-006")
+    id_contrato = contrato["id_contrato_alquiler"]
+    condicion = _crear_condicion(client, id_contrato, monto="100.00", fecha_desde="2026-05-01")
+
+    response = client.patch(
+        _url_cerrar(id_contrato, condicion["id_condicion_economica"]),
+        headers={**HEADERS, "If-Match-Version": "abc"},
+        json={"fecha_hasta": "2026-10-31"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}

@@ -194,3 +194,34 @@ def test_create_condicion_economica_devuelve_400_si_solapamiento(client) -> None
 
     assert response.status_code == 400
     assert response.json()["details"]["errors"] == ["CONDICION_ECONOMICA_SOLAPADA"]
+
+
+def test_create_condicion_economica_devuelve_400_si_falta_x_op_id(client) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="CEA-CRE-007")
+
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    response = client.post(
+        _url(contrato["id_contrato_alquiler"]),
+        headers=headers,
+        json={"monto_base": "100.00", "fecha_desde": "2026-05-01"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_create_condicion_economica_devuelve_400_si_x_op_id_invalido(client) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="CEA-CRE-008")
+
+    response = client.post(
+        _url(contrato["id_contrato_alquiler"]),
+        headers={**HEADERS, "X-Op-Id": "no-es-uuid"},
+        json={"monto_base": "100.00", "fecha_desde": "2026-05-01"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
