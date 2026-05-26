@@ -2705,7 +2705,16 @@ def registrar_pago_persona(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> RegistrarPagoPersonaResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = RegistrarPagoPersonaService(repository=repository)
 
@@ -2885,7 +2894,16 @@ def revertir_pago_agrupado(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> RevertirPagoAgrupadoResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = RevertirPagoAgrupadoService(repository=repository)
 

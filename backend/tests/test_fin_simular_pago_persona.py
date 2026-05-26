@@ -3,6 +3,7 @@ Tests de integración para POST /api/v1/financiero/personas/{id_persona}/simular
 La simulación no persiste cambios.
 """
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -59,7 +60,7 @@ def _simular(client, id_persona: int, monto: float, fecha_corte: str | None = No
 
 
 def _pagar(client, id_persona: int, monto: float, fecha_pago: str | None = None) -> dict:
-    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    headers = {**HEADERS, "X-Op-Id": str(uuid4())}
     body: dict = {"monto": monto}
     if fecha_pago:
         body["fecha_pago"] = fecha_pago
