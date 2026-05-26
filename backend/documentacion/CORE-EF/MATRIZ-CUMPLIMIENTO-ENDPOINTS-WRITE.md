@@ -149,8 +149,8 @@ Fecha de corte de esta auditoría: **2026-05-26**.
 
 Esta sección consolida el estado posterior a los PRs **#80 a #101** y separa explícitamente el alcance en cinco grupos:
 
-### 1) Write migrado a CORE-EF
-Se consideran migrados/actualizados los endpoints write de los bloques ya ejecutados en la migración masiva:
+### 1) Write con migración de headers CORE-EF aplicada en router/tests
+Se consideran migrados/actualizados en alcance **HTTP/headers y contrato de errores** los endpoints write de los bloques ya ejecutados en la migración masiva:
 - **Personas (write de dominio personas)**.
 - **Inmobiliario** (inmuebles, unidades funcionales, disponibilidades, ocupaciones y acciones asociadas).
 - **Disponibilidad/Ocupación** (altas, reemplazos, cierres, bajas y actualizaciones de vigencia).
@@ -160,10 +160,10 @@ Se consideran migrados/actualizados los endpoints write de los bloques ya ejecut
 - **Pagos financieros sin caja** (`/api/v1/financiero/pagos`, reversión de pago agrupado sin caja operativa).
 - **Egresos / pago externo / liquidaciones no-caja** (flujos financieros externos sin módulo de caja operativa).
 
-> Nota de auditoría: esta matriz mantiene algunos campos como “no confirmado” donde la evidencia profunda repository/SQL todavía no fue trazada fila por fila dentro de este documento, pero el estado de migración CORE-EF por bloque funcional se considera ejecutado según el alcance de PRs #80–#101.
+> Nota de auditoría (alcance real de PRs #80–#101): el avance documentado corresponde principalmente a normalización de headers técnicos en routers, envelope `ErrorResponse`, separación de `400 VALIDATION_ERROR` vs `409 CONCURRENCY_ERROR` y cobertura de tests en endpoints migrados. **No implica cierre integral de cumplimiento CORE-EF por endpoint** (outbox, idempotencia, locks lógicos, sincronización distribuida, trazabilidad repository/SQL ni evidencia profunda service/repository/SQL).
 
 ### 2) Read-like / simulación (no write de negocio)
-Quedan explícitamente fuera del grupo write migrado de negocio:
+Quedan explícitamente fuera del grupo de migración HTTP/headers de write de negocio:
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview` → **PREVIEW_READLIKE**.
 - `POST /api/v1/financiero/personas/{id_persona}/simular-pago` → **SIMULACION_READLIKE**.
 - **Recibo de pago agrupado**: actualmente se trata como salida **read-like**/consulta; **no** constituye comprobante fiscal persistido.
@@ -185,7 +185,7 @@ Quedan explícitamente fuera del grupo write migrado de negocio:
 1. **Caja operativa (bloqueante funcional):** diseñar e implementar módulo real antes de cualquier “migración CORE-EF de caja”.
 2. **Recibos/documental fiscal:** definir modelo persistido de comprobante (no read-like), trazabilidad y reglas fiscales.
 3. **Inbox técnico financiero:** cerrar brechas de robustez (idempotencia técnica, reintentos, observabilidad, contratos de error).
-4. **Auditoría de evidencia profunda:** reemplazar “no confirmado” por evidencia concreta en services/repositories/SQL por endpoint crítico.
+4. **Auditoría profunda de cumplimiento CORE-EF por endpoint hasta service/repository/SQL:** reemplazar “no confirmado” por evidencia concreta en services/repositories/SQL por endpoint crítico.
 5. **Cierre por dominio:** ejecutar auditoría final formal por dominio (personas, comercial, operativo/inmobiliario, locativo, financiero).
 
 ## Próximos issues propuestos
@@ -201,8 +201,9 @@ Quedan explícitamente fuera del grupo write migrado de negocio:
 
 ## Recomendación de cierre de fase
 
-- **Se recomienda cerrar la fase de migración masiva CORE-EF de los dominios ya implementados** (PRs #80–#101), dejando explícito que:
+- **Se recomienda cerrar la fase de normalización HTTP/headers CORE-EF de los dominios ya alcanzados** (PRs #80–#101), dejando explícito que:
   - caja operativa permanece **no implementada** (no migrar todavía);
   - recibo de pago agrupado permanece **read-like** (sin comprobante persistido);
   - inbox financiero permanece **técnico parcial** con issue dedicado.
 - La siguiente fase debe enfocarse en módulos faltantes reales (caja y documental fiscal) y en auditoría de cierre con evidencia profunda por endpoint.
+- Este cierre de fase **no** debe interpretarse como cierre integral de cumplimiento CORE-EF por endpoint mientras la matriz mantenga estados `PARCIAL`, `NO_CONFIRMADO` o `NO CUMPLE` en controles de profundidad.
