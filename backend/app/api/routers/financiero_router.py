@@ -122,6 +122,11 @@ from app.api.schemas.financiero import (
     RelacionGeneradoraResponse,
 )
 from app.application.common.commands import CommandContext
+from app.api.core_ef_headers import (
+    CoreEFHeaderValidationError,
+    CoreEFHeaders,
+    parse_core_ef_headers,
+)
 from app.application.financiero.commands.create_relacion_generadora import (
     CreateRelacionGeneradoraCommand,
 )
@@ -279,6 +284,51 @@ router = APIRouter(tags=["Financiero"])
 class FinancieroCommandContext(CommandContext):
     id_instalacion: int | None = None
     op_id: UUID | None = None
+
+
+def _core_ef_error_response(exc: CoreEFHeaderValidationError) -> JSONResponse:
+    error = ErrorResponse(
+        error_code="VALIDATION_ERROR",
+        error_message=exc.message,
+        details={"header": exc.header_name},
+    )
+    return JSONResponse(status_code=400, content=error.model_dump())
+
+
+def _parse_core_ef_headers_or_error(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None = None,
+    require_if_match_version: bool = False,
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=if_match_version,
+            require_if_match_version=require_if_match_version,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _core_ef_error_response(exc)
+
+
+def _build_context_from_core_ef_headers(core_ef_headers: CoreEFHeaders) -> FinancieroCommandContext:
+    return FinancieroCommandContext(
+        id_instalacion=core_ef_headers.x_instalacion_id,
+        op_id=core_ef_headers.x_op_id,
+        request_id=core_ef_headers.x_op_id,
+        actor_id=str(core_ef_headers.x_usuario_id),
+        metadata={
+            "x_op_id": str(core_ef_headers.x_op_id),
+            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
+            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
+        },
+    )
 
 
 def _build_context(
@@ -682,7 +732,17 @@ def liquidar_impuesto_trasladado(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> LiquidacionImpuestoTrasladadoResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = LiquidarImpuestoTrasladadoService(repository=repository)
 
@@ -1043,7 +1103,17 @@ def create_relacion_generadora(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> RelacionGeneradoraResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = CreateRelacionGeneradoraCommand(
         context=context,
@@ -1187,7 +1257,17 @@ def materializar_factura_servicio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> MaterializarFacturaServicioResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = MaterializarFacturaServicioService(repository=repository)
 
@@ -2157,7 +2237,17 @@ def create_obligacion_financiera(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> ObligacionFinancieraResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = CreateObligacionFinancieraCommand(
         context=context,
