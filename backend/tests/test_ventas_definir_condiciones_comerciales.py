@@ -1029,3 +1029,32 @@ def test_definir_condiciones_comerciales_venta_hace_rollback_si_falla_un_objeto(
         },
     ).mappings().one()["total"]
     assert disponibilidades == 2
+
+def test_definir_condiciones_comerciales_devuelve_400_validation_error_si_falta_x_op_id(client) -> None:
+    response = client.post(
+        "/api/v1/ventas/1/definir-condiciones-comerciales",
+        headers={k: v for k, v in {**HEADERS, "If-Match-Version": "1"}.items() if k != "X-Op-Id"},
+        json=_payload_condiciones(
+            monto_total=1000.0,
+            objetos=[],
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": "X-Op-Id"}
+
+
+def test_definir_condiciones_comerciales_devuelve_400_validation_error_si_falta_if_match_version(client) -> None:
+    response = client.post(
+        "/api/v1/ventas/1/definir-condiciones-comerciales",
+        headers={k: v for k, v in HEADERS.items() if k != "If-Match-Version"},
+        json=_payload_condiciones(
+            monto_total=1000.0,
+            objetos=[],
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": "If-Match-Version"}
