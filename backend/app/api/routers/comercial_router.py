@@ -1525,7 +1525,6 @@ def confirmar_venta_completa_desde_reserva(
 @router.post(
     "/api/v1/ventas/directa/confirmar-venta-completa",
     response_model=ConfirmVentaDirectaCompletaResponse,
-    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},

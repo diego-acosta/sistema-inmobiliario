@@ -98,6 +98,21 @@ def test_confirmar_venta_directa_completa_no_expone_if_match_version() -> None:
     assert "If-Match-Version" not in header_names
 
 
+
+
+def test_confirmar_venta_directa_completa_openapi_no_duplica_headers_core_ef() -> None:
+    operation = app.openapi()["paths"][ENDPOINT]["post"]
+    headers = [
+        parameter["name"]
+        for parameter in operation.get("parameters", [])
+        if parameter["in"] == "header"
+    ]
+
+    assert headers.count("X-Op-Id") == 1
+    assert headers.count("X-Usuario-Id") == 1
+    assert headers.count("X-Sucursal-Id") == 1
+    assert headers.count("X-Instalacion-Id") == 1
+
 def test_confirmar_venta_directa_completa_objetos_van_en_nivel_superior() -> None:
     openapi = app.openapi()
     operation = openapi["paths"][ENDPOINT]["post"]
