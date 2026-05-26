@@ -868,50 +868,22 @@ def activate_contrato_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ContratoAlquilerActivateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = LocativoCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = ActivateContratoAlquilerCommand(
         context=context,
         id_contrato_alquiler=id_contrato_alquiler,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = LocativoRepository(db)
@@ -1192,50 +1164,22 @@ def finalize_contrato_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ContratoAlquilerFinalizeResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = LocativoCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = FinalizeContratoAlquilerCommand(
         context=context,
         id_contrato_alquiler=id_contrato_alquiler,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = LocativoRepository(db)
@@ -1306,50 +1250,22 @@ def cancel_contrato_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ContratoAlquilerCancelResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = LocativoCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = CancelContratoAlquilerCommand(
         context=context,
         id_contrato_alquiler=id_contrato_alquiler,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = LocativoRepository(db)
@@ -1420,50 +1336,22 @@ def delete_contrato_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ContratoAlquilerBajaResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = LocativoCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = DeleteContratoAlquilerCommand(
         context=context,
         id_contrato_alquiler=id_contrato_alquiler,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = LocativoRepository(db)
@@ -1662,18 +1550,22 @@ def confirmar_reserva_locativa(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaLocativaResponse | JSONResponse:
-    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
-    parsed_version: int | None = None
-    if if_match_version is not None:
-        try:
-            parsed_version = int(if_match_version)
-        except ValueError:
-            pass
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = ConfirmarReservaLocativaCommand(
         context=context,
         id_reserva_locativa=id_reserva_locativa,
-        if_match_version=parsed_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = LocativoRepository(db)
@@ -1736,18 +1628,22 @@ def cancel_reserva_locativa(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaLocativaResponse | JSONResponse:
-    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
-    parsed_version: int | None = None
-    if if_match_version is not None:
-        try:
-            parsed_version = int(if_match_version)
-        except ValueError:
-            pass
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = CancelReservaLocativaCommand(
         context=context,
         id_reserva_locativa=id_reserva_locativa,
-        if_match_version=parsed_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = LocativoRepository(db)
@@ -2007,15 +1903,18 @@ def _patch_solicitud_headers(
     x_sucursal_id: str | None,
     x_instalacion_id: str | None,
     if_match_version: str | None,
-) -> tuple[Any, int | None]:
-    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
-    parsed: int | None = None
-    if if_match_version is not None:
-        try:
-            parsed = int(if_match_version)
-        except ValueError:
-            pass
-    return context, parsed
+) -> tuple[LocativoCommandContext, int] | JSONResponse:
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    return _build_context_from_core_ef_headers(core_ef_headers), core_ef_headers.if_match_version
 
 
 @router.patch(
@@ -2037,9 +1936,12 @@ def aprobar_solicitud_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> SolicitudAlquilerResponse | JSONResponse:
-    context, parsed = _patch_solicitud_headers(
+    parsed_headers = _patch_solicitud_headers(
         x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id, if_match_version
     )
+    if isinstance(parsed_headers, JSONResponse):
+        return parsed_headers
+    context, parsed = parsed_headers
     command = AprobarSolicitudAlquilerCommand(
         context=context,
         id_solicitud_alquiler=id_solicitud_alquiler,
@@ -2082,9 +1984,12 @@ def rechazar_solicitud_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> SolicitudAlquilerResponse | JSONResponse:
-    context, parsed = _patch_solicitud_headers(
+    parsed_headers = _patch_solicitud_headers(
         x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id, if_match_version
     )
+    if isinstance(parsed_headers, JSONResponse):
+        return parsed_headers
+    context, parsed = parsed_headers
     command = RechazarSolicitudAlquilerCommand(
         context=context,
         id_solicitud_alquiler=id_solicitud_alquiler,
@@ -2127,9 +2032,12 @@ def cancelar_solicitud_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> SolicitudAlquilerResponse | JSONResponse:
-    context, parsed = _patch_solicitud_headers(
+    parsed_headers = _patch_solicitud_headers(
         x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id, if_match_version
     )
+    if isinstance(parsed_headers, JSONResponse):
+        return parsed_headers
+    context, parsed = parsed_headers
     command = CancelarSolicitudAlquilerCommand(
         context=context,
         id_solicitud_alquiler=id_solicitud_alquiler,

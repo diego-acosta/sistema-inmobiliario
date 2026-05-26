@@ -109,3 +109,30 @@ def test_activate_contrato_alquiler_devuelve_409_si_version_no_coincide(
     assert response.status_code == 409
     assert response.json()["error_code"] == "CONCURRENCY_ERROR"
     assert "If-Match-Version" in response.json()["error_message"]
+
+def test_activate_contrato_alquiler_devuelve_400_si_falta_if_match_version(client) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="CA-ACT-004")
+
+    response = client.patch(
+        f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
+
+
+def test_activate_contrato_alquiler_devuelve_400_si_if_match_version_invalido(client) -> None:
+    contrato = _crear_contrato_borrador(client, codigo="CA-ACT-005")
+
+    response = client.patch(
+        f"/api/v1/contratos-alquiler/{contrato['id_contrato_alquiler']}/activar",
+        headers={**HEADERS, "If-Match-Version": "abc"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}

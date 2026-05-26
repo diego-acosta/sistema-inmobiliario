@@ -71,3 +71,30 @@ def test_aprobar_solicitud_alquiler_devuelve_409_si_version_no_coincide(client) 
     assert body["ok"] is False
     assert body["error_code"] == "CONCURRENCY_ERROR"
     assert "If-Match-Version" in body["error_message"]
+
+def test_aprobar_solicitud_alquiler_devuelve_400_si_falta_if_match_version(client) -> None:
+    sol = _crear_solicitud(client, codigo="SOL-APR-004")
+
+    response = client.patch(
+        f"/api/v1/solicitudes-alquiler/{sol['id_solicitud_alquiler']}/aprobar",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
+
+
+def test_aprobar_solicitud_alquiler_devuelve_400_si_if_match_version_invalido(client) -> None:
+    sol = _crear_solicitud(client, codigo="SOL-APR-005")
+
+    response = client.patch(
+        f"/api/v1/solicitudes-alquiler/{sol['id_solicitud_alquiler']}/aprobar",
+        headers={**HEADERS, "If-Match-Version": "abc"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
