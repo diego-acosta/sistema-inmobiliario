@@ -763,3 +763,26 @@ def test_generate_venta_from_reserva_service_devuelve_error_si_objetos_son_incon
 
     assert result.success is False
     assert result.errors == ["INVALID_RESERVA_OBJECTS"]
+
+def test_generate_venta_from_reserva_devuelve_400_validation_error_si_falta_x_op_id(client) -> None:
+    response = client.post(
+        "/api/v1/reservas-venta/1/generar-venta",
+        headers={k: v for k, v in {**HEADERS, "If-Match-Version": "1"}.items() if k != "X-Op-Id"},
+        json=_payload_generar_venta(codigo_venta="V-GEN-HDR-001"),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": "X-Op-Id"}
+
+
+def test_generate_venta_from_reserva_devuelve_400_validation_error_si_if_match_version_es_invalido(client) -> None:
+    response = client.post(
+        "/api/v1/reservas-venta/1/generar-venta",
+        headers={**HEADERS, "If-Match-Version": "abc"},
+        json=_payload_generar_venta(codigo_venta="V-GEN-HDR-002"),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": "If-Match-Version"}
