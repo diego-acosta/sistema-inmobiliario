@@ -92,3 +92,31 @@ def test_confirmar_venta_completa_desde_reserva_request_valido_para_reserva_inex
     assert body["ok"] is False
     assert body["error_code"] == "NOT_FOUND_RESERVA_VENTA"
     assert body["details"]["errors"] == ["NOT_FOUND_RESERVA_VENTA"]
+
+
+def test_confirmar_venta_completa_desde_reserva_openapi_no_duplica_headers_core_ef() -> None:
+    operation = app.openapi()["paths"][
+        "/api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa"
+    ]["post"]
+    params = operation.get("parameters", [])
+    header_names = [
+        p["name"]
+        for p in params
+        if p.get("in") == "header"
+        and p.get("name")
+        in {
+            "X-Op-Id",
+            "X-Usuario-Id",
+            "X-Sucursal-Id",
+            "X-Instalacion-Id",
+            "If-Match-Version",
+        }
+    ]
+    for name in {
+        "X-Op-Id",
+        "X-Usuario-Id",
+        "X-Sucursal-Id",
+        "X-Instalacion-Id",
+        "If-Match-Version",
+    }:
+        assert header_names.count(name) == 1

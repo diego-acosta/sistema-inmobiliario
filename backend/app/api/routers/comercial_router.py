@@ -1373,6 +1373,10 @@ def confirm_reserva_venta(
 @router.post(
     "/api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa",
     response_model=ConfirmVentaCompletaDesdeReservaResponse,
+    # Nota: no usar openapi_extra con headers CORE-EF aqui porque FastAPI ya
+    # genera estos parametros desde Header(...) y se duplicaria name+in.
+    # Se mantiene Header(default=None) para preservar el contrato runtime:
+    # faltante/invalido => 400 VALIDATION_ERROR (no 422 nativo).
     responses={
         400: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -1389,51 +1393,25 @@ def confirmar_venta_completa_desde_reserva(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ConfirmVentaCompletaDesdeReservaResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
 
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    context = _build_comercial_command_context(
+        core_ef_headers,
+        if_match_version=if_match_version,
     )
 
     command = ConfirmVentaCompletaDesdeReservaCommand(
         context=context,
         id_reserva_venta=id_reserva_venta,
-        if_match_version_reserva=parsed_if_match_version,
+        if_match_version_reserva=core_ef_headers.if_match_version,
         generar_venta=ConfirmVentaCompletaGenerarVentaInput(
             codigo_venta=request.generar_venta.codigo_venta,
             fecha_venta=request.generar_venta.fecha_venta,
