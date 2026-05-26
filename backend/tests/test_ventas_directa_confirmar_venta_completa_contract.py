@@ -98,6 +98,21 @@ def test_confirmar_venta_directa_completa_no_expone_if_match_version() -> None:
     assert "If-Match-Version" not in header_names
 
 
+
+
+def test_confirmar_venta_directa_completa_openapi_no_duplica_headers_core_ef() -> None:
+    operation = app.openapi()["paths"][ENDPOINT]["post"]
+    headers = [
+        parameter["name"]
+        for parameter in operation.get("parameters", [])
+        if parameter["in"] == "header"
+    ]
+
+    assert headers.count("X-Op-Id") == 1
+    assert headers.count("X-Usuario-Id") == 1
+    assert headers.count("X-Sucursal-Id") == 1
+    assert headers.count("X-Instalacion-Id") == 1
+
 def test_confirmar_venta_directa_completa_objetos_van_en_nivel_superior() -> None:
     openapi = app.openapi()
     operation = openapi["paths"][ENDPOINT]["post"]
@@ -148,6 +163,63 @@ def test_confirmar_venta_directa_completa_rechaza_objetos_duplicados_en_condicio
 
     assert response.status_code == 422
 
+
+
+
+def test_confirmar_venta_directa_completa_x_op_id_faltante_devuelve_400_validation_error(
+    client,
+) -> None:
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+
+    response = client.post(
+        ENDPOINT,
+        headers=headers,
+        json=_payload_confirmar_venta_directa_completa(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_confirmar_venta_directa_completa_x_op_id_invalido_devuelve_400_validation_error(
+    client,
+) -> None:
+    headers = dict(HEADERS)
+    headers["X-Op-Id"] = "op-id-invalido"
+
+    response = client.post(
+        ENDPOINT,
+        headers=headers,
+        json=_payload_confirmar_venta_directa_completa(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_confirmar_venta_directa_completa_x_instalacion_id_invalido_devuelve_400_validation_error(
+    client,
+) -> None:
+    headers = dict(HEADERS)
+    headers["X-Instalacion-Id"] = "instalacion-invalida"
+
+    response = client.post(
+        ENDPOINT,
+        headers=headers,
+        json=_payload_confirmar_venta_directa_completa(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Instalacion-Id"}
 
 def test_confirmar_venta_directa_completa_request_valido_no_devuelve_not_implemented(
     client,
