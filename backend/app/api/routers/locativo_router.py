@@ -8,6 +8,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
+from app.api.core_ef_headers import (
+    CoreEFHeaderValidationError,
+    CoreEFHeaders,
+    parse_core_ef_headers,
+)
 from app.api.schemas.locativo import (
     SolicitudAlquilerCreateRequest,
     SolicitudAlquilerData,
@@ -205,6 +210,70 @@ class LocativoCommandContext(CommandContext):
     op_id: UUID | None = None
 
 
+def _core_ef_error_response(exc: CoreEFHeaderValidationError) -> JSONResponse:
+    error = ErrorResponse(
+        error_code="VALIDATION_ERROR",
+        error_message=exc.message,
+        details={"header": exc.header_name},
+    )
+    return JSONResponse(status_code=400, content=error.model_dump())
+
+
+def _parse_core_ef_headers_or_error(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=None,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _core_ef_error_response(exc)
+
+
+def _parse_core_ef_headers_with_if_match_or_error(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None,
+    require_if_match_version: bool,
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=if_match_version,
+            require_if_match_version=require_if_match_version,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _core_ef_error_response(exc)
+
+
+def _build_context_from_core_ef_headers(core_ef_headers: CoreEFHeaders) -> LocativoCommandContext:
+    return LocativoCommandContext(
+        id_instalacion=core_ef_headers.x_instalacion_id,
+        op_id=core_ef_headers.x_op_id,
+        request_id=core_ef_headers.x_op_id,
+        actor_id=str(core_ef_headers.x_usuario_id),
+        metadata={
+            "x_op_id": str(core_ef_headers.x_op_id),
+            "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
+            "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
+        },
+    )
+
+
 @router.post(
     "/api/v1/contratos-alquiler",
     status_code=201,
@@ -223,38 +292,15 @@ def create_contrato_alquiler(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> ContratoAlquilerCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = LocativoCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = CreateContratoAlquilerCommand(
         context=context,
@@ -382,50 +428,22 @@ def update_contrato_alquiler(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ContratoAlquilerCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = LocativoCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = UpdateContratoAlquilerCommand(
         context=context,
         id_contrato_alquiler=id_contrato_alquiler,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
         codigo_contrato=request.codigo_contrato,
         fecha_inicio=request.fecha_inicio,
         fecha_fin=request.fecha_fin,
@@ -1549,7 +1567,15 @@ def create_reserva_locativa(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> ReservaLocativaResponse | JSONResponse:
-    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = CreateReservaLocativaCommand(
         context=context,
@@ -1916,7 +1942,15 @@ def create_solicitud_alquiler(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> SolicitudAlquilerResponse | JSONResponse:
-    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     command = CreateSolicitudAlquilerCommand(
         context=context,
         codigo_solicitud=request.codigo_solicitud,

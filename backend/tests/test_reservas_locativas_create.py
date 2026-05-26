@@ -145,3 +145,18 @@ def test_create_reserva_locativa_fecha_vencimiento_invalida_devuelve_400(client)
 
     assert response.status_code == 400
     assert response.json()["details"]["errors"] == ["INVALID_DATE_RANGE"]
+
+
+def test_create_reserva_locativa_x_op_id_invalido_devuelve_400_validation_error(client) -> None:
+    id_inmueble = _crear_inmueble_disponible(client, codigo="INM-RL-HEAD-001")
+    response = client.post(
+        "/api/v1/reservas-locativas",
+        headers={**HEADERS, "X-Op-Id": "no-es-uuid"},
+        json=_payload_reserva(codigo="RL-HEAD-001", id_inmueble=id_inmueble),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
