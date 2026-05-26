@@ -625,14 +625,6 @@ def update_reserva_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "X-Instalacion-Id es requerido." in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="X-Instalacion-Id es requerido.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudo actualizar la reserva de venta.",
@@ -729,14 +721,6 @@ def delete_reserva_venta(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La reserva no puede darse de baja porque ya esta vinculada a una venta.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
-        if "X-Instalacion-Id es requerido." in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="X-Instalacion-Id es requerido.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
@@ -2203,14 +2187,6 @@ def define_condiciones_comerciales_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "X-Instalacion-Id es requerido." in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="X-Instalacion-Id es requerido.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudieron definir las condiciones comerciales de la venta.",
@@ -2368,37 +2344,16 @@ def generate_plan_pago_venta_v2_por_bloques(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> GeneratePlanPagoVentaV2PorBloquesResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers)
     command = _build_plan_pago_v2_por_bloques_command(
         id_venta=id_venta,
         request=request,
@@ -2487,37 +2442,16 @@ def generate_plan_pago_venta_cuotas_iguales_simple(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> GeneratePlanPagoVentaCuotasIgualesSimpleResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers)
     command = GeneratePlanPagoVentaCuotasIgualesSimpleCommand(
         context=context,
         id_venta=id_venta,
@@ -2606,37 +2540,16 @@ def generate_plan_pago_venta_anticipo_mas_cuotas_iguales(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers)
     command = GeneratePlanPagoVentaAnticipoMasCuotasIgualesCommand(
         context=context,
         id_venta=id_venta,
@@ -2728,50 +2641,22 @@ def confirm_venta(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ConfirmVentaResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers, if_match_version=if_match_version)
 
     command = ConfirmVentaCommand(
         context=context,
         id_venta=id_venta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
         observaciones=request.observaciones,
     )
 
@@ -2864,14 +2749,6 @@ def confirm_venta(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La reserva vinculada no se encuentra en un estado compatible para confirmar la venta.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
-        if "X-Instalacion-Id es requerido." in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="X-Instalacion-Id es requerido.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
@@ -3110,14 +2987,6 @@ def create_instrumento_compraventa(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "X-Instalacion-Id es requerido." in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="X-Instalacion-Id es requerido.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudo registrar el instrumento de compraventa.",
@@ -3330,14 +3199,6 @@ def create_cesion(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "X-Instalacion-Id es requerido." in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="X-Instalacion-Id es requerido.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudo registrar la cesion.",
@@ -3513,14 +3374,6 @@ def create_escrituracion(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La venta ya posee una escrituracion activa incompatible.",
-                details={"errors": result.errors},
-            )
-            return JSONResponse(status_code=400, content=error.model_dump())
-
-        if "X-Instalacion-Id es requerido." in result.errors:
-            error = ErrorResponse(
-                error_code="APPLICATION_ERROR",
-                error_message="X-Instalacion-Id es requerido.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())

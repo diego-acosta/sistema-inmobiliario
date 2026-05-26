@@ -388,3 +388,30 @@ def test_confirm_venta_hace_rollback_completo_si_falla_la_persistencia(
     assert venta_row["estado_venta"] == "borrador"
     assert venta_row["version_registro"] == 1
     assert venta_row["observaciones"] == "Venta para condiciones comerciales"
+
+
+def test_confirm_venta_requiere_if_match_version_valido(client, db_session) -> None:
+    venta = _crear_venta_desde_reserva_publica(client, db_session)
+
+    headers_sin_if_match = {k: v for k, v in HEADERS.items() if k != "If-Match-Version"}
+    response = client.patch(
+        f"/api/v1/ventas/{venta['id_venta']}/confirmar",
+        headers=headers_sin_if_match,
+        json=_payload_confirmar_venta(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
+
+    response = client.patch(
+        f"/api/v1/ventas/{venta['id_venta']}/confirmar",
+        headers={**HEADERS, "If-Match-Version": "abc"},
+        json=_payload_confirmar_venta(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
