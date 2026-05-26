@@ -443,7 +443,7 @@ def update_contrato_alquiler(
     command = UpdateContratoAlquilerCommand(
         context=context,
         id_contrato_alquiler=id_contrato_alquiler,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
         codigo_contrato=request.codigo_contrato,
         fecha_inicio=request.fecha_inicio,
         fecha_fin=request.fecha_fin,
