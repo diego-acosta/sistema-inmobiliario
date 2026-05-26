@@ -172,15 +172,9 @@ def test_activate_reserva_venta_devuelve_400_si_falta_if_match_version(client, d
         ),
         {"id_inmueble": id_inmueble},
     ).mappings().all()
-    assert len(disponibilidad_rows) == 2
-    assert any(
-        row["estado_disponibilidad"] == "DISPONIBLE" and row["fecha_hasta"] is not None
-        for row in disponibilidad_rows
-    )
-    assert any(
-        row["estado_disponibilidad"] == "RESERVADA" and row["fecha_hasta"] is None
-        for row in disponibilidad_rows
-    )
+    assert len(disponibilidad_rows) == 1
+    assert disponibilidad_rows[0]["estado_disponibilidad"] == "DISPONIBLE"
+    assert disponibilidad_rows[0]["fecha_hasta"] is None
 
 
 def test_activate_reserva_venta_devuelve_404_si_no_existe(client, db_session) -> None:
