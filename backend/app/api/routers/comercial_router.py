@@ -1525,6 +1525,7 @@ def confirmar_venta_completa_desde_reserva(
 @router.post(
     "/api/v1/ventas/directa/confirmar-venta-completa",
     response_model=ConfirmVentaDirectaCompletaResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -1539,38 +1540,16 @@ def confirmar_venta_directa_completa(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> ConfirmVentaDirectaCompletaResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers)
 
     command = ConfirmVentaDirectaCompletaCommand(
         context=context,

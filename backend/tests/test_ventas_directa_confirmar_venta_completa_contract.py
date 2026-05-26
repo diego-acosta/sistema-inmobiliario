@@ -149,6 +149,63 @@ def test_confirmar_venta_directa_completa_rechaza_objetos_duplicados_en_condicio
     assert response.status_code == 422
 
 
+
+
+def test_confirmar_venta_directa_completa_x_op_id_faltante_devuelve_400_validation_error(
+    client,
+) -> None:
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+
+    response = client.post(
+        ENDPOINT,
+        headers=headers,
+        json=_payload_confirmar_venta_directa_completa(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_confirmar_venta_directa_completa_x_op_id_invalido_devuelve_400_validation_error(
+    client,
+) -> None:
+    headers = dict(HEADERS)
+    headers["X-Op-Id"] = "op-id-invalido"
+
+    response = client.post(
+        ENDPOINT,
+        headers=headers,
+        json=_payload_confirmar_venta_directa_completa(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_confirmar_venta_directa_completa_x_instalacion_id_invalido_devuelve_400_validation_error(
+    client,
+) -> None:
+    headers = dict(HEADERS)
+    headers["X-Instalacion-Id"] = "instalacion-invalida"
+
+    response = client.post(
+        ENDPOINT,
+        headers=headers,
+        json=_payload_confirmar_venta_directa_completa(),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Instalacion-Id"}
+
 def test_confirmar_venta_directa_completa_request_valido_no_devuelve_not_implemented(
     client,
 ) -> None:
