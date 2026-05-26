@@ -770,7 +770,7 @@ def test_pago_sin_scope_multiples_relaciones_devuelve_409(client, db_session) ->
         id_persona=id_persona,
         monto=500.00,
         fecha_pago="2026-05-10",
-        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        headers={**HEADERS, "X-Op-Id": str(uuid4())},
     )
 
     assert resp.status_code == 409, resp.text
@@ -833,7 +833,7 @@ def test_pago_rechaza_obligacion_y_relacion_juntas(client, db_session) -> None:
         client,
         id_persona=id_persona,
         monto=100.00,
-        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        headers={**HEADERS, "X-Op-Id": str(uuid4())},
         id_obligacion_financiera=ob["id_obligacion_financiera"],
         id_relacion_generadora=rg["id_relacion_generadora"],
     )
@@ -864,7 +864,7 @@ def test_pago_rechaza_alcances_inconsistentes(client, db_session, body) -> None:
 
     resp = client.post(
         URL,
-        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        headers={**HEADERS, "X-Op-Id": str(uuid4())},
         params={"id_persona": id_persona},
         json=body,
     )
@@ -891,7 +891,7 @@ def test_pago_rechaza_obligacion_ajena_a_persona(client, db_session) -> None:
         client,
         id_persona=id_persona,
         monto=100.00,
-        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        headers={**HEADERS, "X-Op-Id": str(uuid4())},
         id_obligacion_financiera=ob["id_obligacion_financiera"],
     )
 
@@ -917,7 +917,7 @@ def test_pago_rechaza_relacion_sin_obligaciones_para_persona(client, db_session)
         client,
         id_persona=id_persona,
         monto=100.00,
-        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        headers={**HEADERS, "X-Op-Id": str(uuid4())},
         id_relacion_generadora=rg["id_relacion_generadora"],
     )
 
@@ -1650,7 +1650,7 @@ def test_pago_op_id_distinto_registra_nuevo_pago_si_queda_saldo(client, db_sessi
     assert float(saldo["saldo_pendiente"]) == pytest.approx(4000.00)
 
 
-def test_pago_sin_op_id_mantiene_comportamiento_no_idempotente(client, db_session) -> None:
+def test_pago_sin_op_id_devuelve_validation_error(client, db_session) -> None:
     id_persona, contrato = _setup(
         client, db_session,
         codigo="PAG-IDEM-003",
@@ -1659,28 +1659,17 @@ def test_pago_sin_op_id_mantiene_comportamiento_no_idempotente(client, db_sessio
     )
     headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
 
-    _pagar_con_headers(
-        client, id_persona, monto=3000.00, headers=headers, fecha_pago="2026-05-05"
-    )
-    _pagar_con_headers(
-        client, id_persona, monto=3000.00, headers=headers, fecha_pago="2026-05-05"
+    resp = _post_pago(
+        client,
+        id_persona=id_persona,
+        monto=3000.00,
+        headers=headers,
+        fecha_pago="2026-05-05",
     )
 
-    saldo = _saldos_por_contrato(db_session, contrato["id_contrato_alquiler"])[0]
-    count_mov = db_session.execute(
-        text(
-            """
-            SELECT COUNT(*)
-            FROM movimiento_financiero
-            WHERE tipo_movimiento = 'PAGO'
-              AND op_id_alta IS NULL
-              AND deleted_at IS NULL
-            """
-        )
-    ).scalar()
-
-    assert count_mov == 2
-    assert float(saldo["saldo_pendiente"]) == pytest.approx(4000.00)
+    assert resp.status_code == 400
+    assert resp.json()["error_code"] == "VALIDATION_ERROR"
+    assert resp.json()["details"] == {"header": "X-Op-Id"}
 
 
 def test_lista_pagos_agrupados_persona_multiobligacion(client, db_session) -> None:
