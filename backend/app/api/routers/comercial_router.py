@@ -1711,7 +1711,6 @@ def confirmar_venta_directa_completa(
     "/api/v1/reservas-venta/{id_reserva_venta}/generar-venta",
     status_code=201,
     response_model=GenerateVentaFromReservaVentaResponse,
-    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -2016,7 +2015,6 @@ def get_venta_detalle_integral(
 @router.post(
     "/api/v1/ventas/{id_venta}/definir-condiciones-comerciales",
     response_model=DefineCondicionesComercialesVentaResponse,
-    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
