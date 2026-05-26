@@ -118,7 +118,31 @@ def _crear_inmueble(client, *, codigo: str) -> int:
         },
     )
     assert response.status_code == 201
-    return response.json()["data"]["id_inmueble"]
+
+
+def test_create_reserva_venta_devuelve_400_si_falta_x_op_id(client, db_session) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre="Header", apellido="Create")
+    _crear_rol_participacion_activo(db_session, id_rol_participacion=9490)
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-HDR-001")
+    _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
+
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    response = client.post(
+        "/api/v1/reservas-venta",
+        headers=headers,
+        json=_payload_base(
+            codigo_reserva="RV-HDR-001",
+            objetos=[{"id_inmueble": id_inmueble, "observaciones": None}],
+            id_persona=id_persona,
+            id_rol=9490,
+        ),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"]["header"] == "X-Op-Id"
 
 
 def _crear_unidad_funcional(client, *, id_inmueble: int, codigo: str) -> int:

@@ -6,6 +6,11 @@ from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.core_ef_headers import (
+    CoreEFHeaderValidationError,
+    CoreEFHeaders,
+    parse_core_ef_headers,
+)
 from app.api.dependencies import get_db
 from app.api.schemas.comercial import (
     CesionListData,
@@ -235,6 +240,21 @@ from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository i
 
 router = APIRouter(tags=["Comercial"])
 
+_CORE_EF_REQUIRED_HEADERS_OPENAPI = {
+    "parameters": [
+        {"name": "X-Op-Id", "in": "header", "required": True, "schema": {"type": "string"}},
+        {"name": "X-Usuario-Id", "in": "header", "required": True, "schema": {"type": "string"}},
+        {"name": "X-Sucursal-Id", "in": "header", "required": True, "schema": {"type": "string"}},
+        {"name": "X-Instalacion-Id", "in": "header", "required": True, "schema": {"type": "string"}},
+    ]
+}
+_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI = {
+    "parameters": [
+        *_CORE_EF_REQUIRED_HEADERS_OPENAPI["parameters"],
+        {"name": "If-Match-Version", "in": "header", "required": True, "schema": {"type": "string"}},
+    ]
+}
+
 
 @dataclass(slots=True)
 class ComercialCommandContext(CommandContext):
@@ -242,10 +262,73 @@ class ComercialCommandContext(CommandContext):
     op_id: UUID | None = None
 
 
+def _core_ef_error_response(exc: CoreEFHeaderValidationError) -> JSONResponse:
+    error = ErrorResponse(
+        error_code="VALIDATION_ERROR",
+        error_message=exc.message,
+        details={"header": exc.header_name},
+    )
+    return JSONResponse(status_code=400, content=error.model_dump())
+
+
+def _parse_core_ef_headers_or_error(
+    *, x_op_id: str | None, x_usuario_id: str | None, x_sucursal_id: str | None, x_instalacion_id: str | None
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=None,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _core_ef_error_response(exc)
+
+
+def _parse_core_ef_headers_with_if_match_or_error(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None,
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=if_match_version,
+            require_if_match_version=True,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _core_ef_error_response(exc)
+
+
+def _build_comercial_command_context(core_ef_headers: CoreEFHeaders, if_match_version: str | None = None) -> ComercialCommandContext:
+    metadata: dict[str, str] = {
+        "x_op_id": str(core_ef_headers.x_op_id),
+        "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
+        "x_instalacion_id": str(core_ef_headers.x_instalacion_id),
+    }
+    if if_match_version is not None:
+        metadata["if_match_version"] = if_match_version
+    return ComercialCommandContext(
+        id_instalacion=core_ef_headers.x_instalacion_id,
+        op_id=core_ef_headers.x_op_id,
+        request_id=core_ef_headers.x_op_id,
+        actor_id=str(core_ef_headers.x_usuario_id),
+        metadata=metadata,
+    )
+
+
 @router.post(
     "/api/v1/reservas-venta",
     status_code=201,
     response_model=ReservaVentaCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -260,38 +343,16 @@ def create_reserva_venta(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> ReservaVentaCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers)
 
     command = CreateReservaVentaCommand(
         context=context,
@@ -455,6 +516,7 @@ def create_reserva_venta(
 @router.put(
     "/api/v1/reservas-venta/{id_reserva_venta}",
     response_model=ReservaVentaUpdateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -472,51 +534,22 @@ def update_reserva_venta(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaVentaUpdateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers, if_match_version)
 
     command = UpdateReservaVentaCommand(
         context=context,
         id_reserva_venta=id_reserva_venta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
         codigo_reserva=request.codigo_reserva,
         fecha_reserva=request.fecha_reserva,
         fecha_vencimiento=request.fecha_vencimiento,
@@ -620,6 +653,7 @@ def update_reserva_venta(
 @router.patch(
     "/api/v1/reservas-venta/{id_reserva_venta}/baja",
     response_model=ReservaVentaBajaResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -636,51 +670,22 @@ def delete_reserva_venta(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaVentaBajaResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers, if_match_version)
 
     command = DeleteReservaVentaCommand(
         context=context,
         id_reserva_venta=id_reserva_venta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = ComercialRepository(db)
@@ -858,6 +863,7 @@ def list_reservas_venta(
 @router.post(
     "/api/v1/reservas-venta/{id_reserva_venta}/activar",
     response_model=ReservaVentaActivateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -874,50 +880,22 @@ def activate_reserva_venta(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaVentaActivateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers, if_match_version)
 
     command = ActivateReservaVentaCommand(
         context=context,
         id_reserva_venta=id_reserva_venta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = ComercialRepository(db)
@@ -1023,6 +1001,7 @@ def activate_reserva_venta(
 @router.post(
     "/api/v1/reservas-venta/{id_reserva_venta}/cancelar",
     response_model=ReservaVentaCancelResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -1039,50 +1018,22 @@ def cancel_reserva_venta(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaVentaCancelResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers, if_match_version)
 
     command = CancelReservaVentaCommand(
         context=context,
         id_reserva_venta=id_reserva_venta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = ComercialRepository(db)
@@ -1166,6 +1117,7 @@ def cancel_reserva_venta(
 @router.post(
     "/api/v1/reservas-venta/{id_reserva_venta}/vencer",
     response_model=ReservaVentaExpireResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -1182,50 +1134,22 @@ def expire_reserva_venta(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaVentaExpireResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers, if_match_version)
 
     command = ExpireReservaVentaCommand(
         context=context,
         id_reserva_venta=id_reserva_venta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = ComercialRepository(db)
@@ -1301,6 +1225,7 @@ def expire_reserva_venta(
 @router.post(
     "/api/v1/reservas-venta/{id_reserva_venta}/confirmar",
     response_model=ReservaVentaConfirmResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -1317,50 +1242,22 @@ def confirm_reserva_venta(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> ReservaVentaConfirmResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = ComercialCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_comercial_command_context(core_ef_headers, if_match_version)
 
     command = ConfirmReservaVentaCommand(
         context=context,
         id_reserva_venta=id_reserva_venta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = ComercialRepository(db)

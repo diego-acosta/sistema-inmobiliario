@@ -132,6 +132,33 @@ def test_flujo_publico_reserva_venta_create_activate_confirm(client, db_session)
     reserva_confirmada = confirm_response.json()["data"]
     assert reserva_confirmada["estado_reserva"] == "confirmada"
 
+
+def test_activate_reserva_venta_devuelve_400_si_falta_if_match_version(client, db_session) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre="Header", apellido="Transition")
+    _crear_rol_participacion_activo(db_session, id_rol_participacion=9491)
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-HDR-002")
+    _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
+
+    create_response = client.post(
+        "/api/v1/reservas-venta",
+        headers=HEADERS,
+        json=_payload_base(
+            codigo_reserva="RV-HDR-002",
+            objetos=[{"id_inmueble": id_inmueble, "observaciones": None}],
+            id_persona=id_persona,
+            id_rol=9491,
+        ),
+    )
+    assert create_response.status_code == 201
+    reserva = create_response.json()["data"]
+
+    response = client.post(f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/activar", headers=HEADERS)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"]["header"] == "If-Match-Version"
+
     disponibilidad_rows = db_session.execute(
         text(
             """
