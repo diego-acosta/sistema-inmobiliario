@@ -582,3 +582,24 @@ def test_servicio_unificado_payload_distinto_con_plan_vivo_devuelve_conflicto(
     assert first.success, first.errors
     assert not second.success
     assert second.errors == ["PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE"]
+
+
+def test_plan_pago_v2_generar_requiere_x_op_id_valido(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-HDR-001")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    response = client.post(URL.format(id_venta=id_venta), headers=headers, json=_payload_contado())
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+    headers = {**HEADERS, "X-Op-Id": "no-es-uuid"}
+    response = client.post(URL.format(id_venta=id_venta), headers=headers, json=_payload_contado())
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
