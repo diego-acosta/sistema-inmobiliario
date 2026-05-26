@@ -276,3 +276,53 @@ def test_confirmar_venta_completa_if_match_invalido(client, db_session) -> None:
 
     assert response.status_code == 409
     assert response.json()["error_code"] == "CONCURRENCY_ERROR"
+
+
+def test_confirmar_venta_completa_x_op_id_faltante_devuelve_400(client, db_session) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-HDR-MISS")
+
+    headers = {**HEADERS, "If-Match-Version": str(reserva["version_registro"])}
+    headers.pop("X-Op-Id", None)
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers=headers,
+        json=_payload(codigo_venta="V-COMP-HDR-MISS", id_inmueble=reserva["id_inmueble"]),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
+
+
+def test_confirmar_venta_completa_if_match_faltante_devuelve_400(client, db_session) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-IFMISS")
+
+    headers = dict(HEADERS)
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers=headers,
+        json=_payload(codigo_venta="V-COMP-IFMISS", id_inmueble=reserva["id_inmueble"]),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
+
+
+def test_confirmar_venta_completa_if_match_invalido_formato_devuelve_400(client, db_session) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-IFBAD")
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": "abc"},
+        json=_payload(codigo_venta="V-COMP-IFBAD", id_inmueble=reserva["id_inmueble"]),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
