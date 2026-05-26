@@ -1,3 +1,4 @@
+from uuid import uuid4
 from sqlalchemy import text
 
 from tests.test_disponibilidades_create import HEADERS
@@ -34,7 +35,7 @@ def _payload(
 
 
 def _headers_sin_op_id() -> dict:
-    return dict(HEADERS)
+    return {**HEADERS, "X-Op-Id": str(uuid4())}
 
 
 def _crear_cuenta_financiera(
