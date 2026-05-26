@@ -128,3 +128,34 @@ def test_confirmar_reserva_locativa_devuelve_409_si_version_no_coincide(client) 
     assert body["ok"] is False
     assert body["error_code"] == "CONCURRENCY_ERROR"
     assert "If-Match-Version" in body["error_message"]
+
+def test_confirmar_reserva_locativa_devuelve_400_si_falta_if_match_version(client) -> None:
+    reserva = _crear_reserva_pendiente(
+        client, codigo="RL-CONF-VAL-001", codigo_inm="INM-RL-CONF-VAL-001"
+    )
+
+    response = client.patch(
+        f"/api/v1/reservas-locativas/{reserva['id_reserva_locativa']}/confirmar",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
+
+
+def test_confirmar_reserva_locativa_devuelve_400_si_if_match_version_invalido(client) -> None:
+    reserva = _crear_reserva_pendiente(
+        client, codigo="RL-CONF-VAL-002", codigo_inm="INM-RL-CONF-VAL-002"
+    )
+
+    response = client.patch(
+        f"/api/v1/reservas-locativas/{reserva['id_reserva_locativa']}/confirmar",
+        headers={**HEADERS, "If-Match-Version": "abc"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "If-Match-Version"}
