@@ -498,3 +498,43 @@ def test_update_ocupacion_devuelve_error_si_intenta_cerrar_via_put(
         response.json()["error_message"]
         == "Para cerrar una ocupacion vigente debe usarse PATCH /api/v1/ocupaciones/{id_ocupacion}/cerrar."
     )
+
+
+def test_update_ocupacion_devuelve_validation_error_si_falta_if_match_version(client) -> None:
+    response = client.put(
+        "/api/v1/ocupaciones/999999",
+        headers=HEADERS,
+        json={
+            "id_inmueble": 1,
+            "id_unidad_funcional": None,
+            "tipo_ocupacion": "PROPIA",
+            "fecha_desde": "2026-04-21T10:00:00",
+            "fecha_hasta": None,
+            "descripcion": None,
+            "observaciones": None,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": "If-Match-Version"}
+
+
+def test_update_ocupacion_devuelve_validation_error_si_if_match_version_invalido(client) -> None:
+    response = client.put(
+        "/api/v1/ocupaciones/999999",
+        headers={**HEADERS, "If-Match-Version": "abc"},
+        json={
+            "id_inmueble": 1,
+            "id_unidad_funcional": None,
+            "tipo_ocupacion": "PROPIA",
+            "fecha_desde": "2026-04-21T10:00:00",
+            "fecha_hasta": None,
+            "descripcion": None,
+            "observaciones": None,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": "If-Match-Version"}

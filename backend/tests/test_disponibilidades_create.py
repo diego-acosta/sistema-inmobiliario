@@ -240,3 +240,24 @@ def test_create_disponibilidad_devuelve_error_si_fecha_hasta_es_menor(
     body = response.json()
     assert body["error_code"] == "APPLICATION_ERROR"
     assert body["error_message"] == "fecha_hasta no puede ser menor que fecha_desde."
+
+
+def test_create_disponibilidad_devuelve_validation_error_si_falta_x_op_id(client) -> None:
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    response = client.post(
+        "/api/v1/disponibilidades",
+        headers=headers,
+        json={
+            "id_inmueble": 1,
+            "id_unidad_funcional": None,
+            "estado_disponibilidad": "DISPONIBLE",
+            "fecha_desde": "2026-04-21T10:00:00",
+            "fecha_hasta": None,
+            "motivo": None,
+            "observaciones": None,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": "X-Op-Id"}
