@@ -118,6 +118,7 @@ def _crear_inmueble(client, *, codigo: str) -> int:
         },
     )
     assert response.status_code == 201
+    return response.json()["data"]["id_inmueble"]
 
 
 def test_create_reserva_venta_devuelve_400_si_falta_x_op_id(client, db_session) -> None:
