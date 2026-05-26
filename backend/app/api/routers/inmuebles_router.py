@@ -2681,24 +2681,52 @@ def associate_inmueble_desarrollo(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> InmuebleAsociarDesarrolloResponse | JSONResponse:
-    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
-        x_op_id=x_op_id,
-        x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id,
-        x_instalacion_id=x_instalacion_id,
-        if_match_version=if_match_version,
-        require_if_match_version=True,
-    )
-    if isinstance(core_ef_headers, JSONResponse):
-        return core_ef_headers
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+    parsed_if_match_version: int | None = None
 
-    context = _build_inmueble_command_context(core_ef_headers)
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    if if_match_version is not None:
+        try:
+            parsed_if_match_version = int(if_match_version)
+        except ValueError:
+            parsed_if_match_version = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+            "if_match_version": if_match_version,
+        },
+    }
+
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = InmuebleCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
 
     command = AssociateInmuebleDesarrolloCommand(
         context=context,
         id_inmueble=id_inmueble,
         id_desarrollo=request.id_desarrollo,
-        if_match_version=core_ef_headers.if_match_version,
+        if_match_version=parsed_if_match_version,
     )
 
     repository = InmuebleRepository(db)
@@ -2764,23 +2792,51 @@ def disassociate_inmueble_desarrollo(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> InmuebleDesasociarDesarrolloResponse | JSONResponse:
-    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
-        x_op_id=x_op_id,
-        x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id,
-        x_instalacion_id=x_instalacion_id,
-        if_match_version=if_match_version,
-        require_if_match_version=True,
-    )
-    if isinstance(core_ef_headers, JSONResponse):
-        return core_ef_headers
+    id_instalacion: int | None = None
+    op_id: UUID | None = None
+    parsed_if_match_version: int | None = None
 
-    context = _build_inmueble_command_context(core_ef_headers)
+    if x_instalacion_id is not None:
+        try:
+            id_instalacion = int(x_instalacion_id)
+        except ValueError:
+            id_instalacion = None
+
+    if x_op_id:
+        try:
+            op_id = UUID(x_op_id)
+        except ValueError:
+            op_id = None
+
+    if if_match_version is not None:
+        try:
+            parsed_if_match_version = int(if_match_version)
+        except ValueError:
+            parsed_if_match_version = None
+
+    context_kwargs = {
+        "actor_id": x_usuario_id,
+        "metadata": {
+            "x_op_id": x_op_id,
+            "x_sucursal_id": x_sucursal_id,
+            "x_instalacion_id": x_instalacion_id,
+            "if_match_version": if_match_version,
+        },
+    }
+
+    if op_id is not None:
+        context_kwargs["request_id"] = op_id
+
+    context = InmuebleCommandContext(
+        id_instalacion=id_instalacion,
+        op_id=op_id,
+        **context_kwargs,
+    )
 
     command = DisassociateInmuebleDesarrolloCommand(
         context=context,
         id_inmueble=id_inmueble,
-        if_match_version=core_ef_headers.if_match_version,
+        if_match_version=parsed_if_match_version,
     )
 
     repository = InmuebleRepository(db)
