@@ -224,3 +224,21 @@ def test_unique_index_impide_doble_contrato_activo_por_reserva(client, db_sessio
             {"id_reserva_locativa": id_reserva},
         )
         db_session.flush()
+
+
+def test_generar_contrato_header_x_op_id_faltante_devuelve_400(client) -> None:
+    reserva = _crear_reserva_confirmada(
+        client, codigo_reserva="RL-GEN-HDR-001", codigo_inm="INM-GEN-HDR-001"
+    )
+
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    response = client.post(
+        URL_GENERAR.format(id=reserva["id_reserva_locativa"]),
+        headers=headers,
+        json=_payload_contrato(codigo="CA-GEN-HDR-001"),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}

@@ -1659,7 +1659,15 @@ def generar_contrato_desde_reserva_locativa(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> ContratoAlquilerCreateResponse | JSONResponse:
-    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = GenerarContratoDesdeReservaLocativaCommand(
         context=context,
@@ -2033,7 +2041,15 @@ def convertir_solicitud_alquiler_a_reserva(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> ReservaLocativaResponse | JSONResponse:
-    context, _, _ = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+    context = _build_context_from_core_ef_headers(core_ef_headers)
 
     command = ConvertSolicitudAlquilerToReservaLocativaCommand(
         context=context,

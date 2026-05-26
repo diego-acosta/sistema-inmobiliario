@@ -239,3 +239,19 @@ def test_convertir_sin_disponibilidad_devuelve_400(client) -> None:
     body = response.json()
     assert body["ok"] is False
     assert body["details"]["errors"] == ["OBJECT_NOT_AVAILABLE"]
+
+
+def test_convertir_solicitud_header_x_op_id_invalido_devuelve_400(client) -> None:
+    sol = _crear_solicitud_aprobada(client, codigo="SOL-CONV-HDR-001")
+    id_inmueble = _crear_inmueble_disponible(client, codigo="INM-CONV-HDR-001")
+
+    response = client.post(
+        URL_CONVERTIR.format(id=sol["id_solicitud_alquiler"]),
+        headers={**HEADERS, "X-Op-Id": "no-es-uuid"},
+        json=_payload_reserva(codigo="RL-CONV-HDR-001", id_inmueble=id_inmueble),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
