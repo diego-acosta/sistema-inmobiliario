@@ -710,6 +710,7 @@ def get_unidad_funcional_trazabilidad_integracion(
     "/api/v1/disponibilidades",
     status_code=201,
     response_model=DisponibilidadCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -724,38 +725,16 @@ def create_disponibilidad(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> DisponibilidadCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CreateDisponibilidadCommand(
         context=context,
@@ -824,6 +803,7 @@ def create_disponibilidad(
     "/api/v1/disponibilidades/reemplazar-vigente",
     status_code=201,
     response_model=DisponibilidadCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -838,38 +818,16 @@ def replace_disponibilidad_vigente(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> DisponibilidadCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = ReplaceDisponibilidadVigenteCommand(
         context=context,
@@ -961,6 +919,7 @@ def replace_disponibilidad_vigente(
     "/api/v1/ocupaciones/reemplazar-vigente",
     status_code=201,
     response_model=OcupacionCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -975,38 +934,16 @@ def replace_ocupacion_vigente(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> OcupacionCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = ReplaceOcupacionVigenteCommand(
         context=context,
@@ -1096,6 +1033,7 @@ def replace_ocupacion_vigente(
     "/api/v1/ocupaciones",
     status_code=201,
     response_model=OcupacionCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -1110,38 +1048,16 @@ def create_ocupacion(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> OcupacionCreateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CreateOcupacionCommand(
         context=context,
@@ -1207,6 +1123,7 @@ def create_ocupacion(
 @router.patch(
     "/api/v1/ocupaciones/{id_ocupacion}/cerrar",
     response_model=OcupacionCerrarResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -1224,52 +1141,24 @@ def close_ocupacion(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> OcupacionCerrarResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CloseOcupacionCommand(
         context=context,
         id_ocupacion=id_ocupacion,
         fecha_hasta=request.fecha_hasta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = InmuebleRepository(db)
@@ -1338,6 +1227,7 @@ def close_ocupacion(
 @router.patch(
     "/api/v1/ocupaciones/{id_ocupacion}/baja",
     response_model=OcupacionBajaResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -1354,51 +1244,23 @@ def delete_ocupacion(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> OcupacionBajaResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = DeleteOcupacionCommand(
         context=context,
         id_ocupacion=id_ocupacion,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = InmuebleRepository(db)
@@ -1443,6 +1305,7 @@ def delete_ocupacion(
 @router.put(
     "/api/v1/ocupaciones/{id_ocupacion}",
     response_model=OcupacionUpdateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -1460,51 +1323,23 @@ def update_ocupacion(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> OcupacionUpdateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = UpdateOcupacionCommand(
         context=context,
         id_ocupacion=id_ocupacion,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
         id_inmueble=request.id_inmueble,
         id_unidad_funcional=request.id_unidad_funcional,
         tipo_ocupacion=request.tipo_ocupacion,
@@ -1599,6 +1434,7 @@ def update_ocupacion(
 @router.put(
     "/api/v1/disponibilidades/{id_disponibilidad}",
     response_model=DisponibilidadUpdateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -1616,51 +1452,23 @@ def update_disponibilidad(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> DisponibilidadUpdateResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = UpdateDisponibilidadCommand(
         context=context,
         id_disponibilidad=id_disponibilidad,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
         id_inmueble=request.id_inmueble,
         id_unidad_funcional=request.id_unidad_funcional,
         estado_disponibilidad=request.estado_disponibilidad,
@@ -1757,6 +1565,7 @@ def update_disponibilidad(
 @router.patch(
     "/api/v1/disponibilidades/{id_disponibilidad}/cerrar",
     response_model=DisponibilidadCerrarResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -1774,52 +1583,24 @@ def close_disponibilidad(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> DisponibilidadCerrarResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = CloseDisponibilidadCommand(
         context=context,
         id_disponibilidad=id_disponibilidad,
         fecha_hasta=request.fecha_hasta,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = InmuebleRepository(db)
@@ -1890,6 +1671,7 @@ def close_disponibilidad(
 @router.patch(
     "/api/v1/disponibilidades/{id_disponibilidad}/baja",
     response_model=DisponibilidadBajaResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -1906,51 +1688,23 @@ def delete_disponibilidad(
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> DisponibilidadBajaResponse | JSONResponse:
-    id_instalacion: int | None = None
-    op_id: UUID | None = None
-    parsed_if_match_version: int | None = None
-
-    if x_instalacion_id is not None:
-        try:
-            id_instalacion = int(x_instalacion_id)
-        except ValueError:
-            id_instalacion = None
-
-    if x_op_id:
-        try:
-            op_id = UUID(x_op_id)
-        except ValueError:
-            op_id = None
-
-    if if_match_version is not None:
-        try:
-            parsed_if_match_version = int(if_match_version)
-        except ValueError:
-            parsed_if_match_version = None
-
-    context_kwargs = {
-        "actor_id": x_usuario_id,
-        "metadata": {
-            "x_op_id": x_op_id,
-            "x_sucursal_id": x_sucursal_id,
-            "x_instalacion_id": x_instalacion_id,
-            "if_match_version": if_match_version,
-        },
-    }
-
-    if op_id is not None:
-        context_kwargs["request_id"] = op_id
-
-    context = InmuebleCommandContext(
-        id_instalacion=id_instalacion,
-        op_id=op_id,
-        **context_kwargs,
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_inmueble_command_context(core_ef_headers)
 
     command = DeleteDisponibilidadCommand(
         context=context,
         id_disponibilidad=id_disponibilidad,
-        if_match_version=parsed_if_match_version,
+        if_match_version=core_ef_headers.if_match_version,
     )
 
     repository = InmuebleRepository(db)
