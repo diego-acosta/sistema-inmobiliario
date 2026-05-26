@@ -34,7 +34,7 @@ def _payload(
 
 
 def _headers_sin_op_id() -> dict:
-    return {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    return dict(HEADERS)
 
 
 def _crear_cuenta_financiera(
@@ -515,6 +515,39 @@ def _anular_liquidacion_recupero(
     )
 
 
+
+
+def test_registrar_egreso_proveedor_rechaza_header_x_op_id_faltante(client, db_session) -> None:
+    id_inmueble = _crear_inmueble(db_session, codigo="FS-EF-HDR-001")
+    id_servicio = _crear_servicio(db_session, codigo="FS-EF-HDR-SRV-001")
+    _asociar_inmueble_servicio(db_session, id_inmueble=id_inmueble, id_servicio=id_servicio)
+
+    factura = client.post(
+        "/api/v1/facturas-servicio",
+        headers=HEADERS,
+        json=_payload(id_servicio=id_servicio, id_inmueble=id_inmueble, numero_factura="FS-EF-HDR-FAC"),
+    )
+    assert factura.status_code == 201, factura.text
+    id_factura = factura.json()["data"]["id_factura_servicio"]
+
+    id_cuenta = _crear_cuenta_financiera(db_session, nombre="Cuenta header faltante")
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
+    response = client.post(
+        f"/api/v1/financiero/facturas-servicio/{id_factura}/egresos-proveedor",
+        headers=headers,
+        json={
+            "id_cuenta_financiera_origen": id_cuenta,
+            "fecha_pago": "2026-05-20",
+            "importe_pagado": 1000.0,
+            "medio_pago": "TRANSFERENCIA",
+            "referencia_comprobante": "HDR-OP-ID-MISS",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"header": "X-Op-Id"}
 def test_materializar_factura_servicio_responsable_100_crea_relacion_obligacion_composicion_y_obligado(
     client, db_session
 ) -> None:

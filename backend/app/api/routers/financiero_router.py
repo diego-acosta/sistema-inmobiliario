@@ -518,7 +518,17 @@ def registrar_egreso_impuesto_empresa(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> EgresoImpuestoEmpresaResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     service = RegistrarEgresoImpuestoEmpresaService(FinancieroRepository(db))
 
     try:
@@ -658,7 +668,17 @@ def anular_egreso_impuesto_empresa(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> AnularEgresoImpuestoEmpresaResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = AnularEgresoImpuestoEmpresaService(repository=repository)
 
@@ -933,7 +953,17 @@ def registrar_pago_externo_impuesto_trasladado(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PagoExternoImpuestoTrasladadoResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = RegistrarPagoExternoImpuestoTrasladadoService(repository=repository)
 
@@ -1029,7 +1059,17 @@ def anular_liquidacion_impuesto_trasladado(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> AnularLiquidacionImpuestoTrasladadoResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = AnularLiquidacionImpuestoTrasladadoService(repository=repository)
 
@@ -1363,7 +1403,17 @@ def registrar_pago_externo_factura_servicio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> PagoExternoFacturaServicioResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = RegistrarPagoExternoFacturaServicioService(repository=repository)
 
@@ -1449,7 +1499,17 @@ def registrar_egreso_proveedor_factura_servicio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> EgresoProveedorFacturaServicioResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = RegistrarEgresoProveedorFacturaServicioService(repository=repository)
 
@@ -1673,7 +1733,17 @@ def liquidar_recupero_factura_servicio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> LiquidacionRecuperoFacturaServicioResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = LiquidarRecuperoFacturaServicioService(repository=repository)
 
@@ -1768,7 +1838,17 @@ def anular_liquidacion_recupero(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> AnularLiquidacionRecuperoResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = AnularLiquidacionRecuperoService(repository=repository)
 
@@ -1839,7 +1919,17 @@ def anular_egreso_proveedor_factura_servicio(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> AnularEgresoProveedorFacturaServicioResponse | JSONResponse:
-    context = _build_context(x_op_id, x_usuario_id, x_sucursal_id, x_instalacion_id)
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=None,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    context = _build_context_from_core_ef_headers(core_ef_headers)
     repository = FinancieroRepository(db)
     service = AnularEgresoProveedorFacturaServicioService(repository=repository)
 
