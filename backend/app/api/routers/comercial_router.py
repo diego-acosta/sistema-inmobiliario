@@ -625,6 +625,15 @@ def update_reserva_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
+
+        if "X-Instalacion-Id es requerido." in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="X-Instalacion-Id es requerido.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudo actualizar la reserva de venta.",
@@ -721,6 +730,15 @@ def delete_reserva_venta(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La reserva no puede darse de baja porque ya esta vinculada a una venta.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+
+        if "X-Instalacion-Id es requerido." in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="X-Instalacion-Id es requerido.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
@@ -2187,6 +2205,15 @@ def define_condiciones_comerciales_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
+
+        if "X-Instalacion-Id es requerido." in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="X-Instalacion-Id es requerido.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudieron definir las condiciones comerciales de la venta.",
@@ -2987,6 +3014,15 @@ def create_instrumento_compraventa(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
+
+        if "X-Instalacion-Id es requerido." in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="X-Instalacion-Id es requerido.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudo registrar el instrumento de compraventa.",
@@ -3199,6 +3235,15 @@ def create_cesion(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
+
+        if "X-Instalacion-Id es requerido." in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="X-Instalacion-Id es requerido.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
         error = ErrorResponse(
             error_code="APPLICATION_ERROR",
             error_message="No se pudo registrar la cesion.",
@@ -3374,6 +3419,15 @@ def create_escrituracion(
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La venta ya posee una escrituracion activa incompatible.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
+
+        if "X-Instalacion-Id es requerido." in result.errors:
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="X-Instalacion-Id es requerido.",
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
