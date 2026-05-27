@@ -35,6 +35,48 @@ def _service(db_session) -> GeneratePlanPagoVentaV2PorBloquesService:
     )
 
 
+def _insertar_plan_pago_venta_minimo(db_session, *, codigo_venta: str) -> int:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta=codigo_venta)
+    return db_session.execute(
+        text(
+            """
+            INSERT INTO plan_pago_venta (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_venta,
+                metodo_plan_pago,
+                estado_plan_pago,
+                moneda,
+                monto_total_plan
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP,
+                1,
+                1,
+                CAST(:op_id AS uuid),
+                CAST(:op_id AS uuid),
+                :id_venta,
+                'PLAN_POR_BLOQUES',
+                'BORRADOR',
+                'ARS',
+                10000000.00
+            )
+            RETURNING id_plan_pago_venta
+            """
+        ),
+        {"id_venta": id_venta, "op_id": HEADERS["X-Op-Id"]},
+    ).scalar_one()
+
+
 def _command(
     *,
     id_venta: int,
@@ -675,8 +717,11 @@ def test_generate_interes_directo_base_calculo_invalida_devuelve_validation_erro
 def test_repository_bloque_interes_directo_tasa_distinta_es_incompatible(db_session) -> None:
     repository = PlanPagoVentaV2Repository(db_session)
     now = datetime.now(UTC)
+    id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
+        db_session, codigo_venta="V-PPV2-BLQ-REPO-ID-001"
+    )
     payload = PlanPagoVentaBloqueUpsertPayload(
-        id_plan_pago_venta=1,
+        id_plan_pago_venta=id_plan_pago_venta,
         numero_bloque=1,
         tipo_bloque="TRAMO_CUOTAS",
         etiqueta_bloque="Tramo 1",
@@ -715,8 +760,11 @@ def test_repository_bloque_interes_directo_tasa_distinta_es_incompatible(db_sess
 def test_repository_bloque_interes_directo_tasa_equivalente_por_escala_es_compatible(db_session) -> None:
     repository = PlanPagoVentaV2Repository(db_session)
     now = datetime.now(UTC)
+    id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
+        db_session, codigo_venta="V-PPV2-BLQ-REPO-ID-002"
+    )
     payload = PlanPagoVentaBloqueUpsertPayload(
-        id_plan_pago_venta=1,
+        id_plan_pago_venta=id_plan_pago_venta,
         numero_bloque=1,
         tipo_bloque="TRAMO_CUOTAS",
         etiqueta_bloque="Tramo 1",
