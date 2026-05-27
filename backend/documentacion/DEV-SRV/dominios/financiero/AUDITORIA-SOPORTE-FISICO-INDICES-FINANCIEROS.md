@@ -48,11 +48,35 @@ Conclusion backend: hay operaciones de ajuste/bonificacion sobre obligaciones, p
 
 ## 1.3 Documentacion DEV-SRV / financiero
 
-- Existe `SRV-FIN-004-gestion-de-indices-financieros.md` con definicion funcional del servicio, pero en estado documental.
+- Existe `SRV-FIN-004-gestion-de-indices-financieros.md` con definicion funcional del servicio.
+- SRV-FIN-004 ya define funcionalmente:
+  - alta de indice financiero;
+  - modificacion de indice financiero;
+  - actualizacion de valor de indice;
+  - mantenimiento de vigencia;
+  - contexto tecnico (`usuario_id`, `sucursal_id`, `instalacion_id`, `op_id`, `version_esperada`);
+  - validacion de idempotencia;
+  - registro de outbox cuando corresponda.
 - Existe auditoria previa de INDEXACION en Plan Pago V2 que ya marca como pendiente el soporte de indice financiero por fecha.
 - Existe documentacion financiera y comercial que menciona `AJUSTE_INDEXACION` y uso futuro en planes, sin confirmacion de soporte fisico implementado para indice/historico.
 
-Conclusion documental: el modelo funcional de indices existe a nivel de diseno, pero el soporte tecnico/fisico sigue pendiente.
+Conclusion documental: la definicion funcional del servicio ya existe (SRV-FIN-004); la brecha confirmada en este PR es de soporte fisico/implementacion.
+
+## 1.4 Relacion con SRV-FIN-004
+
+Esta auditoria:
+
+- no crea ni inventa un servicio nuevo;
+- toma `SRV-FIN-004-gestion-de-indices-financieros.md` como fuente funcional vigente;
+- delimita la brecha tecnica efectiva para ejecutar SRV-FIN-004 en implementacion real.
+
+Brecha confirmada (fisica/de implementacion, no funcional-documental):
+
+- no se confirmo tabla `indice_financiero`;
+- no se confirmo tabla `indice_financiero_valor`;
+- no se confirmo seed/catalogo de indices financieros;
+- no se confirmo repository/query de indice por fecha;
+- no se confirmo endpoint/service implementado para alta/modificacion/actualizacion.
 
 ---
 
@@ -226,4 +250,3 @@ Estas tablas habilitarian, en etapas posteriores:
 - SQL: **NO MODIFICA**.
 - Codigo: **NO MODIFICA**.
 - Tests: **NO MODIFICA**.
-
