@@ -133,3 +133,43 @@ Cobertura relevante identificada:
 - `sed -n '1,260p' backend/app/application/comercial/services/confirm_venta_service.py`
 - `rg -n "def get_pago_persona_by_op_id|def registrar_pago_multipago|payload_idempotencia|def revertir_pago_agrupado|def _create_venta_directa_tx|def _generate_venta_from_reserva_tx|def _confirm_venta_tx|op_id_alta|ux_.*op_id|pago_grupo" backend/app/infrastructure/persistence/repositories backend/database backend/tests -S`
 - `rg -n "/api/v1/financiero/pagos|revertir|confirmar-venta-completa|/api/v1/ventas/.*/confirmar|IDEMPOTENCY_PAYLOAD_CONFLICT|PAGO_YA_REVERTIDO|CONCURRENCY_ERROR" backend/tests -S`
+
+
+## 10. Incremento #104 — hardening focalizado en `POST /api/v1/financiero/pagos`
+
+Alcance aplicado en este incremento: **solo auditoría profunda de `registrar_pago_persona`** (router/service/repository/tests/persistencia), sin cambios de lógica de negocio ni SQL estructural.
+
+### 10.1 Resultado de auditoría puntual
+
+- **`X-Op-Id` en router**: se valida como header CORE-EF obligatorio y se inyecta en `context.op_id` antes de invocar `RegistrarPagoPersonaService`.
+- **`X-Op-Id` en service/context**: el service toma `context.op_id` y hace lookup por `op_id` con `repository.get_pago_persona_by_op_id(...)` antes de ejecutar nuevas escrituras.
+- **Lookup por op_id**: existe y consulta `movimiento_financiero` + `aplicacion_financiera` filtrando por `m.op_id_alta = :op_id` y `tipo_movimiento = 'PAGO'`.
+- **Comparación de payload idempotente**: existe por `_payload_idempotencia_equivalente(...)` usando `id_persona`, `monto`, `fecha_pago`, `alcance_pago`, `id_obligacion_financiera`, `id_relacion_generadora`.
+- **Persistencia relevante**: la evidencia del repository muestra persistencia de `op_id_alta`/`op_id_ultima_modificacion` en `movimiento_financiero` (y trazabilidad asociada por aplicaciones del grupo de pago).
+
+### 10.2 Matriz de comportamiento validada (solo pagos)
+
+- **Mismo `X-Op-Id` + mismo payload (retry secuencial posterior a éxito)**: retorna replay seguro con mismo resultado y sin duplicar movimientos (`201` con mismo `uid_pago_grupo`/`codigo_pago_grupo`).
+- **Mismo `X-Op-Id` + payload distinto (retry secuencial posterior a éxito)**: retorna `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
+- **`X-Op-Id` nuevo + payload distinto**: registra nuevo pago (si el estado financiero lo permite) y genera nuevo grupo de pago.
+- **Retry tras respuesta exitosa**: cubierto por tests de retry idempotente (no duplica movimientos ni afecta saldo dos veces).
+- **Retry de op_id original tras reversión**: retorna `409 PAGO_YA_REVERTIDO`.
+
+### 10.3 Estado de cumplimiento del endpoint auditado
+
+Para `POST /api/v1/financiero/pagos`, con evidencia actual en código + tests, el estado se mantiene en **CUMPLE PARCIAL**. La evidencia disponible confirma idempotencia para **reintentos secuenciales** posteriores a una respuesta exitosa (mismo `X-Op-Id` + mismo payload, y mismo `X-Op-Id` + payload distinto con conflicto `409`).
+
+No queda confirmada en este incremento la idempotencia ante **concurrencia simultánea** de dos requests con el mismo `X-Op-Id`: ambos intentos podrían atravesar el lookup `get_pago_persona_by_op_id` antes del commit y no hay evidencia documentada aquí de un cierre duro de carrera (constraint única fuerte por `op_id_alta`, registro técnico idempotente, lock transaccional o índice/estrategia equivalente por `op_id`).
+
+### 10.4 Brechas remanentes (sin implementar en este issue)
+
+1. No hay prueba explícita de **falla intermedia DB inyectada** y retry con el mismo `X-Op-Id` para verificar recuperación post-error parcial.
+2. No está cerrada con evidencia la carrera de **concurrencia simultánea** con mismo `X-Op-Id` (dos requests en paralelo antes de commit).
+3. Hardening pendiente: definir y evidenciar cierre técnico de carrera por diseño futuro (por ejemplo, **constraint única**, **registro técnico idempotente**, **lock transaccional** o **índice/estrategia por `op_id`**).
+
+### 10.5 Decisión de cambio en #104
+
+- **No se cambia lógica de negocio** de pagos.
+- **No se cambia SQL estructural**.
+- **No se tocan otros endpoints**.
+- Se actualiza únicamente documentación de evidencia de auditoría.
