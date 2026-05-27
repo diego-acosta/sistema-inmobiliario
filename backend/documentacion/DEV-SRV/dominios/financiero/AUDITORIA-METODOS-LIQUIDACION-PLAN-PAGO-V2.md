@@ -7,6 +7,12 @@
 - No se encontró implementación de cálculo para **interés directo**, **indexación por índice** (CAC/IPC/UVA dentro de Plan Pago V2), **anticipo + cuotas indexadas**, **cuotas escalonadas por tasa o tramo no simple**, ni **combinaciones por bloques con motor de estrategia explícito por método financiero**.
 - Existen endpoints financieros de **ajuste/bonificación de indexación sobre obligación existente**, pero eso no equivale a método de liquidación de Plan Pago V2 al alta del cronograma.
 
+
+## 1.1 Métodos fuera de alcance (esta etapa)
+
+- sistema alemán: **descartado**.
+- sistema francés: **fuera de alcance por ahora**.
+
 ## 2. Estado actual de Plan Pago V2
 
 - Dominio principal: **comercial** para definición/alta del plan y bloques; materialización de deuda en **financiero** (`obligacion_financiera`, `composicion_obligacion`) vía repositorio V2.
@@ -124,6 +130,11 @@ Recomendación para esta etapa de diseño:
    - Anticipo + indexadas; refuerzos formales; escalonadas tipadas.
 5. **Fase 4 (hardening)**
    - Idempotencia avanzada por payload equivalente, conflictos de plan vivo, regresión integral.
+
+## 10.1 Primer método recomendado
+
+- El **primer método recomendado** para implementación es **interés directo**.
+- Justificación: tiene menor complejidad relativa que indexación (no depende de serie de índice externa ni reglas de actualización), y permite validar de punta a punta la arquitectura propuesta: **strategy por método + bloques parametrizados + composición capital/interés**.
 
 ## 11. Riesgos
 
