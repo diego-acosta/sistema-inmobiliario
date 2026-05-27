@@ -191,6 +191,16 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesRequest(BaseModel):
     regla_redondeo: str = "ULTIMA_CUOTA"
 
 
+
+class GeneratePlanPagoVentaInteresDirectoRequest(BaseModel):
+    monto_total_plan: Decimal
+    moneda: str = "ARS"
+    cantidad_cuotas: int
+    tasa_interes_directo: Decimal
+    fecha_primer_vencimiento: date
+    periodicidad: str = "MENSUAL"
+    regla_redondeo: str = "ULTIMA_CUOTA"
+
 class PlanPagoVentaBloqueV2Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -489,6 +499,15 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesData(
 class GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse(BaseModel):
     ok: Literal[True] = True
     data: GeneratePlanPagoVentaAnticipoMasCuotasIgualesData
+
+
+class GeneratePlanPagoVentaInteresDirectoData(GeneratePlanPagoVentaCuotasIgualesSimpleData):
+    pass
+
+
+class GeneratePlanPagoVentaInteresDirectoResponse(BaseModel):
+    ok: Literal[True] = True
+    data: GeneratePlanPagoVentaInteresDirectoData
 
 
 class GeneratePlanPagoVentaV2PorBloquesData(BaseModel):
