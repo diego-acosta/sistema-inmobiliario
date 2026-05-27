@@ -557,6 +557,7 @@ class PreviewPlanPagoVentaV2PorBloquesData(BaseModel):
     moneda: str
     monto_total_plan: Decimal
     total_calculado: Decimal
+    total_con_interes: Decimal
     diferencia: Decimal
     bloques: list[PlanPagoVentaBloqueV2PreviewData]
     obligaciones: list[ObligacionPlanPagoVentaV2PreviewData]

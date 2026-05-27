@@ -271,7 +271,9 @@ def test_endpoint_preview_interes_directo_devuelve_campos_nuevos(client) -> None
     )
     response = client.post(URL.format(id_venta=1), json=payload)
     assert response.status_code == 200, response.text
-    bloque = response.json()["data"]["bloques"][0]
+    data = response.json()["data"]
+    assert data["total_con_interes"] == "11200000.00"
+    bloque = data["bloques"][0]
     assert bloque["metodo_liquidacion"] == "INTERES_DIRECTO"
     assert bloque["tasa_interes_directo_periodica"] == "0.02"
     assert bloque["cantidad_periodos"] == 6
