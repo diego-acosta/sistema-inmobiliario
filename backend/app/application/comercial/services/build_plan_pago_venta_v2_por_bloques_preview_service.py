@@ -31,6 +31,7 @@ TIPO_BLOQUE_SALDO = "SALDO"
 TIPO_ITEM_ANTICIPO = "ANTICIPO"
 TIPO_ITEM_REFUERZO = "REFUERZO"
 TIPO_ITEM_SALDO = "SALDO"
+METODO_LIQUIDACION_INTERES_DIRECTO = "INTERES_DIRECTO"
 
 
 @dataclass(slots=True)
@@ -181,9 +182,28 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             )
             if regla_redondeo != REGLA_REDONDEO_ULTIMA_CUOTA:
                 return "INVALID_REGLA_REDONDEO"
+            liquidacion_error = self._validate_metodo_liquidacion_tramo(bloque)
+            if liquidacion_error is not None:
+                return liquidacion_error
             return None
 
         return self._validate_pago_unico(bloque)
+
+    def _validate_metodo_liquidacion_tramo(
+        self, bloque: PlanPagoVentaBloqueInput
+    ) -> str | None:
+        metodo = (bloque.metodo_liquidacion or "").strip().upper()
+        if not metodo:
+            return None
+        if metodo != METODO_LIQUIDACION_INTERES_DIRECTO:
+            return "VALIDATION_ERROR"
+        if (
+            bloque.tasa_interes_directo_periodica is None
+            or bloque.cantidad_periodos is None
+            or not (bloque.base_calculo_interes or "").strip()
+        ):
+            return "VALIDATION_ERROR"
+        return None
 
     def _validate_pago_unico(self, bloque: PlanPagoVentaBloqueInput) -> str | None:
         if bloque.importe_total_bloque is None or bloque.importe_total_bloque <= 0:

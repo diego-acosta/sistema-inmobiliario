@@ -149,6 +149,10 @@ def _bloques_plan_pago_venta_v2(db_session, *, id_venta: int) -> list[dict]:
                 b.fecha_primer_vencimiento,
                 b.periodicidad,
                 b.regla_redondeo,
+                b.metodo_liquidacion,
+                b.tasa_interes_directo_periodica,
+                b.cantidad_periodos,
+                b.base_calculo_interes,
                 b.concepto_financiero_codigo
             FROM plan_pago_venta ppv
             JOIN plan_pago_venta_bloque b

@@ -239,3 +239,40 @@ def test_endpoint_preview_rechaza_campos_extra_internos(client) -> None:
     assert ("body", "id_plan_pago_venta") in locations
     assert ("body", "bloques", 0, "id_plan_pago_venta_bloque") in locations
     assert ("body", "bloques", 0, "clave_bloque") in locations
+
+def test_preview_interes_directo_requiere_tres_parametros() -> None:
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                    metodo_liquidacion="INTERES_DIRECTO",
+                )
+            ]
+        )
+    )
+    assert not result.success
+    assert result.errors == ["VALIDATION_ERROR"]
+
+
+def test_endpoint_preview_interes_directo_devuelve_campos_nuevos(client) -> None:
+    payload = _payload_tramo_por_capital_total()
+    payload["bloques"][0].update(
+        {
+            "metodo_liquidacion": "INTERES_DIRECTO",
+            "tasa_interes_directo_periodica": 0.02,
+            "cantidad_periodos": 6,
+            "base_calculo_interes": "SALDO",
+        }
+    )
+    response = client.post(URL.format(id_venta=1), json=payload)
+    assert response.status_code == 200, response.text
+    bloque = response.json()["data"]["bloques"][0]
+    assert bloque["metodo_liquidacion"] == "INTERES_DIRECTO"
+    assert bloque["tasa_interes_directo_periodica"] == "0.02"
+    assert bloque["cantidad_periodos"] == 6
+    assert bloque["base_calculo_interes"] == "SALDO"

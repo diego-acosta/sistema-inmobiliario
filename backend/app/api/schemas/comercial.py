@@ -203,6 +203,10 @@ class PlanPagoVentaBloqueV2Request(BaseModel):
     fecha_primer_vencimiento: date | None = None
     periodicidad: str | None = None
     regla_redondeo: str | None = None
+    metodo_liquidacion: str | None = None
+    tasa_interes_directo_periodica: Decimal | None = None
+    cantidad_periodos: int | None = None
+    base_calculo_interes: str | None = None
     observaciones: str | None = None
 
 
@@ -464,6 +468,10 @@ class PlanPagoVentaBloqueV2Data(BaseModel):
     fecha_primer_vencimiento: date | None
     periodicidad: str | None
     regla_redondeo: str | None
+    metodo_liquidacion: str | None = None
+    tasa_interes_directo_periodica: Decimal | None = None
+    cantidad_periodos: int | None = None
+    base_calculo_interes: str | None = None
     concepto_financiero_codigo: str
 
 
@@ -516,6 +524,10 @@ class PlanPagoVentaBloqueV2PreviewData(BaseModel):
     fecha_primer_vencimiento: date | None
     periodicidad: str | None
     regla_redondeo: str | None
+    metodo_liquidacion: str | None = None
+    tasa_interes_directo_periodica: Decimal | None = None
+    cantidad_periodos: int | None = None
+    base_calculo_interes: str | None = None
     concepto_financiero_codigo: str
 
 

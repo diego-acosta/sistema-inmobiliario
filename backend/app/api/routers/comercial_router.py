@@ -2211,6 +2211,10 @@ def _build_plan_pago_v2_por_bloques_command(
                 fecha_primer_vencimiento=bloque.fecha_primer_vencimiento,
                 periodicidad=bloque.periodicidad,
                 regla_redondeo=bloque.regla_redondeo,
+                metodo_liquidacion=bloque.metodo_liquidacion,
+                tasa_interes_directo_periodica=bloque.tasa_interes_directo_periodica,
+                cantidad_periodos=bloque.cantidad_periodos,
+                base_calculo_interes=bloque.base_calculo_interes,
                 observaciones=bloque.observaciones,
             )
             for bloque in request.bloques
@@ -2245,6 +2249,10 @@ def _plan_pago_v2_preview_response_data(
                 "fecha_primer_vencimiento": bloque.input.fecha_primer_vencimiento,
                 "periodicidad": bloque.input.periodicidad,
                 "regla_redondeo": bloque.input.regla_redondeo,
+                "metodo_liquidacion": bloque.input.metodo_liquidacion,
+                "tasa_interes_directo_periodica": bloque.input.tasa_interes_directo_periodica,
+                "cantidad_periodos": bloque.input.cantidad_periodos,
+                "base_calculo_interes": bloque.input.base_calculo_interes,
                 "concepto_financiero_codigo": bloque.concepto_financiero_codigo,
             }
             for bloque in preview["bloques"]

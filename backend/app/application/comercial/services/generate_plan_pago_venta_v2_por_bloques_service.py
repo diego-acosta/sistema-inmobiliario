@@ -294,6 +294,10 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             fecha_primer_vencimiento=input_bloque.fecha_primer_vencimiento,
             periodicidad=periodicidad,
             regla_redondeo=regla_redondeo,
+            metodo_liquidacion=input_bloque.metodo_liquidacion,
+            tasa_interes_directo_periodica=input_bloque.tasa_interes_directo_periodica,
+            cantidad_periodos=input_bloque.cantidad_periodos,
+            base_calculo_interes=input_bloque.base_calculo_interes,
             concepto_financiero_codigo=bloque.concepto_financiero_codigo,
             observaciones=input_bloque.observaciones,
             created_at=now,
@@ -411,6 +415,13 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             )
             and existing["concepto_financiero_codigo"]
             == expected.concepto_financiero_codigo
+            and (existing.get("metodo_liquidacion") or None)
+            == (expected.input.metodo_liquidacion or None)
+            and self._decimal_or_none(existing.get("tasa_interes_directo_periodica"))
+            == self._decimal_or_none(expected.input.tasa_interes_directo_periodica)
+            and existing.get("cantidad_periodos") == expected.input.cantidad_periodos
+            and (existing.get("base_calculo_interes") or None)
+            == (expected.input.base_calculo_interes or None)
         )
 
     def _resolve_conceptos(

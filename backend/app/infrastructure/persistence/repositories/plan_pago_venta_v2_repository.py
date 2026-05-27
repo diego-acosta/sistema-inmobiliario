@@ -343,6 +343,10 @@ class PlanPagoVentaV2Repository:
                 fecha_primer_vencimiento,
                 periodicidad,
                 regla_redondeo,
+                metodo_liquidacion,
+                tasa_interes_directo_periodica,
+                cantidad_periodos,
+                base_calculo_interes,
                 concepto_financiero_codigo,
                 observaciones
             )
@@ -367,6 +371,10 @@ class PlanPagoVentaV2Repository:
                 :fecha_primer_vencimiento,
                 :periodicidad,
                 :regla_redondeo,
+                :metodo_liquidacion,
+                :tasa_interes_directo_periodica,
+                :cantidad_periodos,
+                :base_calculo_interes,
                 :concepto_financiero_codigo,
                 :observaciones
             )
@@ -387,6 +395,10 @@ class PlanPagoVentaV2Repository:
                 fecha_primer_vencimiento,
                 periodicidad,
                 regla_redondeo,
+                metodo_liquidacion,
+                tasa_interes_directo_periodica,
+                cantidad_periodos,
+                base_calculo_interes,
                 concepto_financiero_codigo
             """
         )
@@ -411,6 +423,10 @@ class PlanPagoVentaV2Repository:
             "fecha_primer_vencimiento",
             "periodicidad",
             "regla_redondeo",
+            "metodo_liquidacion",
+            "tasa_interes_directo_periodica",
+            "cantidad_periodos",
+            "base_calculo_interes",
             "concepto_financiero_codigo",
         )
         incompatible = [
@@ -453,6 +469,10 @@ class PlanPagoVentaV2Repository:
                 fecha_primer_vencimiento,
                 periodicidad,
                 regla_redondeo,
+                metodo_liquidacion,
+                tasa_interes_directo_periodica,
+                cantidad_periodos,
+                base_calculo_interes,
                 concepto_financiero_codigo,
                 observaciones
             FROM plan_pago_venta_bloque

@@ -603,3 +603,44 @@ def test_plan_pago_v2_generar_requiere_x_op_id_valido(client, db_session) -> Non
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR"
     assert body["details"] == {"header": "X-Op-Id"}
+
+def test_generate_interes_directo_persiste_campos_nuevos(db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-001")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                    metodo_liquidacion="INTERES_DIRECTO",
+                    tasa_interes_directo_periodica=Decimal("0.02"),
+                    cantidad_periodos=6,
+                    base_calculo_interes="SALDO",
+                )
+            ],
+        )
+    )
+    assert result.success, result.errors
+    bloque = _bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)[0]
+    assert bloque["metodo_liquidacion"] == "INTERES_DIRECTO"
+    assert bloque["tasa_interes_directo_periodica"] == Decimal("0.02")
+    assert bloque["cantidad_periodos"] == 6
+    assert bloque["base_calculo_interes"] == "SALDO"
+
+
+def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-002")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = _payload_financiado()
+    payload["bloques"][1]["metodo_liquidacion"] = "NOPE"
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert "VALIDATION_ERROR" in body["details"]["errors"]
