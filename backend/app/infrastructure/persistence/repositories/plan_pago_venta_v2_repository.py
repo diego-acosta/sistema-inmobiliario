@@ -798,6 +798,13 @@ class PlanPagoVentaV2Repository:
     def _create_composicion(
         self, values: dict[str, Any], id_obligacion_financiera: int
     ) -> None:
+        composiciones = values.get("composiciones") or [
+            {
+                "id_concepto_financiero": values["id_concepto_financiero"],
+                "codigo_concepto_financiero": values["codigo_concepto_financiero"],
+                "importe_componente": values["importe_total"],
+            }
+        ]
         stmt = text(
             """
             INSERT INTO composicion_obligacion (
@@ -827,20 +834,23 @@ class PlanPagoVentaV2Repository:
                 :op_id_ultima_modificacion,
                 :id_obligacion_financiera,
                 :id_concepto_financiero,
-                1,
-                :importe_total,
-                :importe_total,
+                :orden_composicion,
+                :importe_componente,
+                :importe_componente,
                 :moneda
             )
             """
         )
-        self.db.execute(
-            stmt,
-            {
-                **values,
-                "id_obligacion_financiera": id_obligacion_financiera,
-            },
-        )
+        for orden, composicion in enumerate(composiciones, start=1):
+            self.db.execute(
+                stmt,
+                {
+                    **values,
+                    **composicion,
+                    "orden_composicion": orden,
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                },
+            )
 
     def _create_obligado(
         self, values: dict[str, Any], id_obligacion_financiera: int

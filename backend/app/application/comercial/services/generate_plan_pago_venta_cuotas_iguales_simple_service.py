@@ -164,6 +164,7 @@ class ObligacionCronogramaV2CreatePayload:
     id_instalacion_ultima_modificacion: int | None
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
+    composiciones: list[dict[str, Any]] | None = None
 
 
 class PlanPagoVentaV2Repository(Protocol):

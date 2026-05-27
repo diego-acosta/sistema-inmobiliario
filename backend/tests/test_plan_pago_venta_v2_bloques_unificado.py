@@ -650,12 +650,9 @@ def test_plan_pago_v2_generar_requiere_x_op_id_valido(client, db_session) -> Non
     assert body["error_code"] == "VALIDATION_ERROR"
     assert body["details"] == {"header": "X-Op-Id"}
 
-def test_generate_interes_directo_devuelve_validation_error_y_no_persiste(db_session) -> None:
+def test_generate_interes_directo_genera_obligaciones_y_composicion(db_session) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-001")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
-    before_ppv = db_session.execute(text("SELECT COUNT(*) FROM plan_pago_venta")).scalar_one()
-    before_obl = db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one()
-
     result = _service(db_session).execute(
         _command(
             id_venta=id_venta,
@@ -664,23 +661,51 @@ def test_generate_interes_directo_devuelve_validation_error_y_no_persiste(db_ses
                 PlanPagoVentaBloqueInput(
                     tipo_bloque="TRAMO_CUOTAS",
                     importe_total_bloque=Decimal("10000000.00"),
-                    cantidad_cuotas=6,
+                    cantidad_cuotas=12,
                     fecha_primer_vencimiento=date(2026, 6, 10),
                     periodicidad="MENSUAL",
                     metodo_liquidacion="INTERES_DIRECTO",
                     tasa_interes_directo_periodica=Decimal("0.02"),
-                    cantidad_periodos=6,
+                    cantidad_periodos=12,
                     base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
                 )
             ],
         )
     )
-    assert not result.success
-    assert result.errors == ["VALIDATION_ERROR"]
-    after_ppv = db_session.execute(text("SELECT COUNT(*) FROM plan_pago_venta")).scalar_one()
-    after_obl = db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one()
-    assert after_ppv == before_ppv
-    assert after_obl == before_obl
+    assert result.success, result.errors
+    assert len(result.data["obligaciones"]) == 12
+    total_obligaciones = sum(
+        Decimal(str(ob["importe_total"])) for ob in result.data["obligaciones"]
+    )
+    assert total_obligaciones == Decimal("12400000.00")
+    composiciones = db_session.execute(
+        text(
+            """
+            SELECT co.importe_componente, cf.codigo_concepto_financiero
+            FROM composicion_obligacion co
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = co.id_obligacion_financiera
+            WHERE o.id_relacion_generadora = :id_relacion_generadora
+            ORDER BY o.numero_obligacion, co.orden_composicion
+            """
+        ),
+        {"id_relacion_generadora": result.data["id_relacion_generadora"]},
+    ).mappings().all()
+    assert len(composiciones) == 24
+    capital = sum(
+        Decimal(str(row["importe_componente"]))
+        for row in composiciones
+        if row["codigo_concepto_financiero"] == "CAPITAL_VENTA"
+    )
+    interes = sum(
+        Decimal(str(row["importe_componente"]))
+        for row in composiciones
+        if row["codigo_concepto_financiero"] == "INTERES_FINANCIERO"
+    )
+    assert capital == Decimal("10000000.00")
+    assert interes == Decimal("2400000.00")
 
 
 def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(client, db_session) -> None:

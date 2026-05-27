@@ -34,6 +34,7 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
 )
 from app.application.common.results import AppResult
 
+CONCEPTO_INTERES_FINANCIERO = "INTERES_FINANCIERO"
 
 class GeneratePlanPagoVentaV2PorBloquesService:
     def __init__(
@@ -55,8 +56,6 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
-        if self._contains_interes_directo(command):
-            return AppResult.fail("VALIDATION_ERROR")
 
         try:
             with self._transaction():
@@ -72,8 +71,6 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
-        if self._contains_interes_directo(command):
-            return AppResult.fail("VALIDATION_ERROR")
 
         try:
             return self._execute_in_transaction(
@@ -240,6 +237,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
                 now=now,
                 id_instalacion=id_instalacion,
                 op_id=op_id,
+                conceptos=conceptos,
             )
             clave_funcionales.append(payload.clave_funcional_origen)
             self.repository.create_obligacion_cronograma_v2_if_not_exists(payload)
@@ -326,12 +324,18 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         now: datetime,
         id_instalacion: int | None,
         op_id: Any,
+        conceptos: dict[str, dict[str, Any]],
     ) -> ObligacionCronogramaV2CreatePayload:
         clave_funcional = (
             f"PLAN_PAGO_VENTA:{bloque['id_plan_pago_venta']}:"
             f"BLOQUE:{obligacion_preview.bloque.numero_bloque}:"
             f"{obligacion_preview.tipo_item_cronograma}:"
             f"{obligacion_preview.item_numero}"
+        )
+        composiciones = self._build_composiciones_obligacion(
+            obligacion_preview=obligacion_preview,
+            concepto_capital=concepto,
+            conceptos=conceptos,
         )
         return ObligacionCronogramaV2CreatePayload(
             id_relacion_generadora=id_relacion_generadora,
@@ -356,7 +360,49 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             id_instalacion_ultima_modificacion=id_instalacion,
             op_id_alta=op_id,
             op_id_ultima_modificacion=op_id,
+            composiciones=composiciones,
         )
+
+    def _build_composiciones_obligacion(
+        self,
+        *,
+        obligacion_preview: PlanPagoVentaV2ObligacionPreview,
+        concepto_capital: dict[str, Any],
+        conceptos: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]] | None:
+        bloque_input = obligacion_preview.bloque.input
+        if (
+            obligacion_preview.bloque.tipo_bloque != TIPO_BLOQUE_TRAMO_CUOTAS
+            or (bloque_input.metodo_liquidacion or "").strip().upper()
+            != METODO_LIQUIDACION_INTERES_DIRECTO
+        ):
+            return None
+        cantidad = Decimal(bloque_input.cantidad_cuotas or 1)
+        tasa = bloque_input.tasa_interes_directo_periodica or Decimal("0.00")
+        periodos = Decimal(bloque_input.cantidad_periodos or 0)
+        capital_total = (bloque_input.importe_total_bloque or Decimal("0.00")).quantize(Decimal("0.01"))
+        interes_total = (capital_total * tasa * periodos).quantize(Decimal("0.01"))
+        capital_cuota_base = (capital_total / cantidad).quantize(Decimal("0.01"))
+        interes_cuota_base = (interes_total / cantidad).quantize(Decimal("0.01"))
+        idx = Decimal(obligacion_preview.item_numero)
+        if idx < cantidad:
+            capital = capital_cuota_base
+            interes = interes_cuota_base
+        else:
+            capital = (capital_total - capital_cuota_base * (cantidad - 1)).quantize(Decimal("0.01"))
+            interes = (interes_total - interes_cuota_base * (cantidad - 1)).quantize(Decimal("0.01"))
+        return [
+            {
+                "id_concepto_financiero": concepto_capital["id_concepto_financiero"],
+                "codigo_concepto_financiero": concepto_capital["codigo_concepto_financiero"],
+                "importe_componente": capital,
+            },
+            {
+                "id_concepto_financiero": conceptos[CONCEPTO_INTERES_FINANCIERO]["id_concepto_financiero"],
+                "codigo_concepto_financiero": CONCEPTO_INTERES_FINANCIERO,
+                "importe_componente": interes,
+            },
+        ]
 
     def _plan_vivo_compatible(
         self,
@@ -433,7 +479,15 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         self, bloques: list[PlanPagoVentaV2BloquePreview]
     ) -> dict[str, dict[str, Any]]:
         conceptos: dict[str, dict[str, Any]] = {}
-        for codigo in {bloque.concepto_financiero_codigo for bloque in bloques}:
+        codigos = {bloque.concepto_financiero_codigo for bloque in bloques}
+        if any(
+            (bloque.input.metodo_liquidacion or "").strip().upper()
+            == METODO_LIQUIDACION_INTERES_DIRECTO
+            and bloque.tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS
+            for bloque in bloques
+        ):
+            codigos.add(CONCEPTO_INTERES_FINANCIERO)
+        for codigo in codigos:
             concepto = self.repository.get_concepto_financiero_by_codigo(codigo)
             if concepto is None:
                 raise ValueError(f"NOT_FOUND_CONCEPTO:{codigo}")
@@ -459,11 +513,3 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         if self.db.in_transaction():
             return self.db.begin_nested()
         return self.db.begin()
-
-    @staticmethod
-    def _contains_interes_directo(command: GeneratePlanPagoVentaV2PorBloquesCommand) -> bool:
-        return any(
-            (bloque.metodo_liquidacion or "").strip().upper()
-            == METODO_LIQUIDACION_INTERES_DIRECTO
-            for bloque in command.bloques
-        )

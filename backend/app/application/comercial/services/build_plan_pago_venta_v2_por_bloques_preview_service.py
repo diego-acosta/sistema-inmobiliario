@@ -81,6 +81,9 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         except ValueError as exc:
             return AppResult.fail(str(exc))
         total_calculado = sum(
+            (self._bloque_total_capital(bloque.input) for bloque in bloques), Decimal("0.00")
+        ).quantize(Decimal("0.01"))
+        total_con_interes = sum(
             (bloque.total_bloque for bloque in bloques), Decimal("0.00")
         ).quantize(Decimal("0.01"))
         redondeos = [
@@ -97,6 +100,7 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                 "bloques": bloques,
                 "obligaciones": obligaciones,
                 "total_calculado": total_calculado,
+                "total_con_interes": total_con_interes,
                 "diferencia": (command.monto_total_plan - total_calculado).quantize(
                     Decimal("0.01")
                 ),
@@ -134,7 +138,7 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             error = self._validate_bloque(bloque, tipo_pago=tipo_pago)
             if error is not None:
                 return error
-            total += self._bloque_total(bloque)
+            total += self._bloque_total_capital(bloque)
 
         if total.quantize(Decimal("0.01")) != command.monto_total_plan:
             return "SUMA_BLOQUES_INVALIDA"
@@ -319,6 +323,8 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         return obligaciones
 
     def _importes_cuotas(self, bloque: PlanPagoVentaBloqueInput) -> list[Decimal]:
+        if self._tramo_usa_interes_directo(bloque):
+            return self._importes_cuotas_interes_directo(bloque)
         if self._tramo_usa_capital_total(bloque):
             return self._importes_cuotas_por_total(bloque)
         return [
@@ -332,6 +338,25 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         total = bloque.importe_total_bloque or Decimal("0.00")
         cantidad = bloque.cantidad_cuotas or 0
         cuota_base = self._cuota_base_por_total(bloque)
+        cuotas = [cuota_base for _ in range(max(cantidad - 1, 0))]
+        ultima = (total - sum(cuotas, Decimal("0.00"))).quantize(Decimal("0.01"))
+        if ultima <= 0:
+            raise ValueError("BLOQUE_INVALIDO")
+        cuotas.append(ultima)
+        return cuotas
+
+    def _importes_cuotas_interes_directo(
+        self, bloque: PlanPagoVentaBloqueInput
+    ) -> list[Decimal]:
+        capital_total = (bloque.importe_total_bloque or Decimal("0.00")).quantize(
+            Decimal("0.01")
+        )
+        interes_total = self._interes_total_directo(bloque)
+        total = (capital_total + interes_total).quantize(Decimal("0.01"))
+        cantidad = bloque.cantidad_cuotas or 0
+        cuota_base = (total / Decimal(cantidad or 1)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
         cuotas = [cuota_base for _ in range(max(cantidad - 1, 0))]
         ultima = (total - sum(cuotas, Decimal("0.00"))).quantize(Decimal("0.01"))
         if ultima <= 0:
@@ -359,6 +384,13 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
     def _bloque_total(self, bloque: PlanPagoVentaBloqueInput) -> Decimal:
         tipo_bloque = bloque.tipo_bloque.strip().upper()
         if tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
+            if self._tramo_usa_interes_directo(bloque):
+                capital_total = (bloque.importe_total_bloque or Decimal("0.00")).quantize(
+                    Decimal("0.01")
+                )
+                return (capital_total + self._interes_total_directo(bloque)).quantize(
+                    Decimal("0.01")
+                )
             if self._tramo_usa_capital_total(bloque):
                 return (bloque.importe_total_bloque or Decimal("0.00")).quantize(
                     Decimal("0.01")
@@ -367,6 +399,32 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                 bloque.cantidad_cuotas or 0
             )
         return bloque.importe_total_bloque or Decimal("0.00")
+
+    def _bloque_total_capital(self, bloque: PlanPagoVentaBloqueInput) -> Decimal:
+        tipo_bloque = bloque.tipo_bloque.strip().upper()
+        if tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
+            if self._tramo_usa_capital_total(bloque):
+                return (bloque.importe_total_bloque or Decimal("0.00")).quantize(
+                    Decimal("0.01")
+                )
+            return ((bloque.importe_cuota or Decimal("0.00")) * Decimal(
+                bloque.cantidad_cuotas or 0
+            )).quantize(Decimal("0.01"))
+        return (bloque.importe_total_bloque or Decimal("0.00")).quantize(Decimal("0.01"))
+
+    def _tramo_usa_interes_directo(self, bloque: PlanPagoVentaBloqueInput) -> bool:
+        return (
+            self._normalize_upper_or_none(bloque.metodo_liquidacion)
+            == METODO_LIQUIDACION_INTERES_DIRECTO
+        )
+
+    def _interes_total_directo(self, bloque: PlanPagoVentaBloqueInput) -> Decimal:
+        capital_total = bloque.importe_total_bloque or Decimal("0.00")
+        tasa = bloque.tasa_interes_directo_periodica or Decimal("0.00")
+        periodos = Decimal(bloque.cantidad_periodos or 0)
+        return (capital_total * tasa * periodos).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
 
     @staticmethod
     def _default_etiqueta_bloque(tipo_bloque: str) -> str:
