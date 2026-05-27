@@ -613,6 +613,7 @@ def test_generate_interes_directo_devuelve_validation_error_y_no_persiste(db_ses
     result = _service(db_session).execute(
         _command(
             id_venta=id_venta,
+            monto_total_plan=Decimal("10000000.00"),
             bloques=[
                 PlanPagoVentaBloqueInput(
                     tipo_bloque="TRAMO_CUOTAS",
