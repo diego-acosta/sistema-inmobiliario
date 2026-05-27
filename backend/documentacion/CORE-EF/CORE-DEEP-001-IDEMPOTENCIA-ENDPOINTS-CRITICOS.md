@@ -149,20 +149,23 @@ Alcance aplicado en este incremento: **solo auditoría profunda de `registrar_pa
 
 ### 10.2 Matriz de comportamiento validada (solo pagos)
 
-- **Mismo `X-Op-Id` + mismo payload**: retorna replay seguro con mismo resultado y sin duplicar movimientos (`201` con mismo `uid_pago_grupo`/`codigo_pago_grupo`).
-- **Mismo `X-Op-Id` + payload distinto**: retorna `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
+- **Mismo `X-Op-Id` + mismo payload (retry secuencial posterior a éxito)**: retorna replay seguro con mismo resultado y sin duplicar movimientos (`201` con mismo `uid_pago_grupo`/`codigo_pago_grupo`).
+- **Mismo `X-Op-Id` + payload distinto (retry secuencial posterior a éxito)**: retorna `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
 - **`X-Op-Id` nuevo + payload distinto**: registra nuevo pago (si el estado financiero lo permite) y genera nuevo grupo de pago.
 - **Retry tras respuesta exitosa**: cubierto por tests de retry idempotente (no duplica movimientos ni afecta saldo dos veces).
 - **Retry de op_id original tras reversión**: retorna `409 PAGO_YA_REVERTIDO`.
 
 ### 10.3 Estado de cumplimiento del endpoint auditado
 
-Para `POST /api/v1/financiero/pagos`, con evidencia actual en código + tests, el estado se mantiene en **CUMPLE PARCIAL (fuerte en idempotencia de endpoint)**. La parte **parcial** no está en replay/conflict del endpoint (ya cubiertos), sino en no evidenciar en este incremento infraestructura técnica inbox/outbox dedicada a este caso.
+Para `POST /api/v1/financiero/pagos`, con evidencia actual en código + tests, el estado se mantiene en **CUMPLE PARCIAL**. La evidencia disponible confirma idempotencia para **reintentos secuenciales** posteriores a una respuesta exitosa (mismo `X-Op-Id` + mismo payload, y mismo `X-Op-Id` + payload distinto con conflicto `409`).
+
+No queda confirmada en este incremento la idempotencia ante **concurrencia simultánea** de dos requests con el mismo `X-Op-Id`: ambos intentos podrían atravesar el lookup `get_pago_persona_by_op_id` antes del commit y no hay evidencia documentada aquí de un cierre duro de carrera (constraint única fuerte por `op_id_alta`, registro técnico idempotente, lock transaccional o índice/estrategia equivalente por `op_id`).
 
 ### 10.4 Brechas remanentes (sin implementar en este issue)
 
 1. No hay prueba explícita de **falla intermedia DB inyectada** y retry con el mismo `X-Op-Id` para verificar recuperación post-error parcial.
-2. No se formaliza en este issue un registro técnico adicional tipo inbox/idempotency-log por endpoint (fuera de alcance).
+2. No está cerrada con evidencia la carrera de **concurrencia simultánea** con mismo `X-Op-Id` (dos requests en paralelo antes de commit).
+3. Hardening pendiente: definir y evidenciar cierre técnico de carrera por diseño futuro (por ejemplo, **constraint única**, **registro técnico idempotente**, **lock transaccional** o **índice/estrategia por `op_id`**).
 
 ### 10.5 Decisión de cambio en #104
 
