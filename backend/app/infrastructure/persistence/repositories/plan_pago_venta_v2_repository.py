@@ -410,7 +410,7 @@ class PlanPagoVentaV2Repository:
     def _ensure_plan_pago_venta_bloque_compatible(
         self, bloque: dict[str, Any], expected: dict[str, Any]
     ) -> None:
-        fields = (
+        fields_default = (
             "id_plan_pago_venta",
             "numero_bloque",
             "tipo_bloque",
@@ -423,18 +423,30 @@ class PlanPagoVentaV2Repository:
             "fecha_primer_vencimiento",
             "periodicidad",
             "regla_redondeo",
-            "metodo_liquidacion",
-            "tasa_interes_directo_periodica",
-            "cantidad_periodos",
-            "base_calculo_interes",
             "concepto_financiero_codigo",
         )
         incompatible = [
             field
-            for field in fields
+            for field in fields_default
             if self._normalize_bloque_value(bloque.get(field))
             != self._normalize_bloque_value(expected.get(field))
         ]
+        if self._normalize_upper_or_none(bloque.get("metodo_liquidacion")) != self._normalize_upper_or_none(
+            expected.get("metodo_liquidacion")
+        ):
+            incompatible.append("metodo_liquidacion")
+        if self._normalize_tasa_or_none(
+            bloque.get("tasa_interes_directo_periodica")
+        ) != self._normalize_tasa_or_none(expected.get("tasa_interes_directo_periodica")):
+            incompatible.append("tasa_interes_directo_periodica")
+        if self._normalize_int_or_none(bloque.get("cantidad_periodos")) != self._normalize_int_or_none(
+            expected.get("cantidad_periodos")
+        ):
+            incompatible.append("cantidad_periodos")
+        if self._normalize_upper_or_none(
+            bloque.get("base_calculo_interes")
+        ) != self._normalize_upper_or_none(expected.get("base_calculo_interes")):
+            incompatible.append("base_calculo_interes")
         if incompatible:
             clave = expected.get("clave_bloque") or bloque.get("clave_bloque")
             raise ValueError(
@@ -449,6 +461,25 @@ class PlanPagoVentaV2Repository:
         if isinstance(value, date):
             return value.isoformat()
         return value
+
+    @staticmethod
+    def _normalize_tasa_or_none(value: Any) -> Decimal | None:
+        if value is None:
+            return None
+        return Decimal(str(value)).quantize(Decimal("0.00000001"))
+
+    @staticmethod
+    def _normalize_int_or_none(value: Any) -> int | None:
+        if value is None:
+            return None
+        return int(value)
+
+    @staticmethod
+    def _normalize_upper_or_none(value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().upper()
+        return normalized or None
 
     def get_plan_pago_venta_bloques(
         self, id_plan_pago_venta: int

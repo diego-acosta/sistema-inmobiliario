@@ -1,4 +1,5 @@
 from datetime import date
+from datetime import datetime, UTC
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -9,6 +10,9 @@ from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques 
 )
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
+)
+from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
+    PlanPagoVentaBloqueUpsertPayload,
 )
 from app.application.common.commands import CommandContext
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
@@ -666,3 +670,78 @@ def test_generate_interes_directo_base_calculo_invalida_devuelve_validation_erro
     body = response.json()
     assert body["error_code"] == "APPLICATION_ERROR"
     assert "VALIDATION_ERROR" in body["details"]["errors"]
+
+
+def test_repository_bloque_interes_directo_tasa_distinta_es_incompatible(db_session) -> None:
+    repository = PlanPagoVentaV2Repository(db_session)
+    now = datetime.now(UTC)
+    payload = PlanPagoVentaBloqueUpsertPayload(
+        id_plan_pago_venta=1,
+        numero_bloque=1,
+        tipo_bloque="TRAMO_CUOTAS",
+        etiqueta_bloque="Tramo 1",
+        clave_bloque="PLAN_PAGO_VENTA:1:BLOQUE:TRAMO_CUOTAS:1",
+        cantidad_cuotas=6,
+        importe_total_bloque=Decimal("10000000.00"),
+        importe_cuota=None,
+        fecha_vencimiento=None,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        periodicidad="MENSUAL",
+        regla_redondeo="ULTIMA_CUOTA",
+        metodo_liquidacion="INTERES_DIRECTO",
+        tasa_interes_directo_periodica=Decimal("0.021"),
+        cantidad_periodos=6,
+        base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+        concepto_financiero_codigo="CAPITAL_VENTA",
+        observaciones=None,
+        created_at=now,
+        updated_at=now,
+        id_instalacion_origen=1,
+        id_instalacion_ultima_modificacion=1,
+        op_id_alta=None,
+        op_id_ultima_modificacion=None,
+    )
+    repository.get_or_create_plan_pago_venta_bloque(payload)
+    payload.tasa_interes_directo_periodica = Decimal("0.024")
+
+    try:
+        repository.get_or_create_plan_pago_venta_bloque(payload)
+        assert False, "expected incompatibility"
+    except ValueError as exc:
+        assert str(exc).startswith("PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
+        assert "tasa_interes_directo_periodica" in str(exc)
+
+
+def test_repository_bloque_interes_directo_tasa_equivalente_por_escala_es_compatible(db_session) -> None:
+    repository = PlanPagoVentaV2Repository(db_session)
+    now = datetime.now(UTC)
+    payload = PlanPagoVentaBloqueUpsertPayload(
+        id_plan_pago_venta=1,
+        numero_bloque=1,
+        tipo_bloque="TRAMO_CUOTAS",
+        etiqueta_bloque="Tramo 1",
+        clave_bloque="PLAN_PAGO_VENTA:1:BLOQUE:TRAMO_CUOTAS:1",
+        cantidad_cuotas=6,
+        importe_total_bloque=Decimal("10000000.00"),
+        importe_cuota=None,
+        fecha_vencimiento=None,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        periodicidad="MENSUAL",
+        regla_redondeo="ULTIMA_CUOTA",
+        metodo_liquidacion="INTERES_DIRECTO",
+        tasa_interes_directo_periodica=Decimal("0.021"),
+        cantidad_periodos=6,
+        base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+        concepto_financiero_codigo="CAPITAL_VENTA",
+        observaciones=None,
+        created_at=now,
+        updated_at=now,
+        id_instalacion_origen=1,
+        id_instalacion_ultima_modificacion=1,
+        op_id_alta=None,
+        op_id_ultima_modificacion=None,
+    )
+    first = repository.get_or_create_plan_pago_venta_bloque(payload)
+    payload.tasa_interes_directo_periodica = Decimal("0.02100000")
+    second = repository.get_or_create_plan_pago_venta_bloque(payload)
+    assert first["id_plan_pago_venta_bloque"] == second["id_plan_pago_venta_bloque"]
