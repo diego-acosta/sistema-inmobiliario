@@ -80,7 +80,6 @@ class PlanPagoVentaUpsertPayload:
     id_instalacion_ultima_modificacion: int | None
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
-    composiciones: list[dict[str, Any]] | None = None
 
 
 @dataclass(slots=True)
@@ -94,7 +93,6 @@ class RelacionGeneradoraUpsertPayload:
     id_instalacion_ultima_modificacion: int | None
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
-    composiciones: list[dict[str, Any]] | None = None
 
 
 @dataclass(slots=True)
@@ -112,7 +110,6 @@ class GeneracionCronogramaCreatePayload:
     id_instalacion_ultima_modificacion: int | None
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
-    composiciones: list[dict[str, Any]] | None = None
 
 
 @dataclass(slots=True)
@@ -137,7 +134,6 @@ class PlanPagoVentaBloqueUpsertPayload:
     id_instalacion_ultima_modificacion: int | None
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
-    composiciones: list[dict[str, Any]] | None = None
 
 
 @dataclass(slots=True)
@@ -164,7 +160,6 @@ class ObligacionCronogramaV2CreatePayload:
     id_instalacion_ultima_modificacion: int | None
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
-    composiciones: list[dict[str, Any]] | None = None
 
 
 class PlanPagoVentaV2Repository(Protocol):

@@ -45,8 +45,6 @@ from app.api.schemas.comercial import (
     GenerateVentaFromReservaVentaResponse,
     GeneratePlanPagoVentaCuotasIgualesSimpleRequest,
     GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
-    GeneratePlanPagoVentaInteresDirectoRequest,
-    GeneratePlanPagoVentaInteresDirectoResponse,
     PreviewPlanPagoVentaV2PorBloquesRequest,
     PreviewPlanPagoVentaV2PorBloquesResponse,
     InstrumentoCompraventaData,
@@ -148,9 +146,6 @@ from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_
 from app.application.comercial.commands.generate_plan_pago_venta_anticipo_mas_cuotas_iguales import (
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesCommand,
 )
-from app.application.comercial.commands.generate_plan_pago_venta_interes_directo import (
-    GeneratePlanPagoVentaInteresDirectoCommand,
-)
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
     GeneratePlanPagoVentaV2PorBloquesCommand,
     PlanPagoVentaBloqueInput,
@@ -203,9 +198,6 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
 )
 from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cuotas_iguales_service import (
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesService,
-)
-from app.application.comercial.services.generate_plan_pago_venta_interes_directo_service import (
-    GeneratePlanPagoVentaInteresDirectoService,
 )
 from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
     BuildPlanPagoVentaV2PorBloquesPreviewService,
@@ -2610,31 +2602,6 @@ def generate_plan_pago_venta_anticipo_mas_cuotas_iguales(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse(data=result.data)
-
-
-@router.post(
-    "/api/v1/ventas/{id_venta}/plan-pago-v2/interes-directo",
-    response_model=GeneratePlanPagoVentaInteresDirectoResponse,
-    responses={400: {"model": ErrorResponse},404: {"model": ErrorResponse},500: {"model": ErrorResponse}},
-)
-def generate_plan_pago_venta_interes_directo(
-    id_venta: int,
-    request: GeneratePlanPagoVentaInteresDirectoRequest,
-    db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
-) -> GeneratePlanPagoVentaInteresDirectoResponse | JSONResponse:
-    core_ef_headers = _parse_core_ef_headers_or_error(x_op_id=x_op_id,x_usuario_id=x_usuario_id,x_sucursal_id=x_sucursal_id,x_instalacion_id=x_instalacion_id)
-    if isinstance(core_ef_headers, JSONResponse):
-        return core_ef_headers
-    command = GeneratePlanPagoVentaInteresDirectoCommand(context=_build_comercial_command_context(core_ef_headers), id_venta=id_venta, monto_total_plan=request.monto_total_plan, moneda=request.moneda, cantidad_cuotas=request.cantidad_cuotas, tasa_interes_directo=request.tasa_interes_directo, fecha_primer_vencimiento=request.fecha_primer_vencimiento, periodicidad=request.periodicidad, regla_redondeo=request.regla_redondeo)
-    service = GeneratePlanPagoVentaInteresDirectoService(repository=PlanPagoVentaV2Repository(db))
-    result = service.execute(command)
-    if not result.success or result.data is None:
-        return JSONResponse(status_code=400, content=ErrorResponse(error_code="APPLICATION_ERROR", error_message="No se pudo generar el plan de pago V2 de interés directo.", details={"errors": result.errors}).model_dump())
-    return GeneratePlanPagoVentaInteresDirectoResponse(data=result.data)
 
 
 @router.patch(
