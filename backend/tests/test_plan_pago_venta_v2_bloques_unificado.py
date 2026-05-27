@@ -656,7 +656,7 @@ def test_generate_interes_directo_genera_obligaciones_y_composicion(db_session) 
     result = _service(db_session).execute(
         _command(
             id_venta=id_venta,
-            monto_total_plan=Decimal("11200000.00"),
+            monto_total_plan=Decimal("10000000.00"),
             bloques=[
                 PlanPagoVentaBloqueInput(
                     tipo_bloque="TRAMO_CUOTAS",
@@ -674,6 +674,10 @@ def test_generate_interes_directo_genera_obligaciones_y_composicion(db_session) 
     )
     assert result.success, result.errors
     assert len(result.data["obligaciones"]) == 12
+    total_obligaciones = sum(
+        Decimal(str(ob["importe_total"])) for ob in result.data["obligaciones"]
+    )
+    assert total_obligaciones == Decimal("12400000.00")
     composiciones = db_session.execute(
         text(
             """

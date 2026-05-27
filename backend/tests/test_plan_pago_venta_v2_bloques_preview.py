@@ -281,7 +281,7 @@ def test_endpoint_preview_interes_directo_devuelve_campos_nuevos(client) -> None
 def test_preview_interes_directo_calcula_total_con_interes_y_ajuste_ultima() -> None:
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
         _command(
-            monto_total_plan=Decimal("1240000.00"),
+            monto_total_plan=Decimal("1000000.00"),
             bloques=[
                 PlanPagoVentaBloqueInput(
                     tipo_bloque="TRAMO_CUOTAS",
@@ -298,8 +298,9 @@ def test_preview_interes_directo_calcula_total_con_interes_y_ajuste_ultima() -> 
         )
     )
     assert result.success, result.errors
-    assert result.data["total_calculado"] == Decimal("1240000.00")
-    cuotas = [ob["importe_total"] for ob in result.data["obligaciones"]]
+    assert result.data["total_calculado"] == Decimal("1000000.00")
+    assert result.data["total_con_interes"] == Decimal("1240000.00")
+    cuotas = [ob.importe_total for ob in result.data["obligaciones"]]
     assert cuotas[0] == Decimal("103333.33")
     assert cuotas[-1] == Decimal("103333.37")
 
