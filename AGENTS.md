@@ -169,3 +169,25 @@ Si una solución:
 - contradice tests existentes sin explicitarlo
 
 → es inválida, aunque funcione técnicamente.
+
+
+---
+
+## 14. CORE-EF obligatorio para endpoints write (checklist operativo)
+
+Para todo endpoint write nuevo o modificado, el PR debe incluir decisión CORE-EF explícita (no se difiere a migración posterior).
+
+1. **Clasificación obligatoria del endpoint:** `COMMAND_WRITE_NEGOCIO`, `COMMAND_WRITE_TECNICO`, `SIMULACION_READLIKE`, `PREVIEW_READLIKE`, `QUERY_READLIKE` o `NO_CONFIRMADO`.
+2. **Si es write sincronizable:** usar helper común CORE-EF de headers (sin parseo manual) y exigir `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; exigir `If-Match-Version` cuando modifica entidad existente/versionada; preservar `ErrorResponse` estándar; no devolver `{"detail": "..."}` para errores de headers.
+3. **Todo command sincronizable debe declarar:**
+   - idempotencia: aplica/no aplica, criterio de payload, `mismo op_id + mismo payload`, `mismo op_id + payload distinto`, retry post-error;
+   - outbox: aplica/no aplica, evento y misma transacción que negocio;
+   - lock lógico: aplica/no aplica, entidad bloqueada y operaciones incompatibles;
+   - versionado: entidad versionada y uso esperado de `version_registro`;
+   - rollback/transacción: frontera transaccional del caso de uso.
+4. **Tests mínimos obligatorios en PR write:** headers faltantes/inválidos; happy path; `If-Match-Version` faltante/inválido si aplica; mismatch real de versión si aplica; idempotencia si aplica; rollback si es orquestador; outbox si aplica.
+5. **Resumen obligatorio del PR:** sección "Decisión CORE-EF" con naturaleza del endpoint, headers, idempotencia, outbox, lock, versionado y tests ejecutados.
+6. **Reglas de alcance:** no implementar caja operativa, recibos fiscales persistidos, documental real ni administrativo nuevo sin nacer con estas reglas.
+7. **Read-like/simulación/preview:** dejar explícita la condición para no forzar headers write.
+8. **Cuando una regla no aplique:** indicar `NO APLICA` con justificación breve.
+9. **Prohibición de cumplimiento sin evidencia:** no declarar cumplimiento CORE-EF profundo sin respaldo verificable en router/service/repository/SQL/tests.
