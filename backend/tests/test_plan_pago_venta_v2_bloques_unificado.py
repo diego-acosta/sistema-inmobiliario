@@ -604,9 +604,11 @@ def test_plan_pago_v2_generar_requiere_x_op_id_valido(client, db_session) -> Non
     assert body["error_code"] == "VALIDATION_ERROR"
     assert body["details"] == {"header": "X-Op-Id"}
 
-def test_generate_interes_directo_persiste_campos_nuevos(db_session) -> None:
+def test_generate_interes_directo_devuelve_validation_error_y_no_persiste(db_session) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-001")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
+    before_ppv = db_session.execute(text("SELECT COUNT(*) FROM plan_pago_venta")).scalar_one()
+    before_obl = db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one()
 
     result = _service(db_session).execute(
         _command(
@@ -621,17 +623,17 @@ def test_generate_interes_directo_persiste_campos_nuevos(db_session) -> None:
                     metodo_liquidacion="INTERES_DIRECTO",
                     tasa_interes_directo_periodica=Decimal("0.02"),
                     cantidad_periodos=6,
-                    base_calculo_interes="SALDO",
+                    base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
                 )
             ],
         )
     )
-    assert result.success, result.errors
-    bloque = _bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)[0]
-    assert bloque["metodo_liquidacion"] == "INTERES_DIRECTO"
-    assert bloque["tasa_interes_directo_periodica"] == Decimal("0.02")
-    assert bloque["cantidad_periodos"] == 6
-    assert bloque["base_calculo_interes"] == "SALDO"
+    assert not result.success
+    assert result.errors == ["VALIDATION_ERROR"]
+    after_ppv = db_session.execute(text("SELECT COUNT(*) FROM plan_pago_venta")).scalar_one()
+    after_obl = db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one()
+    assert after_ppv == before_ppv
+    assert after_obl == before_obl
 
 
 def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(client, db_session) -> None:
@@ -639,6 +641,25 @@ def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(clie
     _vincular_comprador_venta(db_session, id_venta=id_venta)
     payload = _payload_financiado()
     payload["bloques"][1]["metodo_liquidacion"] = "NOPE"
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert "VALIDATION_ERROR" in body["details"]["errors"]
+
+
+def test_generate_interes_directo_base_calculo_invalida_devuelve_validation_error(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-003")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = _payload_financiado()
+    payload["bloques"][1].update(
+        {
+            "metodo_liquidacion": "INTERES_DIRECTO",
+            "tasa_interes_directo_periodica": 0.02,
+            "cantidad_periodos": 6,
+            "base_calculo_interes": "SALDO",
+        }
+    )
     response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
     assert response.status_code == 400
     body = response.json()

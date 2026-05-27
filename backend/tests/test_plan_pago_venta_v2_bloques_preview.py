@@ -266,7 +266,7 @@ def test_endpoint_preview_interes_directo_devuelve_campos_nuevos(client) -> None
             "metodo_liquidacion": "INTERES_DIRECTO",
             "tasa_interes_directo_periodica": 0.02,
             "cantidad_periodos": 6,
-            "base_calculo_interes": "SALDO",
+            "base_calculo_interes": "capital_inicial_bloque",
         }
     )
     response = client.post(URL.format(id_venta=1), json=payload)
@@ -275,4 +275,26 @@ def test_endpoint_preview_interes_directo_devuelve_campos_nuevos(client) -> None
     assert bloque["metodo_liquidacion"] == "INTERES_DIRECTO"
     assert bloque["tasa_interes_directo_periodica"] == "0.02"
     assert bloque["cantidad_periodos"] == 6
-    assert bloque["base_calculo_interes"] == "SALDO"
+    assert bloque["base_calculo_interes"] == "CAPITAL_INICIAL_BLOQUE"
+
+
+def test_preview_interes_directo_base_calculo_invalida_devuelve_validation_error() -> None:
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                    metodo_liquidacion="INTERES_DIRECTO",
+                    tasa_interes_directo_periodica=Decimal("0.02"),
+                    cantidad_periodos=6,
+                    base_calculo_interes="SALDO",
+                )
+            ]
+        )
+    )
+    assert not result.success
+    assert result.errors == ["VALIDATION_ERROR"]

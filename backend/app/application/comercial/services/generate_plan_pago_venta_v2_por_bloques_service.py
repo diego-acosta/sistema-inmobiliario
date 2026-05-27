@@ -10,6 +10,7 @@ from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques 
     GeneratePlanPagoVentaV2PorBloquesCommand,
 )
 from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    METODO_LIQUIDACION_INTERES_DIRECTO,
     BuildPlanPagoVentaV2PorBloquesPreviewService,
     METODO_PLAN_POR_BLOQUES,
     TIPO_BLOQUE_ANTICIPO,
@@ -54,6 +55,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
+        if self._contains_interes_directo(command):
+            return AppResult.fail("VALIDATION_ERROR")
 
         try:
             with self._transaction():
@@ -69,6 +72,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
+        if self._contains_interes_directo(command):
+            return AppResult.fail("VALIDATION_ERROR")
 
         try:
             return self._execute_in_transaction(
@@ -454,3 +459,11 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         if self.db.in_transaction():
             return self.db.begin_nested()
         return self.db.begin()
+
+    @staticmethod
+    def _contains_interes_directo(command: GeneratePlanPagoVentaV2PorBloquesCommand) -> bool:
+        return any(
+            (bloque.metodo_liquidacion or "").strip().upper()
+            == METODO_LIQUIDACION_INTERES_DIRECTO
+            for bloque in command.bloques
+        )
