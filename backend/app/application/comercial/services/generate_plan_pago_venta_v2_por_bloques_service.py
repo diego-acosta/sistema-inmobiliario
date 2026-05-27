@@ -10,6 +10,7 @@ from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques 
     GeneratePlanPagoVentaV2PorBloquesCommand,
 )
 from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    METODO_LIQUIDACION_INTERES_DIRECTO,
     BuildPlanPagoVentaV2PorBloquesPreviewService,
     METODO_PLAN_POR_BLOQUES,
     TIPO_BLOQUE_ANTICIPO,
@@ -54,6 +55,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
+        if self._contains_interes_directo(command):
+            return AppResult.fail("VALIDATION_ERROR")
 
         try:
             with self._transaction():
@@ -69,6 +72,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
+        if self._contains_interes_directo(command):
+            return AppResult.fail("VALIDATION_ERROR")
 
         try:
             return self._execute_in_transaction(
@@ -294,6 +299,10 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             fecha_primer_vencimiento=input_bloque.fecha_primer_vencimiento,
             periodicidad=periodicidad,
             regla_redondeo=regla_redondeo,
+            metodo_liquidacion=input_bloque.metodo_liquidacion,
+            tasa_interes_directo_periodica=input_bloque.tasa_interes_directo_periodica,
+            cantidad_periodos=input_bloque.cantidad_periodos,
+            base_calculo_interes=input_bloque.base_calculo_interes,
             concepto_financiero_codigo=bloque.concepto_financiero_codigo,
             observaciones=input_bloque.observaciones,
             created_at=now,
@@ -411,6 +420,13 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             )
             and existing["concepto_financiero_codigo"]
             == expected.concepto_financiero_codigo
+            and (existing.get("metodo_liquidacion") or None)
+            == (expected.input.metodo_liquidacion or None)
+            and self._decimal_or_none(existing.get("tasa_interes_directo_periodica"))
+            == self._decimal_or_none(expected.input.tasa_interes_directo_periodica)
+            and existing.get("cantidad_periodos") == expected.input.cantidad_periodos
+            and (existing.get("base_calculo_interes") or None)
+            == (expected.input.base_calculo_interes or None)
         )
 
     def _resolve_conceptos(
@@ -443,3 +459,11 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         if self.db.in_transaction():
             return self.db.begin_nested()
         return self.db.begin()
+
+    @staticmethod
+    def _contains_interes_directo(command: GeneratePlanPagoVentaV2PorBloquesCommand) -> bool:
+        return any(
+            (bloque.metodo_liquidacion or "").strip().upper()
+            == METODO_LIQUIDACION_INTERES_DIRECTO
+            for bloque in command.bloques
+        )

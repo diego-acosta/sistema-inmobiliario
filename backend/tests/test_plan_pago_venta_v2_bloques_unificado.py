@@ -1,4 +1,5 @@
 from datetime import date
+from datetime import datetime, UTC
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -9,6 +10,9 @@ from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques 
 )
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
+)
+from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
+    PlanPagoVentaBloqueUpsertPayload,
 )
 from app.application.common.commands import CommandContext
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
@@ -29,6 +33,48 @@ def _service(db_session) -> GeneratePlanPagoVentaV2PorBloquesService:
     return GeneratePlanPagoVentaV2PorBloquesService(
         repository=PlanPagoVentaV2Repository(db_session)
     )
+
+
+def _insertar_plan_pago_venta_minimo(db_session, *, codigo_venta: str) -> int:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta=codigo_venta)
+    return db_session.execute(
+        text(
+            """
+            INSERT INTO plan_pago_venta (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_venta,
+                metodo_plan_pago,
+                estado_plan_pago,
+                moneda,
+                monto_total_plan
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP,
+                1,
+                1,
+                CAST(:op_id AS uuid),
+                CAST(:op_id AS uuid),
+                :id_venta,
+                'PLAN_POR_BLOQUES',
+                'BORRADOR',
+                'ARS',
+                10000000.00
+            )
+            RETURNING id_plan_pago_venta
+            """
+        ),
+        {"id_venta": id_venta, "op_id": HEADERS["X-Op-Id"]},
+    ).scalar_one()
 
 
 def _command(
@@ -603,3 +649,147 @@ def test_plan_pago_v2_generar_requiere_x_op_id_valido(client, db_session) -> Non
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR"
     assert body["details"] == {"header": "X-Op-Id"}
+
+def test_generate_interes_directo_devuelve_validation_error_y_no_persiste(db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-001")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    before_ppv = db_session.execute(text("SELECT COUNT(*) FROM plan_pago_venta")).scalar_one()
+    before_obl = db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one()
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("10000000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                    metodo_liquidacion="INTERES_DIRECTO",
+                    tasa_interes_directo_periodica=Decimal("0.02"),
+                    cantidad_periodos=6,
+                    base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+                )
+            ],
+        )
+    )
+    assert not result.success
+    assert result.errors == ["VALIDATION_ERROR"]
+    after_ppv = db_session.execute(text("SELECT COUNT(*) FROM plan_pago_venta")).scalar_one()
+    after_obl = db_session.execute(text("SELECT COUNT(*) FROM obligacion_financiera")).scalar_one()
+    assert after_ppv == before_ppv
+    assert after_obl == before_obl
+
+
+def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-002")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = _payload_financiado()
+    payload["bloques"][1]["metodo_liquidacion"] = "NOPE"
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert "VALIDATION_ERROR" in body["details"]["errors"]
+
+
+def test_generate_interes_directo_base_calculo_invalida_devuelve_validation_error(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-003")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    payload = _payload_financiado()
+    payload["bloques"][1].update(
+        {
+            "metodo_liquidacion": "INTERES_DIRECTO",
+            "tasa_interes_directo_periodica": 0.02,
+            "cantidad_periodos": 6,
+            "base_calculo_interes": "SALDO",
+        }
+    )
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert "VALIDATION_ERROR" in body["details"]["errors"]
+
+
+def test_repository_bloque_interes_directo_tasa_distinta_es_incompatible(db_session) -> None:
+    repository = PlanPagoVentaV2Repository(db_session)
+    now = datetime.now(UTC)
+    id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
+        db_session, codigo_venta="V-PPV2-BLQ-REPO-ID-001"
+    )
+    payload = PlanPagoVentaBloqueUpsertPayload(
+        id_plan_pago_venta=id_plan_pago_venta,
+        numero_bloque=1,
+        tipo_bloque="TRAMO_CUOTAS",
+        etiqueta_bloque="Tramo 1",
+        clave_bloque="PLAN_PAGO_VENTA:1:BLOQUE:TRAMO_CUOTAS:1",
+        cantidad_cuotas=6,
+        importe_total_bloque=None,
+        importe_cuota=Decimal("1666666.67"),
+        fecha_vencimiento=None,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        periodicidad="MENSUAL",
+        regla_redondeo="ULTIMA_CUOTA",
+        metodo_liquidacion="INTERES_DIRECTO",
+        tasa_interes_directo_periodica=Decimal("0.021"),
+        cantidad_periodos=6,
+        base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+        concepto_financiero_codigo="CAPITAL_VENTA",
+        observaciones=None,
+        created_at=now,
+        updated_at=now,
+        id_instalacion_origen=1,
+        id_instalacion_ultima_modificacion=1,
+        op_id_alta=None,
+        op_id_ultima_modificacion=None,
+    )
+    repository.get_or_create_plan_pago_venta_bloque(payload)
+    payload.tasa_interes_directo_periodica = Decimal("0.024")
+
+    try:
+        repository.get_or_create_plan_pago_venta_bloque(payload)
+        assert False, "expected incompatibility"
+    except ValueError as exc:
+        assert str(exc).startswith("PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
+        assert "tasa_interes_directo_periodica" in str(exc)
+
+
+def test_repository_bloque_interes_directo_tasa_equivalente_por_escala_es_compatible(db_session) -> None:
+    repository = PlanPagoVentaV2Repository(db_session)
+    now = datetime.now(UTC)
+    id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
+        db_session, codigo_venta="V-PPV2-BLQ-REPO-ID-002"
+    )
+    payload = PlanPagoVentaBloqueUpsertPayload(
+        id_plan_pago_venta=id_plan_pago_venta,
+        numero_bloque=1,
+        tipo_bloque="TRAMO_CUOTAS",
+        etiqueta_bloque="Tramo 1",
+        clave_bloque="PLAN_PAGO_VENTA:1:BLOQUE:TRAMO_CUOTAS:1",
+        cantidad_cuotas=6,
+        importe_total_bloque=None,
+        importe_cuota=Decimal("1666666.67"),
+        fecha_vencimiento=None,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        periodicidad="MENSUAL",
+        regla_redondeo="ULTIMA_CUOTA",
+        metodo_liquidacion="INTERES_DIRECTO",
+        tasa_interes_directo_periodica=Decimal("0.021"),
+        cantidad_periodos=6,
+        base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+        concepto_financiero_codigo="CAPITAL_VENTA",
+        observaciones=None,
+        created_at=now,
+        updated_at=now,
+        id_instalacion_origen=1,
+        id_instalacion_ultima_modificacion=1,
+        op_id_alta=None,
+        op_id_ultima_modificacion=None,
+    )
+    first = repository.get_or_create_plan_pago_venta_bloque(payload)
+    payload.tasa_interes_directo_periodica = Decimal("0.02100000")
+    second = repository.get_or_create_plan_pago_venta_bloque(payload)
+    assert first["id_plan_pago_venta_bloque"] == second["id_plan_pago_venta_bloque"]

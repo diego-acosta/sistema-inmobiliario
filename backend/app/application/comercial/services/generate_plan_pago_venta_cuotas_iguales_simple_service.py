@@ -126,6 +126,10 @@ class PlanPagoVentaBloqueUpsertPayload:
     fecha_primer_vencimiento: date | None
     periodicidad: str | None
     regla_redondeo: str | None
+    metodo_liquidacion: str | None
+    tasa_interes_directo_periodica: Decimal | None
+    cantidad_periodos: int | None
+    base_calculo_interes: str | None
     concepto_financiero_codigo: str | None
     observaciones: str | None
     created_at: datetime
@@ -349,6 +353,10 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleService:
                 fecha_primer_vencimiento=command.fecha_primer_vencimiento,
                 periodicidad=periodicidad,
                 regla_redondeo=regla_redondeo,
+                metodo_liquidacion=None,
+                tasa_interes_directo_periodica=None,
+                cantidad_periodos=None,
+                base_calculo_interes=None,
                 concepto_financiero_codigo=CONCEPTO_CAPITAL_VENTA,
                 observaciones=None,
                 created_at=now,

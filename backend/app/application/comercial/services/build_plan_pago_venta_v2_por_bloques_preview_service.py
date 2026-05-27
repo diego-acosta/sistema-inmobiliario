@@ -31,6 +31,8 @@ TIPO_BLOQUE_SALDO = "SALDO"
 TIPO_ITEM_ANTICIPO = "ANTICIPO"
 TIPO_ITEM_REFUERZO = "REFUERZO"
 TIPO_ITEM_SALDO = "SALDO"
+METODO_LIQUIDACION_INTERES_DIRECTO = "INTERES_DIRECTO"
+BASE_CALCULO_INTERES_CAPITAL_INICIAL_BLOQUE = "CAPITAL_INICIAL_BLOQUE"
 
 
 @dataclass(slots=True)
@@ -181,9 +183,40 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             )
             if regla_redondeo != REGLA_REDONDEO_ULTIMA_CUOTA:
                 return "INVALID_REGLA_REDONDEO"
+            liquidacion_error = self._validate_metodo_liquidacion_tramo(bloque)
+            if liquidacion_error is not None:
+                return liquidacion_error
             return None
 
         return self._validate_pago_unico(bloque)
+
+    def _validate_metodo_liquidacion_tramo(
+        self, bloque: PlanPagoVentaBloqueInput
+    ) -> str | None:
+        metodo = self._normalize_upper_or_none(bloque.metodo_liquidacion)
+        bloque.metodo_liquidacion = metodo
+        if not metodo:
+            return None
+        if metodo != METODO_LIQUIDACION_INTERES_DIRECTO:
+            return "VALIDATION_ERROR"
+        base_calculo = self._normalize_upper_or_none(bloque.base_calculo_interes)
+        bloque.base_calculo_interes = base_calculo
+        if (
+            bloque.tasa_interes_directo_periodica is None
+            or bloque.cantidad_periodos is None
+            or not base_calculo
+        ):
+            return "VALIDATION_ERROR"
+        if base_calculo != BASE_CALCULO_INTERES_CAPITAL_INICIAL_BLOQUE:
+            return "VALIDATION_ERROR"
+        return None
+
+    @staticmethod
+    def _normalize_upper_or_none(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        return normalized or None
 
     def _validate_pago_unico(self, bloque: PlanPagoVentaBloqueInput) -> str | None:
         if bloque.importe_total_bloque is None or bloque.importe_total_bloque <= 0:

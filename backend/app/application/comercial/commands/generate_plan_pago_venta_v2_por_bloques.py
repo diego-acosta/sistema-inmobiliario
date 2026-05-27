@@ -16,6 +16,10 @@ class PlanPagoVentaBloqueInput:
     fecha_primer_vencimiento: date | None = None
     periodicidad: str | None = None
     regla_redondeo: str | None = None
+    metodo_liquidacion: str | None = None
+    tasa_interes_directo_periodica: Decimal | None = None
+    cantidad_periodos: int | None = None
+    base_calculo_interes: str | None = None
     observaciones: str | None = None
 
 
