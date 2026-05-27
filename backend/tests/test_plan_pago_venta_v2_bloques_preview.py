@@ -278,6 +278,32 @@ def test_endpoint_preview_interes_directo_devuelve_campos_nuevos(client) -> None
     assert bloque["base_calculo_interes"] == "CAPITAL_INICIAL_BLOQUE"
 
 
+def test_preview_interes_directo_calcula_total_con_interes_y_ajuste_ultima() -> None:
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(
+            monto_total_plan=Decimal("1240000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("1000000.00"),
+                    cantidad_cuotas=12,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                    metodo_liquidacion="INTERES_DIRECTO",
+                    tasa_interes_directo_periodica=Decimal("0.02"),
+                    cantidad_periodos=12,
+                    base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+                )
+            ],
+        )
+    )
+    assert result.success, result.errors
+    assert result.data["total_calculado"] == Decimal("1240000.00")
+    cuotas = [ob["importe_total"] for ob in result.data["obligaciones"]]
+    assert cuotas[0] == Decimal("103333.33")
+    assert cuotas[-1] == Decimal("103333.37")
+
+
 def test_preview_interes_directo_base_calculo_invalida_devuelve_validation_error() -> None:
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
         _command(
