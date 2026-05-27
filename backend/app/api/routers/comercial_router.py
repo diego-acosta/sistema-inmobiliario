@@ -2235,6 +2235,7 @@ def _plan_pago_v2_preview_response_data(
         "moneda": command.moneda.strip().upper(),
         "monto_total_plan": command.monto_total_plan,
         "total_calculado": preview["total_calculado"],
+        "total_con_interes": preview["total_con_interes"],
         "diferencia": preview["diferencia"],
         "redondeos": preview["redondeos"],
         "bloques": [
