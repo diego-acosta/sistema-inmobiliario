@@ -20,8 +20,8 @@ Resultado consolidado:
 |---|---|---|---|---|---|---|---|---|
 | POST /api/v1/financiero/pagos | Sí | Sí | Sí | Parcial (`payload_idempotencia` en consulta agregada por op_id) | Sí (testeado) | Sí (409 `IDEMPOTENCY_PAYLOAD_CONFLICT`) | Parcial (sin prueba explícita de falla intermedia DB) | CUMPLE PARCIAL |
 | POST /api/v1/financiero/pagos/{codigo_pago_grupo}/revertir | Sí | Sí | Sí | No confirmado (no tabla técnica dedicada) | Sí (testeado: segunda reversión sin duplicar) | No confirmado | Parcial | CUMPLE PARCIAL |
-| POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa | Sí | Sí | Sí (por subservicios) | No confirmado | No confirmado | No confirmado | Sí (rollback compuesto testeado) | NO CONFIRMADO |
-| POST /api/v1/ventas/directa/confirmar-venta-completa | Sí | Sí | Sí (payloads con op_id_alta/op_id_ultima_modificacion) | No confirmado | No confirmado | No confirmado | Sí (rollback compuesto testeado) | NO CONFIRMADO |
+| POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa | Sí | Sí | Sí (por subservicios) | No confirmado | No confirmado | No confirmado | No confirmado (rollback compuesto testeado, retry no probado) | NO CONFIRMADO |
+| POST /api/v1/ventas/directa/confirmar-venta-completa | Sí | Sí | Sí (payloads con op_id_alta/op_id_ultima_modificacion) | No confirmado | No confirmado | No confirmado | No confirmado (rollback compuesto testeado, retry no probado) | NO CONFIRMADO |
 | PATCH /api/v1/ventas/{id_venta}/confirmar | Sí | Sí | Sí (`op_id_ultima_modificacion`) | No confirmado | No confirmado | No confirmado | Parcial (control por versión; no test de retry idempotente por op_id) | NO CONFIRMADO |
 
 ## 3. Evidencia por endpoint
@@ -56,7 +56,7 @@ Clasificación: **NO CONFIRMADO** en idempotencia real por endpoint.
 - Router exige headers CORE-EF (incluyendo `X-Op-Id`).
 - Service compuesto transaccional con rollback y construcción de payloads que incluyen `op_id_alta/op_id_ultima_modificacion`.
 - No se observa verificación previa por `op_id` para detectar replay/conflict a nivel endpoint.
-- Tests existentes cubren contrato/rollback, no comportamiento idempotente por op_id.
+- Tests existentes cubren contrato y rollback transaccional, pero no prueban retry posterior con el mismo X-Op-Id ni conflicto por payload distinto.
 
 Clasificación: **NO CONFIRMADO**.
 
