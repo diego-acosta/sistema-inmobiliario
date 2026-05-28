@@ -161,3 +161,60 @@ CREATE INDEX IF NOT EXISTS idx_indice_financiero_valor_fecha_activo
 CREATE INDEX IF NOT EXISTS idx_indice_financiero_valor_estado_activo
     ON indice_financiero_valor (estado_valor_indice)
     WHERE deleted_at IS NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'trg_bi_indice_financiero_core_ef'
+          AND tgrelid = 'public.indice_financiero'::regclass
+    ) THEN
+        CREATE TRIGGER trg_bi_indice_financiero_core_ef
+        BEFORE INSERT ON public.indice_financiero
+        FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'trg_bu_indice_financiero_core_ef'
+          AND tgrelid = 'public.indice_financiero'::regclass
+    ) THEN
+        CREATE TRIGGER trg_bu_indice_financiero_core_ef
+        BEFORE UPDATE ON public.indice_financiero
+        FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'trg_bi_indice_financiero_valor_core_ef'
+          AND tgrelid = 'public.indice_financiero_valor'::regclass
+    ) THEN
+        CREATE TRIGGER trg_bi_indice_financiero_valor_core_ef
+        BEFORE INSERT ON public.indice_financiero_valor
+        FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'trg_bu_indice_financiero_valor_core_ef'
+          AND tgrelid = 'public.indice_financiero_valor'::regclass
+    ) THEN
+        CREATE TRIGGER trg_bu_indice_financiero_valor_core_ef
+        BEFORE UPDATE ON public.indice_financiero_valor
+        FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+    END IF;
+END $$;
+
