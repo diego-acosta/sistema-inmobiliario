@@ -888,7 +888,7 @@ def _indexacion_repo_payload(
     )
 
 
-def test_generate_indexacion_persiste_configuracion_sin_obligaciones_indexadas(client, db_session) -> None:
+def test_generate_indexacion_devuelve_error_controlado_y_no_persiste(client, db_session) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-001")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
     id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-GEN-001")
@@ -910,30 +910,44 @@ def test_generate_indexacion_persiste_configuracion_sin_obligaciones_indexadas(c
 
     response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
 
-    assert response.status_code == 200, response.text
-    data = response.json()["data"]
-    assert data["generacion_cronograma_financiero"] is None
-    assert data["obligaciones"] == []
-    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 5
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert body["details"]["errors"] == ["INDEXACION_GENERATE_NO_IMPLEMENTADO"]
+    assert (
+        db_session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM plan_pago_venta
+                WHERE id_venta = :id_venta
+                  AND deleted_at IS NULL
+                """
+            ),
+            {"id_venta": id_venta},
+        ).scalar_one()
+        == 0
+    )
+    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 0
     assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 0
-    rows = db_session.execute(
-        text(
-            """
-            SELECT ppvbi.*
-            FROM plan_pago_venta_bloque_indexacion ppvbi
-            JOIN plan_pago_venta_bloque ppvb
-              ON ppvb.id_plan_pago_venta_bloque = ppvbi.id_plan_pago_venta_bloque
-            JOIN plan_pago_venta ppv
-              ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta
-            WHERE ppv.id_venta = :id_venta
-              AND ppvbi.deleted_at IS NULL
-            """
-        ),
-        {"id_venta": id_venta},
-    ).mappings().all()
-    assert len(rows) == 1
-    assert rows[0]["id_indice_financiero"] == id_indice
-    assert rows[0]["valor_base_indice"] == Decimal("100.12345678")
+    assert (
+        db_session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM plan_pago_venta_bloque_indexacion ppvbi
+                JOIN plan_pago_venta_bloque ppvb
+                  ON ppvb.id_plan_pago_venta_bloque = ppvbi.id_plan_pago_venta_bloque
+                JOIN plan_pago_venta ppv
+                  ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta
+                WHERE ppv.id_venta = :id_venta
+                  AND ppvbi.deleted_at IS NULL
+                """
+            ),
+            {"id_venta": id_venta},
+        ).scalar_one()
+        == 0
+    )
 
 
 def test_repository_persiste_y_lee_plan_pago_venta_bloque_indexacion(db_session) -> None:

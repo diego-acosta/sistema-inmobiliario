@@ -519,10 +519,10 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse(BaseModel):
 
 class GeneratePlanPagoVentaV2PorBloquesData(BaseModel):
     id_venta: int
-    id_relacion_generadora: int | None
+    id_relacion_generadora: int
     plan_pago_venta: PlanPagoVentaV2Data
     bloques: list[PlanPagoVentaBloqueV2Data]
-    generacion_cronograma_financiero: GeneracionCronogramaFinancieroData | None
+    generacion_cronograma_financiero: GeneracionCronogramaFinancieroData
     obligaciones: list[ObligacionCronogramaVentaPorBloquesV2Data]
 
 
