@@ -207,6 +207,15 @@ class PlanPagoVentaBloqueV2Request(BaseModel):
     tasa_interes_directo_periodica: Decimal | None = None
     cantidad_periodos: int | None = None
     base_calculo_interes: str | None = None
+    id_indice_financiero: int | None = None
+    fecha_base_indice: date | None = None
+    valor_base_indice: Decimal | None = None
+    modo_indexacion: str | None = None
+    base_calculo_indexacion: str | None = None
+    tipo_generacion_indexada: str | None = None
+    politica_valor_no_disponible: str | None = None
+    conserva_capital_original: bool | None = None
+    genera_ajuste_por_diferencia: bool | None = None
     observaciones: str | None = None
 
 
@@ -472,6 +481,15 @@ class PlanPagoVentaBloqueV2Data(BaseModel):
     tasa_interes_directo_periodica: Decimal | None = None
     cantidad_periodos: int | None = None
     base_calculo_interes: str | None = None
+    id_indice_financiero: int | None = None
+    fecha_base_indice: date | None = None
+    valor_base_indice: Decimal | None = None
+    modo_indexacion: str | None = None
+    base_calculo_indexacion: str | None = None
+    tipo_generacion_indexada: str | None = None
+    politica_valor_no_disponible: str | None = None
+    conserva_capital_original: bool | None = None
+    genera_ajuste_por_diferencia: bool | None = None
     concepto_financiero_codigo: str
 
 
@@ -501,10 +519,10 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse(BaseModel):
 
 class GeneratePlanPagoVentaV2PorBloquesData(BaseModel):
     id_venta: int
-    id_relacion_generadora: int
+    id_relacion_generadora: int | None
     plan_pago_venta: PlanPagoVentaV2Data
     bloques: list[PlanPagoVentaBloqueV2Data]
-    generacion_cronograma_financiero: GeneracionCronogramaFinancieroData
+    generacion_cronograma_financiero: GeneracionCronogramaFinancieroData | None
     obligaciones: list[ObligacionCronogramaVentaPorBloquesV2Data]
 
 
@@ -528,6 +546,15 @@ class PlanPagoVentaBloqueV2PreviewData(BaseModel):
     tasa_interes_directo_periodica: Decimal | None = None
     cantidad_periodos: int | None = None
     base_calculo_interes: str | None = None
+    id_indice_financiero: int | None = None
+    fecha_base_indice: date | None = None
+    valor_base_indice: Decimal | None = None
+    modo_indexacion: str | None = None
+    base_calculo_indexacion: str | None = None
+    tipo_generacion_indexada: str | None = None
+    politica_valor_no_disponible: str | None = None
+    conserva_capital_original: bool | None = None
+    genera_ajuste_por_diferencia: bool | None = None
     concepto_financiero_codigo: str
 
 

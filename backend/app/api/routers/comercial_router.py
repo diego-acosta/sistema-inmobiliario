@@ -2215,6 +2215,15 @@ def _build_plan_pago_v2_por_bloques_command(
                 tasa_interes_directo_periodica=bloque.tasa_interes_directo_periodica,
                 cantidad_periodos=bloque.cantidad_periodos,
                 base_calculo_interes=bloque.base_calculo_interes,
+                id_indice_financiero=bloque.id_indice_financiero,
+                fecha_base_indice=bloque.fecha_base_indice,
+                valor_base_indice=bloque.valor_base_indice,
+                modo_indexacion=bloque.modo_indexacion,
+                base_calculo_indexacion=bloque.base_calculo_indexacion,
+                tipo_generacion_indexada=bloque.tipo_generacion_indexada,
+                politica_valor_no_disponible=bloque.politica_valor_no_disponible,
+                conserva_capital_original=bloque.conserva_capital_original,
+                genera_ajuste_por_diferencia=bloque.genera_ajuste_por_diferencia,
                 observaciones=bloque.observaciones,
             )
             for bloque in request.bloques
@@ -2254,6 +2263,15 @@ def _plan_pago_v2_preview_response_data(
                 "tasa_interes_directo_periodica": bloque.input.tasa_interes_directo_periodica,
                 "cantidad_periodos": bloque.input.cantidad_periodos,
                 "base_calculo_interes": bloque.input.base_calculo_interes,
+                "id_indice_financiero": bloque.input.id_indice_financiero,
+                "fecha_base_indice": bloque.input.fecha_base_indice,
+                "valor_base_indice": bloque.input.valor_base_indice,
+                "modo_indexacion": bloque.input.modo_indexacion,
+                "base_calculo_indexacion": bloque.input.base_calculo_indexacion,
+                "tipo_generacion_indexada": bloque.input.tipo_generacion_indexada,
+                "politica_valor_no_disponible": bloque.input.politica_valor_no_disponible,
+                "conserva_capital_original": bloque.input.conserva_capital_original,
+                "genera_ajuste_por_diferencia": bloque.input.genera_ajuste_por_diferencia,
                 "concepto_financiero_codigo": bloque.concepto_financiero_codigo,
             }
             for bloque in preview["bloques"]
@@ -2376,6 +2394,7 @@ def generate_plan_pago_venta_v2_por_bloques(
         if any(
             error.startswith("PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE")
             or error.startswith("PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
+            or error.startswith("PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE")
             or error.startswith("OBLIGACION_PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
             for error in result.errors
         ):

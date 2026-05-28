@@ -141,6 +141,27 @@ class PlanPagoVentaBloqueUpsertPayload:
 
 
 @dataclass(slots=True)
+class PlanPagoVentaBloqueIndexacionUpsertPayload:
+    id_plan_pago_venta_bloque: int
+    id_indice_financiero: int
+    fecha_base_indice: date
+    valor_base_indice: Decimal
+    modo_indexacion: str
+    base_calculo_indexacion: str
+    tipo_generacion_indexada: str
+    politica_valor_no_disponible: str
+    conserva_capital_original: bool
+    genera_ajuste_por_diferencia: bool
+    observaciones: str | None
+    created_at: datetime
+    updated_at: datetime
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: UUID | None
+    op_id_ultima_modificacion: UUID | None
+
+
+@dataclass(slots=True)
 class ObligacionCronogramaV2CreatePayload:
     id_relacion_generadora: int
     id_generacion_cronograma_financiero: int
@@ -198,6 +219,14 @@ class PlanPagoVentaV2Repository(Protocol):
     def get_or_create_plan_pago_venta_bloque(
         self, payload: PlanPagoVentaBloqueUpsertPayload
     ) -> dict[str, Any]: ...
+
+    def get_or_create_plan_pago_venta_bloque_indexacion(
+        self, payload: PlanPagoVentaBloqueIndexacionUpsertPayload
+    ) -> dict[str, Any]: ...
+
+    def get_plan_pago_venta_bloque_indexacion(
+        self, id_plan_pago_venta_bloque: int
+    ) -> dict[str, Any] | None: ...
 
     def get_concepto_financiero_by_codigo(
         self, codigo: str

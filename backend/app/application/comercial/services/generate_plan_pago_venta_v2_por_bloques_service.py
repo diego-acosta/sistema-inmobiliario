@@ -10,6 +10,7 @@ from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques 
     GeneratePlanPagoVentaV2PorBloquesCommand,
 )
 from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    METODO_LIQUIDACION_INDEXACION,
     METODO_LIQUIDACION_INTERES_DIRECTO,
     BuildPlanPagoVentaV2PorBloquesPreviewService,
     METODO_PLAN_POR_BLOQUES,
@@ -23,6 +24,7 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     GeneracionCronogramaCreatePayload,
     ObligacionCronogramaV2CreatePayload,
     PERIODICIDAD_MENSUAL,
+    PlanPagoVentaBloqueIndexacionUpsertPayload,
     PlanPagoVentaBloqueUpsertPayload,
     PlanPagoVentaUpsertPayload,
     PlanPagoVentaV2Repository,
@@ -35,6 +37,7 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
 from app.application.common.results import AppResult
 
 CONCEPTO_INTERES_FINANCIERO = "INTERES_FINANCIERO"
+
 
 class GeneratePlanPagoVentaV2PorBloquesService:
     def __init__(
@@ -56,7 +59,6 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
-
         try:
             with self._transaction():
                 return self._execute_in_transaction(
@@ -71,7 +73,6 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
-
         try:
             return self._execute_in_transaction(
                 command,
@@ -79,6 +80,14 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             )
         except ValueError as exc:
             return AppResult.fail(str(exc))
+
+    @staticmethod
+    def _has_indexacion(bloques: list[PlanPagoVentaV2BloquePreview]) -> bool:
+        return any(
+            (bloque.input.metodo_liquidacion or "").strip().upper()
+            == METODO_LIQUIDACION_INDEXACION
+            for bloque in bloques
+        )
 
     def _execute_in_transaction(
         self,
@@ -177,6 +186,39 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             )
             for bloque in prepared_bloques
         ]
+
+        if self._has_indexacion(prepared_bloques):
+            indexaciones = []
+            for prepared, bloque in zip(prepared_bloques, bloques, strict=True):
+                if (
+                    (prepared.input.metodo_liquidacion or "").strip().upper()
+                    != METODO_LIQUIDACION_INDEXACION
+                ):
+                    continue
+                indexaciones.append(
+                    self.repository.get_or_create_plan_pago_venta_bloque_indexacion(
+                        self._build_bloque_indexacion_payload(
+                            bloque=prepared,
+                            id_plan_pago_venta_bloque=bloque[
+                                "id_plan_pago_venta_bloque"
+                            ],
+                            now=now,
+                            id_instalacion=id_instalacion,
+                            op_id=op_id,
+                        )
+                    )
+                )
+            return AppResult.ok(
+                {
+                    "id_venta": command.id_venta,
+                    "id_relacion_generadora": None,
+                    "plan_pago_venta": plan,
+                    "bloques": bloques,
+                    "bloques_indexacion": indexaciones,
+                    "generacion_cronograma_financiero": None,
+                    "obligaciones": [],
+                }
+            )
 
         relacion = self.repository.get_or_create_relacion_generadora(
             RelacionGeneradoraUpsertPayload(
@@ -302,6 +344,36 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             cantidad_periodos=input_bloque.cantidad_periodos,
             base_calculo_interes=input_bloque.base_calculo_interes,
             concepto_financiero_codigo=bloque.concepto_financiero_codigo,
+            observaciones=input_bloque.observaciones,
+            created_at=now,
+            updated_at=now,
+            id_instalacion_origen=id_instalacion,
+            id_instalacion_ultima_modificacion=id_instalacion,
+            op_id_alta=op_id,
+            op_id_ultima_modificacion=op_id,
+        )
+
+    def _build_bloque_indexacion_payload(
+        self,
+        *,
+        bloque: PlanPagoVentaV2BloquePreview,
+        id_plan_pago_venta_bloque: int,
+        now: datetime,
+        id_instalacion: int | None,
+        op_id: Any,
+    ) -> PlanPagoVentaBloqueIndexacionUpsertPayload:
+        input_bloque = bloque.input
+        return PlanPagoVentaBloqueIndexacionUpsertPayload(
+            id_plan_pago_venta_bloque=id_plan_pago_venta_bloque,
+            id_indice_financiero=input_bloque.id_indice_financiero,
+            fecha_base_indice=input_bloque.fecha_base_indice,
+            valor_base_indice=input_bloque.valor_base_indice,
+            modo_indexacion=input_bloque.modo_indexacion,
+            base_calculo_indexacion=input_bloque.base_calculo_indexacion,
+            tipo_generacion_indexada=input_bloque.tipo_generacion_indexada,
+            politica_valor_no_disponible=input_bloque.politica_valor_no_disponible,
+            conserva_capital_original=input_bloque.conserva_capital_original,
+            genera_ajuste_por_diferencia=input_bloque.genera_ajuste_por_diferencia,
             observaciones=input_bloque.observaciones,
             created_at=now,
             updated_at=now,
