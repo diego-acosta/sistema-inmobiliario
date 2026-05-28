@@ -101,6 +101,17 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
           FROM pg_constraint
+         WHERE conname = 'uq_indice_financiero_valor_id_indice_pair'
+           AND conrelid = 'public.indice_financiero_valor'::regclass
+    ) THEN
+        ALTER TABLE public.indice_financiero_valor
+            ADD CONSTRAINT uq_indice_financiero_valor_id_indice_pair
+            UNIQUE (id_indice_financiero_valor, id_indice_financiero);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_constraint
          WHERE conname = 'fk_ppvbi_plan_pago_venta_bloque'
            AND conrelid = 'public.plan_pago_venta_bloque_indexacion'::regclass
     ) THEN
@@ -122,6 +133,17 @@ BEGIN
             FOREIGN KEY (id_indice_financiero)
             REFERENCES public.indice_financiero (id_indice_financiero)
             ON DELETE RESTRICT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_constraint
+         WHERE conname = 'uq_ppvbi_id_indice_pair'
+           AND conrelid = 'public.plan_pago_venta_bloque_indexacion'::regclass
+    ) THEN
+        ALTER TABLE public.plan_pago_venta_bloque_indexacion
+            ADD CONSTRAINT uq_ppvbi_id_indice_pair
+            UNIQUE (id_plan_pago_venta_bloque_indexacion, id_indice_financiero);
     END IF;
 
     IF NOT EXISTS (
@@ -271,6 +293,32 @@ BEGIN
             ADD CONSTRAINT fk_ofi_indice_financiero_valor
             FOREIGN KEY (id_indice_financiero_valor)
             REFERENCES public.indice_financiero_valor (id_indice_financiero_valor)
+            ON DELETE RESTRICT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_constraint
+         WHERE conname = 'fk_ofi_indice_financiero_valor_mismo_indice'
+           AND conrelid = 'public.obligacion_financiera_indexacion'::regclass
+    ) THEN
+        ALTER TABLE public.obligacion_financiera_indexacion
+            ADD CONSTRAINT fk_ofi_indice_financiero_valor_mismo_indice
+            FOREIGN KEY (id_indice_financiero_valor, id_indice_financiero)
+            REFERENCES public.indice_financiero_valor (id_indice_financiero_valor, id_indice_financiero)
+            ON DELETE RESTRICT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_constraint
+         WHERE conname = 'fk_ofi_bloque_indexacion_mismo_indice'
+           AND conrelid = 'public.obligacion_financiera_indexacion'::regclass
+    ) THEN
+        ALTER TABLE public.obligacion_financiera_indexacion
+            ADD CONSTRAINT fk_ofi_bloque_indexacion_mismo_indice
+            FOREIGN KEY (id_plan_pago_venta_bloque_indexacion, id_indice_financiero)
+            REFERENCES public.plan_pago_venta_bloque_indexacion (id_plan_pago_venta_bloque_indexacion, id_indice_financiero)
             ON DELETE RESTRICT;
     END IF;
 
@@ -455,8 +503,10 @@ COMMENT ON TABLE public.obligacion_financiera_indexacion IS
 COMMENT ON COLUMN public.obligacion_financiera_indexacion.id_obligacion_financiera IS
     'Obligacion cuya indexacion queda trazada; importe_total, saldo, moneda, estado y vencimiento viven en obligacion_financiera.';
 COMMENT ON COLUMN public.obligacion_financiera_indexacion.id_indice_financiero_valor IS
-    'Valor de indice congelado/aplicado para trazabilidad tecnica de la obligacion indexada.';
+    'Valor de indice congelado/aplicado para trazabilidad tecnica de la obligacion indexada; debe pertenecer al mismo id_indice_financiero trazado.';
 COMMENT ON COLUMN public.obligacion_financiera_indexacion.coeficiente_indexacion IS
     'Coeficiente tecnico usado para explicar el calculo indexado; los importes resultantes no se duplican en esta tabla.';
+COMMENT ON COLUMN public.obligacion_financiera_indexacion.id_plan_pago_venta_bloque_indexacion IS
+    'Configuracion de bloque indexado asociada; debe compartir el mismo id_indice_financiero trazado en la obligacion.';
 COMMENT ON COLUMN public.obligacion_financiera_indexacion.base_calculo_indexacion IS
     'Base tecnica de calculo. CAPITAL_VENTA y AJUSTE_INDEXACION deben materializarse en composicion_obligacion cuando se implemente generate.';
