@@ -286,7 +286,7 @@ def test_baja_persona_documento_devuelve_404_si_documento_no_pertenece_a_persona
     assert response.json()["error_code"] == "NOT_FOUND"
 
 
-def test_baja_persona_documento_devuelve_409_si_falta_if_match_version(
+def test_baja_persona_documento_devuelve_400_si_falta_if_match_version(
     client,
 ) -> None:
     persona_response = client.post(
@@ -324,11 +324,11 @@ def test_baja_persona_documento_devuelve_409_si_falta_if_match_version(
         headers=HEADERS,
     )
 
-    assert response.status_code == 409
-    assert response.json()["error_code"] == "CONCURRENCY_ERROR"
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
 
 
-def test_baja_persona_documento_devuelve_409_si_if_match_version_es_invalido(
+def test_baja_persona_documento_devuelve_400_si_if_match_version_es_invalido(
     client,
 ) -> None:
     persona_response = client.post(
@@ -366,8 +366,8 @@ def test_baja_persona_documento_devuelve_409_si_if_match_version_es_invalido(
         headers={**HEADERS, "If-Match-Version": "abc"},
     )
 
-    assert response.status_code == 409
-    assert response.json()["error_code"] == "CONCURRENCY_ERROR"
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
 
 
 def test_baja_persona_documento_devuelve_409_si_update_no_afecta_filas_por_version(

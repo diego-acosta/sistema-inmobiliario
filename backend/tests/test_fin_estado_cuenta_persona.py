@@ -3,6 +3,7 @@ Tests de integración para GET /api/v1/financiero/personas/{id_persona}/estado-c
 """
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -241,7 +242,7 @@ def _pagar_persona(
     body.update(scope)
     response = client.post(
         "/api/v1/financiero/pagos",
-        headers={k: v for k, v in HEADERS.items() if k != "X-Op-Id"},
+        headers={**HEADERS, "X-Op-Id": str(uuid4())},
         params={"id_persona": id_persona},
         json=body,
     )
