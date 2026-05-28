@@ -19,6 +19,7 @@ set PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_FILE=%BACKEND_DIR%\database\patch_plan_p
 set PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloques_v2_20260515.sql
 set PATCH_PLAN_PAGO_VENTA_METODO_PLAN_POR_BLOQUES_V2_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_metodo_plan_por_bloques_v2_20260515.sql
 set PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloque_metodo_liquidacion_20260527.sql
+set PATCH_INDICES_FINANCIEROS_FILE=%BACKEND_DIR%\database\patch_indices_financieros_20260527.sql
 
 echo ============================
 echo Reset DB - Sistema Inmobiliario
@@ -33,6 +34,7 @@ echo Patch plan pago venta cronograma V2: %PATCH_PLAN_PAGO_VENTA_CRONOGRAMA_V2_F
 echo Patch plan pago venta bloques V2: %PATCH_PLAN_PAGO_VENTA_BLOQUES_V2_FILE%
 echo Patch plan pago venta metodo PLAN_POR_BLOQUES V2: %PATCH_PLAN_PAGO_VENTA_METODO_PLAN_POR_BLOQUES_V2_FILE%
 echo Patch plan pago venta bloque metodo liquidacion: %PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE%
+echo Patch indices financieros: %PATCH_INDICES_FINANCIEROS_FILE%
 
 if not exist "%SCHEMA_FILE%" (
   echo ERROR: No existe el schema: %SCHEMA_FILE%
@@ -72,6 +74,12 @@ if not exist "%PATCH_PLAN_PAGO_VENTA_METODO_PLAN_POR_BLOQUES_V2_FILE%" (
 
 if not exist "%PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE%" (
   echo ERROR: No existe el patch de metodo_liquidacion por bloque: %PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_INDICES_FINANCIEROS_FILE%" (
+  echo ERROR: No existe el patch de indices financieros: %PATCH_INDICES_FINANCIEROS_FILE%
   pause
   exit /b 1
 )
@@ -138,6 +146,15 @@ echo Aplicando patch metodo_liquidacion por bloque en %DEV_DB%...
 %PGBIN%\psql -d %DEV_DB% -f "%PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch metodo_liquidacion por bloque en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch indices financieros en %DEV_DB%...
+%PGBIN%\psql -d %DEV_DB% -f "%PATCH_INDICES_FINANCIEROS_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch indices financieros en %DEV_DB%
   pause
   exit /b 1
 )
@@ -213,6 +230,15 @@ echo Aplicando patch metodo_liquidacion por bloque en %TEST_DB%...
 %PGBIN%\psql -d %TEST_DB% -f "%PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch metodo_liquidacion por bloque en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch indices financieros en %TEST_DB%...
+%PGBIN%\psql -d %TEST_DB% -f "%PATCH_INDICES_FINANCIEROS_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch indices financieros en %TEST_DB%
   pause
   exit /b 1
 )
