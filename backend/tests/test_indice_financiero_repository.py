@@ -36,7 +36,7 @@ def _crear_indice(db_session, codigo: str, estado: str = "ACTIVO", deleted: bool
             "codigo": codigo,
             "nombre": f"Indice {codigo}",
             "estado": estado,
-            "deleted_at": "2026-01-01 00:00:00" if deleted else None,
+            "deleted_at": "2099-01-01 00:00:00" if deleted else None,
         },
     ).one()
     return row[0]
@@ -80,7 +80,7 @@ def _crear_valor(
             "valor_indice": valor_indice,
             "fecha_publicacion": fecha_valor,
             "estado_valor_indice": estado_valor_indice,
-            "deleted_at": "2026-01-01 00:00:00" if deleted else None,
+            "deleted_at": "2099-01-01 00:00:00" if deleted else None,
         },
     ).one()
     return row[0]
