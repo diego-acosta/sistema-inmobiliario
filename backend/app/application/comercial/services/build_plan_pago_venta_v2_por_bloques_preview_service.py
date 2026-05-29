@@ -31,8 +31,19 @@ TIPO_BLOQUE_SALDO = "SALDO"
 TIPO_ITEM_ANTICIPO = "ANTICIPO"
 TIPO_ITEM_REFUERZO = "REFUERZO"
 TIPO_ITEM_SALDO = "SALDO"
+METODO_LIQUIDACION_SIN_INTERES = "SIN_INTERES"
 METODO_LIQUIDACION_INTERES_DIRECTO = "INTERES_DIRECTO"
+METODO_LIQUIDACION_INDEXACION = "INDEXACION"
+METODOS_LIQUIDACION_VALIDOS = {
+    METODO_LIQUIDACION_SIN_INTERES,
+    METODO_LIQUIDACION_INTERES_DIRECTO,
+    METODO_LIQUIDACION_INDEXACION,
+}
 BASE_CALCULO_INTERES_CAPITAL_INICIAL_BLOQUE = "CAPITAL_INICIAL_BLOQUE"
+MODO_INDEXACION_POR_COEFICIENTE = "POR_COEFICIENTE"
+BASE_CALCULO_INDEXACION_CAPITAL_INICIAL_BLOQUE = "CAPITAL_INICIAL_BLOQUE"
+TIPO_GENERACION_INDEXADA_DEFINITIVA = "DEFINITIVA"
+POLITICA_VALOR_NO_DISPONIBLE_ERROR = "ERROR_SI_NO_EXISTE"
 
 
 @dataclass(slots=True)
@@ -81,7 +92,8 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         except ValueError as exc:
             return AppResult.fail(str(exc))
         total_calculado = sum(
-            (self._bloque_total_capital(bloque.input) for bloque in bloques), Decimal("0.00")
+            (self._bloque_total_capital(bloque.input) for bloque in bloques),
+            Decimal("0.00"),
         ).quantize(Decimal("0.01"))
         total_con_interes = sum(
             (bloque.total_bloque for bloque in bloques), Decimal("0.00")
@@ -157,6 +169,13 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         }:
             return "BLOQUE_INVALIDO"
 
+        metodo = self._normalize_upper_or_none(bloque.metodo_liquidacion)
+        bloque.metodo_liquidacion = metodo
+        if metodo is not None and metodo not in METODOS_LIQUIDACION_VALIDOS:
+            return "VALIDATION_ERROR"
+        if metodo == METODO_LIQUIDACION_INDEXACION and tipo_bloque != TIPO_BLOQUE_TRAMO_CUOTAS:
+            return "VALIDATION_ERROR"
+
         if tipo_bloque == TIPO_BLOQUE_CONTADO:
             if tipo_pago != TIPO_PAGO_CONTADO:
                 return "BLOQUE_INVALIDO"
@@ -199,8 +218,10 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
     ) -> str | None:
         metodo = self._normalize_upper_or_none(bloque.metodo_liquidacion)
         bloque.metodo_liquidacion = metodo
-        if not metodo:
+        if not metodo or metodo == METODO_LIQUIDACION_SIN_INTERES:
             return None
+        if metodo == METODO_LIQUIDACION_INDEXACION:
+            return self._validate_indexacion_tramo(bloque)
         if metodo != METODO_LIQUIDACION_INTERES_DIRECTO:
             return "VALIDATION_ERROR"
         base_calculo = self._normalize_upper_or_none(bloque.base_calculo_interes)
@@ -212,6 +233,54 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         ):
             return "VALIDATION_ERROR"
         if base_calculo != BASE_CALCULO_INTERES_CAPITAL_INICIAL_BLOQUE:
+            return "VALIDATION_ERROR"
+        return None
+
+    def _validate_indexacion_tramo(
+        self, bloque: PlanPagoVentaBloqueInput
+    ) -> str | None:
+        bloque.modo_indexacion = self._normalize_upper_or_none(bloque.modo_indexacion)
+        bloque.base_calculo_indexacion = self._normalize_upper_or_none(
+            bloque.base_calculo_indexacion
+        )
+        bloque.tipo_generacion_indexada = self._normalize_upper_or_none(
+            bloque.tipo_generacion_indexada
+        )
+        bloque.politica_valor_no_disponible = self._normalize_upper_or_none(
+            bloque.politica_valor_no_disponible
+        )
+        if (
+            bloque.id_indice_financiero is None
+            or bloque.id_indice_financiero <= 0
+            or bloque.fecha_base_indice is None
+            or bloque.valor_base_indice is None
+            or bloque.modo_indexacion is None
+            or bloque.base_calculo_indexacion is None
+            or bloque.tipo_generacion_indexada is None
+            or bloque.politica_valor_no_disponible is None
+            or bloque.conserva_capital_original is None
+            or bloque.genera_ajuste_por_diferencia is None
+        ):
+            return "VALIDATION_ERROR"
+        if bloque.valor_base_indice <= 0:
+            return "VALIDATION_ERROR"
+        if bloque.modo_indexacion != MODO_INDEXACION_POR_COEFICIENTE:
+            return "VALIDATION_ERROR"
+        if (
+            bloque.base_calculo_indexacion
+            != BASE_CALCULO_INDEXACION_CAPITAL_INICIAL_BLOQUE
+        ):
+            return "VALIDATION_ERROR"
+        if bloque.tipo_generacion_indexada != TIPO_GENERACION_INDEXADA_DEFINITIVA:
+            return "VALIDATION_ERROR"
+        if (
+            bloque.politica_valor_no_disponible
+            != POLITICA_VALOR_NO_DISPONIBLE_ERROR
+        ):
+            return "VALIDATION_ERROR"
+        if bloque.conserva_capital_original is not True:
+            return "VALIDATION_ERROR"
+        if bloque.genera_ajuste_por_diferencia is not True:
             return "VALIDATION_ERROR"
         return None
 

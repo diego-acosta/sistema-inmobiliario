@@ -818,3 +818,320 @@ def test_repository_bloque_interes_directo_tasa_equivalente_por_escala_es_compat
     payload.tasa_interes_directo_periodica = Decimal("0.02100000")
     second = repository.get_or_create_plan_pago_venta_bloque(payload)
     assert first["id_plan_pago_venta_bloque"] == second["id_plan_pago_venta_bloque"]
+
+
+def _insertar_indice_financiero_minimo(db_session, *, codigo: str) -> int:
+    return db_session.execute(
+        text(
+            """
+            INSERT INTO indice_financiero (
+                codigo_indice_financiero,
+                nombre_indice_financiero,
+                tipo_indice,
+                unidad_medida,
+                frecuencia_publicacion,
+                fuente_indice,
+                estado_indice_financiero
+            )
+            VALUES (:codigo, :codigo, 'INDICE', 'PUNTOS', 'MENSUAL', 'TEST', 'ACTIVO')
+            RETURNING id_indice_financiero
+            """
+        ),
+        {"codigo": codigo},
+    ).scalar_one()
+
+
+def _indexacion_payload_kwargs(id_indice_financiero: int = 1) -> dict:
+    return {
+        "metodo_liquidacion": "INDEXACION",
+        "id_indice_financiero": id_indice_financiero,
+        "fecha_base_indice": date(2026, 5, 1),
+        "valor_base_indice": Decimal("100.12345678"),
+        "modo_indexacion": "POR_COEFICIENTE",
+        "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+        "tipo_generacion_indexada": "DEFINITIVA",
+        "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+        "conserva_capital_original": True,
+        "genera_ajuste_por_diferencia": True,
+    }
+
+
+def _indexacion_repo_payload(
+    *,
+    id_plan_pago_venta_bloque: int,
+    id_indice_financiero: int,
+    fecha_base_indice: date = date(2026, 5, 1),
+    valor_base_indice: Decimal = Decimal("100.12345678"),
+    politica_valor_no_disponible: str = "ERROR_SI_NO_EXISTE",
+) -> object:
+    from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
+        PlanPagoVentaBloqueIndexacionUpsertPayload,
+    )
+
+    now = datetime.now(UTC)
+    return PlanPagoVentaBloqueIndexacionUpsertPayload(
+        id_plan_pago_venta_bloque=id_plan_pago_venta_bloque,
+        id_indice_financiero=id_indice_financiero,
+        fecha_base_indice=fecha_base_indice,
+        valor_base_indice=valor_base_indice,
+        modo_indexacion="POR_COEFICIENTE",
+        base_calculo_indexacion="CAPITAL_INICIAL_BLOQUE",
+        tipo_generacion_indexada="DEFINITIVA",
+        politica_valor_no_disponible=politica_valor_no_disponible,
+        conserva_capital_original=True,
+        genera_ajuste_por_diferencia=True,
+        observaciones=None,
+        created_at=now,
+        updated_at=now,
+        id_instalacion_origen=1,
+        id_instalacion_ultima_modificacion=1,
+        op_id_alta=None,
+        op_id_ultima_modificacion=None,
+    )
+
+
+def test_generate_indexacion_devuelve_error_controlado_y_no_persiste(client, db_session) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-001")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-GEN-001")
+    payload = _payload_financiado()
+    payload["bloques"][1].update(
+        {
+            "metodo_liquidacion": "INDEXACION",
+            "id_indice_financiero": id_indice,
+            "fecha_base_indice": "2026-05-01",
+            "valor_base_indice": "100.12345678",
+            "modo_indexacion": "POR_COEFICIENTE",
+            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+            "tipo_generacion_indexada": "DEFINITIVA",
+            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    )
+
+    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert body["details"]["errors"] == ["INDEXACION_GENERATE_NO_IMPLEMENTADO"]
+    assert (
+        db_session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM plan_pago_venta
+                WHERE id_venta = :id_venta
+                  AND deleted_at IS NULL
+                """
+            ),
+            {"id_venta": id_venta},
+        ).scalar_one()
+        == 0
+    )
+    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 0
+    assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 0
+    assert (
+        db_session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM plan_pago_venta_bloque_indexacion ppvbi
+                JOIN plan_pago_venta_bloque ppvb
+                  ON ppvb.id_plan_pago_venta_bloque = ppvbi.id_plan_pago_venta_bloque
+                JOIN plan_pago_venta ppv
+                  ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta
+                WHERE ppv.id_venta = :id_venta
+                  AND ppvbi.deleted_at IS NULL
+                """
+            ),
+            {"id_venta": id_venta},
+        ).scalar_one()
+        == 0
+    )
+
+
+def test_repository_persiste_y_lee_plan_pago_venta_bloque_indexacion(db_session) -> None:
+    repository = PlanPagoVentaV2Repository(db_session)
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-001")
+    id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
+        db_session, codigo_venta="V-PPV2-BLQ-REPO-IX-001"
+    )
+    bloque = repository.get_or_create_plan_pago_venta_bloque(
+        PlanPagoVentaBloqueUpsertPayload(
+            id_plan_pago_venta=id_plan_pago_venta,
+            numero_bloque=1,
+            tipo_bloque="TRAMO_CUOTAS",
+            etiqueta_bloque="Tramo indexado",
+            clave_bloque="PLAN_PAGO_VENTA:1:BLOQUE:TRAMO_CUOTAS:1",
+            cantidad_cuotas=6,
+            importe_total_bloque=Decimal("10000000.00"),
+            importe_cuota=Decimal("1666666.67"),
+            fecha_vencimiento=None,
+            fecha_primer_vencimiento=date(2026, 6, 10),
+            periodicidad="MENSUAL",
+            regla_redondeo="ULTIMA_CUOTA",
+            metodo_liquidacion="INDEXACION",
+            tasa_interes_directo_periodica=None,
+            cantidad_periodos=None,
+            base_calculo_interes=None,
+            concepto_financiero_codigo="CAPITAL_VENTA",
+            observaciones=None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            id_instalacion_origen=1,
+            id_instalacion_ultima_modificacion=1,
+            op_id_alta=None,
+            op_id_ultima_modificacion=None,
+        )
+    )
+    payload = _indexacion_repo_payload(
+        id_plan_pago_venta_bloque=bloque["id_plan_pago_venta_bloque"],
+        id_indice_financiero=id_indice,
+    )
+
+    created = repository.get_or_create_plan_pago_venta_bloque_indexacion(payload)
+    found = repository.get_plan_pago_venta_bloque_indexacion(
+        bloque["id_plan_pago_venta_bloque"]
+    )
+
+    assert found == created
+    assert created["id_indice_financiero"] == id_indice
+    assert created["valor_base_indice"] == Decimal("100.12345678")
+
+
+def test_repository_indexacion_detecta_incompatibilidad(db_session) -> None:
+    repository = PlanPagoVentaV2Repository(db_session)
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-002")
+    id_indice_otro = _insertar_indice_financiero_minimo(db_session, codigo="CAC-IX-002")
+    id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
+        db_session, codigo_venta="V-PPV2-BLQ-REPO-IX-002"
+    )
+    bloque = repository.get_or_create_plan_pago_venta_bloque(
+        PlanPagoVentaBloqueUpsertPayload(
+            id_plan_pago_venta=id_plan_pago_venta,
+            numero_bloque=1,
+            tipo_bloque="TRAMO_CUOTAS",
+            etiqueta_bloque="Tramo indexado",
+            clave_bloque="PLAN_PAGO_VENTA:2:BLOQUE:TRAMO_CUOTAS:1",
+            cantidad_cuotas=6,
+            importe_total_bloque=Decimal("10000000.00"),
+            importe_cuota=Decimal("1666666.67"),
+            fecha_vencimiento=None,
+            fecha_primer_vencimiento=date(2026, 6, 10),
+            periodicidad="MENSUAL",
+            regla_redondeo="ULTIMA_CUOTA",
+            metodo_liquidacion="INDEXACION",
+            tasa_interes_directo_periodica=None,
+            cantidad_periodos=None,
+            base_calculo_interes=None,
+            concepto_financiero_codigo="CAPITAL_VENTA",
+            observaciones=None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            id_instalacion_origen=1,
+            id_instalacion_ultima_modificacion=1,
+            op_id_alta=None,
+            op_id_ultima_modificacion=None,
+        )
+    )
+    id_bloque = bloque["id_plan_pago_venta_bloque"]
+    repository.get_or_create_plan_pago_venta_bloque_indexacion(
+        _indexacion_repo_payload(
+            id_plan_pago_venta_bloque=id_bloque,
+            id_indice_financiero=id_indice,
+        )
+    )
+
+    incompatible_payloads = [
+        _indexacion_repo_payload(
+            id_plan_pago_venta_bloque=id_bloque,
+            id_indice_financiero=id_indice_otro,
+        ),
+        _indexacion_repo_payload(
+            id_plan_pago_venta_bloque=id_bloque,
+            id_indice_financiero=id_indice,
+            valor_base_indice=Decimal("100.12345679"),
+        ),
+        _indexacion_repo_payload(
+            id_plan_pago_venta_bloque=id_bloque,
+            id_indice_financiero=id_indice,
+            fecha_base_indice=date(2026, 5, 2),
+        ),
+    ]
+
+    for payload in incompatible_payloads:
+        try:
+            repository.get_or_create_plan_pago_venta_bloque_indexacion(payload)
+            assert False, "expected incompatibility"
+        except ValueError as exc:
+            assert str(exc).startswith(
+                "PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE"
+            )
+
+
+def test_repository_indexacion_compara_valor_base_indice_a_ocho_decimales(db_session) -> None:
+    repository = PlanPagoVentaV2Repository(db_session)
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-003")
+    id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
+        db_session, codigo_venta="V-PPV2-BLQ-REPO-IX-003"
+    )
+    bloque = repository.get_or_create_plan_pago_venta_bloque(
+        PlanPagoVentaBloqueUpsertPayload(
+            id_plan_pago_venta=id_plan_pago_venta,
+            numero_bloque=1,
+            tipo_bloque="TRAMO_CUOTAS",
+            etiqueta_bloque="Tramo indexado",
+            clave_bloque="PLAN_PAGO_VENTA:3:BLOQUE:TRAMO_CUOTAS:1",
+            cantidad_cuotas=6,
+            importe_total_bloque=Decimal("10000000.00"),
+            importe_cuota=Decimal("1666666.67"),
+            fecha_vencimiento=None,
+            fecha_primer_vencimiento=date(2026, 6, 10),
+            periodicidad="MENSUAL",
+            regla_redondeo="ULTIMA_CUOTA",
+            metodo_liquidacion="INDEXACION",
+            tasa_interes_directo_periodica=None,
+            cantidad_periodos=None,
+            base_calculo_interes=None,
+            concepto_financiero_codigo="CAPITAL_VENTA",
+            observaciones=None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            id_instalacion_origen=1,
+            id_instalacion_ultima_modificacion=1,
+            op_id_alta=None,
+            op_id_ultima_modificacion=None,
+        )
+    )
+    id_bloque = bloque["id_plan_pago_venta_bloque"]
+    first = repository.get_or_create_plan_pago_venta_bloque_indexacion(
+        _indexacion_repo_payload(
+            id_plan_pago_venta_bloque=id_bloque,
+            id_indice_financiero=id_indice,
+            valor_base_indice=Decimal("100.12"),
+        )
+    )
+    second = repository.get_or_create_plan_pago_venta_bloque_indexacion(
+        _indexacion_repo_payload(
+            id_plan_pago_venta_bloque=id_bloque,
+            id_indice_financiero=id_indice,
+            valor_base_indice=Decimal("100.12000000"),
+        )
+    )
+    assert first["id_plan_pago_venta_bloque_indexacion"] == second[
+        "id_plan_pago_venta_bloque_indexacion"
+    ]
+
+    try:
+        repository.get_or_create_plan_pago_venta_bloque_indexacion(
+            _indexacion_repo_payload(
+                id_plan_pago_venta_bloque=id_bloque,
+                id_indice_financiero=id_indice,
+                valor_base_indice=Decimal("100.12000001"),
+            )
+        )
+        assert False, "expected incompatibility"
+    except ValueError as exc:
+        assert "valor_base_indice" in str(exc)

@@ -327,3 +327,134 @@ def test_preview_interes_directo_base_calculo_invalida_devuelve_validation_error
     )
     assert not result.success
     assert result.errors == ["VALIDATION_ERROR"]
+
+
+def _indexacion_kwargs() -> dict:
+    return {
+        "metodo_liquidacion": "indexacion",
+        "id_indice_financiero": 1,
+        "fecha_base_indice": date(2026, 5, 1),
+        "valor_base_indice": Decimal("100.12345678"),
+        "modo_indexacion": "por_coeficiente",
+        "base_calculo_indexacion": "capital_inicial_bloque",
+        "tipo_generacion_indexada": "definitiva",
+        "politica_valor_no_disponible": "error_si_no_existe",
+        "conserva_capital_original": True,
+        "genera_ajuste_por_diferencia": True,
+    }
+
+
+def _tramo_indexado(**overrides) -> PlanPagoVentaBloqueInput:
+    values = {
+        "tipo_bloque": "TRAMO_CUOTAS",
+        "importe_total_bloque": Decimal("10000000.00"),
+        "cantidad_cuotas": 6,
+        "fecha_primer_vencimiento": date(2026, 6, 10),
+        "periodicidad": "MENSUAL",
+        **_indexacion_kwargs(),
+    }
+    values.update(overrides)
+    return PlanPagoVentaBloqueInput(**values)
+
+
+def test_preview_acepta_indexacion_valida_y_propaga_campos_en_bloque() -> None:
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(bloques=[_tramo_indexado()])
+    )
+
+    assert result.success, result.errors
+    bloque = result.data["bloques"][0]
+    assert bloque.input.metodo_liquidacion == "INDEXACION"
+    assert bloque.input.id_indice_financiero == 1
+    assert bloque.input.fecha_base_indice == date(2026, 5, 1)
+    assert bloque.input.valor_base_indice == Decimal("100.12345678")
+    assert bloque.input.modo_indexacion == "POR_COEFICIENTE"
+    assert bloque.input.base_calculo_indexacion == "CAPITAL_INICIAL_BLOQUE"
+    assert bloque.input.tipo_generacion_indexada == "DEFINITIVA"
+    assert bloque.input.politica_valor_no_disponible == "ERROR_SI_NO_EXISTE"
+    assert bloque.input.conserva_capital_original is True
+    assert bloque.input.genera_ajuste_por_diferencia is True
+    assert result.data["total_calculado"] == Decimal("10000000.00")
+    assert result.data["total_con_interes"] == Decimal("10000000.00")
+    assert sum(
+        (obligacion.importe_total for obligacion in result.data["obligaciones"]),
+        Decimal("0.00"),
+    ) == Decimal("10000000.00")
+
+
+def test_endpoint_preview_indexacion_valida_devuelve_campos_nuevos(client) -> None:
+    payload = _payload_tramo_por_capital_total()
+    payload["bloques"][0].update(
+        {
+            "metodo_liquidacion": "indexacion",
+            "id_indice_financiero": 1,
+            "fecha_base_indice": "2026-05-01",
+            "valor_base_indice": "100.12345678",
+            "modo_indexacion": "por_coeficiente",
+            "base_calculo_indexacion": "capital_inicial_bloque",
+            "tipo_generacion_indexada": "definitiva",
+            "politica_valor_no_disponible": "error_si_no_existe",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    )
+
+    response = client.post(URL.format(id_venta=1), json=payload)
+
+    assert response.status_code == 200, response.text
+    bloque = response.json()["data"]["bloques"][0]
+    assert bloque["metodo_liquidacion"] == "INDEXACION"
+    assert bloque["id_indice_financiero"] == 1
+    assert bloque["fecha_base_indice"] == "2026-05-01"
+    assert bloque["valor_base_indice"] == "100.12345678"
+    assert bloque["modo_indexacion"] == "POR_COEFICIENTE"
+    assert bloque["base_calculo_indexacion"] == "CAPITAL_INICIAL_BLOQUE"
+    assert bloque["tipo_generacion_indexada"] == "DEFINITIVA"
+    assert bloque["politica_valor_no_disponible"] == "ERROR_SI_NO_EXISTE"
+    assert bloque["conserva_capital_original"] is True
+    assert bloque["genera_ajuste_por_diferencia"] is True
+    assert response.json()["data"]["total_calculado"] == "10000000.00"
+
+
+def test_preview_rechaza_indexacion_si_tipo_bloque_no_es_tramo_cuotas() -> None:
+    bloque = PlanPagoVentaBloqueInput(
+        tipo_bloque="ANTICIPO",
+        importe_total_bloque=Decimal("10000000.00"),
+        fecha_vencimiento=date(2026, 6, 10),
+        **_indexacion_kwargs(),
+    )
+
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(bloques=[bloque])
+    )
+
+    assert not result.success
+    assert result.errors == ["VALIDATION_ERROR"]
+
+
+def test_preview_rechaza_indexacion_si_faltan_parametros_obligatorios() -> None:
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(bloques=[_tramo_indexado(id_indice_financiero=None)])
+    )
+
+    assert not result.success
+    assert result.errors == ["VALIDATION_ERROR"]
+
+
+def test_preview_rechaza_indexacion_con_valores_invalidos() -> None:
+    invalid_overrides = [
+        {"modo_indexacion": "POR_INDICE"},
+        {"base_calculo_indexacion": "SALDO"},
+        {"tipo_generacion_indexada": "PROVISORIA"},
+        {"politica_valor_no_disponible": "USAR_ULTIMO"},
+        {"valor_base_indice": Decimal("0.00000000")},
+        {"conserva_capital_original": False},
+        {"genera_ajuste_por_diferencia": False},
+    ]
+
+    for overrides in invalid_overrides:
+        result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+            _command(bloques=[_tramo_indexado(**overrides)])
+        )
+        assert not result.success, overrides
+        assert result.errors == ["VALIDATION_ERROR"]

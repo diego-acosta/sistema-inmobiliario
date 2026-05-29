@@ -10,6 +10,7 @@ from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques 
     GeneratePlanPagoVentaV2PorBloquesCommand,
 )
 from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    METODO_LIQUIDACION_INDEXACION,
     METODO_LIQUIDACION_INTERES_DIRECTO,
     BuildPlanPagoVentaV2PorBloquesPreviewService,
     METODO_PLAN_POR_BLOQUES,
@@ -36,6 +37,7 @@ from app.application.common.results import AppResult
 
 CONCEPTO_INTERES_FINANCIERO = "INTERES_FINANCIERO"
 
+
 class GeneratePlanPagoVentaV2PorBloquesService:
     def __init__(
         self,
@@ -56,7 +58,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
-
+        if self._has_indexacion(preview_without_plan.data["bloques"]):
+            return AppResult.fail("INDEXACION_GENERATE_NO_IMPLEMENTADO")
         try:
             with self._transaction():
                 return self._execute_in_transaction(
@@ -71,7 +74,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
-
+        if self._has_indexacion(preview_without_plan.data["bloques"]):
+            return AppResult.fail("INDEXACION_GENERATE_NO_IMPLEMENTADO")
         try:
             return self._execute_in_transaction(
                 command,
@@ -79,6 +83,14 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             )
         except ValueError as exc:
             return AppResult.fail(str(exc))
+
+    @staticmethod
+    def _has_indexacion(bloques: list[PlanPagoVentaV2BloquePreview]) -> bool:
+        return any(
+            (bloque.input.metodo_liquidacion or "").strip().upper()
+            == METODO_LIQUIDACION_INDEXACION
+            for bloque in bloques
+        )
 
     def _execute_in_transaction(
         self,

@@ -481,6 +481,154 @@ class PlanPagoVentaV2Repository:
         normalized = str(value).strip().upper()
         return normalized or None
 
+    def get_or_create_plan_pago_venta_bloque_indexacion(
+        self, payload: Any
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text(
+            """
+            INSERT INTO plan_pago_venta_bloque_indexacion (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_plan_pago_venta_bloque,
+                id_indice_financiero,
+                fecha_base_indice,
+                valor_base_indice,
+                modo_indexacion,
+                base_calculo_indexacion,
+                tipo_generacion_indexada,
+                politica_valor_no_disponible,
+                conserva_capital_original,
+                genera_ajuste_por_diferencia,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_plan_pago_venta_bloque,
+                :id_indice_financiero,
+                :fecha_base_indice,
+                :valor_base_indice,
+                :modo_indexacion,
+                :base_calculo_indexacion,
+                :tipo_generacion_indexada,
+                :politica_valor_no_disponible,
+                :conserva_capital_original,
+                :genera_ajuste_por_diferencia,
+                :observaciones
+            )
+            ON CONFLICT (id_plan_pago_venta_bloque)
+            WHERE deleted_at IS NULL
+            DO UPDATE SET updated_at = plan_pago_venta_bloque_indexacion.updated_at
+            RETURNING
+                id_plan_pago_venta_bloque_indexacion,
+                id_plan_pago_venta_bloque,
+                id_indice_financiero,
+                fecha_base_indice,
+                valor_base_indice,
+                modo_indexacion,
+                base_calculo_indexacion,
+                tipo_generacion_indexada,
+                politica_valor_no_disponible,
+                conserva_capital_original,
+                genera_ajuste_por_diferencia,
+                observaciones
+            """
+        )
+        row = self.db.execute(stmt, values).mappings().one()
+        indexacion = dict(row)
+        self._ensure_plan_pago_venta_bloque_indexacion_compatible(indexacion, values)
+        return indexacion
+
+    def get_plan_pago_venta_bloque_indexacion(
+        self, id_plan_pago_venta_bloque: int
+    ) -> dict[str, Any] | None:
+        stmt = text(
+            """
+            SELECT
+                id_plan_pago_venta_bloque_indexacion,
+                id_plan_pago_venta_bloque,
+                id_indice_financiero,
+                fecha_base_indice,
+                valor_base_indice,
+                modo_indexacion,
+                base_calculo_indexacion,
+                tipo_generacion_indexada,
+                politica_valor_no_disponible,
+                conserva_capital_original,
+                genera_ajuste_por_diferencia,
+                observaciones
+            FROM plan_pago_venta_bloque_indexacion
+            WHERE id_plan_pago_venta_bloque = :id_plan_pago_venta_bloque
+              AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(
+            stmt, {"id_plan_pago_venta_bloque": id_plan_pago_venta_bloque}
+        ).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def _ensure_plan_pago_venta_bloque_indexacion_compatible(
+        self, indexacion: dict[str, Any], expected: dict[str, Any]
+    ) -> None:
+        fields_default = (
+            "id_plan_pago_venta_bloque",
+            "id_indice_financiero",
+            "fecha_base_indice",
+            "conserva_capital_original",
+            "genera_ajuste_por_diferencia",
+        )
+        incompatible = [
+            field
+            for field in fields_default
+            if self._normalize_indexacion_value(indexacion.get(field))
+            != self._normalize_indexacion_value(expected.get(field))
+        ]
+        if self._normalize_indice_value(
+            indexacion.get("valor_base_indice")
+        ) != self._normalize_indice_value(expected.get("valor_base_indice")):
+            incompatible.append("valor_base_indice")
+        for field in (
+            "modo_indexacion",
+            "base_calculo_indexacion",
+            "tipo_generacion_indexada",
+            "politica_valor_no_disponible",
+        ):
+            if self._normalize_upper_or_none(
+                indexacion.get(field)
+            ) != self._normalize_upper_or_none(expected.get(field)):
+                incompatible.append(field)
+        if incompatible:
+            raise ValueError(
+                "PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE:"
+                f"{expected.get('id_plan_pago_venta_bloque')}:"
+                f"{','.join(incompatible)}"
+            )
+
+    @staticmethod
+    def _normalize_indexacion_value(value: Any) -> Any:
+        if isinstance(value, date):
+            return value.isoformat()
+        return value
+
+    @staticmethod
+    def _normalize_indice_value(value: Any) -> Decimal | None:
+        if value is None:
+            return None
+        return Decimal(str(value)).quantize(Decimal("0.00000001"))
+
     def get_plan_pago_venta_bloques(
         self, id_plan_pago_venta: int
     ) -> list[dict[str, Any]]:
