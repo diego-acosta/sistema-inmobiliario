@@ -827,12 +827,13 @@ def _insertar_indice_financiero_minimo(db_session, *, codigo: str) -> int:
             INSERT INTO indice_financiero (
                 codigo_indice_financiero,
                 nombre_indice_financiero,
-                tipo_indice_financiero,
-                periodicidad_publicacion,
-                fuente_publicacion,
+                tipo_indice,
+                unidad_medida,
+                frecuencia_publicacion,
+                fuente_indice,
                 estado_indice_financiero
             )
-            VALUES (:codigo, :codigo, 'INDICE', 'MENSUAL', 'TEST', 'ACTIVO')
+            VALUES (:codigo, :codigo, 'INDICE', 'PUNTOS', 'MENSUAL', 'TEST', 'ACTIVO')
             RETURNING id_indice_financiero
             """
         ),
