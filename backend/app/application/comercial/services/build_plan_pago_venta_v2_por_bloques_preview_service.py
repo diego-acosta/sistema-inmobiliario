@@ -20,6 +20,15 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     add_months,
 )
 from app.application.common.results import AppResult
+from app.application.financiero.services.indexacion_cuota_calculator import (
+    BASE_CALCULO_INDEXACION_CAPITAL_INICIAL_BLOQUE,
+    ESTADO_INDEXACION_CON_INDICE,
+    ESTADO_INDEXACION_PROYECTADA,
+    MODO_INDEXACION_POR_COEFICIENTE,
+    POLITICA_VALOR_NO_DISPONIBLE_ERROR,
+    TIPO_GENERACION_INDEXADA_DEFINITIVA,
+    IndexacionCuotaCalculator,
+)
 
 METODO_PLAN_POR_BLOQUES = "PLAN_POR_BLOQUES"
 TIPO_PAGO_CONTADO = "CONTADO"
@@ -41,12 +50,8 @@ METODOS_LIQUIDACION_VALIDOS = {
     METODO_LIQUIDACION_INDEXACION,
 }
 BASE_CALCULO_INTERES_CAPITAL_INICIAL_BLOQUE = "CAPITAL_INICIAL_BLOQUE"
-MODO_INDEXACION_POR_COEFICIENTE = "POR_COEFICIENTE"
-BASE_CALCULO_INDEXACION_CAPITAL_INICIAL_BLOQUE = "CAPITAL_INICIAL_BLOQUE"
-TIPO_GENERACION_INDEXADA_DEFINITIVA = "DEFINITIVA"
-POLITICA_VALOR_NO_DISPONIBLE_ERROR = "ERROR_SI_NO_EXISTE"
-ESTADO_PREVIEW_INDEXACION_CON_INDICE = "CON_INDICE_APLICADO"
-ESTADO_PREVIEW_INDEXACION_PROYECTADA = "PROYECTADA_SIN_INDICE"
+ESTADO_PREVIEW_INDEXACION_CON_INDICE = ESTADO_INDEXACION_CON_INDICE
+ESTADO_PREVIEW_INDEXACION_PROYECTADA = ESTADO_INDEXACION_PROYECTADA
 
 
 class IndiceFinancieroPreviewQuery(Protocol):
@@ -102,6 +107,9 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         self, indice_financiero_query: IndiceFinancieroPreviewQuery | None = None
     ) -> None:
         self.indice_financiero_query = indice_financiero_query
+        self.indexacion_cuota_calculator = IndexacionCuotaCalculator(
+            indice_financiero_query
+        )
 
     def execute(
         self,
@@ -543,45 +551,28 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         if not self._tramo_usa_indexacion(bloque):
             return {"importe_total": capital_cuota}
 
-        base = bloque.valor_base_indice or Decimal("0.00")
-        common = {
-            "id_indice_financiero": bloque.id_indice_financiero,
-            "valor_base_indice": base,
-            "capital_cuota": capital_cuota,
-        }
-        valor = None
-        if self.indice_financiero_query is not None and bloque.id_indice_financiero:
-            valor = self.indice_financiero_query.get_valor_publicado_por_id_y_fecha(
-                bloque.id_indice_financiero, fecha_vencimiento
-            )
+        resultado = self.indexacion_cuota_calculator.calcular(
+            id_indice_financiero=bloque.id_indice_financiero or 0,
+            valor_base_indice=bloque.valor_base_indice or Decimal("0.00"),
+            fecha_objetivo=fecha_vencimiento,
+            capital_cuota=capital_cuota,
+            modo_indexacion=bloque.modo_indexacion or "",
+            base_calculo_indexacion=bloque.base_calculo_indexacion or "",
+            tipo_generacion_indexada=bloque.tipo_generacion_indexada or "",
+            politica_valor_no_disponible=bloque.politica_valor_no_disponible or "",
+        )
 
-        if valor is None:
-            return {
-                **common,
-                "estado_preview_indexacion": ESTADO_PREVIEW_INDEXACION_PROYECTADA,
-                "importe_total": capital_cuota,
-            }
-
-        valor_aplicado = Decimal(valor["valor_indice"])
-        coeficiente = (valor_aplicado / base).quantize(
-            Decimal("0.00000001"), rounding=ROUND_HALF_UP
-        )
-        ajuste = (capital_cuota * (coeficiente - Decimal("1"))).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        importe_total = (capital_cuota + ajuste).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
         return {
-            **common,
-            "estado_preview_indexacion": ESTADO_PREVIEW_INDEXACION_CON_INDICE,
-            "id_indice_financiero": valor["id_indice_financiero"],
-            "id_indice_financiero_valor": valor["id_indice_financiero_valor"],
-            "fecha_valor_indice": valor["fecha_valor"],
-            "valor_aplicado_indice": valor_aplicado,
-            "coeficiente_indexacion": coeficiente,
-            "ajuste_indexacion_cuota": ajuste,
-            "importe_total": importe_total,
+            "estado_preview_indexacion": resultado.estado_indexacion,
+            "id_indice_financiero": resultado.id_indice_financiero,
+            "id_indice_financiero_valor": resultado.id_indice_financiero_valor,
+            "fecha_valor_indice": resultado.fecha_valor_indice,
+            "valor_base_indice": resultado.valor_base_indice,
+            "valor_aplicado_indice": resultado.valor_aplicado_indice,
+            "coeficiente_indexacion": resultado.coeficiente_indexacion,
+            "capital_cuota": resultado.capital_cuota,
+            "ajuste_indexacion_cuota": resultado.ajuste_indexacion_cuota,
+            "importe_total": resultado.importe_total,
         }
 
     def _importes_cuotas(self, bloque: PlanPagoVentaBloqueInput) -> list[Decimal]:
