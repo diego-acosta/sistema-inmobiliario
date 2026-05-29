@@ -1707,5 +1707,7 @@ def main(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    runner = getattr(ft, "run", None) or ft.app
-    runner(target=main)
+    if hasattr(ft, "run"):
+        ft.run(main)
+    else:
+        ft.app(target=main)
