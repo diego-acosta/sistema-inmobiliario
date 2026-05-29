@@ -40,6 +40,8 @@ from app.api.schemas.comercial import (
     GeneratePlanPagoVentaAnticipoMasCuotasIgualesResponse,
     GeneratePlanPagoVentaV2PorBloquesRequest,
     GeneratePlanPagoVentaV2PorBloquesResponse,
+    PlanPagoVentaV2IntegralData,
+    PlanPagoVentaV2IntegralResponse,
     GenerateVentaFromReservaVentaData,
     GenerateVentaFromReservaVentaRequest,
     GenerateVentaFromReservaVentaResponse,
@@ -228,6 +230,9 @@ from app.application.comercial.services.update_reserva_venta_service import (
 from app.application.comercial.services.get_venta_service import GetVentaService
 from app.application.comercial.services.get_venta_detalle_integral_service import (
     GetVentaDetalleIntegralService,
+)
+from app.application.comercial.services.get_plan_pago_venta_v2_integral_service import (
+    GetPlanPagoVentaV2IntegralService,
 )
 from app.application.common.commands import CommandContext
 from app.infrastructure.persistence.repositories.indice_financiero_repository import (
@@ -2310,6 +2315,52 @@ def _plan_pago_v2_preview_response_data(
             for obligacion in preview["obligaciones"]
         ],
     }
+
+
+@router.get(
+    "/api/v1/ventas/{id_venta}/plan-pago-v2",
+    response_model=PlanPagoVentaV2IntegralResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def get_plan_pago_venta_v2_integral(
+    id_venta: int,
+    db: Session = Depends(get_db),
+) -> PlanPagoVentaV2IntegralResponse | JSONResponse:
+    service = GetPlanPagoVentaV2IntegralService(
+        repository=PlanPagoVentaV2Repository(db)
+    )
+
+    try:
+        result = service.execute(id_venta)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_VENTA" in result.errors:
+            error = ErrorResponse(
+                error_code="NOT_FOUND",
+                error_message="La venta indicada no existe.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=404, content=error.model_dump())
+
+        error = ErrorResponse(
+            error_code="NOT_FOUND_PLAN_PAGO_V2",
+            error_message="La venta indicada no posee un Plan Pago V2 vigente.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    return PlanPagoVentaV2IntegralResponse(
+        data=PlanPagoVentaV2IntegralData(**result.data)
+    )
 
 
 @router.post(

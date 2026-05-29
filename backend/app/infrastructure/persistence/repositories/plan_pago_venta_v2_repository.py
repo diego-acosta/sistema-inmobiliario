@@ -63,6 +63,381 @@ class PlanPagoVentaV2Repository:
         row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
         return dict(row) if row else None
 
+    def get_plan_pago_venta_v2_integral(self, id_venta: int) -> dict[str, Any] | None:
+        plan = self.get_plan_pago_venta_vivo(id_venta)
+        if plan is None:
+            return None
+
+        id_plan_pago_venta = plan["id_plan_pago_venta"]
+        relacion = self.get_relacion_generadora_venta(id_venta)
+        bloques = self.get_plan_pago_venta_bloques_integrales(id_plan_pago_venta)
+        obligaciones = self.get_obligaciones_plan_pago_venta_v2_integrales(
+            id_plan_pago_venta
+        )
+        composiciones = self.get_composiciones_obligaciones_plan_pago_venta_v2(
+            id_plan_pago_venta
+        )
+        generaciones = self.get_generaciones_plan_pago_venta_v2(id_plan_pago_venta)
+        resumen = self.get_resumen_plan_pago_venta_v2(id_plan_pago_venta)
+
+        obligaciones_por_bloque: dict[int, list[dict[str, Any]]] = {}
+        composiciones_por_obligacion: dict[int, list[dict[str, Any]]] = {}
+        for composicion in composiciones:
+            composiciones_por_obligacion.setdefault(
+                composicion["id_obligacion_financiera"], []
+            ).append(composicion)
+
+        for obligacion in obligaciones:
+            obligacion["composiciones"] = composiciones_por_obligacion.get(
+                obligacion["id_obligacion_financiera"], []
+            )
+            obligaciones_por_bloque.setdefault(
+                obligacion["id_plan_pago_venta_bloque"], []
+            ).append(obligacion)
+
+        for bloque in bloques:
+            bloque["obligaciones"] = obligaciones_por_bloque.get(
+                bloque["id_plan_pago_venta_bloque"], []
+            )
+
+        return {
+            "id_venta": id_venta,
+            "plan_pago_venta": plan,
+            "relacion_generadora": relacion,
+            "generaciones": generaciones,
+            "bloques": bloques,
+            "resumen": resumen,
+        }
+
+    def get_relacion_generadora_venta(self, id_venta: int) -> dict[str, Any] | None:
+        stmt = text("""
+            SELECT
+                id_relacion_generadora,
+                tipo_origen,
+                id_origen,
+                estado_relacion_generadora
+            FROM relacion_generadora
+            WHERE tipo_origen = 'venta'
+              AND id_origen = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY id_relacion_generadora ASC
+            LIMIT 1
+            """)
+        row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def get_generaciones_plan_pago_venta_v2(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text("""
+            SELECT
+                id_generacion_cronograma_financiero,
+                id_relacion_generadora,
+                id_plan_pago_venta,
+                tipo_generacion,
+                clave_generacion,
+                estado_generacion,
+                fecha_generacion
+            FROM generacion_cronograma_financiero
+            WHERE id_plan_pago_venta = :id_plan_pago_venta
+              AND deleted_at IS NULL
+            ORDER BY fecha_generacion ASC, id_generacion_cronograma_financiero ASC
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
+
+    def get_plan_pago_venta_bloques_integrales(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text("""
+            SELECT
+                b.id_plan_pago_venta_bloque,
+                b.id_plan_pago_venta,
+                b.numero_bloque,
+                b.tipo_bloque,
+                b.etiqueta_bloque,
+                b.clave_bloque,
+                b.cantidad_cuotas,
+                b.importe_total_bloque,
+                b.importe_cuota,
+                b.fecha_vencimiento,
+                b.fecha_primer_vencimiento,
+                b.periodicidad,
+                b.regla_redondeo,
+                b.metodo_liquidacion,
+                b.tasa_interes_directo_periodica,
+                b.cantidad_periodos,
+                b.base_calculo_interes,
+                b.concepto_financiero_codigo,
+                b.observaciones,
+                bi.id_plan_pago_venta_bloque_indexacion,
+                bi.id_indice_financiero,
+                i.codigo_indice_financiero,
+                i.nombre_indice_financiero,
+                bi.fecha_base_indice,
+                bi.valor_base_indice,
+                bi.modo_indexacion,
+                bi.base_calculo_indexacion,
+                bi.tipo_generacion_indexada,
+                bi.politica_valor_no_disponible,
+                bi.conserva_capital_original,
+                bi.genera_ajuste_por_diferencia
+            FROM plan_pago_venta_bloque b
+            LEFT JOIN plan_pago_venta_bloque_indexacion bi
+              ON bi.id_plan_pago_venta_bloque = b.id_plan_pago_venta_bloque
+             AND bi.deleted_at IS NULL
+            LEFT JOIN indice_financiero i
+              ON i.id_indice_financiero = bi.id_indice_financiero
+             AND i.deleted_at IS NULL
+            WHERE b.id_plan_pago_venta = :id_plan_pago_venta
+              AND b.deleted_at IS NULL
+            ORDER BY b.numero_bloque ASC
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .all()
+        )
+        bloques: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            indexacion = None
+            if data.pop("id_plan_pago_venta_bloque_indexacion") is not None:
+                indexacion = {
+                    "id_plan_pago_venta_bloque_indexacion": row[
+                        "id_plan_pago_venta_bloque_indexacion"
+                    ],
+                    "id_indice_financiero": data.pop("id_indice_financiero"),
+                    "codigo_indice_financiero": data.pop("codigo_indice_financiero"),
+                    "nombre_indice_financiero": data.pop("nombre_indice_financiero"),
+                    "fecha_base_indice": data.pop("fecha_base_indice"),
+                    "valor_base_indice": data.pop("valor_base_indice"),
+                    "modo_indexacion": data.pop("modo_indexacion"),
+                    "base_calculo_indexacion": data.pop("base_calculo_indexacion"),
+                    "tipo_generacion_indexada": data.pop("tipo_generacion_indexada"),
+                    "politica_valor_no_disponible": data.pop(
+                        "politica_valor_no_disponible"
+                    ),
+                    "conserva_capital_original": data.pop(
+                        "conserva_capital_original"
+                    ),
+                    "genera_ajuste_por_diferencia": data.pop(
+                        "genera_ajuste_por_diferencia"
+                    ),
+                }
+            else:
+                for key in (
+                    "id_indice_financiero",
+                    "codigo_indice_financiero",
+                    "nombre_indice_financiero",
+                    "fecha_base_indice",
+                    "valor_base_indice",
+                    "modo_indexacion",
+                    "base_calculo_indexacion",
+                    "tipo_generacion_indexada",
+                    "politica_valor_no_disponible",
+                    "conserva_capital_original",
+                    "genera_ajuste_por_diferencia",
+                ):
+                    data.pop(key)
+            data["indexacion"] = indexacion
+            bloques.append(data)
+        return bloques
+
+    def get_obligaciones_plan_pago_venta_v2_integrales(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text("""
+            SELECT
+                o.id_obligacion_financiera,
+                o.id_relacion_generadora,
+                o.id_generacion_cronograma_financiero,
+                o.id_plan_pago_venta_bloque,
+                o.numero_obligacion,
+                o.tipo_item_cronograma,
+                o.etiqueta_obligacion,
+                o.clave_funcional_origen,
+                o.fecha_vencimiento,
+                o.importe_total,
+                o.saldo_pendiente,
+                o.moneda,
+                o.estado_obligacion,
+                ofi.id_obligacion_financiera_indexacion,
+                ofi.id_indice_financiero,
+                ofi.id_indice_financiero_valor,
+                ofi.fecha_base_indice,
+                ofi.valor_base_indice,
+                ofi.fecha_aplicacion_indice,
+                ofi.valor_aplicado_indice,
+                ofi.coeficiente_indexacion,
+                ofi.modo_indexacion,
+                ofi.base_calculo_indexacion,
+                ofi.tipo_generacion_indexada
+            FROM obligacion_financiera o
+            JOIN plan_pago_venta_bloque b
+              ON b.id_plan_pago_venta_bloque = o.id_plan_pago_venta_bloque
+             AND b.deleted_at IS NULL
+            LEFT JOIN obligacion_financiera_indexacion ofi
+              ON ofi.id_obligacion_financiera = o.id_obligacion_financiera
+             AND ofi.deleted_at IS NULL
+            WHERE b.id_plan_pago_venta = :id_plan_pago_venta
+              AND o.deleted_at IS NULL
+            ORDER BY b.numero_bloque ASC, o.numero_obligacion ASC
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .all()
+        )
+        obligaciones: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            indexacion = None
+            if data.pop("id_obligacion_financiera_indexacion") is not None:
+                indexacion = {
+                    "id_obligacion_financiera_indexacion": row[
+                        "id_obligacion_financiera_indexacion"
+                    ],
+                    "id_indice_financiero": data.pop("id_indice_financiero"),
+                    "id_indice_financiero_valor": data.pop(
+                        "id_indice_financiero_valor"
+                    ),
+                    "fecha_base_indice": data.pop("fecha_base_indice"),
+                    "valor_base_indice": data.pop("valor_base_indice"),
+                    "fecha_aplicacion_indice": data.pop("fecha_aplicacion_indice"),
+                    "valor_aplicado_indice": data.pop("valor_aplicado_indice"),
+                    "coeficiente_indexacion": data.pop("coeficiente_indexacion"),
+                    "modo_indexacion": data.pop("modo_indexacion"),
+                    "base_calculo_indexacion": data.pop("base_calculo_indexacion"),
+                    "tipo_generacion_indexada": data.pop("tipo_generacion_indexada"),
+                }
+            else:
+                for key in (
+                    "id_indice_financiero",
+                    "id_indice_financiero_valor",
+                    "fecha_base_indice",
+                    "valor_base_indice",
+                    "fecha_aplicacion_indice",
+                    "valor_aplicado_indice",
+                    "coeficiente_indexacion",
+                    "modo_indexacion",
+                    "base_calculo_indexacion",
+                    "tipo_generacion_indexada",
+                ):
+                    data.pop(key)
+            data["indexacion"] = indexacion
+            obligaciones.append(data)
+        return obligaciones
+
+    def get_composiciones_obligaciones_plan_pago_venta_v2(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text("""
+            SELECT
+                co.id_composicion_obligacion,
+                co.id_obligacion_financiera,
+                co.id_concepto_financiero,
+                cf.codigo_concepto_financiero,
+                co.orden_composicion,
+                co.importe_componente,
+                co.saldo_componente,
+                co.moneda_componente
+            FROM composicion_obligacion co
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = co.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            JOIN plan_pago_venta_bloque b
+              ON b.id_plan_pago_venta_bloque = o.id_plan_pago_venta_bloque
+             AND b.deleted_at IS NULL
+            JOIN concepto_financiero cf
+              ON cf.id_concepto_financiero = co.id_concepto_financiero
+             AND cf.deleted_at IS NULL
+            WHERE b.id_plan_pago_venta = :id_plan_pago_venta
+              AND co.deleted_at IS NULL
+            ORDER BY b.numero_bloque ASC, o.numero_obligacion ASC, co.orden_composicion ASC
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
+
+    def get_resumen_plan_pago_venta_v2(
+        self, id_plan_pago_venta: int
+    ) -> dict[str, Any]:
+        stmt = text("""
+            WITH obligaciones AS (
+                SELECT o.id_obligacion_financiera, o.importe_total, b.metodo_liquidacion
+                FROM obligacion_financiera o
+                JOIN plan_pago_venta_bloque b
+                  ON b.id_plan_pago_venta_bloque = o.id_plan_pago_venta_bloque
+                 AND b.deleted_at IS NULL
+                WHERE b.id_plan_pago_venta = :id_plan_pago_venta
+                  AND o.deleted_at IS NULL
+            ), composiciones AS (
+                SELECT
+                    cf.codigo_concepto_financiero,
+                    co.importe_componente
+                FROM composicion_obligacion co
+                JOIN obligaciones o
+                  ON o.id_obligacion_financiera = co.id_obligacion_financiera
+                JOIN concepto_financiero cf
+                  ON cf.id_concepto_financiero = co.id_concepto_financiero
+                 AND cf.deleted_at IS NULL
+                WHERE co.deleted_at IS NULL
+            ), indexaciones AS (
+                SELECT ofi.id_obligacion_financiera
+                FROM obligacion_financiera_indexacion ofi
+                JOIN obligaciones o
+                  ON o.id_obligacion_financiera = ofi.id_obligacion_financiera
+                WHERE ofi.deleted_at IS NULL
+            )
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM plan_pago_venta_bloque b
+                    WHERE b.id_plan_pago_venta = :id_plan_pago_venta
+                      AND b.deleted_at IS NULL
+                ) AS cantidad_bloques,
+                (SELECT COUNT(*) FROM obligaciones) AS cantidad_obligaciones,
+                COALESCE((
+                    SELECT SUM(importe_componente)
+                    FROM composiciones
+                    WHERE codigo_concepto_financiero = 'CAPITAL_VENTA'
+                ), 0) AS total_capital,
+                COALESCE((
+                    SELECT SUM(importe_componente)
+                    FROM composiciones
+                    WHERE codigo_concepto_financiero = 'INTERES_FINANCIERO'
+                ), 0) AS total_interes,
+                COALESCE((
+                    SELECT SUM(importe_componente)
+                    FROM composiciones
+                    WHERE codigo_concepto_financiero = 'AJUSTE_INDEXACION'
+                ), 0) AS total_ajuste_indexacion,
+                COALESCE((SELECT SUM(importe_total) FROM obligaciones), 0) AS total_obligaciones,
+                (SELECT COUNT(*) FROM indexaciones) AS cantidad_obligaciones_con_indexacion,
+                (
+                    SELECT COUNT(*)
+                    FROM obligaciones o
+                    LEFT JOIN indexaciones i
+                      ON i.id_obligacion_financiera = o.id_obligacion_financiera
+                    WHERE o.metodo_liquidacion = 'INDEXACION'
+                      AND i.id_obligacion_financiera IS NULL
+                ) AS cantidad_obligaciones_proyectadas_sin_indexacion
+            """)
+        row = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .one()
+        )
+        return dict(row)
+
     def upsert_plan_pago_venta_borrador(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
         existing = self.get_plan_pago_venta_vivo(values["id_venta"])
