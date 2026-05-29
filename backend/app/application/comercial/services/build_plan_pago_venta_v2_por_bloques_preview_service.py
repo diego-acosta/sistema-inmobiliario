@@ -144,7 +144,7 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             ),
             Decimal("0.00"),
         ).quantize(Decimal("0.01"))
-        total_con_indexacion = (total_calculado + total_ajuste_indexacion).quantize(
+        total_con_indexacion = (total_con_interes + total_ajuste_indexacion).quantize(
             Decimal("0.01")
         )
         return AppResult.ok(
