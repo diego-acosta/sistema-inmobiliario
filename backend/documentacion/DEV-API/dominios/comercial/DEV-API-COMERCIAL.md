@@ -569,6 +569,7 @@ Implementado y disponible hoy:
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/anticipo-mas-cuotas-iguales`
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
+- `GET /api/v1/ventas/{id_venta}/plan-pago-v2`
 
 Alineacion con bloques V2:
 
@@ -580,6 +581,108 @@ Alineacion con bloques V2:
 - `id_plan_pago_venta_bloque` es trazabilidad de origen comercial-financiero; no es clave idempotente.
 - `clave_funcional_origen` sigue siendo la clave idempotente financiera por obligacion.
 - El endpoint unificado recibe bloques desde el cliente y reutiliza el motor interno `PLAN_POR_BLOQUES`.
+
+#### `GET /api/v1/ventas/{id_venta}/plan-pago-v2`
+
+Estado:
+- implementado como consulta integral/read del Plan Pago V2 vigente de una venta
+- clasificacion CORE-EF: `QUERY_READLIKE`
+- no requiere headers write (`X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`) ni `If-Match-Version`
+
+Objetivo:
+- devolver la cabecera `plan_pago_venta`
+- devolver `relacion_generadora` y corridas `generacion_cronograma_financiero` asociadas si existen
+- devolver bloques ordenados por `numero_bloque`
+- incluir configuracion `plan_pago_venta_bloque_indexacion` por bloque cuando exista
+- devolver obligaciones generadas por bloque con sus composiciones persistidas
+- incluir `obligacion_financiera_indexacion` cuando exista y `null` cuando la cuota aun esta proyectada sin indice aplicado
+- devolver un resumen calculado desde importes persistidos, sin recalcular reglas financieras
+
+Response `200` minimo:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_venta": 1,
+    "plan_pago_venta": {
+      "id_plan_pago_venta": 20,
+      "id_venta": 1,
+      "metodo_plan_pago": "PLAN_POR_BLOQUES",
+      "estado_plan_pago": "GENERADO",
+      "moneda": "ARS",
+      "monto_total_plan": 3000000.00,
+      "cantidad_cuotas": null,
+      "periodicidad": null,
+      "fecha_primer_vencimiento": null,
+      "importe_anticipo": null,
+      "fecha_vencimiento_anticipo": null,
+      "regla_redondeo": "ULTIMA_CUOTA",
+      "observaciones": null
+    },
+    "relacion_generadora": {
+      "id_relacion_generadora": 10,
+      "tipo_origen": "venta",
+      "id_origen": 1,
+      "estado_relacion_generadora": "ACTIVA"
+    },
+    "generaciones": [],
+    "bloques": [
+      {
+        "id_plan_pago_venta_bloque": 40,
+        "id_plan_pago_venta": 20,
+        "numero_bloque": 1,
+        "tipo_bloque": "TRAMO_CUOTAS",
+        "metodo_liquidacion": "INDEXACION",
+        "indexacion": null,
+        "obligaciones": [
+          {
+            "id_obligacion_financiera": 100,
+            "id_plan_pago_venta_bloque": 40,
+            "numero_obligacion": 1,
+            "importe_total": 1000000.00,
+            "saldo_pendiente": 1000000.00,
+            "composiciones": [],
+            "indexacion": null
+          }
+        ]
+      }
+    ],
+    "resumen": {
+      "cantidad_bloques": 1,
+      "cantidad_obligaciones": 1,
+      "total_capital": 1000000.00,
+      "total_interes": 0,
+      "total_ajuste_indexacion": 0,
+      "total_obligaciones": 1000000.00,
+      "cantidad_obligaciones_con_indexacion": 0,
+      "cantidad_obligaciones_proyectadas_sin_indexacion": 1
+    }
+  }
+}
+```
+
+Reglas de lectura:
+
+- no modifica datos
+- no registra pagos
+- no toca caja ni recibos
+- no recalcula deuda, intereses ni indexacion
+- no consulta valores nuevos de indice
+- no crea obligaciones ni composiciones
+- no cambia estados ni emite cuotas
+- el resumen suma importes persistidos en `composicion_obligacion` y `obligacion_financiera`
+- `total_capital` suma `CAPITAL_VENTA`
+- `total_interes` suma `INTERES_FINANCIERO`
+- `total_ajuste_indexacion` suma `AJUSTE_INDEXACION`
+- `cantidad_obligaciones_proyectadas_sin_indexacion` cuenta obligaciones de bloques `INDEXACION` sin registro en `obligacion_financiera_indexacion`
+
+Errores posibles:
+
+- `404 NOT_FOUND`: la venta indicada no existe
+- `404 NOT_FOUND_PLAN_PAGO_V2`: la venta existe pero no posee Plan Pago V2 vigente
+- `500 INTERNAL_ERROR`: error inesperado
+
 
 #### `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
 

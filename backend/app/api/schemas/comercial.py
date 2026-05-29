@@ -531,6 +531,89 @@ class GeneratePlanPagoVentaV2PorBloquesResponse(BaseModel):
     data: GeneratePlanPagoVentaV2PorBloquesData
 
 
+class PlanPagoVentaV2RelacionGeneradoraData(BaseModel):
+    id_relacion_generadora: int
+    tipo_origen: str
+    id_origen: int
+    estado_relacion_generadora: str
+
+
+class PlanPagoVentaV2BloqueIndexacionData(BaseModel):
+    id_plan_pago_venta_bloque_indexacion: int
+    id_indice_financiero: int
+    codigo_indice_financiero: str | None
+    nombre_indice_financiero: str | None
+    fecha_base_indice: date
+    valor_base_indice: Decimal
+    modo_indexacion: str
+    base_calculo_indexacion: str
+    tipo_generacion_indexada: str
+    politica_valor_no_disponible: str
+    conserva_capital_original: bool
+    genera_ajuste_por_diferencia: bool
+
+
+class PlanPagoVentaV2ObligacionComposicionData(BaseModel):
+    id_composicion_obligacion: int
+    id_obligacion_financiera: int
+    id_concepto_financiero: int
+    codigo_concepto_financiero: str
+    orden_composicion: int
+    importe_componente: Decimal
+    saldo_componente: Decimal
+    moneda_componente: str
+
+
+class PlanPagoVentaV2ObligacionIndexacionData(BaseModel):
+    id_obligacion_financiera_indexacion: int
+    id_indice_financiero: int
+    id_indice_financiero_valor: int
+    fecha_base_indice: date
+    valor_base_indice: Decimal
+    fecha_aplicacion_indice: date
+    valor_aplicado_indice: Decimal
+    coeficiente_indexacion: Decimal
+    modo_indexacion: str
+    base_calculo_indexacion: str
+    tipo_generacion_indexada: str
+
+
+class PlanPagoVentaV2ObligacionIntegralData(ObligacionCronogramaVentaPorBloquesV2Data):
+    composiciones: list[PlanPagoVentaV2ObligacionComposicionData]
+    indexacion: PlanPagoVentaV2ObligacionIndexacionData | None = None
+
+
+class PlanPagoVentaV2BloqueIntegralData(PlanPagoVentaBloqueV2Data):
+    observaciones: str | None = None
+    indexacion: PlanPagoVentaV2BloqueIndexacionData | None = None
+    obligaciones: list[PlanPagoVentaV2ObligacionIntegralData]
+
+
+class PlanPagoVentaV2ResumenData(BaseModel):
+    cantidad_bloques: int
+    cantidad_obligaciones: int
+    total_capital: Decimal
+    total_interes: Decimal
+    total_ajuste_indexacion: Decimal
+    total_obligaciones: Decimal
+    cantidad_obligaciones_con_indexacion: int
+    cantidad_obligaciones_proyectadas_sin_indexacion: int
+
+
+class PlanPagoVentaV2IntegralData(BaseModel):
+    id_venta: int
+    plan_pago_venta: PlanPagoVentaV2Data
+    relacion_generadora: PlanPagoVentaV2RelacionGeneradoraData | None = None
+    generaciones: list[GeneracionCronogramaFinancieroData]
+    bloques: list[PlanPagoVentaV2BloqueIntegralData]
+    resumen: PlanPagoVentaV2ResumenData
+
+
+class PlanPagoVentaV2IntegralResponse(BaseModel):
+    ok: Literal[True] = True
+    data: PlanPagoVentaV2IntegralData
+
+
 class PlanPagoVentaBloqueV2PreviewData(BaseModel):
     numero_bloque: int
     tipo_bloque: str
