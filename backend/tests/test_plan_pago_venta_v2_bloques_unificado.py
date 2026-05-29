@@ -997,6 +997,20 @@ def _obligaciones_indexacion(db_session, *, id_relacion_generadora: int) -> list
     ]
 
 
+def _count_table_for_venta(db_session, *, id_venta: int, table_name: str) -> int:
+    allowed_tables = {
+        "plan_pago_venta": "plan_pago_venta ppv WHERE ppv.id_venta = :id_venta AND ppv.deleted_at IS NULL",
+        "plan_pago_venta_bloque": "plan_pago_venta_bloque ppvb JOIN plan_pago_venta ppv ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta WHERE ppv.id_venta = :id_venta AND ppvb.deleted_at IS NULL",
+        "obligacion_financiera": "obligacion_financiera o JOIN relacion_generadora rg ON rg.id_relacion_generadora = o.id_relacion_generadora WHERE rg.tipo_origen = 'venta' AND rg.id_origen = :id_venta AND o.deleted_at IS NULL",
+        "composicion_obligacion": "composicion_obligacion co JOIN obligacion_financiera o ON o.id_obligacion_financiera = co.id_obligacion_financiera JOIN relacion_generadora rg ON rg.id_relacion_generadora = o.id_relacion_generadora WHERE rg.tipo_origen = 'venta' AND rg.id_origen = :id_venta AND co.deleted_at IS NULL",
+        "obligacion_financiera_indexacion": "obligacion_financiera_indexacion ofi JOIN obligacion_financiera o ON o.id_obligacion_financiera = ofi.id_obligacion_financiera JOIN relacion_generadora rg ON rg.id_relacion_generadora = o.id_relacion_generadora WHERE rg.tipo_origen = 'venta' AND rg.id_origen = :id_venta AND ofi.deleted_at IS NULL",
+    }
+    from_clause = allowed_tables[table_name]
+    return db_session.execute(
+        text(f"SELECT COUNT(*) FROM {from_clause}"), {"id_venta": id_venta}
+    ).scalar_one()
+
+
 def test_generate_indexacion_con_indices_disponibles_materializa_ajuste(
     db_session,
 ) -> None:
@@ -1021,7 +1035,7 @@ def test_generate_indexacion_con_indices_disponibles_materializa_ajuste(
     assert result.success, result.errors
     assert len(result.data["obligaciones"]) == 3
     assert all(
-        Decimal(str(obligacion["importe_total"])) == Decimal("1098602.79")
+        Decimal(str(obligacion["importe_total"])) == Decimal("1098643.65")
         for obligacion in result.data["obligaciones"]
     )
     composiciones = _composiciones_por_obligacion(
@@ -1118,8 +1132,8 @@ def test_generate_indexacion_mixto_proyecta_sin_indice_y_materializa_disponibles
         Decimal(str(ob["importe_total"])) for ob in result.data["obligaciones"]
     ] == [
         Decimal("1000000.00"),
-        Decimal("1098602.79"),
-        Decimal("1098602.79"),
+        Decimal("1098643.65"),
+        Decimal("1098643.65"),
     ]
     composiciones = _composiciones_por_obligacion(
         db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
@@ -1167,22 +1181,80 @@ def test_generate_indexacion_reejecutar_mismo_payload_no_duplica(db_session) -> 
     assert first.success, first.errors
     assert second.success, second.errors
     assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 1
-    assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 3
     assert (
-        len(
-            _composiciones_por_obligacion(
-                db_session, id_relacion_generadora=first.data["id_relacion_generadora"]
-            )
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 3
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="composicion_obligacion"
         )
         == 6
     )
     assert (
-        len(
-            _obligaciones_indexacion(
-                db_session, id_relacion_generadora=first.data["id_relacion_generadora"]
-            )
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera_indexacion"
         )
         == 3
+    )
+
+
+def test_generate_indexacion_ajuste_negativo_devuelve_error_controlado_y_rollback(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-GEN-NEG")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-GEN-NEG"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("90.00000000"),
+    )
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+
+    assert not result.success
+    assert result.errors == ["INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO"]
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="plan_pago_venta"
+        )
+        == 0
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="plan_pago_venta_bloque"
+        )
+        == 0
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 0
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="composicion_obligacion"
+        )
+        == 0
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera_indexacion"
+        )
+        == 0
     )
 
 

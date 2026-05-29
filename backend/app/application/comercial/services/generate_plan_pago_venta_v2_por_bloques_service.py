@@ -44,6 +44,7 @@ CONCEPTO_AJUSTE_INDEXACION = "AJUSTE_INDEXACION"
 ERROR_OBLIGACION_INDEXACION_INCOMPATIBLE = (
     "PLAN_PAGO_VENTA_OBLIGACION_INDEXACION_INCOMPATIBLE"
 )
+ERROR_INDEXACION_AJUSTE_NEGATIVO = "INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO"
 
 
 class GeneratePlanPagoVentaV2PorBloquesService:
@@ -69,6 +70,10 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
+        if self._has_ajuste_indexacion_negativo(
+            preview_without_plan.data["obligaciones"]
+        ):
+            return AppResult.fail(ERROR_INDEXACION_AJUSTE_NEGATIVO)
         try:
             with self._transaction():
                 return self._execute_in_transaction(
@@ -83,6 +88,10 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         preview_without_plan = self.preview_service.execute(command)
         if not preview_without_plan.success:
             return AppResult.fail(preview_without_plan.errors[0])
+        if self._has_ajuste_indexacion_negativo(
+            preview_without_plan.data["obligaciones"]
+        ):
+            return AppResult.fail(ERROR_INDEXACION_AJUSTE_NEGATIVO)
         try:
             return self._execute_in_transaction(
                 command,
@@ -174,6 +183,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         )
         if not preview.success:
             return AppResult.fail(preview.errors[0])
+        if self._has_ajuste_indexacion_negativo(preview.data["obligaciones"]):
+            raise ValueError(ERROR_INDEXACION_AJUSTE_NEGATIVO)
         prepared_bloques = preview.data["bloques"]
         obligaciones_preview = preview.data["obligaciones"]
         bloques = [
@@ -339,6 +350,16 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             id_instalacion_ultima_modificacion=id_instalacion,
             op_id_alta=op_id,
             op_id_ultima_modificacion=op_id,
+        )
+
+    @staticmethod
+    def _has_ajuste_indexacion_negativo(
+        obligaciones: list[PlanPagoVentaV2ObligacionPreview],
+    ) -> bool:
+        return any(
+            obligacion.ajuste_indexacion_cuota is not None
+            and obligacion.ajuste_indexacion_cuota < Decimal("0.00")
+            for obligacion in obligaciones
         )
 
     def _persist_indexacion_bloques(
@@ -549,11 +570,15 @@ class GeneratePlanPagoVentaV2PorBloquesService:
                     "importe_componente": capital,
                 }
             ]
+            ajuste_indexacion = obligacion_preview.ajuste_indexacion_cuota or Decimal(
+                "0.00"
+            )
+            if ajuste_indexacion < Decimal("0.00"):
+                raise ValueError(ERROR_INDEXACION_AJUSTE_NEGATIVO)
             if (
                 obligacion_preview.estado_preview_indexacion
                 == ESTADO_PREVIEW_INDEXACION_CON_INDICE
-                and (obligacion_preview.ajuste_indexacion_cuota or Decimal("0.00"))
-                != Decimal("0.00")
+                and ajuste_indexacion != Decimal("0.00")
             ):
                 composiciones.append(
                     {
@@ -561,7 +586,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
                             "id_concepto_financiero"
                         ],
                         "codigo_concepto_financiero": CONCEPTO_AJUSTE_INDEXACION,
-                        "importe_componente": obligacion_preview.ajuste_indexacion_cuota,
+                        "importe_componente": ajuste_indexacion,
                     }
                 )
             return composiciones
