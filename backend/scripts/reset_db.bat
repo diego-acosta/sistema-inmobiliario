@@ -21,6 +21,7 @@ set PATCH_PLAN_PAGO_VENTA_METODO_PLAN_POR_BLOQUES_V2_FILE=%BACKEND_DIR%\database
 set PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloque_metodo_liquidacion_20260527.sql
 set PATCH_INDICES_FINANCIEROS_FILE=%BACKEND_DIR%\database\patch_indices_financieros_20260527.sql
 set PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloque_indexacion_20260528.sql
+set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
 echo Reset DB - Sistema Inmobiliario
@@ -37,6 +38,7 @@ echo Patch plan pago venta metodo PLAN_POR_BLOQUES V2: %PATCH_PLAN_PAGO_VENTA_ME
 echo Patch plan pago venta bloque metodo liquidacion: %PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE%
 echo Patch indices financieros: %PATCH_INDICES_FINANCIEROS_FILE%
 echo Patch plan pago venta bloque indexacion: %PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE%
+echo Seed indices financieros demo: %SEED_INDICES_FINANCIEROS_DEMO_FILE%
 
 if not exist "%SCHEMA_FILE%" (
   echo ERROR: No existe el schema: %SCHEMA_FILE%
@@ -88,6 +90,12 @@ if not exist "%PATCH_INDICES_FINANCIEROS_FILE%" (
 
 if not exist "%PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE%" (
   echo ERROR: No existe el patch de indexacion por bloque: %PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%SEED_INDICES_FINANCIEROS_DEMO_FILE%" (
+  echo ERROR: No existe el seed demo de indices financieros: %SEED_INDICES_FINANCIEROS_DEMO_FILE%
   pause
   exit /b 1
 )
@@ -185,6 +193,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo.
+echo Aplicando seed demo de indices financieros en %DEV_DB%...
+%PGBIN%\psql -d %DEV_DB% -f "%SEED_INDICES_FINANCIEROS_DEMO_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando seed demo de indices financieros en %DEV_DB%
+  pause
+  exit /b 1
+)
+
 rem ============================
 rem TEST
 rem ============================
@@ -276,7 +293,7 @@ echo Los tests deben crear sus propios datos de dominio.
 echo.
 echo ============================
 echo Bases reseteadas correctamente
-echo - %DEV_DB%  (baseline tecnico + seed)
+echo - %DEV_DB%  (baseline tecnico + seed + indices financieros demo)
 echo - %TEST_DB% (solo baseline tecnico)
 echo ============================
 
