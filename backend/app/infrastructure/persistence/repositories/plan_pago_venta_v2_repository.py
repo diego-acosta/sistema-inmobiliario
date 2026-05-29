@@ -15,14 +15,15 @@ class PlanPagoVentaV2Repository:
     @staticmethod
     def _values(payload: Any) -> dict[str, Any]:
         if hasattr(payload, "__dataclass_fields__"):
-            return {field: getattr(payload, field) for field in payload.__dataclass_fields__}
+            return {
+                field: getattr(payload, field) for field in payload.__dataclass_fields__
+            }
         if isinstance(payload, dict):
             return payload
         return vars(payload)
 
     def get_venta_minima(self, id_venta: int) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_venta,
                 estado_venta,
@@ -32,14 +33,12 @@ class PlanPagoVentaV2Repository:
             FROM venta
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
         return dict(row) if row else None
 
     def get_plan_pago_venta_vivo(self, id_venta: int) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_plan_pago_venta,
                 id_venta,
@@ -60,8 +59,7 @@ class PlanPagoVentaV2Repository:
               AND estado_plan_pago IN ('BORRADOR', 'ACTIVO', 'GENERADO')
             ORDER BY id_plan_pago_venta ASC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
         return dict(row) if row else None
 
@@ -69,8 +67,7 @@ class PlanPagoVentaV2Repository:
         values = self._values(payload)
         existing = self.get_plan_pago_venta_vivo(values["id_venta"])
         if existing is not None:
-            stmt = text(
-                """
+            stmt = text("""
                 UPDATE plan_pago_venta
                 SET
                     metodo_plan_pago = :metodo_plan_pago,
@@ -103,15 +100,18 @@ class PlanPagoVentaV2Repository:
                     fecha_vencimiento_anticipo,
                     regla_redondeo,
                     observaciones
-                """
+                """)
+            row = (
+                self.db.execute(
+                    stmt,
+                    {**values, "id_plan_pago_venta": existing["id_plan_pago_venta"]},
+                )
+                .mappings()
+                .one()
             )
-            row = self.db.execute(
-                stmt, {**values, "id_plan_pago_venta": existing["id_plan_pago_venta"]}
-            ).mappings().one()
             return dict(row)
 
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO plan_pago_venta (
                 uid_global,
                 version_registro,
@@ -170,8 +170,7 @@ class PlanPagoVentaV2Repository:
                 fecha_vencimiento_anticipo,
                 regla_redondeo,
                 observaciones
-            """
-        )
+            """)
         row = self.db.execute(stmt, values).mappings().one()
         return dict(row)
 
@@ -183,8 +182,7 @@ class PlanPagoVentaV2Repository:
         id_instalacion_ultima_modificacion: int | None,
         op_id_ultima_modificacion: Any,
     ) -> dict[str, Any]:
-        stmt = text(
-            """
+        stmt = text("""
             UPDATE plan_pago_venta
             SET
                 estado_plan_pago = 'GENERADO',
@@ -207,23 +205,25 @@ class PlanPagoVentaV2Repository:
                 fecha_vencimiento_anticipo,
                 regla_redondeo,
                 observaciones
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_plan_pago_venta": id_plan_pago_venta,
+                    "updated_at": updated_at,
+                    "id_instalacion_ultima_modificacion": id_instalacion_ultima_modificacion,
+                    "op_id_ultima_modificacion": op_id_ultima_modificacion,
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "id_plan_pago_venta": id_plan_pago_venta,
-                "updated_at": updated_at,
-                "id_instalacion_ultima_modificacion": id_instalacion_ultima_modificacion,
-                "op_id_ultima_modificacion": op_id_ultima_modificacion,
-            },
-        ).mappings().one()
         return dict(row)
 
     def get_or_create_relacion_generadora(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO relacion_generadora (
                 uid_global,
                 version_registro,
@@ -258,15 +258,13 @@ class PlanPagoVentaV2Repository:
                 id_origen,
                 descripcion,
                 estado_relacion_generadora
-            """
-        )
+            """)
         row = self.db.execute(stmt, values).mappings().one()
         return dict(row)
 
     def get_or_create_generacion_cronograma(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO generacion_cronograma_financiero (
                 uid_global,
                 version_registro,
@@ -313,15 +311,13 @@ class PlanPagoVentaV2Repository:
                 clave_generacion,
                 estado_generacion,
                 fecha_generacion
-            """
-        )
+            """)
         row = self.db.execute(stmt, values).mappings().one()
         return dict(row)
 
     def get_or_create_plan_pago_venta_bloque(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO plan_pago_venta_bloque (
                 uid_global,
                 version_registro,
@@ -400,8 +396,7 @@ class PlanPagoVentaV2Repository:
                 cantidad_periodos,
                 base_calculo_interes,
                 concepto_financiero_codigo
-            """
-        )
+            """)
         row = self.db.execute(stmt, values).mappings().one()
         bloque = dict(row)
         self._ensure_plan_pago_venta_bloque_compatible(bloque, values)
@@ -431,17 +426,19 @@ class PlanPagoVentaV2Repository:
             if self._normalize_bloque_value(bloque.get(field))
             != self._normalize_bloque_value(expected.get(field))
         ]
-        if self._normalize_upper_or_none(bloque.get("metodo_liquidacion")) != self._normalize_upper_or_none(
-            expected.get("metodo_liquidacion")
-        ):
+        if self._normalize_upper_or_none(
+            bloque.get("metodo_liquidacion")
+        ) != self._normalize_upper_or_none(expected.get("metodo_liquidacion")):
             incompatible.append("metodo_liquidacion")
         if self._normalize_tasa_or_none(
             bloque.get("tasa_interes_directo_periodica")
-        ) != self._normalize_tasa_or_none(expected.get("tasa_interes_directo_periodica")):
-            incompatible.append("tasa_interes_directo_periodica")
-        if self._normalize_int_or_none(bloque.get("cantidad_periodos")) != self._normalize_int_or_none(
-            expected.get("cantidad_periodos")
+        ) != self._normalize_tasa_or_none(
+            expected.get("tasa_interes_directo_periodica")
         ):
+            incompatible.append("tasa_interes_directo_periodica")
+        if self._normalize_int_or_none(
+            bloque.get("cantidad_periodos")
+        ) != self._normalize_int_or_none(expected.get("cantidad_periodos")):
             incompatible.append("cantidad_periodos")
         if self._normalize_upper_or_none(
             bloque.get("base_calculo_interes")
@@ -485,8 +482,7 @@ class PlanPagoVentaV2Repository:
         self, payload: Any
     ) -> dict[str, Any]:
         values = self._values(payload)
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO plan_pago_venta_bloque_indexacion (
                 uid_global,
                 version_registro,
@@ -545,8 +541,7 @@ class PlanPagoVentaV2Repository:
                 conserva_capital_original,
                 genera_ajuste_por_diferencia,
                 observaciones
-            """
-        )
+            """)
         row = self.db.execute(stmt, values).mappings().one()
         indexacion = dict(row)
         self._ensure_plan_pago_venta_bloque_indexacion_compatible(indexacion, values)
@@ -555,8 +550,7 @@ class PlanPagoVentaV2Repository:
     def get_plan_pago_venta_bloque_indexacion(
         self, id_plan_pago_venta_bloque: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_plan_pago_venta_bloque_indexacion,
                 id_plan_pago_venta_bloque,
@@ -573,11 +567,14 @@ class PlanPagoVentaV2Repository:
             FROM plan_pago_venta_bloque_indexacion
             WHERE id_plan_pago_venta_bloque = :id_plan_pago_venta_bloque
               AND deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt, {"id_plan_pago_venta_bloque": id_plan_pago_venta_bloque}
+            )
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            stmt, {"id_plan_pago_venta_bloque": id_plan_pago_venta_bloque}
-        ).mappings().one_or_none()
         return dict(row) if row else None
 
     def _ensure_plan_pago_venta_bloque_indexacion_compatible(
@@ -632,8 +629,7 @@ class PlanPagoVentaV2Repository:
     def get_plan_pago_venta_bloques(
         self, id_plan_pago_venta: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_plan_pago_venta_bloque,
                 id_plan_pago_venta,
@@ -658,31 +654,27 @@ class PlanPagoVentaV2Repository:
             WHERE id_plan_pago_venta = :id_plan_pago_venta
               AND deleted_at IS NULL
             ORDER BY numero_bloque ASC
-            """
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_plan_pago_venta": id_plan_pago_venta}
-        ).mappings().all()
         return [dict(row) for row in rows]
 
     def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT id_concepto_financiero, codigo_concepto_financiero
             FROM concepto_financiero
             WHERE codigo_concepto_financiero = :codigo
               AND estado_concepto_financiero = 'ACTIVO'
               AND deleted_at IS NULL
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"codigo": codigo}).mappings().one_or_none()
         return dict(row) if row else None
 
-    def get_compradores_financieros_venta(
-        self, id_venta: int
-    ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+    def get_compradores_financieros_venta(self, id_venta: int) -> list[dict[str, Any]]:
+        stmt = text("""
             SELECT
                 rpr.id_relacion_persona_rol,
                 rpr.id_persona,
@@ -702,10 +694,70 @@ class PlanPagoVentaV2Repository:
               AND (rpr.fecha_hasta IS NULL OR rpr.fecha_hasta >= CURRENT_TIMESTAMP)
               AND UPPER(rp.codigo_rol) = 'COMPRADOR'
             ORDER BY rpr.fecha_desde ASC, rpr.id_relacion_persona_rol ASC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, {"id_venta": id_venta}).mappings().all()
         return [dict(row) for row in rows]
+
+    def get_indice_financiero_activo(
+        self, id_indice_financiero: int
+    ) -> dict[str, Any] | None:
+        if id_indice_financiero <= 0:
+            return None
+        stmt = text("""
+            SELECT id_indice_financiero, codigo_indice_financiero
+            FROM indice_financiero
+            WHERE id_indice_financiero = :id_indice_financiero
+              AND estado_indice_financiero = 'ACTIVO'
+              AND deleted_at IS NULL
+            """)
+        row = (
+            self.db.execute(stmt, {"id_indice_financiero": id_indice_financiero})
+            .mappings()
+            .one_or_none()
+        )
+        return dict(row) if row else None
+
+    def get_valor_publicado_por_id_y_fecha(
+        self,
+        id_indice_financiero: int,
+        fecha_objetivo: date,
+    ) -> dict[str, Any] | None:
+        if id_indice_financiero <= 0:
+            return None
+        stmt = text("""
+            SELECT
+                i.id_indice_financiero,
+                i.codigo_indice_financiero,
+                i.nombre_indice_financiero,
+                iv.id_indice_financiero_valor,
+                iv.fecha_valor,
+                iv.valor_indice,
+                iv.fecha_publicacion,
+                iv.fuente_valor
+            FROM indice_financiero AS i
+            JOIN indice_financiero_valor AS iv
+              ON iv.id_indice_financiero = i.id_indice_financiero
+            WHERE i.id_indice_financiero = :id_indice_financiero
+              AND i.estado_indice_financiero = 'ACTIVO'
+              AND i.deleted_at IS NULL
+              AND iv.estado_valor_indice = 'PUBLICADO'
+              AND iv.deleted_at IS NULL
+              AND iv.fecha_valor <= :fecha_objetivo
+            ORDER BY iv.fecha_valor DESC
+            LIMIT 1
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_indice_financiero": id_indice_financiero,
+                    "fecha_objetivo": fecha_objetivo,
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return dict(row) if row else None
 
     def create_obligacion_cronograma_v2_if_not_exists(
         self, payload: Any
@@ -719,7 +771,7 @@ class PlanPagoVentaV2Repository:
             existing_bloque = existing["id_plan_pago_venta_bloque"]
             expected_bloque = values["id_plan_pago_venta_bloque"]
             if existing_bloque is None and expected_bloque is not None:
-                return self._set_obligacion_plan_pago_venta_bloque(
+                updated = self._set_obligacion_plan_pago_venta_bloque(
                     id_obligacion_financiera=existing["id_obligacion_financiera"],
                     id_plan_pago_venta_bloque=expected_bloque,
                     updated_at=values["updated_at"],
@@ -728,6 +780,8 @@ class PlanPagoVentaV2Repository:
                     ],
                     op_id_ultima_modificacion=values["op_id_ultima_modificacion"],
                 )
+                updated["__created"] = False
+                return updated
             if (
                 existing_bloque is not None
                 and expected_bloque is not None
@@ -737,10 +791,10 @@ class PlanPagoVentaV2Repository:
                     "OBLIGACION_PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE:"
                     f"{values['clave_funcional_origen']}"
                 )
+            existing["__created"] = False
             return existing
 
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             INSERT INTO obligacion_financiera (
                 uid_global,
                 version_registro,
@@ -805,18 +859,20 @@ class PlanPagoVentaV2Repository:
                 saldo_pendiente,
                 moneda,
                 estado_obligacion
-            """
-        )
+            """)
         ob_row = self.db.execute(ob_stmt, values).mappings().one_or_none()
         if ob_row is None:
-            return self._get_obligacion_by_clave(
+            existing = self._get_obligacion_by_clave(
                 id_relacion_generadora=values["id_relacion_generadora"],
                 clave_funcional_origen=values["clave_funcional_origen"],
             )
+            existing["__created"] = False
+            return existing
 
         obligacion = dict(ob_row)
         self._create_composicion(values, obligacion["id_obligacion_financiera"])
         self._create_obligado(values, obligacion["id_obligacion_financiera"])
+        obligacion["__created"] = True
         return obligacion
 
     def get_obligaciones_cronograma_by_claves(
@@ -827,8 +883,7 @@ class PlanPagoVentaV2Repository:
     ) -> list[dict[str, Any]]:
         if not claves_funcionales:
             return []
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
@@ -848,15 +903,18 @@ class PlanPagoVentaV2Repository:
               AND o.clave_funcional_origen = ANY(:claves_funcionales)
               AND o.deleted_at IS NULL
             ORDER BY o.numero_obligacion ASC
-            """
+            """)
+        rows = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_relacion_generadora": id_relacion_generadora,
+                    "claves_funcionales": claves_funcionales,
+                },
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt,
-            {
-                "id_relacion_generadora": id_relacion_generadora,
-                "claves_funcionales": claves_funcionales,
-            },
-        ).mappings().all()
         return [dict(row) for row in rows]
 
     def _get_obligacion_by_clave(
@@ -894,8 +952,7 @@ class PlanPagoVentaV2Repository:
         id_instalacion_ultima_modificacion: int | None,
         op_id_ultima_modificacion: Any,
     ) -> dict[str, Any]:
-        stmt = text(
-            """
+        stmt = text("""
             UPDATE obligacion_financiera
             SET
                 id_plan_pago_venta_bloque = :id_plan_pago_venta_bloque,
@@ -905,8 +962,7 @@ class PlanPagoVentaV2Repository:
             WHERE id_obligacion_financiera = :id_obligacion_financiera
               AND deleted_at IS NULL
               AND id_plan_pago_venta_bloque IS NULL
-            """
-        )
+            """)
         self.db.execute(
             stmt,
             {
@@ -917,8 +973,7 @@ class PlanPagoVentaV2Repository:
                 "op_id_ultima_modificacion": op_id_ultima_modificacion,
             },
         )
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
@@ -936,12 +991,164 @@ class PlanPagoVentaV2Repository:
             FROM obligacion_financiera o
             WHERE o.id_obligacion_financiera = :id_obligacion_financiera
               AND o.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt, {"id_obligacion_financiera": id_obligacion_financiera}
-        ).mappings().one()
         return dict(row)
+
+    def get_obligacion_financiera_indexacion(
+        self, id_obligacion_financiera: int
+    ) -> dict[str, Any] | None:
+        stmt = text("""
+            SELECT
+                id_obligacion_financiera_indexacion,
+                id_obligacion_financiera,
+                id_plan_pago_venta_bloque_indexacion,
+                id_indice_financiero,
+                id_indice_financiero_valor,
+                fecha_base_indice,
+                valor_base_indice,
+                fecha_aplicacion_indice,
+                valor_aplicado_indice,
+                coeficiente_indexacion,
+                modo_indexacion,
+                base_calculo_indexacion,
+                tipo_generacion_indexada,
+                observaciones
+            FROM obligacion_financiera_indexacion
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND deleted_at IS NULL
+            """)
+        row = (
+            self.db.execute(
+                stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return dict(row) if row else None
+
+    def get_or_create_obligacion_financiera_indexacion(
+        self, payload: Any
+    ) -> dict[str, Any]:
+        values = self._values(payload)
+        stmt = text("""
+            INSERT INTO obligacion_financiera_indexacion (
+                uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                id_instalacion_origen,
+                id_instalacion_ultima_modificacion,
+                op_id_alta,
+                op_id_ultima_modificacion,
+                id_obligacion_financiera,
+                id_plan_pago_venta_bloque_indexacion,
+                id_indice_financiero,
+                id_indice_financiero_valor,
+                fecha_base_indice,
+                valor_base_indice,
+                fecha_aplicacion_indice,
+                valor_aplicado_indice,
+                coeficiente_indexacion,
+                modo_indexacion,
+                base_calculo_indexacion,
+                tipo_generacion_indexada,
+                observaciones
+            )
+            VALUES (
+                gen_random_uuid(),
+                1,
+                :created_at,
+                :updated_at,
+                :id_instalacion_origen,
+                :id_instalacion_ultima_modificacion,
+                :op_id_alta,
+                :op_id_ultima_modificacion,
+                :id_obligacion_financiera,
+                :id_plan_pago_venta_bloque_indexacion,
+                :id_indice_financiero,
+                :id_indice_financiero_valor,
+                :fecha_base_indice,
+                :valor_base_indice,
+                :fecha_aplicacion_indice,
+                :valor_aplicado_indice,
+                :coeficiente_indexacion,
+                :modo_indexacion,
+                :base_calculo_indexacion,
+                :tipo_generacion_indexada,
+                :observaciones
+            )
+            ON CONFLICT (id_obligacion_financiera)
+            WHERE deleted_at IS NULL
+            DO UPDATE SET updated_at = obligacion_financiera_indexacion.updated_at
+            RETURNING
+                id_obligacion_financiera_indexacion,
+                id_obligacion_financiera,
+                id_plan_pago_venta_bloque_indexacion,
+                id_indice_financiero,
+                id_indice_financiero_valor,
+                fecha_base_indice,
+                valor_base_indice,
+                fecha_aplicacion_indice,
+                valor_aplicado_indice,
+                coeficiente_indexacion,
+                modo_indexacion,
+                base_calculo_indexacion,
+                tipo_generacion_indexada,
+                observaciones
+            """)
+        row = self.db.execute(stmt, values).mappings().one()
+        indexacion = dict(row)
+        self.ensure_obligacion_financiera_indexacion_compatible(indexacion, values)
+        return indexacion
+
+    def ensure_obligacion_financiera_indexacion_compatible(
+        self, indexacion: dict[str, Any], expected: dict[str, Any]
+    ) -> None:
+        fields_default = (
+            "id_obligacion_financiera",
+            "id_plan_pago_venta_bloque_indexacion",
+            "id_indice_financiero",
+            "id_indice_financiero_valor",
+            "fecha_base_indice",
+            "fecha_aplicacion_indice",
+        )
+        incompatible = [
+            field
+            for field in fields_default
+            if self._normalize_indexacion_value(indexacion.get(field))
+            != self._normalize_indexacion_value(expected.get(field))
+        ]
+        for field in (
+            "valor_base_indice",
+            "valor_aplicado_indice",
+            "coeficiente_indexacion",
+        ):
+            if self._normalize_indice_value(
+                indexacion.get(field)
+            ) != self._normalize_indice_value(expected.get(field)):
+                incompatible.append(field)
+        for field in (
+            "modo_indexacion",
+            "base_calculo_indexacion",
+            "tipo_generacion_indexada",
+        ):
+            if self._normalize_upper_or_none(
+                indexacion.get(field)
+            ) != self._normalize_upper_or_none(expected.get(field)):
+                incompatible.append(field)
+        if incompatible:
+            raise ValueError(
+                "PLAN_PAGO_VENTA_OBLIGACION_INDEXACION_INCOMPATIBLE:"
+                f"{expected.get('id_obligacion_financiera')}:"
+                f"{','.join(incompatible)}"
+            )
 
     def _create_composicion(
         self, values: dict[str, Any], id_obligacion_financiera: int
@@ -953,8 +1160,7 @@ class PlanPagoVentaV2Repository:
                 "importe_componente": values["importe_total"],
             }
         ]
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO composicion_obligacion (
                 uid_global,
                 version_registro,
@@ -987,8 +1193,7 @@ class PlanPagoVentaV2Repository:
                 :importe_componente,
                 :moneda
             )
-            """
-        )
+            """)
         for orden, composicion in enumerate(composiciones, start=1):
             self.db.execute(
                 stmt,
@@ -1003,8 +1208,7 @@ class PlanPagoVentaV2Repository:
     def _create_obligado(
         self, values: dict[str, Any], id_obligacion_financiera: int
     ) -> None:
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO obligacion_obligado (
                 uid_global,
                 version_registro,
@@ -1033,8 +1237,7 @@ class PlanPagoVentaV2Repository:
                 :rol_obligado,
                 100.00
             )
-            """
-        )
+            """)
         self.db.execute(
             stmt,
             {

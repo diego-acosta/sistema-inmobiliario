@@ -2416,6 +2416,7 @@ def generate_plan_pago_venta_v2_por_bloques(
             error.startswith("PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE")
             or error.startswith("PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
             or error.startswith("PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE")
+            or error.startswith("PLAN_PAGO_VENTA_OBLIGACION_INDEXACION_INCOMPATIBLE")
             or error.startswith("OBLIGACION_PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE")
             for error in result.errors
         ):
