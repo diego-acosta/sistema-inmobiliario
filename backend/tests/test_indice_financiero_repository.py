@@ -191,3 +191,20 @@ def test_soft_delete_indice_y_valor_no_se_usan(db_session) -> None:
         "VAL_DEL", date(2026, 1, 5)
     )
     assert result_valor_deleted is None
+
+
+def test_indice_activo_valor_publicado_por_id_y_fecha(db_session) -> None:
+    repo = IndiceFinancieroRepository(db_session)
+    id_indice = _crear_indice(db_session, "IPC_ID")
+    _crear_valor(db_session, id_indice, "2026-01-10", "100.00000000")
+    id_valor_esperado = _crear_valor(
+        db_session, id_indice, "2026-02-10", "105.00000000"
+    )
+
+    result = repo.get_valor_publicado_por_id_y_fecha(id_indice, date(2026, 2, 20))
+
+    assert result is not None
+    assert result["id_indice_financiero"] == id_indice
+    assert result["id_indice_financiero_valor"] == id_valor_esperado
+    assert result["fecha_valor"] == date(2026, 2, 10)
+    assert repo.get_valor_publicado_por_id_y_fecha(0, date(2026, 2, 20)) is None

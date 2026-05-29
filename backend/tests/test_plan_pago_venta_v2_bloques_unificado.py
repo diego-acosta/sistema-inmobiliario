@@ -897,6 +897,7 @@ def test_generate_indexacion_devuelve_error_controlado_y_no_persiste(client, db_
     payload = _payload_financiado()
     payload["bloques"][1].update(
         {
+            "importe_total_bloque": 3000000.00,
             "metodo_liquidacion": "INDEXACION",
             "id_indice_financiero": id_indice,
             "fecha_base_indice": "2026-05-01",

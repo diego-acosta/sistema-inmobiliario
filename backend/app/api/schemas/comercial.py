@@ -555,6 +555,10 @@ class PlanPagoVentaBloqueV2PreviewData(BaseModel):
     politica_valor_no_disponible: str | None = None
     conserva_capital_original: bool | None = None
     genera_ajuste_por_diferencia: bool | None = None
+    total_con_indexacion: Decimal | None = None
+    total_ajuste_indexacion: Decimal | None = None
+    cantidad_cuotas_con_indice: int = 0
+    cantidad_cuotas_proyectadas_sin_indice: int = 0
     concepto_financiero_codigo: str
 
 
@@ -569,6 +573,15 @@ class ObligacionPlanPagoVentaV2PreviewData(BaseModel):
     importe_total: Decimal
     moneda: str
     concepto_financiero_codigo: str
+    estado_preview_indexacion: str | None = None
+    id_indice_financiero: int | None = None
+    id_indice_financiero_valor: int | None = None
+    fecha_valor_indice: date | None = None
+    valor_base_indice: Decimal | None = None
+    valor_aplicado_indice: Decimal | None = None
+    coeficiente_indexacion: Decimal | None = None
+    capital_cuota: Decimal | None = None
+    ajuste_indexacion_cuota: Decimal | None = None
 
 
 class RedondeoPlanPagoVentaV2PreviewData(BaseModel):
@@ -585,6 +598,8 @@ class PreviewPlanPagoVentaV2PorBloquesData(BaseModel):
     monto_total_plan: Decimal
     total_calculado: Decimal
     total_con_interes: Decimal
+    total_con_indexacion: Decimal
+    total_ajuste_indexacion: Decimal
     diferencia: Decimal
     bloques: list[PlanPagoVentaBloqueV2PreviewData]
     obligaciones: list[ObligacionPlanPagoVentaV2PreviewData]

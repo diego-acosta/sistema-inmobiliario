@@ -230,6 +230,9 @@ from app.application.comercial.services.get_venta_detalle_integral_service impor
     GetVentaDetalleIntegralService,
 )
 from app.application.common.commands import CommandContext
+from app.infrastructure.persistence.repositories.indice_financiero_repository import (
+    IndiceFinancieroRepository,
+)
 from app.infrastructure.persistence.repositories.comercial_repository import (
     ComercialRepository,
 )
@@ -2245,6 +2248,8 @@ def _plan_pago_v2_preview_response_data(
         "monto_total_plan": command.monto_total_plan,
         "total_calculado": preview["total_calculado"],
         "total_con_interes": preview["total_con_interes"],
+        "total_con_indexacion": preview["total_con_indexacion"],
+        "total_ajuste_indexacion": preview["total_ajuste_indexacion"],
         "diferencia": preview["diferencia"],
         "redondeos": preview["redondeos"],
         "bloques": [
@@ -2272,6 +2277,10 @@ def _plan_pago_v2_preview_response_data(
                 "politica_valor_no_disponible": bloque.input.politica_valor_no_disponible,
                 "conserva_capital_original": bloque.input.conserva_capital_original,
                 "genera_ajuste_por_diferencia": bloque.input.genera_ajuste_por_diferencia,
+                "total_con_indexacion": bloque.total_con_indexacion,
+                "total_ajuste_indexacion": bloque.total_ajuste_indexacion,
+                "cantidad_cuotas_con_indice": bloque.cantidad_cuotas_con_indice,
+                "cantidad_cuotas_proyectadas_sin_indice": bloque.cantidad_cuotas_proyectadas_sin_indice,
                 "concepto_financiero_codigo": bloque.concepto_financiero_codigo,
             }
             for bloque in preview["bloques"]
@@ -2288,6 +2297,15 @@ def _plan_pago_v2_preview_response_data(
                 "importe_total": obligacion.importe_total,
                 "moneda": command.moneda.strip().upper(),
                 "concepto_financiero_codigo": obligacion.concepto_financiero_codigo,
+                "estado_preview_indexacion": obligacion.estado_preview_indexacion,
+                "id_indice_financiero": obligacion.id_indice_financiero,
+                "id_indice_financiero_valor": obligacion.id_indice_financiero_valor,
+                "fecha_valor_indice": obligacion.fecha_valor_indice,
+                "valor_base_indice": obligacion.valor_base_indice,
+                "valor_aplicado_indice": obligacion.valor_aplicado_indice,
+                "coeficiente_indexacion": obligacion.coeficiente_indexacion,
+                "capital_cuota": obligacion.capital_cuota,
+                "ajuste_indexacion_cuota": obligacion.ajuste_indexacion_cuota,
             }
             for obligacion in preview["obligaciones"]
         ],
@@ -2305,13 +2323,16 @@ def _plan_pago_v2_preview_response_data(
 def preview_plan_pago_venta_v2_por_bloques(
     id_venta: int,
     request: PreviewPlanPagoVentaV2PorBloquesRequest,
+    db: Session = Depends(get_db),
 ) -> PreviewPlanPagoVentaV2PorBloquesResponse | JSONResponse:
     command = _build_plan_pago_v2_por_bloques_command(
         id_venta=id_venta,
         request=request,
         context=CommandContext(),
     )
-    service = BuildPlanPagoVentaV2PorBloquesPreviewService()
+    service = BuildPlanPagoVentaV2PorBloquesPreviewService(
+        indice_financiero_query=IndiceFinancieroRepository(db)
+    )
 
     try:
         result = service.execute(command)

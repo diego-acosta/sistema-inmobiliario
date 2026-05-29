@@ -164,7 +164,9 @@ def test_preview_valida_suma_general_con_tramo_por_capital_total() -> None:
 def test_endpoint_preview_tramo_por_capital_total_devuelve_ultima_cuota_ajustada(
     client,
 ) -> None:
-    response = client.post(URL.format(id_venta=1), json=_payload_tramo_por_capital_total())
+    response = client.post(
+        URL.format(id_venta=1), json=_payload_tramo_por_capital_total()
+    )
 
     assert response.status_code == 200, response.text
     data = response.json()["data"]
@@ -192,7 +194,9 @@ def test_endpoint_preview_no_persiste_filas(db_session, client) -> None:
     ]
     before = {table: _count(db_session, table) for table in tables}
 
-    response = client.post(URL.format(id_venta=1), json=_payload_tramo_por_capital_total())
+    response = client.post(
+        URL.format(id_venta=1), json=_payload_tramo_por_capital_total()
+    )
 
     assert response.status_code == 200, response.text
     after = {table: _count(db_session, table) for table in tables}
@@ -239,6 +243,7 @@ def test_endpoint_preview_rechaza_campos_extra_internos(client) -> None:
     assert ("body", "id_plan_pago_venta") in locations
     assert ("body", "bloques", 0, "id_plan_pago_venta_bloque") in locations
     assert ("body", "bloques", 0, "clave_bloque") in locations
+
 
 def test_preview_interes_directo_requiere_tres_parametros() -> None:
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
@@ -307,7 +312,9 @@ def test_preview_interes_directo_calcula_total_con_interes_y_ajuste_ultima() -> 
     assert cuotas[-1] == Decimal("103333.37")
 
 
-def test_preview_interes_directo_base_calculo_invalida_devuelve_validation_error() -> None:
+def test_preview_interes_directo_base_calculo_invalida_devuelve_validation_error() -> (
+    None
+):
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
         _command(
             bloques=[
@@ -387,7 +394,7 @@ def test_endpoint_preview_indexacion_valida_devuelve_campos_nuevos(client) -> No
     payload["bloques"][0].update(
         {
             "metodo_liquidacion": "indexacion",
-            "id_indice_financiero": 1,
+            "id_indice_financiero": 999999999,
             "fecha_base_indice": "2026-05-01",
             "valor_base_indice": "100.12345678",
             "modo_indexacion": "por_coeficiente",
@@ -404,7 +411,7 @@ def test_endpoint_preview_indexacion_valida_devuelve_campos_nuevos(client) -> No
     assert response.status_code == 200, response.text
     bloque = response.json()["data"]["bloques"][0]
     assert bloque["metodo_liquidacion"] == "INDEXACION"
-    assert bloque["id_indice_financiero"] == 1
+    assert bloque["id_indice_financiero"] == 999999999
     assert bloque["fecha_base_indice"] == "2026-05-01"
     assert bloque["valor_base_indice"] == "100.12345678"
     assert bloque["modo_indexacion"] == "POR_COEFICIENTE"
@@ -413,7 +420,146 @@ def test_endpoint_preview_indexacion_valida_devuelve_campos_nuevos(client) -> No
     assert bloque["politica_valor_no_disponible"] == "ERROR_SI_NO_EXISTE"
     assert bloque["conserva_capital_original"] is True
     assert bloque["genera_ajuste_por_diferencia"] is True
-    assert response.json()["data"]["total_calculado"] == "10000000.00"
+    data = response.json()["data"]
+    assert data["total_calculado"] == "10000000.00"
+    assert data["total_con_indexacion"] == "10000000.00"
+    assert data["total_ajuste_indexacion"] == "0.00"
+    assert bloque["total_con_indexacion"] == "10000000.00"
+    assert bloque["total_ajuste_indexacion"] == "0.00"
+    assert bloque["cantidad_cuotas_con_indice"] == 0
+    assert bloque["cantidad_cuotas_proyectadas_sin_indice"] == 6
+    assert {
+        obligacion["estado_preview_indexacion"] for obligacion in data["obligaciones"]
+    } == {"PROYECTADA_SIN_INDICE"}
+
+
+def _crear_indice_preview(db_session, codigo: str) -> int:
+    row = db_session.execute(
+        text("""
+            INSERT INTO indice_financiero (
+                codigo_indice_financiero,
+                nombre_indice_financiero,
+                tipo_indice,
+                unidad_medida,
+                frecuencia_publicacion,
+                estado_indice_financiero
+            )
+            VALUES (
+                :codigo,
+                :nombre,
+                'IPC',
+                'PUNTOS',
+                'MENSUAL',
+                'ACTIVO'
+            )
+            RETURNING id_indice_financiero
+            """),
+        {"codigo": codigo, "nombre": f"Indice {codigo}"},
+    ).one()
+    return row[0]
+
+
+def _crear_valor_indice_preview(
+    db_session,
+    id_indice_financiero: int,
+    fecha_valor: str,
+    valor_indice: str,
+) -> int:
+    row = db_session.execute(
+        text("""
+            INSERT INTO indice_financiero_valor (
+                id_indice_financiero,
+                fecha_valor,
+                valor_indice,
+                fecha_publicacion,
+                fuente_valor,
+                estado_valor_indice
+            )
+            VALUES (
+                :id_indice_financiero,
+                :fecha_valor,
+                :valor_indice,
+                :fecha_valor,
+                'TEST',
+                'PUBLICADO'
+            )
+            RETURNING id_indice_financiero_valor
+            """),
+        {
+            "id_indice_financiero": id_indice_financiero,
+            "fecha_valor": fecha_valor,
+            "valor_indice": valor_indice,
+        },
+    ).one()
+    return row[0]
+
+
+def test_endpoint_preview_indexacion_calcula_cuotas_con_indice_disponible(
+    db_session, client
+) -> None:
+    id_indice = _crear_indice_preview(db_session, "IPC_PREVIEW_ALL")
+    valores = [
+        _crear_valor_indice_preview(
+            db_session, id_indice, "2026-06-10", "110.00000000"
+        ),
+        _crear_valor_indice_preview(
+            db_session, id_indice, "2026-07-10", "120.00000000"
+        ),
+        _crear_valor_indice_preview(
+            db_session, id_indice, "2026-08-10", "130.00000000"
+        ),
+    ]
+    payload = _payload_tramo_por_capital_total()
+    payload["monto_total_plan"] = "3000.00"
+    payload["bloques"][0].update(
+        {
+            "importe_total_bloque": "3000.00",
+            "cantidad_cuotas": 3,
+            "metodo_liquidacion": "INDEXACION",
+            "id_indice_financiero": id_indice,
+            "fecha_base_indice": "2026-05-01",
+            "valor_base_indice": "100.00000000",
+            "modo_indexacion": "POR_COEFICIENTE",
+            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+            "tipo_generacion_indexada": "DEFINITIVA",
+            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    )
+
+    response = client.post(URL.format(id_venta=1), json=payload)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["total_calculado"] == "3000.00"
+    assert data["total_con_interes"] == "3000.00"
+    assert data["total_ajuste_indexacion"] == "600.00"
+    assert data["total_con_indexacion"] == "3600.00"
+    bloque = data["bloques"][0]
+    assert bloque["total_ajuste_indexacion"] == "600.00"
+    assert bloque["total_con_indexacion"] == "3600.00"
+    assert bloque["cantidad_cuotas_con_indice"] == 3
+    assert bloque["cantidad_cuotas_proyectadas_sin_indice"] == 0
+    obligaciones = data["obligaciones"]
+    assert [obligacion["capital_cuota"] for obligacion in obligaciones] == [
+        "1000.00",
+        "1000.00",
+        "1000.00",
+    ]
+    assert [obligacion["ajuste_indexacion_cuota"] for obligacion in obligaciones] == [
+        "100.00",
+        "200.00",
+        "300.00",
+    ]
+    assert [obligacion["importe_total"] for obligacion in obligaciones] == [
+        "1100.00",
+        "1200.00",
+        "1300.00",
+    ]
+    assert [
+        obligacion["id_indice_financiero_valor"] for obligacion in obligaciones
+    ] == valores
 
 
 def test_preview_rechaza_indexacion_si_tipo_bloque_no_es_tramo_cuotas() -> None:
@@ -448,6 +594,8 @@ def test_preview_rechaza_indexacion_con_valores_invalidos() -> None:
         {"tipo_generacion_indexada": "PROVISORIA"},
         {"politica_valor_no_disponible": "USAR_ULTIMO"},
         {"valor_base_indice": Decimal("0.00000000")},
+        {"id_indice_financiero": 0},
+        {"tasa_interes_directo_periodica": Decimal("0.02")},
         {"conserva_capital_original": False},
         {"genera_ajuste_por_diferencia": False},
     ]
@@ -458,3 +606,270 @@ def test_preview_rechaza_indexacion_con_valores_invalidos() -> None:
         )
         assert not result.success, overrides
         assert result.errors == ["VALIDATION_ERROR"]
+
+
+def test_preview_rechaza_interes_directo_con_configuracion_indexacion() -> None:
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("10000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                    metodo_liquidacion="INTERES_DIRECTO",
+                    tasa_interes_directo_periodica=Decimal("0.02"),
+                    cantidad_periodos=6,
+                    base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+                    id_indice_financiero=1,
+                )
+            ]
+        )
+    )
+
+    assert not result.success
+    assert result.errors == ["VALIDATION_ERROR"]
+
+
+class _IndicePreviewFake:
+    def __init__(self, valores: dict[date, dict]) -> None:
+        self.valores = valores
+
+    def get_valor_publicado_por_id_y_fecha(
+        self, id_indice_financiero: int, fecha_objetivo: date
+    ) -> dict | None:
+        fechas = [fecha for fecha in self.valores if fecha <= fecha_objetivo]
+        if not fechas:
+            return None
+        return self.valores[max(fechas)]
+
+
+def _valor_indice(
+    *,
+    id_indice_financiero: int = 1,
+    id_indice_financiero_valor: int,
+    fecha_valor: date,
+    valor_indice: str,
+) -> dict:
+    return {
+        "id_indice_financiero": id_indice_financiero,
+        "codigo_indice_financiero": "IPC_TEST",
+        "nombre_indice_financiero": "Indice test",
+        "id_indice_financiero_valor": id_indice_financiero_valor,
+        "fecha_valor": fecha_valor,
+        "valor_indice": Decimal(valor_indice),
+        "fecha_publicacion": fecha_valor,
+        "fuente_valor": "TEST",
+    }
+
+
+def test_preview_indexacion_calcula_todas_las_cuotas_con_indice_disponible() -> None:
+    bloque = _tramo_indexado(
+        importe_total_bloque=Decimal("3000.00"),
+        cantidad_cuotas=3,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        valor_base_indice=Decimal("100.00000000"),
+    )
+    query = _IndicePreviewFake(
+        {
+            date(2026, 6, 10): _valor_indice(
+                id_indice_financiero_valor=10,
+                fecha_valor=date(2026, 6, 10),
+                valor_indice="110.00000000",
+            ),
+            date(2026, 7, 10): _valor_indice(
+                id_indice_financiero_valor=11,
+                fecha_valor=date(2026, 7, 10),
+                valor_indice="120.00000000",
+            ),
+            date(2026, 8, 10): _valor_indice(
+                id_indice_financiero_valor=12,
+                fecha_valor=date(2026, 8, 10),
+                valor_indice="130.00000000",
+            ),
+        }
+    )
+
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService(query).execute(
+        _command(monto_total_plan=Decimal("3000.00"), bloques=[bloque])
+    )
+
+    assert result.success, result.errors
+    assert result.data["total_calculado"] == Decimal("3000.00")
+    assert result.data["total_con_interes"] == Decimal("3000.00")
+    assert result.data["total_ajuste_indexacion"] == Decimal("600.00")
+    assert result.data["total_con_indexacion"] == Decimal("3600.00")
+    preview_bloque = result.data["bloques"][0]
+    assert preview_bloque.total_ajuste_indexacion == Decimal("600.00")
+    assert preview_bloque.total_con_indexacion == Decimal("3600.00")
+    assert preview_bloque.cantidad_cuotas_con_indice == 3
+    assert preview_bloque.cantidad_cuotas_proyectadas_sin_indice == 0
+    obligaciones = result.data["obligaciones"]
+    assert [ob.capital_cuota for ob in obligaciones] == [Decimal("1000.00")] * 3
+    assert [ob.ajuste_indexacion_cuota for ob in obligaciones] == [
+        Decimal("100.00"),
+        Decimal("200.00"),
+        Decimal("300.00"),
+    ]
+    assert [ob.importe_total for ob in obligaciones] == [
+        Decimal("1100.00"),
+        Decimal("1200.00"),
+        Decimal("1300.00"),
+    ]
+    assert all(
+        ob.estado_preview_indexacion == "CON_INDICE_APLICADO" for ob in obligaciones
+    )
+    assert obligaciones[0].id_indice_financiero_valor == 10
+    assert obligaciones[0].fecha_valor_indice == date(2026, 6, 10)
+    assert obligaciones[0].valor_base_indice == Decimal("100.00000000")
+    assert obligaciones[0].valor_aplicado_indice == Decimal("110.00000000")
+    assert obligaciones[0].coeficiente_indexacion == Decimal("1.10000000")
+
+
+def test_preview_indexacion_representa_cuotas_mixtas_sin_inventar_indice() -> None:
+    bloque = _tramo_indexado(
+        importe_total_bloque=Decimal("3000.00"),
+        cantidad_cuotas=3,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        valor_base_indice=Decimal("100.00000000"),
+    )
+    query = _IndicePreviewFake(
+        {
+            date(2026, 7, 10): _valor_indice(
+                id_indice_financiero_valor=20,
+                fecha_valor=date(2026, 7, 10),
+                valor_indice="125.00000000",
+            )
+        }
+    )
+
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService(query).execute(
+        _command(monto_total_plan=Decimal("3000.00"), bloques=[bloque])
+    )
+
+    assert result.success, result.errors
+    obligaciones = result.data["obligaciones"]
+    assert obligaciones[0].estado_preview_indexacion == "PROYECTADA_SIN_INDICE"
+    assert obligaciones[0].importe_total == Decimal("1000.00")
+    assert obligaciones[0].id_indice_financiero_valor is None
+    assert obligaciones[0].valor_aplicado_indice is None
+    assert obligaciones[0].ajuste_indexacion_cuota is None
+    assert [ob.estado_preview_indexacion for ob in obligaciones[1:]] == [
+        "CON_INDICE_APLICADO",
+        "CON_INDICE_APLICADO",
+    ]
+    assert [ob.id_indice_financiero_valor for ob in obligaciones[1:]] == [20, 20]
+    assert [ob.ajuste_indexacion_cuota for ob in obligaciones[1:]] == [
+        Decimal("250.00"),
+        Decimal("250.00"),
+    ]
+    assert result.data["total_ajuste_indexacion"] == Decimal("500.00")
+    assert result.data["total_con_indexacion"] == Decimal("3500.00")
+    assert result.data["bloques"][0].cantidad_cuotas_con_indice == 2
+    assert result.data["bloques"][0].cantidad_cuotas_proyectadas_sin_indice == 1
+
+
+def test_preview_plan_mixto_interes_directo_e_indexacion_en_bloques_distintos() -> None:
+    bloque_interes = PlanPagoVentaBloqueInput(
+        tipo_bloque="TRAMO_CUOTAS",
+        importe_total_bloque=Decimal("1000.00"),
+        cantidad_cuotas=2,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        periodicidad="MENSUAL",
+        metodo_liquidacion="INTERES_DIRECTO",
+        tasa_interes_directo_periodica=Decimal("0.10"),
+        cantidad_periodos=2,
+        base_calculo_interes="CAPITAL_INICIAL_BLOQUE",
+    )
+    bloque_indexacion = _tramo_indexado(
+        importe_total_bloque=Decimal("3000.00"),
+        cantidad_cuotas=3,
+        fecha_primer_vencimiento=date(2026, 8, 10),
+        valor_base_indice=Decimal("100.00000000"),
+    )
+    query = _IndicePreviewFake(
+        {
+            date(2026, 8, 10): _valor_indice(
+                id_indice_financiero_valor=30,
+                fecha_valor=date(2026, 8, 10),
+                valor_indice="110.00000000",
+            ),
+            date(2026, 9, 10): _valor_indice(
+                id_indice_financiero_valor=31,
+                fecha_valor=date(2026, 9, 10),
+                valor_indice="120.00000000",
+            ),
+            date(2026, 10, 10): _valor_indice(
+                id_indice_financiero_valor=32,
+                fecha_valor=date(2026, 10, 10),
+                valor_indice="130.00000000",
+            ),
+        }
+    )
+
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService(query).execute(
+        _command(
+            monto_total_plan=Decimal("4000.00"),
+            bloques=[bloque_interes, bloque_indexacion],
+        )
+    )
+
+    assert result.success, result.errors
+    bloques = result.data["bloques"]
+    assert [bloque.input.metodo_liquidacion for bloque in bloques] == [
+        "INTERES_DIRECTO",
+        "INDEXACION",
+    ]
+    assert bloques[0].input.id_indice_financiero is None
+    assert bloques[0].input.valor_base_indice is None
+    assert bloques[1].input.tasa_interes_directo_periodica is None
+    assert bloques[1].input.cantidad_periodos is None
+    assert bloques[1].input.base_calculo_interes is None
+    obligaciones = result.data["obligaciones"]
+    suma_obligaciones = sum(
+        (obligacion.importe_total for obligacion in obligaciones), Decimal("0.00")
+    )
+    assert result.data["total_calculado"] == Decimal("4000.00")
+    assert result.data["total_con_interes"] == Decimal("4200.00")
+    assert result.data["total_ajuste_indexacion"] == Decimal("600.00")
+    assert result.data["total_con_indexacion"] == suma_obligaciones
+    assert result.data["total_con_indexacion"] == Decimal("4800.00")
+    assert [ob.importe_total for ob in obligaciones[:2]] == [
+        Decimal("600.00"),
+        Decimal("600.00"),
+    ]
+    assert [ob.ajuste_indexacion_cuota for ob in obligaciones[:2]] == [None, None]
+    assert [ob.ajuste_indexacion_cuota for ob in obligaciones[2:]] == [
+        Decimal("100.00"),
+        Decimal("200.00"),
+        Decimal("300.00"),
+    ]
+
+
+def test_preview_indexacion_sin_valores_devuelve_cuotas_proyectadas_sin_indice() -> (
+    None
+):
+    bloque = _tramo_indexado(
+        importe_total_bloque=Decimal("3000.00"),
+        cantidad_cuotas=3,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        valor_base_indice=Decimal("100.00000000"),
+    )
+
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService(
+        _IndicePreviewFake({})
+    ).execute(_command(monto_total_plan=Decimal("3000.00"), bloques=[bloque]))
+
+    assert result.success, result.errors
+    obligaciones = result.data["obligaciones"]
+    assert [ob.estado_preview_indexacion for ob in obligaciones] == [
+        "PROYECTADA_SIN_INDICE"
+    ] * 3
+    assert [ob.importe_total for ob in obligaciones] == [Decimal("1000.00")] * 3
+    assert all(ob.ajuste_indexacion_cuota is None for ob in obligaciones)
+    assert all(ob.valor_aplicado_indice is None for ob in obligaciones)
+    assert result.data["total_ajuste_indexacion"] == Decimal("0.00")
+    assert result.data["total_con_indexacion"] == Decimal("3000.00")
+    assert result.data["bloques"][0].cantidad_cuotas_con_indice == 0
+    assert result.data["bloques"][0].cantidad_cuotas_proyectadas_sin_indice == 3
