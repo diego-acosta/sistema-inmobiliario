@@ -860,6 +860,7 @@ def _indexacion_repo_payload(
     *,
     id_plan_pago_venta_bloque: int,
     id_indice_financiero: int,
+    fecha_base_indice: date = date(2026, 5, 1),
     valor_base_indice: Decimal = Decimal("100.12345678"),
     politica_valor_no_disponible: str = "ERROR_SI_NO_EXISTE",
 ) -> object:
@@ -871,7 +872,7 @@ def _indexacion_repo_payload(
     return PlanPagoVentaBloqueIndexacionUpsertPayload(
         id_plan_pago_venta_bloque=id_plan_pago_venta_bloque,
         id_indice_financiero=id_indice_financiero,
-        fecha_base_indice=date(2026, 5, 1),
+        fecha_base_indice=fecha_base_indice,
         valor_base_indice=valor_base_indice,
         modo_indexacion="POR_COEFICIENTE",
         base_calculo_indexacion="CAPITAL_INICIAL_BLOQUE",
@@ -1056,7 +1057,7 @@ def test_repository_indexacion_detecta_incompatibilidad(db_session) -> None:
         _indexacion_repo_payload(
             id_plan_pago_venta_bloque=id_bloque,
             id_indice_financiero=id_indice,
-            politica_valor_no_disponible="USAR_ULTIMO",
+            fecha_base_indice=date(2026, 5, 2),
         ),
     ]
 
