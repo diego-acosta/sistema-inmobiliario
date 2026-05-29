@@ -38,8 +38,7 @@ def _service(db_session) -> GeneratePlanPagoVentaV2PorBloquesService:
 def _insertar_plan_pago_venta_minimo(db_session, *, codigo_venta: str) -> int:
     id_venta = _insertar_venta_minima(db_session, codigo_venta=codigo_venta)
     return db_session.execute(
-        text(
-            """
+        text("""
             INSERT INTO plan_pago_venta (
                 uid_global,
                 version_registro,
@@ -71,8 +70,7 @@ def _insertar_plan_pago_venta_minimo(db_session, *, codigo_venta: str) -> int:
                 10000000.00
             )
             RETURNING id_plan_pago_venta
-            """
-        ),
+            """),
         {"id_venta": id_venta, "op_id": HEADERS["X-Op-Id"]},
     ).scalar_one()
 
@@ -425,7 +423,9 @@ def test_servicio_unificado_execute_in_existing_transaction_no_abre_transaccion_
     service = _service(db_session)
 
     def fail_if_transaction_is_opened():
-        raise AssertionError("execute_in_existing_transaction no debe abrir transaccion")
+        raise AssertionError(
+            "execute_in_existing_transaction no debe abrir transaccion"
+        )
 
     monkeypatch.setattr(service, "_transaction", fail_if_transaction_is_opened)
 
@@ -631,11 +631,15 @@ def test_servicio_unificado_payload_distinto_con_plan_vivo_devuelve_conflicto(
 
 
 def test_plan_pago_v2_generar_requiere_x_op_id_valido(client, db_session) -> None:
-    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-HTTP-HDR-001")
+    id_venta = _insertar_venta_minima(
+        db_session, codigo_venta="V-PPV2-BLQ-HTTP-HDR-001"
+    )
     _vincular_comprador_venta(db_session, id_venta=id_venta)
 
     headers = {k: v for k, v in HEADERS.items() if k != "X-Op-Id"}
-    response = client.post(URL.format(id_venta=id_venta), headers=headers, json=_payload_contado())
+    response = client.post(
+        URL.format(id_venta=id_venta), headers=headers, json=_payload_contado()
+    )
 
     assert response.status_code == 400
     body = response.json()
@@ -643,12 +647,15 @@ def test_plan_pago_v2_generar_requiere_x_op_id_valido(client, db_session) -> Non
     assert body["details"] == {"header": "X-Op-Id"}
 
     headers = {**HEADERS, "X-Op-Id": "no-es-uuid"}
-    response = client.post(URL.format(id_venta=id_venta), headers=headers, json=_payload_contado())
+    response = client.post(
+        URL.format(id_venta=id_venta), headers=headers, json=_payload_contado()
+    )
 
     assert response.status_code == 400
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR"
     assert body["details"] == {"header": "X-Op-Id"}
+
 
 def test_generate_interes_directo_genera_obligaciones_y_composicion(db_session) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-001")
@@ -678,9 +685,9 @@ def test_generate_interes_directo_genera_obligaciones_y_composicion(db_session) 
         Decimal(str(ob["importe_total"])) for ob in result.data["obligaciones"]
     )
     assert total_obligaciones == Decimal("12400000.00")
-    composiciones = db_session.execute(
-        text(
-            """
+    composiciones = (
+        db_session.execute(
+            text("""
             SELECT co.importe_componente, cf.codigo_concepto_financiero
             FROM composicion_obligacion co
             JOIN concepto_financiero cf
@@ -689,10 +696,12 @@ def test_generate_interes_directo_genera_obligaciones_y_composicion(db_session) 
               ON o.id_obligacion_financiera = co.id_obligacion_financiera
             WHERE o.id_relacion_generadora = :id_relacion_generadora
             ORDER BY o.numero_obligacion, co.orden_composicion
-            """
-        ),
-        {"id_relacion_generadora": result.data["id_relacion_generadora"]},
-    ).mappings().all()
+            """),
+            {"id_relacion_generadora": result.data["id_relacion_generadora"]},
+        )
+        .mappings()
+        .all()
+    )
     assert len(composiciones) == 24
     capital = sum(
         Decimal(str(row["importe_componente"]))
@@ -708,7 +717,9 @@ def test_generate_interes_directo_genera_obligaciones_y_composicion(db_session) 
     assert interes == Decimal("2400000.00")
 
 
-def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(client, db_session) -> None:
+def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(
+    client, db_session
+) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-002")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
     payload = _payload_financiado()
@@ -720,7 +731,9 @@ def test_generate_interes_directo_metodo_invalido_devuelve_validation_error(clie
     assert "VALIDATION_ERROR" in body["details"]["errors"]
 
 
-def test_generate_interes_directo_base_calculo_invalida_devuelve_validation_error(client, db_session) -> None:
+def test_generate_interes_directo_base_calculo_invalida_devuelve_validation_error(
+    client, db_session
+) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-ID-003")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
     payload = _payload_financiado()
@@ -739,7 +752,9 @@ def test_generate_interes_directo_base_calculo_invalida_devuelve_validation_erro
     assert "VALIDATION_ERROR" in body["details"]["errors"]
 
 
-def test_repository_bloque_interes_directo_tasa_distinta_es_incompatible(db_session) -> None:
+def test_repository_bloque_interes_directo_tasa_distinta_es_incompatible(
+    db_session,
+) -> None:
     repository = PlanPagoVentaV2Repository(db_session)
     now = datetime.now(UTC)
     id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
@@ -782,7 +797,9 @@ def test_repository_bloque_interes_directo_tasa_distinta_es_incompatible(db_sess
         assert "tasa_interes_directo_periodica" in str(exc)
 
 
-def test_repository_bloque_interes_directo_tasa_equivalente_por_escala_es_compatible(db_session) -> None:
+def test_repository_bloque_interes_directo_tasa_equivalente_por_escala_es_compatible(
+    db_session,
+) -> None:
     repository = PlanPagoVentaV2Repository(db_session)
     now = datetime.now(UTC)
     id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
@@ -822,8 +839,7 @@ def test_repository_bloque_interes_directo_tasa_equivalente_por_escala_es_compat
 
 def _insertar_indice_financiero_minimo(db_session, *, codigo: str) -> int:
     return db_session.execute(
-        text(
-            """
+        text("""
             INSERT INTO indice_financiero (
                 codigo_indice_financiero,
                 nombre_indice_financiero,
@@ -835,9 +851,43 @@ def _insertar_indice_financiero_minimo(db_session, *, codigo: str) -> int:
             )
             VALUES (:codigo, :codigo, 'INDICE', 'PUNTOS', 'MENSUAL', 'TEST', 'ACTIVO')
             RETURNING id_indice_financiero
-            """
-        ),
+            """),
         {"codigo": codigo},
+    ).scalar_one()
+
+
+def _insertar_indice_financiero_valor(
+    db_session,
+    *,
+    id_indice_financiero: int,
+    fecha_valor: date,
+    valor_indice: Decimal,
+) -> int:
+    return db_session.execute(
+        text("""
+            INSERT INTO indice_financiero_valor (
+                id_indice_financiero,
+                fecha_valor,
+                valor_indice,
+                fecha_publicacion,
+                fuente_valor,
+                estado_valor_indice
+            )
+            VALUES (
+                :id_indice_financiero,
+                :fecha_valor,
+                :valor_indice,
+                :fecha_valor,
+                'TEST',
+                'PUBLICADO'
+            )
+            RETURNING id_indice_financiero_valor
+            """),
+        {
+            "id_indice_financiero": id_indice_financiero,
+            "fecha_valor": fecha_valor,
+            "valor_indice": valor_indice,
+        },
     ).scalar_one()
 
 
@@ -890,70 +940,370 @@ def _indexacion_repo_payload(
     )
 
 
-def test_generate_indexacion_devuelve_error_controlado_y_no_persiste(client, db_session) -> None:
-    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-001")
+def _bloque_indexado_generate(
+    id_indice: int, *, cantidad_cuotas: int = 3
+) -> PlanPagoVentaBloqueInput:
+    return PlanPagoVentaBloqueInput(
+        tipo_bloque="TRAMO_CUOTAS",
+        importe_total_bloque=Decimal("3000000.00"),
+        cantidad_cuotas=cantidad_cuotas,
+        fecha_primer_vencimiento=date(2026, 6, 10),
+        periodicidad="MENSUAL",
+        **_indexacion_payload_kwargs(id_indice),
+    )
+
+
+def _composiciones_por_obligacion(
+    db_session, *, id_relacion_generadora: int
+) -> list[dict]:
+    return [
+        dict(row)
+        for row in db_session.execute(
+            text("""
+                SELECT
+                    o.numero_obligacion,
+                    cf.codigo_concepto_financiero,
+                    co.importe_componente,
+                    co.saldo_componente
+                FROM composicion_obligacion co
+                JOIN concepto_financiero cf
+                  ON cf.id_concepto_financiero = co.id_concepto_financiero
+                JOIN obligacion_financiera o
+                  ON o.id_obligacion_financiera = co.id_obligacion_financiera
+                WHERE o.id_relacion_generadora = :id_relacion_generadora
+                  AND co.deleted_at IS NULL
+                ORDER BY o.numero_obligacion, co.orden_composicion
+                """),
+            {"id_relacion_generadora": id_relacion_generadora},
+        ).mappings()
+    ]
+
+
+def _obligaciones_indexacion(db_session, *, id_relacion_generadora: int) -> list[dict]:
+    return [
+        dict(row)
+        for row in db_session.execute(
+            text("""
+                SELECT ofi.*
+                FROM obligacion_financiera_indexacion ofi
+                JOIN obligacion_financiera o
+                  ON o.id_obligacion_financiera = ofi.id_obligacion_financiera
+                WHERE o.id_relacion_generadora = :id_relacion_generadora
+                  AND ofi.deleted_at IS NULL
+                ORDER BY o.numero_obligacion
+                """),
+            {"id_relacion_generadora": id_relacion_generadora},
+        ).mappings()
+    ]
+
+
+def _count_table_for_venta(db_session, *, id_venta: int, table_name: str) -> int:
+    allowed_tables = {
+        "plan_pago_venta": "plan_pago_venta ppv WHERE ppv.id_venta = :id_venta AND ppv.deleted_at IS NULL",
+        "plan_pago_venta_bloque": "plan_pago_venta_bloque ppvb JOIN plan_pago_venta ppv ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta WHERE ppv.id_venta = :id_venta AND ppvb.deleted_at IS NULL",
+        "obligacion_financiera": "obligacion_financiera o JOIN relacion_generadora rg ON rg.id_relacion_generadora = o.id_relacion_generadora WHERE rg.tipo_origen = 'venta' AND rg.id_origen = :id_venta AND o.deleted_at IS NULL",
+        "composicion_obligacion": "composicion_obligacion co JOIN obligacion_financiera o ON o.id_obligacion_financiera = co.id_obligacion_financiera JOIN relacion_generadora rg ON rg.id_relacion_generadora = o.id_relacion_generadora WHERE rg.tipo_origen = 'venta' AND rg.id_origen = :id_venta AND co.deleted_at IS NULL",
+        "obligacion_financiera_indexacion": "obligacion_financiera_indexacion ofi JOIN obligacion_financiera o ON o.id_obligacion_financiera = ofi.id_obligacion_financiera JOIN relacion_generadora rg ON rg.id_relacion_generadora = o.id_relacion_generadora WHERE rg.tipo_origen = 'venta' AND rg.id_origen = :id_venta AND ofi.deleted_at IS NULL",
+    }
+    from_clause = allowed_tables[table_name]
+    return db_session.execute(
+        text(f"SELECT COUNT(*) FROM {from_clause}"), {"id_venta": id_venta}
+    ).scalar_one()
+
+
+def test_generate_indexacion_con_indices_disponibles_materializa_ajuste(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-GEN-OK")
     _vincular_comprador_venta(db_session, id_venta=id_venta)
-    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-GEN-001")
-    payload = _payload_financiado()
-    payload["bloques"][1].update(
-        {
-            "importe_total_bloque": 3000000.00,
-            "metodo_liquidacion": "INDEXACION",
-            "id_indice_financiero": id_indice,
-            "fecha_base_indice": "2026-05-01",
-            "valor_base_indice": "100.12345678",
-            "modo_indexacion": "POR_COEFICIENTE",
-            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
-            "tipo_generacion_indexada": "DEFINITIVA",
-            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
-            "conserva_capital_original": True,
-            "genera_ajuste_por_diferencia": True,
-        }
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-GEN-OK")
+    id_valor = _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("110.00000000"),
     )
 
-    response = client.post(URL.format(id_venta=id_venta), headers=HEADERS, json=payload)
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
 
-    assert response.status_code == 400, response.text
-    body = response.json()
-    assert body["error_code"] == "APPLICATION_ERROR"
-    assert body["details"]["errors"] == ["INDEXACION_GENERATE_NO_IMPLEMENTADO"]
+    assert result.success, result.errors
+    assert len(result.data["obligaciones"]) == 3
+    assert all(
+        Decimal(str(obligacion["importe_total"])) == Decimal("1098643.65")
+        for obligacion in result.data["obligaciones"]
+    )
+    composiciones = _composiciones_por_obligacion(
+        db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
+    )
+    assert [row["codigo_concepto_financiero"] for row in composiciones] == [
+        "CAPITAL_VENTA",
+        "AJUSTE_INDEXACION",
+        "CAPITAL_VENTA",
+        "AJUSTE_INDEXACION",
+        "CAPITAL_VENTA",
+        "AJUSTE_INDEXACION",
+    ]
+    assert all(
+        row["saldo_componente"] == row["importe_componente"] for row in composiciones
+    )
+    indexaciones = _obligaciones_indexacion(
+        db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
+    )
+    assert len(indexaciones) == 3
+    assert {row["id_indice_financiero_valor"] for row in indexaciones} == {id_valor}
+    assert {row["valor_aplicado_indice"] for row in indexaciones} == {
+        Decimal("110.00000000")
+    }
+
+
+def test_generate_indexacion_sin_indices_futuros_deja_proyectadas_solo_capital(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-GEN-PROY")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-GEN-PROY"
+    )
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+
+    assert result.success, result.errors
+    assert len(result.data["obligaciones"]) == 3
+    assert {
+        obligacion["estado_obligacion"] for obligacion in result.data["obligaciones"]
+    } == {"PROYECTADA"}
+    assert all(
+        Decimal(str(obligacion["importe_total"])) == Decimal("1000000.00")
+        for obligacion in result.data["obligaciones"]
+    )
+    composiciones = _composiciones_por_obligacion(
+        db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
+    )
+    assert [row["codigo_concepto_financiero"] for row in composiciones] == [
+        "CAPITAL_VENTA",
+        "CAPITAL_VENTA",
+        "CAPITAL_VENTA",
+    ]
     assert (
-        db_session.execute(
-            text(
-                """
-                SELECT COUNT(*)
-                FROM plan_pago_venta
-                WHERE id_venta = :id_venta
-                  AND deleted_at IS NULL
-                """
-            ),
-            {"id_venta": id_venta},
-        ).scalar_one()
+        _obligaciones_indexacion(
+            db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
+        )
+        == []
+    )
+
+
+def test_generate_indexacion_mixto_proyecta_sin_indice_y_materializa_disponibles(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-GEN-MIX")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-GEN-MIX"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 7, 10),
+        valor_indice=Decimal("110.00000000"),
+    )
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+
+    assert result.success, result.errors
+    assert [
+        Decimal(str(ob["importe_total"])) for ob in result.data["obligaciones"]
+    ] == [
+        Decimal("1000000.00"),
+        Decimal("1098643.65"),
+        Decimal("1098643.65"),
+    ]
+    composiciones = _composiciones_por_obligacion(
+        db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
+    )
+    assert [row["codigo_concepto_financiero"] for row in composiciones] == [
+        "CAPITAL_VENTA",
+        "CAPITAL_VENTA",
+        "AJUSTE_INDEXACION",
+        "CAPITAL_VENTA",
+        "AJUSTE_INDEXACION",
+    ]
+    assert (
+        len(
+            _obligaciones_indexacion(
+                db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
+            )
+        )
+        == 2
+    )
+
+
+def test_generate_indexacion_reejecutar_mismo_payload_no_duplica(db_session) -> None:
+    id_venta = _insertar_venta_minima(
+        db_session, codigo_venta="V-PPV2-BLQ-IX-GEN-IDEMP"
+    )
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-GEN-IDEMP"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("110.00000000"),
+    )
+    command = _command(
+        id_venta=id_venta,
+        monto_total_plan=Decimal("3000000.00"),
+        bloques=[_bloque_indexado_generate(id_indice)],
+    )
+
+    first = _service(db_session).execute(command)
+    second = _service(db_session).execute(command)
+
+    assert first.success, first.errors
+    assert second.success, second.errors
+    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 1
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 3
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="composicion_obligacion"
+        )
+        == 6
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera_indexacion"
+        )
+        == 3
+    )
+
+
+def test_generate_indexacion_ajuste_negativo_devuelve_error_controlado_y_rollback(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-GEN-NEG")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-GEN-NEG"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("90.00000000"),
+    )
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+
+    assert not result.success
+    assert result.errors == ["INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO"]
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="plan_pago_venta"
+        )
         == 0
     )
-    assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 0
-    assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 0
     assert (
-        db_session.execute(
-            text(
-                """
-                SELECT COUNT(*)
-                FROM plan_pago_venta_bloque_indexacion ppvbi
-                JOIN plan_pago_venta_bloque ppvb
-                  ON ppvb.id_plan_pago_venta_bloque = ppvbi.id_plan_pago_venta_bloque
-                JOIN plan_pago_venta ppv
-                  ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta
-                WHERE ppv.id_venta = :id_venta
-                  AND ppvbi.deleted_at IS NULL
-                """
-            ),
-            {"id_venta": id_venta},
-        ).scalar_one()
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="plan_pago_venta_bloque"
+        )
+        == 0
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 0
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="composicion_obligacion"
+        )
+        == 0
+    )
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera_indexacion"
+        )
         == 0
     )
 
 
-def test_repository_persiste_y_lee_plan_pago_venta_bloque_indexacion(db_session) -> None:
+def test_generate_indexacion_configuracion_incompatible_devuelve_error_controlado(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(
+        db_session, codigo_venta="V-PPV2-BLQ-IX-GEN-INCOMP"
+    )
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-GEN-INCOMP"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("110.00000000"),
+    )
+    first = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+    assert first.success, first.errors
+
+    changed = _bloque_indexado_generate(id_indice)
+    changed.valor_base_indice = Decimal("101.12345678")
+    second = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[changed],
+        )
+    )
+
+    assert not second.success
+    assert any(
+        error.startswith("PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE")
+        or error.startswith("PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE")
+        for error in second.errors
+    )
+
+
+def test_repository_persiste_y_lee_plan_pago_venta_bloque_indexacion(
+    db_session,
+) -> None:
     repository = PlanPagoVentaV2Repository(db_session)
     id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-001")
     id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
@@ -1067,12 +1417,12 @@ def test_repository_indexacion_detecta_incompatibilidad(db_session) -> None:
             repository.get_or_create_plan_pago_venta_bloque_indexacion(payload)
             assert False, "expected incompatibility"
         except ValueError as exc:
-            assert str(exc).startswith(
-                "PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE"
-            )
+            assert str(exc).startswith("PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE")
 
 
-def test_repository_indexacion_compara_valor_base_indice_a_ocho_decimales(db_session) -> None:
+def test_repository_indexacion_compara_valor_base_indice_a_ocho_decimales(
+    db_session,
+) -> None:
     repository = PlanPagoVentaV2Repository(db_session)
     id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-IX-003")
     id_plan_pago_venta = _insertar_plan_pago_venta_minimo(
@@ -1121,9 +1471,10 @@ def test_repository_indexacion_compara_valor_base_indice_a_ocho_decimales(db_ses
             valor_base_indice=Decimal("100.12000000"),
         )
     )
-    assert first["id_plan_pago_venta_bloque_indexacion"] == second[
-        "id_plan_pago_venta_bloque_indexacion"
-    ]
+    assert (
+        first["id_plan_pago_venta_bloque_indexacion"]
+        == second["id_plan_pago_venta_bloque_indexacion"]
+    )
 
     try:
         repository.get_or_create_plan_pago_venta_bloque_indexacion(

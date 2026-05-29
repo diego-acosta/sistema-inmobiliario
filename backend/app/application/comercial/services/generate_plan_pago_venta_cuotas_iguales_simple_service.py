@@ -162,6 +162,29 @@ class PlanPagoVentaBloqueIndexacionUpsertPayload:
 
 
 @dataclass(slots=True)
+class ObligacionFinancieraIndexacionUpsertPayload:
+    id_obligacion_financiera: int
+    id_plan_pago_venta_bloque_indexacion: int
+    id_indice_financiero: int
+    id_indice_financiero_valor: int
+    fecha_base_indice: date
+    valor_base_indice: Decimal
+    fecha_aplicacion_indice: date
+    valor_aplicado_indice: Decimal
+    coeficiente_indexacion: Decimal
+    modo_indexacion: str
+    base_calculo_indexacion: str
+    tipo_generacion_indexada: str
+    observaciones: str | None
+    created_at: datetime
+    updated_at: datetime
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: UUID | None
+    op_id_ultima_modificacion: UUID | None
+
+
+@dataclass(slots=True)
 class ObligacionCronogramaV2CreatePayload:
     id_relacion_generadora: int
     id_generacion_cronograma_financiero: int
