@@ -57,6 +57,8 @@ pero no debe considerarse el flujo principal para probar venta completa.
   exclusivamente `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview`.
 - El prototipo no calcula fechas de cuotas, interes directo ni indexacion
   localmente para el preview oficial.
+- El paso Plan Pago V2 muestra un campo `ID venta backend` visible para cargar
+  una venta existente de la base DEV antes de usar preview/generate.
 - Las acciones se presentan como flujo guiado: `1. Previsualizar plan`,
   `2. Generar plan de pago`, `3. Ver plan generado`.
 - Preview y consulta integral son lectura/visualizacion; no prometen pago,
@@ -70,8 +72,10 @@ pero no debe considerarse el flujo principal para probar venta completa.
 3. Carga bloques comerciales.
 4. En cada `TRAMO_CUOTAS` elige `Metodo de liquidacion`.
 5. La pantalla valida suma, campos requeridos y exclusividad de metodos.
-6. Si no hay venta backend asociada, el flujo informa que primero se debe crear
-   o seleccionar la venta backend y deja deshabilitadas las acciones backend.
+6. El usuario informa `ID venta backend` con el ID de una venta existente en
+   base DEV; si falta o es invalido, la UI muestra `Ingresá el ID de una venta
+   backend existente para probar el plan.` y deja deshabilitadas las acciones
+   backend.
 7. `1. Previsualizar plan`: ejecuta preview oficial con `POST /preview` y muestra
    el cronograma calculado por backend.
 8. `2. Generar plan de pago`: se habilita solo con preview oficial vigente;
@@ -79,7 +83,9 @@ pero no debe considerarse el flujo principal para probar venta completa.
    `GET /api/v1/ventas/{id_venta}/plan-pago-v2`.
 9. `3. Ver plan generado`: se habilita cuando ya se genero el plan o hay una
    consulta integral cargada para la venta.
-10. El paso final muestra checklist operativo: venta backend, preview oficial y
+10. Si cambia el `ID venta backend`, se limpia el preview oficial, la consulta
+    integral y el estado de generate; se debe previsualizar nuevamente.
+11. El paso final muestra checklist operativo: venta backend, preview oficial y
     plan generado.
 
 ## 6. Editor de bloques
@@ -285,7 +291,8 @@ indexacion y no debe inventar estados locales de indexacion.
 La seccion `Preview oficial backend` es la unica fuente del cronograma. Sus
 estados esperados son:
 
-- sin venta backend: `Disponible cuando exista una venta backend asociada.`;
+- sin venta backend: `Disponible cuando exista una venta backend asociada.` y
+  pedido de ingresar un ID de venta backend existente;
 - con venta backend sin preview: `Presioná Previsualizar plan para ver el
   cronograma calculado por backend.`;
 - con borrador modificado: aviso `Preview desactualizado` y pedido de volver a
@@ -430,8 +437,10 @@ Queda explicitamente fuera de alcance:
 - La `Estructura del plan` queda limitada a borrador visual local.
 - Las acciones backend aparecen guiadas como `1. Previsualizar plan`,
   `2. Generar plan de pago`, `3. Ver plan generado`.
-- Sin venta backend asociada, la UI explica el prerequisito y deshabilita
+- Sin `ID venta backend` valido, la UI explica el prerequisito y deshabilita
   preview/generate/ver plan.
+- Al cambiar el `ID venta backend`, se descartan preview oficial, consulta
+  integral y generate previos para evitar mezclar respuestas de otra venta.
 - El `Preview oficial backend` es la unica fuente del cronograma y muestra
   capital, ajuste de indexacion, importe total, estado de indexacion y concepto
   desde la respuesta backend.

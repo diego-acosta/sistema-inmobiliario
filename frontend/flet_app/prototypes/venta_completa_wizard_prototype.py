@@ -390,17 +390,12 @@ class VentaCompletaWizardPrototype:
                             width=260,
                             on_change=lambda e: self._set_backend_field("base_url", e.control.value),
                         ),
-                        ft.TextField(
-                            label="ID venta backend",
-                            value=self.state.id_venta_backend,
-                            width=150,
-                            on_change=lambda e: self._set_backend_field("id_venta_backend", e.control.value),
-                        ),
                         tipo_pago_dropdown,
                     ],
                     wrap=True,
                     spacing=10,
                 ),
+                self._backend_sale_selector(),
                 self._bloques_editor(),
                 ft.Row(
                     controls=[
@@ -743,12 +738,41 @@ class VentaCompletaWizardPrototype:
             border_radius=6,
         )
 
+    def _backend_sale_selector(self) -> ft.Control:
+        has_sale = self._has_backend_sale()
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Venta backend para probar Plan Pago V2", weight=ft.FontWeight.W_700),
+                    ft.TextField(
+                        label="ID venta backend",
+                        value=self.state.id_venta_backend,
+                        hint_text="Ej: 1",
+                        helper_text="Usá el ID de una venta existente en la base DEV.",
+                        width=260,
+                        keyboard_type=ft.KeyboardType.NUMBER,
+                        on_change=lambda e: self._set_backend_field("id_venta_backend", e.control.value),
+                    ),
+                    ft.Text(
+                        "Venta backend lista para preview/generate."
+                        if has_sale
+                        else "Ingresá el ID de una venta backend existente para probar el plan.",
+                        color=ft.Colors.GREEN_700 if has_sale else ft.Colors.ORANGE_700,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=12,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=8,
+        )
+
     def _plan_pago_action_flow(self) -> ft.Control:
         has_sale = self._has_backend_sale()
         preview_ready = self._has_preview_vigente()
         plan_ready = self._has_plan_generado()
         preview_hint = (
-            "Primero necesitás una venta backend creada/seleccionada."
+            "Ingresá el ID de una venta backend existente para probar el plan."
             if not has_sale
             else "Calcula el cronograma oficial con las reglas del backend."
         )
@@ -864,7 +888,7 @@ class VentaCompletaWizardPrototype:
     def _backend_preview_panel(self) -> ft.Control:
         if not self._has_backend_sale():
             return _official_preview_empty_panel(
-                "Disponible cuando exista una venta backend asociada."
+                "Disponible cuando exista una venta backend asociada. Ingresá el ID de una venta backend existente para probar el plan."
             )
         if self.state.preview_response is None:
             return _official_preview_empty_panel(
@@ -1067,9 +1091,14 @@ class VentaCompletaWizardPrototype:
         self._render()
 
     def _set_backend_field(self, field_name: str, value: str) -> None:
-        setattr(self.state, field_name, value or "")
+        new_value = value or ""
+        previous_value = getattr(self.state, field_name)
+        setattr(self.state, field_name, new_value)
         self.state.backend_error = None
-        self._mark_preview_stale()
+        if field_name == "id_venta_backend" and new_value != previous_value:
+            self._clear_backend_plan_state()
+        else:
+            self._mark_preview_stale()
         self._render()
 
     def _set_tipo_pago(self, value: str | None) -> None:
@@ -1268,6 +1297,18 @@ class VentaCompletaWizardPrototype:
             self.state.preview_stale = True
         self.state.preview_generado = False
         self.state.generate_status_code = None
+        self.state.backend_error = None
+
+    def _clear_backend_plan_state(self) -> None:
+        self.state.preview_response = None
+        self.state.preview_status_code = None
+        self.state.preview_generado = False
+        self.state.preview_stale = True
+        self.state.generate_response = None
+        self.state.generate_status_code = None
+        self.state.detalle_response = None
+        self.state.detalle_status_code = None
+        self.state.confirmacion_simulada = False
         self.state.backend_error = None
 
     def _payload(self) -> dict[str, Any]:
