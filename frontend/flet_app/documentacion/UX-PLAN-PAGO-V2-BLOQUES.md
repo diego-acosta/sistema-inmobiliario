@@ -14,6 +14,8 @@ un plan de pago de venta V2 por bloques, incluyendo liquidacion visual por bloqu
 Alcance del documento y del prototipo:
 
 - documentacion UX y prototipo Flet no productivo;
+- el prototipo principal para probar el flujo completo es `frontend/flet_app/prototypes/venta_completa_wizard_prototype.py`;
+- `frontend/flet_app/prototypes/plan_pago_v2_bloques_prototype.py` queda como referencia aislada/auxiliar y no es el flujo principal de venta completa;
 - no modifica backend;
 - no modifica SQL;
 - no implementa pagos, caja, recibos ni emision posterior de cuotas indexadas;
@@ -36,7 +38,15 @@ GET  /api/v1/ventas/{id_venta}/plan-pago-v2
   ejecutar pagos, imputaciones, caja ni recibos.
 - La UX no invade dominio operativo ni pagos/caja.
 
-## 3. Principios UX
+## 3. Prototipo principal
+
+El soporte visual de Plan Pago V2 por bloques debe validarse en
+`frontend/flet_app/prototypes/venta_completa_wizard_prototype.py`, porque ese
+archivo representa el wizard principal de venta completa. La pantalla aislada
+`plan_pago_v2_bloques_prototype.py` puede servir como referencia UX auxiliar,
+pero no debe considerarse el flujo principal para probar venta completa.
+
+## 4. Principios UX
 
 - La pantalla debe hablar en terminos comerciales: contado, anticipo, cuotas,
   refuerzos, saldo, interes directo e indexacion.
@@ -45,7 +55,7 @@ GET  /api/v1/ventas/{id_venta}/plan-pago-v2
   caja, recibo ni emision posterior de cuotas indexadas.
 - Una vez generado, el plan se presenta como estructura de consulta cerrada.
 
-## 4. Flujo de pantalla
+## 5. Flujo de pantalla
 
 1. El usuario ingresa al prototipo o al detalle de una venta.
 2. Selecciona `CONTADO` o `FINANCIADO`.
@@ -60,7 +70,7 @@ GET  /api/v1/ventas/{id_venta}/plan-pago-v2
 10. El plan generado se visualiza con cabecera, bloques, obligaciones,
     composiciones, indexacion por obligacion y resumen.
 
-## 5. Editor de bloques
+## 6. Editor de bloques
 
 Cada bloque se muestra como card editable.
 
@@ -78,7 +88,7 @@ Campos no principales / tecnicos:
 - `clave_funcional_origen`.
 - `id_plan_pago_venta_bloque`.
 
-### 5.1 Bloques de pago unico
+### 6.1 Bloques de pago unico
 
 Aplica a `CONTADO`, `ANTICIPO`, `REFUERZO` y `SALDO`.
 
@@ -94,7 +104,7 @@ Conceptos esperados:
 - `ANTICIPO` usa `ANTICIPO_VENTA`.
 - `REFUERZO` y `SALDO` usan `CAPITAL_VENTA`.
 
-### 5.2 TRAMO_CUOTAS: campos base
+### 6.2 TRAMO_CUOTAS: campos base
 
 Campos visibles:
 
@@ -105,7 +115,7 @@ Campos visibles:
 - `periodicidad = MENSUAL`;
 - selector `Metodo de liquidacion`.
 
-## 6. Metodo de liquidacion por TRAMO_CUOTAS
+## 7. Metodo de liquidacion por TRAMO_CUOTAS
 
 Selector obligatorio de UX:
 
@@ -121,7 +131,7 @@ Reglas:
 - Si se elige `INDEXACION`, la UI oculta y limpia campos de `INTERES_DIRECTO`.
 - Si se elige `SIN_INTERES`, la UI oculta y limpia ambos grupos.
 
-### 6.1 SIN_INTERES / legacy
+### 7.1 SIN_INTERES / legacy
 
 No muestra campos adicionales de liquidacion.
 
@@ -139,7 +149,7 @@ Payload por bloque:
 }
 ```
 
-### 6.2 INTERES_DIRECTO
+### 7.2 INTERES_DIRECTO
 
 Ayuda visible:
 
@@ -170,7 +180,7 @@ Payload de ejemplo:
 }
 ```
 
-### 6.3 INDEXACION
+### 7.3 INDEXACION
 
 Campos visibles:
 
@@ -218,7 +228,7 @@ Payload de ejemplo:
 }
 ```
 
-## 7. Validaciones UX
+## 8. Validaciones UX
 
 Generales:
 
@@ -253,7 +263,7 @@ Por `INDEXACION`:
 - requiere `base_calculo_indexacion = CAPITAL_INICIAL_BLOQUE`;
 - bloquea campos de `INTERES_DIRECTO` en el mismo bloque.
 
-## 8. Preview oficial
+## 9. Preview oficial
 
 La tabla de preview debe mostrar:
 
@@ -284,7 +294,7 @@ Resumen de preview:
 - `total_ajuste_indexacion`;
 - diferencia contra el monto total.
 
-## 9. Generate
+## 10. Generate
 
 Boton:
 
@@ -310,7 +320,7 @@ X-Instalacion-Id
 
 Preview y consulta integral no requieren `X-Op-Id`.
 
-## 10. Consulta integral posterior
+## 11. Consulta integral posterior
 
 Usar:
 
@@ -351,7 +361,7 @@ fecha de valor. Si la obligacion pertenece a bloque `INDEXACION` pero
 Proyectada sin indice aplicado
 ```
 
-## 11. CORE-EF
+## 12. CORE-EF
 
 Decision UX/prototipo:
 
@@ -364,7 +374,7 @@ Decision UX/prototipo:
   responsabilidad del backend existente; la UI no declara cumplimiento profundo
   sin evidencia de router/service/repository/SQL/tests.
 
-## 12. Fuera de alcance
+## 13. Fuera de alcance
 
 Queda explicitamente fuera de alcance:
 
@@ -377,7 +387,7 @@ Queda explicitamente fuera de alcance:
 - cambios backend;
 - cambios de reglas financieras.
 
-## 13. Criterios de aceptacion UX
+## 14. Criterios de aceptacion UX
 
 - El usuario puede construir un plan contado sin ver campos tecnicos.
 - El usuario puede construir un plan financiado con anticipo, tramos, refuerzos

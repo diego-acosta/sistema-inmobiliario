@@ -30,14 +30,6 @@ import httpx
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_MONEDA = "ARS"
 UNIQUE_BLOCKS = ("CONTADO", "ANTICIPO", "REFUERZO", "SALDO")
-LIQUIDATION_METHODS = ("SIN_INTERES", "INTERES_DIRECTO", "INDEXACION")
-DEMO_INDICES = (
-    ("1", "CAC_DEMO", "CAC demo"),
-    ("2", "IPC_DEMO", "IPC demo"),
-    ("3", "UVA_DEMO", "UVA demo"),
-    ("4", "RIPTE_DEMO", "RIPTE demo"),
-)
-
 
 
 def _border_all(width: int | float, color: ft.ColorValue) -> ft.Border:
@@ -56,13 +48,6 @@ class BloqueDraft:
     cantidad_cuotas: str = ""
     fecha_primer_vencimiento: str = ""
     periodicidad: str = "MENSUAL"
-    metodo_liquidacion: str = "SIN_INTERES"
-    tasa_interes_directo_periodica: str = ""
-    cantidad_periodos: str = ""
-    id_indice_financiero: str = ""
-    codigo_indice_financiero: str = ""
-    fecha_base_indice: str = ""
-    valor_base_indice: str = ""
 
 
 @dataclass
@@ -74,10 +59,6 @@ class CronogramaRow:
     vencimiento: str
     importe: Decimal
     concepto: str
-    capital_cuota: Decimal = Decimal("0.00")
-    interes_ajuste: Decimal = Decimal("0.00")
-    importe_total: Decimal = Decimal("0.00")
-    estado_indexacion: str = "-"
 
 
 @dataclass
@@ -658,121 +639,6 @@ class PlanPagoV2BloquesPrototype:
             self.tramo_cuota_texts[bloque.uid] = calculated_text
             self.tramo_rounding_texts[bloque.uid] = rounding_text
             self.tramo_due_fields[bloque.uid] = due_field
-            liquidation_fields: list[ft.Control] = [
-                ft.Dropdown(
-                    label="Metodo de liquidacion",
-                    value=bloque.metodo_liquidacion,
-                    width=220,
-                    options=[ft.dropdown.Option(value) for value in LIQUIDATION_METHODS],
-                    on_change=lambda e, b=bloque: self._update_liquidation_method(
-                        b, e.control.value
-                    ),
-                )
-            ]
-            if bloque.metodo_liquidacion == "INTERES_DIRECTO":
-                liquidation_fields.extend(
-                    [
-                        ft.Text(
-                            "Interes directo: interes simple sobre capital inicial del bloque.",
-                            size=12,
-                            color=ft.Colors.BLUE_GREY_700,
-                        ),
-                        ft.Row(
-                            controls=[
-                                ft.TextField(
-                                    label="tasa_interes_directo_periodica",
-                                    value=bloque.tasa_interes_directo_periodica,
-                                    width=230,
-                                    on_change=lambda e, b=bloque: self._update_block(
-                                        b, "tasa_interes_directo_periodica", e.control.value
-                                    ),
-                                ),
-                                ft.TextField(
-                                    label="cantidad_periodos",
-                                    value=bloque.cantidad_periodos,
-                                    width=180,
-                                    on_change=lambda e, b=bloque: self._update_block(
-                                        b, "cantidad_periodos", e.control.value
-                                    ),
-                                ),
-                                _kv("base_calculo_interes", "CAPITAL_INICIAL_BLOQUE"),
-                            ],
-                            wrap=True,
-                            spacing=10,
-                        ),
-                    ]
-                )
-            elif bloque.metodo_liquidacion == "INDEXACION":
-                liquidation_fields.extend(
-                    [
-                        ft.Text(
-                            "Indices DEV/demo: valores demo/no oficiales. Ajustar ID si la base local asigno otros identificadores.",
-                            size=12,
-                            color=ft.Colors.AMBER_800,
-                        ),
-                        ft.Row(
-                            controls=[
-                                ft.Dropdown(
-                                    label="Indice demo",
-                                    value=bloque.codigo_indice_financiero or None,
-                                    width=180,
-                                    options=[
-                                        ft.dropdown.Option(key=code, text=f"{code} - {name}")
-                                        for _, code, name in DEMO_INDICES
-                                    ],
-                                    on_change=lambda e, b=bloque: self._select_demo_index(
-                                        b, e.control.value
-                                    ),
-                                ),
-                                ft.TextField(
-                                    label="id_indice_financiero",
-                                    value=bloque.id_indice_financiero,
-                                    width=170,
-                                    on_change=lambda e, b=bloque: self._update_block(
-                                        b, "id_indice_financiero", e.control.value
-                                    ),
-                                ),
-                                ft.TextField(
-                                    label="fecha_base_indice",
-                                    value=bloque.fecha_base_indice,
-                                    width=170,
-                                    on_change=lambda e, b=bloque: self._update_block(
-                                        b, "fecha_base_indice", e.control.value
-                                    ),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.CALENDAR_MONTH,
-                                    tooltip="Seleccionar fecha base",
-                                    on_click=lambda _, b=bloque: self._open_date_picker(
-                                        b, "fecha_base_indice"
-                                    ),
-                                ),
-                                ft.TextField(
-                                    label="valor_base_indice",
-                                    value=bloque.valor_base_indice,
-                                    width=170,
-                                    on_change=lambda e, b=bloque: self._update_block(
-                                        b, "valor_base_indice", e.control.value
-                                    ),
-                                ),
-                            ],
-                            wrap=True,
-                            spacing=10,
-                        ),
-                        ft.Row(
-                            controls=[
-                                _kv("modo_indexacion", "POR_COEFICIENTE"),
-                                _kv("base_calculo_indexacion", "CAPITAL_INICIAL_BLOQUE"),
-                                _kv("tipo_generacion_indexada", "DEFINITIVA"),
-                                _kv("politica_valor_no_disponible", "ERROR_SI_NO_EXISTE"),
-                                _kv("conserva_capital_original", "true"),
-                                _kv("genera_ajuste_por_diferencia", "true"),
-                            ],
-                            wrap=True,
-                            spacing=18,
-                        ),
-                    ]
-                )
             controls.extend(
                 [
                     ft.Row(
@@ -825,20 +691,14 @@ class PlanPagoV2BloquesPrototype:
                                 value=bloque.periodicidad,
                                 width=150,
                                 options=[ft.dropdown.Option("MENSUAL")],
-                                on_change=lambda e, b=bloque: self._update_block(
+                                on_select=lambda e, b=bloque: self._update_block(
                                     b, "periodicidad", e.control.value
                                 ),
                             ),
                         ],
                         wrap=True,
                         spacing=10,
-                    ),
-                    ft.Container(
-                        content=ft.Column(controls=liquidation_fields, spacing=8),
-                        padding=10,
-                        border=_border_all(1, ft.Colors.BLUE_GREY_100),
-                        border_radius=6,
-                    ),
+                    )
                 ]
             )
         else:
@@ -893,40 +753,6 @@ class PlanPagoV2BloquesPrototype:
             "periodicidad",
         ):
             self._recalculate_tramo_dates()
-        self.state.error_message = None
-        self.state.validation_requested = False
-        self.state.current_step = 1
-        self._mark_backend_preview_stale()
-        self._refresh_summary_and_preview(rebuild_step=False)
-
-
-    def _update_liquidation_method(self, bloque: BloqueDraft, value: str | None) -> None:
-        method = value if value in LIQUIDATION_METHODS else "SIN_INTERES"
-        bloque.metodo_liquidacion = method
-        if method != "INTERES_DIRECTO":
-            bloque.tasa_interes_directo_periodica = ""
-            bloque.cantidad_periodos = ""
-        if method != "INDEXACION":
-            bloque.id_indice_financiero = ""
-            bloque.codigo_indice_financiero = ""
-            bloque.fecha_base_indice = ""
-            bloque.valor_base_indice = ""
-        elif not bloque.fecha_base_indice:
-            bloque.fecha_base_indice = _format_ar_date(date.today().replace(day=1))
-        self.state.error_message = None
-        self.state.validation_requested = False
-        self.state.current_step = 1
-        self._mark_backend_preview_stale()
-        self._refresh()
-
-    def _select_demo_index(self, bloque: BloqueDraft, code: str | None) -> None:
-        for demo_id, demo_code, _ in DEMO_INDICES:
-            if demo_code == code:
-                bloque.codigo_indice_financiero = demo_code
-                bloque.id_indice_financiero = demo_id
-                break
-        else:
-            bloque.codigo_indice_financiero = ""
         self.state.error_message = None
         self.state.validation_requested = False
         self.state.current_step = 1
@@ -1138,30 +964,6 @@ class PlanPagoV2BloquesPrototype:
                     errors.append("TRAMO_CUOTAS: primer vencimiento requerido.")
                 if bloque.periodicidad != "MENSUAL":
                     errors.append("TRAMO_CUOTAS: periodicidad debe ser MENSUAL.")
-                if bloque.metodo_liquidacion not in LIQUIDATION_METHODS:
-                    errors.append("TRAMO_CUOTAS: metodo de liquidacion invalido.")
-                if bloque.metodo_liquidacion == "INTERES_DIRECTO":
-                    tasa = _decimal_or_none(bloque.tasa_interes_directo_periodica)
-                    if tasa is None:
-                        errors.append("INTERES_DIRECTO: tasa_interes_directo_periodica requerida.")
-                    if _int_or_none(bloque.cantidad_periodos) is None:
-                        errors.append("INTERES_DIRECTO: cantidad_periodos requerida.")
-                    if bloque.id_indice_financiero or bloque.fecha_base_indice or bloque.valor_base_indice:
-                        errors.append("INTERES_DIRECTO: no puede combinar campos de INDEXACION.")
-                elif bloque.metodo_liquidacion == "INDEXACION":
-                    if capital is None or capital <= 0:
-                        errors.append("INDEXACION: requiere importe_total_bloque/capital del tramo.")
-                    if _int_or_none(bloque.id_indice_financiero) is None:
-                        errors.append("INDEXACION: id_indice_financiero requerido.")
-                    if not _valid_date(bloque.fecha_base_indice):
-                        errors.append("INDEXACION: fecha_base_indice requerida.")
-                    valor_base = _decimal_or_none(bloque.valor_base_indice)
-                    if valor_base is None or valor_base <= 0:
-                        errors.append("INDEXACION: valor_base_indice debe ser mayor a cero.")
-                    if bloque.tasa_interes_directo_periodica or bloque.cantidad_periodos:
-                        errors.append("INDEXACION: no puede combinar campos de INTERES_DIRECTO.")
-                elif bloque.tasa_interes_directo_periodica or bloque.cantidad_periodos or bloque.id_indice_financiero or bloque.fecha_base_indice or bloque.valor_base_indice:
-                    errors.append("SIN_INTERES: no debe contener campos de interes ni indexacion.")
         if monto_total is not None and self._blocks_total() != monto_total:
             errors.append("La suma UX de bloques no coincide con el monto total del plan.")
         if monto_total is not None and self._backend_payload_total() != monto_total:
@@ -1317,35 +1119,8 @@ class PlanPagoV2BloquesPrototype:
                         bloque.fecha_primer_vencimiento
                     ),
                     "periodicidad": bloque.periodicidad,
-                    "metodo_liquidacion": bloque.metodo_liquidacion,
                 }
             )
-            if bloque.metodo_liquidacion == "INTERES_DIRECTO":
-                payload.update(
-                    {
-                        "tasa_interes_directo_periodica": float(
-                            _decimal_or_zero(bloque.tasa_interes_directo_periodica)
-                        ),
-                        "cantidad_periodos": _int_or_none(bloque.cantidad_periodos),
-                        "base_calculo_interes": "CAPITAL_INICIAL_BLOQUE",
-                    }
-                )
-            elif bloque.metodo_liquidacion == "INDEXACION":
-                payload.update(
-                    {
-                        "id_indice_financiero": _int_or_none(bloque.id_indice_financiero),
-                        "fecha_base_indice": _iso_date_or_empty(bloque.fecha_base_indice),
-                        "valor_base_indice": float(
-                            _decimal_or_zero(bloque.valor_base_indice)
-                        ),
-                        "modo_indexacion": "POR_COEFICIENTE",
-                        "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
-                        "tipo_generacion_indexada": "DEFINITIVA",
-                        "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
-                        "conserva_capital_original": True,
-                        "genera_ajuste_por_diferencia": True,
-                    }
-                )
         else:
             payload.update(
                 {
@@ -1385,7 +1160,7 @@ class PlanPagoV2BloquesPrototype:
         self.state.loading = True
         self._refresh_summary_and_preview()
         path = f"/api/v1/ventas/{id_venta}/plan-pago-v2/preview"
-        response = self._post(path, self._payload(), include_core_headers=False)
+        response = self._post(path, self._payload())
         self.state.loading = False
         self.state.backend_preview_status_code = response.get("status_code")
         self.state.backend_preview_response = response.get("json")
@@ -1423,24 +1198,13 @@ class PlanPagoV2BloquesPrototype:
         self.state.error_message = None
         self._refresh_summary_and_preview()
         path = f"/api/v1/ventas/{id_venta}/plan-pago-v2/generar"
-        response = self._post(path, self._payload(), include_core_headers=True)
+        response = self._post(path, self._payload())
         self.state.loading = False
         self.state.status_code = response.get("status_code")
         if response.get("ok"):
             self.state.last_response = response.get("json")
             self.state.error_message = None
             self.state.response_json_visible = False
-            self._render_response()
-            self.response_column.controls.insert(
-                0,
-                ft.Text(
-                    "Plan de pago generado correctamente. Consulta integral refrescada.",
-                    color=ft.Colors.GREEN_700,
-                    weight=ft.FontWeight.W_600,
-                ),
-            )
-            self._load_detail(None)
-            return
         else:
             self.state.last_response = response.get("json")
             self.state.response_json_visible = False
@@ -1448,7 +1212,7 @@ class PlanPagoV2BloquesPrototype:
         self._render_response()
         self._refresh_summary_and_preview()
 
-    def _load_detail(self, _: ft.ControlEvent | None) -> None:
+    def _load_detail(self, _: ft.ControlEvent) -> None:
         id_venta = _int_or_none(self.id_venta.value)
         if id_venta is None:
             self._set_error("ID venta requerido.")
@@ -1456,7 +1220,7 @@ class PlanPagoV2BloquesPrototype:
         self.state.loading = True
         self.state.error_message = None
         self._refresh_summary_and_preview()
-        path = f"/api/v1/ventas/{id_venta}/plan-pago-v2"
+        path = f"/api/v1/ventas/{id_venta}/detalle-integral"
         response = self._get(path)
         self.state.loading = False
         self.state.status_code = response.get("status_code")
@@ -1467,15 +1231,13 @@ class PlanPagoV2BloquesPrototype:
         else:
             self.state.detail_response = response.get("json")
             self.state.detail_json_visible = False
-            self.state.error_message = response.get("error") or "Error al cargar consulta integral."
+            self.state.error_message = response.get("error") or "Error al cargar detalle."
         self._render_detail()
         self._refresh_summary_and_preview()
 
-    def _post(
-        self, path: str, payload: dict[str, Any], *, include_core_headers: bool
-    ) -> dict[str, Any]:
+    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url()}{path}"
-        headers = self._headers() if include_core_headers else {}
+        headers = self._headers()
         try:
             with httpx.Client(timeout=20.0) as client:
                 response = client.post(url, json=payload, headers=headers)
@@ -1487,7 +1249,7 @@ class PlanPagoV2BloquesPrototype:
         url = f"{self._base_url()}{path}"
         try:
             with httpx.Client(timeout=20.0) as client:
-                response = client.get(url)
+                response = client.get(url, headers=self._headers())
         except httpx.HTTPError as exc:
             return {"ok": False, "error": str(exc)}
         return _response_payload(response)
@@ -1538,7 +1300,7 @@ class PlanPagoV2BloquesPrototype:
         if self.state.status_code is not None:
             self.detail_column.controls.append(ft.Text(f"Status HTTP: {self.state.status_code}"))
         data = _data_envelope(self.state.detail_response)
-        plan = data if isinstance(data, dict) else None
+        plan = data.get("plan_pago_v2") if isinstance(data, dict) else None
         if self.state.status_code is not None and self.state.status_code >= 400:
             self.detail_column.controls.append(
                 _backend_error_panel(
@@ -1550,7 +1312,7 @@ class PlanPagoV2BloquesPrototype:
             self.detail_column.controls.append(_plan_readonly(plan))
         elif self.state.detail_response is not None:
             self.detail_column.controls.append(
-                ft.Text("La consulta integral no devolvio un plan de pago V2.")
+                ft.Text("El detalle integral no devolvio plan_pago_v2.")
             )
         if self.state.detail_response is not None:
             self.detail_column.controls.append(
@@ -1619,11 +1381,15 @@ def _backend_preview_panel(data: dict[str, Any]) -> ft.Control:
                     ft.Text("Calculo oficial backend", weight=ft.FontWeight.W_700),
                     ft.Row(
                         controls=[
-                            _kv("Total calculado", str(data.get("total_calculado") or "-")),
-                            _kv("Total con interes", str(data.get("total_con_interes") or "-")),
-                            _kv("Total con indexacion", str(data.get("total_con_indexacion") or "-")),
-                            _kv("Ajuste indexacion", str(data.get("total_ajuste_indexacion") or "-")),
-                            _kv("Diferencia", str(data.get("diferencia") or "-"), color=diff_color),
+                            _kv(
+                                "Total calculado",
+                                str(data.get("total_calculado") or "-"),
+                            ),
+                            _kv(
+                                "Diferencia",
+                                str(data.get("diferencia") or "-"),
+                                color=diff_color,
+                            ),
                             _kv("Bloques", str(len(bloques))),
                             _kv("Obligaciones", str(len(obligaciones))),
                         ],
@@ -1682,34 +1448,7 @@ def _backend_blocks_preview(bloques: list[dict[str, Any]]) -> ft.Control:
         )
         if bloque.get("cantidad_cuotas"):
             detalle += f" | cuotas {bloque.get('cantidad_cuotas')}"
-        metodo = bloque.get("metodo_liquidacion") or "SIN_INTERES"
-        detalle += f" | metodo {metodo}"
         rows.append(ft.Text(detalle, size=12))
-        if metodo == "INTERES_DIRECTO":
-            rows.append(
-                ft.Text(
-                    "  Interes directo: tasa "
-                    f"{bloque.get('tasa_interes_directo_periodica') or '-'} | "
-                    f"periodos {bloque.get('cantidad_periodos') or '-'} | "
-                    f"base {bloque.get('base_calculo_interes') or '-'}",
-                    size=11,
-                    color=ft.Colors.BLUE_GREY_700,
-                )
-            )
-        if metodo == "INDEXACION":
-            rows.append(
-                ft.Text(
-                    "  Indexacion: indice "
-                    f"{bloque.get('id_indice_financiero') or '-'} | "
-                    f"base {bloque.get('fecha_base_indice') or '-'} "
-                    f"valor {bloque.get('valor_base_indice') or '-'} | "
-                    f"con indice {bloque.get('cantidad_cuotas_con_indice', 0)} / "
-                    f"proyectadas {bloque.get('cantidad_cuotas_proyectadas_sin_indice', 0)} | "
-                    f"ajuste {bloque.get('total_ajuste_indexacion') or '-'}",
-                    size=11,
-                    color=ft.Colors.BLUE_GREY_700,
-                )
-            )
     return ft.Container(
         content=ft.Column(controls=rows, spacing=4),
         padding=10,
@@ -1719,41 +1458,66 @@ def _backend_blocks_preview(bloques: list[dict[str, Any]]) -> ft.Control:
 
 
 def _backend_obligaciones_preview(obligaciones: list[dict[str, Any]]) -> ft.Control:
+    header_style = {
+        "size": 11,
+        "weight": ft.FontWeight.W_700,
+        "color": ft.Colors.BLUE_GREY_700,
+    }
     rows: list[ft.Control] = [
         ft.Text("Obligaciones preview", weight=ft.FontWeight.W_700)
     ]
     if not obligaciones:
         rows.append(ft.Text("Sin obligaciones."))
-    for obligacion in obligaciones:
-        indexacion = _preview_indexacion_text(obligacion)
-        capital = obligacion.get("capital_cuota") or obligacion.get("importe_total") or "-"
-        ajuste = obligacion.get("ajuste_indexacion_cuota") or "0.00"
+    else:
         rows.append(
-            ft.Container(
-                content=ft.Column(
-                    controls=[
-                        ft.Row(
-                            controls=[
-                                _kv("N", str(obligacion.get("numero_obligacion") or "-")),
-                                _kv("Bloque", str(obligacion.get("numero_bloque") or "-")),
-                                _kv("Tipo obligacion", str(obligacion.get("tipo_item_cronograma") or "-")),
-                                _kv("Etiqueta", str(obligacion.get("etiqueta_obligacion") or "-")),
-                                _kv("Vencimiento", _format_display_date(str(obligacion.get("fecha_vencimiento") or ""))),
-                                _kv("Capital cuota", str(capital)),
-                                _kv("Interes / Ajuste", str(ajuste)),
-                                _kv("Importe total", str(obligacion.get("importe_total") or "-")),
-                                _kv("Estado indexacion", str(obligacion.get("estado_preview_indexacion") or "-")),
-                                _kv("Concepto", str(obligacion.get("concepto_financiero_codigo") or "-")),
-                            ],
-                            wrap=True,
-                            spacing=16,
+            ft.Row(
+                controls=[
+                    ft.Container(ft.Text("N", **header_style), width=34),
+                    ft.Container(ft.Text("Bloque", **header_style), width=70),
+                    ft.Container(ft.Text("Tipo", **header_style), width=76),
+                    ft.Container(ft.Text("Vencimiento", **header_style), width=92),
+                    ft.Container(ft.Text("Importe", **header_style), width=96),
+                ],
+                spacing=8,
+            )
+        )
+    for obligacion in obligaciones:
+        rows.append(
+            ft.Row(
+                controls=[
+                    ft.Container(
+                        ft.Text(str(obligacion.get("numero_obligacion") or "-"), size=12),
+                        width=34,
+                    ),
+                    ft.Container(
+                        ft.Text(str(obligacion.get("numero_bloque") or "-"), size=12),
+                        width=70,
+                    ),
+                    ft.Container(
+                        ft.Text(str(obligacion.get("tipo_item_cronograma") or "-"), size=12),
+                        width=76,
+                    ),
+                    ft.Container(
+                        ft.Text(
+                            _format_display_date(
+                                str(obligacion.get("fecha_vencimiento") or "")
+                            ),
+                            size=12,
                         ),
-                        ft.Text(indexacion, size=11, color=ft.Colors.BLUE_GREY_700),
-                    ],
-                    spacing=4,
-                ),
-                padding=8,
-                border=ft.Border.only(bottom=ft.BorderSide(1, ft.Colors.BLUE_GREY_50)),
+                        width=92,
+                    ),
+                    ft.Container(
+                        ft.Text(
+                            str(obligacion.get("importe_total") or "-"),
+                            size=12,
+                            weight=ft.FontWeight.W_600,
+                            text_align=ft.TextAlign.RIGHT,
+                        ),
+                        width=96,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.START,
             )
         )
     return ft.Container(
@@ -1762,20 +1526,6 @@ def _backend_obligaciones_preview(obligaciones: list[dict[str, Any]]) -> ft.Cont
         border=_border_all(1, ft.Colors.BLUE_GREY_100),
         border_radius=6,
     )
-
-
-def _preview_indexacion_text(obligacion: dict[str, Any]) -> str:
-    estado = str(obligacion.get("estado_preview_indexacion") or "")
-    if obligacion.get("valor_aplicado_indice") is not None:
-        return (
-            "Con indice aplicado: "
-            f"valor {obligacion.get('valor_aplicado_indice')} | "
-            f"coeficiente {obligacion.get('coeficiente_indexacion') or '-'} | "
-            f"ajuste {obligacion.get('ajuste_indexacion_cuota') or '0.00'}"
-        )
-    if estado:
-        return "Proyectada sin indice: capital base sin ajuste aplicado."
-    return "Sin indexacion."
 
 
 def _plan_summary(data: dict[str, Any]) -> ft.Control:
@@ -1824,10 +1574,8 @@ def _plan_summary(data: dict[str, Any]) -> ft.Control:
     )
 
 
-def _plan_readonly(data: dict[str, Any]) -> ft.Control:
-    plan = data.get("plan_pago_venta") if isinstance(data.get("plan_pago_venta"), dict) else data
-    bloques = _list_or_empty(data.get("bloques") or plan.get("bloques"))
-    resumen = data.get("resumen") if isinstance(data.get("resumen"), dict) else {}
+def _plan_readonly(plan: dict[str, Any]) -> ft.Control:
+    bloques = _list_or_empty(plan.get("bloques"))
     controls: list[ft.Control] = [
         ft.Text("Plan generado", weight=ft.FontWeight.W_700),
         ft.Row(
@@ -1841,54 +1589,8 @@ def _plan_readonly(data: dict[str, Any]) -> ft.Control:
             spacing=18,
         ),
     ]
-    if resumen:
-        controls.append(
-            ft.Container(
-                content=ft.Row(
-                    controls=[
-                        _kv("total_capital", str(resumen.get("total_capital") or "-")),
-                        _kv("total_interes", str(resumen.get("total_interes") or "-")),
-                        _kv("total_ajuste_indexacion", str(resumen.get("total_ajuste_indexacion") or "-")),
-                        _kv("total_obligaciones", str(resumen.get("total_obligaciones") or "-")),
-                        _kv("obligaciones con indexacion", str(resumen.get("cantidad_obligaciones_con_indexacion") or 0)),
-                        _kv("proyectadas sin indexacion", str(resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion") or 0)),
-                    ],
-                    wrap=True,
-                    spacing=18,
-                ),
-                padding=10,
-                border=_border_all(1, ft.Colors.GREEN_200),
-                border_radius=6,
-            )
-        )
     for bloque in bloques:
         obligaciones = _list_or_empty(bloque.get("obligaciones"))
-        indexacion = bloque.get("indexacion") if isinstance(bloque.get("indexacion"), dict) else None
-        config_controls: list[ft.Control] = [
-            ft.Row(
-                controls=[
-                    _kv("Metodo liquidacion", str(bloque.get("metodo_liquidacion") or "SIN_INTERES")),
-                    _kv("Interes directo", str(bloque.get("tasa_interes_directo_periodica") or "NO APLICA")),
-                    _kv("Base interes", str(bloque.get("base_calculo_interes") or "NO APLICA")),
-                ],
-                wrap=True,
-                spacing=18,
-            )
-        ]
-        if indexacion:
-            config_controls.append(
-                ft.Row(
-                    controls=[
-                        _kv("Indice", str(indexacion.get("codigo_indice_financiero") or indexacion.get("id_indice_financiero") or "-")),
-                        _kv("Fecha base", str(indexacion.get("fecha_base_indice") or "-")),
-                        _kv("Valor base", str(indexacion.get("valor_base_indice") or "-")),
-                        _kv("Modo", str(indexacion.get("modo_indexacion") or "-")),
-                        _kv("Base", str(indexacion.get("base_calculo_indexacion") or "-")),
-                    ],
-                    wrap=True,
-                    spacing=18,
-                )
-            )
         controls.append(
             ft.ExpansionTile(
                 title=ft.Text(
@@ -1901,8 +1603,7 @@ def _plan_readonly(data: dict[str, Any]) -> ft.Control:
                     f"Importe: {bloque.get('importe_total_bloque') or bloque.get('importe_cuota') or '-'}"
                 ),
                 controls=[
-                    ft.Column(controls=config_controls, spacing=6),
-                    _obligaciones_table(obligaciones, bloque_metodo=bloque.get("metodo_liquidacion")),
+                    _obligaciones_table(obligaciones),
                     _json_view(
                         {
                             key: value
@@ -1921,57 +1622,38 @@ def _plan_readonly(data: dict[str, Any]) -> ft.Control:
     )
 
 
-def _obligaciones_table(
-    obligaciones: list[dict[str, Any]], *, bloque_metodo: str | None = None
-) -> ft.Control:
+def _obligaciones_table(obligaciones: list[dict[str, Any]]) -> ft.Control:
     if not obligaciones:
         return ft.Text("Sin obligaciones en este bloque.")
-    rows: list[ft.Control] = []
-    for item in obligaciones:
-        composiciones = _list_or_empty(item.get("composiciones"))
-        indexacion = item.get("indexacion") if isinstance(item.get("indexacion"), dict) else None
-        chips = ", ".join(
-            f"{c.get('codigo_concepto_financiero')}: {c.get('importe_componente')}"
-            for c in composiciones
-        ) or "Sin composiciones"
-        if indexacion:
-            indexacion_text = (
-                "Indice aplicado: "
-                f"valor {indexacion.get('valor_aplicado_indice')} | "
-                f"coeficiente {indexacion.get('coeficiente_indexacion')} | "
-                f"fecha {indexacion.get('fecha_aplicacion_indice')}"
+    return ft.DataTable(
+        columns=[
+            ft.DataColumn(ft.Text("N")),
+            ft.DataColumn(ft.Text("Tipo")),
+            ft.DataColumn(ft.Text("Etiqueta")),
+            ft.DataColumn(ft.Text("Vencimiento")),
+            ft.DataColumn(ft.Text("Importe")),
+            ft.DataColumn(ft.Text("Saldo")),
+            ft.DataColumn(ft.Text("Estado")),
+            ft.DataColumn(ft.Text("Composiciones")),
+        ],
+        rows=[
+            ft.DataRow(
+                cells=[
+                    ft.DataCell(ft.Text(str(item.get("numero_obligacion") or "-"))),
+                    ft.DataCell(ft.Text(str(item.get("tipo_item_cronograma") or "-"))),
+                    ft.DataCell(ft.Text(str(item.get("etiqueta_obligacion") or "-"))),
+                    ft.DataCell(ft.Text(str(item.get("fecha_vencimiento") or "-"))),
+                    ft.DataCell(ft.Text(str(item.get("importe_total") or "-"))),
+                    ft.DataCell(ft.Text(str(item.get("saldo_pendiente") or "-"))),
+                    ft.DataCell(ft.Text(str(item.get("estado_obligacion") or "-"))),
+                    ft.DataCell(
+                        ft.Text(str(len(_list_or_empty(item.get("composiciones")))))
+                    ),
+                ]
             )
-        elif bloque_metodo == "INDEXACION":
-            indexacion_text = "Proyectada sin indice aplicado"
-        else:
-            indexacion_text = "Sin indexacion"
-        rows.append(
-            ft.Container(
-                content=ft.Column(
-                    controls=[
-                        ft.Row(
-                            controls=[
-                                _kv("N", str(item.get("numero_obligacion") or "-")),
-                                _kv("Tipo", str(item.get("tipo_item_cronograma") or "-")),
-                                _kv("Etiqueta", str(item.get("etiqueta_obligacion") or "-")),
-                                _kv("Vencimiento", str(item.get("fecha_vencimiento") or "-")),
-                                _kv("Importe", str(item.get("importe_total") or "-")),
-                                _kv("Saldo", str(item.get("saldo_pendiente") or "-")),
-                                _kv("Estado", str(item.get("estado_obligacion") or "-")),
-                            ],
-                            wrap=True,
-                            spacing=16,
-                        ),
-                        ft.Text(f"Composiciones: {chips}", size=11, color=ft.Colors.BLUE_GREY_700),
-                        ft.Text(indexacion_text, size=11, color=ft.Colors.BLUE_GREY_700),
-                    ],
-                    spacing=4,
-                ),
-                padding=8,
-                border=ft.Border.only(bottom=ft.BorderSide(1, ft.Colors.BLUE_GREY_50)),
-            )
-        )
-    return ft.Column(controls=rows, spacing=4)
+            for item in obligaciones
+        ],
+    )
 
 
 def _backend_error_panel(status_code: int, payload: Any) -> ft.Control:
