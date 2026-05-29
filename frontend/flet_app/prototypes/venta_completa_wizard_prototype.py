@@ -748,10 +748,14 @@ class VentaCompletaWizardPrototype:
                         label="ID venta backend",
                         value=self.state.id_venta_backend,
                         hint_text="Ej: 1",
-                        helper_text="Usá el ID de una venta existente en la base DEV.",
                         width=260,
                         keyboard_type=ft.KeyboardType.NUMBER,
                         on_change=lambda e: self._set_backend_field("id_venta_backend", e.control.value),
+                    ),
+                    ft.Text(
+                        "Usá el ID de una venta existente en la base DEV.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Text(
                         "Venta backend lista para preview/generate."
