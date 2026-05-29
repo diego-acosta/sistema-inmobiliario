@@ -238,31 +238,83 @@ Usar una unica fecha/valor aplicado por bloque simplifica la idempotencia y la p
 
 ---
 
-## F) Comportamiento esperado de Preview
+## F) Modo operativo: plan nuevo vs carga historica
+
+La strategy futura debe distinguir explicitamente si esta operando sobre un plan indexado nuevo/prospectivo o sobre una carga historica/backfill de un plan antiguo. Esta distincion evita exigir valores futuros no publicados en planes nuevos, pero permite materializar cuotas antiguas cuando los valores historicos del indice ya existen o fueron cargados previamente.
+
+### F.1 Plan indexado nuevo / prospectivo
+
+Definicion: plan creado hoy para cuotas futuras o aun no determinables por falta de publicacion del indice.
+
+Reglas:
+
+1. Las cuotas futuras nacen como `PROYECTADAS`.
+2. No se inventan valores de indice no publicados.
+3. La emision/liquidacion definitiva ocurre cuando el indice aplicable este publicado/cargado.
+4. Si falta el indice aplicable para una cuota futura, la cuota permanece `PROYECTADA` o pendiente de emision/liquidacion definitiva.
+5. Preview puede mostrar calculos solo para cuotas con valores publicados disponibles; para cuotas sin valor aplicable debe informar condicion pendiente/error controlado segun contrato futuro, sin usar valores estimados inventados.
+6. Generate prospectivo no debe exigir valores futuros no publicados como condicion para crear la estructura del plan; si la implementacion decide que generate solo materializa obligaciones definitivas, entonces debe bloquear la emision definitiva de las cuotas sin indice y mantenerlas pendientes/proyectadas.
+
+Decision recomendada:
+
+- Separar la creacion/proyeccion del plan de la emision/liquidacion definitiva de cada cuota indexada.
+- No cambiar `CAPITAL_VENTA`: la cuota futura conserva el capital base prorrateado y solo suma `AJUSTE_INDEXACION` cuando exista valor aplicado real.
+
+### F.2 Carga historica / backfill de plan antiguo
+
+Definicion: carga controlada de planes indexados antiguos ya existentes fuera del sistema, con cuotas correspondientes a periodos pasados o ya determinables.
+
+Reglas:
+
+1. Se permite cargar planes indexados antiguos.
+2. Si los valores historicos del indice ya existen en `indice_financiero_valor` o se cargan previamente, las cuotas pueden emitirse/materializarse de una vez.
+3. Las cuotas vencidas o ya determinables pueden quedar `EMITIDAS` o materializadas segun el estado funcional definido para el flujo de importacion, siempre que se cuente con:
+   - `valor_base_indice`;
+   - `valor_aplicado_indice` por cuota/periodo;
+   - `fecha_valor` o periodo aplicado;
+   - `id_indice_financiero_valor` cuando corresponda;
+   - coeficiente calculado;
+   - composicion `CAPITAL_VENTA` + `AJUSTE_INDEXACION`.
+4. No se deben inventar valores historicos: si faltan, deben cargarse primero en `indice_financiero_valor` o devolverse error controlado.
+5. La carga historica debe congelar los valores aplicados usados para cada cuota materializada.
+
+Decision recomendada:
+
+- Tratar la carga historica como **futuro command/import controlado** si requiere reglas propias de estado inicial, validacion masiva, auditoria de origen o permisos especiales.
+- Si se reutiliza generate, el request/command debe declarar explicitamente `modo_operacion` o ampliar `tipo_generacion_indexada` para distinguir al menos:
+  - `PROSPECTIVO` / plan nuevo;
+  - `HISTORICO_BACKFILL` / carga historica.
+- No reutilizar silenciosamente el mismo comportamiento de generate para ambos casos, porque la exigencia de valores publicados y el estado inicial de las cuotas no son equivalentes.
+
+---
+
+## G) Comportamiento esperado de Preview
 
 Clasificacion CORE-EF futura: `PREVIEW_READLIKE`.
 
 Preview futuro debe:
 
 1. Validar configuracion de `INDEXACION` sin persistir efectos.
-2. Consultar valores publicados disponibles del indice para las fechas objetivo.
-3. Calcular:
+2. Consultar valores publicados disponibles del indice para las fechas objetivo cuando el modo y la fecha lo requieran.
+3. Calcular, para cuotas con valor aplicable disponible:
    - `coeficiente_indexacion`;
    - `capital_indexado`;
    - `ajuste_indexacion`;
    - `total_con_indexacion`.
 4. Devolver campos de indexacion del bloque.
-5. Devolver `total_con_indexacion` a nivel bloque y plan.
+5. Devolver `total_con_indexacion` a nivel bloque y plan cuando todos los valores requeridos para ese total esten disponibles; si hay cuotas prospectivas sin indice, debe explicitar importes pendientes/no determinables.
 6. Idealmente devolver detalle por cuota:
    - `fecha_vencimiento`;
-   - `id_indice_financiero_valor`;
+   - `id_indice_financiero_valor` cuando exista valor aplicado;
    - `fecha_valor` publicada usada;
    - `valor_aplicado_indice`;
    - `coeficiente_indexacion`;
    - `capital_cuota`;
    - `ajuste_indexacion_cuota`;
-   - `importe_cuota`.
-7. Si falta valor de indice, devolver error controlado (`INDICE_SIN_VALOR_PARA_FECHA`), no usar cero, no usar uno, no proyectar y no inventar valor.
+   - `importe_cuota`;
+   - estado esperado de determinacion (`PROYECTADA`, pendiente de indice, o determinable/materializable).
+7. En carga historica, si falta un valor historico requerido, devolver error controlado (`INDICE_SIN_VALOR_PARA_FECHA`), no usar cero, no usar uno, no proyectar y no inventar valor.
+8. En plan nuevo/prospectivo, si falta un valor futuro no publicado, no inventar valor: dejar la cuota como proyectada/pendiente de emision definitiva o devolver condicion controlada segun contrato futuro.
 
 Preview no debe:
 
@@ -273,22 +325,34 @@ Preview no debe:
 
 ---
 
-## G) Comportamiento esperado de Generate futuro
+## H) Comportamiento esperado de Generate futuro
 
 Clasificacion CORE-EF futura: `COMMAND_WRITE_NEGOCIO`.
 
 Generate futuro debe:
 
-1. Dejar de devolver `INDEXACION_GENERATE_NO_IMPLEMENTADO` solo cuando exista strategy implementada y cubierta por tests.
-2. Validar que el indice existe, esta activo y tiene valor publicado usable para cada fecha objetivo.
-3. Validar configuracion `INDEXACION` contra lo persistido o contra el payload idempotente.
-4. Congelar los valores aplicados en la misma transaccion que genera obligaciones.
-5. Generar obligaciones reales por cuota con `importe_total = CAPITAL_VENTA + AJUSTE_INDEXACION`.
-6. Generar composiciones:
+1. Dejar de devolver `INDEXACION_GENERATE_NO_IMPLEMENTADO` solo cuando exista strategy implementada y cubierta por tests para el modo operativo soportado.
+2. Validar que el indice existe y esta activo.
+3. Distinguir explicitamente el modo operativo:
+   - plan indexado nuevo/prospectivo;
+   - carga historica/backfill de plan antiguo.
+4. Para plan prospectivo:
+   - no exigir valores futuros no publicados;
+   - crear cuotas `PROYECTADAS` o pendientes de emision/liquidacion cuando el indice aplicable todavia no exista;
+   - emitir/materializar definitivamente solo las cuotas cuyo valor aplicable ya este publicado/cargado, si el flujo lo permite;
+   - no generar `AJUSTE_INDEXACION` definitivo para cuotas sin valor aplicado real.
+5. Para carga historica/backfill:
+   - exigir todos los valores historicos aplicables a las cuotas que se pretenden emitir/materializar;
+   - permitir materializar de una vez cuotas vencidas o ya determinables si existe `indice_financiero_valor` para cada fecha/periodo requerido;
+   - devolver error controlado si falta algun valor historico requerido.
+6. Validar configuracion `INDEXACION` contra lo persistido o contra el payload idempotente.
+7. Congelar los valores aplicados reales en la misma transaccion que genera/emite/materializa obligaciones.
+8. Generar obligaciones reales por cuota con `importe_total = CAPITAL_VENTA + AJUSTE_INDEXACION` cuando la cuota este determinada/materializada.
+9. Generar composiciones para cuotas determinadas/materializadas:
    - `CAPITAL_VENTA` por el capital base prorrateado;
    - `AJUSTE_INDEXACION` por la diferencia indexada prorrateada.
-7. Persistir o reutilizar `plan_pago_venta_bloque_indexacion`.
-8. Persistir `obligacion_financiera_indexacion` por obligacion/cuota, con:
+10. Persistir o reutilizar `plan_pago_venta_bloque_indexacion`.
+11. Persistir `obligacion_financiera_indexacion` por obligacion/cuota emitida o materializada, con:
    - `id_obligacion_financiera`;
    - `id_plan_pago_venta_bloque_indexacion`;
    - `id_indice_financiero`;
@@ -296,26 +360,30 @@ Generate futuro debe:
    - `fecha_base_indice`;
    - `valor_base_indice`;
    - `fecha_aplicacion_indice`;
+   - `fecha_valor` o periodo aplicado cuando el modelo lo exponga;
    - `valor_aplicado_indice`;
    - `coeficiente_indexacion`;
    - `modo_indexacion`;
    - `base_calculo_indexacion`;
-   - `tipo_generacion_indexada`.
-9. Mantener idempotencia del generate: reintentos deben devolver/reutilizar el mismo resultado compatible, no duplicar obligaciones ni cambiar valores aplicados ya congelados.
-10. Ejecutar todo en una frontera transaccional unica: plan, bloques, configuracion indexada, obligaciones, composiciones y trazabilidad de indexacion.
+   - `tipo_generacion_indexada` o `modo_operacion`.
+12. Mantener idempotencia del generate/import: reintentos deben devolver/reutilizar el mismo resultado compatible, no duplicar obligaciones ni cambiar valores aplicados ya congelados.
+13. Ejecutar todo en una frontera transaccional unica: plan, bloques, configuracion indexada, obligaciones, composiciones y trazabilidad de indexacion.
 
 Generate no debe:
 
 - persistir parcialmente si falla una cuota;
 - recalcular con valores publicados nuevos si ya existe generacion compatible congelada;
 - combinar `INDEXACION` con `INTERES_DIRECTO` en el mismo bloque;
-- crear pagos, caja, recibos, documental real ni administrativo nuevo.
+- crear pagos, caja, recibos, documental real ni administrativo nuevo;
+- inventar valores de indice futuros ni historicos.
+
+Si la carga historica no se resuelve con generate, debe documentarse y nacer como command/import separado con decision CORE-EF propia antes de implementarse.
 
 ---
 
-## H) Persistencia de valor aplicado
+## I) Persistencia de valor aplicado
 
-### H.1 Analisis
+### I.1 Analisis
 
 `plan_pago_venta_bloque_indexacion` alcanza para guardar la configuracion base del bloque:
 
@@ -327,9 +395,9 @@ Generate no debe:
 - politica de no disponibilidad;
 - flags de conservar capital y generar ajuste.
 
-Pero no alcanza para explicar generate si cada cuota usa su propia `fecha_vencimiento`, porque puede haber varios `valor_aplicado_indice` dentro del mismo bloque.
+Pero no alcanza para explicar generate/import si cada cuota usa su propia `fecha_vencimiento` o periodo aplicado, porque puede haber varios `valor_aplicado_indice` dentro del mismo bloque.
 
-### H.2 Opciones evaluadas
+### I.2 Opciones evaluadas
 
 1. Guardar valor aplicado en observaciones/detalle de `composicion_obligacion` si existiera campo apto.
    - Estado: **NO RECOMENDADO**.
@@ -342,13 +410,20 @@ Pero no alcanza para explicar generate si cada cuota usa su propia `fecha_vencim
 
 3. Congelar una unica fecha/valor aplicado por bloque para evitar detalle por cuota.
    - Estado: **NO RECOMENDADO como primera opcion**.
-   - Motivo: simplifica, pero sacrifica exactitud por vencimiento y desaprovecha la tabla de trazabilidad ya disponible.
+   - Motivo: simplifica, pero sacrifica exactitud por vencimiento/periodo y desaprovecha la tabla de trazabilidad ya disponible.
 
-### H.3 Decision recomendada
+### I.3 Decision recomendada
 
-Usar `obligacion_financiera_indexacion` como detalle obligatorio por obligacion/cuota en generate futuro.
+Usar `obligacion_financiera_indexacion` como detalle obligatorio por obligacion/cuota emitida o materializada.
 
-Esto permite que la primera implementacion use fecha de vencimiento por cuota y mantenga:
+Reglas:
+
+- `plan_pago_venta_bloque_indexacion` guarda la configuracion base del bloque.
+- `obligacion_financiera_indexacion` guarda el valor aplicado real por cuota cuando la cuota se emite/materializa.
+- En plan prospectivo, `obligacion_financiera_indexacion` se crea cuando exista valor aplicado real y la cuota quede emitida/materializada; no debe crearse con valores inventados.
+- En carga historica, `obligacion_financiera_indexacion` puede crearse inmediatamente para cuotas con indice aplicado conocido y validado contra `indice_financiero_valor`.
+
+Esto permite que la primera implementacion use fecha de vencimiento/periodo por cuota y mantenga:
 
 - trazabilidad;
 - idempotencia;
@@ -357,13 +432,14 @@ Esto permite que la primera implementacion use fecha de vencimiento por cuota y 
 
 ---
 
-## I) Idempotencia
+## J) Idempotencia
 
-### I.1 Compatibilidad esperada
+### J.1 Compatibilidad esperada
 
-Un generate indexado es compatible cuando coinciden:
+Un generate/import indexado es compatible cuando coinciden:
 
-- `op_id` y contexto CORE-EF segun endpoint write existente;
+- `op_id` y contexto CORE-EF segun endpoint write existente o command/import futuro;
+- modo operativo (`PROSPECTIVO` o `HISTORICO_BACKFILL`) declarado por `modo_operacion` o `tipo_generacion_indexada` equivalente;
 - `id_venta`, `tipo_pago`, `monto_total_plan`, `moneda`;
 - estructura de bloques y cuotas;
 - `metodo_liquidacion = INDEXACION`;
@@ -376,35 +452,44 @@ Un generate indexado es compatible cuando coinciden:
 - `politica_valor_no_disponible`;
 - `conserva_capital_original = TRUE`;
 - `genera_ajuste_por_diferencia = TRUE`;
-- fechas objetivo por cuota;
-- valores publicados aplicados congelados (`id_indice_financiero_valor`, `fecha_valor`, `valor_indice`).
+- fechas objetivo/periodos por cuota;
+- valores publicados aplicados congelados para cuotas emitidas/materializadas (`id_indice_financiero_valor`, `fecha_valor`, `valor_indice`).
 
-### I.2 Mismo payload y mismos valores de indice aplicados
+### J.2 Mismo payload y mismos valores de indice aplicados
 
 Resultado: **compatible**.
 
 - Debe devolver/reutilizar plan, obligaciones, composiciones y trazabilidad ya generadas.
 - No debe duplicar obligaciones.
 
-### I.3 Mismo payload pero valores publicados cambiaron despues
+### J.3 Mismo payload pero valores publicados cambiaron despues
 
 Regla recomendada:
 
-- Si no existia generacion previa, generate usa los valores publicados vigentes al momento del primer intento exitoso y los congela.
-- Si ya existia generacion previa compatible, generate no recalcula con valores nuevos: debe devolver lo ya congelado.
+- Si no existia generacion/import previo, el flujo usa los valores publicados disponibles y requeridos al momento del primer intento exitoso y los congela para las cuotas emitidas/materializadas.
+- Si ya existia generacion/import previo compatible, el flujo no recalcula con valores nuevos: debe devolver lo ya congelado.
 - Si el mismo `op_id` intenta producir otro set de valores aplicados, debe tratarse como incompatibilidad/idempotencia conflictiva.
 
-Motivo: `tipo_generacion_indexada = DEFINITIVA` exige estabilidad del resultado generado y evita que un retry post-error cambie deuda por actualizacion posterior del indice.
+Motivo: la emision/materializacion indexada exige estabilidad del resultado generado y evita que un retry post-error cambie deuda por actualizacion posterior del indice.
 
-### I.4 Retry post-error
+### J.4 Carga historica / backfill
 
-- Si fallo antes de persistir cualquier obligacion, puede reintentar y recalcular con los valores publicados disponibles en ese nuevo intento.
+Reglas especificas:
+
+- La idempotencia debe incluir los valores aplicados historicos congelados.
+- Reintento con mismo payload + mismos valores aplicados = compatible.
+- Reintento con valor aplicado distinto para la misma cuota/periodo = conflicto/incompatibilidad.
+- Si falta un valor historico requerido, no debe persistirse parcialmente; se devuelve error controlado y se reintenta luego de cargar el valor faltante en `indice_financiero_valor`.
+
+### J.5 Retry post-error
+
+- Si fallo antes de persistir cualquier obligacion, puede reintentar y recalcular/leer los valores publicados disponibles en ese nuevo intento.
 - Si fallo luego de persistencia parcial, eso no debe quedar confirmado: la transaccion debe hacer rollback completo.
 - Si el primer intento confirmo transaccion, todo retry debe usar lo congelado, no recalcular.
 
 ---
 
-## J) Errores funcionales esperados
+## K) Errores funcionales esperados
 
 Codigos sugeridos para la strategy futura:
 
@@ -420,32 +505,39 @@ No se deben devolver errores de headers como `{"detail": "..."}` en endpoints wr
 
 ---
 
-## K) Tests futuros minimos
+## L) Tests futuros minimos
 
-Cuando se implemente la strategy, agregar o ajustar tests sin inventar cobertura:
+Cuando se implemente la strategy o el import/backfill, agregar o ajustar tests sin inventar cobertura:
 
 1. Preview `INDEXACION` con valor exacto de indice por fecha.
 2. Preview `INDEXACION` con fallback al ultimo valor publicado anterior.
 3. Preview `INDEXACION` sin valor disponible: error controlado `INDICE_SIN_VALOR_PARA_FECHA`.
 4. Preview devuelve `total_con_indexacion` y detalle de valor aplicado usado.
-5. Generate genera obligaciones reales con composiciones `CAPITAL_VENTA` + `AJUSTE_INDEXACION`.
+5. Generate/import genera obligaciones reales con composiciones `CAPITAL_VENTA` + `AJUSTE_INDEXACION` para cuotas determinadas.
 6. Suma de `CAPITAL_VENTA` = capital base del bloque.
 7. Suma de `AJUSTE_INDEXACION` = ajuste total esperado segun politica de fecha/valor aplicado.
 8. Ultima cuota absorbe redondeo de capital y ajuste por separado.
-9. Generate persiste `obligacion_financiera_indexacion` por cuota con valor aplicado congelado.
+9. Generate/import persiste `obligacion_financiera_indexacion` por cuota emitida/materializada con valor aplicado congelado.
 10. Idempotencia con mismo payload y mismos valores congelados.
 11. Mismo payload con configuracion indexada incompatible devuelve `PLAN_PAGO_VENTA_BLOQUE_INDEXACION_INCOMPATIBLE`.
 12. Cambio de `valor_base_indice` a ocho decimales se comporta igual que la compatibilidad actual del repository.
-13. No regresion de `INTERES_DIRECTO` en preview/generate.
-14. No regresion de planes legacy / sin `metodo_liquidacion`.
-15. Generate con `INDEXACION` deja de devolver `INDEXACION_GENERATE_NO_IMPLEMENTADO` solo en tests de la strategy implementada.
-16. CORE-EF de generate: headers faltantes/invalidos, rollback ante error, idempotencia y ausencia de persistencia parcial.
+13. Carga historica con todos los indices disponibles genera obligaciones `EMITIDAS` o materializadas segun estado definido.
+14. Carga historica con falta de indice historico devuelve error controlado y no persiste parcialmente.
+15. Plan nuevo/prospectivo con falta de indice futuro deja cuotas `PROYECTADAS` o bloquea solo la emision definitiva segun contrato futuro.
+16. No se inventan indices ni valores futuros/historicos.
+17. Se persiste `obligacion_financiera_indexacion` por cada cuota historica emitida/materializada.
+18. Reintento de carga historica con mismo payload + mismos valores aplicados es compatible.
+19. Reintento de carga historica con valor aplicado distinto para la misma cuota/periodo devuelve conflicto/incompatibilidad.
+20. No regresion de `INTERES_DIRECTO` en preview/generate.
+21. No regresion de planes legacy / sin `metodo_liquidacion`.
+22. Generate con `INDEXACION` deja de devolver `INDEXACION_GENERATE_NO_IMPLEMENTADO` solo en tests de la strategy implementada para el modo soportado.
+23. CORE-EF de generate/import: headers faltantes/invalidos, rollback ante error, idempotencia y ausencia de persistencia parcial.
 
 ---
 
-## L) Decision CORE-EF
+## M) Decision CORE-EF
 
-### L.1 PR actual
+### M.1 PR actual
 
 - Naturaleza: **PR documental / tecnico**.
 - Endpoint write nuevo o modificado: **NO APLICA**.
@@ -458,37 +550,42 @@ Cuando se implemente la strategy, agregar o ajustar tests sin inventar cobertura
 - Rollback/transaccion: **NO APLICA**.
 - Tests obligatorios de endpoint write: **NO APLICA**; este PR no cambia comportamiento.
 
-### L.2 Futuro preview
+### M.2 Futuro preview
 
 - Clasificacion: `PREVIEW_READLIKE`.
 - Headers write CORE-EF: **NO APLICA** por ser read-like sin persistencia.
 - Debe ser deterministico con valores publicados disponibles y devolver error controlado si falta valor.
 
-### L.3 Futuro generate
+### M.3 Futuro generate / import historico
 
-- Clasificacion: `COMMAND_WRITE_NEGOCIO`.
-- Debe respetar headers CORE-EF existentes del endpoint write.
-- Idempotencia: **APLICA** por `op_id + payload + valores de indice congelados`.
-- Outbox: **APLICA solo si el flujo de generate existente lo declara para la operacion sincronizable**; no inventar evento sin respaldo.
+- Futuro generate prospectivo: `COMMAND_WRITE_NEGOCIO`.
+- Futuro import/backfill historico, si nace separado: `COMMAND_WRITE_NEGOCIO` o `COMMAND_WRITE_TECNICO` segun decision de negocio/operacion, pero debe declararse explicitamente antes de implementarse.
+- Debe respetar headers CORE-EF existentes del endpoint write o del command/import que se defina.
+- Idempotencia: **APLICA** por `op_id + payload + modo_operacion + valores de indice congelados`.
+- Para carga historica, la compatibilidad incluye los valores aplicados historicos por cuota/periodo.
+- Outbox: **APLICA solo si el flujo de generate/import existente lo declara para la operacion sincronizable**; no inventar evento sin respaldo.
 - Lock logico: **APLICA si el flujo de plan/venta ya bloquea generacion concurrente sobre la venta/plan**; no definir lock nuevo sin soporte.
 - Versionado: usar `version_registro`/compatibilidad existente cuando modifique entidades versionadas.
-- Rollback/transaccion: plan, bloques, configuracion indexada, obligaciones, composiciones y trazabilidad deben persistir en una unica transaccion atomica.
+- Rollback/transaccion: plan, bloques, configuracion indexada, obligaciones, composiciones y trazabilidad deben persistir en una unica transaccion atomica, tanto en prospectivo como en carga historica.
 
 ---
 
-## M) Decision final recomendada
+## N) Decision final recomendada
 
 Para la primera implementacion de la strategy `INDEXACION`:
 
 1. Usar formula `valor_aplicado_indice / valor_base_indice`.
 2. Usar `CAPITAL_INICIAL_BLOQUE` como unica base de calculo.
 3. Usar `fecha_vencimiento` de cada cuota como fecha objetivo del indice.
-4. Usar fallback al ultimo valor `PUBLICADO <= fecha_vencimiento`.
-5. Devolver error controlado si no hay valor usable.
-6. Mantener `CAPITAL_VENTA` como capital original prorrateado.
-7. Materializar la diferencia en `AJUSTE_INDEXACION`.
-8. Persistir detalle por cuota en `obligacion_financiera_indexacion`.
-9. Congelar valores aplicados en generate y hacerlos parte de la compatibilidad idempotente.
-10. Mantener `INDEXACION_GENERATE_NO_IMPLEMENTADO` hasta que la strategy, persistencia y tests esten completos.
+4. Usar fallback al ultimo valor `PUBLICADO <= fecha_vencimiento` cuando se requiera valor aplicado real.
+5. Distinguir explicitamente plan nuevo/prospectivo vs carga historica/backfill mediante `modo_operacion` o `tipo_generacion_indexada` equivalente.
+6. En plan prospectivo, no exigir ni inventar valores futuros no publicados; dejar cuotas `PROYECTADAS` o pendientes de emision/liquidacion definitiva.
+7. En carga historica, permitir materializar cuotas antiguas si todos los valores historicos aplicables existen o fueron cargados previamente.
+8. Devolver error controlado si falta un valor historico requerido o si se intenta emitir/materializar sin valor aplicado real.
+9. Mantener `CAPITAL_VENTA` como capital original prorrateado.
+10. Materializar la diferencia en `AJUSTE_INDEXACION`.
+11. Persistir detalle por cuota emitida/materializada en `obligacion_financiera_indexacion`.
+12. Congelar valores aplicados en generate/import y hacerlos parte de la compatibilidad idempotente.
+13. Mantener `INDEXACION_GENERATE_NO_IMPLEMENTADO` hasta que la strategy, persistencia y tests esten completos para el modo operativo soportado.
 
-Esta decision no invade pagos, caja, recibos, mora ni documental real; no modifica `INTERES_DIRECTO`; no cambia `metodo_plan_pago` global; y mantiene `INDEXACION` como `metodo_liquidacion` exclusivo de bloque `TRAMO_CUOTAS` en `PLAN_POR_BLOQUES`.
+Esta decision no invade pagos, caja, recibos, mora ni documental real; no modifica `INTERES_DIRECTO`; no cambia `metodo_plan_pago` global; no inventa indices futuros ni historicos; y mantiene `INDEXACION` como `metodo_liquidacion` exclusivo de bloque `TRAMO_CUOTAS` en `PLAN_POR_BLOQUES`.
