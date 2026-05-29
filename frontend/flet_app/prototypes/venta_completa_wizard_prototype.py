@@ -19,6 +19,12 @@ DEMO_INDICES = (
     ("3", "UVA_DEMO", "UVA demo"),
     ("4", "RIPTE_DEMO", "RIPTE demo"),
 )
+DEMO_INDEX_BASE_VALUES = {
+    "CAC_DEMO": "100.00",
+    "IPC_DEMO": "100.00",
+    "UVA_DEMO": "1.00",
+    "RIPTE_DEMO": "100.00",
+}
 UNIQUE_BLOCKS = {"CONTADO", "ANTICIPO", "REFUERZO", "SALDO"}
 
 
@@ -631,6 +637,7 @@ class VentaCompletaWizardPrototype:
             value=value,
             width=width,
             options=options,
+            on_change=on_change,
         )
         dropdown.on_change = on_change
         return dropdown
@@ -679,39 +686,59 @@ class VentaCompletaWizardPrototype:
                 ]
             )
         elif bloque.metodo_liquidacion == "INDEXACION":
-            controls.extend(
-                [
+            controls.append(self._indexation_editor(bloque))
+        return ft.Container(
+            content=ft.Column(controls=controls, spacing=8),
+            padding=10,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+        )
+
+    def _indexation_editor(self, bloque: BloquePlanDraft) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Indexación", weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Indices DEV/demo: valores demo/no oficiales. Ajustar ID si la base local asigno otro identificador.",
+                        "Valores demo/no oficiales. Si el ID sugerido no coincide con la base DEV, cargá el ID índice financiero real.",
                         size=12,
                         color=ft.Colors.AMBER_800,
                     ),
                     ft.Row(
                         controls=[
                             self._dropdown(
-                                label="Indice demo",
+                                label="Índice demo",
                                 value=bloque.codigo_indice_financiero or None,
-                                width=180,
-                                options=[ft.dropdown.Option(code) for _, code, _ in DEMO_INDICES],
+                                width=190,
+                                options=[
+                                    ft.dropdown.Option(key=code, text=f"{code} — {label}")
+                                    for _, code, label in DEMO_INDICES
+                                ],
                                 on_change=lambda e, b=bloque: self._select_demo_index(b, e.control.value),
                             ),
                             ft.TextField(
-                                label="id_indice_financiero",
+                                label="ID índice financiero",
                                 value=bloque.id_indice_financiero,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_bloque(b, "id_indice_financiero", e.control.value),
+                                width=190,
+                                on_change=lambda e, b=bloque: self._update_bloque(
+                                    b, "id_indice_financiero", e.control.value
+                                ),
                             ),
                             ft.TextField(
-                                label="fecha_base_indice",
+                                label="Fecha base índice",
                                 value=bloque.fecha_base_indice,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_bloque(b, "fecha_base_indice", e.control.value),
+                                width=180,
+                                on_change=lambda e, b=bloque: self._update_bloque(
+                                    b, "fecha_base_indice", e.control.value
+                                ),
                             ),
                             ft.TextField(
-                                label="valor_base_indice",
+                                label="Valor base índice",
                                 value=bloque.valor_base_indice,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_bloque(b, "valor_base_indice", e.control.value),
+                                width=180,
+                                on_change=lambda e, b=bloque: self._update_bloque(
+                                    b, "valor_base_indice", e.control.value
+                                ),
                             ),
                         ],
                         wrap=True,
@@ -729,12 +756,11 @@ class VentaCompletaWizardPrototype:
                         wrap=True,
                         spacing=18,
                     ),
-                ]
-            )
-        return ft.Container(
-            content=ft.Column(controls=controls, spacing=8),
+                ],
+                spacing=8,
+            ),
             padding=10,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border=_border_all(1, ft.Colors.AMBER_200),
             border_radius=6,
         )
 
@@ -1220,7 +1246,13 @@ class VentaCompletaWizardPrototype:
         for demo_id, demo_code, _ in DEMO_INDICES:
             if demo_code == code:
                 bloque.codigo_indice_financiero = demo_code
-                bloque.id_indice_financiero = demo_id
+                bloque.id_indice_financiero = bloque.id_indice_financiero or demo_id
+                bloque.fecha_base_indice = bloque.fecha_base_indice or _format_ar_date(
+                    date.today().replace(day=1)
+                )
+                bloque.valor_base_indice = (
+                    bloque.valor_base_indice or DEMO_INDEX_BASE_VALUES.get(demo_code, "")
+                )
                 break
         else:
             bloque.codigo_indice_financiero = ""

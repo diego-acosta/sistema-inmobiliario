@@ -200,8 +200,12 @@ Payload de ejemplo:
 
 ### 7.3 INDEXACION
 
+Cuando `Metodo de liquidacion = INDEXACION`, el editor de `TRAMO_CUOTAS` debe
+renderizar una seccion visible titulada `Indexación`.
+
 Campos visibles:
 
+- selector `Índice demo` con `CAC_DEMO`, `IPC_DEMO`, `UVA_DEMO`, `RIPTE_DEMO`;
 - `id_indice_financiero` o selector de indice;
 - `fecha_base_indice`;
 - `valor_base_indice`;
