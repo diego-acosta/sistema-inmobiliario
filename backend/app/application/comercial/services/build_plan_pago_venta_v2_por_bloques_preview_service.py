@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any
+from typing import Any, Protocol
 
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
     GeneratePlanPagoVentaV2PorBloquesCommand,
@@ -44,6 +45,16 @@ MODO_INDEXACION_POR_COEFICIENTE = "POR_COEFICIENTE"
 BASE_CALCULO_INDEXACION_CAPITAL_INICIAL_BLOQUE = "CAPITAL_INICIAL_BLOQUE"
 TIPO_GENERACION_INDEXADA_DEFINITIVA = "DEFINITIVA"
 POLITICA_VALOR_NO_DISPONIBLE_ERROR = "ERROR_SI_NO_EXISTE"
+ESTADO_PREVIEW_INDEXACION_CON_INDICE = "CON_INDICE_APLICADO"
+ESTADO_PREVIEW_INDEXACION_PROYECTADA = "PROYECTADA_SIN_INDICE"
+
+
+class IndiceFinancieroPreviewQuery(Protocol):
+    def get_valor_publicado_por_id_y_fecha(
+        self,
+        id_indice_financiero: int,
+        fecha_objetivo: date,
+    ) -> dict[str, Any] | None: ...
 
 
 @dataclass(slots=True)
@@ -59,6 +70,10 @@ class PlanPagoVentaV2BloquePreview:
     importe_total_bloque: Decimal | None
     importe_cuota: Decimal | None
     redondeo_ajuste: Decimal
+    total_con_indexacion: Decimal | None = None
+    total_ajuste_indexacion: Decimal | None = None
+    cantidad_cuotas_con_indice: int = 0
+    cantidad_cuotas_proyectadas_sin_indice: int = 0
 
 
 @dataclass(slots=True)
@@ -71,9 +86,23 @@ class PlanPagoVentaV2ObligacionPreview:
     fecha_vencimiento: Any
     importe_total: Decimal
     concepto_financiero_codigo: str
+    estado_preview_indexacion: str | None = None
+    id_indice_financiero: int | None = None
+    id_indice_financiero_valor: int | None = None
+    fecha_valor_indice: Any | None = None
+    valor_base_indice: Decimal | None = None
+    valor_aplicado_indice: Decimal | None = None
+    coeficiente_indexacion: Decimal | None = None
+    capital_cuota: Decimal | None = None
+    ajuste_indexacion_cuota: Decimal | None = None
 
 
 class BuildPlanPagoVentaV2PorBloquesPreviewService:
+    def __init__(
+        self, indice_financiero_query: IndiceFinancieroPreviewQuery | None = None
+    ) -> None:
+        self.indice_financiero_query = indice_financiero_query
+
     def execute(
         self,
         command: GeneratePlanPagoVentaV2PorBloquesCommand,
@@ -89,6 +118,7 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                 command, id_plan_pago_venta=id_plan_pago_venta
             )
             obligaciones = self._build_obligaciones(bloques)
+            self._aplicar_resumen_indexacion(bloques, obligaciones)
         except ValueError as exc:
             return AppResult.fail(str(exc))
         total_calculado = sum(
@@ -107,12 +137,24 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             for bloque in bloques
             if bloque.redondeo_ajuste != Decimal("0.00")
         ]
+        total_ajuste_indexacion = sum(
+            (
+                obligacion.ajuste_indexacion_cuota or Decimal("0.00")
+                for obligacion in obligaciones
+            ),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"))
+        total_con_indexacion = (total_calculado + total_ajuste_indexacion).quantize(
+            Decimal("0.01")
+        )
         return AppResult.ok(
             {
                 "bloques": bloques,
                 "obligaciones": obligaciones,
                 "total_calculado": total_calculado,
                 "total_con_interes": total_con_interes,
+                "total_con_indexacion": total_con_indexacion,
+                "total_ajuste_indexacion": total_ajuste_indexacion,
                 "diferencia": (command.monto_total_plan - total_calculado).quantize(
                     Decimal("0.01")
                 ),
@@ -173,7 +215,10 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         bloque.metodo_liquidacion = metodo
         if metodo is not None and metodo not in METODOS_LIQUIDACION_VALIDOS:
             return "VALIDATION_ERROR"
-        if metodo == METODO_LIQUIDACION_INDEXACION and tipo_bloque != TIPO_BLOQUE_TRAMO_CUOTAS:
+        if (
+            metodo == METODO_LIQUIDACION_INDEXACION
+            and tipo_bloque != TIPO_BLOQUE_TRAMO_CUOTAS
+        ):
             return "VALIDATION_ERROR"
 
         if tipo_bloque == TIPO_BLOQUE_CONTADO:
@@ -224,6 +269,8 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             return self._validate_indexacion_tramo(bloque)
         if metodo != METODO_LIQUIDACION_INTERES_DIRECTO:
             return "VALIDATION_ERROR"
+        if self._has_indexacion_config(bloque):
+            return "VALIDATION_ERROR"
         base_calculo = self._normalize_upper_or_none(bloque.base_calculo_interes)
         bloque.base_calculo_interes = base_calculo
         if (
@@ -249,6 +296,10 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         bloque.politica_valor_no_disponible = self._normalize_upper_or_none(
             bloque.politica_valor_no_disponible
         )
+        if self._has_interes_directo_config(bloque):
+            return "VALIDATION_ERROR"
+        if not self._tramo_usa_capital_total(bloque):
+            return "VALIDATION_ERROR"
         if (
             bloque.id_indice_financiero is None
             or bloque.id_indice_financiero <= 0
@@ -273,16 +324,38 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             return "VALIDATION_ERROR"
         if bloque.tipo_generacion_indexada != TIPO_GENERACION_INDEXADA_DEFINITIVA:
             return "VALIDATION_ERROR"
-        if (
-            bloque.politica_valor_no_disponible
-            != POLITICA_VALOR_NO_DISPONIBLE_ERROR
-        ):
+        if bloque.politica_valor_no_disponible != POLITICA_VALOR_NO_DISPONIBLE_ERROR:
             return "VALIDATION_ERROR"
         if bloque.conserva_capital_original is not True:
             return "VALIDATION_ERROR"
         if bloque.genera_ajuste_por_diferencia is not True:
             return "VALIDATION_ERROR"
         return None
+
+    @staticmethod
+    def _has_interes_directo_config(bloque: PlanPagoVentaBloqueInput) -> bool:
+        return (
+            bloque.tasa_interes_directo_periodica is not None
+            or bloque.cantidad_periodos is not None
+            or bloque.base_calculo_interes is not None
+        )
+
+    @staticmethod
+    def _has_indexacion_config(bloque: PlanPagoVentaBloqueInput) -> bool:
+        return any(
+            value is not None
+            for value in (
+                bloque.id_indice_financiero,
+                bloque.fecha_base_indice,
+                bloque.valor_base_indice,
+                bloque.modo_indexacion,
+                bloque.base_calculo_indexacion,
+                bloque.tipo_generacion_indexada,
+                bloque.politica_valor_no_disponible,
+                bloque.conserva_capital_original,
+                bloque.genera_ajuste_por_diferencia,
+            )
+        )
 
     @staticmethod
     def _normalize_upper_or_none(value: str | None) -> str | None:
@@ -330,6 +403,11 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             ):
                 cuotas = self._importes_cuotas_por_total(bloque)
                 redondeo_ajuste = (cuotas[-1] - cuotas[0]).quantize(Decimal("0.01"))
+            total_con_indexacion = None
+            total_ajuste_indexacion = None
+            if self._tramo_usa_indexacion(bloque):
+                total_con_indexacion = self._bloque_total_capital(bloque)
+                total_ajuste_indexacion = Decimal("0.00")
             prepared.append(
                 PlanPagoVentaV2BloquePreview(
                     input=bloque,
@@ -349,6 +427,8 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                     ),
                     importe_cuota=importe_cuota,
                     redondeo_ajuste=redondeo_ajuste,
+                    total_con_indexacion=total_con_indexacion,
+                    total_ajuste_indexacion=total_ajuste_indexacion,
                 )
             )
         return prepared
@@ -361,6 +441,14 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             if bloque.tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
                 importes = self._importes_cuotas(bloque.input)
                 for cuota_numero, importe in enumerate(importes, start=1):
+                    fecha_vencimiento = add_months(
+                        bloque.input.fecha_primer_vencimiento, cuota_numero - 1
+                    )
+                    indexacion = self._preview_indexacion_cuota(
+                        bloque.input,
+                        capital_cuota=importe,
+                        fecha_vencimiento=fecha_vencimiento,
+                    )
                     obligaciones.append(
                         PlanPagoVentaV2ObligacionPreview(
                             bloque=bloque,
@@ -368,11 +456,28 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                             tipo_item_cronograma=TIPO_ITEM_CUOTA,
                             etiqueta_obligacion=f"Cuota {cuota_numero}",
                             item_numero=cuota_numero,
-                            fecha_vencimiento=add_months(
-                                bloque.input.fecha_primer_vencimiento, cuota_numero - 1
-                            ),
-                            importe_total=importe,
+                            fecha_vencimiento=fecha_vencimiento,
+                            importe_total=indexacion.get("importe_total", importe),
                             concepto_financiero_codigo=bloque.concepto_financiero_codigo,
+                            estado_preview_indexacion=indexacion.get(
+                                "estado_preview_indexacion"
+                            ),
+                            id_indice_financiero=indexacion.get("id_indice_financiero"),
+                            id_indice_financiero_valor=indexacion.get(
+                                "id_indice_financiero_valor"
+                            ),
+                            fecha_valor_indice=indexacion.get("fecha_valor_indice"),
+                            valor_base_indice=indexacion.get("valor_base_indice"),
+                            valor_aplicado_indice=indexacion.get(
+                                "valor_aplicado_indice"
+                            ),
+                            coeficiente_indexacion=indexacion.get(
+                                "coeficiente_indexacion"
+                            ),
+                            capital_cuota=indexacion.get("capital_cuota"),
+                            ajuste_indexacion_cuota=indexacion.get(
+                                "ajuste_indexacion_cuota"
+                            ),
                         )
                     )
                 continue
@@ -390,6 +495,94 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                 )
             )
         return obligaciones
+
+    def _aplicar_resumen_indexacion(
+        self,
+        bloques: list[PlanPagoVentaV2BloquePreview],
+        obligaciones: list[PlanPagoVentaV2ObligacionPreview],
+    ) -> None:
+        for bloque in bloques:
+            if not self._tramo_usa_indexacion(bloque.input):
+                continue
+            obligaciones_bloque = [
+                obligacion
+                for obligacion in obligaciones
+                if obligacion.bloque.numero_bloque == bloque.numero_bloque
+            ]
+            total_ajuste = sum(
+                (
+                    obligacion.ajuste_indexacion_cuota or Decimal("0.00")
+                    for obligacion in obligaciones_bloque
+                ),
+                Decimal("0.00"),
+            ).quantize(Decimal("0.01"))
+            bloque.total_ajuste_indexacion = total_ajuste
+            bloque.total_con_indexacion = (
+                self._bloque_total_capital(bloque.input) + total_ajuste
+            ).quantize(Decimal("0.01"))
+            bloque.cantidad_cuotas_con_indice = sum(
+                1
+                for obligacion in obligaciones_bloque
+                if obligacion.estado_preview_indexacion
+                == ESTADO_PREVIEW_INDEXACION_CON_INDICE
+            )
+            bloque.cantidad_cuotas_proyectadas_sin_indice = sum(
+                1
+                for obligacion in obligaciones_bloque
+                if obligacion.estado_preview_indexacion
+                == ESTADO_PREVIEW_INDEXACION_PROYECTADA
+            )
+
+    def _preview_indexacion_cuota(
+        self,
+        bloque: PlanPagoVentaBloqueInput,
+        *,
+        capital_cuota: Decimal,
+        fecha_vencimiento: date,
+    ) -> dict[str, Any]:
+        if not self._tramo_usa_indexacion(bloque):
+            return {"importe_total": capital_cuota}
+
+        base = bloque.valor_base_indice or Decimal("0.00")
+        common = {
+            "id_indice_financiero": bloque.id_indice_financiero,
+            "valor_base_indice": base,
+            "capital_cuota": capital_cuota,
+        }
+        valor = None
+        if self.indice_financiero_query is not None and bloque.id_indice_financiero:
+            valor = self.indice_financiero_query.get_valor_publicado_por_id_y_fecha(
+                bloque.id_indice_financiero, fecha_vencimiento
+            )
+
+        if valor is None:
+            return {
+                **common,
+                "estado_preview_indexacion": ESTADO_PREVIEW_INDEXACION_PROYECTADA,
+                "importe_total": capital_cuota,
+            }
+
+        valor_aplicado = Decimal(valor["valor_indice"])
+        coeficiente = (valor_aplicado / base).quantize(
+            Decimal("0.00000001"), rounding=ROUND_HALF_UP
+        )
+        ajuste = (capital_cuota * (coeficiente - Decimal("1"))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        importe_total = (capital_cuota + ajuste).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        return {
+            **common,
+            "estado_preview_indexacion": ESTADO_PREVIEW_INDEXACION_CON_INDICE,
+            "id_indice_financiero": valor["id_indice_financiero"],
+            "id_indice_financiero_valor": valor["id_indice_financiero_valor"],
+            "fecha_valor_indice": valor["fecha_valor"],
+            "valor_aplicado_indice": valor_aplicado,
+            "coeficiente_indexacion": coeficiente,
+            "ajuste_indexacion_cuota": ajuste,
+            "importe_total": importe_total,
+        }
 
     def _importes_cuotas(self, bloque: PlanPagoVentaBloqueInput) -> list[Decimal]:
         if self._tramo_usa_interes_directo(bloque):
@@ -454,9 +647,9 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         tipo_bloque = bloque.tipo_bloque.strip().upper()
         if tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
             if self._tramo_usa_interes_directo(bloque):
-                capital_total = (bloque.importe_total_bloque or Decimal("0.00")).quantize(
-                    Decimal("0.01")
-                )
+                capital_total = (
+                    bloque.importe_total_bloque or Decimal("0.00")
+                ).quantize(Decimal("0.01"))
                 return (capital_total + self._interes_total_directo(bloque)).quantize(
                     Decimal("0.01")
                 )
@@ -476,15 +669,24 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                 return (bloque.importe_total_bloque or Decimal("0.00")).quantize(
                     Decimal("0.01")
                 )
-            return ((bloque.importe_cuota or Decimal("0.00")) * Decimal(
-                bloque.cantidad_cuotas or 0
-            )).quantize(Decimal("0.01"))
-        return (bloque.importe_total_bloque or Decimal("0.00")).quantize(Decimal("0.01"))
+            return (
+                (bloque.importe_cuota or Decimal("0.00"))
+                * Decimal(bloque.cantidad_cuotas or 0)
+            ).quantize(Decimal("0.01"))
+        return (bloque.importe_total_bloque or Decimal("0.00")).quantize(
+            Decimal("0.01")
+        )
 
     def _tramo_usa_interes_directo(self, bloque: PlanPagoVentaBloqueInput) -> bool:
         return (
             self._normalize_upper_or_none(bloque.metodo_liquidacion)
             == METODO_LIQUIDACION_INTERES_DIRECTO
+        )
+
+    def _tramo_usa_indexacion(self, bloque: PlanPagoVentaBloqueInput) -> bool:
+        return (
+            self._normalize_upper_or_none(bloque.metodo_liquidacion)
+            == METODO_LIQUIDACION_INDEXACION
         )
 
     def _interes_total_directo(self, bloque: PlanPagoVentaBloqueInput) -> Decimal:
