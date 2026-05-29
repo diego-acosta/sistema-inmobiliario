@@ -373,8 +373,8 @@ class VentaCompletaWizardPrototype:
             value=self.state.tipo_pago,
             width=180,
             options=[ft.dropdown.Option("CONTADO"), ft.dropdown.Option("FINANCIADO")],
-            on_change=lambda e: self._set_tipo_pago(e.control.value),
         )
+        tipo_pago_dropdown.on_change = lambda e: self._set_tipo_pago(e.control.value)
         return self._card(
             "Paso 5 — Plan Pago V2 por bloques",
             [
@@ -609,7 +609,7 @@ class VentaCompletaWizardPrototype:
                                 width=170,
                                 on_change=lambda e, b=bloque: self._update_bloque(b, "primer_vencimiento", e.control.value),
                             ),
-                            ft.Dropdown(
+                            self._dropdown(
                                 label="Periodicidad",
                                 value=bloque.periodicidad,
                                 width=150,
@@ -651,9 +651,29 @@ class VentaCompletaWizardPrototype:
             border_radius=8,
         )
 
+
+    @staticmethod
+    def _dropdown(
+        *,
+        label: str,
+        value: str | None,
+        width: int,
+        options: list[ft.dropdown.Option],
+        on_change: Any,
+    ) -> ft.Dropdown:
+        """Build a Dropdown using event assignment for local Flet compatibility."""
+        dropdown = ft.Dropdown(
+            label=label,
+            value=value,
+            width=width,
+            options=options,
+        )
+        dropdown.on_change = on_change
+        return dropdown
+
     def _liquidation_editor(self, bloque: BloquePlanDraft) -> ft.Control:
         controls: list[ft.Control] = [
-            ft.Dropdown(
+            self._dropdown(
                 label="Metodo de liquidacion",
                 value=bloque.metodo_liquidacion,
                 width=230,
@@ -704,7 +724,7 @@ class VentaCompletaWizardPrototype:
                     ),
                     ft.Row(
                         controls=[
-                            ft.Dropdown(
+                            self._dropdown(
                                 label="Indice demo",
                                 value=bloque.codigo_indice_financiero or None,
                                 width=180,
@@ -1687,4 +1707,5 @@ def main(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    runner = getattr(ft, "run", None) or ft.app
+    runner(target=main)
