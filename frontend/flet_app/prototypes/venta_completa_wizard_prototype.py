@@ -637,7 +637,6 @@ class VentaCompletaWizardPrototype:
             value=value,
             width=width,
             options=options,
-            on_change=on_change,
         )
         dropdown.on_change = on_change
         return dropdown
