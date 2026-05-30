@@ -191,9 +191,150 @@ Decisión futura sobre errores:
 - Al implementar múltiples compradores, `COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO` debe quedar obsoleto para Plan Pago V2 por bloques o reservado únicamente para endpoints/planes que sigan documentados como monocomprador.
 - `COMPRADOR_VENTA_NO_RESUELTO` debe mantenerse para venta sin comprador resoluble.
 
-## 7. Impacto por endpoint compuesto
+## 7. Impacto en resumen por cliente / ficha de comprador
 
-### 7.1 `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`
+Esta sección aclara la lectura esperada de una venta multi comprador antes de
+implementar backend/UI de resúmenes, fichas de cliente o consultas derivadas.
+
+### 7.1 La obligación financiera no se divide por comprador
+
+- La `obligacion_financiera` sigue existiendo por cuota, hito o componente del
+  plan de pago.
+- No se debe crear una obligación separada por cada comprador para representar
+  su participación.
+- Ejemplo:
+  - Cuota 1 total = `1.000.000`.
+  - Comprador A = `50%`.
+  - Comprador B = `50%`.
+  - Sigue existiendo una obligación por `1.000.000`, con dos obligados
+    asociados.
+
+### 7.2 `obligacion_obligado` define participación/responsabilidad
+
+- Cada comprador queda vinculado a la obligación mediante
+  `obligacion_obligado`.
+- El porcentaje indica responsabilidad/participación pactada según la decisión
+  vigente para la venta y el plan.
+- Ese porcentaje no debe confundirse con pago efectuado, saldo individual
+  cobrado ni deuda individual liquidada.
+
+### 7.3 Conceptos que deben mantenerse separados
+
+Deben distinguirse explícitamente estos tres conceptos:
+
+1. participación en la compra;
+2. responsabilidad de pago pactada;
+3. estado financiero/pago de la obligación.
+
+Pueden coincidir inicialmente, por ejemplo en una venta `50% / 50%`, pero no
+deben mezclarse conceptualmente. La participación o responsabilidad pactada no
+prueba por sí misma cuánto pagó cada comprador ni cuál es su saldo individual
+real.
+
+### 7.4 Resumen del plan/venta
+
+El resumen del plan o de la venta debe mostrar el `100%` de la obligación y sus
+componentes:
+
+- total capital;
+- total interés;
+- total ajuste indexación;
+- total obligaciones;
+- saldo pendiente total.
+
+Este resumen no debe prorratear la obligación como si existieran obligaciones
+financieras independientes por comprador.
+
+### 7.5 Resumen por comprador / ficha cliente
+
+La ficha de comprador o resumen por cliente debe mostrar, como mínimo:
+
+- venta vinculada;
+- rol `COMPRADOR`;
+- porcentaje/responsabilidad pactada;
+- obligaciones vinculadas;
+- importe total de cada obligación;
+- porción proporcional como dato derivado e informativo;
+- estado de la obligación total.
+
+No debe mostrar la porción proporcional aislada como si fuera una deuda
+independiente, hasta que se definan reglas de pago e imputación por comprador.
+La porción proporcional es un dato derivado de
+`importe_total * porcentaje_responsabilidad / 100`, no una obligación nueva.
+
+### 7.6 Ejemplo de visualización
+
+Venta `V-001`
+
+Cuota 1:
+
+- obligación total: `1.000.000`;
+- estado: `PROYECTADA` / `EMITIDA` / `VENCIDA` / `CANCELADA`;
+- Juan Pérez: responsabilidad `50%`, porción informativa `500.000`;
+- Ana Gómez: responsabilidad `50%`, porción informativa `500.000`.
+
+Ficha Juan Pérez:
+
+- Venta `V-001`;
+- rol: comprador;
+- responsabilidad pactada: `50%`;
+- Cuota 1: total obligación `1.000.000`, porción informativa `500.000`,
+  estado pendiente.
+
+### 7.7 Pagos e imputación
+
+Pagos e imputaciones individuales quedan fuera de esta implementación
+documental y fuera del alcance de la primera lectura de resumen por comprador.
+Antes de mostrar un `saldo individual real` o una `deuda individual`, se debe
+definir explícitamente:
+
+- si un comprador puede pagar solo su parte;
+- si un tercero puede pagar por todos;
+- cómo se imputa un pago parcial;
+- cómo se reduce la responsabilidad proporcional;
+- si hay solidaridad o mancomunidad entre compradores.
+
+Por ahora, la porción por comprador es informativa y derivada del porcentaje
+pactado. No representa imputación real de pagos ni saldo exigible individual.
+
+### 7.8 Nomenclatura recomendada
+
+Evitar `deuda individual` mientras no exista diseño de pagos/imputaciones que
+la defina. Usar términos explícitos como:
+
+- responsabilidad pactada;
+- porción proporcional informativa;
+- participación en obligaciones;
+- obligaciones vinculadas.
+
+Si en backend futuro se crea un campo nuevo, preferir un nombre explícito como
+`porcentaje_responsabilidad_pago`; o documentar expresamente la decisión si se
+usa `porcentaje_participacion_compra` para derivar la responsabilidad de pago.
+
+### 7.9 Tests futuros documentales esperados
+
+Cuando se implementen consultas o fichas de comprador, agregar cobertura para:
+
+1. la consulta de plan muestra la obligación total con varios obligados;
+2. la consulta/ficha comprador muestra total de obligación y porción
+   proporcional informativa;
+3. no se duplican obligaciones por comprador;
+4. pagos e imputaciones individuales quedan fuera de alcance hasta diseño
+   específico.
+
+### 7.10 CORE-EF para esta aclaración y futuras implementaciones
+
+- PR documental: `NO APLICA` endpoint write porque no modifica router, service,
+  repository, SQL, tests ni comportamiento runtime.
+- Implementación futura de consultas/resúmenes: debe clasificarse como
+  `QUERY_READLIKE` si no persiste estado.
+- Implementación futura de pagos/imputaciones por comprador: será
+  `COMMAND_WRITE_NEGOCIO` y requerirá decisión CORE-EF propia, incluyendo
+  headers, idempotencia, outbox, lock lógico, versionado, transacción y tests.
+
+## 8. Impacto por endpoint compuesto
+
+### 8.1 `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`
 
 Naturaleza: `COMMAND_WRITE_NEGOCIO`.
 
@@ -210,7 +351,7 @@ Cambios necesarios:
 
 Brecha crítica: el modelo actual de reserva/participación no expone porcentaje de responsabilidad; sin definir persistencia o contrato de porcentaje, el soporte multi comprador desde reserva queda incompleto.
 
-### 7.2 `POST /api/v1/ventas/directa/confirmar-venta-completa`
+### 8.2 `POST /api/v1/ventas/directa/confirmar-venta-completa`
 
 Naturaleza: `COMMAND_WRITE_NEGOCIO`.
 
@@ -226,7 +367,7 @@ Cambios necesarios:
 - Rollback: mantener la transacción compuesta actual.
 - Errores controlados: mapear errores de validación a `ErrorResponse` estándar y evitar `detail` crudo.
 
-## 8. Códigos de error propuestos
+## 9. Códigos de error propuestos
 
 | Código | Uso esperado | HTTP sugerido |
 |---|---|---|
@@ -239,7 +380,7 @@ Cambios necesarios:
 | `COMPRADOR_VENTA_NO_RESUELTO` | Plan Pago V2 no puede resolver ningún comprador vigente desde la venta. | 400 |
 | `COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO` | Debe quedar obsoleto al implementar multi comprador para V2 por bloques, o reservado para planes/endpoints monocomprador explícitos. | 400 mientras siga vigente |
 
-## 9. Tests futuros mínimos
+## 10. Tests futuros mínimos
 
 ### Venta directa completa
 
@@ -272,9 +413,9 @@ Cambios necesarios:
 6. No regresión de `INDEXACION`.
 7. Rollback si falla la inserción de un obligado después de crear obligación/composición.
 
-## 10. Decisión CORE-EF
+## 11. Decisión CORE-EF
 
-### 10.1 Alcance de este PR documental
+### 11.1 Alcance de este PR documental
 
 Este PR no crea ni modifica endpoints write: `NO APLICA` ejecución obligatoria de
 tests CORE-EF de endpoint porque no hay cambio de runtime, router, service,
@@ -287,14 +428,14 @@ Clasificación futura de endpoints afectados:
 - `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`: `COMMAND_WRITE_NEGOCIO`.
 - `POST /api/v1/ventas/directa/confirmar-venta-completa`: `COMMAND_WRITE_NEGOCIO`.
 
-### 10.2 Headers, versionado y frontera transaccional
+### 11.2 Headers, versionado y frontera transaccional
 
 - Headers: mantener `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` usando helper común CORE-EF; desde reserva mantener `If-Match-Version` sobre `reserva_venta` versionada.
 - Versionado: desde reserva usa `version_registro` de `reserva_venta`; venta directa crea entidad nueva y no requiere `If-Match-Version` inicial. Si la implementación futura versiona una estructura específica de compradores de venta, deberá declarar su `version_registro` esperado.
 - Rollback/transacción: mantener una única frontera transaccional para venta, objetos, compradores, condiciones, Plan Pago V2, obligaciones, `obligacion_obligado` y confirmación.
 - ErrorResponse: preservar errores estructurados; no devolver `{"detail": "..."}` para errores de headers ni validaciones de dominio.
 
-### 10.3 Idempotencia esperada para implementación futura
+### 11.3 Idempotencia esperada para implementación futura
 
 La implementación futura multi comprador debe declarar idempotencia como `APLICA`
 para ambos comandos write sincronizables. Criterio mínimo:
@@ -307,7 +448,7 @@ para ambos comandos write sincronizables. Criterio mínimo:
 - Compatibilidad multi comprador: la comparación debe normalizar lista de compradores, `id_persona`, rol `COMPRADOR`, porcentajes, orden irrelevante si se decide soportarlo, objetos y responsables financieros generados.
 - Responsables financieros: la compatibilidad debe validar que las obligaciones existentes tengan los `obligacion_obligado` esperados para la lista normalizada de compradores y porcentajes.
 
-### 10.4 Outbox
+### 11.4 Outbox
 
 - Este PR documental no agrega outbox: `NO APLICA` cambio runtime.
 - Para implementación futura, `APLICA` revisar el outbox existente de confirmación de venta. Si el flujo actual ya emite evento de venta confirmada, multi comprador debe quedar cubierto por el mismo evento, sin crear un evento paralelo.
@@ -315,7 +456,7 @@ para ambos comandos write sincronizables. Criterio mínimo:
 - No crear evento nuevo sin revisar el patrón existente de confirmación de venta y su consumidor.
 - Si el evento existente no transporta detalle de compradores, la implementación debe decidir explícitamente si el consumidor puede leerlos desde persistencia o si el contrato del evento requiere ampliación versionada.
 
-### 10.5 Lock lógico
+### 11.5 Lock lógico
 
 No introducir lock técnico nuevo sin diseño específico, pero la implementación
 futura debe declarar `APLICA` lock lógico/alcance protegido e incompatibilidades:
@@ -334,7 +475,7 @@ Venta directa:
 - Operaciones incompatibles: otra venta concurrente sobre el mismo inmueble/unidad funcional si afecta disponibilidad, reserva concurrente conflictiva, ocupación conflictiva o conflicto jerárquico inmobiliario.
 - Evidencia esperada: validaciones de disponibilidad, reservas/ventas conflictivas, ocupación y jerarquía inmobiliaria, más idempotencia por `X-Op-Id`.
 
-### 10.6 Tests CORE-EF futuros mínimos
+### 11.6 Tests CORE-EF futuros mínimos
 
 Cuando se implemente multi comprador, agregar o ajustar tests para:
 
@@ -346,7 +487,7 @@ Cuando se implemente multi comprador, agregar o ajustar tests para:
 6. Concurrencia/lock lógico si ya existe harness o patrón de pruebas; si no existe, dejar documentado como brecha de testing antes de declarar cumplimiento profundo.
 7. Outbox: si se toca evento de venta confirmada, verificar que se persista en la misma transacción y que no se emitan eventos duplicados en retry.
 
-## 11. Brechas y decisiones pendientes antes de implementar
+## 12. Brechas y decisiones pendientes antes de implementar
 
 1. Definir persistencia del `porcentaje_responsabilidad` de comprador en venta. El SQL actual de `relacion_persona_rol` no tiene columna de porcentaje.
 2. Definir si la reserva de venta debe capturar porcentajes o si la distribución se informa solo al confirmar venta completa.
@@ -357,7 +498,7 @@ Cuando se implemente multi comprador, agregar o ajustar tests para:
 7. Asegurar idempotencia de obligados en obligaciones existentes.
 8. Mantener no regresión de `INTERES_DIRECTO`, `INDEXACION` y venta directa simple.
 
-## 12. Conclusión
+## 13. Conclusión
 
 El soporte multi comprador no está completo hoy:
 
