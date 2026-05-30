@@ -1,3 +1,6 @@
+from datetime import date
+from decimal import Decimal
+
 from sqlalchemy import text
 
 from tests.sql_failpoints import install_statement_failpoint_once
@@ -111,28 +114,28 @@ def _payload(
 
 
 def _venta_by_codigo(db_session, codigo_venta: str):
-    return db_session.execute(
-        text(
-            """
+    return (
+        db_session.execute(
+            text("""
             SELECT id_venta, estado_venta, version_registro
             FROM venta
             WHERE codigo_venta = :codigo_venta
               AND deleted_at IS NULL
-            """
-        ),
-        {"codigo_venta": codigo_venta},
-    ).mappings().one_or_none()
+            """),
+            {"codigo_venta": codigo_venta},
+        )
+        .mappings()
+        .one_or_none()
+    )
 
 
 def _estado_reserva(db_session, id_reserva_venta: int) -> str:
     return db_session.execute(
-        text(
-            """
+        text("""
             SELECT estado_reserva
             FROM reserva_venta
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
+            """),
         {"id_reserva_venta": id_reserva_venta},
     ).scalar_one()
 
@@ -140,6 +143,174 @@ def _estado_reserva(db_session, id_reserva_venta: int) -> str:
 def _count_obligaciones(db_session) -> int:
     return db_session.execute(
         text("SELECT COUNT(*) FROM obligacion_financiera WHERE deleted_at IS NULL")
+    ).scalar_one()
+
+
+def _insertar_indice_financiero_minimo(db_session, *, codigo: str) -> int:
+    return db_session.execute(
+        text("""
+            INSERT INTO indice_financiero (
+                codigo_indice_financiero,
+                nombre_indice_financiero,
+                tipo_indice,
+                unidad_medida,
+                frecuencia_publicacion,
+                fuente_indice,
+                estado_indice_financiero
+            )
+            VALUES (:codigo, :codigo, 'INDICE', 'PUNTOS', 'MENSUAL', 'TEST', 'ACTIVO')
+            RETURNING id_indice_financiero
+            """),
+        {"codigo": codigo},
+    ).scalar_one()
+
+
+def _insertar_indice_financiero_valor(
+    db_session,
+    *,
+    id_indice_financiero: int,
+    fecha_valor: date,
+    valor_indice: Decimal,
+) -> int:
+    return db_session.execute(
+        text("""
+            INSERT INTO indice_financiero_valor (
+                id_indice_financiero,
+                fecha_valor,
+                valor_indice,
+                fecha_publicacion,
+                fuente_valor,
+                estado_valor_indice
+            )
+            VALUES (
+                :id_indice_financiero,
+                :fecha_valor,
+                :valor_indice,
+                :fecha_valor,
+                'TEST',
+                'PUBLICADO'
+            )
+            RETURNING id_indice_financiero_valor
+            """),
+        {
+            "id_indice_financiero": id_indice_financiero,
+            "fecha_valor": fecha_valor,
+            "valor_indice": valor_indice,
+        },
+    ).scalar_one()
+
+
+def _usar_plan_interes_directo(payload: dict[str, object]) -> None:
+    payload["plan_pago_v2"]["bloques"] = [
+        {
+            "tipo_bloque": "TRAMO_CUOTAS",
+            "etiqueta_bloque": "Tramo con interes directo",
+            "importe_total_bloque": "150000.00",
+            "cantidad_cuotas": 3,
+            "fecha_primer_vencimiento": "2026-06-10",
+            "periodicidad": "MENSUAL",
+            "metodo_liquidacion": "INTERES_DIRECTO",
+            "tasa_interes_directo_periodica": "0.02",
+            "cantidad_periodos": 3,
+            "base_calculo_interes": "CAPITAL_INICIAL_BLOQUE",
+        }
+    ]
+
+
+def _usar_plan_indexado(payload: dict[str, object], id_indice_financiero: int) -> None:
+    payload["plan_pago_v2"]["bloques"] = [
+        {
+            "tipo_bloque": "TRAMO_CUOTAS",
+            "etiqueta_bloque": "Tramo indexado",
+            "importe_total_bloque": "150000.00",
+            "cantidad_cuotas": 3,
+            "fecha_primer_vencimiento": "2026-06-10",
+            "periodicidad": "MENSUAL",
+            "metodo_liquidacion": "INDEXACION",
+            "id_indice_financiero": id_indice_financiero,
+            "fecha_base_indice": "2026-05-01",
+            "valor_base_indice": "100.12345678",
+            "modo_indexacion": "POR_COEFICIENTE",
+            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+            "tipo_generacion_indexada": "DEFINITIVA",
+            "politica_valor_no_disponible": "PROYECTAR_SIN_AJUSTE",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    ]
+
+
+def _plan_bloques_by_venta(db_session, id_venta: int) -> list[dict]:
+    return [
+        dict(row)
+        for row in db_session.execute(
+            text("""
+                SELECT ppvb.*
+                FROM plan_pago_venta_bloque ppvb
+                JOIN plan_pago_venta ppv
+                  ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta
+                WHERE ppv.id_venta = :id_venta
+                  AND ppvb.deleted_at IS NULL
+                ORDER BY ppvb.numero_bloque
+                """),
+            {"id_venta": id_venta},
+        ).mappings()
+    ]
+
+
+def _composiciones_by_venta(db_session, id_venta: int) -> list[dict]:
+    return [
+        dict(row)
+        for row in db_session.execute(
+            text("""
+                SELECT o.numero_obligacion, o.estado_obligacion, cf.codigo_concepto_financiero
+                FROM composicion_obligacion co
+                JOIN concepto_financiero cf
+                  ON cf.id_concepto_financiero = co.id_concepto_financiero
+                JOIN obligacion_financiera o
+                  ON o.id_obligacion_financiera = co.id_obligacion_financiera
+                JOIN relacion_generadora rg
+                  ON rg.id_relacion_generadora = o.id_relacion_generadora
+                WHERE rg.tipo_origen = 'venta'
+                  AND rg.id_origen = :id_venta
+                  AND co.deleted_at IS NULL
+                ORDER BY o.numero_obligacion, co.orden_composicion
+                """),
+            {"id_venta": id_venta},
+        ).mappings()
+    ]
+
+
+def _count_indexacion_config_by_venta(db_session, id_venta: int) -> int:
+    return db_session.execute(
+        text("""
+            SELECT COUNT(*)
+            FROM plan_pago_venta_bloque_indexacion ppvbi
+            JOIN plan_pago_venta_bloque ppvb
+              ON ppvb.id_plan_pago_venta_bloque = ppvbi.id_plan_pago_venta_bloque
+            JOIN plan_pago_venta ppv
+              ON ppv.id_plan_pago_venta = ppvb.id_plan_pago_venta
+            WHERE ppv.id_venta = :id_venta
+              AND ppvbi.deleted_at IS NULL
+            """),
+        {"id_venta": id_venta},
+    ).scalar_one()
+
+
+def _count_obligacion_indexacion_by_venta(db_session, id_venta: int) -> int:
+    return db_session.execute(
+        text("""
+            SELECT COUNT(*)
+            FROM obligacion_financiera_indexacion ofi
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = ofi.id_obligacion_financiera
+            JOIN relacion_generadora rg
+              ON rg.id_relacion_generadora = o.id_relacion_generadora
+            WHERE rg.tipo_origen = 'venta'
+              AND rg.id_origen = :id_venta
+              AND ofi.deleted_at IS NULL
+            """),
+        {"id_venta": id_venta},
     ).scalar_one()
 
 
@@ -245,13 +416,11 @@ def test_confirmar_venta_completa_reserva_inexistente(client) -> None:
 def test_confirmar_venta_completa_reserva_estado_invalido(client, db_session) -> None:
     reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-STATE")
     db_session.execute(
-        text(
-            """
+        text("""
             UPDATE reserva_venta
             SET estado_reserva = 'borrador'
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
+            """),
         {"id_reserva_venta": reserva["id_reserva_venta"]},
     )
 
@@ -271,14 +440,18 @@ def test_confirmar_venta_completa_if_match_invalido(client, db_session) -> None:
     response = client.post(
         f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
         headers={**HEADERS, "If-Match-Version": "999"},
-        json=_payload(codigo_venta="V-COMP-IFMATCH", id_inmueble=reserva["id_inmueble"]),
+        json=_payload(
+            codigo_venta="V-COMP-IFMATCH", id_inmueble=reserva["id_inmueble"]
+        ),
     )
 
     assert response.status_code == 409
     assert response.json()["error_code"] == "CONCURRENCY_ERROR"
 
 
-def test_confirmar_venta_completa_x_op_id_faltante_devuelve_400(client, db_session) -> None:
+def test_confirmar_venta_completa_x_op_id_faltante_devuelve_400(
+    client, db_session
+) -> None:
     reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-HDR-MISS")
 
     headers = {**HEADERS, "If-Match-Version": str(reserva["version_registro"])}
@@ -287,7 +460,9 @@ def test_confirmar_venta_completa_x_op_id_faltante_devuelve_400(client, db_sessi
     response = client.post(
         f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
         headers=headers,
-        json=_payload(codigo_venta="V-COMP-HDR-MISS", id_inmueble=reserva["id_inmueble"]),
+        json=_payload(
+            codigo_venta="V-COMP-HDR-MISS", id_inmueble=reserva["id_inmueble"]
+        ),
     )
 
     assert response.status_code == 400
@@ -296,7 +471,9 @@ def test_confirmar_venta_completa_x_op_id_faltante_devuelve_400(client, db_sessi
     assert body["details"] == {"header": "X-Op-Id"}
 
 
-def test_confirmar_venta_completa_if_match_faltante_devuelve_400(client, db_session) -> None:
+def test_confirmar_venta_completa_if_match_faltante_devuelve_400(
+    client, db_session
+) -> None:
     reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-IFMISS")
 
     headers = dict(HEADERS)
@@ -313,7 +490,9 @@ def test_confirmar_venta_completa_if_match_faltante_devuelve_400(client, db_sess
     assert body["details"] == {"header": "If-Match-Version"}
 
 
-def test_confirmar_venta_completa_if_match_invalido_formato_devuelve_400(client, db_session) -> None:
+def test_confirmar_venta_completa_if_match_invalido_formato_devuelve_400(
+    client, db_session
+) -> None:
     reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-IFBAD")
 
     response = client.post(
@@ -326,3 +505,108 @@ def test_confirmar_venta_completa_if_match_invalido_formato_devuelve_400(client,
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR"
     assert body["details"] == {"header": "If-Match-Version"}
+
+
+def test_confirmar_venta_completa_desde_reserva_interes_directo_propaga_bloque(
+    client, db_session
+) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-ID")
+    payload = _payload(codigo_venta="V-COMP-ID", id_inmueble=reserva["id_inmueble"])
+    _usar_plan_interes_directo(payload)
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "V-COMP-ID")
+    assert venta is not None
+    bloques = _plan_bloques_by_venta(db_session, venta["id_venta"])
+    assert bloques[0]["metodo_liquidacion"] == "INTERES_DIRECTO"
+    assert Decimal(str(bloques[0]["tasa_interes_directo_periodica"])) == Decimal(
+        "0.02000000"
+    )
+    assert bloques[0]["cantidad_periodos"] == 3
+    assert bloques[0]["base_calculo_interes"] == "CAPITAL_INICIAL_BLOQUE"
+    conceptos = {
+        row["codigo_concepto_financiero"]
+        for row in _composiciones_by_venta(db_session, venta["id_venta"])
+    }
+    assert {"CAPITAL_VENTA", "INTERES_FINANCIERO"}.issubset(conceptos)
+
+
+def test_confirmar_venta_completa_desde_reserva_indexacion_propaga_bloque(
+    client, db_session
+) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-IX")
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-COMP-RV-IX"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 7, 10),
+        valor_indice=Decimal("110.00000000"),
+    )
+    payload = _payload(codigo_venta="V-COMP-IX", id_inmueble=reserva["id_inmueble"])
+    _usar_plan_indexado(payload, id_indice)
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "V-COMP-IX")
+    assert venta is not None
+    bloques = _plan_bloques_by_venta(db_session, venta["id_venta"])
+    assert bloques[0]["metodo_liquidacion"] == "INDEXACION"
+    assert _count_indexacion_config_by_venta(db_session, venta["id_venta"]) == 1
+    assert _count_obligacion_indexacion_by_venta(db_session, venta["id_venta"]) == 2
+    composiciones = _composiciones_by_venta(db_session, venta["id_venta"])
+    assert "AJUSTE_INDEXACION" in {
+        row["codigo_concepto_financiero"] for row in composiciones
+    }
+    assert [row for row in composiciones if row["numero_obligacion"] == 1] == [
+        {
+            "numero_obligacion": 1,
+            "estado_obligacion": "PROYECTADA",
+            "codigo_concepto_financiero": "CAPITAL_VENTA",
+        }
+    ]
+
+
+def test_confirmar_venta_completa_desde_reserva_indexacion_invalida_rollback(
+    client, db_session
+) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-IX-NEG")
+    before_obligaciones = _count_obligaciones(db_session)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-COMP-RV-NEG"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("90.00000000"),
+    )
+    payload = _payload(codigo_venta="V-COMP-IX-NEG", id_inmueble=reserva["id_inmueble"])
+    _usar_plan_indexado(payload, id_indice)
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert (
+        "INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO"
+        in response.json()["details"]["errors"]
+    )
+    assert _estado_reserva(db_session, reserva["id_reserva_venta"]) == "confirmada"
+    assert _venta_by_codigo(db_session, "V-COMP-IX-NEG") is None
+    assert _count_obligaciones(db_session) == before_obligaciones

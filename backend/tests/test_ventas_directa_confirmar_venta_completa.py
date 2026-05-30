@@ -1,3 +1,6 @@
+from datetime import date
+from decimal import Decimal
+
 from sqlalchemy import text
 
 from tests.sql_failpoints import install_statement_failpoint_once
@@ -10,13 +13,24 @@ from tests.test_reservas_venta_create import (
     _insertar_reserva_conflictiva,
     _insertar_venta_conflictiva,
 )
-
+from tests.test_reservas_venta_confirmar_venta_completa import (
+    _composiciones_by_venta,
+    _count_indexacion_config_by_venta,
+    _count_obligacion_indexacion_by_venta,
+    _insertar_indice_financiero_minimo,
+    _insertar_indice_financiero_valor,
+    _plan_bloques_by_venta,
+    _usar_plan_indexado,
+    _usar_plan_interes_directo,
+)
 
 ENDPOINT = "/api/v1/ventas/directa/confirmar-venta-completa"
 
 
 def _crear_base_directa(client, db_session, *, codigo: str) -> dict[str, int]:
-    id_persona = _crear_persona(client, nombre=f"Comprador {codigo}", apellido="Directo")
+    id_persona = _crear_persona(
+        client, nombre=f"Comprador {codigo}", apellido="Directo"
+    )
     id_rol = _crear_rol_participacion_activo(
         db_session,
         id_rol_participacion=9900 + abs(hash(codigo)) % 200,
@@ -104,17 +118,19 @@ def _payload(
 
 
 def _venta_by_codigo(db_session, codigo_venta: str):
-    return db_session.execute(
-        text(
-            """
+    return (
+        db_session.execute(
+            text("""
             SELECT id_venta, id_reserva_venta, estado_venta, version_registro
             FROM venta
             WHERE codigo_venta = :codigo_venta
               AND deleted_at IS NULL
-            """
-        ),
-        {"codigo_venta": codigo_venta},
-    ).mappings().one_or_none()
+            """),
+            {"codigo_venta": codigo_venta},
+        )
+        .mappings()
+        .one_or_none()
+    )
 
 
 def _count_obligaciones(db_session) -> int:
@@ -125,29 +141,25 @@ def _count_obligaciones(db_session) -> int:
 
 def _count_venta_objetos(db_session, id_venta: int) -> int:
     return db_session.execute(
-        text(
-            """
+        text("""
             SELECT COUNT(*)
             FROM venta_objeto_inmobiliario
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
-            """
-        ),
+            """),
         {"id_venta": id_venta},
     ).scalar_one()
 
 
 def _count_compradores(db_session, id_venta: int) -> int:
     return db_session.execute(
-        text(
-            """
+        text("""
             SELECT COUNT(*)
             FROM relacion_persona_rol
             WHERE tipo_relacion = 'venta'
               AND id_relacion = :id_venta
               AND deleted_at IS NULL
-            """
-        ),
+            """),
         {"id_venta": id_venta},
     ).scalar_one()
 
@@ -236,14 +248,12 @@ def test_confirmar_venta_directa_falla_confirmacion_hace_rollback(
 def test_confirmar_venta_directa_objeto_no_disponible(client, db_session) -> None:
     base = _crear_base_directa(client, db_session, codigo="NO-DISP")
     db_session.execute(
-        text(
-            """
+        text("""
             UPDATE disponibilidad
             SET estado_disponibilidad = 'RESERVADA'
             WHERE id_inmueble = :id_inmueble
               AND deleted_at IS NULL
-            """
-        ),
+            """),
         {"id_inmueble": base["id_inmueble"]},
     )
 
@@ -258,9 +268,7 @@ def test_confirmar_venta_directa_objeto_no_disponible(client, db_session) -> Non
     assert _venta_by_codigo(db_session, "VD-COMP-NO-DISP") is None
 
 
-def test_confirmar_venta_directa_objeto_con_reserva_vigente(
-    client, db_session
-) -> None:
+def test_confirmar_venta_directa_objeto_con_reserva_vigente(client, db_session) -> None:
     base = _crear_base_directa(client, db_session, codigo="RESERVA")
     _insertar_reserva_conflictiva(
         db_session,
@@ -315,3 +323,95 @@ def test_confirmar_venta_directa_codigo_duplicado(client, db_session) -> None:
 
     assert response.status_code == 400
     assert response.json()["details"]["errors"] == ["DUPLICATE_CODIGO_VENTA"]
+
+
+def test_confirmar_venta_directa_completa_interes_directo_propaga_bloque(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="ID")
+    payload = _payload(codigo_venta="VD-COMP-ID", **base)
+    _usar_plan_interes_directo(payload)
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-ID")
+    assert venta is not None
+    bloques = _plan_bloques_by_venta(db_session, venta["id_venta"])
+    assert bloques[0]["metodo_liquidacion"] == "INTERES_DIRECTO"
+    assert Decimal(str(bloques[0]["tasa_interes_directo_periodica"])) == Decimal(
+        "0.02000000"
+    )
+    assert bloques[0]["cantidad_periodos"] == 3
+    assert bloques[0]["base_calculo_interes"] == "CAPITAL_INICIAL_BLOQUE"
+    conceptos = {
+        row["codigo_concepto_financiero"]
+        for row in _composiciones_by_venta(db_session, venta["id_venta"])
+    }
+    assert {"CAPITAL_VENTA", "INTERES_FINANCIERO"}.issubset(conceptos)
+
+
+def test_confirmar_venta_directa_completa_indexacion_propaga_bloque(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="IX")
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-COMP-VD-IX"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 7, 10),
+        valor_indice=Decimal("110.00000000"),
+    )
+    payload = _payload(codigo_venta="VD-COMP-IX", **base)
+    _usar_plan_indexado(payload, id_indice)
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-IX")
+    assert venta is not None
+    bloques = _plan_bloques_by_venta(db_session, venta["id_venta"])
+    assert bloques[0]["metodo_liquidacion"] == "INDEXACION"
+    assert _count_indexacion_config_by_venta(db_session, venta["id_venta"]) == 1
+    assert _count_obligacion_indexacion_by_venta(db_session, venta["id_venta"]) == 2
+    composiciones = _composiciones_by_venta(db_session, venta["id_venta"])
+    assert "AJUSTE_INDEXACION" in {
+        row["codigo_concepto_financiero"] for row in composiciones
+    }
+    assert [row for row in composiciones if row["numero_obligacion"] == 1] == [
+        {
+            "numero_obligacion": 1,
+            "estado_obligacion": "PROYECTADA",
+            "codigo_concepto_financiero": "CAPITAL_VENTA",
+        }
+    ]
+
+
+def test_confirmar_venta_directa_completa_indexacion_invalida_rollback(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="IX-NEG")
+    before_obligaciones = _count_obligaciones(db_session)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-COMP-VD-NEG"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("90.00000000"),
+    )
+    payload = _payload(codigo_venta="VD-COMP-IX-NEG", **base)
+    _usar_plan_indexado(payload, id_indice)
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert (
+        "INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO"
+        in response.json()["details"]["errors"]
+    )
+    assert _venta_by_codigo(db_session, "VD-COMP-IX-NEG") is None
+    assert _count_obligaciones(db_session) == before_obligaciones
