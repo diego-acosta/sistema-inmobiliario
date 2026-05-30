@@ -233,7 +233,7 @@ def _usar_plan_indexado(payload: dict[str, object], id_indice_financiero: int) -
             "modo_indexacion": "POR_COEFICIENTE",
             "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
             "tipo_generacion_indexada": "DEFINITIVA",
-            "politica_valor_no_disponible": "PROYECTAR_SIN_AJUSTE",
+            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
             "conserva_capital_original": True,
             "genera_ajuste_por_diferencia": True,
         }
