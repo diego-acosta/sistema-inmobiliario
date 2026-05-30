@@ -274,20 +274,77 @@ Cambios necesarios:
 
 ## 10. Decisión CORE-EF
 
-Clasificación de endpoints:
+### 10.1 Alcance de este PR documental
+
+Este PR no crea ni modifica endpoints write: `NO APLICA` ejecución obligatoria de
+tests CORE-EF de endpoint porque no hay cambio de runtime, router, service,
+repository, SQL ni tests. La implementación futura de multi comprador sí aplica
+como `COMMAND_WRITE_NEGOCIO` y debe nacer con la decisión CORE-EF explícita
+descripta en esta sección.
+
+Clasificación futura de endpoints afectados:
 
 - `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`: `COMMAND_WRITE_NEGOCIO`.
 - `POST /api/v1/ventas/directa/confirmar-venta-completa`: `COMMAND_WRITE_NEGOCIO`.
 
-Decisión operativa para implementación futura:
+### 10.2 Headers, versionado y frontera transaccional
 
 - Headers: mantener `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` usando helper común CORE-EF; desde reserva mantener `If-Match-Version` sobre `reserva_venta` versionada.
-- Idempotencia: no declarar idempotencia profunda nueva sin evidencia. Mantener criterios existentes; si se agrega distribución multi comprador, la idempotencia de Plan Pago V2 debe considerar obligaciones y obligados por clave funcional.
-- Outbox: no agregar outbox nuevo salvo patrón existente en confirmación de venta.
-- Lock lógico: mantener bloqueos/validaciones existentes de disponibilidad, reserva y venta; no introducir lock nuevo sin diseño explícito.
-- Versionado: desde reserva usa `version_registro` de `reserva_venta`; venta directa crea entidad nueva y no requiere `If-Match-Version` inicial.
-- Rollback/transacción: mantener una única frontera transaccional para venta, objetos, compradores, condiciones, Plan Pago V2 y confirmación.
+- Versionado: desde reserva usa `version_registro` de `reserva_venta`; venta directa crea entidad nueva y no requiere `If-Match-Version` inicial. Si la implementación futura versiona una estructura específica de compradores de venta, deberá declarar su `version_registro` esperado.
+- Rollback/transacción: mantener una única frontera transaccional para venta, objetos, compradores, condiciones, Plan Pago V2, obligaciones, `obligacion_obligado` y confirmación.
 - ErrorResponse: preservar errores estructurados; no devolver `{"detail": "..."}` para errores de headers ni validaciones de dominio.
+
+### 10.3 Idempotencia esperada para implementación futura
+
+La implementación futura multi comprador debe declarar idempotencia como `APLICA`
+para ambos comandos write sincronizables. Criterio mínimo:
+
+- `mismo X-Op-Id + mismo payload`: operación idempotente; debe devolver o reutilizar un resultado compatible con lo ya persistido, sin duplicar venta, compradores, objetos, condiciones, plan, obligaciones ni `obligacion_obligado`.
+- `mismo X-Op-Id + payload distinto`: conflicto de idempotencia; debe fallar con error controlado y no mutar estado.
+- Retry post-error antes de commit: puede reintentarse sin persistencia parcial porque la transacción compuesta debe haber revertido venta, compradores, objetos, condiciones, Plan Pago V2, obligaciones y obligados.
+- Retry post-error después de commit exitoso: debe devolver o reutilizar lo ya persistido y no crear duplicados.
+- Payload idempotente: debe incluir, como mínimo, compradores, porcentajes, objetos, condiciones comerciales, `plan_pago_v2`, datos de confirmación y, desde reserva, `id_reserva_venta` + `If-Match-Version` esperado.
+- Compatibilidad multi comprador: la comparación debe normalizar lista de compradores, `id_persona`, rol `COMPRADOR`, porcentajes, orden irrelevante si se decide soportarlo, objetos y responsables financieros generados.
+- Responsables financieros: la compatibilidad debe validar que las obligaciones existentes tengan los `obligacion_obligado` esperados para la lista normalizada de compradores y porcentajes.
+
+### 10.4 Outbox
+
+- Este PR documental no agrega outbox: `NO APLICA` cambio runtime.
+- Para implementación futura, `APLICA` revisar el outbox existente de confirmación de venta. Si el flujo actual ya emite evento de venta confirmada, multi comprador debe quedar cubierto por el mismo evento, sin crear un evento paralelo.
+- Si se agrega o modifica evento, debe persistirse en la misma transacción que venta, compradores, objetos, condiciones comerciales, `plan_pago_v2`, obligaciones y `obligacion_obligado`.
+- No crear evento nuevo sin revisar el patrón existente de confirmación de venta y su consumidor.
+- Si el evento existente no transporta detalle de compradores, la implementación debe decidir explícitamente si el consumidor puede leerlos desde persistencia o si el contrato del evento requiere ampliación versionada.
+
+### 10.5 Lock lógico
+
+No introducir lock técnico nuevo sin diseño específico, pero la implementación
+futura debe declarar `APLICA` lock lógico/alcance protegido e incompatibilidades:
+
+Desde reserva:
+
+- Scope protegido: `id_reserva_venta` durante la confirmación completa.
+- Entidades protegidas: reserva, objetos reservados, venta derivada, compradores heredados/resueltos y disponibilidad afectada.
+- Operaciones incompatibles: otra confirmación de la misma reserva, generación de otra venta desde la misma reserva, cancelación/anulación concurrente, modificación concurrente de participaciones/compradores, y cambio concurrente de disponibilidad u objeto reservado.
+- Evidencia esperada: uso de `If-Match-Version`, validación de estado convertible, validación de venta previa para la reserva y rollback compuesto.
+
+Venta directa:
+
+- Scope protegido: operación de alta por `X-Op-Id`/payload y objetos vendidos.
+- Entidades protegidas: objetos inmobiliarios (`id_inmueble` / `id_unidad_funcional`), venta nueva, compradores, condiciones, Plan Pago V2 y obligaciones derivadas.
+- Operaciones incompatibles: otra venta concurrente sobre el mismo inmueble/unidad funcional si afecta disponibilidad, reserva concurrente conflictiva, ocupación conflictiva o conflicto jerárquico inmobiliario.
+- Evidencia esperada: validaciones de disponibilidad, reservas/ventas conflictivas, ocupación y jerarquía inmobiliaria, más idempotencia por `X-Op-Id`.
+
+### 10.6 Tests CORE-EF futuros mínimos
+
+Cuando se implemente multi comprador, agregar o ajustar tests para:
+
+1. `mismo X-Op-Id + mismo payload` en venta completa multi comprador devuelve/reutiliza resultado compatible.
+2. `mismo X-Op-Id + payload distinto` falla por conflicto de idempotencia sin mutar estado.
+3. Rollback ante porcentaje inválido sin persistencia parcial de venta/compradores/plan/obligaciones.
+4. Rollback ante fallo de Plan Pago V2 sin persistencia parcial de venta directa o venta desde reserva.
+5. Retry no duplica compradores, `obligacion_obligado` ni `obligacion_financiera`.
+6. Concurrencia/lock lógico si ya existe harness o patrón de pruebas; si no existe, dejar documentado como brecha de testing antes de declarar cumplimiento profundo.
+7. Outbox: si se toca evento de venta confirmada, verificar que se persista en la misma transacción y que no se emitan eventos duplicados en retry.
 
 ## 11. Brechas y decisiones pendientes antes de implementar
 
