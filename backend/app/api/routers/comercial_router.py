@@ -245,21 +245,45 @@ from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository i
     PlanPagoVentaV2Repository,
 )
 
-
 router = APIRouter(tags=["Comercial"])
 
 _CORE_EF_REQUIRED_HEADERS_OPENAPI = {
     "parameters": [
-        {"name": "X-Op-Id", "in": "header", "required": True, "schema": {"type": "string"}},
-        {"name": "X-Usuario-Id", "in": "header", "required": True, "schema": {"type": "string"}},
-        {"name": "X-Sucursal-Id", "in": "header", "required": True, "schema": {"type": "string"}},
-        {"name": "X-Instalacion-Id", "in": "header", "required": True, "schema": {"type": "string"}},
+        {
+            "name": "X-Op-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Usuario-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Sucursal-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        {
+            "name": "X-Instalacion-Id",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
     ]
 }
 _CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI = {
     "parameters": [
         *_CORE_EF_REQUIRED_HEADERS_OPENAPI["parameters"],
-        {"name": "If-Match-Version", "in": "header", "required": True, "schema": {"type": "string"}},
+        {
+            "name": "If-Match-Version",
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        },
     ]
 }
 
@@ -280,7 +304,11 @@ def _core_ef_error_response(exc: CoreEFHeaderValidationError) -> JSONResponse:
 
 
 def _parse_core_ef_headers_or_error(
-    *, x_op_id: str | None, x_usuario_id: str | None, x_sucursal_id: str | None, x_instalacion_id: str | None
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
 ) -> CoreEFHeaders | JSONResponse:
     try:
         return parse_core_ef_headers(
@@ -315,7 +343,9 @@ def _parse_core_ef_headers_with_if_match_or_error(
         return _core_ef_error_response(exc)
 
 
-def _build_comercial_command_context(core_ef_headers: CoreEFHeaders, if_match_version: str | None = None) -> ComercialCommandContext:
+def _build_comercial_command_context(
+    core_ef_headers: CoreEFHeaders, if_match_version: str | None = None
+) -> ComercialCommandContext:
     metadata: dict[str, str] = {
         "x_op_id": str(core_ef_headers.x_op_id),
         "x_sucursal_id": str(core_ef_headers.x_sucursal_id),
@@ -633,7 +663,6 @@ def update_reserva_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-
         if "X-Instalacion-Id es requerido." in result.errors:
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
@@ -741,7 +770,6 @@ def delete_reserva_venta(
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
-
 
         if "X-Instalacion-Id es requerido." in result.errors:
             error = ErrorResponse(
@@ -1468,6 +1496,19 @@ def confirmar_venta_completa_desde_reserva(
                     fecha_primer_vencimiento=item.fecha_primer_vencimiento,
                     periodicidad=item.periodicidad,
                     regla_redondeo=item.regla_redondeo,
+                    metodo_liquidacion=item.metodo_liquidacion,
+                    tasa_interes_directo_periodica=item.tasa_interes_directo_periodica,
+                    cantidad_periodos=item.cantidad_periodos,
+                    base_calculo_interes=item.base_calculo_interes,
+                    id_indice_financiero=item.id_indice_financiero,
+                    fecha_base_indice=item.fecha_base_indice,
+                    valor_base_indice=item.valor_base_indice,
+                    modo_indexacion=item.modo_indexacion,
+                    base_calculo_indexacion=item.base_calculo_indexacion,
+                    tipo_generacion_indexada=item.tipo_generacion_indexada,
+                    politica_valor_no_disponible=item.politica_valor_no_disponible,
+                    conserva_capital_original=item.conserva_capital_original,
+                    genera_ajuste_por_diferencia=item.genera_ajuste_por_diferencia,
                     observaciones=item.observaciones,
                 )
                 for item in request.plan_pago_v2.bloques
@@ -1619,6 +1660,19 @@ def confirmar_venta_directa_completa(
                     fecha_primer_vencimiento=item.fecha_primer_vencimiento,
                     periodicidad=item.periodicidad,
                     regla_redondeo=item.regla_redondeo,
+                    metodo_liquidacion=item.metodo_liquidacion,
+                    tasa_interes_directo_periodica=item.tasa_interes_directo_periodica,
+                    cantidad_periodos=item.cantidad_periodos,
+                    base_calculo_interes=item.base_calculo_interes,
+                    id_indice_financiero=item.id_indice_financiero,
+                    fecha_base_indice=item.fecha_base_indice,
+                    valor_base_indice=item.valor_base_indice,
+                    modo_indexacion=item.modo_indexacion,
+                    base_calculo_indexacion=item.base_calculo_indexacion,
+                    tipo_generacion_indexada=item.tipo_generacion_indexada,
+                    politica_valor_no_disponible=item.politica_valor_no_disponible,
+                    conserva_capital_original=item.conserva_capital_original,
+                    genera_ajuste_por_diferencia=item.genera_ajuste_por_diferencia,
                     observaciones=item.observaciones,
                 )
                 for item in request.plan_pago_v2.bloques
@@ -2142,7 +2196,9 @@ def define_condiciones_comerciales_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if any(error.startswith("INVALID_PLAN_CUOTAS_FIJAS") for error in result.errors):
+        if any(
+            error.startswith("INVALID_PLAN_CUOTAS_FIJAS") for error in result.errors
+        ):
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="El plan CUOTAS_FIJAS requiere cuotas secuenciales desde 1, importes positivos, moneda consistente, fechas de vencimiento y suma exacta contra monto_total.",
@@ -2168,7 +2224,6 @@ def define_condiciones_comerciales_venta(
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
-
 
         if "X-Instalacion-Id es requerido." in result.errors:
             error = ErrorResponse(
@@ -2735,7 +2790,9 @@ def confirm_venta(
     if isinstance(core_ef_headers, JSONResponse):
         return core_ef_headers
 
-    context = _build_comercial_command_context(core_ef_headers, if_match_version=if_match_version)
+    context = _build_comercial_command_context(
+        core_ef_headers, if_match_version=if_match_version
+    )
 
     command = ConfirmVentaCommand(
         context=context,
@@ -2897,9 +2954,7 @@ def list_instrumentos_compraventa(
 
     return InstrumentoCompraventaListResponse(
         data=InstrumentoCompraventaListData(
-            items=[
-                InstrumentoCompraventaData(**item) for item in result.data["items"]
-            ],
+            items=[InstrumentoCompraventaData(**item) for item in result.data["items"]],
             total=result.data["total"],
         )
     )
@@ -2990,7 +3045,11 @@ def create_instrumento_compraventa(
     if not result.success or result.data is None:
         if any(
             error in result.errors
-            for error in ("NOT_FOUND_VENTA", "NOT_FOUND_INMUEBLE", "NOT_FOUND_UNIDAD_FUNCIONAL")
+            for error in (
+                "NOT_FOUND_VENTA",
+                "NOT_FOUND_INMUEBLE",
+                "NOT_FOUND_UNIDAD_FUNCIONAL",
+            )
         ):
             error = ErrorResponse(
                 error_code="NOT_FOUND",
@@ -3071,7 +3130,6 @@ def create_instrumento_compraventa(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-
         if "X-Instalacion-Id es requerido." in result.errors:
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
@@ -3094,9 +3152,7 @@ def create_instrumento_compraventa(
             for objeto in result.data["objetos"]
         ],
     }
-    return CreateInstrumentoCompraventaResponse(
-        data=InstrumentoCompraventaData(**data)
-    )
+    return CreateInstrumentoCompraventaResponse(data=InstrumentoCompraventaData(**data))
 
 
 @router.get(
@@ -3292,7 +3348,6 @@ def create_cesion(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-
         if "X-Instalacion-Id es requerido." in result.errors:
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
@@ -3479,7 +3534,6 @@ def create_escrituracion(
                 details={"errors": result.errors},
             )
             return JSONResponse(status_code=400, content=error.model_dump())
-
 
         if "X-Instalacion-Id es requerido." in result.errors:
             error = ErrorResponse(

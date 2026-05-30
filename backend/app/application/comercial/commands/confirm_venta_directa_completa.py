@@ -62,7 +62,20 @@ class ConfirmVentaDirectaCompletaPlanPagoBloqueInput:
     fecha_primer_vencimiento: date | None
     periodicidad: str | None
     regla_redondeo: str | None
-    observaciones: str | None
+    metodo_liquidacion: str | None = None
+    tasa_interes_directo_periodica: Decimal | None = None
+    cantidad_periodos: int | None = None
+    base_calculo_interes: str | None = None
+    id_indice_financiero: int | None = None
+    fecha_base_indice: date | None = None
+    valor_base_indice: Decimal | None = None
+    modo_indexacion: str | None = None
+    base_calculo_indexacion: str | None = None
+    tipo_generacion_indexada: str | None = None
+    politica_valor_no_disponible: str | None = None
+    conserva_capital_original: bool | None = None
+    genera_ajuste_por_diferencia: bool | None = None
+    observaciones: str | None = None
 
 
 @dataclass(slots=True)
