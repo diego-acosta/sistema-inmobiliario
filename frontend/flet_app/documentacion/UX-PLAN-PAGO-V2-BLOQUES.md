@@ -51,6 +51,16 @@ pero no debe considerarse el flujo principal para probar venta completa.
 - La pantalla debe hablar en terminos comerciales: contado, anticipo, cuotas,
   refuerzos, saldo, interes directo e indexacion.
 - La validacion visual debe anticipar errores antes de llamar al backend.
+- La `Estructura del plan` es solo un borrador visual de bloques cargados; no es
+  cronograma, no calcula cuotas reales y no reemplaza al backend.
+- El `Preview oficial backend` es la unica fuente del cronograma visible; consume
+  exclusivamente `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview`.
+- El prototipo no calcula fechas de cuotas, interes directo ni indexacion
+  localmente para el preview oficial.
+- El paso Plan Pago V2 muestra un campo `ID venta backend` visible para cargar
+  una venta existente de la base DEV antes de usar preview/generate.
+- Las acciones se presentan como flujo guiado: `1. Previsualizar plan`,
+  `2. Generar plan de pago`, `3. Ver plan generado`.
 - Preview y consulta integral son lectura/visualizacion; no prometen pago,
   caja, recibo ni emision posterior de cuotas indexadas.
 - Una vez generado, el plan se presenta como estructura de consulta cerrada.
@@ -62,13 +72,21 @@ pero no debe considerarse el flujo principal para probar venta completa.
 3. Carga bloques comerciales.
 4. En cada `TRAMO_CUOTAS` elige `Metodo de liquidacion`.
 5. La pantalla valida suma, campos requeridos y exclusividad de metodos.
-6. Ejecuta preview oficial con `POST /preview`.
-7. Revisa cronograma, interes, ajustes e indexacion proyectada/aplicada.
-8. Confirma con `Generar plan de pago`.
-9. El generate envia headers CORE-EF requeridos y, si responde OK, refresca
+6. El usuario informa `ID venta backend` con el ID de una venta existente en
+   base DEV; si falta o es invalido, la UI muestra `Ingresá el ID de una venta
+   backend existente para probar el plan.` y deja deshabilitadas las acciones
+   backend.
+7. `1. Previsualizar plan`: ejecuta preview oficial con `POST /preview` y muestra
+   el cronograma calculado por backend.
+8. `2. Generar plan de pago`: se habilita solo con preview oficial vigente;
+   envia headers CORE-EF requeridos y, si responde OK, refresca
    `GET /api/v1/ventas/{id_venta}/plan-pago-v2`.
-10. El plan generado se visualiza con cabecera, bloques, obligaciones,
-    composiciones, indexacion por obligacion y resumen.
+9. `3. Ver plan generado`: se habilita cuando ya se genero el plan o hay una
+   consulta integral cargada para la venta.
+10. Si cambia el `ID venta backend`, se limpia el preview oficial, la consulta
+    integral y el estado de generate; se debe previsualizar nuevamente.
+11. El paso final muestra checklist operativo: venta backend, preview oficial y
+    plan generado.
 
 ## 6. Editor de bloques
 
@@ -182,8 +200,12 @@ Payload de ejemplo:
 
 ### 7.3 INDEXACION
 
+Cuando `Metodo de liquidacion = INDEXACION`, el editor de `TRAMO_CUOTAS` debe
+renderizar una seccion visible titulada `Indexación`.
+
 Campos visibles:
 
+- selector `Índice demo` con `CAC_DEMO`, `IPC_DEMO`, `UVA_DEMO`, `RIPTE_DEMO`;
 - `id_indice_financiero` o selector de indice;
 - `fecha_base_indice`;
 - `valor_base_indice`;
@@ -265,10 +287,27 @@ Por `INDEXACION`:
 
 ## 9. Preview oficial
 
-La tabla de preview debe mostrar:
+La seccion local `Estructura del plan` muestra solo el borrador visual de los
+bloques ingresados por el usuario. No debe llamarse `Cronograma preview`, no debe
+calcular fechas de cuotas, no debe calcular interes directo, no debe calcular
+indexacion y no debe inventar estados locales de indexacion.
+
+La seccion `Preview oficial backend` es la unica fuente del cronograma. Sus
+estados esperados son:
+
+- sin venta backend: `Disponible cuando exista una venta backend asociada.` y
+  pedido de ingresar un ID de venta backend existente;
+- con venta backend sin preview: `Presioná Previsualizar plan para ver el
+  cronograma calculado por backend.`;
+- con borrador modificado: aviso `Preview desactualizado` y pedido de volver a
+  previsualizar;
+- con preview vigente: tabla renderizada exclusivamente desde las `obligaciones`
+  devueltas por el backend.
+
+La tabla de preview oficial debe mostrar:
 
 ```text
-N° | Bloque | Tipo obligacion | Etiqueta | Vencimiento | Capital cuota | Interes / Ajuste | Importe total | Estado indexacion | Concepto
+N° | Bloque | Tipo bloque | Etiqueta | Vencimiento | Capital cuota | Ajuste indexacion | Importe total | Estado indexacion | Concepto
 ```
 
 Reglas:
@@ -280,26 +319,29 @@ Reglas:
 - `SALDO` genera una fila `SALDO`.
 - El orden respeta el orden visual de bloques.
 
-Para `INDEXACION`:
+Para la columna `Capital cuota`, la UI muestra `capital_cuota` si viene
+informado y usa `importe_total` como fallback visual cuando `capital_cuota` es
+null. Para `INDEXACION`, `capital_cuota` sigue siendo la fuente principal y el
+ajuste permanece separado en `ajuste_indexacion_cuota`; no se recalculan importes
+localmente.
 
-- Si la cuota tiene indice aplicado, mostrar `Con indice aplicado`, valor
-  aplicado, coeficiente y ajuste.
-- Si no tiene indice, mostrar `Proyectada sin indice` y capital base.
+Para `INDEXACION`, la UI no inventa estados locales: muestra
+`estado_preview_indexacion`, importes y ajustes tal como vienen en cada
+obligacion del backend.
 
 Resumen de preview:
 
 - `total_calculado`;
 - `total_con_interes`;
 - `total_con_indexacion`;
-- `total_ajuste_indexacion`;
-- diferencia contra el monto total.
+- `total_ajuste_indexacion`.
 
 ## 10. Generate
 
-Boton:
+Accion guiada:
 
 ```text
-Generar plan de pago
+2. Generar plan de pago
 ```
 
 Comportamiento:
@@ -396,8 +438,20 @@ Queda explicitamente fuera de alcance:
   `INDEXACION`.
 - La UI impide mezclar `INTERES_DIRECTO` e `INDEXACION` en el mismo bloque.
 - La pantalla bloquea confirmacion si la suma no coincide.
-- El preview muestra capital, interes/ajuste, importe total, estado de
-  indexacion y concepto.
+- La `Estructura del plan` queda limitada a borrador visual local.
+- Las acciones backend aparecen guiadas como `1. Previsualizar plan`,
+  `2. Generar plan de pago`, `3. Ver plan generado`.
+- Sin `ID venta backend` valido, la UI explica el prerequisito y deshabilita
+  preview/generate/ver plan.
+- Al cambiar el `ID venta backend`, se descartan preview oficial, consulta
+  integral y generate previos para evitar mezclar respuestas de otra venta.
+- El `Preview oficial backend` es la unica fuente del cronograma y muestra
+  capital, ajuste de indexacion, importe total, estado de indexacion y concepto
+  desde la respuesta backend.
+- Si `capital_cuota` viene null, la columna `Capital cuota` usa `importe_total`
+  como fallback visual sin recalcular importes.
+- El prototipo no calcula fechas, interes directo ni indexacion localmente para
+  el preview oficial.
 - Generate envia headers CORE-EF.
 - La consulta integral muestra cabecera, bloques, indexacion, obligaciones,
   composiciones y resumen.

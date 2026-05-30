@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation
 import json
 from typing import Any
 from uuid import uuid4
@@ -19,6 +19,12 @@ DEMO_INDICES = (
     ("3", "UVA_DEMO", "UVA demo"),
     ("4", "RIPTE_DEMO", "RIPTE demo"),
 )
+DEMO_INDEX_BASE_VALUES = {
+    "CAC_DEMO": "100.00",
+    "IPC_DEMO": "100.00",
+    "UVA_DEMO": "1.00",
+    "RIPTE_DEMO": "100.00",
+}
 UNIQUE_BLOCKS = {"CONTADO", "ANTICIPO", "REFUERZO", "SALDO"}
 
 
@@ -390,17 +396,12 @@ class VentaCompletaWizardPrototype:
                             width=260,
                             on_change=lambda e: self._set_backend_field("base_url", e.control.value),
                         ),
-                        ft.TextField(
-                            label="ID venta backend",
-                            value=self.state.id_venta_backend,
-                            width=150,
-                            on_change=lambda e: self._set_backend_field("id_venta_backend", e.control.value),
-                        ),
                         tipo_pago_dropdown,
                     ],
                     wrap=True,
                     spacing=10,
                 ),
+                self._backend_sale_selector(),
                 self._bloques_editor(),
                 ft.Row(
                     controls=[
@@ -448,34 +449,7 @@ class VentaCompletaWizardPrototype:
                         ),
                     ]
                 ),
-                ft.Row(
-                    controls=[
-                        ft.Button(
-                            "Generar preview backend",
-                            icon=ft.Icons.PREVIEW,
-                            disabled=self.state.loading_backend,
-                            on_click=self._generate_preview,
-                        ),
-                        ft.Button(
-                            "Generar plan de pago",
-                            icon=ft.Icons.SEND,
-                            disabled=(
-                                self.state.loading_backend
-                                or not self.state.preview_generado
-                                or self.state.preview_stale
-                            ),
-                            on_click=self._generate_plan_backend,
-                        ),
-                        ft.OutlinedButton(
-                            "Cargar consulta integral",
-                            icon=ft.Icons.REFRESH,
-                            disabled=self.state.loading_backend,
-                            on_click=self._load_plan_integral,
-                        ),
-                    ],
-                    wrap=True,
-                    spacing=10,
-                ),
+                self._plan_pago_action_flow(),
                 self._backend_status_panel(),
                 self._validation_box(4),
                 self._backend_preview_panel(),
@@ -484,13 +458,17 @@ class VentaCompletaWizardPrototype:
         )
 
     def _step_revision(self) -> ft.Control:
-        errors = self._flow_errors_before_review()
-        preview = self._preview_cronograma_local()
+        errors = self._final_confirmation_errors()
+        final_hint = (
+            "Checklist listo para confirmar."
+            if not errors
+            else "Para confirmar, completá primero los pendientes del checklist y del paso correspondiente."
+        )
         return self._card(
             "Paso 6 — Revisión y confirmación final",
             [
                 ft.Text(
-                    "Revisá toda la venta y el cronograma antes de confirmar. La confirmación está simulada en este prototipo."
+                    "Revisá toda la venta y el cronograma oficial antes de confirmar. La confirmación está simulada en este prototipo."
                 ),
                 _kv_grid(
                     [
@@ -519,16 +497,8 @@ class VentaCompletaWizardPrototype:
                         for b in self.state.bloques
                     ],
                 ),
-                ft.Text("Cronograma preview local", weight=ft.FontWeight.W_700),
-                _simple_table(
-                    ["Bloque", "Etiqueta", "Vencimiento", "Capital", "Interés/Ajuste", "Importe"],
-                    preview,
-                ),
-                ft.Text("Alertas", weight=ft.FontWeight.W_700),
-                ft.Column(
-                    [ft.Text(error, color=ft.Colors.RED_700) for error in errors]
-                    or [ft.Text("Sin alertas bloqueantes.", color=ft.Colors.GREEN_700)]
-                ),
+                self._review_checklist(),
+                ft.Text(final_hint, color=ft.Colors.GREEN_700 if not errors else ft.Colors.RED_700),
                 ft.Button(
                     "Confirmar venta completa (simulado)",
                     icon=ft.Icons.CHECK_CIRCLE,
@@ -715,39 +685,59 @@ class VentaCompletaWizardPrototype:
                 ]
             )
         elif bloque.metodo_liquidacion == "INDEXACION":
-            controls.extend(
-                [
+            controls.append(self._indexation_editor(bloque))
+        return ft.Container(
+            content=ft.Column(controls=controls, spacing=8),
+            padding=10,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+        )
+
+    def _indexation_editor(self, bloque: BloquePlanDraft) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Indexación", weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Indices DEV/demo: valores demo/no oficiales. Ajustar ID si la base local asigno otro identificador.",
+                        "Valores demo/no oficiales. Si el ID sugerido no coincide con la base DEV, cargá el ID índice financiero real.",
                         size=12,
                         color=ft.Colors.AMBER_800,
                     ),
                     ft.Row(
                         controls=[
                             self._dropdown(
-                                label="Indice demo",
+                                label="Índice demo",
                                 value=bloque.codigo_indice_financiero or None,
-                                width=180,
-                                options=[ft.dropdown.Option(code) for _, code, _ in DEMO_INDICES],
+                                width=190,
+                                options=[
+                                    ft.dropdown.Option(key=code, text=f"{code} — {label}")
+                                    for _, code, label in DEMO_INDICES
+                                ],
                                 on_change=lambda e, b=bloque: self._select_demo_index(b, e.control.value),
                             ),
                             ft.TextField(
-                                label="id_indice_financiero",
+                                label="ID índice financiero",
                                 value=bloque.id_indice_financiero,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_bloque(b, "id_indice_financiero", e.control.value),
+                                width=190,
+                                on_change=lambda e, b=bloque: self._update_bloque(
+                                    b, "id_indice_financiero", e.control.value
+                                ),
                             ),
                             ft.TextField(
-                                label="fecha_base_indice",
+                                label="Fecha base índice",
                                 value=bloque.fecha_base_indice,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_bloque(b, "fecha_base_indice", e.control.value),
+                                width=180,
+                                on_change=lambda e, b=bloque: self._update_bloque(
+                                    b, "fecha_base_indice", e.control.value
+                                ),
                             ),
                             ft.TextField(
-                                label="valor_base_indice",
+                                label="Valor base índice",
                                 value=bloque.valor_base_indice,
-                                width=170,
-                                on_change=lambda e, b=bloque: self._update_bloque(b, "valor_base_indice", e.control.value),
+                                width=180,
+                                on_change=lambda e, b=bloque: self._update_bloque(
+                                    b, "valor_base_indice", e.control.value
+                                ),
                             ),
                         ],
                         wrap=True,
@@ -765,14 +755,147 @@ class VentaCompletaWizardPrototype:
                         wrap=True,
                         spacing=18,
                     ),
-                ]
-            )
-        return ft.Container(
-            content=ft.Column(controls=controls, spacing=8),
+                ],
+                spacing=8,
+            ),
             padding=10,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border=_border_all(1, ft.Colors.AMBER_200),
             border_radius=6,
         )
+
+    def _backend_sale_selector(self) -> ft.Control:
+        has_sale = self._has_backend_sale()
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Venta backend para probar Plan Pago V2", weight=ft.FontWeight.W_700),
+                    ft.TextField(
+                        label="ID venta backend",
+                        value=self.state.id_venta_backend,
+                        hint_text="Ej: 1",
+                        width=260,
+                        keyboard_type=ft.KeyboardType.NUMBER,
+                        on_change=lambda e: self._set_backend_field("id_venta_backend", e.control.value),
+                    ),
+                    ft.Text(
+                        "Usá el ID de una venta existente en la base DEV.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Text(
+                        "Venta backend lista para preview/generate."
+                        if has_sale
+                        else "Ingresá el ID de una venta backend existente para probar el plan.",
+                        color=ft.Colors.GREEN_700 if has_sale else ft.Colors.ORANGE_700,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=12,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=8,
+        )
+
+    def _plan_pago_action_flow(self) -> ft.Control:
+        has_sale = self._has_backend_sale()
+        preview_ready = self._has_preview_vigente()
+        plan_ready = self._has_plan_generado()
+        preview_hint = (
+            "Ingresá el ID de una venta backend existente para probar el plan."
+            if not has_sale
+            else "Calcula el cronograma oficial con las reglas del backend."
+        )
+        generate_hint = (
+            "Previsualizá el plan antes de generarlo."
+            if has_sale and not preview_ready
+            else "Envía el plan con headers CORE-EF y refresca la consulta integral."
+        )
+        view_hint = (
+            "Disponible después de generar correctamente el plan."
+            if not plan_ready
+            else "Abre la consulta integral del plan generado."
+        )
+        return ft.Column(
+            controls=[
+                ft.Text("Flujo guiado", weight=ft.FontWeight.W_700),
+                ft.Row(
+                    controls=[
+                        _action_step_card(
+                            title="1. Previsualizar plan",
+                            description=preview_hint,
+                            button=ft.Button(
+                                "Previsualizar plan",
+                                icon=ft.Icons.PREVIEW,
+                                disabled=self.state.loading_backend or not has_sale,
+                                on_click=self._generate_preview,
+                            ),
+                            active=has_sale and not preview_ready,
+                        ),
+                        _action_step_card(
+                            title="2. Generar plan de pago",
+                            description=generate_hint,
+                            button=ft.Button(
+                                "Generar plan de pago",
+                                icon=ft.Icons.SEND,
+                                disabled=self.state.loading_backend or not preview_ready,
+                                on_click=self._generate_plan_backend,
+                            ),
+                            active=preview_ready and not plan_ready,
+                        ),
+                        _action_step_card(
+                            title="3. Ver plan generado",
+                            description=view_hint,
+                            button=ft.Button(
+                                "Ver plan generado",
+                                icon=ft.Icons.VISIBILITY,
+                                disabled=self.state.loading_backend or not plan_ready,
+                                on_click=self._load_plan_integral,
+                            ),
+                            active=plan_ready,
+                        ),
+                    ],
+                    wrap=True,
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                ),
+                ft.OutlinedButton(
+                    "Buscar plan existente",
+                    icon=ft.Icons.SEARCH,
+                    disabled=self.state.loading_backend or not has_sale,
+                    on_click=self._load_plan_integral,
+                ),
+            ],
+            spacing=8,
+        )
+
+    def _has_backend_sale(self) -> bool:
+        return _int_or_zero(self.state.id_venta_backend) > 0
+
+    def _has_preview_vigente(self) -> bool:
+        return self.state.preview_generado and not self.state.preview_stale
+
+    def _has_plan_generado(self) -> bool:
+        generate_ok = self.state.generate_status_code is not None and self.state.generate_status_code < 400
+        detalle_ok = self.state.detalle_status_code is not None and self.state.detalle_status_code < 400
+        return generate_ok or detalle_ok
+
+    def _review_checklist(self) -> ft.Control:
+        return ft.Column(
+            controls=[
+                ft.Text("Checklist final", weight=ft.FontWeight.W_700),
+                _checklist_item("Venta backend", "lista" if self._has_backend_sale() else "pendiente"),
+                _checklist_item("Preview oficial", self._preview_checklist_status()),
+                _checklist_item("Plan generado", "listo" if self._has_plan_generado() else "pendiente"),
+            ],
+            spacing=6,
+        )
+
+    def _preview_checklist_status(self) -> str:
+        if self._has_preview_vigente():
+            return "vigente"
+        if self.state.preview_response is not None and self.state.preview_stale:
+            return "desactualizado"
+        return "pendiente"
 
     def _backend_status_panel(self) -> ft.Control:
         messages: list[ft.Control] = []
@@ -792,25 +915,40 @@ class VentaCompletaWizardPrototype:
         return ft.Column(controls=messages, spacing=4) if messages else ft.Text("")
 
     def _backend_preview_panel(self) -> ft.Control:
+        if not self._has_backend_sale():
+            return _official_preview_empty_panel(
+                "Disponible cuando exista una venta backend asociada. Ingresá el ID de una venta backend existente para probar el plan."
+            )
         if self.state.preview_response is None:
-            return ft.Text("Preview backend pendiente.", color=ft.Colors.BLUE_GREY_700)
-        data = _data_envelope(self.state.preview_response)
+            return _official_preview_empty_panel(
+                "Presioná Previsualizar plan para ver el cronograma calculado por backend."
+            )
         if self.state.preview_status_code and self.state.preview_status_code >= 400:
             return _backend_error_panel(self.state.preview_status_code, self.state.preview_response)
+        if self.state.preview_stale:
+            return _official_preview_empty_panel(
+                "Preview desactualizado. Cambiaste el borrador. Volvé a previsualizar antes de generar."
+            )
+        data = _data_envelope(self.state.preview_response)
         if not isinstance(data, dict):
-            return _json_expansion("Preview backend", self.state.preview_response)
+            return _json_expansion("Preview oficial backend", self.state.preview_response)
         bloques = _list_or_empty(data.get("bloques"))
         obligaciones = _list_or_empty(data.get("obligaciones"))
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text("Preview backend Plan Pago V2", weight=ft.FontWeight.W_700),
+                    ft.Text("Preview oficial backend", weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Cronograma renderizado exclusivamente desde POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
                     ft.Row(
                         controls=[
-                            _kv_inline("total_calculado", str(data.get("total_calculado") or "-")),
-                            _kv_inline("total_con_interes", str(data.get("total_con_interes") or "-")),
-                            _kv_inline("total_con_indexacion", str(data.get("total_con_indexacion") or "-")),
-                            _kv_inline("total_ajuste_indexacion", str(data.get("total_ajuste_indexacion") or "-")),
+                            _kv_inline("total_calculado", _display_value(data.get("total_calculado"))),
+                            _kv_inline("total_con_interes", _display_value(data.get("total_con_interes"))),
+                            _kv_inline("total_con_indexacion", _display_value(data.get("total_con_indexacion"))),
+                            _kv_inline("total_ajuste_indexacion", _display_value(data.get("total_ajuste_indexacion"))),
                             _kv_inline("bloques", str(len(bloques))),
                             _kv_inline("obligaciones", str(len(obligaciones))),
                         ],
@@ -900,7 +1038,7 @@ class VentaCompletaWizardPrototype:
         elif step == 4:
             errors.extend(self._plan_pago_errors(require_preview=True))
         elif step == 5:
-            errors.extend(self._flow_errors_before_review())
+            errors.extend(self._final_confirmation_errors())
         return (not errors, errors)
 
     def _plan_pago_errors(self, *, require_preview: bool) -> list[str]:
@@ -916,7 +1054,7 @@ class VentaCompletaWizardPrototype:
             if any(b.tipo_bloque == "CONTADO" for b in self.state.bloques):
                 errors.append("FINANCIADO no admite bloque CONTADO.")
         if _int_or_zero(self.state.id_venta_backend) <= 0:
-            errors.append("ID venta backend requerido para preview/generate/consulta integral.")
+            errors.append("Primero seleccioná o creá la venta en backend para poder previsualizar/generar el plan.")
         for bloque in self.state.bloques:
             importe = _decimal_or_zero(bloque.importe)
             if importe <= 0:
@@ -958,15 +1096,21 @@ class VentaCompletaWizardPrototype:
                 ):
                     errors.append("SIN_INTERES: no debe contener campos de interes ni indexacion.")
         if require_preview and not self.state.preview_generado:
-            errors.append("Debe generarse preview backend antes de confirmar.")
+            errors.append("Previsualizá el plan antes de confirmar.")
         if require_preview and self.state.preview_stale:
-            errors.append("El preview backend esta desactualizado.")
+            errors.append("Cambiaste el borrador. Volvé a previsualizar antes de generar.")
         return _dedupe(errors)
 
     def _flow_errors_before_review(self) -> list[str]:
         errors: list[str] = []
         for step in range(len(STEPS) - 1):
             errors.extend(self._step_status(step)[1])
+        return _dedupe(errors)
+
+    def _final_confirmation_errors(self) -> list[str]:
+        errors = self._flow_errors_before_review()
+        if not self._has_plan_generado():
+            errors.append("Generá el plan de pago antes de confirmar.")
         return _dedupe(errors)
 
     def _set(self, field_name: str, value: str) -> None:
@@ -976,9 +1120,14 @@ class VentaCompletaWizardPrototype:
         self._render()
 
     def _set_backend_field(self, field_name: str, value: str) -> None:
-        setattr(self.state, field_name, value or "")
+        new_value = value or ""
+        previous_value = getattr(self.state, field_name)
+        setattr(self.state, field_name, new_value)
         self.state.backend_error = None
-        self._mark_preview_stale()
+        if field_name == "id_venta_backend" and new_value != previous_value:
+            self._clear_backend_plan_state()
+        else:
+            self._mark_preview_stale()
         self._render()
 
     def _set_tipo_pago(self, value: str | None) -> None:
@@ -1096,7 +1245,13 @@ class VentaCompletaWizardPrototype:
         for demo_id, demo_code, _ in DEMO_INDICES:
             if demo_code == code:
                 bloque.codigo_indice_financiero = demo_code
-                bloque.id_indice_financiero = demo_id
+                bloque.id_indice_financiero = bloque.id_indice_financiero or demo_id
+                bloque.fecha_base_indice = bloque.fecha_base_indice or _format_ar_date(
+                    date.today().replace(day=1)
+                )
+                bloque.valor_base_indice = (
+                    bloque.valor_base_indice or DEMO_INDEX_BASE_VALUES.get(demo_code, "")
+                )
                 break
         else:
             bloque.codigo_indice_financiero = ""
@@ -1154,7 +1309,7 @@ class VentaCompletaWizardPrototype:
     def _load_plan_integral(self, _: Any, *, render: bool = True) -> None:
         id_venta = _int_or_zero(self.state.id_venta_backend)
         if id_venta <= 0:
-            self.state.backend_error = "ID venta backend requerido para consulta integral."
+            self.state.backend_error = "Primero seleccioná o creá la venta en backend para poder ver el plan generado."
             self._render()
             return
         self.state.loading_backend = True
@@ -1177,6 +1332,18 @@ class VentaCompletaWizardPrototype:
             self.state.preview_stale = True
         self.state.preview_generado = False
         self.state.generate_status_code = None
+        self.state.backend_error = None
+
+    def _clear_backend_plan_state(self) -> None:
+        self.state.preview_response = None
+        self.state.preview_status_code = None
+        self.state.preview_generado = False
+        self.state.preview_stale = True
+        self.state.generate_response = None
+        self.state.generate_status_code = None
+        self.state.detalle_response = None
+        self.state.detalle_status_code = None
+        self.state.confirmacion_simulada = False
         self.state.backend_error = None
 
     def _payload(self) -> dict[str, Any]:
@@ -1280,42 +1447,61 @@ class VentaCompletaWizardPrototype:
             Decimal("0.00"),
         ).quantize(Decimal("0.01"))
 
-    def _preview_cronograma_local(self) -> list[list[str]]:
-        rows: list[list[str]] = []
-        for bloque in self.state.bloques:
-            total = _decimal_or_zero(bloque.importe)
-            if bloque.tipo_bloque == "TRAMO_CUOTAS":
-                cantidad = _int_or_zero(bloque.cantidad_cuotas)
-                cuota = (total / Decimal(cantidad or 1)).quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_UP
-                )
-                for index in range(1, cantidad + 1):
-                    rows.append(
-                        [
-                            bloque.tipo_bloque,
-                            f"Cuota {index} ({bloque.metodo_liquidacion})",
-                            bloque.primer_vencimiento or "-",
-                            _money(cuota),
-                            "ver preview backend" if bloque.metodo_liquidacion != "SIN_INTERES" else "0.00",
-                            _money(cuota),
-                        ]
-                    )
-            else:
-                rows.append(
-                    [
-                        bloque.tipo_bloque,
-                        bloque.etiqueta or bloque.tipo_bloque,
-                        bloque.vencimiento or "-",
-                        _money(total),
-                        "0.00",
-                        _money(total),
-                    ]
-                )
-        return rows
+def _action_step_card(
+    *,
+    title: str,
+    description: str,
+    button: ft.Control,
+    active: bool,
+) -> ft.Control:
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Text(title, weight=ft.FontWeight.W_700),
+                ft.Text(description, size=12, color=ft.Colors.BLUE_GREY_700),
+                button,
+            ],
+            spacing=8,
+        ),
+        width=260,
+        padding=12,
+        border=_border_all(2 if active else 1, ft.Colors.BLUE_200 if active else ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+    )
+
+
+def _checklist_item(label: str, status: str) -> ft.Control:
+    ready = status in {"lista", "vigente", "listo"}
+    stale = status == "desactualizado"
+    icon = ft.Icons.CHECK_CIRCLE if ready else ft.Icons.ERROR_OUTLINE if stale else ft.Icons.RADIO_BUTTON_UNCHECKED
+    color = ft.Colors.GREEN_700 if ready else ft.Colors.ORANGE_700 if stale else ft.Colors.BLUE_GREY_600
+    return ft.Row(
+        controls=[
+            ft.Icon(icon, size=16, color=color),
+            ft.Text(label, width=130, color=ft.Colors.BLUE_GREY_700),
+            ft.Text(status, weight=ft.FontWeight.W_700, color=color),
+        ],
+        spacing=8,
+    )
+
+
+def _official_preview_empty_panel(message: str) -> ft.Control:
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Text("Preview oficial backend", weight=ft.FontWeight.W_700),
+                ft.Text(message, color=ft.Colors.BLUE_GREY_700),
+            ],
+            spacing=6,
+        ),
+        padding=12,
+        border=_border_all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+    )
 
 
 def _preview_blocks_view(bloques: list[dict[str, Any]]) -> ft.Control:
-    controls: list[ft.Control] = [ft.Text("Bloques preview", weight=ft.FontWeight.W_700)]
+    controls: list[ft.Control] = [ft.Text("Bloques devueltos por backend", weight=ft.FontWeight.W_700)]
     if not bloques:
         controls.append(ft.Text("Sin bloques."))
     for bloque in bloques:
@@ -1332,7 +1518,7 @@ def _preview_blocks_view(bloques: list[dict[str, Any]]) -> ft.Control:
             controls.append(
                 ft.Text(
                     f"  INDEXACION: con indice {bloque.get('cantidad_cuotas_con_indice', 0)} | "
-                    f"PROYECTADA_SIN_INDICE {bloque.get('cantidad_cuotas_proyectadas_sin_indice', 0)} | "
+                    f"cuotas proyectadas sin indice {bloque.get('cantidad_cuotas_proyectadas_sin_indice', 0)} | "
                     f"ajuste {bloque.get('total_ajuste_indexacion') or '-'}",
                     size=11,
                     color=ft.Colors.BLUE_GREY_700,
@@ -1347,57 +1533,47 @@ def _preview_blocks_view(bloques: list[dict[str, Any]]) -> ft.Control:
 
 
 def _preview_obligaciones_view(obligaciones: list[dict[str, Any]]) -> ft.Control:
-    controls: list[ft.Control] = [ft.Text("Obligaciones preview", weight=ft.FontWeight.W_700)]
-    if not obligaciones:
-        controls.append(ft.Text("Sin obligaciones."))
-    for obligacion in obligaciones:
-        estado = str(obligacion.get("estado_preview_indexacion") or "-")
-        controls.append(
-            ft.Container(
-                content=ft.Column(
-                    controls=[
-                        ft.Row(
-                            controls=[
-                                _kv_inline("N", str(obligacion.get("numero_obligacion") or "-")),
-                                _kv_inline("Bloque", str(obligacion.get("numero_bloque") or "-")),
-                                _kv_inline("Tipo", str(obligacion.get("tipo_item_cronograma") or "-")),
-                                _kv_inline("Vencimiento", str(obligacion.get("fecha_vencimiento") or "-")),
-                                _kv_inline("Capital", str(obligacion.get("capital_cuota") or obligacion.get("importe_total") or "-")),
-                                _kv_inline("Interes/Ajuste", str(obligacion.get("ajuste_indexacion_cuota") or "0.00")),
-                                _kv_inline("Importe", str(obligacion.get("importe_total") or "-")),
-                                _kv_inline("Estado indexacion", estado),
-                                _kv_inline("Concepto", str(obligacion.get("concepto_financiero_codigo") or "-")),
-                            ],
-                            wrap=True,
-                            spacing=14,
-                        ),
-                        ft.Text(_preview_indexacion_text(obligacion), size=11, color=ft.Colors.BLUE_GREY_700),
-                    ],
-                    spacing=4,
-                ),
-                padding=8,
-                border=ft.Border.only(bottom=ft.BorderSide(1, ft.Colors.BLUE_GREY_50)),
-            )
-        )
+    rows = [
+        [
+            _display_value(obligacion.get("numero_obligacion") or ordinal),
+            _display_value(obligacion.get("numero_bloque")),
+            _display_value(obligacion.get("tipo_bloque")),
+            _display_value(obligacion.get("etiqueta_obligacion")),
+            _display_value(obligacion.get("fecha_vencimiento")),
+            _display_value(_preview_capital_cuota(obligacion)),
+            _display_value(obligacion.get("ajuste_indexacion_cuota")),
+            _display_value(obligacion.get("importe_total")),
+            _display_value(obligacion.get("estado_preview_indexacion")),
+            _display_value(obligacion.get("concepto_financiero_codigo")),
+        ]
+        for ordinal, obligacion in enumerate(obligaciones, 1)
+    ]
     return ft.Container(
-        content=ft.Column(controls=controls, spacing=5),
+        content=ft.Column(
+            controls=[
+                ft.Text("Obligaciones devueltas por backend", weight=ft.FontWeight.W_700),
+                _simple_table(
+                    [
+                        "N°",
+                        "Bloque",
+                        "Tipo bloque",
+                        "Etiqueta",
+                        "Vencimiento",
+                        "Capital cuota",
+                        "Ajuste indexación",
+                        "Importe total",
+                        "Estado indexación",
+                        "Concepto",
+                    ],
+                    rows,
+                ),
+            ],
+            spacing=6,
+        ),
         padding=10,
         border=_border_all(1, ft.Colors.BLUE_GREY_100),
         border_radius=6,
     )
-
-
-def _preview_indexacion_text(obligacion: dict[str, Any]) -> str:
-    if obligacion.get("valor_aplicado_indice") is not None:
-        return (
-            "CON_INDICE_APLICADO: "
-            f"valor {obligacion.get('valor_aplicado_indice')} | "
-            f"coeficiente {obligacion.get('coeficiente_indexacion') or '-'} | "
-            f"ajuste {obligacion.get('ajuste_indexacion_cuota') or '0.00'}"
-        )
-    if obligacion.get("estado_preview_indexacion"):
-        return "PROYECTADA_SIN_INDICE: capital base sin ajuste aplicado."
-    return "Sin indexacion."
 
 
 def _plan_integral_view(data: dict[str, Any]) -> ft.Control:
@@ -1530,6 +1706,19 @@ def _obligaciones_integrales_view(obligaciones: list[dict[str, Any]], metodo_blo
             )
         )
     return ft.Column(controls=rows, spacing=4)
+
+
+def _preview_capital_cuota(obligacion: dict[str, Any]) -> Any:
+    capital = obligacion.get("capital_cuota")
+    if capital is not None and capital != "":
+        return capital
+    return obligacion.get("importe_total")
+
+
+def _display_value(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    return str(value)
 
 
 def _simple_table(headers: list[str], rows: list[list[str]]) -> ft.Control:
