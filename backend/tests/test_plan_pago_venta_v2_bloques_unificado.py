@@ -231,6 +231,69 @@ def _obligaciones_unificadas(db_session, *, id_venta: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+
+class _PlanPagoVentaV2RepositoryCompradoresOverride(PlanPagoVentaV2Repository):
+    def __init__(self, db_session, compradores: list[dict]) -> None:
+        super().__init__(db_session)
+        self._compradores = compradores
+
+    def get_compradores_financieros_venta(self, id_venta: int) -> list[dict]:
+        return [dict(row) for row in self._compradores]
+
+
+def _service_con_compradores(
+    db_session, compradores: list[dict]
+) -> GeneratePlanPagoVentaV2PorBloquesService:
+    return GeneratePlanPagoVentaV2PorBloquesService(
+        repository=_PlanPagoVentaV2RepositoryCompradoresOverride(db_session, compradores)
+    )
+
+
+def _obligados_plan_pago_v2(db_session, *, id_venta: int) -> list[dict]:
+    rows = db_session.execute(
+        text("""
+            SELECT
+                o.id_obligacion_financiera,
+                o.numero_obligacion,
+                oo.id_persona,
+                oo.rol_obligado,
+                oo.porcentaje_responsabilidad
+            FROM relacion_generadora rg
+            JOIN obligacion_financiera o
+              ON o.id_relacion_generadora = rg.id_relacion_generadora
+             AND o.deleted_at IS NULL
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = o.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+            WHERE rg.tipo_origen = 'venta'
+              AND rg.id_origen = :id_venta
+              AND rg.deleted_at IS NULL
+            ORDER BY o.numero_obligacion, oo.id_persona
+            """),
+        {"id_venta": id_venta},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _count_obligados_plan_pago_v2(db_session, *, id_venta: int) -> int:
+    return db_session.execute(
+        text("""
+            SELECT COUNT(*)
+            FROM relacion_generadora rg
+            JOIN obligacion_financiera o
+              ON o.id_relacion_generadora = rg.id_relacion_generadora
+             AND o.deleted_at IS NULL
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = o.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+            WHERE rg.tipo_origen = 'venta'
+              AND rg.id_origen = :id_venta
+              AND rg.deleted_at IS NULL
+            """),
+        {"id_venta": id_venta},
+    ).scalar_one()
+
+
 def test_endpoint_unificado_genera_contado_como_saldo_con_capital(
     client, db_session
 ) -> None:
@@ -353,6 +416,7 @@ def test_endpoint_unificado_reejecutar_mismo_payload_no_duplica(
     assert second.status_code == 200, second.text
     assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 5
     assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 15
+    assert _count_obligados_plan_pago_v2(db_session, id_venta=id_venta) == 15
     assert _count_venta_plan_cuota(db_session, id_venta=id_venta) == 0
 
 
@@ -601,6 +665,158 @@ def test_servicio_unificado_reejecutar_mismo_payload_no_duplica(db_session) -> N
     assert second.success, second.errors
     assert len(_bloques_plan_pago_venta_v2(db_session, id_venta=id_venta)) == 5
     assert len(_obligaciones_unificadas(db_session, id_venta=id_venta)) == 15
+    assert _count_obligados_plan_pago_v2(db_session, id_venta=id_venta) == 15
+
+
+def test_servicio_unificado_multi_comprador_crea_obligados_sin_duplicar(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-001")
+    id_persona_1 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_persona_2 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    compradores = [
+        {
+            "id_relacion_persona_rol": 1,
+            "id_persona": id_persona_1,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("50.00"),
+        },
+        {
+            "id_relacion_persona_rol": 2,
+            "id_persona": id_persona_2,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("50.00"),
+        },
+    ]
+
+    result = _service_con_compradores(db_session, compradores).execute(
+        _command(id_venta=id_venta)
+    )
+
+    assert result.success, result.errors
+    assert _count_table_for_venta(
+        db_session, id_venta=id_venta, table_name="obligacion_financiera"
+    ) == len(result.data["obligaciones"])
+    assert len(result.data["obligaciones"]) == 15
+    obligados = _obligados_plan_pago_v2(db_session, id_venta=id_venta)
+    assert len(obligados) == 30
+    assert {row["rol_obligado"] for row in obligados} == {"COMPRADOR"}
+    assert {str(row["porcentaje_responsabilidad"]) for row in obligados} == {
+        "50.00"
+    }
+
+
+def test_servicio_unificado_multi_comprador_idempotente_no_duplica_obligados(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-002")
+    id_persona_1 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_persona_2 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    compradores = [
+        {
+            "id_relacion_persona_rol": 1,
+            "id_persona": id_persona_1,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("60.00"),
+        },
+        {
+            "id_relacion_persona_rol": 2,
+            "id_persona": id_persona_2,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("40.00"),
+        },
+    ]
+    service = _service_con_compradores(db_session, compradores)
+    command = _command(id_venta=id_venta)
+
+    first = service.execute(command)
+    second = service.execute(command)
+
+    assert first.success, first.errors
+    assert second.success, second.errors
+    assert _count_table_for_venta(
+        db_session, id_venta=id_venta, table_name="obligacion_financiera"
+    ) == 15
+    assert _count_obligados_plan_pago_v2(db_session, id_venta=id_venta) == 30
+
+
+def test_servicio_unificado_multi_comprador_duplicado_devuelve_error_controlado(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-003")
+    id_persona = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    compradores = [
+        {
+            "id_relacion_persona_rol": 1,
+            "id_persona": id_persona,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("50.00"),
+        },
+        {
+            "id_relacion_persona_rol": 2,
+            "id_persona": id_persona,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("50.00"),
+        },
+    ]
+
+    result = _service_con_compradores(db_session, compradores).execute(
+        _command(id_venta=id_venta)
+    )
+
+    assert not result.success
+    assert result.errors == ["COMPRADOR_DUPLICADO"]
+    assert _count_table_for_venta(
+        db_session, id_venta=id_venta, table_name="obligacion_financiera"
+    ) == 0
+
+
+def test_servicio_unificado_multi_comprador_porcentajes_no_suman_100(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-004")
+    id_persona_1 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_persona_2 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    compradores = [
+        {
+            "id_relacion_persona_rol": 1,
+            "id_persona": id_persona_1,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("50.00"),
+        },
+        {
+            "id_relacion_persona_rol": 2,
+            "id_persona": id_persona_2,
+            "codigo_rol": "COMPRADOR",
+            "porcentaje_responsabilidad": Decimal("40.00"),
+        },
+    ]
+
+    result = _service_con_compradores(db_session, compradores).execute(
+        _command(id_venta=id_venta)
+    )
+
+    assert not result.success
+    assert result.errors == ["PORCENTAJE_COMPRADORES_NO_SUMA_100"]
+    assert _count_table_for_venta(
+        db_session, id_venta=id_venta, table_name="obligacion_financiera"
+    ) == 0
+
+
+def test_servicio_unificado_multi_comprador_sin_porcentaje_devuelve_error_controlado(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-005")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+
+    result = _service(db_session).execute(_command(id_venta=id_venta))
+
+    assert not result.success
+    assert result.errors == ["PORCENTAJE_COMPRADORES_NO_DEFINIDO"]
+    assert _count_table_for_venta(
+        db_session, id_venta=id_venta, table_name="obligacion_financiera"
+    ) == 0
 
 
 def test_servicio_unificado_payload_distinto_con_plan_vivo_devuelve_conflicto(

@@ -185,6 +185,13 @@ class ObligacionFinancieraIndexacionUpsertPayload:
 
 
 @dataclass(slots=True)
+class ObligadoCronogramaV2CreatePayload:
+    id_persona: int
+    rol_obligado: str
+    porcentaje_responsabilidad: Decimal
+
+
+@dataclass(slots=True)
 class ObligacionCronogramaV2CreatePayload:
     id_relacion_generadora: int
     id_generacion_cronograma_financiero: int
@@ -200,8 +207,8 @@ class ObligacionCronogramaV2CreatePayload:
     estado_obligacion: str
     id_concepto_financiero: int
     codigo_concepto_financiero: str
-    id_persona_obligado: int
-    rol_obligado: str
+    id_persona_obligado: int | None
+    rol_obligado: str | None
     created_at: datetime
     updated_at: datetime
     id_instalacion_origen: int | None
@@ -209,6 +216,7 @@ class ObligacionCronogramaV2CreatePayload:
     op_id_alta: UUID | None
     op_id_ultima_modificacion: UUID | None
     composiciones: list[dict[str, Any]] | None = None
+    obligados: list[ObligadoCronogramaV2CreatePayload | dict[str, Any]] | None = None
 
 
 class PlanPagoVentaV2Repository(Protocol):
