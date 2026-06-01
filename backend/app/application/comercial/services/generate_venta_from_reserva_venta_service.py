@@ -115,6 +115,8 @@ class ComercialRepository(Protocol):
 
     def venta_codigo_exists(self, codigo_venta: str) -> bool: ...
 
+    def get_rol_participacion_codigo(self, id_rol_participacion: int) -> str | None: ...
+
     def get_current_disponibilidad_state(
         self,
         *,
@@ -165,6 +167,15 @@ class GenerateVentaFromReservaVentaService:
             return AppResult.fail("RESERVA_WITHOUT_OBJECTS")
 
         seen_objects: set[tuple[str, int]] = set()
+        roles_por_participacion = self._roles_por_participacion(
+            reserva.get("participaciones", [])
+        )
+        porcentaje_error = self._validate_compradores_porcentaje(
+            reserva.get("participaciones", []), roles_por_participacion
+        )
+        if porcentaje_error is not None:
+            return AppResult.fail(porcentaje_error)
+
         for objeto in objetos:
             id_inmueble = objeto["id_inmueble"]
             id_unidad_funcional = objeto["id_unidad_funcional"]
@@ -266,14 +277,21 @@ class GenerateVentaFromReservaVentaService:
             )
 
         participaciones_payload: list[VentaFromReservaParticipacionCreatePayload] = []
-        for participacion in reserva.get("participaciones", []):
+        for index, participacion in enumerate(reserva.get("participaciones", [])):
             participaciones_payload.append(
                 VentaFromReservaParticipacionCreatePayload(
                     id_persona=participacion["id_persona"],
                     id_rol_participacion=participacion["id_rol_participacion"],
-                    porcentaje_responsabilidad=self._normalize_porcentaje_participacion_reserva(
-                        participacion.get("porcentaje_responsabilidad"),
-                        total_participaciones=len(reserva.get("participaciones", [])),
+                    porcentaje_responsabilidad=(
+                        self._normalize_porcentaje_participacion_reserva(
+                            participacion.get("porcentaje_responsabilidad"),
+                            total_compradores=self._count_compradores(
+                                reserva.get("participaciones", []),
+                                roles_por_participacion,
+                            ),
+                        )
+                        if self._is_comprador(roles_por_participacion.get(index))
+                        else None
                     ),
                     tipo_relacion="venta",
                     id_relacion=0,
@@ -319,15 +337,78 @@ class GenerateVentaFromReservaVentaService:
 
         return AppResult.ok(result["data"])
 
+    def _roles_por_participacion(
+        self, participaciones: list[dict[str, Any]]
+    ) -> dict[int, str | None]:
+        return {
+            index: self.repository.get_rol_participacion_codigo(
+                participacion["id_rol_participacion"]
+            )
+            for index, participacion in enumerate(participaciones)
+        }
+
+    def _validate_compradores_porcentaje(
+        self,
+        participaciones: list[dict[str, Any]],
+        roles_por_participacion: dict[int, str | None],
+    ) -> str | None:
+        compradores = [
+            participacion
+            for index, participacion in enumerate(participaciones)
+            if self._is_comprador(roles_por_participacion.get(index))
+        ]
+        if not compradores:
+            return None
+
+        compradores_por_persona: set[int] = set()
+        porcentajes: list[Decimal] = []
+        for comprador in compradores:
+            id_persona = comprador["id_persona"]
+            if id_persona in compradores_por_persona:
+                return "COMPRADOR_DUPLICADO"
+            compradores_por_persona.add(id_persona)
+
+            porcentaje = self._normalize_porcentaje_participacion_reserva(
+                comprador.get("porcentaje_responsabilidad"),
+                total_compradores=len(compradores),
+            )
+            if porcentaje is None:
+                return "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+            if porcentaje <= Decimal("0.00") or porcentaje > Decimal("100.00"):
+                return "PORCENTAJE_COMPRADOR_INVALIDO"
+            porcentajes.append(porcentaje)
+
+        total = sum(porcentajes, Decimal("0.00")).quantize(Decimal("0.01"))
+        if total != Decimal("100.00"):
+            return "PORCENTAJE_COMPRADORES_NO_SUMA_100"
+        return None
+
     @staticmethod
     def _normalize_porcentaje_participacion_reserva(
-        porcentaje: Decimal | None, *, total_participaciones: int
+        porcentaje: Decimal | None, *, total_compradores: int
     ) -> Decimal | None:
-        if porcentaje is None and total_participaciones == 1:
+        if porcentaje is None and total_compradores == 1:
             return Decimal("100.00")
         if porcentaje is None:
             return None
         return Decimal(str(porcentaje)).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _count_compradores(
+        participaciones: list[dict[str, Any]],
+        roles_por_participacion: dict[int, str | None],
+    ) -> int:
+        return sum(
+            1
+            for index, _participacion in enumerate(participaciones)
+            if GenerateVentaFromReservaVentaService._is_comprador(
+                roles_por_participacion.get(index)
+            )
+        )
+
+    @staticmethod
+    def _is_comprador(codigo_rol: str | None) -> bool:
+        return (codigo_rol or "").strip().upper() == "COMPRADOR"
 
     @staticmethod
     def _is_codigo_venta_duplicate(exc: IntegrityError) -> bool:

@@ -397,6 +397,313 @@ def test_generate_venta_from_reserva_confirmada_crea_venta_finaliza_reserva_y_co
     assert obligaciones["total"] == 0
 
 
+def _crear_base_generar_venta_comprador(
+    client,
+    db_session,
+    *,
+    codigo: str,
+) -> tuple[int, int, int]:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre=f"Comprador {codigo}", apellido="Venta")
+    id_rol = _crear_rol_participacion_activo(
+        db_session,
+        id_rol_participacion=9850,
+        codigo_rol="COMPRADOR",
+    )
+    id_inmueble = _crear_inmueble(client, codigo=f"INM-GEN-PCT-{codigo}")
+    _crear_disponibilidad(
+        client,
+        id_inmueble=id_inmueble,
+        estado_disponibilidad="RESERVADA",
+    )
+    return id_persona, id_rol, id_inmueble
+
+
+def _post_generar_venta_porcentaje(
+    client, reserva: dict[str, int], *, codigo_venta: str
+):
+    return client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/generar-venta",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=_payload_generar_venta(codigo_venta=codigo_venta),
+    )
+
+
+def _assert_error_controlado_generate(response, expected_error: str) -> None:
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert body["details"]["errors"] == [expected_error]
+
+
+def _assert_venta_no_creada(db_session, codigo_venta: str) -> None:
+    total = db_session.execute(
+        text("""
+            SELECT COUNT(*)
+            FROM venta
+            WHERE codigo_venta = :codigo_venta
+            """),
+        {"codigo_venta": codigo_venta},
+    ).scalar_one()
+    assert total == 0
+
+
+def _porcentajes_compradores_venta(db_session, codigo_venta: str) -> list[Decimal]:
+    rows = (
+        db_session.execute(
+            text("""
+            SELECT rpr.porcentaje_responsabilidad
+            FROM venta v
+            JOIN relacion_persona_rol rpr
+              ON rpr.tipo_relacion = 'venta'
+             AND rpr.id_relacion = v.id_venta
+             AND rpr.deleted_at IS NULL
+            WHERE v.codigo_venta = :codigo_venta
+              AND v.deleted_at IS NULL
+            ORDER BY rpr.id_persona
+            """),
+            {"codigo_venta": codigo_venta},
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
+
+
+def _reserva_confirmada_con_compradores(
+    db_session,
+    *,
+    codigo_reserva: str,
+    id_inmueble: int,
+    participaciones: list[dict[str, object]],
+) -> dict[str, int]:
+    return _insertar_reserva_para_generar_venta(
+        db_session,
+        codigo_reserva=codigo_reserva,
+        estado_reserva="confirmada",
+        objetos=[
+            {
+                "id_inmueble": id_inmueble,
+                "id_unidad_funcional": None,
+                "observaciones": "Objeto reservado con compradores",
+            }
+        ],
+        participaciones=participaciones,
+    )
+
+
+def test_generate_venta_from_reserva_comprador_unico_sin_porcentaje_default_100(
+    client, db_session
+) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_generar_venta_comprador(
+        client, db_session, codigo="UNO-SIN"
+    )
+    reserva = _reserva_confirmada_con_compradores(
+        db_session,
+        codigo_reserva="RV-GEN-PCT-UNO-SIN",
+        id_inmueble=id_inmueble,
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": id_rol,
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador unico sin porcentaje",
+            }
+        ],
+    )
+
+    response = _post_generar_venta_porcentaje(
+        client, reserva, codigo_venta="V-GEN-PCT-UNO-SIN"
+    )
+
+    assert response.status_code == 201, response.text
+    assert _porcentajes_compradores_venta(db_session, "V-GEN-PCT-UNO-SIN") == [
+        Decimal("100.00")
+    ]
+
+
+def test_generate_venta_from_reserva_comprador_unico_porcentaje_100_funciona(
+    client, db_session
+) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_generar_venta_comprador(
+        client, db_session, codigo="UNO-100"
+    )
+    reserva = _reserva_confirmada_con_compradores(
+        db_session,
+        codigo_reserva="RV-GEN-PCT-UNO-100",
+        id_inmueble=id_inmueble,
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("100.00"),
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador unico 100",
+            }
+        ],
+    )
+
+    response = _post_generar_venta_porcentaje(
+        client, reserva, codigo_venta="V-GEN-PCT-UNO-100"
+    )
+
+    assert response.status_code == 201, response.text
+    assert _porcentajes_compradores_venta(db_session, "V-GEN-PCT-UNO-100") == [
+        Decimal("100.00")
+    ]
+
+
+def test_generate_venta_from_reserva_comprador_unico_porcentaje_50_falla(
+    client, db_session
+) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_generar_venta_comprador(
+        client, db_session, codigo="UNO-50"
+    )
+    reserva = _reserva_confirmada_con_compradores(
+        db_session,
+        codigo_reserva="RV-GEN-PCT-UNO-50",
+        id_inmueble=id_inmueble,
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("50.00"),
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador unico 50",
+            }
+        ],
+    )
+
+    response = _post_generar_venta_porcentaje(
+        client, reserva, codigo_venta="V-GEN-PCT-UNO-50"
+    )
+
+    _assert_error_controlado_generate(response, "PORCENTAJE_COMPRADORES_NO_SUMA_100")
+    _assert_venta_no_creada(db_session, "V-GEN-PCT-UNO-50")
+
+
+def test_generate_venta_from_reserva_dos_compradores_50_50_copia_porcentajes(
+    client, db_session
+) -> None:
+    id_persona_1, id_rol, id_inmueble = _crear_base_generar_venta_comprador(
+        client, db_session, codigo="DOS-50"
+    )
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Venta")
+    reserva = _reserva_confirmada_con_compradores(
+        db_session,
+        codigo_reserva="RV-GEN-PCT-DOS-50",
+        id_inmueble=id_inmueble,
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("50.00"),
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador 1",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("50.00"),
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador 2",
+            },
+        ],
+    )
+
+    response = _post_generar_venta_porcentaje(
+        client, reserva, codigo_venta="V-GEN-PCT-DOS-50"
+    )
+
+    assert response.status_code == 201, response.text
+    assert _porcentajes_compradores_venta(db_session, "V-GEN-PCT-DOS-50") == [
+        Decimal("50.00"),
+        Decimal("50.00"),
+    ]
+
+
+def test_generate_venta_from_reserva_dos_compradores_60_60_falla(
+    client, db_session
+) -> None:
+    id_persona_1, id_rol, id_inmueble = _crear_base_generar_venta_comprador(
+        client, db_session, codigo="DOS-60"
+    )
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Venta")
+    reserva = _reserva_confirmada_con_compradores(
+        db_session,
+        codigo_reserva="RV-GEN-PCT-DOS-60",
+        id_inmueble=id_inmueble,
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("60.00"),
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador 1",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("60.00"),
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador 2",
+            },
+        ],
+    )
+
+    response = _post_generar_venta_porcentaje(
+        client, reserva, codigo_venta="V-GEN-PCT-DOS-60"
+    )
+
+    _assert_error_controlado_generate(response, "PORCENTAJE_COMPRADORES_NO_SUMA_100")
+    _assert_venta_no_creada(db_session, "V-GEN-PCT-DOS-60")
+
+
+def test_generate_venta_from_reserva_dos_compradores_uno_sin_porcentaje_falla(
+    client, db_session
+) -> None:
+    id_persona_1, id_rol, id_inmueble = _crear_base_generar_venta_comprador(
+        client, db_session, codigo="DOS-FALTA"
+    )
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Venta")
+    reserva = _reserva_confirmada_con_compradores(
+        db_session,
+        codigo_reserva="RV-GEN-PCT-DOS-FALTA",
+        id_inmueble=id_inmueble,
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("50.00"),
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador 1",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador 2 sin porcentaje",
+            },
+        ],
+    )
+
+    response = _post_generar_venta_porcentaje(
+        client, reserva, codigo_venta="V-GEN-PCT-DOS-FALTA"
+    )
+
+    _assert_error_controlado_generate(response, "PORCENTAJE_COMPRADORES_NO_DEFINIDO")
+    _assert_venta_no_creada(db_session, "V-GEN-PCT-DOS-FALTA")
+
+
 def test_generate_venta_from_reserva_devuelve_404_si_no_existe(
     client, db_session
 ) -> None:
@@ -743,12 +1050,122 @@ class _FakeGenerateVentaRepository:
     def get_current_disponibilidad_state(self, **kwargs) -> str | None:
         return "RESERVADA"
 
+    def get_rol_participacion_codigo(self, id_rol_participacion: int) -> str | None:
+        return "COMPRADOR"
+
     def generate_venta_from_reserva(
         self, payload, objetos, participaciones, reserva_payload
     ):
         raise AssertionError(
             "No debe intentar persistir si los objetos de la reserva son inconsistentes."
         )
+
+
+class _FakeGenerateVentaRepositorySplitInvalido(_FakeGenerateVentaRepository):
+    def __init__(self, participaciones: list[dict[str, object]]) -> None:
+        self._participaciones = participaciones
+
+    def get_reserva_venta(self, id_reserva_venta: int) -> dict[str, object] | None:
+        reserva = super().get_reserva_venta(id_reserva_venta)
+        assert reserva is not None
+        reserva["objetos"] = [
+            {
+                "id_reserva_venta_objeto": 1,
+                "id_inmueble": 1,
+                "id_unidad_funcional": None,
+                "observaciones": None,
+            }
+        ]
+        reserva["participaciones"] = self._participaciones
+        return reserva
+
+
+def _command_fake_split_invalido() -> GenerateVentaFromReservaVentaCommand:
+    return GenerateVentaFromReservaVentaCommand(
+        context=CommandContext(actor_id="1", metadata={}),
+        id_reserva_venta=1,
+        if_match_version=1,
+        codigo_venta="V-FAKE-SPLIT",
+        fecha_venta=datetime(2026, 4, 22, 11, 0, 0, tzinfo=UTC),
+        monto_total=None,
+        observaciones=None,
+    )
+
+
+def test_generate_venta_from_reserva_service_porcentaje_cero_falla_controlado() -> None:
+    service = GenerateVentaFromReservaVentaService(
+        _FakeGenerateVentaRepositorySplitInvalido(
+            [
+                {
+                    "id_persona": 1,
+                    "id_rol_participacion": 1,
+                    "porcentaje_responsabilidad": Decimal("0.00"),
+                    "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                    "fecha_hasta": None,
+                    "observaciones": None,
+                }
+            ]
+        )
+    )
+
+    result = service.execute(_command_fake_split_invalido())
+
+    assert result.success is False
+    assert result.errors == ["PORCENTAJE_COMPRADOR_INVALIDO"]
+
+
+def test_generate_venta_from_reserva_service_porcentaje_101_falla_controlado() -> None:
+    service = GenerateVentaFromReservaVentaService(
+        _FakeGenerateVentaRepositorySplitInvalido(
+            [
+                {
+                    "id_persona": 1,
+                    "id_rol_participacion": 1,
+                    "porcentaje_responsabilidad": Decimal("101.00"),
+                    "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                    "fecha_hasta": None,
+                    "observaciones": None,
+                }
+            ]
+        )
+    )
+
+    result = service.execute(_command_fake_split_invalido())
+
+    assert result.success is False
+    assert result.errors == ["PORCENTAJE_COMPRADOR_INVALIDO"]
+
+
+def test_generate_venta_from_reserva_service_comprador_duplicado_falla_controlado() -> (
+    None
+):
+    service = GenerateVentaFromReservaVentaService(
+        _FakeGenerateVentaRepositorySplitInvalido(
+            [
+                {
+                    "id_persona": 1,
+                    "id_rol_participacion": 1,
+                    "porcentaje_responsabilidad": Decimal("50.00"),
+                    "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                    "fecha_hasta": None,
+                    "observaciones": None,
+                },
+                {
+                    "id_persona": 1,
+                    "id_rol_participacion": 1,
+                    "porcentaje_responsabilidad": Decimal("50.00"),
+                    "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                    "fecha_hasta": None,
+                    "observaciones": None,
+                },
+            ]
+        )
+    )
+
+    result = service.execute(_command_fake_split_invalido())
+
+    assert result.success is False
+    assert result.errors == ["COMPRADOR_DUPLICADO"]
 
 
 def test_generate_venta_from_reserva_service_devuelve_error_si_objetos_son_inconsistentes() -> (
