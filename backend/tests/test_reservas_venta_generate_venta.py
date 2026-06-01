@@ -29,9 +29,9 @@ def _insertar_reserva_para_generar_venta(
     objetos: list[dict[str, int | None]],
     participaciones: list[dict[str, object]] | None = None,
 ) -> dict[str, int]:
-    reserva = db_session.execute(
-        text(
-            """
+    reserva = (
+        db_session.execute(
+            text("""
             INSERT INTO reserva_venta (
                 uid_global,
                 version_registro,
@@ -63,19 +63,20 @@ def _insertar_reserva_para_generar_venta(
                 'Reserva para generar venta'
             )
             RETURNING id_reserva_venta, version_registro
-            """
-        ),
-        {
-            "op_id": HEADERS["X-Op-Id"],
-            "codigo_reserva": codigo_reserva,
-            "estado_reserva": estado_reserva,
-        },
-    ).mappings().one()
+            """),
+            {
+                "op_id": HEADERS["X-Op-Id"],
+                "codigo_reserva": codigo_reserva,
+                "estado_reserva": estado_reserva,
+            },
+        )
+        .mappings()
+        .one()
+    )
 
     for objeto in objetos:
         db_session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO reserva_venta_objeto_inmobiliario (
                     uid_global,
                     version_registro,
@@ -104,8 +105,7 @@ def _insertar_reserva_para_generar_venta(
                     :id_unidad_funcional,
                     :observaciones
                 )
-                """
-            ),
+                """),
             {
                 "op_id": HEADERS["X-Op-Id"],
                 "id_reserva_venta": reserva["id_reserva_venta"],
@@ -117,8 +117,7 @@ def _insertar_reserva_para_generar_venta(
 
     for participacion in participaciones or []:
         db_session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO relacion_persona_rol (
                     uid_global,
                     version_registro,
@@ -132,6 +131,7 @@ def _insertar_reserva_para_generar_venta(
                     id_rol_participacion,
                     tipo_relacion,
                     id_relacion,
+                    porcentaje_responsabilidad,
                     fecha_desde,
                     fecha_hasta,
                     observaciones
@@ -149,17 +149,20 @@ def _insertar_reserva_para_generar_venta(
                     :id_rol_participacion,
                     'reserva_venta',
                     :id_relacion,
+                    :porcentaje_responsabilidad,
                     :fecha_desde,
                     :fecha_hasta,
                     :observaciones
                 )
-                """
-            ),
+                """),
             {
                 "op_id": HEADERS["X-Op-Id"],
                 "id_persona": participacion["id_persona"],
                 "id_rol_participacion": participacion["id_rol_participacion"],
                 "id_relacion": reserva["id_reserva_venta"],
+                "porcentaje_responsabilidad": participacion.get(
+                    "porcentaje_responsabilidad"
+                ),
                 "fecha_desde": participacion["fecha_desde"],
                 "fecha_hasta": participacion.get("fecha_hasta"),
                 "observaciones": participacion.get("observaciones"),
@@ -173,9 +176,7 @@ def _insertar_reserva_para_generar_venta(
 
 
 def _crear_trigger_falla_venta_objeto(db_session, *, id_inmueble: int) -> None:
-    db_session.execute(
-        text(
-            """
+    db_session.execute(text("""
             CREATE OR REPLACE FUNCTION trg_test_fail_venta_objeto()
             RETURNS trigger
             LANGUAGE plpgsql
@@ -187,24 +188,18 @@ def _crear_trigger_falla_venta_objeto(db_session, *, id_inmueble: int) -> None:
                 RETURN NEW;
             END;
             $$;
-            """
-        ).bindparams(id_inmueble_fail=id_inmueble)
-    )
+            """).bindparams(id_inmueble_fail=id_inmueble))
     db_session.execute(
         text(
             "DROP TRIGGER IF EXISTS trg_test_fail_venta_objeto ON venta_objeto_inmobiliario"
         )
     )
-    db_session.execute(
-        text(
-            """
+    db_session.execute(text("""
             CREATE TRIGGER trg_test_fail_venta_objeto
             BEFORE INSERT ON venta_objeto_inmobiliario
             FOR EACH ROW
             EXECUTE FUNCTION trg_test_fail_venta_objeto()
-            """
-        )
-    )
+            """))
 
 
 def _payload_generar_venta(*, codigo_venta: str) -> dict[str, object]:
@@ -267,22 +262,24 @@ def test_generate_venta_from_reserva_confirmada_crea_venta_finaliza_reserva_y_co
     assert body["data"]["objetos"][0]["id_inmueble"] == id_inmueble
     assert body["data"]["objetos"][0]["precio_asignado"] is None
 
-    reserva_row = db_session.execute(
-        text(
-            """
+    reserva_row = (
+        db_session.execute(
+            text("""
             SELECT estado_reserva, version_registro
             FROM reserva_venta
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
-        {"id_reserva_venta": reserva["id_reserva_venta"]},
-    ).mappings().one()
+            """),
+            {"id_reserva_venta": reserva["id_reserva_venta"]},
+        )
+        .mappings()
+        .one()
+    )
     assert reserva_row["estado_reserva"] == "finalizada"
     assert reserva_row["version_registro"] == 2
 
-    venta_row = db_session.execute(
-        text(
-            """
+    venta_row = (
+        db_session.execute(
+            text("""
             SELECT
                 id_venta,
                 id_reserva_venta,
@@ -293,19 +290,21 @@ def test_generate_venta_from_reserva_confirmada_crea_venta_finaliza_reserva_y_co
                 deleted_at
             FROM venta
             WHERE codigo_venta = :codigo_venta
-            """
-        ),
-        {"codigo_venta": "V-GEN-001"},
-    ).mappings().one()
+            """),
+            {"codigo_venta": "V-GEN-001"},
+        )
+        .mappings()
+        .one()
+    )
     assert venta_row["id_reserva_venta"] == reserva["id_reserva_venta"]
     assert venta_row["estado_venta"] == "borrador"
     assert venta_row["monto_total"] == Decimal("150000.00")
     assert venta_row["observaciones"] == "Venta generada desde reserva"
     assert venta_row["deleted_at"] is None
 
-    venta_objeto_row = db_session.execute(
-        text(
-            """
+    venta_objeto_row = (
+        db_session.execute(
+            text("""
             SELECT
                 id_venta,
                 id_inmueble,
@@ -314,85 +313,93 @@ def test_generate_venta_from_reserva_confirmada_crea_venta_finaliza_reserva_y_co
                 observaciones
             FROM venta_objeto_inmobiliario
             WHERE id_venta = :id_venta
-            """
-        ),
-        {"id_venta": venta_row["id_venta"]},
-    ).mappings().one()
+            """),
+            {"id_venta": venta_row["id_venta"]},
+        )
+        .mappings()
+        .one()
+    )
     assert venta_objeto_row["id_inmueble"] == id_inmueble
     assert venta_objeto_row["id_unidad_funcional"] is None
     assert venta_objeto_row["precio_asignado"] is None
     assert venta_objeto_row["observaciones"] == "Objeto reservado"
 
-    disponibilidades = db_session.execute(
-        text(
-            """
+    disponibilidades = (
+        db_session.execute(
+            text("""
             SELECT estado_disponibilidad, fecha_hasta
             FROM disponibilidad
             WHERE id_inmueble = :id_inmueble
               AND deleted_at IS NULL
             ORDER BY id_disponibilidad
-            """
-        ),
-        {"id_inmueble": id_inmueble},
-    ).mappings().all()
+            """),
+            {"id_inmueble": id_inmueble},
+        )
+        .mappings()
+        .all()
+    )
     assert len(disponibilidades) == 1
     assert disponibilidades[0]["estado_disponibilidad"] == "RESERVADA"
     assert disponibilidades[0]["fecha_hasta"] is None
 
-    relacion_venta = db_session.execute(
-        text(
-            """
+    relacion_venta = (
+        db_session.execute(
+            text("""
             SELECT id_persona, id_rol_participacion, tipo_relacion, id_relacion
             FROM relacion_persona_rol
             WHERE tipo_relacion = 'venta'
               AND id_relacion = :id_venta
               AND deleted_at IS NULL
-            """
-        ),
-        {"id_venta": venta_row["id_venta"]},
-    ).mappings().one()
+            """),
+            {"id_venta": venta_row["id_venta"]},
+        )
+        .mappings()
+        .one()
+    )
     assert relacion_venta["id_persona"] == id_persona
     assert relacion_venta["id_rol_participacion"] == 9201
     assert relacion_venta["tipo_relacion"] == "venta"
 
-    ocupaciones = db_session.execute(
-        text(
-            """
+    ocupaciones = (
+        db_session.execute(
+            text("""
             SELECT COUNT(*) AS total
             FROM ocupacion
             WHERE id_inmueble = :id_inmueble
               AND deleted_at IS NULL
-            """
-        ),
-        {"id_inmueble": id_inmueble},
-    ).mappings().one()
+            """),
+            {"id_inmueble": id_inmueble},
+        )
+        .mappings()
+        .one()
+    )
     assert ocupaciones["total"] == 0
 
-    relacion_generadora = db_session.execute(
-        text(
-            """
+    relacion_generadora = (
+        db_session.execute(
+            text("""
             SELECT COUNT(*) AS total
             FROM relacion_generadora
             WHERE tipo_origen = 'venta'
               AND id_origen = :id_venta
-            """
-        ),
-        {"id_venta": venta_row["id_venta"]},
-    ).mappings().one()
+            """),
+            {"id_venta": venta_row["id_venta"]},
+        )
+        .mappings()
+        .one()
+    )
     assert relacion_generadora["total"] == 0
 
-    obligaciones = db_session.execute(
-        text(
-            """
+    obligaciones = db_session.execute(text("""
             SELECT COUNT(*) AS total
             FROM obligacion_financiera
-            """
-        )
-    ).mappings().one()
+            """)).mappings().one()
     assert obligaciones["total"] == 0
 
 
-def test_generate_venta_from_reserva_devuelve_404_si_no_existe(client, db_session) -> None:
+def test_generate_venta_from_reserva_devuelve_404_si_no_existe(
+    client, db_session
+) -> None:
     _apply_reserva_multiobjeto_patch(db_session)
 
     response = client.post(
@@ -422,13 +429,11 @@ def test_generate_venta_from_reserva_devuelve_404_si_esta_eliminada(
         objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None}],
     )
     db_session.execute(
-        text(
-            """
+        text("""
             UPDATE reserva_venta
             SET deleted_at = CURRENT_TIMESTAMP
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
+            """),
         {"id_reserva_venta": reserva["id_reserva_venta"]},
     )
 
@@ -498,30 +503,34 @@ def test_generate_venta_from_reserva_devuelve_error_de_concurrencia_si_version_n
     assert response.status_code == 409
     assert response.json()["error_code"] == "CONCURRENCY_ERROR"
 
-    reserva_row = db_session.execute(
-        text(
-            """
+    reserva_row = (
+        db_session.execute(
+            text("""
             SELECT estado_reserva, version_registro
             FROM reserva_venta
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
-        {"id_reserva_venta": reserva["id_reserva_venta"]},
-    ).mappings().one()
+            """),
+            {"id_reserva_venta": reserva["id_reserva_venta"]},
+        )
+        .mappings()
+        .one()
+    )
     assert reserva_row["estado_reserva"] == "confirmada"
     assert reserva_row["version_registro"] == reserva["version_registro"]
 
-    ventas = db_session.execute(
-        text(
-            """
+    ventas = (
+        db_session.execute(
+            text("""
             SELECT COUNT(*) AS total
             FROM venta
             WHERE id_reserva_venta = :id_reserva_venta
               AND deleted_at IS NULL
-            """
-        ),
-        {"id_reserva_venta": reserva["id_reserva_venta"]},
-    ).mappings().one()
+            """),
+            {"id_reserva_venta": reserva["id_reserva_venta"]},
+        )
+        .mappings()
+        .one()
+    )
     assert ventas["total"] == 0
 
 
@@ -550,13 +559,11 @@ def test_generate_venta_from_reserva_devuelve_error_si_ya_fue_convertida(
     assert first_response.status_code == 201
 
     version_actual = db_session.execute(
-        text(
-            """
+        text("""
             SELECT version_registro
             FROM reserva_venta
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
+            """),
         {"id_reserva_venta": reserva["id_reserva_venta"]},
     ).scalar_one()
 
@@ -567,7 +574,10 @@ def test_generate_venta_from_reserva_devuelve_error_si_ya_fue_convertida(
     )
 
     assert second_response.status_code == 400
-    assert second_response.json()["error_message"] == "La reserva ya fue convertida en una venta."
+    assert (
+        second_response.json()["error_message"]
+        == "La reserva ya fue convertida en una venta."
+    )
 
 
 def test_generate_venta_from_reserva_devuelve_error_si_hay_conflicto_con_venta_activa(
@@ -653,49 +663,39 @@ def test_generate_venta_from_reserva_hace_rollback_completo_si_falla_un_objeto(
     assert response.status_code == 500
     assert response.json()["error_code"] == "INTERNAL_ERROR"
 
-    reserva_row = db_session.execute(
-        text(
-            """
+    reserva_row = (
+        db_session.execute(
+            text("""
             SELECT estado_reserva, version_registro
             FROM reserva_venta
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        ),
-        {"id_reserva_venta": reserva["id_reserva_venta"]},
-    ).mappings().one()
+            """),
+            {"id_reserva_venta": reserva["id_reserva_venta"]},
+        )
+        .mappings()
+        .one()
+    )
     assert reserva_row["estado_reserva"] == "confirmada"
     assert reserva_row["version_registro"] == 1
 
-    ventas = db_session.execute(
-        text(
-            """
+    ventas = db_session.execute(text("""
             SELECT COUNT(*) AS total
             FROM venta
             WHERE codigo_venta = 'V-GEN-006'
-            """
-        )
-    ).mappings().one()
+            """)).mappings().one()
     assert ventas["total"] == 0
 
-    venta_objetos = db_session.execute(
-        text(
-            """
+    venta_objetos = db_session.execute(text("""
             SELECT COUNT(*) AS total
             FROM venta_objeto_inmobiliario
-            """
-        )
-    ).mappings().one()
+            """)).mappings().one()
     assert venta_objetos["total"] == 0
 
-    participaciones_venta = db_session.execute(
-        text(
-            """
+    participaciones_venta = db_session.execute(text("""
             SELECT COUNT(*) AS total
             FROM relacion_persona_rol
             WHERE tipo_relacion = 'venta'
-            """
-        )
-    ).mappings().one()
+            """)).mappings().one()
     assert participaciones_venta["total"] == 0
 
 
@@ -743,11 +743,17 @@ class _FakeGenerateVentaRepository:
     def get_current_disponibilidad_state(self, **kwargs) -> str | None:
         return "RESERVADA"
 
-    def generate_venta_from_reserva(self, payload, objetos, participaciones, reserva_payload):
-        raise AssertionError("No debe intentar persistir si los objetos de la reserva son inconsistentes.")
+    def generate_venta_from_reserva(
+        self, payload, objetos, participaciones, reserva_payload
+    ):
+        raise AssertionError(
+            "No debe intentar persistir si los objetos de la reserva son inconsistentes."
+        )
 
 
-def test_generate_venta_from_reserva_service_devuelve_error_si_objetos_son_inconsistentes() -> None:
+def test_generate_venta_from_reserva_service_devuelve_error_si_objetos_son_inconsistentes() -> (
+    None
+):
     service = GenerateVentaFromReservaVentaService(_FakeGenerateVentaRepository())
     command = GenerateVentaFromReservaVentaCommand(
         context=CommandContext(actor_id="1", metadata={}),
@@ -764,10 +770,17 @@ def test_generate_venta_from_reserva_service_devuelve_error_si_objetos_son_incon
     assert result.success is False
     assert result.errors == ["INVALID_RESERVA_OBJECTS"]
 
-def test_generate_venta_from_reserva_devuelve_400_validation_error_si_falta_x_op_id(client) -> None:
+
+def test_generate_venta_from_reserva_devuelve_400_validation_error_si_falta_x_op_id(
+    client,
+) -> None:
     response = client.post(
         "/api/v1/reservas-venta/1/generar-venta",
-        headers={k: v for k, v in {**HEADERS, "If-Match-Version": "1"}.items() if k != "X-Op-Id"},
+        headers={
+            k: v
+            for k, v in {**HEADERS, "If-Match-Version": "1"}.items()
+            if k != "X-Op-Id"
+        },
         json=_payload_generar_venta(codigo_venta="V-GEN-HDR-001"),
     )
 
@@ -776,7 +789,9 @@ def test_generate_venta_from_reserva_devuelve_400_validation_error_si_falta_x_op
     assert response.json()["details"] == {"header": "X-Op-Id"}
 
 
-def test_generate_venta_from_reserva_devuelve_400_validation_error_si_if_match_version_es_invalido(client) -> None:
+def test_generate_venta_from_reserva_devuelve_400_validation_error_si_if_match_version_es_invalido(
+    client,
+) -> None:
     response = client.post(
         "/api/v1/reservas-venta/1/generar-venta",
         headers={**HEADERS, "If-Match-Version": "abc"},

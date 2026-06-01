@@ -222,9 +222,7 @@ class PlanPagoVentaV2Repository:
                     "politica_valor_no_disponible": data.pop(
                         "politica_valor_no_disponible"
                     ),
-                    "conserva_capital_original": data.pop(
-                        "conserva_capital_original"
-                    ),
+                    "conserva_capital_original": data.pop("conserva_capital_original"),
                     "genera_ajuste_por_diferencia": data.pop(
                         "genera_ajuste_por_diferencia"
                     ),
@@ -367,9 +365,7 @@ class PlanPagoVentaV2Repository:
         )
         return [dict(row) for row in rows]
 
-    def get_resumen_plan_pago_venta_v2(
-        self, id_plan_pago_venta: int
-    ) -> dict[str, Any]:
+    def get_resumen_plan_pago_venta_v2(self, id_plan_pago_venta: int) -> dict[str, Any]:
         stmt = text("""
             WITH obligaciones AS (
                 SELECT o.id_obligacion_financiera, o.importe_total, b.metodo_liquidacion
@@ -1054,11 +1050,7 @@ class PlanPagoVentaV2Repository:
                 rpr.id_relacion_persona_rol,
                 rpr.id_persona,
                 rp.codigo_rol,
-                -- Preparatory Plan Pago V2 support: relacion_persona_rol does not
-                -- persist financial responsibility percentages yet. Multi-buyer
-                -- sales therefore remain blocked by PORCENTAJE_COMPRADORES_NO_DEFINIDO
-                -- until a real persisted source is added and read here.
-                NULL::numeric AS porcentaje_responsabilidad
+                rpr.porcentaje_responsabilidad
             FROM relacion_persona_rol rpr
             JOIN rol_participacion rp
               ON rp.id_rol_participacion = rpr.id_rol_participacion
@@ -1639,9 +1631,7 @@ class PlanPagoVentaV2Repository:
             id_persona=id_persona,
             rol_obligado=rol_obligado,
         )
-        porcentaje = Decimal(str(porcentaje_responsabilidad)).quantize(
-            Decimal("0.01")
-        )
+        porcentaje = Decimal(str(porcentaje_responsabilidad)).quantize(Decimal("0.01"))
         if existing is not None:
             existing_porcentaje = Decimal(
                 str(existing["porcentaje_responsabilidad"])
@@ -1686,16 +1676,20 @@ class PlanPagoVentaV2Repository:
                 rol_obligado,
                 porcentaje_responsabilidad
             """)
-        row = self.db.execute(
-            stmt,
-            {
-                **values,
-                "id_obligacion_financiera": id_obligacion_financiera,
-                "id_persona": id_persona,
-                "rol_obligado": rol_obligado,
-                "porcentaje_responsabilidad": porcentaje,
-            },
-        ).mappings().one()
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    **values,
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "id_persona": id_persona,
+                    "rol_obligado": rol_obligado,
+                    "porcentaje_responsabilidad": porcentaje,
+                },
+            )
+            .mappings()
+            .one()
+        )
         return dict(row)
 
     def _validate_obligados_compatibles(
@@ -1714,17 +1708,19 @@ class PlanPagoVentaV2Repository:
               AND rol_obligado = ANY(:roles)
               AND deleted_at IS NULL
             """)
-        rows = self.db.execute(
-            stmt,
-            {
-                "id_obligacion_financiera": id_obligacion_financiera,
-                "roles": list(roles),
-            },
-        ).mappings().all()
+        rows = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "roles": list(roles),
+                },
+            )
+            .mappings()
+            .all()
+        )
         found = [(row["id_persona"], row["rol_obligado"]) for row in rows]
-        if len(found) != len(set(found)) or any(
-            row not in expected for row in found
-        ):
+        if len(found) != len(set(found)) or any(row not in expected for row in found):
             raise ValueError("OBLIGACION_OBLIGADO_INCOMPATIBLE")
 
     def _get_obligado(
@@ -1745,14 +1741,18 @@ class PlanPagoVentaV2Repository:
             ORDER BY id_obligacion_obligado ASC
             LIMIT 1
             """)
-        row = self.db.execute(
-            stmt,
-            {
-                "id_obligacion_financiera": id_obligacion_financiera,
-                "id_persona": id_persona,
-                "rol_obligado": rol_obligado,
-            },
-        ).mappings().one_or_none()
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "id_persona": id_persona,
+                    "rol_obligado": rol_obligado,
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
         return dict(row) if row else None
 
     def _create_obligado(

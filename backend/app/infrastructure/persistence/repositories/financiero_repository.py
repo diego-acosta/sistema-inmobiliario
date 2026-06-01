@@ -59,7 +59,9 @@ def _append_motivo_anulacion(observaciones: str | None, motivo: str) -> str:
     if observaciones:
         try:
             parsed = json.loads(observaciones)
-            payload = parsed if isinstance(parsed, dict) else {"observaciones": observaciones}
+            payload = (
+                parsed if isinstance(parsed, dict) else {"observaciones": observaciones}
+            )
         except (TypeError, ValueError):
             payload = {"observaciones": observaciones}
     else:
@@ -81,31 +83,39 @@ class FinancieroRepository:
         stmt = text(
             "SELECT 1 FROM persona WHERE id_persona = :id AND deleted_at IS NULL"
         )
-        return self.db.execute(stmt, {"id": id_persona}).scalar_one_or_none() is not None
+        return (
+            self.db.execute(stmt, {"id": id_persona}).scalar_one_or_none() is not None
+        )
 
     def venta_exists(self, id_venta: int) -> bool:
-        stmt = text(
-            "SELECT 1 FROM venta WHERE id_venta = :id AND deleted_at IS NULL"
-        )
+        stmt = text("SELECT 1 FROM venta WHERE id_venta = :id AND deleted_at IS NULL")
         return self.db.execute(stmt, {"id": id_venta}).scalar_one_or_none() is not None
 
     def contrato_alquiler_exists(self, id_contrato_alquiler: int) -> bool:
         stmt = text(
             "SELECT 1 FROM contrato_alquiler WHERE id_contrato_alquiler = :id AND deleted_at IS NULL"
         )
-        return self.db.execute(stmt, {"id": id_contrato_alquiler}).scalar_one_or_none() is not None
+        return (
+            self.db.execute(stmt, {"id": id_contrato_alquiler}).scalar_one_or_none()
+            is not None
+        )
 
     def factura_servicio_exists(self, id_factura_servicio: int) -> bool:
         stmt = text(
             "SELECT 1 FROM factura_servicio WHERE id_factura_servicio = :id AND deleted_at IS NULL"
         )
-        return self.db.execute(stmt, {"id": id_factura_servicio}).scalar_one_or_none() is not None
+        return (
+            self.db.execute(stmt, {"id": id_factura_servicio}).scalar_one_or_none()
+            is not None
+        )
 
     def inmueble_exists(self, id_inmueble: int) -> bool:
         stmt = text(
             "SELECT 1 FROM inmueble WHERE id_inmueble = :id AND deleted_at IS NULL"
         )
-        return self.db.execute(stmt, {"id": id_inmueble}).scalar_one_or_none() is not None
+        return (
+            self.db.execute(stmt, {"id": id_inmueble}).scalar_one_or_none() is not None
+        )
 
     def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool:
         stmt = text(
@@ -119,15 +129,13 @@ class FinancieroRepository:
     def comprobante_impuesto_activo_exists(
         self, organismo: str, numero_comprobante: str
     ) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT 1
             FROM comprobante_impuesto
             WHERE organismo = :organismo
               AND numero_comprobante = :numero_comprobante
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(
                 stmt,
@@ -177,8 +185,7 @@ class FinancieroRepository:
         else:
             values = vars(payload)
 
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO comprobante_impuesto (
                 uid_global,
                 version_registro,
@@ -243,8 +250,7 @@ class FinancieroRepository:
                 modalidad_gestion_impuesto,
                 estado_comprobante_impuesto,
                 observaciones
-            """
-        )
+            """)
         try:
             row = self.db.execute(stmt, values).mappings().one()
             self.db.commit()
@@ -256,8 +262,7 @@ class FinancieroRepository:
     def get_comprobante_impuesto(
         self, id_comprobante_impuesto: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_comprobante_impuesto,
                 uid_global,
@@ -279,16 +284,18 @@ class FinancieroRepository:
             FROM comprobante_impuesto
             WHERE id_comprobante_impuesto = :id
               AND deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_comprobante_impuesto})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_comprobante_impuesto}).mappings().one_or_none()
         if row is None:
             return None
         return self._comprobante_impuesto_row_to_dict(row)
 
     def list_comprobantes_impuesto(self) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_comprobante_impuesto,
                 uid_global,
@@ -310,20 +317,17 @@ class FinancieroRepository:
             FROM comprobante_impuesto
             WHERE deleted_at IS NULL
             ORDER BY id_comprobante_impuesto
-            """
-        )
+            """)
         rows = self.db.execute(stmt).mappings().all()
         return [self._comprobante_impuesto_row_to_dict(row) for row in rows]
 
     def liquidacion_recupero_exists(self, id_liquidacion_recupero: int) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT 1
             FROM liquidacion_recupero
             WHERE id_liquidacion_recupero = :id
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(stmt, {"id": id_liquidacion_recupero}).scalar_one_or_none()
             is not None
@@ -332,14 +336,12 @@ class FinancieroRepository:
     def liquidacion_impuesto_trasladado_exists(
         self, id_liquidacion_impuesto_trasladado: int
     ) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT 1
             FROM liquidacion_impuesto_trasladado
             WHERE id_liquidacion_impuesto_trasladado = :id
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(
                 stmt, {"id": id_liquidacion_impuesto_trasladado}
@@ -350,8 +352,7 @@ class FinancieroRepository:
     def get_factura_servicio_para_materializar(
         self, id_factura_servicio: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_factura_servicio,
                 id_servicio,
@@ -368,22 +369,25 @@ class FinancieroRepository:
             FROM factura_servicio
             WHERE id_factura_servicio = :id
               AND deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_factura_servicio}).mappings().one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_factura_servicio}).mappings().one_or_none()
         return dict(row) if row else None
 
     def relacion_generadora_exists(self, id_relacion_generadora: int) -> bool:
         stmt = text(
             "SELECT 1 FROM relacion_generadora WHERE id_relacion_generadora = :id AND deleted_at IS NULL"
         )
-        return self.db.execute(stmt, {"id": id_relacion_generadora}).scalar_one_or_none() is not None
+        return (
+            self.db.execute(stmt, {"id": id_relacion_generadora}).scalar_one_or_none()
+            is not None
+        )
 
     def get_relacion_generadora_by_origen(
         self, tipo_origen: str, id_origen: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_relacion_generadora,
                 uid_global,
@@ -400,8 +404,7 @@ class FinancieroRepository:
               AND deleted_at IS NULL
             ORDER BY id_relacion_generadora DESC
             LIMIT 1
-            """
-        )
+            """)
         row = (
             self.db.execute(
                 stmt,
@@ -415,13 +418,11 @@ class FinancieroRepository:
     def obligaciones_exist_for_relacion_generadora(
         self, id_relacion_generadora: int
     ) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT 1 FROM obligacion_financiera
             WHERE id_relacion_generadora = :id AND deleted_at IS NULL
             LIMIT 1
-            """
-        )
+            """)
         return (
             self.db.execute(stmt, {"id": id_relacion_generadora}).scalar_one_or_none()
             is not None
@@ -430,8 +431,7 @@ class FinancieroRepository:
     def get_obligacion_activa_by_relacion_generadora(
         self, id_relacion_generadora: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 id_relacion_generadora,
@@ -442,9 +442,12 @@ class FinancieroRepository:
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             ORDER BY id_obligacion_financiera ASC
             LIMIT 1
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_relacion_generadora})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_relacion_generadora}).mappings().one_or_none()
         return dict(row) if row else None
 
     def get_asignaciones_responsables_para_factura(
@@ -461,8 +464,7 @@ class FinancieroRepository:
             if id_inmueble is not None
             else "id_unidad_funcional = :id_objeto"
         )
-        stmt = text(
-            f"""
+        stmt = text(f"""
             SELECT
                 id_asignacion_servicio_responsable,
                 id_persona,
@@ -477,22 +479,26 @@ class FinancieroRepository:
               AND fecha_desde <= :periodo_hasta
               AND COALESCE(fecha_hasta, DATE '9999-12-31') >= :periodo_desde
             ORDER BY fecha_desde ASC, id_asignacion_servicio_responsable ASC
-            """
+            """)
+        rows = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_servicio": id_servicio,
+                    "id_objeto": (
+                        id_inmueble if id_inmueble is not None else id_unidad_funcional
+                    ),
+                    "periodo_desde": periodo_desde,
+                    "periodo_hasta": periodo_hasta,
+                },
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt,
-            {
-                "id_servicio": id_servicio,
-                "id_objeto": id_inmueble if id_inmueble is not None else id_unidad_funcional,
-                "periodo_desde": periodo_desde,
-                "periodo_hasta": periodo_hasta,
-            },
-        ).mappings().all()
         return [dict(row) for row in rows]
 
     def create_cronograma_obligaciones(self, periodos: list[Any]) -> int:
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             INSERT INTO obligacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -513,11 +519,9 @@ class FinancieroRepository:
             WHERE (deleted_at IS NULL)
             DO NOTHING
             RETURNING id_obligacion_financiera
-            """
-        )
+            """)
 
-        comp_stmt = text(
-            """
+        comp_stmt = text("""
             INSERT INTO composicion_obligacion (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -532,11 +536,9 @@ class FinancieroRepository:
                 :id_obligacion_financiera, :id_concepto_financiero,
                 1, :importe_componente, :importe_componente
             )
-            """
-        )
+            """)
 
-        obligado_stmt = text(
-            """
+        obligado_stmt = text("""
             INSERT INTO obligacion_obligado (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -551,34 +553,41 @@ class FinancieroRepository:
                 :id_obligacion_financiera, :id_persona,
                 :rol_obligado, 100.00
             )
-            """
-        )
+            """)
 
         try:
             count = 0
             for periodo in periodos:
                 pv = self._values(periodo)
-                ob_row = self.db.execute(
-                    ob_stmt,
-                    {
-                        "uid_global": pv["uid_global_obligacion"],
-                        "version_registro": pv["version_registro"],
-                        "created_at": pv["created_at"],
-                        "updated_at": pv["updated_at"],
-                        "id_instalacion_origen": pv["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
-                        "op_id_alta": pv["op_id_alta"],
-                        "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
-                        "id_relacion_generadora": pv["id_relacion_generadora"],
-                        "fecha_emision": pv["fecha_emision"],
-                        "fecha_vencimiento": pv["fecha_vencimiento"],
-                        "periodo_desde": pv["periodo_desde"],
-                        "periodo_hasta": pv["periodo_hasta"],
-                        "importe_total": pv["importe_total"],
-                        "moneda": pv["moneda"],
-                        "estado_obligacion": pv["estado_obligacion"],
-                    },
-                ).mappings().one_or_none()
+                ob_row = (
+                    self.db.execute(
+                        ob_stmt,
+                        {
+                            "uid_global": pv["uid_global_obligacion"],
+                            "version_registro": pv["version_registro"],
+                            "created_at": pv["created_at"],
+                            "updated_at": pv["updated_at"],
+                            "id_instalacion_origen": pv["id_instalacion_origen"],
+                            "id_instalacion_ultima_modificacion": pv[
+                                "id_instalacion_ultima_modificacion"
+                            ],
+                            "op_id_alta": pv["op_id_alta"],
+                            "op_id_ultima_modificacion": pv[
+                                "op_id_ultima_modificacion"
+                            ],
+                            "id_relacion_generadora": pv["id_relacion_generadora"],
+                            "fecha_emision": pv["fecha_emision"],
+                            "fecha_vencimiento": pv["fecha_vencimiento"],
+                            "periodo_desde": pv["periodo_desde"],
+                            "periodo_hasta": pv["periodo_hasta"],
+                            "importe_total": pv["importe_total"],
+                            "moneda": pv["moneda"],
+                            "estado_obligacion": pv["estado_obligacion"],
+                        },
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
 
                 if ob_row is None:
                     continue
@@ -591,7 +600,9 @@ class FinancieroRepository:
                         "created_at": pv["created_at"],
                         "updated_at": pv["updated_at"],
                         "id_instalacion_origen": pv["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
+                        "id_instalacion_ultima_modificacion": pv[
+                            "id_instalacion_ultima_modificacion"
+                        ],
                         "op_id_alta": pv["op_id_alta"],
                         "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
                         "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
@@ -607,7 +618,9 @@ class FinancieroRepository:
                         "created_at": pv["created_at"],
                         "updated_at": pv["updated_at"],
                         "id_instalacion_origen": pv["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
+                        "id_instalacion_ultima_modificacion": pv[
+                            "id_instalacion_ultima_modificacion"
+                        ],
                         "op_id_alta": pv["op_id_alta"],
                         "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
                         "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
@@ -624,23 +637,18 @@ class FinancieroRepository:
             raise
 
     def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT id_concepto_financiero, codigo_concepto_financiero
             FROM concepto_financiero
             WHERE codigo_concepto_financiero = :codigo
               AND estado_concepto_financiero = 'ACTIVO'
               AND deleted_at IS NULL
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"codigo": codigo}).mappings().one_or_none()
         return dict(row) if row else None
 
-    def get_venta_minima_para_financiero(
-        self, id_venta: int
-    ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+    def get_venta_minima_para_financiero(self, id_venta: int) -> dict[str, Any] | None:
+        stmt = text("""
             SELECT
                 id_venta,
                 fecha_venta,
@@ -656,13 +664,8 @@ class FinancieroRepository:
             FROM venta
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
-            """
-        )
-        row = (
-            self.db.execute(stmt, {"id_venta": id_venta})
-            .mappings()
-            .one_or_none()
-        )
+            """)
+        row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
         if row is None:
             return None
         data = dict(row)
@@ -670,8 +673,7 @@ class FinancieroRepository:
         return data
 
     def get_cuotas_venta_para_financiero(self, id_venta: int) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_venta_plan_cuota,
                 numero_cuota,
@@ -683,16 +685,14 @@ class FinancieroRepository:
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
             ORDER BY numero_cuota ASC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, {"id_venta": id_venta}).mappings().all()
         return [dict(row) for row in rows]
 
     def get_obligaciones_activas_by_relacion_generadora(
         self, id_relacion_generadora: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 id_relacion_generadora,
@@ -702,20 +702,17 @@ class FinancieroRepository:
               AND deleted_at IS NULL
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             ORDER BY id_obligacion_financiera ASC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, {"id": id_relacion_generadora}).mappings().all()
         return [dict(row) for row in rows]
 
-    def get_compradores_financieros_venta(
-        self, id_venta: int
-    ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+    def get_compradores_financieros_venta(self, id_venta: int) -> list[dict[str, Any]]:
+        stmt = text("""
             SELECT
                 rpr.id_relacion_persona_rol,
                 rpr.id_persona,
-                rp.codigo_rol
+                rp.codigo_rol,
+                rpr.porcentaje_responsabilidad
             FROM relacion_persona_rol rpr
             JOIN rol_participacion rp
               ON rp.id_rol_participacion = rpr.id_rol_participacion
@@ -731,8 +728,7 @@ class FinancieroRepository:
               AND (rpr.fecha_hasta IS NULL OR rpr.fecha_hasta >= CURRENT_TIMESTAMP)
               AND UPPER(rp.codigo_rol) = 'COMPRADOR'
             ORDER BY rpr.fecha_desde ASC, rpr.id_relacion_persona_rol ASC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, {"id_venta": id_venta}).mappings().all()
         return [dict(row) for row in rows]
 
@@ -741,22 +737,21 @@ class FinancieroRepository:
     def get_contrato_alquiler_para_financiero(
         self, id_contrato_alquiler: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT id_contrato_alquiler, fecha_inicio, estado_contrato, deleted_at
             FROM contrato_alquiler
             WHERE id_contrato_alquiler = :id AND deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_contrato_alquiler}).mappings().one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_contrato_alquiler}).mappings().one_or_none()
         return dict(row) if row else None
 
     def get_condicion_economica_vigente_para_financiero(
         self, id_contrato_alquiler: int, fecha_referencia: date
     ) -> dict[str, Any] | None:
         # Condicion que cubre fecha_referencia
-        stmt = text(
-            """
+        stmt = text("""
             SELECT monto_base, moneda
             FROM condicion_economica_alquiler
             WHERE id_contrato_alquiler = :id
@@ -765,32 +760,36 @@ class FinancieroRepository:
               AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha)
             ORDER BY fecha_desde ASC
             LIMIT 1
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt, {"id": id_contrato_alquiler, "fecha": fecha_referencia}
+            )
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            stmt, {"id": id_contrato_alquiler, "fecha": fecha_referencia}
-        ).mappings().one_or_none()
         if row is not None:
             return dict(row)
         # Fallback: primera condicion disponible
-        stmt_fallback = text(
-            """
+        stmt_fallback = text("""
             SELECT monto_base, moneda
             FROM condicion_economica_alquiler
             WHERE id_contrato_alquiler = :id AND deleted_at IS NULL
             ORDER BY fecha_desde ASC
             LIMIT 1
-            """
+            """)
+        row = (
+            self.db.execute(stmt_fallback, {"id": id_contrato_alquiler})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(stmt_fallback, {"id": id_contrato_alquiler}).mappings().one_or_none()
         return dict(row) if row else None
 
     # ── relacion_generadora ───────────────────────────────────────────────────
 
     def create_relacion_generadora(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO relacion_generadora (
                 uid_global,
                 version_registro,
@@ -829,33 +828,35 @@ class FinancieroRepository:
                 estado_relacion_generadora,
                 fecha_alta,
                 deleted_at
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "tipo_origen": values["tipo_origen"],
+                    "id_origen": values["id_origen"],
+                    "descripcion": values["descripcion"],
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "uid_global": values["uid_global"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "tipo_origen": values["tipo_origen"],
-                "id_origen": values["id_origen"],
-                "descripcion": values["descripcion"],
-            },
-        ).mappings().one()
         return self._rg_row_to_dict(row)
 
     def get_relacion_generadora(
         self, id_relacion_generadora: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_relacion_generadora,
                 uid_global,
@@ -868,8 +869,7 @@ class FinancieroRepository:
                 deleted_at
             FROM relacion_generadora
             WHERE id_relacion_generadora = :id
-            """
-        )
+            """)
         row = (
             self.db.execute(stmt, {"id": id_relacion_generadora})
             .mappings()
@@ -882,8 +882,7 @@ class FinancieroRepository:
     def get_relacion_generadora_by_origen(
         self, tipo_origen: str, id_origen: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_relacion_generadora,
                 uid_global,
@@ -900,8 +899,7 @@ class FinancieroRepository:
               AND deleted_at IS NULL
             ORDER BY id_relacion_generadora ASC
             LIMIT 1
-            """
-        )
+            """)
         row = (
             self.db.execute(
                 stmt,
@@ -945,8 +943,7 @@ class FinancieroRepository:
 
         where_clause = " AND ".join(filters)
 
-        list_stmt = text(
-            f"""
+        list_stmt = text(f"""
             SELECT
                 id_relacion_generadora,
                 uid_global,
@@ -962,8 +959,7 @@ class FinancieroRepository:
             ORDER BY id_relacion_generadora DESC
             LIMIT :limit
             OFFSET :offset
-            """
-        )
+            """)
         total_stmt = text(
             f"SELECT COUNT(*) AS total FROM relacion_generadora WHERE {where_clause}"
         )
@@ -994,8 +990,7 @@ class FinancieroRepository:
 
         where_clause = " AND ".join(filters)
 
-        list_stmt = text(
-            f"""
+        list_stmt = text(f"""
             SELECT
                 id_concepto_financiero,
                 codigo_concepto_financiero,
@@ -1008,8 +1003,7 @@ class FinancieroRepository:
             WHERE {where_clause}
             ORDER BY codigo_concepto_financiero ASC
             LIMIT :limit OFFSET :offset
-            """
-        )
+            """)
         total_stmt = text(
             f"SELECT COUNT(*) FROM concepto_financiero WHERE {where_clause}"
         )
@@ -1061,8 +1055,7 @@ class FinancieroRepository:
 
         where = " AND ".join(filters)
 
-        ob_stmt = text(
-            f"""
+        ob_stmt = text(f"""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
@@ -1085,11 +1078,8 @@ class FinancieroRepository:
             WHERE {where}
             ORDER BY o.id_obligacion_financiera DESC
             LIMIT :limit OFFSET :offset
-            """
-        )
-        total_stmt = text(
-            f"SELECT COUNT(*) FROM obligacion_financiera o WHERE {where}"
-        )
+            """)
+        total_stmt = text(f"SELECT COUNT(*) FROM obligacion_financiera o WHERE {where}")
 
         ob_rows = self.db.execute(ob_stmt, params).mappings().all()
         total = self.db.execute(total_stmt, params).scalar_one()
@@ -1099,8 +1089,7 @@ class FinancieroRepository:
 
         ids = [row["id_obligacion_financiera"] for row in ob_rows]
 
-        comp_stmt = text(
-            """
+        comp_stmt = text("""
             SELECT
                 c.id_composicion_obligacion,
                 c.id_obligacion_financiera,
@@ -1114,8 +1103,7 @@ class FinancieroRepository:
               AND c.deleted_at IS NULL
               AND cf.deleted_at IS NULL
             ORDER BY c.id_obligacion_financiera, c.orden_composicion ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
 
         comp_rows = self.db.execute(comp_stmt, {"ids": ids}).mappings().all()
 
@@ -1175,8 +1163,7 @@ class FinancieroRepository:
 
         where = " AND ".join(filters)
 
-        stmt = text(
-            f"""
+        stmt = text(f"""
             SELECT
                 o.id_relacion_generadora,
                 rg.tipo_origen,
@@ -1199,8 +1186,7 @@ class FinancieroRepository:
                 ON rg.id_relacion_generadora = o.id_relacion_generadora
             WHERE {where}
             ORDER BY rg.tipo_origen ASC, o.id_relacion_generadora ASC
-            """
-        )
+            """)
 
         rows = self.db.execute(stmt, params).mappings().all()
 
@@ -1322,15 +1308,13 @@ class FinancieroRepository:
     def has_obligaciones_by_relacion_generadora(
         self, id_relacion_generadora: int
     ) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT 1
             FROM obligacion_financiera
             WHERE id_relacion_generadora = :id_relacion_generadora
               AND deleted_at IS NULL
             LIMIT 1
-            """
-        )
+            """)
         return (
             self.db.execute(
                 stmt,
@@ -1342,8 +1326,7 @@ class FinancieroRepository:
     def get_obligados_by_obligacion(
         self, id_obligacion_financiera: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_obligacion_obligado,
                 id_obligacion_financiera,
@@ -1354,11 +1337,14 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id_obligacion_financiera
               AND deleted_at IS NULL
             ORDER BY id_obligacion_obligado ASC
-            """
+            """)
+        rows = (
+            self.db.execute(
+                stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_obligacion_financiera": id_obligacion_financiera}
-        ).mappings().all()
         return [
             {
                 **dict(row),
@@ -1373,8 +1359,7 @@ class FinancieroRepository:
 
     def create_obligacion_obligado(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO obligacion_obligado (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -1395,27 +1380,30 @@ class FinancieroRepository:
                 id_persona,
                 rol_obligado,
                 porcentaje_responsabilidad
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "uid_global": values["uid_global"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_obligacion_financiera": values["id_obligacion_financiera"],
+                    "id_persona": values["id_persona"],
+                    "rol_obligado": values["rol_obligado"],
+                    "porcentaje_responsabilidad": values["porcentaje_responsabilidad"],
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "uid_global": values["uid_global"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_obligacion_financiera": values["id_obligacion_financiera"],
-                "id_persona": values["id_persona"],
-                "rol_obligado": values["rol_obligado"],
-                "porcentaje_responsabilidad": values["porcentaje_responsabilidad"],
-            },
-        ).mappings().one()
         result = dict(row)
         result["porcentaje_responsabilidad"] = float(
             result["porcentaje_responsabilidad"]
@@ -1430,7 +1418,10 @@ class FinancieroRepository:
         fecha_desde: date | None,
         fecha_hasta: date | None,
     ) -> dict[str, Any]:
-        filters = ["o.id_relacion_generadora = :id_relacion_generadora", "o.deleted_at IS NULL"]
+        filters = [
+            "o.id_relacion_generadora = :id_relacion_generadora",
+            "o.deleted_at IS NULL",
+        ]
         params: dict[str, Any] = {"id_relacion_generadora": id_relacion_generadora}
 
         if not incluir_canceladas:
@@ -1445,8 +1436,7 @@ class FinancieroRepository:
             params["fecha_hasta"] = fecha_hasta
 
         where = " AND ".join(filters)
-        ob_stmt = text(
-            f"""
+        ob_stmt = text(f"""
             SELECT
                 o.id_obligacion_financiera,
                 o.estado_obligacion,
@@ -1458,8 +1448,7 @@ class FinancieroRepository:
             FROM obligacion_financiera o
             WHERE {where}
             ORDER BY o.fecha_vencimiento ASC NULLS LAST, o.id_obligacion_financiera ASC
-            """
-        )
+            """)
         ob_rows = self.db.execute(ob_stmt, params).mappings().all()
 
         if not ob_rows:
@@ -1477,8 +1466,7 @@ class FinancieroRepository:
 
         ids = [row["id_obligacion_financiera"] for row in ob_rows]
 
-        comp_stmt = text(
-            """
+        comp_stmt = text("""
             SELECT
                 c.id_composicion_obligacion,
                 c.id_obligacion_financiera,
@@ -1495,12 +1483,10 @@ class FinancieroRepository:
               AND c.deleted_at IS NULL
               AND cf.deleted_at IS NULL
             ORDER BY c.id_obligacion_financiera, c.orden_composicion ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
         comp_rows = self.db.execute(comp_stmt, {"ids": ids}).mappings().all()
 
-        aplic_stmt = text(
-            """
+        aplic_stmt = text("""
             SELECT
                 a.id_aplicacion_financiera,
                 a.id_obligacion_financiera,
@@ -1519,8 +1505,7 @@ class FinancieroRepository:
                 a.fecha_aplicacion ASC,
                 a.orden_aplicacion ASC NULLS LAST,
                 a.id_aplicacion_financiera ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
         aplic_rows = self.db.execute(aplic_stmt, {"ids": ids}).mappings().all()
 
         comps_by_ob: dict[int, list[dict[str, Any]]] = defaultdict(list)
@@ -1591,7 +1576,9 @@ class FinancieroRepository:
             "id_relacion_generadora": id_relacion_generadora,
             "resumen": {
                 "importe_total": float(sum(row["importe_total"] for row in ob_rows)),
-                "saldo_pendiente": float(sum(row["saldo_pendiente"] for row in ob_rows)),
+                "saldo_pendiente": float(
+                    sum(row["saldo_pendiente"] for row in ob_rows)
+                ),
                 "mora_calculada": float(
                     sum(obligacion["mora_calculada"] for obligacion in obligaciones)
                 ),
@@ -1615,8 +1602,7 @@ class FinancieroRepository:
     def buscar_obligaciones_elegibles_mora(
         self, fecha_proceso: date
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
@@ -1630,18 +1616,14 @@ class FinancieroRepository:
               AND o.estado_obligacion = 'EMITIDA'
             ORDER BY o.id_obligacion_financiera ASC
             FOR UPDATE
-            """
-        )
-        rows = self.db.execute(
-            stmt, {"fecha_proceso": fecha_proceso}
-        ).mappings().all()
+            """)
+        rows = self.db.execute(stmt, {"fecha_proceso": fecha_proceso}).mappings().all()
         return [dict(row) for row in rows]
 
     def get_obligaciones_reemplazables(
         self, id_relacion_generadora: int, fecha_corte: date
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.periodo_desde,
@@ -1660,26 +1642,27 @@ class FinancieroRepository:
                     AND a.deleted_at IS NULL
               )
             ORDER BY o.periodo_desde ASC
-            """
+            """)
+        rows = (
+            self.db.execute(
+                stmt, {"id_rg": id_relacion_generadora, "fecha_corte": fecha_corte}
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_rg": id_relacion_generadora, "fecha_corte": fecha_corte}
-        ).mappings().all()
         return [dict(r) for r in rows]
 
     def marcar_obligaciones_reemplazadas(self, ids: list[int]) -> int:
         # CLOCK_TIMESTAMP() devuelve el tiempo real de ejecución (no el inicio
         # de transacción) para garantizar que deleted_at >= created_at.
-        stmt = text(
-            """
+        stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = 'REEMPLAZADA',
                 deleted_at = CLOCK_TIMESTAMP(),
                 updated_at = CLOCK_TIMESTAMP()
             WHERE id_obligacion_financiera = ANY(:ids)
               AND estado_obligacion NOT IN ('CANCELADA', 'PARCIALMENTE_CANCELADA')
-            """
-        )
+            """)
         result = self.db.execute(stmt, {"ids": ids})
         self.db.commit()
         return result.rowcount or 0
@@ -1687,8 +1670,7 @@ class FinancieroRepository:
     def get_obligaciones_activas_desde(
         self, id_relacion_generadora: int, fecha_corte: date
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.periodo_desde,
@@ -1699,11 +1681,14 @@ class FinancieroRepository:
               AND o.deleted_at IS NULL
               AND o.periodo_desde >= :fecha_corte
             ORDER BY o.periodo_desde ASC, o.id_obligacion_financiera ASC
-            """
+            """)
+        rows = (
+            self.db.execute(
+                stmt, {"id_rg": id_relacion_generadora, "fecha_corte": fecha_corte}
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_rg": id_relacion_generadora, "fecha_corte": fecha_corte}
-        ).mappings().all()
         return [dict(r) for r in rows]
 
     def vincular_obligaciones_reemplazo_1_a_1(
@@ -1712,33 +1697,31 @@ class FinancieroRepository:
         if not pares:
             return 0
 
-        stmt_vieja = text(
-            """
+        stmt_vieja = text("""
             UPDATE obligacion_financiera vieja
             SET id_obligacion_reemplazante = :id_nueva,
                 updated_at = CLOCK_TIMESTAMP()
             WHERE vieja.id_obligacion_financiera = :id_vieja
               AND vieja.estado_obligacion = 'REEMPLAZADA'
               AND vieja.deleted_at IS NOT NULL
-            """
-        )
-        stmt_nueva = text(
-            """
+            """)
+        stmt_nueva = text("""
             UPDATE obligacion_financiera nueva
             SET id_obligacion_reemplazada = :id_vieja,
                 updated_at = CLOCK_TIMESTAMP()
             WHERE nueva.id_obligacion_financiera = :id_nueva
               AND nueva.estado_obligacion = 'EMITIDA'
               AND nueva.deleted_at IS NULL
-            """
-        )
+            """)
         try:
             vinculadas = 0
             for id_vieja, id_nueva in pares:
                 params = {"id_vieja": id_vieja, "id_nueva": id_nueva}
                 result_vieja = self.db.execute(stmt_vieja, params)
                 result_nueva = self.db.execute(stmt_nueva, params)
-                if (result_vieja.rowcount or 0) == 1 and (result_nueva.rowcount or 0) == 1:
+                if (result_vieja.rowcount or 0) == 1 and (
+                    result_nueva.rowcount or 0
+                ) == 1:
                     vinculadas += 1
             self.db.commit()
             return vinculadas
@@ -1747,8 +1730,7 @@ class FinancieroRepository:
             raise
 
     def marcar_obligaciones_vencidas(self, fecha_proceso: date) -> int:
-        stmt = text(
-            """
+        stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = 'VENCIDA',
                 updated_at = CURRENT_TIMESTAMP
@@ -1756,8 +1738,7 @@ class FinancieroRepository:
               AND saldo_pendiente > 0
               AND deleted_at IS NULL
               AND estado_obligacion = 'EMITIDA'
-            """
-        )
+            """)
         result = self.db.execute(stmt, {"fecha_proceso": fecha_proceso})
         self.db.commit()
         return result.rowcount or 0
@@ -1767,8 +1748,7 @@ class FinancieroRepository:
     def get_obligacion_para_imputacion(
         self, id_obligacion_financiera: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 saldo_pendiente,
@@ -1776,8 +1756,7 @@ class FinancieroRepository:
                 deleted_at
             FROM obligacion_financiera
             WHERE id_obligacion_financiera = :id
-            """
-        )
+            """)
         row = (
             self.db.execute(stmt, {"id": id_obligacion_financiera})
             .mappings()
@@ -1788,8 +1767,7 @@ class FinancieroRepository:
     def get_composiciones_para_imputar(
         self, id_obligacion_financiera: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 c.id_composicion_obligacion,
                 c.orden_composicion,
@@ -1804,20 +1782,14 @@ class FinancieroRepository:
               AND c.deleted_at IS NULL
               AND cf.deleted_at IS NULL
             ORDER BY c.orden_composicion ASC
-            """
-        )
-        rows = (
-            self.db.execute(stmt, {"id": id_obligacion_financiera})
-            .mappings()
-            .all()
-        )
+            """)
+        rows = self.db.execute(stmt, {"id": id_obligacion_financiera}).mappings().all()
         return [dict(r) for r in rows]
 
     def get_composicion_servicio_trasladado_con_saldo(
         self, id_obligacion_financiera: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 c.id_composicion_obligacion,
                 c.id_obligacion_financiera,
@@ -1836,16 +1808,18 @@ class FinancieroRepository:
               AND c.saldo_componente > 0
             ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
             LIMIT 1
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_obligacion_financiera})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_obligacion_financiera}).mappings().one_or_none()
         return dict(row) if row else None
 
     def get_composicion_impuesto_trasladado_con_saldo(
         self, id_obligacion_financiera: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 c.id_composicion_obligacion,
                 c.id_obligacion_financiera,
@@ -1864,17 +1838,19 @@ class FinancieroRepository:
               AND c.saldo_componente > 0
             ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
             LIMIT 1
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_obligacion_financiera})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_obligacion_financiera}).mappings().one_or_none()
         return dict(row) if row else None
 
     def create_imputacion(self, payload: Any) -> dict[str, Any]:
         mov = payload.movimiento
         mov_values = self._values(mov)
 
-        mov_stmt = text(
-            """
+        mov_stmt = text("""
             INSERT INTO movimiento_financiero (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -1888,11 +1864,9 @@ class FinancieroRepository:
                 :fecha_movimiento, :tipo_movimiento, :importe, :signo, :estado_movimiento
             )
             RETURNING id_movimiento_financiero
-            """
-        )
+            """)
 
-        aplic_stmt = text(
-            """
+        aplic_stmt = text("""
             INSERT INTO aplicacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -1914,62 +1888,78 @@ class FinancieroRepository:
             RETURNING
                 id_aplicacion_financiera, id_composicion_obligacion,
                 importe_aplicado, orden_aplicacion
-            """
-        )
+            """)
 
         try:
-            mov_row = self.db.execute(
-                mov_stmt,
-                {
-                    "uid_global": mov_values["uid_global"],
-                    "version_registro": mov_values["version_registro"],
-                    "created_at": mov_values["created_at"],
-                    "updated_at": mov_values["updated_at"],
-                    "id_instalacion_origen": mov_values["id_instalacion_origen"],
-                    "id_instalacion_ultima_modificacion": mov_values["id_instalacion_ultima_modificacion"],
-                    "op_id_alta": mov_values["op_id_alta"],
-                    "op_id_ultima_modificacion": mov_values["op_id_ultima_modificacion"],
-                    "fecha_movimiento": mov_values["fecha_movimiento"],
-                    "tipo_movimiento": mov_values["tipo_movimiento"],
-                    "importe": mov_values["importe"],
-                    "signo": mov_values["signo"],
-                    "estado_movimiento": mov_values["estado_movimiento"],
-                },
-            ).mappings().one()
+            mov_row = (
+                self.db.execute(
+                    mov_stmt,
+                    {
+                        "uid_global": mov_values["uid_global"],
+                        "version_registro": mov_values["version_registro"],
+                        "created_at": mov_values["created_at"],
+                        "updated_at": mov_values["updated_at"],
+                        "id_instalacion_origen": mov_values["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": mov_values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_alta": mov_values["op_id_alta"],
+                        "op_id_ultima_modificacion": mov_values[
+                            "op_id_ultima_modificacion"
+                        ],
+                        "fecha_movimiento": mov_values["fecha_movimiento"],
+                        "tipo_movimiento": mov_values["tipo_movimiento"],
+                        "importe": mov_values["importe"],
+                        "signo": mov_values["signo"],
+                        "estado_movimiento": mov_values["estado_movimiento"],
+                    },
+                )
+                .mappings()
+                .one()
+            )
 
             id_movimiento = mov_row["id_movimiento_financiero"]
             aplicaciones: list[dict[str, Any]] = []
 
             for linea in payload.lineas:
                 lv = self._values(linea)
-                aplic_row = self.db.execute(
-                    aplic_stmt,
-                    {
-                        "uid_global": lv["uid_global"],
-                        "version_registro": lv["version_registro"],
-                        "created_at": lv["created_at"],
-                        "updated_at": lv["updated_at"],
-                        "id_instalacion_origen": lv["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": lv["id_instalacion_ultima_modificacion"],
-                        "op_id_alta": lv["op_id_alta"],
-                        "op_id_ultima_modificacion": lv["op_id_ultima_modificacion"],
-                        "id_movimiento_financiero": id_movimiento,
-                        "id_obligacion_financiera": payload.id_obligacion_financiera,
-                        "id_composicion_obligacion": lv["id_composicion_obligacion"],
-                        "fecha_aplicacion": payload.fecha_aplicacion,
-                        "tipo_aplicacion": payload.tipo_aplicacion,
-                        "orden_aplicacion": lv["orden_aplicacion"],
-                        "importe_aplicado": lv["importe_aplicado"],
-                        "origen_automatico_o_manual": payload.origen_automatico_o_manual,
-                    },
-                ).mappings().one()
+                aplic_row = (
+                    self.db.execute(
+                        aplic_stmt,
+                        {
+                            "uid_global": lv["uid_global"],
+                            "version_registro": lv["version_registro"],
+                            "created_at": lv["created_at"],
+                            "updated_at": lv["updated_at"],
+                            "id_instalacion_origen": lv["id_instalacion_origen"],
+                            "id_instalacion_ultima_modificacion": lv[
+                                "id_instalacion_ultima_modificacion"
+                            ],
+                            "op_id_alta": lv["op_id_alta"],
+                            "op_id_ultima_modificacion": lv[
+                                "op_id_ultima_modificacion"
+                            ],
+                            "id_movimiento_financiero": id_movimiento,
+                            "id_obligacion_financiera": payload.id_obligacion_financiera,
+                            "id_composicion_obligacion": lv[
+                                "id_composicion_obligacion"
+                            ],
+                            "fecha_aplicacion": payload.fecha_aplicacion,
+                            "tipo_aplicacion": payload.tipo_aplicacion,
+                            "orden_aplicacion": lv["orden_aplicacion"],
+                            "importe_aplicado": lv["importe_aplicado"],
+                            "origen_automatico_o_manual": payload.origen_automatico_o_manual,
+                        },
+                    )
+                    .mappings()
+                    .one()
+                )
                 aplicaciones.append(dict(aplic_row))
 
             # El trigger ya actualizó saldo_pendiente; leemos el valor final para
             # decidir el estado sin recalcular nada.
             self.db.execute(
-                text(
-                    """
+                text("""
                     UPDATE obligacion_financiera
                     SET estado_obligacion = CASE
                             WHEN saldo_pendiente = 0             THEN 'CANCELADA'
@@ -1978,8 +1968,7 @@ class FinancieroRepository:
                         END
                     WHERE id_obligacion_financiera = :id
                       AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
-                    """
-                ),
+                    """),
                 {"id": payload.id_obligacion_financiera},
             )
 
@@ -1988,7 +1977,9 @@ class FinancieroRepository:
             return {
                 "id_obligacion_financiera": payload.id_obligacion_financiera,
                 "id_movimiento_financiero": id_movimiento,
-                "monto_aplicado": float(sum(a["importe_aplicado"] for a in aplicaciones)),
+                "monto_aplicado": float(
+                    sum(a["importe_aplicado"] for a in aplicaciones)
+                ),
                 "aplicaciones": [
                     {
                         "id_aplicacion_financiera": a["id_aplicacion_financiera"],
@@ -2008,8 +1999,7 @@ class FinancieroRepository:
     def get_obligacion_financiera(
         self, id_obligacion_financiera: int
     ) -> dict[str, Any] | None:
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 uid_global,
@@ -2027,8 +2017,7 @@ class FinancieroRepository:
                 deleted_at
             FROM obligacion_financiera
             WHERE id_obligacion_financiera = :id
-            """
-        )
+            """)
         row = (
             self.db.execute(ob_stmt, {"id": id_obligacion_financiera})
             .mappings()
@@ -2037,8 +2026,7 @@ class FinancieroRepository:
         if row is None:
             return None
 
-        comp_stmt = text(
-            """
+        comp_stmt = text("""
             SELECT
                 c.id_composicion_obligacion,
                 c.orden_composicion,
@@ -2054,8 +2042,7 @@ class FinancieroRepository:
               AND c.deleted_at IS NULL
               AND cf.deleted_at IS NULL
             ORDER BY c.orden_composicion ASC
-            """
-        )
+            """)
         comp_rows = (
             self.db.execute(comp_stmt, {"id": id_obligacion_financiera})
             .mappings()
@@ -2070,16 +2057,14 @@ class FinancieroRepository:
     def obligacion_tiene_aplicaciones_activas(
         self, id_obligacion_financiera: int
     ) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT EXISTS (
                 SELECT 1
                 FROM aplicacion_financiera a
                 WHERE a.id_obligacion_financiera = :id
                   AND a.deleted_at IS NULL
             )
-            """
-        )
+            """)
         return bool(self.db.execute(stmt, {"id": id_obligacion_financiera}).scalar())
 
     def aplicar_ajuste_indexacion_obligacion(
@@ -2094,8 +2079,7 @@ class FinancieroRepository:
         op_id: Any,
     ) -> dict[str, Any]:
         now = datetime.now(UTC)
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 estado_obligacion,
@@ -2104,19 +2088,15 @@ class FinancieroRepository:
             FROM obligacion_financiera
             WHERE id_obligacion_financiera = :id
             FOR UPDATE
-            """
-        )
-        concepto_stmt = text(
-            """
+            """)
+        concepto_stmt = text("""
             SELECT id_concepto_financiero
             FROM concepto_financiero
             WHERE codigo_concepto_financiero = 'AJUSTE_INDEXACION'
               AND estado_concepto_financiero = 'ACTIVO'
               AND deleted_at IS NULL
-            """
-        )
-        duplicado_stmt = text(
-            """
+            """)
+        duplicado_stmt = text("""
             SELECT 1
             FROM composicion_obligacion c
             JOIN concepto_financiero cf
@@ -2127,10 +2107,8 @@ class FinancieroRepository:
               AND cf.codigo_concepto_financiero = 'AJUSTE_INDEXACION'
               AND cf.deleted_at IS NULL
             LIMIT 1
-            """
-        )
-        insert_stmt = text(
-            """
+            """)
+        insert_stmt = text("""
             INSERT INTO composicion_obligacion (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2154,10 +2132,8 @@ class FinancieroRepository:
                 :detalle_calculo, :observaciones
             )
             RETURNING id_composicion_obligacion
-            """
-        )
-        estado_stmt = text(
-            """
+            """)
+        estado_stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = CASE
                     WHEN saldo_pendiente = 0 THEN 'CANCELADA'
@@ -2177,13 +2153,14 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id_obligacion_financiera
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             RETURNING estado_obligacion, saldo_pendiente
-            """
-        )
+            """)
 
         try:
-            obligacion = self.db.execute(
-                ob_stmt, {"id": id_obligacion_financiera}
-            ).mappings().one_or_none()
+            obligacion = (
+                self.db.execute(ob_stmt, {"id": id_obligacion_financiera})
+                .mappings()
+                .one_or_none()
+            )
             if obligacion is None or obligacion["deleted_at"] is not None:
                 raise ValueError("NOT_FOUND_OBLIGACION")
             if obligacion["estado_obligacion"] in {"ANULADA", "REEMPLAZADA"}:
@@ -2208,39 +2185,45 @@ class FinancieroRepository:
                 },
                 separators=(",", ":"),
             )
-            composicion = self.db.execute(
-                insert_stmt,
-                {
-                    "uid_global": uid_global,
-                    "created_at": now,
-                    "updated_at": now,
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                    "id_obligacion_financiera": id_obligacion_financiera,
-                    "id_concepto_financiero": id_concepto,
-                    "importe_ajuste": importe_ajuste,
-                    "detalle_calculo": detalle,
-                    "observaciones": motivo,
-                },
-            ).mappings().one()
+            composicion = (
+                self.db.execute(
+                    insert_stmt,
+                    {
+                        "uid_global": uid_global,
+                        "created_at": now,
+                        "updated_at": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                        "id_obligacion_financiera": id_obligacion_financiera,
+                        "id_concepto_financiero": id_concepto,
+                        "importe_ajuste": importe_ajuste,
+                        "detalle_calculo": detalle,
+                        "observaciones": motivo,
+                    },
+                )
+                .mappings()
+                .one()
+            )
 
-            estado = self.db.execute(
-                estado_stmt,
-                {
-                    "id_obligacion_financiera": id_obligacion_financiera,
-                    "fecha_ajuste": fecha_ajuste,
-                    "updated_at": now,
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                },
-            ).mappings().one()
+            estado = (
+                self.db.execute(
+                    estado_stmt,
+                    {
+                        "id_obligacion_financiera": id_obligacion_financiera,
+                        "fecha_ajuste": fecha_ajuste,
+                        "updated_at": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                .mappings()
+                .one()
+            )
 
             self.db.commit()
             return {
                 "id_obligacion_financiera": id_obligacion_financiera,
-                "id_composicion_obligacion": composicion[
-                    "id_composicion_obligacion"
-                ],
+                "id_composicion_obligacion": composicion["id_composicion_obligacion"],
                 "importe_ajuste": float(importe_ajuste),
                 "saldo_pendiente_actualizado": float(estado["saldo_pendiente"]),
                 "estado_obligacion": estado["estado_obligacion"],
@@ -2263,8 +2246,7 @@ class FinancieroRepository:
     ) -> dict[str, Any]:
         now = datetime.now(UTC)
         fecha_movimiento = datetime.combine(fecha_bonificacion, datetime.min.time())
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 estado_obligacion,
@@ -2273,10 +2255,8 @@ class FinancieroRepository:
             FROM obligacion_financiera
             WHERE id_obligacion_financiera = :id
             FOR UPDATE
-            """
-        )
-        idempotente_stmt = text(
-            """
+            """)
+        idempotente_stmt = text("""
             SELECT
                 m.id_movimiento_financiero,
                 m.importe,
@@ -2299,10 +2279,8 @@ class FinancieroRepository:
                 o.id_obligacion_financiera,
                 o.saldo_pendiente,
                 o.estado_obligacion
-            """
-        )
-        comps_stmt = text(
-            """
+            """)
+        comps_stmt = text("""
             SELECT
                 c.id_composicion_obligacion,
                 c.saldo_componente,
@@ -2323,10 +2301,8 @@ class FinancieroRepository:
                     OR cf.codigo_concepto_financiero = 'AJUSTE_INDEXACION'
                   )
             ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
-            """
-        )
-        mov_stmt = text(
-            """
+            """)
+        mov_stmt = text("""
             INSERT INTO movimiento_financiero (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2342,10 +2318,8 @@ class FinancieroRepository:
                 'APLICADO', :observaciones
             )
             RETURNING id_movimiento_financiero
-            """
-        )
-        aplic_stmt = text(
-            """
+            """)
+        aplic_stmt = text("""
             INSERT INTO aplicacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2364,10 +2338,8 @@ class FinancieroRepository:
                 'BONIFICACION_INDEXACION', :orden_aplicacion, :importe_aplicado,
                 'MANUAL', :observaciones
             )
-            """
-        )
-        estado_stmt = text(
-            """
+            """)
+        estado_stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = CASE
                     WHEN saldo_pendiente = 0 THEN 'CANCELADA'
@@ -2383,8 +2355,7 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id_obligacion_financiera
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             RETURNING estado_obligacion, saldo_pendiente
-            """
-        )
+            """)
 
         try:
             if op_id is not None:
@@ -2415,9 +2386,11 @@ class FinancieroRepository:
                         "estado_obligacion": existente["estado_obligacion"],
                     }
 
-            obligacion = self.db.execute(
-                ob_stmt, {"id": id_obligacion_financiera}
-            ).mappings().one_or_none()
+            obligacion = (
+                self.db.execute(ob_stmt, {"id": id_obligacion_financiera})
+                .mappings()
+                .one_or_none()
+            )
             if obligacion is None or obligacion["deleted_at"] is not None:
                 raise ValueError("NOT_FOUND_OBLIGACION")
             if obligacion["estado_obligacion"] in {"ANULADA", "REEMPLAZADA"}:
@@ -2444,9 +2417,7 @@ class FinancieroRepository:
                     continue
                 lineas.append(
                     {
-                        "id_composicion_obligacion": comp[
-                            "id_composicion_obligacion"
-                        ],
+                        "id_composicion_obligacion": comp["id_composicion_obligacion"],
                         "importe_aplicado": aplicado,
                     }
                 )
@@ -2460,19 +2431,23 @@ class FinancieroRepository:
             if monto_aplicado <= 0:
                 raise ValueError("SIN_SALDO_APLICABLE")
 
-            mov_row = self.db.execute(
-                mov_stmt,
-                {
-                    "uid_global": uid_movimiento,
-                    "created_at": now,
-                    "updated_at": now,
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                    "fecha_movimiento": fecha_movimiento,
-                    "importe": importe_bonificacion,
-                    "observaciones": motivo,
-                },
-            ).mappings().one()
+            mov_row = (
+                self.db.execute(
+                    mov_stmt,
+                    {
+                        "uid_global": uid_movimiento,
+                        "created_at": now,
+                        "updated_at": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                        "fecha_movimiento": fecha_movimiento,
+                        "importe": importe_bonificacion,
+                        "observaciones": motivo,
+                    },
+                )
+                .mappings()
+                .one()
+            )
 
             for i, linea in enumerate(lineas, start=1):
                 self.db.execute(
@@ -2483,13 +2458,9 @@ class FinancieroRepository:
                         "updated_at": now,
                         "id_instalacion": id_instalacion,
                         "op_id": op_id,
-                        "id_movimiento_financiero": mov_row[
-                            "id_movimiento_financiero"
-                        ],
+                        "id_movimiento_financiero": mov_row["id_movimiento_financiero"],
                         "id_obligacion_financiera": id_obligacion_financiera,
-                        "id_composicion_obligacion": linea[
-                            "id_composicion_obligacion"
-                        ],
+                        "id_composicion_obligacion": linea["id_composicion_obligacion"],
                         "fecha_aplicacion": fecha_movimiento,
                         "orden_aplicacion": i,
                         "importe_aplicado": linea["importe_aplicado"],
@@ -2497,16 +2468,20 @@ class FinancieroRepository:
                     },
                 )
 
-            estado = self.db.execute(
-                estado_stmt,
-                {
-                    "id_obligacion_financiera": id_obligacion_financiera,
-                    "fecha_bonificacion": fecha_bonificacion,
-                    "updated_at": now,
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                },
-            ).mappings().one()
+            estado = (
+                self.db.execute(
+                    estado_stmt,
+                    {
+                        "id_obligacion_financiera": id_obligacion_financiera,
+                        "fecha_bonificacion": fecha_bonificacion,
+                        "updated_at": now,
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                .mappings()
+                .one()
+            )
 
             self.db.commit()
             return {
@@ -2529,8 +2504,7 @@ class FinancieroRepository:
     ) -> dict[str, Any]:
         ob_values = self._values(obligacion)
 
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             INSERT INTO obligacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2551,11 +2525,9 @@ class FinancieroRepository:
                 descripcion_operativa, fecha_emision, fecha_vencimiento,
                 periodo_desde, periodo_hasta, importe_total, saldo_pendiente,
                 moneda, estado_obligacion
-            """
-        )
+            """)
 
-        comp_stmt = text(
-            """
+        comp_stmt = text("""
             INSERT INTO composicion_obligacion (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2576,54 +2548,68 @@ class FinancieroRepository:
                 id_composicion_obligacion, orden_composicion,
                 estado_composicion_obligacion, importe_componente,
                 saldo_componente, moneda_componente
-            """
-        )
+            """)
 
-        ob_row = self.db.execute(
-            ob_stmt,
-            {
-                "uid_global": ob_values["uid_global"],
-                "version_registro": ob_values["version_registro"],
-                "created_at": ob_values["created_at"],
-                "updated_at": ob_values["updated_at"],
-                "id_instalacion_origen": ob_values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": ob_values["id_instalacion_ultima_modificacion"],
-                "op_id_alta": ob_values["op_id_alta"],
-                "op_id_ultima_modificacion": ob_values["op_id_ultima_modificacion"],
-                "id_relacion_generadora": ob_values["id_relacion_generadora"],
-                "fecha_emision": ob_values["fecha_emision"],
-                "fecha_vencimiento": ob_values["fecha_vencimiento"],
-                "importe_total": ob_values["importe_total"],
-                "moneda": ob_values.get("moneda", "ARS"),
-                "estado_obligacion": ob_values["estado_obligacion"],
-            },
-        ).mappings().one()
+        ob_row = (
+            self.db.execute(
+                ob_stmt,
+                {
+                    "uid_global": ob_values["uid_global"],
+                    "version_registro": ob_values["version_registro"],
+                    "created_at": ob_values["created_at"],
+                    "updated_at": ob_values["updated_at"],
+                    "id_instalacion_origen": ob_values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": ob_values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": ob_values["op_id_alta"],
+                    "op_id_ultima_modificacion": ob_values["op_id_ultima_modificacion"],
+                    "id_relacion_generadora": ob_values["id_relacion_generadora"],
+                    "fecha_emision": ob_values["fecha_emision"],
+                    "fecha_vencimiento": ob_values["fecha_vencimiento"],
+                    "importe_total": ob_values["importe_total"],
+                    "moneda": ob_values.get("moneda", "ARS"),
+                    "estado_obligacion": ob_values["estado_obligacion"],
+                },
+            )
+            .mappings()
+            .one()
+        )
 
         ob_id = ob_row["id_obligacion_financiera"]
         comp_results: list[dict[str, Any]] = []
 
         for comp in composiciones:
             cv = self._values(comp)
-            comp_row = self.db.execute(
-                comp_stmt,
-                {
-                    "uid_global": cv["uid_global"],
-                    "version_registro": cv["version_registro"],
-                    "created_at": cv["created_at"],
-                    "updated_at": cv["updated_at"],
-                    "id_instalacion_origen": cv["id_instalacion_origen"],
-                    "id_instalacion_ultima_modificacion": cv["id_instalacion_ultima_modificacion"],
-                    "op_id_alta": cv["op_id_alta"],
-                    "op_id_ultima_modificacion": cv["op_id_ultima_modificacion"],
-                    "id_obligacion_financiera": ob_id,
-                    "id_concepto_financiero": cv["id_concepto_financiero"],
-                    "orden_composicion": cv["orden_composicion"],
-                    "importe_componente": cv["importe_componente"],
-                    "moneda_componente": cv.get("moneda_componente", "ARS"),
-                },
-            ).mappings().one()
+            comp_row = (
+                self.db.execute(
+                    comp_stmt,
+                    {
+                        "uid_global": cv["uid_global"],
+                        "version_registro": cv["version_registro"],
+                        "created_at": cv["created_at"],
+                        "updated_at": cv["updated_at"],
+                        "id_instalacion_origen": cv["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": cv[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_alta": cv["op_id_alta"],
+                        "op_id_ultima_modificacion": cv["op_id_ultima_modificacion"],
+                        "id_obligacion_financiera": ob_id,
+                        "id_concepto_financiero": cv["id_concepto_financiero"],
+                        "orden_composicion": cv["orden_composicion"],
+                        "importe_componente": cv["importe_componente"],
+                        "moneda_componente": cv.get("moneda_componente", "ARS"),
+                    },
+                )
+                .mappings()
+                .one()
+            )
             comp_results.append(
-                {**dict(comp_row), "codigo_concepto_financiero": cv["codigo_concepto_financiero"]}
+                {
+                    **dict(comp_row),
+                    "codigo_concepto_financiero": cv["codigo_concepto_financiero"],
+                }
             )
 
         result = dict(ob_row)
@@ -2634,8 +2620,7 @@ class FinancieroRepository:
     def create_obligacion_servicio_trasladado(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
 
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             INSERT INTO obligacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2668,10 +2653,8 @@ class FinancieroRepository:
                 saldo_pendiente,
                 moneda,
                 estado_obligacion
-            """
-        )
-        comp_stmt = text(
-            """
+            """)
+        comp_stmt = text("""
             INSERT INTO composicion_obligacion (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2687,10 +2670,8 @@ class FinancieroRepository:
                 1, :importe_componente, :importe_componente
             )
             RETURNING id_composicion_obligacion
-            """
-        )
-        obligado_stmt = text(
-            """
+            """)
+        obligado_stmt = text("""
             INSERT INTO obligacion_obligado (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -2706,32 +2687,35 @@ class FinancieroRepository:
                 :rol_obligado, :porcentaje_responsabilidad
             )
             RETURNING id_obligacion_obligado
-            """
-        )
+            """)
 
-        ob_row = self.db.execute(
-            ob_stmt,
-            {
-                "uid_global": values["uid_global_obligacion"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_relacion_generadora": values["id_relacion_generadora"],
-                "fecha_emision": values["fecha_emision"],
-                "fecha_vencimiento": values["fecha_vencimiento"],
-                "periodo_desde": values["periodo_desde"],
-                "periodo_hasta": values["periodo_hasta"],
-                "importe_total": values["importe_total"],
-                "moneda": values["moneda"],
-                "estado_obligacion": values["estado_obligacion"],
-            },
-        ).mappings().one_or_none()
+        ob_row = (
+            self.db.execute(
+                ob_stmt,
+                {
+                    "uid_global": values["uid_global_obligacion"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_relacion_generadora": values["id_relacion_generadora"],
+                    "fecha_emision": values["fecha_emision"],
+                    "fecha_vencimiento": values["fecha_vencimiento"],
+                    "periodo_desde": values["periodo_desde"],
+                    "periodo_hasta": values["periodo_hasta"],
+                    "importe_total": values["importe_total"],
+                    "moneda": values["moneda"],
+                    "estado_obligacion": values["estado_obligacion"],
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
 
         if ob_row is None:
             existing = self.get_obligacion_activa_by_relacion_generadora(
@@ -2789,11 +2773,8 @@ class FinancieroRepository:
 
     # ── registro de pago (multi-obligación) ─────────────────────────────────
 
-    def get_pago_persona_by_op_id(
-        self, *, op_id: Any
-    ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+    def get_pago_persona_by_op_id(self, *, op_id: Any) -> dict[str, Any] | None:
+        stmt = text("""
             SELECT
                 m.id_movimiento_financiero,
                 m.fecha_movimiento,
@@ -2839,13 +2820,8 @@ class FinancieroRepository:
                 a.id_obligacion_financiera,
                 o.estado_obligacion
             ORDER BY m.id_movimiento_financiero ASC
-            """
-        )
-        rows = (
-            self.db.execute(stmt, {"op_id": op_id})
-            .mappings()
-            .all()
-        )
+            """)
+        rows = self.db.execute(stmt, {"op_id": op_id}).mappings().all()
         if not rows:
             return None
 
@@ -2901,7 +2877,10 @@ class FinancieroRepository:
                 else sum(row["monto_aplicado"] for row in rows)
             ),
             "monto_consumido": float(
-                (Decimal(str(resumen["monto_ingresado"])) - Decimal(str(resumen["remanente"])))
+                (
+                    Decimal(str(resumen["monto_ingresado"]))
+                    - Decimal(str(resumen["remanente"]))
+                )
                 if resumen is not None
                 else sum(row["monto_consumido"] for row in rows)
             ),
@@ -2917,8 +2896,7 @@ class FinancieroRepository:
     def get_pago_externo_factura_servicio_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 m.id_movimiento_financiero,
                 m.fecha_movimiento,
@@ -2939,8 +2917,7 @@ class FinancieroRepository:
               AND m.deleted_at IS NULL
             ORDER BY m.id_movimiento_financiero ASC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
         if row is None:
             return None
@@ -2986,8 +2963,7 @@ class FinancieroRepository:
     def get_pago_externo_impuesto_trasladado_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 m.id_movimiento_financiero,
                 m.fecha_movimiento,
@@ -3010,8 +2986,7 @@ class FinancieroRepository:
               AND m.tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
               AND m.deleted_at IS NULL
             ORDER BY m.id_movimiento_financiero ASC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, {"op_id": op_id}).mappings().all()
         for row in rows:
             payload = None
@@ -3036,12 +3011,8 @@ class FinancieroRepository:
                 "id_persona": int(payload["id_persona"]),
                 "importe_informado": float(payload["importe_pagado"]),
                 "importe_aplicado": float(row["importe_aplicado"]),
-                "remanente_no_aplicado": float(
-                    payload.get("remanente_no_aplicado", 0)
-                ),
-                "saldo_obligacion_posterior": float(
-                    row["saldo_obligacion_posterior"]
-                ),
+                "remanente_no_aplicado": float(payload.get("remanente_no_aplicado", 0)),
+                "saldo_obligacion_posterior": float(row["saldo_obligacion_posterior"]),
                 "crea_movimiento_tesoreria": False,
                 "crea_recibo": False,
                 "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
@@ -3052,8 +3023,7 @@ class FinancieroRepository:
     def get_cuenta_financiera_by_id(
         self, id_cuenta_financiera: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_cuenta_financiera,
                 tipo_cuenta,
@@ -3063,23 +3033,22 @@ class FinancieroRepository:
             FROM cuenta_financiera
             WHERE id_cuenta_financiera = :id
               AND deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_cuenta_financiera}).mappings().one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_cuenta_financiera}).mappings().one_or_none()
         return dict(row) if row else None
 
     def get_total_egresos_proveedor_factura_servicio(
         self, id_factura_servicio: int
     ) -> Decimal:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT COALESCE(SUM(importe_pagado), 0) AS total
             FROM egreso_proveedor_factura_servicio
             WHERE id_factura_servicio = :id_factura_servicio
               AND estado_egreso = 'REGISTRADO'
               AND deleted_at IS NULL
-            """
-        )
+            """)
         total = self.db.execute(
             stmt, {"id_factura_servicio": id_factura_servicio}
         ).scalar_one()
@@ -3088,15 +3057,13 @@ class FinancieroRepository:
     def get_total_egresos_impuesto_empresa(
         self, id_comprobante_impuesto: int
     ) -> Decimal:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT COALESCE(SUM(importe_pagado), 0) AS total
             FROM egreso_impuesto_empresa
             WHERE id_comprobante_impuesto = :id_comprobante_impuesto
               AND estado_egreso = 'REGISTRADO'
               AND deleted_at IS NULL
-            """
-        )
+            """)
         total = self.db.execute(
             stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
         ).scalar_one()
@@ -3105,8 +3072,7 @@ class FinancieroRepository:
     def get_egreso_impuesto_empresa_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_impuesto_empresa,
                 e.id_comprobante_impuesto,
@@ -3126,8 +3092,7 @@ class FinancieroRepository:
               AND e.deleted_at IS NULL
             ORDER BY e.id_egreso_impuesto_empresa ASC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
         if row is None:
             return None
@@ -3161,8 +3126,7 @@ class FinancieroRepository:
     def list_egresos_impuesto_empresa(
         self, id_comprobante_impuesto: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_impuesto_empresa,
                 e.id_movimiento_tesoreria,
@@ -3179,18 +3143,22 @@ class FinancieroRepository:
             WHERE e.id_comprobante_impuesto = :id_comprobante_impuesto
               AND e.deleted_at IS NULL
             ORDER BY e.fecha_pago ASC, e.id_egreso_impuesto_empresa ASC
-            """
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_comprobante_impuesto": id_comprobante_impuesto})
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
-        ).mappings().all()
         egresos: list[dict[str, Any]] = []
         for row in rows:
             observaciones = row["observaciones"]
             if observaciones:
                 try:
                     parsed = json.loads(observaciones)
-                    if isinstance(parsed, dict) and parsed.get("observaciones") is not None:
+                    if (
+                        isinstance(parsed, dict)
+                        and parsed.get("observaciones") is not None
+                    ):
                         observaciones = parsed.get("observaciones")
                 except (TypeError, ValueError):
                     pass
@@ -3211,8 +3179,7 @@ class FinancieroRepository:
     def list_egresos_impuesto_disponibles_para_liquidacion(
         self, id_comprobante_impuesto: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_impuesto_empresa,
                 e.id_movimiento_tesoreria,
@@ -3238,11 +3205,12 @@ class FinancieroRepository:
                     AND lite.estado_liquidacion_impuesto_egreso = 'ACTIVO'
               )
             ORDER BY e.fecha_pago ASC, e.id_egreso_impuesto_empresa ASC
-            """
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_comprobante_impuesto": id_comprobante_impuesto})
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
-        ).mappings().all()
         return [
             {
                 "id_egreso_impuesto_empresa": row["id_egreso_impuesto_empresa"],
@@ -3259,8 +3227,7 @@ class FinancieroRepository:
     def get_egreso_proveedor_factura_servicio_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_proveedor_factura_servicio,
                 e.id_factura_servicio,
@@ -3280,8 +3247,7 @@ class FinancieroRepository:
               AND e.deleted_at IS NULL
             ORDER BY e.id_egreso_proveedor_factura_servicio ASC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
         if row is None:
             return None
@@ -3316,8 +3282,7 @@ class FinancieroRepository:
     def list_egresos_proveedor_factura_servicio(
         self, id_factura_servicio: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_proveedor_factura_servicio,
                 e.id_movimiento_tesoreria,
@@ -3334,18 +3299,22 @@ class FinancieroRepository:
             WHERE e.id_factura_servicio = :id_factura_servicio
               AND e.deleted_at IS NULL
             ORDER BY e.fecha_pago ASC, e.id_egreso_proveedor_factura_servicio ASC
-            """
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_factura_servicio": id_factura_servicio})
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_factura_servicio": id_factura_servicio}
-        ).mappings().all()
         egresos: list[dict[str, Any]] = []
         for row in rows:
             observaciones = row["observaciones"]
             if observaciones:
                 try:
                     parsed = json.loads(observaciones)
-                    if isinstance(parsed, dict) and parsed.get("observaciones") is not None:
+                    if (
+                        isinstance(parsed, dict)
+                        and parsed.get("observaciones") is not None
+                    ):
                         observaciones = parsed.get("observaciones")
                 except (TypeError, ValueError):
                     pass
@@ -3368,8 +3337,7 @@ class FinancieroRepository:
     def list_egresos_proveedor_disponibles_para_recupero(
         self, id_factura_servicio: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_proveedor_factura_servicio,
                 e.id_movimiento_tesoreria,
@@ -3395,11 +3363,12 @@ class FinancieroRepository:
                     AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
               )
             ORDER BY e.fecha_pago ASC, e.id_egreso_proveedor_factura_servicio ASC
-            """
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_factura_servicio": id_factura_servicio})
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_factura_servicio": id_factura_servicio}
-        ).mappings().all()
         return [
             {
                 "id_egreso_proveedor_factura_servicio": row[
@@ -3415,19 +3384,15 @@ class FinancieroRepository:
             for row in rows
         ]
 
-    def get_liquidacion_recupero_by_op_id(
-        self, *, op_id: Any
-    ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+    def get_liquidacion_recupero_by_op_id(self, *, op_id: Any) -> dict[str, Any] | None:
+        stmt = text("""
             SELECT id_liquidacion_recupero
             FROM liquidacion_recupero
             WHERE op_id_alta = :op_id
               AND deleted_at IS NULL
             ORDER BY id_liquidacion_recupero ASC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
         if row is None:
             return None
@@ -3436,8 +3401,7 @@ class FinancieroRepository:
     def get_liquidacion_recupero_by_id(
         self, id_liquidacion_recupero: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 lr.id_liquidacion_recupero,
                 lr.codigo_liquidacion_recupero,
@@ -3456,14 +3420,16 @@ class FinancieroRepository:
               ON lrf.id_liquidacion_recupero = lr.id_liquidacion_recupero
             WHERE lr.id_liquidacion_recupero = :id
               AND lr.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_liquidacion_recupero})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(stmt, {"id": id_liquidacion_recupero}).mappings().one_or_none()
         if row is None:
             return None
 
-        responsables_stmt = text(
-            """
+        responsables_stmt = text("""
             SELECT
                 id_liquidacion_recupero_responsable,
                 id_persona,
@@ -3474,10 +3440,8 @@ class FinancieroRepository:
             FROM liquidacion_recupero_responsable
             WHERE id_liquidacion_recupero = :id
             ORDER BY id_liquidacion_recupero_responsable ASC
-            """
-        )
-        egresos_stmt = text(
-            """
+            """)
+        egresos_stmt = text("""
             SELECT
                 lre.id_liquidacion_recupero_egreso,
                 lre.id_egreso_proveedor_factura_servicio,
@@ -3487,8 +3451,7 @@ class FinancieroRepository:
               AND lre.deleted_at IS NULL
               AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
             ORDER BY lre.id_liquidacion_recupero_egreso ASC
-            """
-        )
+            """)
         responsables = [
             {
                 "id_liquidacion_recupero_responsable": r[
@@ -3502,23 +3465,21 @@ class FinancieroRepository:
                     "id_asignacion_servicio_responsable"
                 ],
             }
-            for r in self.db.execute(
-                responsables_stmt, {"id": id_liquidacion_recupero}
-            ).mappings().all()
+            for r in self.db.execute(responsables_stmt, {"id": id_liquidacion_recupero})
+            .mappings()
+            .all()
         ]
         egresos = [
             {
-                "id_liquidacion_recupero_egreso": e[
-                    "id_liquidacion_recupero_egreso"
-                ],
+                "id_liquidacion_recupero_egreso": e["id_liquidacion_recupero_egreso"],
                 "id_egreso_proveedor_factura_servicio": e[
                     "id_egreso_proveedor_factura_servicio"
                 ],
                 "importe_imputado_base": float(e["importe_imputado_base"]),
             }
-            for e in self.db.execute(
-                egresos_stmt, {"id": id_liquidacion_recupero}
-            ).mappings().all()
+            for e in self.db.execute(egresos_stmt, {"id": id_liquidacion_recupero})
+            .mappings()
+            .all()
         ]
         payload = None
         if row["observaciones"]:
@@ -3548,8 +3509,7 @@ class FinancieroRepository:
     def get_liquidacion_recupero_detalle(
         self, id_liquidacion_recupero: int
     ) -> dict[str, Any] | None:
-        base_stmt = text(
-            """
+        base_stmt = text("""
             SELECT
                 lr.id_liquidacion_recupero,
                 lr.codigo_liquidacion_recupero,
@@ -3564,16 +3524,16 @@ class FinancieroRepository:
             FROM liquidacion_recupero lr
             WHERE lr.id_liquidacion_recupero = :id
               AND lr.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(base_stmt, {"id": id_liquidacion_recupero})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            base_stmt, {"id": id_liquidacion_recupero}
-        ).mappings().one_or_none()
         if row is None:
             return None
 
-        facturas_stmt = text(
-            """
+        facturas_stmt = text("""
             SELECT
                 lrf.id_factura_servicio,
                 fs.proveedor,
@@ -3587,10 +3547,8 @@ class FinancieroRepository:
              AND fs.deleted_at IS NULL
             WHERE lrf.id_liquidacion_recupero = :id
             ORDER BY lrf.id_liquidacion_recupero_factura ASC
-            """
-        )
-        egresos_stmt = text(
-            """
+            """)
+        egresos_stmt = text("""
             SELECT
                 lre.id_egreso_proveedor_factura_servicio,
                 e.id_movimiento_tesoreria,
@@ -3607,10 +3565,8 @@ class FinancieroRepository:
               AND lre.deleted_at IS NULL
               AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
             ORDER BY lre.id_liquidacion_recupero_egreso ASC
-            """
-        )
-        responsables_stmt = text(
-            """
+            """)
+        responsables_stmt = text("""
             SELECT
                 id_liquidacion_recupero_responsable,
                 id_persona,
@@ -3621,10 +3577,8 @@ class FinancieroRepository:
             FROM liquidacion_recupero_responsable
             WHERE id_liquidacion_recupero = :id
             ORDER BY id_liquidacion_recupero_responsable ASC
-            """
-        )
-        composiciones_stmt = text(
-            """
+            """)
+        composiciones_stmt = text("""
             SELECT
                 cf.codigo_concepto_financiero,
                 c.importe_componente,
@@ -3636,10 +3590,8 @@ class FinancieroRepository:
             WHERE c.id_obligacion_financiera = :id_obligacion
               AND c.deleted_at IS NULL
             ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
-            """
-        )
-        obligados_stmt = text(
-            """
+            """)
+        obligados_stmt = text("""
             SELECT
                 id_persona,
                 rol_obligado,
@@ -3648,10 +3600,8 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id_obligacion
               AND deleted_at IS NULL
             ORDER BY id_obligacion_obligado ASC
-            """
-        )
-        obligacion_stmt = text(
-            """
+            """)
+        obligacion_stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 estado_obligacion,
@@ -3659,8 +3609,7 @@ class FinancieroRepository:
             FROM obligacion_financiera
             WHERE id_obligacion_financiera = :id_obligacion
               AND deleted_at IS NULL
-            """
-        )
+            """)
 
         params = {"id": id_liquidacion_recupero}
         facturas = [
@@ -3707,14 +3656,12 @@ class FinancieroRepository:
         id_obligacion = row["id_obligacion_financiera"]
         if id_obligacion is not None:
             ob_params = {"id_obligacion": id_obligacion}
-            ob_row = self.db.execute(
-                obligacion_stmt, ob_params
-            ).mappings().one_or_none()
+            ob_row = (
+                self.db.execute(obligacion_stmt, ob_params).mappings().one_or_none()
+            )
             if ob_row is not None:
                 obligacion = {
-                    "id_obligacion_financiera": ob_row[
-                        "id_obligacion_financiera"
-                    ],
+                    "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
                     "estado_obligacion": ob_row["estado_obligacion"],
                     "saldo_pendiente": float(ob_row["saldo_pendiente"]),
                     "composiciones": [
@@ -3725,9 +3672,9 @@ class FinancieroRepository:
                             "importe_componente": float(c["importe_componente"]),
                             "saldo_componente": float(c["saldo_componente"]),
                         }
-                        for c in self.db.execute(
-                            composiciones_stmt, ob_params
-                        ).mappings().all()
+                        for c in self.db.execute(composiciones_stmt, ob_params)
+                        .mappings()
+                        .all()
                     ],
                     "obligados": [
                         {
@@ -3739,9 +3686,9 @@ class FinancieroRepository:
                                 else None
                             ),
                         }
-                        for o in self.db.execute(
-                            obligados_stmt, ob_params
-                        ).mappings().all()
+                        for o in self.db.execute(obligados_stmt, ob_params)
+                        .mappings()
+                        .all()
                     ],
                 }
 
@@ -3765,8 +3712,7 @@ class FinancieroRepository:
     def list_liquidaciones_recupero_by_factura_servicio(
         self, id_factura_servicio: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 lr.id_liquidacion_recupero,
                 lr.codigo_liquidacion_recupero,
@@ -3799,11 +3745,12 @@ class FinancieroRepository:
                 lr.id_obligacion_financiera,
                 o.saldo_pendiente
             ORDER BY lr.fecha_liquidacion ASC, lr.id_liquidacion_recupero ASC
-            """
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_factura_servicio": id_factura_servicio})
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_factura_servicio": id_factura_servicio}
-        ).mappings().all()
         return [
             {
                 "id_liquidacion_recupero": row["id_liquidacion_recupero"],
@@ -3827,16 +3774,14 @@ class FinancieroRepository:
     def get_liquidacion_impuesto_trasladado_by_op_id(
         self, *, op_id: Any
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT id_liquidacion_impuesto_trasladado
             FROM liquidacion_impuesto_trasladado
             WHERE op_id_alta = :op_id
               AND deleted_at IS NULL
             ORDER BY id_liquidacion_impuesto_trasladado ASC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"op_id": op_id}).mappings().one_or_none()
         if row is None:
             return None
@@ -3847,8 +3792,7 @@ class FinancieroRepository:
     def get_liquidacion_impuesto_trasladado_by_id(
         self, id_liquidacion_impuesto_trasladado: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 lit.id_liquidacion_impuesto_trasladado,
                 lit.codigo_liquidacion_impuesto_trasladado,
@@ -3865,11 +3809,12 @@ class FinancieroRepository:
             FROM liquidacion_impuesto_trasladado lit
             WHERE lit.id_liquidacion_impuesto_trasladado = :id
               AND lit.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_liquidacion_impuesto_trasladado})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            stmt, {"id": id_liquidacion_impuesto_trasladado}
-        ).mappings().one_or_none()
         if row is None:
             return None
 
@@ -3904,8 +3849,7 @@ class FinancieroRepository:
     def get_liquidacion_impuesto_trasladado_detalle(
         self, id_liquidacion_impuesto_trasladado: int
     ) -> dict[str, Any] | None:
-        base_stmt = text(
-            """
+        base_stmt = text("""
             SELECT
                 lit.id_liquidacion_impuesto_trasladado,
                 lit.codigo_liquidacion_impuesto_trasladado,
@@ -3921,16 +3865,16 @@ class FinancieroRepository:
             FROM liquidacion_impuesto_trasladado lit
             WHERE lit.id_liquidacion_impuesto_trasladado = :id
               AND lit.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(base_stmt, {"id": id_liquidacion_impuesto_trasladado})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            base_stmt, {"id": id_liquidacion_impuesto_trasladado}
-        ).mappings().one_or_none()
         if row is None:
             return None
 
-        comprobantes_stmt = text(
-            """
+        comprobantes_stmt = text("""
             SELECT
                 id_comprobante_impuesto,
                 organismo,
@@ -3946,10 +3890,8 @@ class FinancieroRepository:
             FROM liquidacion_impuesto_trasladado_comprobante
             WHERE id_liquidacion_impuesto_trasladado = :id
             ORDER BY id_liquidacion_impuesto_trasladado_comprobante ASC
-            """
-        )
-        egresos_stmt = text(
-            """
+            """)
+        egresos_stmt = text("""
             SELECT
                 lite.id_egreso_impuesto_empresa,
                 eie.id_movimiento_tesoreria,
@@ -3964,10 +3906,8 @@ class FinancieroRepository:
             WHERE lite.id_liquidacion_impuesto_trasladado = :id
               AND lite.deleted_at IS NULL
             ORDER BY lite.id_liquidacion_impuesto_trasladado_egreso ASC
-            """
-        )
-        responsables_stmt = text(
-            """
+            """)
+        responsables_stmt = text("""
             SELECT
                 id_liquidacion_impuesto_trasladado_responsable,
                 id_persona,
@@ -3977,10 +3917,8 @@ class FinancieroRepository:
             FROM liquidacion_impuesto_trasladado_responsable
             WHERE id_liquidacion_impuesto_trasladado = :id
             ORDER BY id_liquidacion_impuesto_trasladado_responsable ASC
-            """
-        )
-        obligacion_stmt = text(
-            """
+            """)
+        obligacion_stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 estado_obligacion,
@@ -3988,10 +3926,8 @@ class FinancieroRepository:
             FROM obligacion_financiera
             WHERE id_obligacion_financiera = :id_obligacion
               AND deleted_at IS NULL
-            """
-        )
-        composiciones_stmt = text(
-            """
+            """)
+        composiciones_stmt = text("""
             SELECT
                 cf.codigo_concepto_financiero,
                 c.importe_componente,
@@ -4003,10 +3939,8 @@ class FinancieroRepository:
             WHERE c.id_obligacion_financiera = :id_obligacion
               AND c.deleted_at IS NULL
             ORDER BY c.orden_composicion ASC, c.id_composicion_obligacion ASC
-            """
-        )
-        obligados_stmt = text(
-            """
+            """)
+        obligados_stmt = text("""
             SELECT
                 id_persona,
                 rol_obligado,
@@ -4015,8 +3949,7 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id_obligacion
               AND deleted_at IS NULL
             ORDER BY id_obligacion_obligado ASC
-            """
-        )
+            """)
 
         params = {"id": id_liquidacion_impuesto_trasladado}
         comprobantes = [
@@ -4063,14 +3996,12 @@ class FinancieroRepository:
         id_obligacion = row["id_obligacion_financiera"]
         if id_obligacion is not None:
             ob_params = {"id_obligacion": id_obligacion}
-            ob_row = self.db.execute(
-                obligacion_stmt, ob_params
-            ).mappings().one_or_none()
+            ob_row = (
+                self.db.execute(obligacion_stmt, ob_params).mappings().one_or_none()
+            )
             if ob_row is not None:
                 obligacion = {
-                    "id_obligacion_financiera": ob_row[
-                        "id_obligacion_financiera"
-                    ],
+                    "id_obligacion_financiera": ob_row["id_obligacion_financiera"],
                     "estado_obligacion": ob_row["estado_obligacion"],
                     "saldo_pendiente": float(ob_row["saldo_pendiente"]),
                     "composiciones": [
@@ -4081,9 +4012,9 @@ class FinancieroRepository:
                             "importe_componente": float(c["importe_componente"]),
                             "saldo_componente": float(c["saldo_componente"]),
                         }
-                        for c in self.db.execute(
-                            composiciones_stmt, ob_params
-                        ).mappings().all()
+                        for c in self.db.execute(composiciones_stmt, ob_params)
+                        .mappings()
+                        .all()
                     ],
                     "obligados": [
                         {
@@ -4095,9 +4026,9 @@ class FinancieroRepository:
                                 else None
                             ),
                         }
-                        for o in self.db.execute(
-                            obligados_stmt, ob_params
-                        ).mappings().all()
+                        for o in self.db.execute(obligados_stmt, ob_params)
+                        .mappings()
+                        .all()
                     ],
                 }
 
@@ -4126,8 +4057,7 @@ class FinancieroRepository:
     def get_liquidacion_impuesto_trasladado_para_pago_externo(
         self, id_liquidacion_impuesto_trasladado: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 lit.id_liquidacion_impuesto_trasladado,
                 lit.estado_liquidacion,
@@ -4143,16 +4073,16 @@ class FinancieroRepository:
              AND o.deleted_at IS NULL
             WHERE lit.id_liquidacion_impuesto_trasladado = :id
               AND lit.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id": id_liquidacion_impuesto_trasladado})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            stmt, {"id": id_liquidacion_impuesto_trasladado}
-        ).mappings().one_or_none()
         if row is None:
             return None
 
-        responsables_stmt = text(
-            """
+        responsables_stmt = text("""
             SELECT
                 id_persona,
                 porcentaje_responsabilidad,
@@ -4160,19 +4090,18 @@ class FinancieroRepository:
             FROM liquidacion_impuesto_trasladado_responsable
             WHERE id_liquidacion_impuesto_trasladado = :id
             ORDER BY id_liquidacion_impuesto_trasladado_responsable ASC
-            """
-        )
+            """)
         responsables = [
             {
                 "id_persona": r["id_persona"],
-                "porcentaje_responsabilidad": float(
-                    r["porcentaje_responsabilidad"]
-                ),
+                "porcentaje_responsabilidad": float(r["porcentaje_responsabilidad"]),
                 "importe_responsable": float(r["importe_responsable"]),
             }
             for r in self.db.execute(
                 responsables_stmt, {"id": id_liquidacion_impuesto_trasladado}
-            ).mappings().all()
+            )
+            .mappings()
+            .all()
         ]
         return {
             "id_liquidacion_impuesto_trasladado": row[
@@ -4198,8 +4127,7 @@ class FinancieroRepository:
         id_liquidacion_impuesto_trasladado: int,
         id_persona: int,
     ) -> Decimal:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT m.observaciones, a.importe_aplicado
             FROM movimiento_financiero m
             JOIN aplicacion_financiera a
@@ -4208,8 +4136,7 @@ class FinancieroRepository:
             WHERE m.tipo_movimiento = 'PAGO_EXTERNO_INFORMADO'
               AND m.estado_movimiento = 'APLICADO'
               AND m.deleted_at IS NULL
-            """
-        )
+            """)
         total = Decimal("0.00")
         for row in self.db.execute(stmt).mappings().all():
             if not row["observaciones"]:
@@ -4221,9 +4148,7 @@ class FinancieroRepository:
             if payload.get("tipo") != "pago_externo_impuesto_trasladado":
                 continue
             try:
-                payload_liquidacion = int(
-                    payload["id_liquidacion_impuesto_trasladado"]
-                )
+                payload_liquidacion = int(payload["id_liquidacion_impuesto_trasladado"])
                 payload_persona = int(payload["id_persona"])
             except (KeyError, TypeError, ValueError):
                 continue
@@ -4237,8 +4162,7 @@ class FinancieroRepository:
     def list_liquidaciones_impuesto_trasladado_by_comprobante(
         self, id_comprobante_impuesto: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 lit.id_liquidacion_impuesto_trasladado,
                 lit.codigo_liquidacion_impuesto_trasladado,
@@ -4277,11 +4201,12 @@ class FinancieroRepository:
                 o.saldo_pendiente
             ORDER BY lit.fecha_liquidacion ASC,
                      lit.id_liquidacion_impuesto_trasladado ASC
-            """
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_comprobante_impuesto": id_comprobante_impuesto})
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_comprobante_impuesto": id_comprobante_impuesto}
-        ).mappings().all()
         return [
             {
                 "id_liquidacion_impuesto_trasladado": row[
@@ -4310,8 +4235,7 @@ class FinancieroRepository:
     def get_liquidacion_impuesto_trasladado_para_anular(
         self, id_liquidacion_impuesto_trasladado: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 lit.id_liquidacion_impuesto_trasladado,
                 lit.estado_liquidacion,
@@ -4330,16 +4254,19 @@ class FinancieroRepository:
             WHERE lit.id_liquidacion_impuesto_trasladado =
                   :id_liquidacion_impuesto_trasladado
               AND lit.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_liquidacion_impuesto_trasladado": (
+                        id_liquidacion_impuesto_trasladado
+                    )
+                },
+            )
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "id_liquidacion_impuesto_trasladado": (
-                    id_liquidacion_impuesto_trasladado
-                )
-            },
-        ).mappings().one_or_none()
         if row is None:
             return None
 
@@ -4347,7 +4274,9 @@ class FinancieroRepository:
         if row["observaciones"]:
             try:
                 parsed = json.loads(row["observaciones"])
-                anulacion = parsed.get("anulacion") if isinstance(parsed, dict) else None
+                anulacion = (
+                    parsed.get("anulacion") if isinstance(parsed, dict) else None
+                )
                 if isinstance(anulacion, dict):
                     motivo_anulacion = anulacion.get("motivo")
             except (TypeError, ValueError):
@@ -4368,8 +4297,7 @@ class FinancieroRepository:
     def get_operaciones_activas_liquidacion_impuesto_trasladado(
         self, id_liquidacion_impuesto_trasladado: int
     ) -> dict[str, Any]:
-        stmt = text(
-            """
+        stmt = text("""
             WITH liq AS (
                 SELECT
                     id_liquidacion_impuesto_trasladado,
@@ -4441,16 +4369,19 @@ class FinancieroRepository:
                           AND c.op_id_ultima_modificacion = liq.op_id_alta
                       )
                 ) AS composiciones_posteriores
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "id_liquidacion_impuesto_trasladado": (
+                        id_liquidacion_impuesto_trasladado
+                    )
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "id_liquidacion_impuesto_trasladado": (
-                    id_liquidacion_impuesto_trasladado
-                )
-            },
-        ).mappings().one()
         counts = {
             "aplicaciones": int(row["aplicaciones"]),
             "movimientos": int(row["movimientos"]),
@@ -4467,8 +4398,7 @@ class FinancieroRepository:
         motivo: str,
         context: Any,
     ) -> dict[str, Any]:
-        row_stmt = text(
-            """
+        row_stmt = text("""
             SELECT
                 lit.id_liquidacion_impuesto_trasladado,
                 lit.estado_liquidacion,
@@ -4480,23 +4410,26 @@ class FinancieroRepository:
                   :id_liquidacion_impuesto_trasladado
               AND lit.deleted_at IS NULL
             FOR UPDATE
-            """
+            """)
+        row = (
+            self.db.execute(
+                row_stmt,
+                {
+                    "id_liquidacion_impuesto_trasladado": (
+                        id_liquidacion_impuesto_trasladado
+                    )
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            row_stmt,
-            {
-                "id_liquidacion_impuesto_trasladado": (
-                    id_liquidacion_impuesto_trasladado
-                )
-            },
-        ).mappings().one()
         observaciones = _append_motivo_anulacion(row["observaciones"], motivo)
         op_id = getattr(context, "op_id", None)
         id_instalacion = getattr(context, "id_instalacion", None)
 
-        lit_row = self.db.execute(
-            text(
-                """
+        lit_row = (
+            self.db.execute(
+                text("""
                 UPDATE liquidacion_impuesto_trasladado
                 SET estado_liquidacion = 'ANULADA',
                     observaciones = :observaciones,
@@ -4505,23 +4438,25 @@ class FinancieroRepository:
                 WHERE id_liquidacion_impuesto_trasladado =
                       :id_liquidacion_impuesto_trasladado
                 RETURNING estado_liquidacion
-                """
-            ),
-            {
-                "id_liquidacion_impuesto_trasladado": (
-                    id_liquidacion_impuesto_trasladado
-                ),
-                "observaciones": observaciones,
-                "id_instalacion": id_instalacion,
-                "op_id": op_id,
-            },
-        ).mappings().one()
+                """),
+                {
+                    "id_liquidacion_impuesto_trasladado": (
+                        id_liquidacion_impuesto_trasladado
+                    ),
+                    "observaciones": observaciones,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                },
+            )
+            .mappings()
+            .one()
+        )
 
         rg_row = None
         if row["id_relacion_generadora"] is not None:
-            rg_row = self.db.execute(
-                text(
-                    """
+            rg_row = (
+                self.db.execute(
+                    text("""
                     UPDATE relacion_generadora
                     SET estado_relacion_generadora = 'CANCELADA',
                         id_instalacion_ultima_modificacion = :id_instalacion,
@@ -4529,20 +4464,22 @@ class FinancieroRepository:
                     WHERE id_relacion_generadora = :id_relacion_generadora
                       AND deleted_at IS NULL
                     RETURNING estado_relacion_generadora
-                    """
-                ),
-                {
-                    "id_relacion_generadora": row["id_relacion_generadora"],
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                },
-            ).mappings().one_or_none()
+                    """),
+                    {
+                        "id_relacion_generadora": row["id_relacion_generadora"],
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
 
         ob_row = None
         if row["id_obligacion_financiera"] is not None:
-            ob_row = self.db.execute(
-                text(
-                    """
+            ob_row = (
+                self.db.execute(
+                    text("""
                     UPDATE obligacion_financiera
                     SET estado_obligacion = 'ANULADA',
                         id_instalacion_ultima_modificacion = :id_instalacion,
@@ -4550,25 +4487,25 @@ class FinancieroRepository:
                     WHERE id_obligacion_financiera = :id_obligacion_financiera
                       AND deleted_at IS NULL
                     RETURNING estado_obligacion
-                    """
-                ),
-                {
-                    "id_obligacion_financiera": row["id_obligacion_financiera"],
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                },
-            ).mappings().one_or_none()
+                    """),
+                    {
+                        "id_obligacion_financiera": row["id_obligacion_financiera"],
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             self.db.execute(
-                text(
-                    """
+                text("""
                     UPDATE composicion_obligacion
                     SET estado_composicion_obligacion = 'ANULADA',
                         id_instalacion_ultima_modificacion = :id_instalacion,
                         op_id_ultima_modificacion = :op_id
                     WHERE id_obligacion_financiera = :id_obligacion_financiera
                       AND deleted_at IS NULL
-                    """
-                ),
+                    """),
                 {
                     "id_obligacion_financiera": row["id_obligacion_financiera"],
                     "id_instalacion": id_instalacion,
@@ -4577,8 +4514,7 @@ class FinancieroRepository:
             )
 
         egresos_liberados = self.db.execute(
-            text(
-                """
+            text("""
                 UPDATE liquidacion_impuesto_trasladado_egreso
                 SET estado_liquidacion_impuesto_egreso = 'ANULADO',
                     deleted_at = CURRENT_TIMESTAMP,
@@ -4588,8 +4524,7 @@ class FinancieroRepository:
                       :id_liquidacion_impuesto_trasladado
                   AND deleted_at IS NULL
                   AND estado_liquidacion_impuesto_egreso = 'ACTIVO'
-                """
-            ),
+                """),
             {
                 "id_liquidacion_impuesto_trasladado": (
                     id_liquidacion_impuesto_trasladado
@@ -4618,8 +4553,7 @@ class FinancieroRepository:
     def get_liquidacion_recupero_para_anular(
         self, id_liquidacion_recupero: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 lr.id_liquidacion_recupero,
                 lr.estado_liquidacion,
@@ -4637,11 +4571,12 @@ class FinancieroRepository:
              AND o.deleted_at IS NULL
             WHERE lr.id_liquidacion_recupero = :id_liquidacion_recupero
               AND lr.deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id_liquidacion_recupero": id_liquidacion_recupero})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            stmt, {"id_liquidacion_recupero": id_liquidacion_recupero}
-        ).mappings().one_or_none()
         if row is None:
             return None
 
@@ -4649,7 +4584,9 @@ class FinancieroRepository:
         if row["observaciones"]:
             try:
                 parsed = json.loads(row["observaciones"])
-                anulacion = parsed.get("anulacion") if isinstance(parsed, dict) else None
+                anulacion = (
+                    parsed.get("anulacion") if isinstance(parsed, dict) else None
+                )
                 if isinstance(anulacion, dict):
                     motivo_anulacion = anulacion.get("motivo")
             except (TypeError, ValueError):
@@ -4668,8 +4605,7 @@ class FinancieroRepository:
     def get_operaciones_activas_liquidacion_recupero(
         self, id_liquidacion_recupero: int
     ) -> dict[str, Any]:
-        stmt = text(
-            """
+        stmt = text("""
             WITH liq AS (
                 SELECT
                     id_liquidacion_recupero,
@@ -4731,11 +4667,12 @@ class FinancieroRepository:
                           AND c.op_id_ultima_modificacion = liq.op_id_alta
                       )
                 ) AS composiciones_posteriores
-            """
+            """)
+        row = (
+            self.db.execute(stmt, {"id_liquidacion_recupero": id_liquidacion_recupero})
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt, {"id_liquidacion_recupero": id_liquidacion_recupero}
-        ).mappings().one()
         counts = {
             "aplicaciones": int(row["aplicaciones"]),
             "movimientos": int(row["movimientos"]),
@@ -4748,8 +4685,7 @@ class FinancieroRepository:
     def anular_liquidacion_recupero(
         self, *, id_liquidacion_recupero: int, motivo: str, context: Any
     ) -> dict[str, Any]:
-        row_stmt = text(
-            """
+        row_stmt = text("""
             SELECT
                 lr.id_liquidacion_recupero,
                 lr.estado_liquidacion,
@@ -4760,18 +4696,21 @@ class FinancieroRepository:
             WHERE lr.id_liquidacion_recupero = :id_liquidacion_recupero
               AND lr.deleted_at IS NULL
             FOR UPDATE
-            """
+            """)
+        row = (
+            self.db.execute(
+                row_stmt, {"id_liquidacion_recupero": id_liquidacion_recupero}
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            row_stmt, {"id_liquidacion_recupero": id_liquidacion_recupero}
-        ).mappings().one()
         observaciones = _append_motivo_anulacion(row["observaciones"], motivo)
         op_id = getattr(context, "op_id", None)
         id_instalacion = getattr(context, "id_instalacion", None)
 
-        lr_row = self.db.execute(
-            text(
-                """
+        lr_row = (
+            self.db.execute(
+                text("""
                 UPDATE liquidacion_recupero
                 SET estado_liquidacion = 'ANULADA',
                     observaciones = :observaciones,
@@ -4779,21 +4718,23 @@ class FinancieroRepository:
                     op_id_ultima_modificacion = :op_id
                 WHERE id_liquidacion_recupero = :id_liquidacion_recupero
                 RETURNING estado_liquidacion
-                """
-            ),
-            {
-                "id_liquidacion_recupero": id_liquidacion_recupero,
-                "observaciones": observaciones,
-                "id_instalacion": id_instalacion,
-                "op_id": op_id,
-            },
-        ).mappings().one()
+                """),
+                {
+                    "id_liquidacion_recupero": id_liquidacion_recupero,
+                    "observaciones": observaciones,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                },
+            )
+            .mappings()
+            .one()
+        )
 
         rg_row = None
         if row["id_relacion_generadora"] is not None:
-            rg_row = self.db.execute(
-                text(
-                    """
+            rg_row = (
+                self.db.execute(
+                    text("""
                     UPDATE relacion_generadora
                     SET estado_relacion_generadora = 'CANCELADA',
                         id_instalacion_ultima_modificacion = :id_instalacion,
@@ -4801,20 +4742,22 @@ class FinancieroRepository:
                     WHERE id_relacion_generadora = :id_relacion_generadora
                       AND deleted_at IS NULL
                     RETURNING estado_relacion_generadora
-                    """
-                ),
-                {
-                    "id_relacion_generadora": row["id_relacion_generadora"],
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                },
-            ).mappings().one_or_none()
+                    """),
+                    {
+                        "id_relacion_generadora": row["id_relacion_generadora"],
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
 
         ob_row = None
         if row["id_obligacion_financiera"] is not None:
-            ob_row = self.db.execute(
-                text(
-                    """
+            ob_row = (
+                self.db.execute(
+                    text("""
                     UPDATE obligacion_financiera
                     SET estado_obligacion = 'ANULADA',
                         id_instalacion_ultima_modificacion = :id_instalacion,
@@ -4822,25 +4765,25 @@ class FinancieroRepository:
                     WHERE id_obligacion_financiera = :id_obligacion_financiera
                       AND deleted_at IS NULL
                     RETURNING estado_obligacion
-                    """
-                ),
-                {
-                    "id_obligacion_financiera": row["id_obligacion_financiera"],
-                    "id_instalacion": id_instalacion,
-                    "op_id": op_id,
-                },
-            ).mappings().one_or_none()
+                    """),
+                    {
+                        "id_obligacion_financiera": row["id_obligacion_financiera"],
+                        "id_instalacion": id_instalacion,
+                        "op_id": op_id,
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             self.db.execute(
-                text(
-                    """
+                text("""
                     UPDATE composicion_obligacion
                     SET estado_composicion_obligacion = 'ANULADA',
                         id_instalacion_ultima_modificacion = :id_instalacion,
                         op_id_ultima_modificacion = :op_id
                     WHERE id_obligacion_financiera = :id_obligacion_financiera
                       AND deleted_at IS NULL
-                    """
-                ),
+                    """),
                 {
                     "id_obligacion_financiera": row["id_obligacion_financiera"],
                     "id_instalacion": id_instalacion,
@@ -4849,8 +4792,7 @@ class FinancieroRepository:
             )
 
         egresos_liberados = self.db.execute(
-            text(
-                """
+            text("""
                 UPDATE liquidacion_recupero_egreso
                 SET estado_liquidacion_recupero_egreso = 'ANULADO',
                     deleted_at = CURRENT_TIMESTAMP,
@@ -4859,8 +4801,7 @@ class FinancieroRepository:
                 WHERE id_liquidacion_recupero = :id_liquidacion_recupero
                   AND deleted_at IS NULL
                   AND estado_liquidacion_recupero_egreso = 'ACTIVO'
-                """
-            ),
+                """),
             {
                 "id_liquidacion_recupero": id_liquidacion_recupero,
                 "id_instalacion": id_instalacion,
@@ -4884,8 +4825,7 @@ class FinancieroRepository:
 
     def crear_liquidacion_recupero(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO liquidacion_recupero (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -4905,37 +4845,41 @@ class FinancieroRepository:
                 :importe_absorbido_empresa, :observaciones
             )
             RETURNING id_liquidacion_recupero
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "uid_global": values["uid_global_liquidacion"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "codigo_liquidacion_recupero": values[
+                        "codigo_liquidacion_recupero"
+                    ],
+                    "fecha_liquidacion": values["fecha_liquidacion"],
+                    "fecha_vencimiento": values["fecha_vencimiento"],
+                    "importe_total_egresado_base": values[
+                        "importe_total_egresado_base"
+                    ],
+                    "importe_total_recuperar": values["importe_total_recuperar"],
+                    "importe_absorbido_empresa": values["importe_absorbido_empresa"],
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "uid_global": values["uid_global_liquidacion"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "codigo_liquidacion_recupero": values["codigo_liquidacion_recupero"],
-                "fecha_liquidacion": values["fecha_liquidacion"],
-                "fecha_vencimiento": values["fecha_vencimiento"],
-                "importe_total_egresado_base": values[
-                    "importe_total_egresado_base"
-                ],
-                "importe_total_recuperar": values["importe_total_recuperar"],
-                "importe_absorbido_empresa": values["importe_absorbido_empresa"],
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
         id_liquidacion = row["id_liquidacion_recupero"]
 
         self.db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO liquidacion_recupero_factura (
                     id_liquidacion_recupero, id_factura_servicio,
                     importe_egresado_base, importe_recuperar
@@ -4944,8 +4888,7 @@ class FinancieroRepository:
                     :id_liquidacion_recupero, :id_factura_servicio,
                     :importe_egresado_base, :importe_recuperar
                 )
-                """
-            ),
+                """),
             {
                 "id_liquidacion_recupero": id_liquidacion,
                 "id_factura_servicio": values["id_factura_servicio"],
@@ -4953,8 +4896,7 @@ class FinancieroRepository:
                 "importe_recuperar": values["importe_total_recuperar"],
             },
         )
-        egreso_stmt = text(
-            """
+        egreso_stmt = text("""
             INSERT INTO liquidacion_recupero_egreso (
                 id_liquidacion_recupero,
                 id_egreso_proveedor_factura_servicio,
@@ -4965,8 +4907,7 @@ class FinancieroRepository:
                 :id_egreso_proveedor_factura_servicio,
                 :importe_imputado_base
             )
-            """
-        )
+            """)
         for egreso in values["egresos"]:
             self.db.execute(
                 egreso_stmt,
@@ -4978,8 +4919,7 @@ class FinancieroRepository:
                     "importe_imputado_base": egreso["importe_pagado"],
                 },
             )
-        responsable_stmt = text(
-            """
+        responsable_stmt = text("""
             INSERT INTO liquidacion_recupero_responsable (
                 id_liquidacion_recupero, id_persona,
                 porcentaje_responsabilidad, importe_responsable,
@@ -4990,8 +4930,7 @@ class FinancieroRepository:
                 :porcentaje_responsabilidad, :importe_responsable,
                 :origen_responsable, :id_asignacion_servicio_responsable
             )
-            """
-        )
+            """)
         for responsable in values["responsables"]:
             rv = self._values(responsable)
             self.db.execute(
@@ -5013,8 +4952,7 @@ class FinancieroRepository:
         self, *, id_liquidacion_recupero: int, id_relacion_generadora: int, payload: Any
     ) -> None:
         values = self._values(payload)
-        ob_stmt = text(
-            """
+        ob_stmt = text("""
             INSERT INTO obligacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5032,32 +4970,34 @@ class FinancieroRepository:
                 :importe_total, :importe_total, 'ARS', 'EMITIDA'
             )
             RETURNING id_obligacion_financiera
-            """
+            """)
+        ob_row = (
+            self.db.execute(
+                ob_stmt,
+                {
+                    "uid_global": values["uid_global_obligacion"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_relacion_generadora": id_relacion_generadora,
+                    "fecha_emision": values["fecha_liquidacion"],
+                    "fecha_vencimiento": values["fecha_vencimiento"],
+                    "importe_total": values["importe_total_recuperar"],
+                },
+            )
+            .mappings()
+            .one()
         )
-        ob_row = self.db.execute(
-            ob_stmt,
-            {
-                "uid_global": values["uid_global_obligacion"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_relacion_generadora": id_relacion_generadora,
-                "fecha_emision": values["fecha_liquidacion"],
-                "fecha_vencimiento": values["fecha_vencimiento"],
-                "importe_total": values["importe_total_recuperar"],
-            },
-        ).mappings().one()
         id_obligacion = ob_row["id_obligacion_financiera"]
 
         self.db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO composicion_obligacion (
                     uid_global, version_registro, created_at, updated_at,
                     id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5072,8 +5012,7 @@ class FinancieroRepository:
                     :id_obligacion_financiera, :id_concepto_financiero,
                     1, :importe_componente, :importe_componente
                 )
-                """
-            ),
+                """),
             {
                 "uid_global": values["uid_global_composicion"],
                 "version_registro": values["version_registro"],
@@ -5090,8 +5029,7 @@ class FinancieroRepository:
                 "importe_componente": values["importe_total_recuperar"],
             },
         )
-        obligado_stmt = text(
-            """
+        obligado_stmt = text("""
             INSERT INTO obligacion_obligado (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5106,8 +5044,7 @@ class FinancieroRepository:
                 :id_obligacion_financiera, :id_persona,
                 'RESPONSABLE_RECUPERO', :porcentaje_responsabilidad
             )
-            """
-        )
+            """)
         for responsable in values["responsables"]:
             rv = self._values(responsable)
             self.db.execute(
@@ -5124,20 +5061,16 @@ class FinancieroRepository:
                     "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
                     "id_obligacion_financiera": id_obligacion,
                     "id_persona": rv["id_persona"],
-                    "porcentaje_responsabilidad": rv[
-                        "porcentaje_responsabilidad"
-                    ],
+                    "porcentaje_responsabilidad": rv["porcentaje_responsabilidad"],
                 },
             )
         self.db.execute(
-            text(
-                """
+            text("""
                 UPDATE liquidacion_recupero
                 SET id_relacion_generadora = :id_relacion_generadora,
                     id_obligacion_financiera = :id_obligacion_financiera
                 WHERE id_liquidacion_recupero = :id_liquidacion_recupero
-                """
-            ),
+                """),
             {
                 "id_liquidacion_recupero": id_liquidacion_recupero,
                 "id_relacion_generadora": id_relacion_generadora,
@@ -5148,8 +5081,7 @@ class FinancieroRepository:
     def crear_liquidacion_impuesto_trasladado(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
         comprobante = values["comprobante"]
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO liquidacion_impuesto_trasladado (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5169,38 +5101,40 @@ class FinancieroRepository:
                 :importe_absorbido_empresa, :observaciones
             )
             RETURNING id_liquidacion_impuesto_trasladado
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "uid_global": values["uid_global_liquidacion"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "codigo_liquidacion_impuesto_trasladado": values[
+                        "codigo_liquidacion_impuesto_trasladado"
+                    ],
+                    "modalidad_gestion_impuesto": values["modalidad_gestion_impuesto"],
+                    "fecha_liquidacion": values["fecha_liquidacion"],
+                    "fecha_vencimiento": values["fecha_vencimiento"],
+                    "importe_total_base": values["importe_total_base"],
+                    "importe_total_trasladar": values["importe_total_trasladar"],
+                    "importe_absorbido_empresa": values["importe_absorbido_empresa"],
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "uid_global": values["uid_global_liquidacion"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "codigo_liquidacion_impuesto_trasladado": values[
-                    "codigo_liquidacion_impuesto_trasladado"
-                ],
-                "modalidad_gestion_impuesto": values["modalidad_gestion_impuesto"],
-                "fecha_liquidacion": values["fecha_liquidacion"],
-                "fecha_vencimiento": values["fecha_vencimiento"],
-                "importe_total_base": values["importe_total_base"],
-                "importe_total_trasladar": values["importe_total_trasladar"],
-                "importe_absorbido_empresa": values["importe_absorbido_empresa"],
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
         id_liquidacion = row["id_liquidacion_impuesto_trasladado"]
 
         self.db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO liquidacion_impuesto_trasladado_comprobante (
                     id_liquidacion_impuesto_trasladado,
                     id_comprobante_impuesto,
@@ -5229,8 +5163,7 @@ class FinancieroRepository:
                     :importe_base,
                     :importe_trasladar
                 )
-                """
-            ),
+                """),
             {
                 "id_liquidacion": id_liquidacion,
                 "id_comprobante_impuesto": values["id_comprobante_impuesto"],
@@ -5247,8 +5180,7 @@ class FinancieroRepository:
             },
         )
 
-        egreso_stmt = text(
-            """
+        egreso_stmt = text("""
             INSERT INTO liquidacion_impuesto_trasladado_egreso (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5265,8 +5197,7 @@ class FinancieroRepository:
                 :id_egreso_impuesto_empresa,
                 :importe_imputado_base
             )
-            """
-        )
+            """)
         for egreso in values["egresos"]:
             self.db.execute(
                 egreso_stmt,
@@ -5281,15 +5212,12 @@ class FinancieroRepository:
                     "op_id_alta": values["op_id_alta"],
                     "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
                     "id_liquidacion": id_liquidacion,
-                    "id_egreso_impuesto_empresa": egreso[
-                        "id_egreso_impuesto_empresa"
-                    ],
+                    "id_egreso_impuesto_empresa": egreso["id_egreso_impuesto_empresa"],
                     "importe_imputado_base": egreso["importe_pagado"],
                 },
             )
 
-        responsable_stmt = text(
-            """
+        responsable_stmt = text("""
             INSERT INTO liquidacion_impuesto_trasladado_responsable (
                 id_liquidacion_impuesto_trasladado,
                 id_persona,
@@ -5304,8 +5232,7 @@ class FinancieroRepository:
                 :importe_responsable,
                 :origen_responsable
             )
-            """
-        )
+            """)
         for responsable in values["responsables"]:
             rv = self._values(responsable)
             self.db.execute(
@@ -5328,9 +5255,9 @@ class FinancieroRepository:
         payload: Any,
     ) -> None:
         values = self._values(payload)
-        ob_row = self.db.execute(
-            text(
-                """
+        ob_row = (
+            self.db.execute(
+                text("""
                 INSERT INTO obligacion_financiera (
                     uid_global, version_registro, created_at, updated_at,
                     id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5348,29 +5275,30 @@ class FinancieroRepository:
                     :importe_total, :importe_total, 'ARS', 'EMITIDA'
                 )
                 RETURNING id_obligacion_financiera
-                """
-            ),
-            {
-                "uid_global": values["uid_global_obligacion"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_relacion_generadora": id_relacion_generadora,
-                "fecha_emision": values["fecha_liquidacion"],
-                "fecha_vencimiento": values["fecha_vencimiento"],
-                "importe_total": values["importe_total_trasladar"],
-            },
-        ).mappings().one()
+                """),
+                {
+                    "uid_global": values["uid_global_obligacion"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_relacion_generadora": id_relacion_generadora,
+                    "fecha_emision": values["fecha_liquidacion"],
+                    "fecha_vencimiento": values["fecha_vencimiento"],
+                    "importe_total": values["importe_total_trasladar"],
+                },
+            )
+            .mappings()
+            .one()
+        )
         id_obligacion = ob_row["id_obligacion_financiera"]
         self.db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO composicion_obligacion (
                     uid_global, version_registro, created_at, updated_at,
                     id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5385,8 +5313,7 @@ class FinancieroRepository:
                     :id_obligacion_financiera, :id_concepto_financiero,
                     1, :importe_componente, :importe_componente
                 )
-                """
-            ),
+                """),
             {
                 "uid_global": values["uid_global_composicion"],
                 "version_registro": values["version_registro"],
@@ -5404,8 +5331,7 @@ class FinancieroRepository:
             },
         )
 
-        obligado_stmt = text(
-            """
+        obligado_stmt = text("""
             INSERT INTO obligacion_obligado (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5420,8 +5346,7 @@ class FinancieroRepository:
                 :id_obligacion_financiera, :id_persona,
                 'RESPONSABLE_IMPUESTO_TRASLADADO', :porcentaje_responsabilidad
             )
-            """
-        )
+            """)
         for responsable in values["responsables"]:
             rv = self._values(responsable)
             self.db.execute(
@@ -5438,22 +5363,18 @@ class FinancieroRepository:
                     "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
                     "id_obligacion_financiera": id_obligacion,
                     "id_persona": rv["id_persona"],
-                    "porcentaje_responsabilidad": rv[
-                        "porcentaje_responsabilidad"
-                    ],
+                    "porcentaje_responsabilidad": rv["porcentaje_responsabilidad"],
                 },
             )
 
         self.db.execute(
-            text(
-                """
+            text("""
                 UPDATE liquidacion_impuesto_trasladado
                 SET id_relacion_generadora = :id_relacion_generadora,
                     id_obligacion_financiera = :id_obligacion_financiera
                 WHERE id_liquidacion_impuesto_trasladado =
                       :id_liquidacion_impuesto_trasladado
-                """
-            ),
+                """),
             {
                 "id_liquidacion_impuesto_trasladado": (
                     id_liquidacion_impuesto_trasladado
@@ -5466,8 +5387,7 @@ class FinancieroRepository:
     def get_egreso_proveedor_factura_servicio_by_id(
         self, id_egreso: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_proveedor_factura_servicio,
                 e.id_factura_servicio,
@@ -5481,8 +5401,7 @@ class FinancieroRepository:
              AND mt.deleted_at IS NULL
             WHERE e.id_egreso_proveedor_factura_servicio = :id_egreso
               AND e.deleted_at IS NULL
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"id_egreso": id_egreso}).mappings().one_or_none()
         if row is None:
             return None
@@ -5490,7 +5409,9 @@ class FinancieroRepository:
         if row["observaciones"]:
             try:
                 parsed = json.loads(row["observaciones"])
-                anulacion = parsed.get("anulacion") if isinstance(parsed, dict) else None
+                anulacion = (
+                    parsed.get("anulacion") if isinstance(parsed, dict) else None
+                )
                 if isinstance(anulacion, dict):
                     motivo_anulacion = anulacion.get("motivo")
             except (TypeError, ValueError):
@@ -5509,8 +5430,7 @@ class FinancieroRepository:
     def get_egreso_impuesto_empresa_by_id(
         self, id_egreso: int
     ) -> dict[str, Any] | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 e.id_egreso_impuesto_empresa,
                 e.id_comprobante_impuesto,
@@ -5524,8 +5444,7 @@ class FinancieroRepository:
              AND mt.deleted_at IS NULL
             WHERE e.id_egreso_impuesto_empresa = :id_egreso
               AND e.deleted_at IS NULL
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"id_egreso": id_egreso}).mappings().one_or_none()
         if row is None:
             return None
@@ -5533,7 +5452,9 @@ class FinancieroRepository:
         if row["observaciones"]:
             try:
                 parsed = json.loads(row["observaciones"])
-                anulacion = parsed.get("anulacion") if isinstance(parsed, dict) else None
+                anulacion = (
+                    parsed.get("anulacion") if isinstance(parsed, dict) else None
+                )
                 if isinstance(anulacion, dict):
                     motivo_anulacion = anulacion.get("motivo")
             except (TypeError, ValueError):
@@ -5548,8 +5469,7 @@ class FinancieroRepository:
         }
 
     def egreso_proveedor_usado_en_liquidacion_recupero(self, id_egreso: int) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT 1
             FROM liquidacion_recupero_egreso lre
             JOIN liquidacion_recupero lr
@@ -5560,18 +5480,14 @@ class FinancieroRepository:
               AND lre.deleted_at IS NULL
               AND lre.estado_liquidacion_recupero_egreso = 'ACTIVO'
             LIMIT 1
-            """
-        )
+            """)
         return (
             self.db.execute(stmt, {"id_egreso": id_egreso}).scalar_one_or_none()
             is not None
         )
 
-    def egreso_impuesto_usado_en_liquidacion_trasladada(
-        self, id_egreso: int
-    ) -> bool:
-        stmt = text(
-            """
+    def egreso_impuesto_usado_en_liquidacion_trasladada(self, id_egreso: int) -> bool:
+        stmt = text("""
             SELECT 1
             FROM liquidacion_impuesto_trasladado_egreso lite
             JOIN liquidacion_impuesto_trasladado lit
@@ -5583,8 +5499,7 @@ class FinancieroRepository:
               AND lite.deleted_at IS NULL
               AND lite.estado_liquidacion_impuesto_egreso = 'ACTIVO'
             LIMIT 1
-            """
-        )
+            """)
         return (
             self.db.execute(stmt, {"id_egreso": id_egreso}).scalar_one_or_none()
             is not None
@@ -5593,8 +5508,7 @@ class FinancieroRepository:
     def anular_egreso_proveedor_factura_servicio(
         self, *, id_egreso: int, motivo: str, context: Any
     ) -> dict[str, Any]:
-        row_stmt = text(
-            """
+        row_stmt = text("""
             SELECT
                 e.id_egreso_proveedor_factura_servicio,
                 e.id_factura_servicio,
@@ -5604,47 +5518,50 @@ class FinancieroRepository:
             WHERE e.id_egreso_proveedor_factura_servicio = :id_egreso
               AND e.deleted_at IS NULL
             FOR UPDATE
-            """
-        )
+            """)
         row = self.db.execute(row_stmt, {"id_egreso": id_egreso}).mappings().one()
         observaciones = _append_motivo_anulacion(row["observaciones"], motivo)
         op_id = getattr(context, "op_id", None)
-        update_egreso_stmt = text(
-            """
+        update_egreso_stmt = text("""
             UPDATE egreso_proveedor_factura_servicio
             SET estado_egreso = 'ANULADO',
                 observaciones = :observaciones,
                 op_id_ultima_modificacion = :op_id
             WHERE id_egreso_proveedor_factura_servicio = :id_egreso
             RETURNING estado_egreso
-            """
-        )
-        update_mt_stmt = text(
-            """
+            """)
+        update_mt_stmt = text("""
             UPDATE movimiento_tesoreria
             SET estado = 'ANULADO',
                 observaciones = :observaciones,
                 op_id_ultima_modificacion = :op_id
             WHERE id_movimiento_tesoreria = :id_movimiento_tesoreria
             RETURNING estado
-            """
+            """)
+        egreso_row = (
+            self.db.execute(
+                update_egreso_stmt,
+                {
+                    "id_egreso": id_egreso,
+                    "observaciones": observaciones,
+                    "op_id": op_id,
+                },
+            )
+            .mappings()
+            .one()
         )
-        egreso_row = self.db.execute(
-            update_egreso_stmt,
-            {
-                "id_egreso": id_egreso,
-                "observaciones": observaciones,
-                "op_id": op_id,
-            },
-        ).mappings().one()
-        mt_row = self.db.execute(
-            update_mt_stmt,
-            {
-                "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
-                "observaciones": observaciones,
-                "op_id": op_id,
-            },
-        ).mappings().one()
+        mt_row = (
+            self.db.execute(
+                update_mt_stmt,
+                {
+                    "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+                    "observaciones": observaciones,
+                    "op_id": op_id,
+                },
+            )
+            .mappings()
+            .one()
+        )
 
         return {
             "id_egreso_proveedor_factura_servicio": row[
@@ -5659,8 +5576,7 @@ class FinancieroRepository:
     def anular_egreso_impuesto_empresa(
         self, *, id_egreso: int, motivo: str, context: Any
     ) -> dict[str, Any]:
-        row_stmt = text(
-            """
+        row_stmt = text("""
             SELECT
                 e.id_egreso_impuesto_empresa,
                 e.id_comprobante_impuesto,
@@ -5670,47 +5586,50 @@ class FinancieroRepository:
             WHERE e.id_egreso_impuesto_empresa = :id_egreso
               AND e.deleted_at IS NULL
             FOR UPDATE
-            """
-        )
+            """)
         row = self.db.execute(row_stmt, {"id_egreso": id_egreso}).mappings().one()
         observaciones = _append_motivo_anulacion(row["observaciones"], motivo)
         op_id = getattr(context, "op_id", None)
-        update_egreso_stmt = text(
-            """
+        update_egreso_stmt = text("""
             UPDATE egreso_impuesto_empresa
             SET estado_egreso = 'ANULADO',
                 observaciones = :observaciones,
                 op_id_ultima_modificacion = :op_id
             WHERE id_egreso_impuesto_empresa = :id_egreso
             RETURNING estado_egreso
-            """
-        )
-        update_mt_stmt = text(
-            """
+            """)
+        update_mt_stmt = text("""
             UPDATE movimiento_tesoreria
             SET estado = 'ANULADO',
                 observaciones = :observaciones,
                 op_id_ultima_modificacion = :op_id
             WHERE id_movimiento_tesoreria = :id_movimiento_tesoreria
             RETURNING estado
-            """
+            """)
+        egreso_row = (
+            self.db.execute(
+                update_egreso_stmt,
+                {
+                    "id_egreso": id_egreso,
+                    "observaciones": observaciones,
+                    "op_id": op_id,
+                },
+            )
+            .mappings()
+            .one()
         )
-        egreso_row = self.db.execute(
-            update_egreso_stmt,
-            {
-                "id_egreso": id_egreso,
-                "observaciones": observaciones,
-                "op_id": op_id,
-            },
-        ).mappings().one()
-        mt_row = self.db.execute(
-            update_mt_stmt,
-            {
-                "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
-                "observaciones": observaciones,
-                "op_id": op_id,
-            },
-        ).mappings().one()
+        mt_row = (
+            self.db.execute(
+                update_mt_stmt,
+                {
+                    "id_movimiento_tesoreria": row["id_movimiento_tesoreria"],
+                    "observaciones": observaciones,
+                    "op_id": op_id,
+                },
+            )
+            .mappings()
+            .one()
+        )
 
         return {
             "id_egreso_impuesto_empresa": row["id_egreso_impuesto_empresa"],
@@ -5723,8 +5642,7 @@ class FinancieroRepository:
     def get_obligados_activos_by_obligacion(
         self, id_obligacion_financiera: int
     ) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 id_obligacion_obligado,
                 id_persona,
@@ -5734,17 +5652,19 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id_obligacion_financiera
               AND deleted_at IS NULL
             ORDER BY id_obligacion_obligado ASC
-            """
+            """)
+        rows = (
+            self.db.execute(
+                stmt, {"id_obligacion_financiera": id_obligacion_financiera}
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            stmt, {"id_obligacion_financiera": id_obligacion_financiera}
-        ).mappings().all()
         return [dict(row) for row in rows]
 
     def registrar_pago_externo_factura_servicio(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        mov_stmt = text(
-            """
+        mov_stmt = text("""
             INSERT INTO movimiento_financiero (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5760,10 +5680,8 @@ class FinancieroRepository:
                 :estado_movimiento, :observaciones
             )
             RETURNING id_movimiento_financiero
-            """
-        )
-        aplic_stmt = text(
-            """
+            """)
+        aplic_stmt = text("""
             INSERT INTO aplicacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5783,10 +5701,8 @@ class FinancieroRepository:
                 :origen_automatico_o_manual, :observaciones
             )
             RETURNING id_aplicacion_financiera
-            """
-        )
-        estado_stmt = text(
-            """
+            """)
+        estado_stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = CASE
                     WHEN saldo_pendiente = 0             THEN 'CANCELADA'
@@ -5796,32 +5712,35 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             RETURNING estado_obligacion, saldo_pendiente
-            """
-        )
+            """)
 
-        mov_row = self.db.execute(
-            mov_stmt,
-            {
-                "uid_global": values["uid_global_movimiento"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "fecha_movimiento": datetime.combine(
-                    values["fecha_pago"], datetime.min.time()
-                ),
-                "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
-                "importe": values["monto_aplicado"],
-                "signo": "CREDITO",
-                "estado_movimiento": "APLICADO",
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
+        mov_row = (
+            self.db.execute(
+                mov_stmt,
+                {
+                    "uid_global": values["uid_global_movimiento"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "fecha_movimiento": datetime.combine(
+                        values["fecha_pago"], datetime.min.time()
+                    ),
+                    "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
+                    "importe": values["monto_aplicado"],
+                    "signo": "CREDITO",
+                    "estado_movimiento": "APLICADO",
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
+        )
         id_movimiento = mov_row["id_movimiento_financiero"]
 
         self.db.execute(
@@ -5851,10 +5770,14 @@ class FinancieroRepository:
             },
         ).mappings().one()
 
-        estado_row = self.db.execute(
-            estado_stmt,
-            {"id": values["id_obligacion_financiera"]},
-        ).mappings().one()
+        estado_row = (
+            self.db.execute(
+                estado_stmt,
+                {"id": values["id_obligacion_financiera"]},
+            )
+            .mappings()
+            .one()
+        )
 
         return {
             "id_factura_servicio": values["id_factura_servicio"],
@@ -5873,8 +5796,7 @@ class FinancieroRepository:
         self, payload: Any
     ) -> dict[str, Any]:
         values = self._values(payload)
-        mov_stmt = text(
-            """
+        mov_stmt = text("""
             INSERT INTO movimiento_financiero (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5890,10 +5812,8 @@ class FinancieroRepository:
                 :estado_movimiento, :observaciones
             )
             RETURNING id_movimiento_financiero
-            """
-        )
-        aplic_stmt = text(
-            """
+            """)
+        aplic_stmt = text("""
             INSERT INTO aplicacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -5913,10 +5833,8 @@ class FinancieroRepository:
                 :origen_automatico_o_manual, :observaciones
             )
             RETURNING id_aplicacion_financiera
-            """
-        )
-        estado_stmt = text(
-            """
+            """)
+        estado_stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = CASE
                     WHEN saldo_pendiente = 0             THEN 'CANCELADA'
@@ -5926,65 +5844,76 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             RETURNING estado_obligacion, saldo_pendiente
-            """
-        )
+            """)
 
-        mov_row = self.db.execute(
-            mov_stmt,
-            {
-                "uid_global": values["uid_global_movimiento"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "fecha_movimiento": datetime.combine(
-                    values["fecha_pago"], datetime.min.time()
-                ),
-                "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
-                "importe": values["importe_aplicado"],
-                "signo": "CREDITO",
-                "estado_movimiento": "APLICADO",
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
+        mov_row = (
+            self.db.execute(
+                mov_stmt,
+                {
+                    "uid_global": values["uid_global_movimiento"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "fecha_movimiento": datetime.combine(
+                        values["fecha_pago"], datetime.min.time()
+                    ),
+                    "tipo_movimiento": "PAGO_EXTERNO_INFORMADO",
+                    "importe": values["importe_aplicado"],
+                    "signo": "CREDITO",
+                    "estado_movimiento": "APLICADO",
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
+        )
         id_movimiento = mov_row["id_movimiento_financiero"]
 
-        aplic_row = self.db.execute(
-            aplic_stmt,
-            {
-                "uid_global": values["uid_global_aplicacion"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_movimiento_financiero": id_movimiento,
-                "id_obligacion_financiera": values["id_obligacion_financiera"],
-                "id_composicion_obligacion": values["id_composicion_obligacion"],
-                "fecha_aplicacion": datetime.combine(
-                    values["fecha_pago"], datetime.min.time()
-                ),
-                "tipo_aplicacion": "PAGO_EXTERNO_INFORMADO",
-                "orden_aplicacion": 1,
-                "importe_aplicado": values["importe_aplicado"],
-                "origen_automatico_o_manual": "MANUAL",
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
+        aplic_row = (
+            self.db.execute(
+                aplic_stmt,
+                {
+                    "uid_global": values["uid_global_aplicacion"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_movimiento_financiero": id_movimiento,
+                    "id_obligacion_financiera": values["id_obligacion_financiera"],
+                    "id_composicion_obligacion": values["id_composicion_obligacion"],
+                    "fecha_aplicacion": datetime.combine(
+                        values["fecha_pago"], datetime.min.time()
+                    ),
+                    "tipo_aplicacion": "PAGO_EXTERNO_INFORMADO",
+                    "orden_aplicacion": 1,
+                    "importe_aplicado": values["importe_aplicado"],
+                    "origen_automatico_o_manual": "MANUAL",
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
+        )
 
-        estado_row = self.db.execute(
-            estado_stmt,
-            {"id": values["id_obligacion_financiera"]},
-        ).mappings().one()
+        estado_row = (
+            self.db.execute(
+                estado_stmt,
+                {"id": values["id_obligacion_financiera"]},
+            )
+            .mappings()
+            .one()
+        )
 
         return {
             "id_liquidacion_impuesto_trasladado": values[
@@ -6009,8 +5938,7 @@ class FinancieroRepository:
     ) -> dict[str, Any]:
         values = self._values(payload)
         fecha_movimiento = datetime.combine(values["fecha_pago"], datetime.min.time())
-        movimiento_stmt = text(
-            """
+        movimiento_stmt = text("""
             INSERT INTO movimiento_tesoreria (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -6040,10 +5968,8 @@ class FinancieroRepository:
                 :observaciones
             )
             RETURNING id_movimiento_tesoreria
-            """
-        )
-        egreso_stmt = text(
-            """
+            """)
+        egreso_stmt = text("""
             INSERT INTO egreso_proveedor_factura_servicio (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -6071,52 +5997,61 @@ class FinancieroRepository:
                 :observaciones
             )
             RETURNING id_egreso_proveedor_factura_servicio
-            """
+            """)
+        mov_row = (
+            self.db.execute(
+                movimiento_stmt,
+                {
+                    "uid_global": values["uid_global_movimiento_tesoreria"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_cuenta_financiera_origen": values[
+                        "id_cuenta_financiera_origen"
+                    ],
+                    "fecha_movimiento": fecha_movimiento,
+                    "importe": values["importe_pagado"],
+                    "referencia_externa": f"FACTURA_SERVICIO:{values['id_factura_servicio']}",
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
         )
-        mov_row = self.db.execute(
-            movimiento_stmt,
-            {
-                "uid_global": values["uid_global_movimiento_tesoreria"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_cuenta_financiera_origen": values["id_cuenta_financiera_origen"],
-                "fecha_movimiento": fecha_movimiento,
-                "importe": values["importe_pagado"],
-                "referencia_externa": f"FACTURA_SERVICIO:{values['id_factura_servicio']}",
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
         id_movimiento = mov_row["id_movimiento_tesoreria"]
 
-        egreso_row = self.db.execute(
-            egreso_stmt,
-            {
-                "uid_global": values["uid_global_egreso"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_factura_servicio": values["id_factura_servicio"],
-                "id_movimiento_tesoreria": id_movimiento,
-                "fecha_pago": values["fecha_pago"],
-                "importe_pagado": values["importe_pagado"],
-                "medio_pago": values["medio_pago"],
-                "referencia_comprobante": values["referencia_comprobante"],
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
+        egreso_row = (
+            self.db.execute(
+                egreso_stmt,
+                {
+                    "uid_global": values["uid_global_egreso"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_factura_servicio": values["id_factura_servicio"],
+                    "id_movimiento_tesoreria": id_movimiento,
+                    "fecha_pago": values["fecha_pago"],
+                    "importe_pagado": values["importe_pagado"],
+                    "medio_pago": values["medio_pago"],
+                    "referencia_comprobante": values["referencia_comprobante"],
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
+        )
 
         return {
             "id_egreso_proveedor_factura_servicio": egreso_row[
@@ -6138,8 +6073,7 @@ class FinancieroRepository:
     def registrar_egreso_impuesto_empresa(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
         fecha_movimiento = datetime.combine(values["fecha_pago"], datetime.min.time())
-        movimiento_stmt = text(
-            """
+        movimiento_stmt = text("""
             INSERT INTO movimiento_tesoreria (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -6169,10 +6103,8 @@ class FinancieroRepository:
                 :observaciones
             )
             RETURNING id_movimiento_tesoreria
-            """
-        )
-        egreso_stmt = text(
-            """
+            """)
+        egreso_stmt = text("""
             INSERT INTO egreso_impuesto_empresa (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -6200,54 +6132,63 @@ class FinancieroRepository:
                 :observaciones
             )
             RETURNING id_egreso_impuesto_empresa
-            """
+            """)
+        mov_row = (
+            self.db.execute(
+                movimiento_stmt,
+                {
+                    "uid_global": values["uid_global_movimiento_tesoreria"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_cuenta_financiera_origen": values[
+                        "id_cuenta_financiera_origen"
+                    ],
+                    "fecha_movimiento": fecha_movimiento,
+                    "importe": values["importe_pagado"],
+                    "referencia_externa": (
+                        f"COMPROBANTE_IMPUESTO:{values['id_comprobante_impuesto']}"
+                    ),
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
         )
-        mov_row = self.db.execute(
-            movimiento_stmt,
-            {
-                "uid_global": values["uid_global_movimiento_tesoreria"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_cuenta_financiera_origen": values["id_cuenta_financiera_origen"],
-                "fecha_movimiento": fecha_movimiento,
-                "importe": values["importe_pagado"],
-                "referencia_externa": (
-                    f"COMPROBANTE_IMPUESTO:{values['id_comprobante_impuesto']}"
-                ),
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
         id_movimiento = mov_row["id_movimiento_tesoreria"]
 
-        egreso_row = self.db.execute(
-            egreso_stmt,
-            {
-                "uid_global": values["uid_global_egreso"],
-                "version_registro": values["version_registro"],
-                "created_at": values["created_at"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_origen": values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": values["op_id_alta"],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                "id_comprobante_impuesto": values["id_comprobante_impuesto"],
-                "id_movimiento_tesoreria": id_movimiento,
-                "fecha_pago": values["fecha_pago"],
-                "importe_pagado": values["importe_pagado"],
-                "medio_pago": values["medio_pago"],
-                "referencia_comprobante": values["referencia_comprobante"],
-                "observaciones": values["observaciones"],
-            },
-        ).mappings().one()
+        egreso_row = (
+            self.db.execute(
+                egreso_stmt,
+                {
+                    "uid_global": values["uid_global_egreso"],
+                    "version_registro": values["version_registro"],
+                    "created_at": values["created_at"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_origen": values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": values["op_id_alta"],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                    "id_comprobante_impuesto": values["id_comprobante_impuesto"],
+                    "id_movimiento_tesoreria": id_movimiento,
+                    "fecha_pago": values["fecha_pago"],
+                    "importe_pagado": values["importe_pagado"],
+                    "medio_pago": values["medio_pago"],
+                    "referencia_comprobante": values["referencia_comprobante"],
+                    "observaciones": values["observaciones"],
+                },
+            )
+            .mappings()
+            .one()
+        )
 
         return {
             "id_egreso_impuesto_empresa": egreso_row["id_egreso_impuesto_empresa"],
@@ -6268,8 +6209,7 @@ class FinancieroRepository:
     def get_ultima_fecha_pago_posterior_vencimiento(
         self, *, id_obligacion_financiera: int, fecha_vencimiento: date
     ) -> date | None:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT MAX(m.fecha_movimiento::date) AS ultima_fecha
             FROM movimiento_financiero m
             JOIN aplicacion_financiera a
@@ -6279,8 +6219,7 @@ class FinancieroRepository:
               AND m.tipo_movimiento = 'PAGO'
               AND m.deleted_at IS NULL
               AND m.fecha_movimiento::date > :fecha_vencimiento
-            """
-        )
+            """)
         return self.db.execute(
             stmt,
             {
@@ -6289,11 +6228,8 @@ class FinancieroRepository:
             },
         ).scalar_one_or_none()
 
-    def get_saldo_morable_pendiente(
-        self, *, id_obligacion_financiera: int
-    ) -> Decimal:
-        stmt = text(
-            """
+    def get_saldo_morable_pendiente(self, *, id_obligacion_financiera: int) -> Decimal:
+        stmt = text("""
             SELECT COALESCE(SUM(c.saldo_componente), 0) AS saldo_morable
             FROM composicion_obligacion c
             JOIN concepto_financiero cf
@@ -6303,16 +6239,14 @@ class FinancieroRepository:
               AND c.estado_composicion_obligacion = 'ACTIVA'
               AND c.deleted_at IS NULL
               AND cf.aplica_punitorio = true
-            """
-        )
+            """)
         saldo = self.db.execute(
             stmt, {"id_obligacion_financiera": id_obligacion_financiera}
         ).scalar_one()
         return Decimal(str(saldo))
 
     def list_pagos_agrupados_persona(self, *, id_persona: int) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 m.codigo_pago_grupo,
                 m.uid_pago_grupo,
@@ -6335,14 +6269,14 @@ class FinancieroRepository:
               AND m.codigo_pago_grupo IS NOT NULL
             GROUP BY m.uid_pago_grupo, m.codigo_pago_grupo
             ORDER BY fecha_pago DESC, m.codigo_pago_grupo DESC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, {"id_persona": id_persona}).mappings().all()
         return [dict(r) for r in rows]
 
-    def get_pago_agrupado_by_codigo(self, *, codigo_pago_grupo: str) -> dict[str, Any] | None:
-        mov_stmt = text(
-            """
+    def get_pago_agrupado_by_codigo(
+        self, *, codigo_pago_grupo: str
+    ) -> dict[str, Any] | None:
+        mov_stmt = text("""
             SELECT
                 m.id_movimiento_financiero,
                 m.uid_pago_grupo,
@@ -6355,16 +6289,16 @@ class FinancieroRepository:
               AND m.tipo_movimiento = 'PAGO'
               AND m.deleted_at IS NULL
             ORDER BY m.id_movimiento_financiero ASC
-            """
+            """)
+        movimientos = (
+            self.db.execute(mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo})
+            .mappings()
+            .all()
         )
-        movimientos = self.db.execute(
-            mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
-        ).mappings().all()
         if not movimientos:
             return None
         ids_mov = [r["id_movimiento_financiero"] for r in movimientos]
-        app_stmt = text(
-            """
+        app_stmt = text("""
             SELECT
                 a.id_aplicacion_financiera,
                 a.id_movimiento_financiero,
@@ -6385,8 +6319,7 @@ class FinancieroRepository:
             JOIN concepto_financiero cf ON cf.id_concepto_financiero = co.id_concepto_financiero
             WHERE a.id_movimiento_financiero IN :ids
             ORDER BY a.id_aplicacion_financiera ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
         aplicaciones = self.db.execute(app_stmt, {"ids": ids_mov}).mappings().all()
         estado_pago_grupo = (
             "ANULADO"
@@ -6402,14 +6335,15 @@ class FinancieroRepository:
             "estado_pago_grupo": estado_pago_grupo,
             "movimientos": [dict(r) for r in movimientos],
             "aplicaciones": [dict(r) for r in aplicaciones],
-            "obligaciones_afectadas": sorted({r["id_obligacion_financiera"] for r in aplicaciones}),
+            "obligaciones_afectadas": sorted(
+                {r["id_obligacion_financiera"] for r in aplicaciones}
+            ),
         }
 
     def get_operaciones_posteriores_pago_agrupado(
         self, *, codigo_pago_grupo: str
     ) -> dict[str, Any]:
-        contexto_stmt = text(
-            """
+        contexto_stmt = text("""
             WITH grupo_mov AS (
                 SELECT id_movimiento_financiero, fecha_movimiento, created_at
                 FROM movimiento_financiero
@@ -6440,11 +6374,12 @@ class FinancieroRepository:
             LEFT JOIN liquidacion_punitorio lp
               ON lp.codigo_pago_grupo = :codigo_pago_grupo
              AND lp.deleted_at IS NULL
-            """
+            """)
+        contexto = (
+            self.db.execute(contexto_stmt, {"codigo_pago_grupo": codigo_pago_grupo})
+            .mappings()
+            .one()
         )
-        contexto = self.db.execute(
-            contexto_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
-        ).mappings().one()
         if contexto["fecha_grupo"] is None:
             return {
                 "tiene_operaciones_posteriores": False,
@@ -6472,8 +6407,7 @@ class FinancieroRepository:
             "obligaciones": obligaciones,
             "composiciones": composiciones,
         }
-        movimientos_stmt = text(
-            """
+        movimientos_stmt = text("""
             SELECT COUNT(DISTINCT m.id_movimiento_financiero)
             FROM movimiento_financiero m
             JOIN aplicacion_financiera a
@@ -6491,10 +6425,8 @@ class FinancieroRepository:
                         AND m.id_movimiento_financiero > :max_movimiento_grupo
                     )
                   )
-            """
-        ).bindparams(bindparam("obligaciones", expanding=True))
-        aplicaciones_stmt = text(
-            """
+            """).bindparams(bindparam("obligaciones", expanding=True))
+        aplicaciones_stmt = text("""
             SELECT COUNT(DISTINCT a.id_aplicacion_financiera)
             FROM aplicacion_financiera a
             JOIN movimiento_financiero m
@@ -6515,13 +6447,11 @@ class FinancieroRepository:
                         AND m.id_movimiento_financiero > :max_movimiento_grupo
                     )
                   )
-            """
-        ).bindparams(
+            """).bindparams(
             bindparam("obligaciones", expanding=True),
             bindparam("composiciones", expanding=True),
         )
-        liquidaciones_stmt = text(
-            """
+        liquidaciones_stmt = text("""
             SELECT COUNT(DISTINCT lp.id_liquidacion_punitorio)
             FROM liquidacion_punitorio lp
             WHERE lp.estado_liquidacion = 'ACTIVA'
@@ -6539,13 +6469,11 @@ class FinancieroRepository:
                         AND lp.id_liquidacion_punitorio > :max_liquidacion_grupo
                     )
                   )
-            """
-        ).bindparams(
+            """).bindparams(
             bindparam("obligaciones", expanding=True),
             bindparam("composiciones", expanding=True),
         )
-        composiciones_stmt = text(
-            """
+        composiciones_stmt = text("""
             SELECT COUNT(DISTINCT co.id_composicion_obligacion)
             FROM composicion_obligacion co
             WHERE co.deleted_at IS NULL
@@ -6556,8 +6484,7 @@ class FinancieroRepository:
                     co.created_at > :created_at_grupo
                     OR co.updated_at > :created_at_grupo
                   )
-            """
-        ).bindparams(
+            """).bindparams(
             bindparam("obligaciones", expanding=True),
             bindparam("composiciones", expanding=True),
         )
@@ -6589,7 +6516,9 @@ class FinancieroRepository:
         if observaciones:
             try:
                 parsed = json.loads(observaciones)
-                payload = parsed if isinstance(parsed, dict) else {"original": observaciones}
+                payload = (
+                    parsed if isinstance(parsed, dict) else {"original": observaciones}
+                )
             except (TypeError, ValueError):
                 payload = {"original": observaciones}
         else:
@@ -6606,8 +6535,7 @@ class FinancieroRepository:
         op_id: Any,
     ) -> dict[str, Any]:
         now = datetime.now(UTC)
-        mov_stmt = text(
-            """
+        mov_stmt = text("""
             SELECT
                 id_movimiento_financiero,
                 estado_movimiento,
@@ -6618,10 +6546,8 @@ class FinancieroRepository:
               AND deleted_at IS NULL
             ORDER BY id_movimiento_financiero ASC
             FOR UPDATE
-            """
-        )
-        app_stmt = text(
-            """
+            """)
+        app_stmt = text("""
             SELECT DISTINCT
                 a.id_aplicacion_financiera,
                 a.id_obligacion_financiera,
@@ -6631,10 +6557,8 @@ class FinancieroRepository:
             WHERE a.id_movimiento_financiero IN :ids
               AND a.deleted_at IS NULL
             ORDER BY a.id_aplicacion_financiera ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
-        liquidaciones_stmt = text(
-            """
+            """).bindparams(bindparam("ids", expanding=True))
+        liquidaciones_stmt = text("""
             SELECT
                 id_liquidacion_punitorio,
                 id_obligacion_financiera,
@@ -6646,10 +6570,8 @@ class FinancieroRepository:
               AND estado_liquidacion = 'ACTIVA'
             ORDER BY id_liquidacion_punitorio ASC
             FOR UPDATE
-            """
-        )
-        update_app_stmt = text(
-            """
+            """)
+        update_app_stmt = text("""
             UPDATE aplicacion_financiera
             SET deleted_at = :now,
                 updated_at = :now,
@@ -6658,10 +6580,8 @@ class FinancieroRepository:
                 observaciones = :observaciones
             WHERE id_aplicacion_financiera = :id_aplicacion_financiera
               AND deleted_at IS NULL
-            """
-        )
-        update_mov_stmt = text(
-            """
+            """)
+        update_mov_stmt = text("""
             UPDATE movimiento_financiero
             SET estado_movimiento = 'ANULADO',
                 updated_at = :now,
@@ -6670,10 +6590,8 @@ class FinancieroRepository:
                 observaciones = :observaciones
             WHERE id_movimiento_financiero = :id_movimiento_financiero
               AND deleted_at IS NULL
-            """
-        )
-        anular_liq_stmt = text(
-            """
+            """)
+        anular_liq_stmt = text("""
             UPDATE liquidacion_punitorio
             SET estado_liquidacion = 'ANULADA',
                 updated_at = :now,
@@ -6682,10 +6600,8 @@ class FinancieroRepository:
             WHERE id_liquidacion_punitorio = :id_liquidacion_punitorio
               AND estado_liquidacion = 'ACTIVA'
               AND deleted_at IS NULL
-            """
-        )
-        reducir_comp_stmt = text(
-            """
+            """)
+        reducir_comp_stmt = text("""
             UPDATE composicion_obligacion
             SET importe_componente = GREATEST(
                     0,
@@ -6696,10 +6612,8 @@ class FinancieroRepository:
                 op_id_ultima_modificacion = :op_id
             WHERE id_composicion_obligacion = :id_composicion_obligacion
               AND deleted_at IS NULL
-            """
-        )
-        estado_stmt = text(
-            """
+            """)
+        estado_stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = CASE
                     WHEN saldo_pendiente = 0 THEN 'CANCELADA'
@@ -6714,13 +6628,14 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id_obligacion_financiera
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             RETURNING id_obligacion_financiera, estado_obligacion, saldo_pendiente
-            """
-        )
+            """)
 
         try:
-            movimientos = self.db.execute(
-                mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
-            ).mappings().all()
+            movimientos = (
+                self.db.execute(mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo})
+                .mappings()
+                .all()
+            )
             if not movimientos:
                 raise ValueError("NOT_FOUND_PAGO")
 
@@ -6730,13 +6645,11 @@ class FinancieroRepository:
                     {
                         row["id_obligacion_financiera"]
                         for row in self.db.execute(
-                            text(
-                                """
+                            text("""
                                 SELECT DISTINCT id_obligacion_financiera
                                 FROM aplicacion_financiera
                                 WHERE id_movimiento_financiero IN :ids
-                                """
-                            ).bindparams(bindparam("ids", expanding=True)),
+                                """).bindparams(bindparam("ids", expanding=True)),
                             {"ids": ids_mov},
                         ).mappings()
                     }
@@ -6753,22 +6666,24 @@ class FinancieroRepository:
                 }
 
             aplicaciones = self.db.execute(app_stmt, {"ids": ids_mov}).mappings().all()
-            liquidaciones = self.db.execute(
-                liquidaciones_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
-            ).mappings().all()
+            liquidaciones = (
+                self.db.execute(
+                    liquidaciones_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
+                )
+                .mappings()
+                .all()
+            )
 
             if not aplicaciones and not liquidaciones:
                 obligaciones_ids = sorted(
                     {
                         row["id_obligacion_financiera"]
                         for row in self.db.execute(
-                            text(
-                                """
+                            text("""
                                 SELECT DISTINCT id_obligacion_financiera
                                 FROM aplicacion_financiera
                                 WHERE id_movimiento_financiero IN :ids
-                                """
-                            ).bindparams(bindparam("ids", expanding=True)),
+                                """).bindparams(bindparam("ids", expanding=True)),
                             {"ids": ids_mov},
                         ).mappings()
                     }
@@ -6784,15 +6699,17 @@ class FinancieroRepository:
                     "estados_obligaciones": [],
                 }
 
-            obligaciones_ids = {
-                a["id_obligacion_financiera"] for a in aplicaciones
-            } | {l["id_obligacion_financiera"] for l in liquidaciones}
+            obligaciones_ids = {a["id_obligacion_financiera"] for a in aplicaciones} | {
+                l["id_obligacion_financiera"] for l in liquidaciones
+            }
 
             for aplicacion in aplicaciones:
                 self.db.execute(
                     update_app_stmt,
                     {
-                        "id_aplicacion_financiera": aplicacion["id_aplicacion_financiera"],
+                        "id_aplicacion_financiera": aplicacion[
+                            "id_aplicacion_financiera"
+                        ],
                         "now": now,
                         "id_instalacion": id_instalacion,
                         "op_id": op_id,
@@ -6848,15 +6765,19 @@ class FinancieroRepository:
 
             estados = []
             for id_obligacion in sorted(obligaciones_ids):
-                estado = self.db.execute(
-                    estado_stmt,
-                    {
-                        "id_obligacion_financiera": id_obligacion,
-                        "now": now,
-                        "id_instalacion": id_instalacion,
-                        "op_id": op_id,
-                    },
-                ).mappings().one_or_none()
+                estado = (
+                    self.db.execute(
+                        estado_stmt,
+                        {
+                            "id_obligacion_financiera": id_obligacion,
+                            "now": now,
+                            "id_instalacion": id_instalacion,
+                            "op_id": op_id,
+                        },
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
                 if estado is not None:
                     estados.append(dict(estado))
 
@@ -6878,8 +6799,7 @@ class FinancieroRepository:
     def get_recibo_pago_agrupado(
         self, *, codigo_pago_grupo: str
     ) -> dict[str, Any] | None:
-        mov_stmt = text(
-            """
+        mov_stmt = text("""
             SELECT
                 m.id_movimiento_financiero,
                 m.uid_pago_grupo,
@@ -6893,17 +6813,17 @@ class FinancieroRepository:
               AND m.tipo_movimiento = 'PAGO'
               AND m.deleted_at IS NULL
             ORDER BY m.id_movimiento_financiero ASC
-            """
+            """)
+        movimientos = (
+            self.db.execute(mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo})
+            .mappings()
+            .all()
         )
-        movimientos = self.db.execute(
-            mov_stmt, {"codigo_pago_grupo": codigo_pago_grupo}
-        ).mappings().all()
         if not movimientos:
             return None
 
         ids_mov = [r["id_movimiento_financiero"] for r in movimientos]
-        detalle_stmt = text(
-            """
+        detalle_stmt = text("""
             SELECT
                 a.id_movimiento_financiero,
                 a.id_obligacion_financiera,
@@ -6943,8 +6863,7 @@ class FinancieroRepository:
                 a.id_movimiento_financiero ASC,
                 a.orden_aplicacion ASC,
                 a.id_aplicacion_financiera ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
         detalle_rows = self.db.execute(detalle_stmt, {"ids": ids_mov}).mappings().all()
 
         resumen = None
@@ -6965,7 +6884,11 @@ class FinancieroRepository:
             else (detalle_rows[0]["id_persona"] if detalle_rows else None)
         )
         persona_row = next(
-            (r for r in detalle_rows if id_persona is not None and r["id_persona"] == id_persona),
+            (
+                r
+                for r in detalle_rows
+                if id_persona is not None and r["id_persona"] == id_persona
+            ),
             detalle_rows[0] if detalle_rows else None,
         )
         descripcion_persona = None
@@ -7064,8 +6987,7 @@ class FinancieroRepository:
         op_id: Any,
         uid_global: str,
     ) -> dict[str, Any]:
-        update_stmt = text(
-            """
+        update_stmt = text("""
             UPDATE composicion_obligacion c
             SET importe_componente = c.importe_componente + :importe_punitorio,
                 updated_at = :updated_at,
@@ -7083,24 +7005,26 @@ class FinancieroRepository:
                 c.id_composicion_obligacion,
                 c.importe_componente,
                 c.saldo_componente
-            """
+            """)
+        row = (
+            self.db.execute(
+                update_stmt,
+                {
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "importe_punitorio": importe_punitorio,
+                    "updated_at": now,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                    "detalle_calculo": detalle_calculo,
+                },
+            )
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            update_stmt,
-            {
-                "id_obligacion_financiera": id_obligacion_financiera,
-                "importe_punitorio": importe_punitorio,
-                "updated_at": now,
-                "id_instalacion": id_instalacion,
-                "op_id": op_id,
-                "detalle_calculo": detalle_calculo,
-            },
-        ).mappings().one_or_none()
         if row is not None:
             return dict(row)
 
-        insert_stmt = text(
-            """
+        insert_stmt = text("""
             INSERT INTO composicion_obligacion (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -7129,21 +7053,24 @@ class FinancieroRepository:
                 id_composicion_obligacion,
                 importe_componente,
                 saldo_componente
-            """
+            """)
+        inserted = (
+            self.db.execute(
+                insert_stmt,
+                {
+                    "uid_global": uid_global,
+                    "created_at": now,
+                    "updated_at": now,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "importe_punitorio": importe_punitorio,
+                    "detalle_calculo": detalle_calculo,
+                },
+            )
+            .mappings()
+            .one_or_none()
         )
-        inserted = self.db.execute(
-            insert_stmt,
-            {
-                "uid_global": uid_global,
-                "created_at": now,
-                "updated_at": now,
-                "id_instalacion": id_instalacion,
-                "op_id": op_id,
-                "id_obligacion_financiera": id_obligacion_financiera,
-                "importe_punitorio": importe_punitorio,
-                "detalle_calculo": detalle_calculo,
-            },
-        ).mappings().one_or_none()
         if inserted is None:
             raise ValueError("Concepto financiero PUNITORIO no encontrado")
         return dict(inserted)
@@ -7167,8 +7094,7 @@ class FinancieroRepository:
         dias_calculados: int,
         importe_liquidado: Decimal,
     ) -> dict[str, Any]:
-        stmt = text(
-            """
+        stmt = text("""
             INSERT INTO liquidacion_punitorio (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -7190,29 +7116,32 @@ class FinancieroRepository:
                 'ACTIVA'
             )
             RETURNING id_liquidacion_punitorio
-            """
+            """)
+        row = (
+            self.db.execute(
+                stmt,
+                {
+                    "uid_global": uid_global,
+                    "created_at": now,
+                    "updated_at": now,
+                    "id_instalacion": id_instalacion,
+                    "op_id": op_id,
+                    "id_obligacion_financiera": id_obligacion_financiera,
+                    "id_composicion_obligacion": id_composicion_obligacion,
+                    "uid_pago_grupo": uid_pago_grupo,
+                    "codigo_pago_grupo": codigo_pago_grupo,
+                    "fecha_vencimiento": fecha_vencimiento,
+                    "fecha_inicio_calculo": fecha_inicio_calculo,
+                    "fecha_fin_calculo": fecha_fin_calculo,
+                    "base_morable": base_morable,
+                    "tasa_diaria": tasa_diaria,
+                    "dias_calculados": dias_calculados,
+                    "importe_liquidado": importe_liquidado,
+                },
+            )
+            .mappings()
+            .one()
         )
-        row = self.db.execute(
-            stmt,
-            {
-                "uid_global": uid_global,
-                "created_at": now,
-                "updated_at": now,
-                "id_instalacion": id_instalacion,
-                "op_id": op_id,
-                "id_obligacion_financiera": id_obligacion_financiera,
-                "id_composicion_obligacion": id_composicion_obligacion,
-                "uid_pago_grupo": uid_pago_grupo,
-                "codigo_pago_grupo": codigo_pago_grupo,
-                "fecha_vencimiento": fecha_vencimiento,
-                "fecha_inicio_calculo": fecha_inicio_calculo,
-                "fecha_fin_calculo": fecha_fin_calculo,
-                "base_morable": base_morable,
-                "tasa_diaria": tasa_diaria,
-                "dias_calculados": dias_calculados,
-                "importe_liquidado": importe_liquidado,
-            },
-        ).mappings().one()
         return dict(row)
 
     def registrar_pago_multipago(
@@ -7223,8 +7152,7 @@ class FinancieroRepository:
         Persiste movimiento_financiero + aplicacion_financiera para una lista de
         obligaciones en una sola transacción. Commit único al final.
         """
-        mov_stmt = text(
-            """
+        mov_stmt = text("""
             INSERT INTO movimiento_financiero (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -7242,11 +7170,9 @@ class FinancieroRepository:
                 :observaciones
             )
             RETURNING id_movimiento_financiero, uid_pago_grupo, codigo_pago_grupo
-            """
-        )
+            """)
 
-        aplic_stmt = text(
-            """
+        aplic_stmt = text("""
             INSERT INTO aplicacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
                 id_instalacion_origen, id_instalacion_ultima_modificacion,
@@ -7267,11 +7193,9 @@ class FinancieroRepository:
             )
             RETURNING id_aplicacion_financiera, id_composicion_obligacion,
                       importe_aplicado, orden_aplicacion
-            """
-        )
+            """)
 
-        estado_stmt = text(
-            """
+        estado_stmt = text("""
             UPDATE obligacion_financiera
             SET estado_obligacion = CASE
                     WHEN saldo_pendiente = 0             THEN 'CANCELADA'
@@ -7281,68 +7205,91 @@ class FinancieroRepository:
             WHERE id_obligacion_financiera = :id
               AND estado_obligacion NOT IN ('ANULADA', 'REEMPLAZADA')
             RETURNING estado_obligacion, saldo_pendiente
-            """
-        )
+            """)
 
         try:
             resultados: list[dict[str, Any]] = []
 
             for pago in pagos:
                 pv = self._values(pago)
-                mov_row = self.db.execute(
-                    mov_stmt,
-                    {
-                        "uid_global": pv["uid_global_movimiento"],
-                        "version_registro": pv["version_registro"],
-                        "created_at": pv["created_at"],
-                        "updated_at": pv["updated_at"],
-                        "id_instalacion_origen": pv["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
-                        "op_id_alta": pv["op_id_alta"],
-                        "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
-                        "uid_pago_grupo": pv["uid_pago_grupo"],
-                        "codigo_pago_grupo": pv["codigo_pago_grupo"],
-                        "fecha_movimiento": pv["fecha_movimiento"],
-                        "tipo_movimiento": "PAGO",
-                        "importe": pv["monto_a_aplicar"],
-                        "signo": "CREDITO",
-                        "estado_movimiento": "APLICADO",
-                        "observaciones": pv["observaciones"],
-                    },
-                ).mappings().one()
+                mov_row = (
+                    self.db.execute(
+                        mov_stmt,
+                        {
+                            "uid_global": pv["uid_global_movimiento"],
+                            "version_registro": pv["version_registro"],
+                            "created_at": pv["created_at"],
+                            "updated_at": pv["updated_at"],
+                            "id_instalacion_origen": pv["id_instalacion_origen"],
+                            "id_instalacion_ultima_modificacion": pv[
+                                "id_instalacion_ultima_modificacion"
+                            ],
+                            "op_id_alta": pv["op_id_alta"],
+                            "op_id_ultima_modificacion": pv[
+                                "op_id_ultima_modificacion"
+                            ],
+                            "uid_pago_grupo": pv["uid_pago_grupo"],
+                            "codigo_pago_grupo": pv["codigo_pago_grupo"],
+                            "fecha_movimiento": pv["fecha_movimiento"],
+                            "tipo_movimiento": "PAGO",
+                            "importe": pv["monto_a_aplicar"],
+                            "signo": "CREDITO",
+                            "estado_movimiento": "APLICADO",
+                            "observaciones": pv["observaciones"],
+                        },
+                    )
+                    .mappings()
+                    .one()
+                )
 
                 id_movimiento = mov_row["id_movimiento_financiero"]
                 aplics: list[dict[str, Any]] = []
 
                 for i, linea in enumerate(pv["lineas"]):
                     lv = self._values(linea) if not isinstance(linea, dict) else linea
-                    aplic_row = self.db.execute(
-                        aplic_stmt,
-                        {
-                            "uid_global": lv["uid_global"],
-                            "version_registro": pv["version_registro"],
-                            "created_at": pv["created_at"],
-                            "updated_at": pv["updated_at"],
-                            "id_instalacion_origen": pv["id_instalacion_origen"],
-                            "id_instalacion_ultima_modificacion": pv["id_instalacion_ultima_modificacion"],
-                            "op_id_alta": pv["op_id_alta"],
-                            "op_id_ultima_modificacion": pv["op_id_ultima_modificacion"],
-                            "id_movimiento_financiero": id_movimiento,
-                            "id_obligacion_financiera": pv["id_obligacion_financiera"],
-                            "id_composicion_obligacion": lv["id_composicion_obligacion"],
-                            "fecha_aplicacion": pv["fecha_movimiento"],
-                            "tipo_aplicacion": "PAGO",
-                            "orden_aplicacion": i + 1,
-                            "importe_aplicado": lv["importe_aplicado"],
-                            "origen_automatico_o_manual": "MANUAL",
-                        },
-                    ).mappings().one()
+                    aplic_row = (
+                        self.db.execute(
+                            aplic_stmt,
+                            {
+                                "uid_global": lv["uid_global"],
+                                "version_registro": pv["version_registro"],
+                                "created_at": pv["created_at"],
+                                "updated_at": pv["updated_at"],
+                                "id_instalacion_origen": pv["id_instalacion_origen"],
+                                "id_instalacion_ultima_modificacion": pv[
+                                    "id_instalacion_ultima_modificacion"
+                                ],
+                                "op_id_alta": pv["op_id_alta"],
+                                "op_id_ultima_modificacion": pv[
+                                    "op_id_ultima_modificacion"
+                                ],
+                                "id_movimiento_financiero": id_movimiento,
+                                "id_obligacion_financiera": pv[
+                                    "id_obligacion_financiera"
+                                ],
+                                "id_composicion_obligacion": lv[
+                                    "id_composicion_obligacion"
+                                ],
+                                "fecha_aplicacion": pv["fecha_movimiento"],
+                                "tipo_aplicacion": "PAGO",
+                                "orden_aplicacion": i + 1,
+                                "importe_aplicado": lv["importe_aplicado"],
+                                "origen_automatico_o_manual": "MANUAL",
+                            },
+                        )
+                        .mappings()
+                        .one()
+                    )
                     aplics.append(dict(aplic_row))
 
-                estado_row = self.db.execute(
-                    estado_stmt,
-                    {"id": pv["id_obligacion_financiera"]},
-                ).mappings().one_or_none()
+                estado_row = (
+                    self.db.execute(
+                        estado_stmt,
+                        {"id": pv["id_obligacion_financiera"]},
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
 
                 resultados.append(
                     {
@@ -7351,7 +7298,9 @@ class FinancieroRepository:
                         "uid_pago_grupo": mov_row["uid_pago_grupo"],
                         "codigo_pago_grupo": mov_row["codigo_pago_grupo"],
                         "monto_aplicado": float(pv["monto_a_aplicar"]),
-                        "estado_resultante": estado_row["estado_obligacion"] if estado_row else None,
+                        "estado_resultante": (
+                            estado_row["estado_obligacion"] if estado_row else None
+                        ),
                     }
                 )
 
@@ -7381,11 +7330,12 @@ class FinancieroRepository:
             filters += "\n              AND o.id_obligacion_financiera = :id_obligacion_financiera"
             params["id_obligacion_financiera"] = id_obligacion_financiera
         if id_relacion_generadora is not None:
-            filters += "\n              AND o.id_relacion_generadora = :id_relacion_generadora"
+            filters += (
+                "\n              AND o.id_relacion_generadora = :id_relacion_generadora"
+            )
             params["id_relacion_generadora"] = id_relacion_generadora
 
-        stmt = text(
-            f"""
+        stmt = text(f"""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
@@ -7421,16 +7371,14 @@ class FinancieroRepository:
                    THEN 0 ELSE 1 END ASC,
               o.fecha_vencimiento ASC NULLS LAST,
               o.id_obligacion_financiera ASC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, params).mappings().all()
         return [dict(r) for r in rows]
 
     def obligacion_pertenece_a_persona(
         self, *, id_persona: int, id_obligacion_financiera: int
     ) -> bool:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT 1
             FROM obligacion_obligado oo
             JOIN obligacion_financiera o
@@ -7440,8 +7388,7 @@ class FinancieroRepository:
               AND oo.deleted_at IS NULL
               AND o.deleted_at IS NULL
             LIMIT 1
-            """
-        )
+            """)
         return (
             self.db.execute(
                 stmt,
@@ -7476,8 +7423,7 @@ class FinancieroRepository:
         branches: list[str] = []
 
         if id_relacion_generadora is not None:
-            branches.append(
-                """
+            branches.append("""
                 SELECT tasa_diaria, dias_gracia, fecha_desde, 1 AS prioridad
                 FROM parametro_punitorio
                 WHERE alcance_tipo = 'RELACION_GENERADORA'
@@ -7486,13 +7432,11 @@ class FinancieroRepository:
                   AND estado_parametro = 'ACTIVO'
                   AND fecha_desde <= :fecha_referencia
                   AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha_referencia)
-                """
-            )
+                """)
             params["id_relacion_generadora"] = id_relacion_generadora
 
         if id_concepto_financiero is not None:
-            branches.append(
-                """
+            branches.append("""
                 SELECT tasa_diaria, dias_gracia, fecha_desde, 2 AS prioridad
                 FROM parametro_punitorio
                 WHERE alcance_tipo = 'CONCEPTO'
@@ -7501,12 +7445,10 @@ class FinancieroRepository:
                   AND estado_parametro = 'ACTIVO'
                   AND fecha_desde <= :fecha_referencia
                   AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha_referencia)
-                """
-            )
+                """)
             params["id_concepto_financiero"] = id_concepto_financiero
 
-        branches.append(
-            """
+        branches.append("""
             SELECT tasa_diaria, dias_gracia, fecha_desde, 3 AS prioridad
             FROM parametro_punitorio
             WHERE alcance_tipo = 'GLOBAL'
@@ -7516,19 +7458,16 @@ class FinancieroRepository:
               AND estado_parametro = 'ACTIVO'
               AND fecha_desde <= :fecha_referencia
               AND (fecha_hasta IS NULL OR fecha_hasta >= :fecha_referencia)
-            """
-        )
+            """)
 
-        stmt = text(
-            f"""
+        stmt = text(f"""
             SELECT tasa_diaria, dias_gracia
             FROM (
                 {" UNION ALL ".join(branches)}
             ) p
             ORDER BY prioridad ASC, fecha_desde DESC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, params).mappings().one_or_none()
         if row is None:
             return resolver_mora_params()
@@ -7596,7 +7535,9 @@ class FinancieroRepository:
             filters.append("rg.id_origen = :id_origen")
             params["id_origen"] = id_origen
         if vencidas is True:
-            filters.append("o.fecha_vencimiento < :fecha_corte_v AND o.saldo_pendiente > 0")
+            filters.append(
+                "o.fecha_vencimiento < :fecha_corte_v AND o.saldo_pendiente > 0"
+            )
             params["fecha_corte_v"] = fecha_corte
         if fecha_vencimiento_desde is not None:
             filters.append("o.fecha_vencimiento >= :fec_desde")
@@ -7607,8 +7548,7 @@ class FinancieroRepository:
 
         where = " AND ".join(filters)
 
-        ob_stmt = text(
-            f"""
+        ob_stmt = text(f"""
             SELECT
                 o.id_obligacion_financiera,
                 o.id_relacion_generadora,
@@ -7630,15 +7570,13 @@ class FinancieroRepository:
                 ON rg.id_relacion_generadora = o.id_relacion_generadora
             WHERE {where}
             ORDER BY o.fecha_vencimiento ASC NULLS LAST, o.id_obligacion_financiera ASC
-            """
-        )
+            """)
 
         rows = self.db.execute(ob_stmt, params).mappings().all()
         ids = [row["id_obligacion_financiera"] for row in rows]
         comps_by_ob: dict[int, list[dict[str, Any]]] = defaultdict(list)
         if ids:
-            comp_stmt = text(
-                """
+            comp_stmt = text("""
                 SELECT
                     c.id_composicion_obligacion,
                     c.id_obligacion_financiera,
@@ -7654,15 +7592,12 @@ class FinancieroRepository:
                   AND c.deleted_at IS NULL
                   AND cf.deleted_at IS NULL
                 ORDER BY c.id_obligacion_financiera, c.orden_composicion ASC
-                """
-            ).bindparams(bindparam("ids", expanding=True))
+                """).bindparams(bindparam("ids", expanding=True))
             comp_rows = self.db.execute(comp_stmt, {"ids": ids}).mappings().all()
             for comp in comp_rows:
                 comps_by_ob[comp["id_obligacion_financiera"]].append(
                     {
-                        "id_composicion_obligacion": comp[
-                            "id_composicion_obligacion"
-                        ],
+                        "id_composicion_obligacion": comp["id_composicion_obligacion"],
                         "codigo_concepto_financiero": comp[
                             "codigo_concepto_financiero"
                         ],
@@ -7755,7 +7690,11 @@ class FinancieroRepository:
             grupo_saldos[grupo] += saldo
             grupo_data = grupos_map.setdefault(
                 grupo,
-                {"grupo_origen_deuda": grupo, "saldo_total": Decimal("0"), "relaciones": {}},
+                {
+                    "grupo_origen_deuda": grupo,
+                    "saldo_total": Decimal("0"),
+                    "relaciones": {},
+                },
             )
             grupo_data["saldo_total"] += saldo
             relaciones = grupo_data["relaciones"]

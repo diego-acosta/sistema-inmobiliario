@@ -6,8 +6,9 @@ from typing import Any
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
-from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
-
+from app.infrastructure.persistence.repositories.outbox_repository import (
+    OutboxRepository,
+)
 
 VENTA_INMOBILIARIO_EVENT_TYPES = (
     "venta_confirmada",
@@ -77,14 +78,11 @@ class ComercialRepository:
             if vigente:
                 filters.append("LOWER(estado_reserva) IN ('activa', 'confirmada')")
             else:
-                filters.append(
-                    "LOWER(estado_reserva) NOT IN ('activa', 'confirmada')"
-                )
+                filters.append("LOWER(estado_reserva) NOT IN ('activa', 'confirmada')")
 
         where_clause = " AND ".join(filters)
 
-        reserva_statement = text(
-            f"""
+        reserva_statement = text(f"""
             SELECT
                 id_reserva_venta,
                 uid_global,
@@ -99,15 +97,12 @@ class ComercialRepository:
             ORDER BY fecha_reserva DESC, id_reserva_venta DESC
             LIMIT :limit
             OFFSET :offset
-            """
-        )
-        total_statement = text(
-            f"""
+            """)
+        total_statement = text(f"""
             SELECT COUNT(*) AS total
             FROM reserva_venta
             WHERE {where_clause}
-            """
-        )
+            """)
 
         reserva_rows = self.db.execute(reserva_statement, params).mappings().all()
         total = self.db.execute(total_statement, params).scalar_one()
@@ -118,8 +113,7 @@ class ComercialRepository:
         }
 
         if reserva_ids:
-            objetos_statement = text(
-                """
+            objetos_statement = text("""
                 SELECT
                     id_reserva_venta,
                     id_reserva_venta_objeto,
@@ -130,11 +124,12 @@ class ComercialRepository:
                 WHERE id_reserva_venta = ANY(:reserva_ids)
                   AND deleted_at IS NULL
                 ORDER BY id_reserva_venta, id_reserva_venta_objeto
-                """
+                """)
+            objetos_rows = (
+                self.db.execute(objetos_statement, {"reserva_ids": reserva_ids})
+                .mappings()
+                .all()
             )
-            objetos_rows = self.db.execute(
-                objetos_statement, {"reserva_ids": reserva_ids}
-            ).mappings().all()
             for row in objetos_rows:
                 objetos_by_reserva[row["id_reserva_venta"]].append(
                     {
@@ -164,28 +159,26 @@ class ComercialRepository:
         }
 
     def inmueble_exists(self, id_inmueble: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM inmueble
             WHERE id_inmueble = :id_inmueble
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
-            self.db.execute(statement, {"id_inmueble": id_inmueble}).scalar_one_or_none()
+            self.db.execute(
+                statement, {"id_inmueble": id_inmueble}
+            ).scalar_one_or_none()
             is not None
         )
 
     def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM unidad_funcional
             WHERE id_unidad_funcional = :id_unidad_funcional
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(
                 statement, {"id_unidad_funcional": id_unidad_funcional}
@@ -194,29 +187,25 @@ class ComercialRepository:
         )
 
     def persona_exists(self, id_persona: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM persona
             WHERE id_persona = :id_persona
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(statement, {"id_persona": id_persona}).scalar_one_or_none()
             is not None
         )
 
     def rol_participacion_exists(self, id_rol_participacion: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM rol_participacion
             WHERE id_rol_participacion = :id_rol_participacion
               AND deleted_at IS NULL
               AND estado_rol = 'ACTIVO'
-            """
-        )
+            """)
         return (
             self.db.execute(
                 statement, {"id_rol_participacion": id_rol_participacion}
@@ -224,28 +213,25 @@ class ComercialRepository:
             is not None
         )
 
-    def get_rol_participacion_codigo(
-        self, id_rol_participacion: int
-    ) -> str | None:
-        statement = text(
-            """
+    def get_rol_participacion_codigo(self, id_rol_participacion: int) -> str | None:
+        statement = text("""
             SELECT UPPER(codigo_rol) AS codigo_rol
             FROM rol_participacion
             WHERE id_rol_participacion = :id_rol_participacion
               AND deleted_at IS NULL
               AND estado_rol = 'ACTIVO'
-            """
+            """)
+        row = (
+            self.db.execute(statement, {"id_rol_participacion": id_rol_participacion})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            statement, {"id_rol_participacion": id_rol_participacion}
-        ).mappings().one_or_none()
         if row is None:
             return None
         return row["codigo_rol"]
 
     def get_reserva_venta(self, id_reserva_venta: int) -> dict[str, Any] | None:
-        reserva_statement = text(
-            """
+        reserva_statement = text("""
             SELECT
                 id_reserva_venta,
                 uid_global,
@@ -258,10 +244,8 @@ class ComercialRepository:
                 deleted_at
             FROM reserva_venta
             WHERE id_reserva_venta = :id_reserva_venta
-            """
-        )
-        objeto_statement = text(
-            """
+            """)
+        objeto_statement = text("""
             SELECT
                 id_reserva_venta_objeto,
                 id_inmueble,
@@ -271,14 +255,13 @@ class ComercialRepository:
             WHERE id_reserva_venta = :id_reserva_venta
               AND deleted_at IS NULL
             ORDER BY id_reserva_venta_objeto
-            """
-        )
-        participacion_statement = text(
-            """
+            """)
+        participacion_statement = text("""
             SELECT
                 id_relacion_persona_rol,
                 id_persona,
                 id_rol_participacion,
+                porcentaje_responsabilidad,
                 fecha_desde,
                 fecha_hasta,
                 observaciones
@@ -287,21 +270,28 @@ class ComercialRepository:
               AND id_relacion = :id_reserva_venta
               AND deleted_at IS NULL
             ORDER BY id_relacion_persona_rol
-            """
-        )
+            """)
 
-        reserva_row = self.db.execute(
-            reserva_statement, {"id_reserva_venta": id_reserva_venta}
-        ).mappings().one_or_none()
+        reserva_row = (
+            self.db.execute(reserva_statement, {"id_reserva_venta": id_reserva_venta})
+            .mappings()
+            .one_or_none()
+        )
         if reserva_row is None:
             return None
 
-        objetos_rows = self.db.execute(
-            objeto_statement, {"id_reserva_venta": id_reserva_venta}
-        ).mappings().all()
-        participaciones_rows = self.db.execute(
-            participacion_statement, {"id_reserva_venta": id_reserva_venta}
-        ).mappings().all()
+        objetos_rows = (
+            self.db.execute(objeto_statement, {"id_reserva_venta": id_reserva_venta})
+            .mappings()
+            .all()
+        )
+        participaciones_rows = (
+            self.db.execute(
+                participacion_statement, {"id_reserva_venta": id_reserva_venta}
+            )
+            .mappings()
+            .all()
+        )
 
         return {
             "id_reserva_venta": reserva_row["id_reserva_venta"],
@@ -327,6 +317,7 @@ class ComercialRepository:
                     "id_relacion_persona_rol": row["id_relacion_persona_rol"],
                     "id_persona": row["id_persona"],
                     "id_rol_participacion": row["id_rol_participacion"],
+                    "porcentaje_responsabilidad": row["porcentaje_responsabilidad"],
                     "fecha_desde": row["fecha_desde"],
                     "fecha_hasta": row["fecha_hasta"],
                     "observaciones": row["observaciones"],
@@ -348,18 +339,15 @@ class ComercialRepository:
             params["exclude_id_reserva_venta"] = exclude_id_reserva_venta
 
         where_clause = " AND ".join(filters)
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT 1
             FROM reserva_venta
             WHERE {where_clause}
-            """
-        )
+            """)
         return self.db.execute(statement, params).scalar_one_or_none() is not None
 
     def get_venta(self, id_venta: int) -> dict[str, Any] | None:
-        venta_statement = text(
-            """
+        venta_statement = text("""
             SELECT
                 id_venta,
                 uid_global,
@@ -381,10 +369,8 @@ class ComercialRepository:
                 deleted_at
             FROM venta
             WHERE id_venta = :id_venta
-            """
-        )
-        objeto_statement = text(
-            """
+            """)
+        objeto_statement = text("""
             SELECT
                 id_venta_objeto,
                 version_registro,
@@ -396,18 +382,19 @@ class ComercialRepository:
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
             ORDER BY id_venta_objeto
-            """
-        )
+            """)
 
-        venta_row = self.db.execute(
-            venta_statement, {"id_venta": id_venta}
-        ).mappings().one_or_none()
+        venta_row = (
+            self.db.execute(venta_statement, {"id_venta": id_venta})
+            .mappings()
+            .one_or_none()
+        )
         if venta_row is None:
             return None
 
-        objetos_rows = self.db.execute(
-            objeto_statement, {"id_venta": id_venta}
-        ).mappings().all()
+        objetos_rows = (
+            self.db.execute(objeto_statement, {"id_venta": id_venta}).mappings().all()
+        )
         cuotas = self._get_cuotas_venta(id_venta)
 
         return {
@@ -444,8 +431,7 @@ class ComercialRepository:
         }
 
     def _get_cuotas_venta(self, id_venta: int) -> list[dict[str, Any]]:
-        statement = text(
-            """
+        statement = text("""
             SELECT
                 id_venta_plan_cuota,
                 numero_cuota,
@@ -457,8 +443,7 @@ class ComercialRepository:
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
             ORDER BY numero_cuota ASC
-            """
-        )
+            """)
         rows = self.db.execute(statement, {"id_venta": id_venta}).mappings().all()
         return [dict(row) for row in rows]
 
@@ -500,12 +485,13 @@ class ComercialRepository:
         instrumentos = self._get_instrumentos_compraventa_for_venta(id_venta)
         cesiones = self._get_cesiones_for_venta(id_venta)
         escrituraciones = self._get_escrituraciones_for_venta(id_venta)
-        integracion_inmobiliaria = self._get_integracion_inmobiliaria_for_venta(id_venta)
+        integracion_inmobiliaria = self._get_integracion_inmobiliaria_for_venta(
+            id_venta
+        )
 
         venta_cerrada_logica = (
-            (venta["estado_venta"] or "").strip().lower() == "confirmada"
-            and len(escrituraciones) > 0
-        )
+            venta["estado_venta"] or ""
+        ).strip().lower() == "confirmada" and len(escrituraciones) > 0
         estado_operativo_conocido_del_activo: str | None = None
         estados_operativos_conocidos = [
             objeto["disponibilidad_actual"] for objeto in objetos
@@ -577,9 +563,7 @@ class ComercialRepository:
                 "moneda": venta["moneda"],
                 "tipo_plan_financiero": venta["tipo_plan_financiero"],
                 "importe_anticipo": venta["importe_anticipo"],
-                "fecha_vencimiento_anticipo": venta[
-                    "fecha_vencimiento_anticipo"
-                ],
+                "fecha_vencimiento_anticipo": venta["fecha_vencimiento_anticipo"],
                 "importe_saldo": venta["importe_saldo"],
                 "fecha_vencimiento_saldo": venta["fecha_vencimiento_saldo"],
                 "cuotas": venta["cuotas"],
@@ -603,8 +587,7 @@ class ComercialRepository:
         }
 
     def _get_partes_for_venta(self, id_venta: int) -> list[dict[str, Any]]:
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 rpr.id_relacion_persona_rol,
                 rpr.id_persona,
@@ -631,14 +614,14 @@ class ComercialRepository:
               AND rpr.id_relacion = :id_venta
               AND rpr.deleted_at IS NULL
             ORDER BY rp.codigo_rol ASC, rpr.fecha_desde ASC, rpr.id_relacion_persona_rol ASC
-            """
-        )
+            """)
         rows = self.db.execute(stmt, {"id_venta": id_venta}).mappings().all()
         return [dict(row) for row in rows]
 
-    def _get_relacion_financiera_for_venta(self, id_venta: int) -> dict[str, Any] | None:
-        stmt = text(
-            """
+    def _get_relacion_financiera_for_venta(
+        self, id_venta: int
+    ) -> dict[str, Any] | None:
+        stmt = text("""
             SELECT
                 id_relacion_generadora,
                 uid_global,
@@ -654,8 +637,7 @@ class ComercialRepository:
               AND deleted_at IS NULL
             ORDER BY id_relacion_generadora ASC
             LIMIT 1
-            """
-        )
+            """)
         row = self.db.execute(stmt, {"id_venta": id_venta}).mappings().one_or_none()
         if row is None:
             return None
@@ -666,8 +648,7 @@ class ComercialRepository:
     def _get_obligaciones_financieras_for_relacion(
         self, id_relacion_generadora: int
     ) -> list[dict[str, Any]]:
-        obligaciones_stmt = text(
-            """
+        obligaciones_stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 uid_global,
@@ -690,19 +671,21 @@ class ComercialRepository:
             WHERE id_relacion_generadora = :id_relacion_generadora
               AND deleted_at IS NULL
             ORDER BY periodo_desde ASC NULLS LAST, id_obligacion_financiera ASC
-            """
+            """)
+        ob_rows = (
+            self.db.execute(
+                obligaciones_stmt, {"id_relacion_generadora": id_relacion_generadora}
+            )
+            .mappings()
+            .all()
         )
-        ob_rows = self.db.execute(
-            obligaciones_stmt, {"id_relacion_generadora": id_relacion_generadora}
-        ).mappings().all()
         if not ob_rows:
             return []
 
         ids = [row["id_obligacion_financiera"] for row in ob_rows]
         params = {"ids": tuple(ids)}
 
-        comps_stmt = text(
-            """
+        comps_stmt = text("""
             SELECT
                 co.id_obligacion_financiera,
                 co.id_composicion_obligacion,
@@ -725,10 +708,8 @@ class ComercialRepository:
               AND co.deleted_at IS NULL
             ORDER BY co.id_obligacion_financiera ASC, co.orden_composicion ASC,
                      co.id_composicion_obligacion ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
-        obligados_stmt = text(
-            """
+            """).bindparams(bindparam("ids", expanding=True))
+        obligados_stmt = text("""
             SELECT
                 id_obligacion_financiera,
                 id_obligacion_obligado,
@@ -739,8 +720,7 @@ class ComercialRepository:
             WHERE id_obligacion_financiera IN :ids
               AND deleted_at IS NULL
             ORDER BY id_obligacion_financiera ASC, id_obligacion_obligado ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
 
         comps_by_ob: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
         for row in self.db.execute(comps_stmt, params).mappings().all():
@@ -764,8 +744,7 @@ class ComercialRepository:
         return obligaciones
 
     def _get_plan_pago_v2_for_venta(self, id_venta: int) -> dict[str, Any] | None:
-        plan_stmt = text(
-            """
+        plan_stmt = text("""
             SELECT
                 id_plan_pago_venta,
                 metodo_plan_pago,
@@ -777,15 +756,15 @@ class ComercialRepository:
               AND deleted_at IS NULL
             ORDER BY id_plan_pago_venta DESC
             LIMIT 1
-            """
+            """)
+        plan_row = (
+            self.db.execute(plan_stmt, {"id_venta": id_venta}).mappings().one_or_none()
         )
-        plan_row = self.db.execute(plan_stmt, {"id_venta": id_venta}).mappings().one_or_none()
         if plan_row is None:
             return None
 
         plan = dict(plan_row)
-        bloques_stmt = text(
-            """
+        bloques_stmt = text("""
             SELECT
                 id_plan_pago_venta_bloque,
                 numero_bloque,
@@ -803,14 +782,15 @@ class ComercialRepository:
             WHERE id_plan_pago_venta = :id_plan_pago_venta
               AND deleted_at IS NULL
             ORDER BY numero_bloque ASC, id_plan_pago_venta_bloque ASC
-            """
-        )
+            """)
         bloques = [
             dict(row)
             for row in self.db.execute(
                 bloques_stmt,
                 {"id_plan_pago_venta": plan["id_plan_pago_venta"]},
-            ).mappings().all()
+            )
+            .mappings()
+            .all()
         ]
         bloque_ids = [bloque["id_plan_pago_venta_bloque"] for bloque in bloques]
         obligaciones_by_bloque: dict[int, list[dict[str, Any]]] = {
@@ -818,8 +798,7 @@ class ComercialRepository:
         }
 
         if bloque_ids:
-            obligaciones_stmt = text(
-                """
+            obligaciones_stmt = text("""
                 SELECT
                     id_obligacion_financiera,
                     id_plan_pago_venta_bloque,
@@ -834,12 +813,15 @@ class ComercialRepository:
                 WHERE id_plan_pago_venta_bloque IN :bloque_ids
                   AND deleted_at IS NULL
                 ORDER BY numero_obligacion ASC NULLS LAST, id_obligacion_financiera ASC
-                """
-            ).bindparams(bindparam("bloque_ids", expanding=True))
-            obligacion_rows = self.db.execute(
-                obligaciones_stmt,
-                {"bloque_ids": tuple(bloque_ids)},
-            ).mappings().all()
+                """).bindparams(bindparam("bloque_ids", expanding=True))
+            obligacion_rows = (
+                self.db.execute(
+                    obligaciones_stmt,
+                    {"bloque_ids": tuple(bloque_ids)},
+                )
+                .mappings()
+                .all()
+            )
             obligacion_ids = [
                 row["id_obligacion_financiera"] for row in obligacion_rows
             ]
@@ -848,8 +830,7 @@ class ComercialRepository:
             }
 
             if obligacion_ids:
-                composiciones_stmt = text(
-                    """
+                composiciones_stmt = text("""
                     SELECT
                         co.id_obligacion_financiera,
                         co.id_composicion_obligacion,
@@ -873,12 +854,15 @@ class ComercialRepository:
                     ORDER BY co.id_obligacion_financiera ASC,
                              co.orden_composicion ASC,
                              co.id_composicion_obligacion ASC
-                    """
-                ).bindparams(bindparam("obligacion_ids", expanding=True))
-                for row in self.db.execute(
-                    composiciones_stmt,
-                    {"obligacion_ids": tuple(obligacion_ids)},
-                ).mappings().all():
+                    """).bindparams(bindparam("obligacion_ids", expanding=True))
+                for row in (
+                    self.db.execute(
+                        composiciones_stmt,
+                        {"obligacion_ids": tuple(obligacion_ids)},
+                    )
+                    .mappings()
+                    .all()
+                ):
                     item = dict(row)
                     id_obligacion = item.pop("id_obligacion_financiera")
                     composiciones_by_obligacion[id_obligacion].append(item)
@@ -911,10 +895,7 @@ class ComercialRepository:
             (Decimal(str(ob["saldo_pendiente"])) for ob in obligaciones), Decimal("0")
         )
         importe_cancelado = sum(
-            (
-                Decimal(str(ob["importe_cancelado_acumulado"]))
-                for ob in obligaciones
-            ),
+            (Decimal(str(ob["importe_cancelado_acumulado"])) for ob in obligaciones),
             Decimal("0"),
         )
         return {
@@ -953,8 +934,7 @@ class ComercialRepository:
         params: dict[str, Any] = {"limit": limit, "offset": offset}
 
         if q is not None and q.strip():
-            filters.append(
-                """
+            filters.append("""
                 (
                     v.codigo_venta ILIKE :q
                     OR COALESCE(v.observaciones, '') ILIKE :q
@@ -975,8 +955,7 @@ class ComercialRepository:
                           )
                     )
                 )
-                """
-            )
+                """)
             params["q"] = f"%{q.strip()}%"
 
         if estado_venta is not None:
@@ -992,8 +971,7 @@ class ComercialRepository:
             if rol_codigo is not None:
                 rol_filter = "AND UPPER(rp.codigo_rol) = :rol_codigo"
                 params["rol_codigo"] = rol_codigo.strip().upper()
-            filters.append(
-                f"""
+            filters.append(f"""
                 EXISTS (
                     SELECT 1
                     FROM relacion_persona_rol rpr
@@ -1006,12 +984,10 @@ class ComercialRepository:
                       AND rpr.id_persona = :id_persona
                       {rol_filter}
                 )
-                """
-            )
+                """)
             params["id_persona"] = id_persona
         elif rol_codigo is not None:
-            filters.append(
-                """
+            filters.append("""
                 EXISTS (
                     SELECT 1
                     FROM relacion_persona_rol rpr
@@ -1023,13 +999,11 @@ class ComercialRepository:
                       AND rpr.deleted_at IS NULL
                       AND UPPER(rp.codigo_rol) = :rol_codigo
                 )
-                """
-            )
+                """)
             params["rol_codigo"] = rol_codigo.strip().upper()
 
         if id_inmueble is not None:
-            filters.append(
-                """
+            filters.append("""
                 EXISTS (
                     SELECT 1
                     FROM venta_objeto_inmobiliario voi
@@ -1037,13 +1011,11 @@ class ComercialRepository:
                       AND voi.deleted_at IS NULL
                       AND voi.id_inmueble = :id_inmueble
                 )
-                """
-            )
+                """)
             params["id_inmueble"] = id_inmueble
 
         if id_unidad_funcional is not None:
-            filters.append(
-                """
+            filters.append("""
                 EXISTS (
                     SELECT 1
                     FROM venta_objeto_inmobiliario voi
@@ -1051,8 +1023,7 @@ class ComercialRepository:
                       AND voi.deleted_at IS NULL
                       AND voi.id_unidad_funcional = :id_unidad_funcional
                 )
-                """
-            )
+                """)
             params["id_unidad_funcional"] = id_unidad_funcional
 
         if fecha_venta_desde is not None:
@@ -1064,8 +1035,7 @@ class ComercialRepository:
             params["fecha_venta_hasta"] = fecha_venta_hasta
 
         if con_saldo is not None:
-            saldo_clause = (
-                """
+            saldo_clause = """
                 EXISTS (
                     SELECT 1
                     FROM relacion_generadora rg
@@ -1078,12 +1048,10 @@ class ComercialRepository:
                       AND rg.deleted_at IS NULL
                 )
                 """
-            )
             filters.append(saldo_clause if con_saldo else f"NOT {saldo_clause}")
 
         where_clause = " AND ".join(filters)
-        list_stmt = text(
-            f"""
+        list_stmt = text(f"""
             SELECT
                 v.id_venta,
                 v.uid_global,
@@ -1099,15 +1067,12 @@ class ComercialRepository:
             ORDER BY v.fecha_venta DESC, v.id_venta DESC
             LIMIT :limit
             OFFSET :offset
-            """
-        )
-        total_stmt = text(
-            f"""
+            """)
+        total_stmt = text(f"""
             SELECT COUNT(*) AS total
             FROM venta v
             WHERE {where_clause}
-            """
-        )
+            """)
         rows = self.db.execute(list_stmt, params).mappings().all()
         total = self.db.execute(total_stmt, params).scalar_one()
         ids = [row["id_venta"] for row in rows]
@@ -1144,8 +1109,7 @@ class ComercialRepository:
     ) -> dict[int, list[dict[str, Any]]]:
         if not ids:
             return {}
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 rpr.id_relacion AS id_venta,
                 rpr.id_relacion_persona_rol,
@@ -1171,8 +1135,7 @@ class ComercialRepository:
               AND UPPER(rp.codigo_rol) = 'COMPRADOR'
             ORDER BY rpr.id_relacion ASC, rp.codigo_rol ASC,
                      rpr.id_relacion_persona_rol ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
         result: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
         for row in self.db.execute(stmt, {"ids": tuple(ids)}).mappings().all():
             result[row["id_venta"]].append(
@@ -1193,8 +1156,7 @@ class ComercialRepository:
     ) -> dict[int, list[dict[str, Any]]]:
         if not ids:
             return {}
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 voi.id_venta,
                 voi.id_venta_objeto,
@@ -1216,8 +1178,7 @@ class ComercialRepository:
             WHERE voi.id_venta IN :ids
               AND voi.deleted_at IS NULL
             ORDER BY voi.id_venta ASC, voi.id_venta_objeto ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
         result: dict[int, list[dict[str, Any]]] = {id_: [] for id_ in ids}
         for row in self.db.execute(stmt, {"ids": tuple(ids)}).mappings().all():
             result[row["id_venta"]].append(dict(row))
@@ -1228,8 +1189,7 @@ class ComercialRepository:
     ) -> dict[int, dict[str, Any]]:
         if not ids:
             return {}
-        stmt = text(
-            """
+        stmt = text("""
             SELECT
                 rg.id_origen,
                 rg.id_relacion_generadora,
@@ -1248,12 +1208,13 @@ class ComercialRepository:
               AND rg.deleted_at IS NULL
             GROUP BY rg.id_origen, rg.id_relacion_generadora
             ORDER BY rg.id_relacion_generadora ASC
-            """
-        ).bindparams(bindparam("ids", expanding=True))
+            """).bindparams(bindparam("ids", expanding=True))
         result: dict[int, dict[str, Any]] = {}
-        for row in self.db.execute(
-            stmt, {"tipo_origen": tipo_origen, "ids": tuple(ids)}
-        ).mappings().all():
+        for row in (
+            self.db.execute(stmt, {"tipo_origen": tipo_origen, "ids": tuple(ids)})
+            .mappings()
+            .all()
+        ):
             result.setdefault(
                 row["id_origen"],
                 {
@@ -1336,8 +1297,7 @@ class ComercialRepository:
         event_type_filters = ", ".join(
             f"'{event_type}'" for event_type in VENTA_INMOBILIARIO_EVENT_TYPES
         )
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT
                 id,
                 event_type,
@@ -1350,8 +1310,7 @@ class ComercialRepository:
               AND aggregate_id = :id_venta
               AND event_type IN ({event_type_filters})
             ORDER BY occurred_at, id
-            """
-        )
+            """)
         rows = self.db.execute(statement, {"id_venta": id_venta}).mappings().all()
         return {
             "eventos": [
@@ -1369,14 +1328,18 @@ class ComercialRepository:
                                 row["event_type"]
                             ),
                         }
-                        for objeto in self._get_event_objects_from_payload(row["payload"])
+                        for objeto in self._get_event_objects_from_payload(
+                            row["payload"]
+                        )
                     ],
                 }
                 for row in rows
             ]
         }
 
-    def _get_event_objects_from_payload(self, payload: Any) -> list[dict[str, int | None]]:
+    def _get_event_objects_from_payload(
+        self, payload: Any
+    ) -> list[dict[str, int | None]]:
         if not isinstance(payload, dict):
             return []
 
@@ -1396,7 +1359,9 @@ class ComercialRepository:
                 continue
             if id_inmueble is not None and not isinstance(id_inmueble, int):
                 continue
-            if id_unidad_funcional is not None and not isinstance(id_unidad_funcional, int):
+            if id_unidad_funcional is not None and not isinstance(
+                id_unidad_funcional, int
+            ):
                 continue
 
             object_key = (
@@ -1417,7 +1382,9 @@ class ComercialRepository:
 
         return parsed_objects
 
-    def _get_integration_effect_for_event(self, event_type: str) -> dict[str, str | None]:
+    def _get_integration_effect_for_event(
+        self, event_type: str
+    ) -> dict[str, str | None]:
         effect = VENTA_INMOBILIARIO_EFFECTS_BY_EVENT.get(
             event_type,
             {
@@ -1431,14 +1398,12 @@ class ComercialRepository:
         }
 
     def venta_exists_for_reserva(self, id_reserva_venta: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM venta
             WHERE id_reserva_venta = :id_reserva_venta
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(
                 statement, {"id_reserva_venta": id_reserva_venta}
@@ -1449,8 +1414,7 @@ class ComercialRepository:
     def update_reserva_venta(self, payload: Any) -> dict[str, Any] | None:
         values = self._values(payload)
 
-        statement = text(
-            """
+        statement = text("""
             UPDATE reserva_venta
             SET
                 codigo_reserva = :codigo_reserva,
@@ -1473,34 +1437,39 @@ class ComercialRepository:
                 estado_reserva,
                 fecha_vencimiento,
                 observaciones
-            """
-        )
+            """)
 
         try:
-            updated = self.db.execute(
-                statement,
-                {
-                    "id_reserva_venta": values["id_reserva_venta"],
-                    "codigo_reserva": values["codigo_reserva"],
-                    "fecha_reserva": values["fecha_reserva"],
-                    "fecha_vencimiento": values["fecha_vencimiento"],
-                    "observaciones": values["observaciones"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
+            updated = (
+                self.db.execute(
+                    statement,
+                    {
+                        "id_reserva_venta": values["id_reserva_venta"],
+                        "codigo_reserva": values["codigo_reserva"],
+                        "fecha_reserva": values["fecha_reserva"],
+                        "fecha_vencimiento": values["fecha_vencimiento"],
+                        "observaciones": values["observaciones"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if updated is None:
                 self.db.rollback()
                 return None
 
-            objetos = self.db.execute(
-                text(
-                    """
+            objetos = (
+                self.db.execute(
+                    text("""
                     SELECT
                         id_reserva_venta_objeto,
                         id_inmueble,
@@ -1510,10 +1479,12 @@ class ComercialRepository:
                     WHERE id_reserva_venta = :id_reserva_venta
                       AND deleted_at IS NULL
                     ORDER BY id_reserva_venta_objeto
-                    """
-                ),
-                {"id_reserva_venta": values["id_reserva_venta"]},
-            ).mappings().all()
+                    """),
+                    {"id_reserva_venta": values["id_reserva_venta"]},
+                )
+                .mappings()
+                .all()
+            )
 
             self.db.commit()
             return {
@@ -1542,8 +1513,7 @@ class ComercialRepository:
     def delete_reserva_venta(self, payload: Any) -> dict[str, Any] | None:
         values = self._values(payload)
 
-        statement = text(
-            """
+        statement = text("""
             UPDATE reserva_venta
             SET
                 version_registro = :version_registro_nueva,
@@ -1557,24 +1527,29 @@ class ComercialRepository:
             RETURNING
                 id_reserva_venta,
                 version_registro
-            """
-        )
+            """)
 
         try:
-            deleted = self.db.execute(
-                statement,
-                {
-                    "id_reserva_venta": values["id_reserva_venta"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "deleted_at": values["deleted_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
+            deleted = (
+                self.db.execute(
+                    statement,
+                    {
+                        "id_reserva_venta": values["id_reserva_venta"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "deleted_at": values["deleted_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if deleted is None:
                 self.db.rollback()
                 return None
@@ -1595,15 +1570,13 @@ class ComercialRepository:
         conflict_states: set[str],
     ) -> bool:
         state_filters = ", ".join(f"'{state}'" for state in sorted(conflict_states))
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT 1
             FROM venta
             WHERE id_reserva_venta = :id_reserva_venta
               AND deleted_at IS NULL
               AND LOWER(estado_venta) IN ({state_filters})
-            """
-        )
+            """)
         return (
             self.db.execute(
                 statement, {"id_reserva_venta": id_reserva_venta}
@@ -1612,16 +1585,16 @@ class ComercialRepository:
         )
 
     def venta_codigo_exists(self, codigo_venta: str) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM venta
             WHERE codigo_venta = :codigo_venta
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
-            self.db.execute(statement, {"codigo_venta": codigo_venta}).scalar_one_or_none()
+            self.db.execute(
+                statement, {"codigo_venta": codigo_venta}
+            ).scalar_one_or_none()
             is not None
         )
 
@@ -1636,8 +1609,7 @@ class ComercialRepository:
             id_inmueble=id_inmueble,
             id_unidad_funcional=id_unidad_funcional,
         )
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT UPPER(estado_disponibilidad) AS estado_disponibilidad
             FROM disponibilidad
             WHERE deleted_at IS NULL
@@ -1645,16 +1617,19 @@ class ComercialRepository:
               AND fecha_desde <= :at_datetime
               AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
             ORDER BY id_disponibilidad
-            """
+            """)
+        rows = (
+            self.db.execute(
+                statement,
+                self._object_params(
+                    id_inmueble=id_inmueble,
+                    id_unidad_funcional=id_unidad_funcional,
+                    at_datetime=at_datetime,
+                ),
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            statement,
-            self._object_params(
-                id_inmueble=id_inmueble,
-                id_unidad_funcional=id_unidad_funcional,
-                at_datetime=at_datetime,
-            ),
-        ).mappings().all()
         if len(rows) != 1:
             return None
         return rows[0]["estado_disponibilidad"]
@@ -1666,9 +1641,10 @@ class ComercialRepository:
         id_unidad_funcional: int | None,
         at_datetime: datetime,
     ) -> bool:
-        filters = self._object_filters(id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional)
-        statement = text(
-            f"""
+        filters = self._object_filters(
+            id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional
+        )
+        statement = text(f"""
             SELECT 1
             FROM disponibilidad
             WHERE deleted_at IS NULL
@@ -1676,8 +1652,7 @@ class ComercialRepository:
               AND fecha_desde <= :at_datetime
               AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
               AND UPPER(estado_disponibilidad) = 'DISPONIBLE'
-            """
-        )
+            """)
         return (
             self.db.execute(
                 statement,
@@ -1697,9 +1672,10 @@ class ComercialRepository:
         id_unidad_funcional: int | None,
         at_datetime: datetime,
     ) -> bool:
-        filters = self._object_filters(id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional)
-        statement = text(
-            f"""
+        filters = self._object_filters(
+            id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional
+        )
+        statement = text(f"""
             SELECT 1
             FROM disponibilidad
             WHERE deleted_at IS NULL
@@ -1707,8 +1683,7 @@ class ComercialRepository:
               AND fecha_desde <= :at_datetime
               AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
               AND UPPER(estado_disponibilidad) <> 'DISPONIBLE'
-            """
-        )
+            """)
         return (
             self.db.execute(
                 statement,
@@ -1728,17 +1703,17 @@ class ComercialRepository:
         id_unidad_funcional: int | None,
         at_datetime: datetime,
     ) -> bool:
-        filters = self._object_filters(id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional)
-        statement = text(
-            f"""
+        filters = self._object_filters(
+            id_inmueble=id_inmueble, id_unidad_funcional=id_unidad_funcional
+        )
+        statement = text(f"""
             SELECT 1
             FROM ocupacion
             WHERE deleted_at IS NULL
               AND {filters}
               AND fecha_desde <= :at_datetime
               AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
-            """
-        )
+            """)
         return (
             self.db.execute(
                 statement,
@@ -1772,8 +1747,7 @@ class ComercialRepository:
             exclude_filter = "AND v.id_venta <> :exclude_id_venta"
             params["exclude_id_venta"] = exclude_id_venta
 
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT 1
             FROM venta_objeto_inmobiliario vo
             JOIN venta v ON v.id_venta = vo.id_venta
@@ -1782,8 +1756,7 @@ class ComercialRepository:
               AND {object_filter}
               AND LOWER(v.estado_venta) IN ({state_filters})
               {exclude_filter}
-            """
-        )
+            """)
         return self.db.execute(statement, params).scalar_one_or_none() is not None
 
     def has_conflicting_active_reserva(
@@ -1807,8 +1780,7 @@ class ComercialRepository:
             exclude_filter = "AND rv.id_reserva_venta <> :exclude_id_reserva_venta"
             params["exclude_id_reserva_venta"] = exclude_id_reserva_venta
 
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT 1
             FROM reserva_venta_objeto_inmobiliario rvo
             JOIN reserva_venta rv ON rv.id_reserva_venta = rvo.id_reserva_venta
@@ -1817,8 +1789,7 @@ class ComercialRepository:
               AND {object_filter}
               AND LOWER(rv.estado_reserva) IN ({state_filters})
               {exclude_filter}
-            """
-        )
+            """)
         return self.db.execute(statement, params).scalar_one_or_none() is not None
 
     def confirm_reserva_venta(
@@ -1828,8 +1799,7 @@ class ComercialRepository:
     ) -> dict[str, Any]:
         values = self._values(payload)
 
-        update_statement = text(
-            """
+        update_statement = text("""
             UPDATE reserva_venta
             SET
                 estado_reserva = :estado_reserva,
@@ -1849,24 +1819,29 @@ class ComercialRepository:
                 estado_reserva,
                 fecha_vencimiento,
                 observaciones
-            """
-        )
+            """)
 
         try:
-            updated = self.db.execute(
-                update_statement,
-                {
-                    "id_reserva_venta": values["id_reserva_venta"],
-                    "estado_reserva": values["estado_reserva"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
+            updated = (
+                self.db.execute(
+                    update_statement,
+                    {
+                        "id_reserva_venta": values["id_reserva_venta"],
+                        "estado_reserva": values["estado_reserva"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if updated is None:
                 self.db.rollback()
                 return {"status": "CONCURRENCY_ERROR"}
@@ -1879,9 +1854,9 @@ class ComercialRepository:
                     self.db.rollback()
                     return replace_result
 
-            objetos = self.db.execute(
-                text(
-                    """
+            objetos = (
+                self.db.execute(
+                    text("""
                     SELECT
                         id_reserva_venta_objeto,
                         id_inmueble,
@@ -1891,10 +1866,12 @@ class ComercialRepository:
                     WHERE id_reserva_venta = :id_reserva_venta
                       AND deleted_at IS NULL
                     ORDER BY id_reserva_venta_objeto
-                    """
-                ),
-                {"id_reserva_venta": values["id_reserva_venta"]},
-            ).mappings().all()
+                    """),
+                    {"id_reserva_venta": values["id_reserva_venta"]},
+                )
+                .mappings()
+                .all()
+            )
 
             self.db.commit()
             return {
@@ -1930,8 +1907,7 @@ class ComercialRepository:
     ) -> dict[str, Any]:
         values = self._values(payload)
 
-        update_statement = text(
-            """
+        update_statement = text("""
             UPDATE reserva_venta
             SET
                 estado_reserva = :estado_reserva,
@@ -1951,24 +1927,29 @@ class ComercialRepository:
                 estado_reserva,
                 fecha_vencimiento,
                 observaciones
-            """
-        )
+            """)
 
         try:
-            updated = self.db.execute(
-                update_statement,
-                {
-                    "id_reserva_venta": values["id_reserva_venta"],
-                    "estado_reserva": values["estado_reserva"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
+            updated = (
+                self.db.execute(
+                    update_statement,
+                    {
+                        "id_reserva_venta": values["id_reserva_venta"],
+                        "estado_reserva": values["estado_reserva"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if updated is None:
                 self.db.rollback()
                 return {"status": "CONCURRENCY_ERROR"}
@@ -1982,9 +1963,9 @@ class ComercialRepository:
                     self.db.rollback()
                     return replace_result
 
-            objetos = self.db.execute(
-                text(
-                    """
+            objetos = (
+                self.db.execute(
+                    text("""
                     SELECT
                         id_reserva_venta_objeto,
                         id_inmueble,
@@ -1994,10 +1975,12 @@ class ComercialRepository:
                     WHERE id_reserva_venta = :id_reserva_venta
                       AND deleted_at IS NULL
                     ORDER BY id_reserva_venta_objeto
-                    """
-                ),
-                {"id_reserva_venta": values["id_reserva_venta"]},
-            ).mappings().all()
+                    """),
+                    {"id_reserva_venta": values["id_reserva_venta"]},
+                )
+                .mappings()
+                .all()
+            )
 
             self.db.commit()
             return {
@@ -2033,8 +2016,7 @@ class ComercialRepository:
     ) -> dict[str, Any]:
         values = self._values(payload)
 
-        update_statement = text(
-            """
+        update_statement = text("""
             UPDATE reserva_venta
             SET
                 estado_reserva = :estado_reserva,
@@ -2054,24 +2036,29 @@ class ComercialRepository:
                 estado_reserva,
                 fecha_vencimiento,
                 observaciones
-            """
-        )
+            """)
 
         try:
-            updated = self.db.execute(
-                update_statement,
-                {
-                    "id_reserva_venta": values["id_reserva_venta"],
-                    "estado_reserva": values["estado_reserva"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
+            updated = (
+                self.db.execute(
+                    update_statement,
+                    {
+                        "id_reserva_venta": values["id_reserva_venta"],
+                        "estado_reserva": values["estado_reserva"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if updated is None:
                 self.db.rollback()
                 return {"status": "CONCURRENCY_ERROR"}
@@ -2085,9 +2072,9 @@ class ComercialRepository:
                     self.db.rollback()
                     return replace_result
 
-            objetos = self.db.execute(
-                text(
-                    """
+            objetos = (
+                self.db.execute(
+                    text("""
                     SELECT
                         id_reserva_venta_objeto,
                         id_inmueble,
@@ -2097,10 +2084,12 @@ class ComercialRepository:
                     WHERE id_reserva_venta = :id_reserva_venta
                       AND deleted_at IS NULL
                     ORDER BY id_reserva_venta_objeto
-                    """
-                ),
-                {"id_reserva_venta": values["id_reserva_venta"]},
-            ).mappings().all()
+                    """),
+                    {"id_reserva_venta": values["id_reserva_venta"]},
+                )
+                .mappings()
+                .all()
+            )
 
             self.db.commit()
             return {
@@ -2132,8 +2121,7 @@ class ComercialRepository:
     def activate_reserva_venta(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
 
-        statement = text(
-            """
+        statement = text("""
             UPDATE reserva_venta
             SET
                 estado_reserva = :estado_reserva,
@@ -2153,31 +2141,36 @@ class ComercialRepository:
                 estado_reserva,
                 fecha_vencimiento,
                 observaciones
-            """
-        )
+            """)
 
         try:
-            updated = self.db.execute(
-                statement,
-                {
-                    "id_reserva_venta": values["id_reserva_venta"],
-                    "estado_reserva": values["estado_reserva"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
+            updated = (
+                self.db.execute(
+                    statement,
+                    {
+                        "id_reserva_venta": values["id_reserva_venta"],
+                        "estado_reserva": values["estado_reserva"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if updated is None:
                 self.db.rollback()
                 return {"status": "CONCURRENCY_ERROR"}
 
-            objetos = self.db.execute(
-                text(
-                    """
+            objetos = (
+                self.db.execute(
+                    text("""
                     SELECT
                         id_reserva_venta_objeto,
                         id_inmueble,
@@ -2187,10 +2180,12 @@ class ComercialRepository:
                     WHERE id_reserva_venta = :id_reserva_venta
                       AND deleted_at IS NULL
                     ORDER BY id_reserva_venta_objeto
-                    """
-                ),
-                {"id_reserva_venta": values["id_reserva_venta"]},
-            ).mappings().all()
+                    """),
+                    {"id_reserva_venta": values["id_reserva_venta"]},
+                )
+                .mappings()
+                .all()
+            )
 
             self.db.commit()
             return {
@@ -2244,8 +2239,7 @@ class ComercialRepository:
             "observaciones": reserva_values["observaciones"],
         }
 
-        reserva_statement = text(
-            """
+        reserva_statement = text("""
             INSERT INTO reserva_venta (
                 uid_global,
                 version_registro,
@@ -2277,11 +2271,9 @@ class ComercialRepository:
                 :observaciones
             )
             RETURNING id_reserva_venta
-            """
-        )
+            """)
 
-        objeto_statement = text(
-            """
+        objeto_statement = text("""
             INSERT INTO reserva_venta_objeto_inmobiliario (
                 uid_global,
                 version_registro,
@@ -2311,11 +2303,9 @@ class ComercialRepository:
                 :observaciones
             )
             RETURNING id_reserva_venta_objeto
-            """
-        )
+            """)
 
-        participacion_statement = text(
-            """
+        participacion_statement = text("""
             INSERT INTO relacion_persona_rol (
                 uid_global,
                 version_registro,
@@ -2329,6 +2319,7 @@ class ComercialRepository:
                 id_rol_participacion,
                 tipo_relacion,
                 id_relacion,
+                porcentaje_responsabilidad,
                 fecha_desde,
                 fecha_hasta,
                 observaciones
@@ -2346,12 +2337,12 @@ class ComercialRepository:
                 :id_rol_participacion,
                 :tipo_relacion,
                 :id_relacion,
+                :porcentaje_responsabilidad,
                 :fecha_desde,
                 :fecha_hasta,
                 :observaciones
             )
-            """
-        )
+            """)
 
         try:
             reserva_row = self.db.execute(reserva_statement, db_values).mappings().one()
@@ -2360,28 +2351,36 @@ class ComercialRepository:
 
             for objeto in objetos:
                 values = self._values(objeto)
-                objeto_row = self.db.execute(
-                    objeto_statement,
-                    {
-                        "uid_global": values["uid_global"],
-                        "version_registro": values["version_registro"],
-                        "created_at": values["created_at"],
-                        "updated_at": values["updated_at"],
-                        "id_instalacion_origen": values["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_alta": values["op_id_alta"],
-                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                        "id_reserva_venta": id_reserva_venta,
-                        "id_inmueble": values["id_inmueble"],
-                        "id_unidad_funcional": values["id_unidad_funcional"],
-                        "observaciones": values["observaciones"],
-                    },
-                ).mappings().one()
+                objeto_row = (
+                    self.db.execute(
+                        objeto_statement,
+                        {
+                            "uid_global": values["uid_global"],
+                            "version_registro": values["version_registro"],
+                            "created_at": values["created_at"],
+                            "updated_at": values["updated_at"],
+                            "id_instalacion_origen": values["id_instalacion_origen"],
+                            "id_instalacion_ultima_modificacion": values[
+                                "id_instalacion_ultima_modificacion"
+                            ],
+                            "op_id_alta": values["op_id_alta"],
+                            "op_id_ultima_modificacion": values[
+                                "op_id_ultima_modificacion"
+                            ],
+                            "id_reserva_venta": id_reserva_venta,
+                            "id_inmueble": values["id_inmueble"],
+                            "id_unidad_funcional": values["id_unidad_funcional"],
+                            "observaciones": values["observaciones"],
+                        },
+                    )
+                    .mappings()
+                    .one()
+                )
                 created_objetos.append(
                     {
-                        "id_reserva_venta_objeto": objeto_row["id_reserva_venta_objeto"],
+                        "id_reserva_venta_objeto": objeto_row[
+                            "id_reserva_venta_objeto"
+                        ],
                         "id_inmueble": values["id_inmueble"],
                         "id_unidad_funcional": values["id_unidad_funcional"],
                         "observaciones": values["observaciones"],
@@ -2402,11 +2401,16 @@ class ComercialRepository:
                             "id_instalacion_ultima_modificacion"
                         ],
                         "op_id_alta": values["op_id_alta"],
-                        "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
                         "id_persona": values["id_persona"],
                         "id_rol_participacion": values["id_rol_participacion"],
                         "tipo_relacion": values["tipo_relacion"],
                         "id_relacion": id_reserva_venta,
+                        "porcentaje_responsabilidad": values.get(
+                            "porcentaje_responsabilidad"
+                        ),
                         "fecha_desde": values["fecha_desde"],
                         "fecha_hasta": values["fecha_hasta"],
                         "observaciones": values["observaciones"],
@@ -2455,8 +2459,7 @@ class ComercialRepository:
         venta_values = self._values(payload)
         reserva_values = self._values(reserva_payload)
 
-        venta_statement = text(
-            """
+        venta_statement = text("""
             INSERT INTO venta (
                 uid_global,
                 version_registro,
@@ -2490,11 +2493,9 @@ class ComercialRepository:
                 :observaciones
             )
             RETURNING id_venta
-            """
-        )
+            """)
 
-        objeto_statement = text(
-            """
+        objeto_statement = text("""
             INSERT INTO venta_objeto_inmobiliario (
                 uid_global,
                 version_registro,
@@ -2526,11 +2527,9 @@ class ComercialRepository:
                 :observaciones
             )
             RETURNING id_venta_objeto
-            """
-        )
+            """)
 
-        participacion_statement = text(
-            """
+        participacion_statement = text("""
             INSERT INTO relacion_persona_rol (
                 uid_global,
                 version_registro,
@@ -2544,6 +2543,7 @@ class ComercialRepository:
                 id_rol_participacion,
                 tipo_relacion,
                 id_relacion,
+                porcentaje_responsabilidad,
                 fecha_desde,
                 fecha_hasta,
                 observaciones
@@ -2561,15 +2561,14 @@ class ComercialRepository:
                 :id_rol_participacion,
                 :tipo_relacion,
                 :id_relacion,
+                :porcentaje_responsabilidad,
                 :fecha_desde,
                 :fecha_hasta,
                 :observaciones
             )
-            """
-        )
+            """)
 
-        reserva_statement = text(
-            """
+        reserva_statement = text("""
             UPDATE reserva_venta
             SET
                 estado_reserva = :estado_reserva,
@@ -2581,8 +2580,7 @@ class ComercialRepository:
               AND version_registro = :version_registro_actual
               AND deleted_at IS NULL
             RETURNING id_reserva_venta
-            """
-        )
+            """)
 
         venta_row = self.db.execute(venta_statement, venta_values).mappings().one()
         id_venta = venta_row["id_venta"]
@@ -2590,26 +2588,32 @@ class ComercialRepository:
 
         for objeto in objetos:
             values = self._values(objeto)
-            objeto_row = self.db.execute(
-                objeto_statement,
-                {
-                    "uid_global": values["uid_global"],
-                    "version_registro": values["version_registro"],
-                    "created_at": values["created_at"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_origen": values["id_instalacion_origen"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_alta": values["op_id_alta"],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                    "id_venta": id_venta,
-                    "id_inmueble": values["id_inmueble"],
-                    "id_unidad_funcional": values["id_unidad_funcional"],
-                    "precio_asignado": values["precio_asignado"],
-                    "observaciones": values["observaciones"],
-                },
-            ).mappings().one()
+            objeto_row = (
+                self.db.execute(
+                    objeto_statement,
+                    {
+                        "uid_global": values["uid_global"],
+                        "version_registro": values["version_registro"],
+                        "created_at": values["created_at"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_origen": values["id_instalacion_origen"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_alta": values["op_id_alta"],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                        "id_venta": id_venta,
+                        "id_inmueble": values["id_inmueble"],
+                        "id_unidad_funcional": values["id_unidad_funcional"],
+                        "precio_asignado": values["precio_asignado"],
+                        "observaciones": values["observaciones"],
+                    },
+                )
+                .mappings()
+                .one()
+            )
             created_objetos.append(
                 {
                     "id_venta_objeto": objeto_row["id_venta_objeto"],
@@ -2639,26 +2643,37 @@ class ComercialRepository:
                     "id_rol_participacion": values["id_rol_participacion"],
                     "tipo_relacion": values["tipo_relacion"],
                     "id_relacion": id_venta,
+                    "porcentaje_responsabilidad": values.get(
+                        "porcentaje_responsabilidad"
+                    ),
                     "fecha_desde": values["fecha_desde"],
                     "fecha_hasta": values["fecha_hasta"],
                     "observaciones": values["observaciones"],
                 },
             )
 
-        updated = self.db.execute(
-            reserva_statement,
-            {
-                "id_reserva_venta": reserva_values["id_reserva_venta"],
-                "estado_reserva": reserva_values["estado_reserva"],
-                "version_registro_actual": reserva_values["version_registro_actual"],
-                "version_registro_nueva": reserva_values["version_registro_nueva"],
-                "updated_at": reserva_values["updated_at"],
-                "id_instalacion_ultima_modificacion": reserva_values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_ultima_modificacion": reserva_values["op_id_ultima_modificacion"],
-            },
-        ).mappings().one_or_none()
+        updated = (
+            self.db.execute(
+                reserva_statement,
+                {
+                    "id_reserva_venta": reserva_values["id_reserva_venta"],
+                    "estado_reserva": reserva_values["estado_reserva"],
+                    "version_registro_actual": reserva_values[
+                        "version_registro_actual"
+                    ],
+                    "version_registro_nueva": reserva_values["version_registro_nueva"],
+                    "updated_at": reserva_values["updated_at"],
+                    "id_instalacion_ultima_modificacion": reserva_values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_ultima_modificacion": reserva_values[
+                        "op_id_ultima_modificacion"
+                    ],
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
         if updated is None:
             return {"status": "CONCURRENCY_ERROR"}
 
@@ -2705,8 +2720,7 @@ class ComercialRepository:
         if validation_status is not None:
             return {"status": validation_status}
 
-        venta_statement = text(
-            """
+        venta_statement = text("""
             INSERT INTO venta (
                 uid_global,
                 version_registro,
@@ -2740,11 +2754,9 @@ class ComercialRepository:
                 :observaciones
             )
             RETURNING id_venta
-            """
-        )
+            """)
 
-        objeto_statement = text(
-            """
+        objeto_statement = text("""
             INSERT INTO venta_objeto_inmobiliario (
                 uid_global,
                 version_registro,
@@ -2775,11 +2787,9 @@ class ComercialRepository:
                 :precio_asignado,
                 :observaciones
             )
-            """
-        )
+            """)
 
-        comprador_statement = text(
-            """
+        comprador_statement = text("""
             INSERT INTO relacion_persona_rol (
                 uid_global,
                 version_registro,
@@ -2793,6 +2803,7 @@ class ComercialRepository:
                 id_rol_participacion,
                 tipo_relacion,
                 id_relacion,
+                porcentaje_responsabilidad,
                 fecha_desde,
                 fecha_hasta,
                 observaciones
@@ -2810,12 +2821,12 @@ class ComercialRepository:
                 :id_rol_participacion,
                 'venta',
                 :id_relacion,
+                :porcentaje_responsabilidad,
                 :fecha_desde,
                 :fecha_hasta,
                 :observaciones
             )
-            """
-        )
+            """)
 
         venta_row = self.db.execute(venta_statement, venta_values).mappings().one()
         id_venta = venta_row["id_venta"]
@@ -2842,30 +2853,33 @@ class ComercialRepository:
                 },
             )
 
-        comprador_values = compradores_values[0]
-        self.db.execute(
-            comprador_statement,
-            {
-                "uid_global": comprador_values["uid_global"],
-                "version_registro": comprador_values["version_registro"],
-                "created_at": comprador_values["created_at"],
-                "updated_at": comprador_values["updated_at"],
-                "id_instalacion_origen": comprador_values["id_instalacion_origen"],
-                "id_instalacion_ultima_modificacion": comprador_values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_alta": comprador_values["op_id_alta"],
-                "op_id_ultima_modificacion": comprador_values[
-                    "op_id_ultima_modificacion"
-                ],
-                "id_persona": comprador_values["id_persona"],
-                "id_rol_participacion": comprador_values["id_rol_participacion"],
-                "id_relacion": id_venta,
-                "fecha_desde": comprador_values["fecha_desde"],
-                "fecha_hasta": comprador_values["fecha_hasta"],
-                "observaciones": comprador_values["observaciones"],
-            },
-        )
+        for comprador_values in compradores_values:
+            self.db.execute(
+                comprador_statement,
+                {
+                    "uid_global": comprador_values["uid_global"],
+                    "version_registro": comprador_values["version_registro"],
+                    "created_at": comprador_values["created_at"],
+                    "updated_at": comprador_values["updated_at"],
+                    "id_instalacion_origen": comprador_values["id_instalacion_origen"],
+                    "id_instalacion_ultima_modificacion": comprador_values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_alta": comprador_values["op_id_alta"],
+                    "op_id_ultima_modificacion": comprador_values[
+                        "op_id_ultima_modificacion"
+                    ],
+                    "id_persona": comprador_values["id_persona"],
+                    "id_rol_participacion": comprador_values["id_rol_participacion"],
+                    "id_relacion": id_venta,
+                    "porcentaje_responsabilidad": comprador_values.get(
+                        "porcentaje_responsabilidad"
+                    ),
+                    "fecha_desde": comprador_values["fecha_desde"],
+                    "fecha_hasta": comprador_values["fecha_hasta"],
+                    "observaciones": comprador_values["observaciones"],
+                },
+            )
 
         return {
             "status": "OK",
@@ -2906,8 +2920,7 @@ class ComercialRepository:
     ) -> dict[str, Any]:
         venta_values = self._values(payload)
 
-        venta_statement = text(
-            """
+        venta_statement = text("""
             UPDATE venta
             SET
                 monto_total = :monto_total,
@@ -2943,11 +2956,9 @@ class ComercialRepository:
                 created_at,
                 updated_at,
                 deleted_at
-            """
-        )
+            """)
 
-        objeto_statement = text(
-            """
+        objeto_statement = text("""
             UPDATE venta_objeto_inmobiliario
             SET
                 precio_asignado = :precio_asignado,
@@ -2964,11 +2975,9 @@ class ComercialRepository:
                 id_unidad_funcional,
                 precio_asignado,
                 observaciones
-            """
-        )
+            """)
 
-        delete_cuotas_statement = text(
-            """
+        delete_cuotas_statement = text("""
             UPDATE venta_plan_cuota
             SET
                 deleted_at = :updated_at,
@@ -2977,10 +2986,8 @@ class ComercialRepository:
                 op_id_ultima_modificacion = :op_id_ultima_modificacion
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
-            """
-        )
-        insert_cuota_statement = text(
-            """
+            """)
+        insert_cuota_statement = text("""
             INSERT INTO venta_plan_cuota (
                 uid_global,
                 version_registro,
@@ -3020,53 +3027,62 @@ class ComercialRepository:
                 fecha_vencimiento,
                 moneda,
                 observaciones
-            """
-        )
+            """)
 
-        venta_row = self.db.execute(
-            venta_statement,
-            {
-                "id_venta": venta_values["id_venta"],
-                "monto_total": venta_values["monto_total"],
-                "tipo_plan_financiero": venta_values["tipo_plan_financiero"],
-                "moneda": venta_values["moneda"],
-                "importe_anticipo": venta_values["importe_anticipo"],
-                "fecha_vencimiento_anticipo": venta_values[
-                    "fecha_vencimiento_anticipo"
-                ],
-                "importe_saldo": venta_values["importe_saldo"],
-                "fecha_vencimiento_saldo": venta_values[
-                    "fecha_vencimiento_saldo"
-                ],
-                "version_registro_actual": venta_values["version_registro_actual"],
-                "version_registro_nueva": venta_values["version_registro_nueva"],
-                "updated_at": venta_values["updated_at"],
-                "id_instalacion_ultima_modificacion": venta_values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_ultima_modificacion": venta_values["op_id_ultima_modificacion"],
-            },
-        ).mappings().one_or_none()
+        venta_row = (
+            self.db.execute(
+                venta_statement,
+                {
+                    "id_venta": venta_values["id_venta"],
+                    "monto_total": venta_values["monto_total"],
+                    "tipo_plan_financiero": venta_values["tipo_plan_financiero"],
+                    "moneda": venta_values["moneda"],
+                    "importe_anticipo": venta_values["importe_anticipo"],
+                    "fecha_vencimiento_anticipo": venta_values[
+                        "fecha_vencimiento_anticipo"
+                    ],
+                    "importe_saldo": venta_values["importe_saldo"],
+                    "fecha_vencimiento_saldo": venta_values["fecha_vencimiento_saldo"],
+                    "version_registro_actual": venta_values["version_registro_actual"],
+                    "version_registro_nueva": venta_values["version_registro_nueva"],
+                    "updated_at": venta_values["updated_at"],
+                    "id_instalacion_ultima_modificacion": venta_values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_ultima_modificacion": venta_values[
+                        "op_id_ultima_modificacion"
+                    ],
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
         if venta_row is None:
             return {"status": "CONCURRENCY_ERROR"}
 
         updated_objetos: list[dict[str, Any]] = []
         for objeto in objetos:
             values = self._values(objeto)
-            objeto_row = self.db.execute(
-                objeto_statement,
-                {
-                    "id_venta_objeto": values["id_venta_objeto"],
-                    "precio_asignado": values["precio_asignado"],
-                    "version_registro_actual": values["version_registro_actual"],
-                    "version_registro_nueva": values["version_registro_nueva"],
-                    "updated_at": values["updated_at"],
-                    "id_instalacion_ultima_modificacion": values[
-                        "id_instalacion_ultima_modificacion"
-                    ],
-                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-                },
-            ).mappings().one_or_none()
+            objeto_row = (
+                self.db.execute(
+                    objeto_statement,
+                    {
+                        "id_venta_objeto": values["id_venta_objeto"],
+                        "precio_asignado": values["precio_asignado"],
+                        "version_registro_actual": values["version_registro_actual"],
+                        "version_registro_nueva": values["version_registro_nueva"],
+                        "updated_at": values["updated_at"],
+                        "id_instalacion_ultima_modificacion": values[
+                            "id_instalacion_ultima_modificacion"
+                        ],
+                        "op_id_ultima_modificacion": values[
+                            "op_id_ultima_modificacion"
+                        ],
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if objeto_row is None:
                 return {"status": "OBJECT_UPDATE_FAILED"}
 
@@ -3088,18 +3104,20 @@ class ComercialRepository:
                 "id_instalacion_ultima_modificacion": venta_values[
                     "id_instalacion_ultima_modificacion"
                 ],
-                "op_id_ultima_modificacion": venta_values[
-                    "op_id_ultima_modificacion"
-                ],
+                "op_id_ultima_modificacion": venta_values["op_id_ultima_modificacion"],
             },
         )
         updated_cuotas: list[dict[str, Any]] = []
         for cuota in cuotas:
             cuota_values = self._values(cuota)
-            cuota_row = self.db.execute(
-                insert_cuota_statement,
-                cuota_values,
-            ).mappings().one()
+            cuota_row = (
+                self.db.execute(
+                    insert_cuota_statement,
+                    cuota_values,
+                )
+                .mappings()
+                .one()
+            )
             updated_cuotas.append(dict(cuota_row))
 
         return {
@@ -3116,9 +3134,7 @@ class ComercialRepository:
                 "tipo_plan_financiero": venta_row["tipo_plan_financiero"],
                 "moneda": venta_row["moneda"],
                 "importe_anticipo": venta_row["importe_anticipo"],
-                "fecha_vencimiento_anticipo": venta_row[
-                    "fecha_vencimiento_anticipo"
-                ],
+                "fecha_vencimiento_anticipo": venta_row["fecha_vencimiento_anticipo"],
                 "importe_saldo": venta_row["importe_saldo"],
                 "fecha_vencimiento_saldo": venta_row["fecha_vencimiento_saldo"],
                 "cuotas": updated_cuotas,
@@ -3130,7 +3146,9 @@ class ComercialRepository:
             },
         }
 
-    def confirm_venta(self, payload: Any, *, outbox_event: Any | None = None) -> dict[str, Any]:
+    def confirm_venta(
+        self, payload: Any, *, outbox_event: Any | None = None
+    ) -> dict[str, Any]:
         try:
             result = self._confirm_venta_tx(payload, outbox_event=outbox_event)
             if result.get("status") == "OK":
@@ -3151,8 +3169,7 @@ class ComercialRepository:
         values = self._values(payload)
         outbox_repository = OutboxRepository(self.db)
 
-        venta_statement = text(
-            """
+        venta_statement = text("""
             UPDATE venta
             SET
                 estado_venta = :estado_venta,
@@ -3183,11 +3200,9 @@ class ComercialRepository:
                 created_at,
                 updated_at,
                 deleted_at
-            """
-        )
+            """)
 
-        objeto_statement = text(
-            """
+        objeto_statement = text("""
             SELECT
                 id_venta_objeto,
                 id_inmueble,
@@ -3198,31 +3213,38 @@ class ComercialRepository:
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
             ORDER BY id_venta_objeto
-            """
-        )
+            """)
 
-        venta_row = self.db.execute(
-            venta_statement,
-            {
-                "id_venta": values["id_venta"],
-                "estado_venta": values["estado_venta"],
-                "observaciones": values["observaciones"],
-                "version_registro_actual": values["version_registro_actual"],
-                "version_registro_nueva": values["version_registro_nueva"],
-                "updated_at": values["updated_at"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-            },
-        ).mappings().one_or_none()
+        venta_row = (
+            self.db.execute(
+                venta_statement,
+                {
+                    "id_venta": values["id_venta"],
+                    "estado_venta": values["estado_venta"],
+                    "observaciones": values["observaciones"],
+                    "version_registro_actual": values["version_registro_actual"],
+                    "version_registro_nueva": values["version_registro_nueva"],
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
         if venta_row is None:
             return {"status": "CONCURRENCY_ERROR"}
 
-        objetos = self.db.execute(
-            objeto_statement,
-            {"id_venta": values["id_venta"]},
-        ).mappings().all()
+        objetos = (
+            self.db.execute(
+                objeto_statement,
+                {"id_venta": values["id_venta"]},
+            )
+            .mappings()
+            .all()
+        )
 
         if outbox_event is not None:
             outbox_values = self._values(outbox_event)
@@ -3250,9 +3272,7 @@ class ComercialRepository:
                 "tipo_plan_financiero": venta_row["tipo_plan_financiero"],
                 "moneda": venta_row["moneda"],
                 "importe_anticipo": venta_row["importe_anticipo"],
-                "fecha_vencimiento_anticipo": venta_row[
-                    "fecha_vencimiento_anticipo"
-                ],
+                "fecha_vencimiento_anticipo": venta_row["fecha_vencimiento_anticipo"],
                 "importe_saldo": venta_row["importe_saldo"],
                 "fecha_vencimiento_saldo": venta_row["fecha_vencimiento_saldo"],
                 "observaciones": venta_row["observaciones"],
@@ -3279,8 +3299,7 @@ class ComercialRepository:
     ) -> dict[str, Any]:
         values = self._values(payload)
 
-        instrumento_statement = text(
-            """
+        instrumento_statement = text("""
             INSERT INTO instrumento_compraventa (
                 uid_global,
                 version_registro,
@@ -3326,11 +3345,9 @@ class ComercialRepository:
                 created_at,
                 updated_at,
                 deleted_at
-            """
-        )
+            """)
 
-        objeto_statement = text(
-            """
+        objeto_statement = text("""
             INSERT INTO instrumento_objeto_inmobiliario (
                 uid_global,
                 version_registro,
@@ -3364,37 +3381,44 @@ class ComercialRepository:
                 id_inmueble,
                 id_unidad_funcional,
                 observaciones
-            """
-        )
+            """)
 
         try:
-            instrumento_row = self.db.execute(instrumento_statement, values).mappings().one()
+            instrumento_row = (
+                self.db.execute(instrumento_statement, values).mappings().one()
+            )
             id_instrumento = instrumento_row["id_instrumento_compraventa"]
             created_objetos: list[dict[str, Any]] = []
 
             for objeto in objetos:
                 objeto_values = self._values(objeto)
-                objeto_row = self.db.execute(
-                    objeto_statement,
-                    {
-                        "uid_global": objeto_values["uid_global"],
-                        "version_registro": objeto_values["version_registro"],
-                        "created_at": objeto_values["created_at"],
-                        "updated_at": objeto_values["updated_at"],
-                        "id_instalacion_origen": objeto_values["id_instalacion_origen"],
-                        "id_instalacion_ultima_modificacion": objeto_values[
-                            "id_instalacion_ultima_modificacion"
-                        ],
-                        "op_id_alta": objeto_values["op_id_alta"],
-                        "op_id_ultima_modificacion": objeto_values[
-                            "op_id_ultima_modificacion"
-                        ],
-                        "id_instrumento_compraventa": id_instrumento,
-                        "id_inmueble": objeto_values["id_inmueble"],
-                        "id_unidad_funcional": objeto_values["id_unidad_funcional"],
-                        "observaciones": objeto_values["observaciones"],
-                    },
-                ).mappings().one()
+                objeto_row = (
+                    self.db.execute(
+                        objeto_statement,
+                        {
+                            "uid_global": objeto_values["uid_global"],
+                            "version_registro": objeto_values["version_registro"],
+                            "created_at": objeto_values["created_at"],
+                            "updated_at": objeto_values["updated_at"],
+                            "id_instalacion_origen": objeto_values[
+                                "id_instalacion_origen"
+                            ],
+                            "id_instalacion_ultima_modificacion": objeto_values[
+                                "id_instalacion_ultima_modificacion"
+                            ],
+                            "op_id_alta": objeto_values["op_id_alta"],
+                            "op_id_ultima_modificacion": objeto_values[
+                                "op_id_ultima_modificacion"
+                            ],
+                            "id_instrumento_compraventa": id_instrumento,
+                            "id_inmueble": objeto_values["id_inmueble"],
+                            "id_unidad_funcional": objeto_values["id_unidad_funcional"],
+                            "observaciones": objeto_values["observaciones"],
+                        },
+                    )
+                    .mappings()
+                    .one()
+                )
                 created_objetos.append(
                     {
                         "id_instrumento_objeto": objeto_row["id_instrumento_objeto"],
@@ -3430,42 +3454,36 @@ class ComercialRepository:
             raise
 
     def cesion_exists_for_venta(self, id_venta: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM cesion
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(statement, {"id_venta": id_venta}).scalar_one_or_none()
             is not None
         )
 
     def escrituracion_exists_for_venta(self, id_venta: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM escrituracion
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(statement, {"id_venta": id_venta}).scalar_one_or_none()
             is not None
         )
 
     def rescision_exists_for_venta(self, id_venta: int) -> bool:
-        statement = text(
-            """
+        statement = text("""
             SELECT 1
             FROM rescision_venta
             WHERE id_venta = :id_venta
               AND deleted_at IS NULL
-            """
-        )
+            """)
         return (
             self.db.execute(statement, {"id_venta": id_venta}).scalar_one_or_none()
             is not None
@@ -3473,8 +3491,7 @@ class ComercialRepository:
 
     def create_cesion(self, payload: Any) -> dict[str, Any]:
         values = self._values(payload)
-        statement = text(
-            """
+        statement = text("""
             INSERT INTO cesion (
                 uid_global,
                 version_registro,
@@ -3514,8 +3531,7 @@ class ComercialRepository:
                 created_at,
                 updated_at,
                 deleted_at
-            """
-        )
+            """)
 
         try:
             cesion_row = self.db.execute(statement, values).mappings().one()
@@ -3547,8 +3563,7 @@ class ComercialRepository:
     ) -> dict[str, Any]:
         values = self._values(payload)
         outbox_repository = OutboxRepository(self.db)
-        statement = text(
-            """
+        statement = text("""
             INSERT INTO escrituracion (
                 uid_global,
                 version_registro,
@@ -3588,8 +3603,7 @@ class ComercialRepository:
                 created_at,
                 updated_at,
                 deleted_at
-            """
-        )
+            """)
 
         try:
             escrituracion_row = self.db.execute(statement, values).mappings().one()
@@ -3671,9 +3685,8 @@ class ComercialRepository:
             if id_inmueble is not None and not self.inmueble_exists(id_inmueble):
                 return "NOT_FOUND_INMUEBLE"
 
-            if (
-                id_unidad_funcional is not None
-                and not self.unidad_funcional_exists(id_unidad_funcional)
+            if id_unidad_funcional is not None and not self.unidad_funcional_exists(
+                id_unidad_funcional
             ):
                 return "NOT_FOUND_UNIDAD_FUNCIONAL"
 
@@ -3727,18 +3740,40 @@ class ComercialRepository:
         if monto_total is not None and Decimal(str(monto_total)) != total_objetos:
             return "MONTO_TOTAL_OBJECTS_MISMATCH"
 
-        if len(compradores_values) != 1:
-            return "INVALID_COMPRADOR_COUNT"
+        if not compradores_values:
+            return "COMPRADORES_REQUERIDOS"
 
-        comprador_values = compradores_values[0]
-        if not self.persona_exists(comprador_values["id_persona"]):
-            return "NOT_FOUND_PERSONA"
+        seen_compradores: set[int] = set()
+        total_porcentaje = Decimal("0.00")
+        for comprador_values in compradores_values:
+            id_persona = comprador_values["id_persona"]
+            if id_persona in seen_compradores:
+                return "COMPRADOR_DUPLICADO"
+            seen_compradores.add(id_persona)
 
-        rol_codigo = self.get_rol_participacion_codigo(
-            comprador_values["id_rol_participacion"]
-        )
-        if rol_codigo != "COMPRADOR":
-            return "INVALID_ROL_COMPRADOR"
+            if not self.persona_exists(id_persona):
+                return "NOT_FOUND_PERSONA"
+
+            rol_codigo = self.get_rol_participacion_codigo(
+                comprador_values["id_rol_participacion"]
+            )
+            if rol_codigo != "COMPRADOR":
+                return "INVALID_ROL_COMPRADOR"
+
+            porcentaje = comprador_values.get("porcentaje_responsabilidad")
+            if porcentaje is None:
+                if len(compradores_values) == 1:
+                    porcentaje = Decimal("100.00")
+                    comprador_values["porcentaje_responsabilidad"] = porcentaje
+                else:
+                    return "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+            porcentaje_decimal = Decimal(str(porcentaje)).quantize(Decimal("0.01"))
+            if porcentaje_decimal <= 0 or porcentaje_decimal > Decimal("100.00"):
+                return "PORCENTAJE_COMPRADOR_INVALIDO"
+            total_porcentaje += porcentaje_decimal
+
+        if total_porcentaje.quantize(Decimal("0.01")) != Decimal("100.00"):
+            return "PORCENTAJE_COMPRADORES_NO_SUMA_100"
 
         return None
 
@@ -3800,15 +3835,13 @@ class ComercialRepository:
         )
 
     def _get_unidades_funcionales_by_inmueble(self, id_inmueble: int) -> list[int]:
-        statement = text(
-            """
+        statement = text("""
             SELECT id_unidad_funcional
             FROM unidad_funcional
             WHERE id_inmueble = :id_inmueble
               AND deleted_at IS NULL
             ORDER BY id_unidad_funcional
-            """
-        )
+            """)
         rows = self.db.execute(statement, {"id_inmueble": id_inmueble}).mappings().all()
         return [row["id_unidad_funcional"] for row in rows]
 
@@ -3817,35 +3850,35 @@ class ComercialRepository:
     ) -> int | None:
         if id_unidad_funcional is None:
             return None
-        statement = text(
-            """
+        statement = text("""
             SELECT id_inmueble
             FROM unidad_funcional
             WHERE id_unidad_funcional = :id_unidad_funcional
               AND deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(statement, {"id_unidad_funcional": id_unidad_funcional})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            statement, {"id_unidad_funcional": id_unidad_funcional}
-        ).mappings().one_or_none()
         if row is None:
             return None
         return row["id_inmueble"]
 
     def _get_reserva_venta_origin(self, id_reserva_venta: int) -> dict[str, Any] | None:
-        statement = text(
-            """
+        statement = text("""
             SELECT
                 id_reserva_venta,
                 estado_reserva
             FROM reserva_venta
             WHERE id_reserva_venta = :id_reserva_venta
               AND deleted_at IS NULL
-            """
+            """)
+        row = (
+            self.db.execute(statement, {"id_reserva_venta": id_reserva_venta})
+            .mappings()
+            .one_or_none()
         )
-        row = self.db.execute(
-            statement, {"id_reserva_venta": id_reserva_venta}
-        ).mappings().one_or_none()
         if row is None:
             return None
         return {
@@ -3864,8 +3897,7 @@ class ComercialRepository:
             id_inmueble=id_inmueble,
             id_unidad_funcional=id_unidad_funcional,
         )
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT
                 estado_disponibilidad
             FROM disponibilidad
@@ -3874,16 +3906,19 @@ class ComercialRepository:
               AND fecha_desde <= :at_datetime
               AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
             ORDER BY id_disponibilidad
-            """
+            """)
+        rows = (
+            self.db.execute(
+                statement,
+                self._object_params(
+                    id_inmueble=id_inmueble,
+                    id_unidad_funcional=id_unidad_funcional,
+                    at_datetime=at_datetime,
+                ),
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            statement,
-            self._object_params(
-                id_inmueble=id_inmueble,
-                id_unidad_funcional=id_unidad_funcional,
-                at_datetime=at_datetime,
-            ),
-        ).mappings().all()
         if len(rows) != 1:
             return None
         return rows[0]["estado_disponibilidad"]
@@ -3899,8 +3934,7 @@ class ComercialRepository:
             id_inmueble=id_inmueble,
             id_unidad_funcional=id_unidad_funcional,
         )
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT
                 tipo_ocupacion
             FROM ocupacion
@@ -3909,16 +3943,19 @@ class ComercialRepository:
               AND fecha_desde <= :at_datetime
               AND (fecha_hasta IS NULL OR fecha_hasta >= :at_datetime)
             ORDER BY id_ocupacion
-            """
+            """)
+        rows = (
+            self.db.execute(
+                statement,
+                self._object_params(
+                    id_inmueble=id_inmueble,
+                    id_unidad_funcional=id_unidad_funcional,
+                    at_datetime=at_datetime,
+                ),
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            statement,
-            self._object_params(
-                id_inmueble=id_inmueble,
-                id_unidad_funcional=id_unidad_funcional,
-                at_datetime=at_datetime,
-            ),
-        ).mappings().all()
         if len(rows) != 1:
             return None
         return rows[0]["tipo_ocupacion"]
@@ -3955,8 +3992,7 @@ class ComercialRepository:
             params["fecha_hasta"] = fecha_hasta
 
         where_clause = " AND ".join(filters)
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT
                 id_instrumento_compraventa,
                 uid_global,
@@ -3973,8 +4009,7 @@ class ComercialRepository:
             FROM instrumento_compraventa
             WHERE {where_clause}
             ORDER BY id_instrumento_compraventa
-            """
-        )
+            """)
         rows = self.db.execute(statement, params).mappings().all()
         instrumentos: list[dict[str, Any]] = []
         for row in rows:
@@ -4002,8 +4037,7 @@ class ComercialRepository:
     def _get_instrumento_objetos(
         self, id_instrumento_compraventa: int
     ) -> list[dict[str, Any]]:
-        statement = text(
-            """
+        statement = text("""
             SELECT
                 id_instrumento_objeto,
                 id_inmueble,
@@ -4013,12 +4047,15 @@ class ComercialRepository:
             WHERE id_instrumento_compraventa = :id_instrumento_compraventa
               AND deleted_at IS NULL
             ORDER BY id_instrumento_objeto
-            """
+            """)
+        rows = (
+            self.db.execute(
+                statement,
+                {"id_instrumento_compraventa": id_instrumento_compraventa},
+            )
+            .mappings()
+            .all()
         )
-        rows = self.db.execute(
-            statement,
-            {"id_instrumento_compraventa": id_instrumento_compraventa},
-        ).mappings().all()
         return [
             {
                 "id_instrumento_objeto": row["id_instrumento_objeto"],
@@ -4056,8 +4093,7 @@ class ComercialRepository:
             params["fecha_hasta"] = fecha_hasta
 
         where_clause = " AND ".join(filters)
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT
                 id_cesion,
                 uid_global,
@@ -4072,8 +4108,7 @@ class ComercialRepository:
             FROM cesion
             WHERE {where_clause}
             ORDER BY id_cesion
-            """
-        )
+            """)
         rows = self.db.execute(statement, params).mappings().all()
         return [
             {
@@ -4118,8 +4153,7 @@ class ComercialRepository:
             params["numero_escritura"] = numero_escritura.strip().lower()
 
         where_clause = " AND ".join(filters)
-        statement = text(
-            f"""
+        statement = text(f"""
             SELECT
                 id_escrituracion,
                 uid_global,
@@ -4134,8 +4168,7 @@ class ComercialRepository:
             FROM escrituracion
             WHERE {where_clause}
             ORDER BY id_escrituracion
-            """
-        )
+            """)
         rows = self.db.execute(statement, params).mappings().all()
         return [
             {
@@ -4160,8 +4193,7 @@ class ComercialRepository:
 
         if values["id_inmueble"] is not None:
             parent_values = {"id_inmueble": values["id_inmueble"]}
-            select_statement = text(
-                """
+            select_statement = text("""
                 SELECT
                     id_disponibilidad,
                     estado_disponibilidad,
@@ -4174,12 +4206,10 @@ class ComercialRepository:
                   AND id_unidad_funcional IS NULL
                 ORDER BY id_disponibilidad
                 FOR UPDATE
-                """
-            )
+                """)
         else:
             parent_values = {"id_unidad_funcional": values["id_unidad_funcional"]}
-            select_statement = text(
-                """
+            select_statement = text("""
                 SELECT
                     id_disponibilidad,
                     estado_disponibilidad,
@@ -4192,25 +4222,23 @@ class ComercialRepository:
                   AND id_inmueble IS NULL
                 ORDER BY id_disponibilidad
                 FOR UPDATE
-                """
-            )
+                """)
 
-        open_rows = self.db.execute(
-            select_statement, parent_values
-        ).mappings().all()
+        open_rows = self.db.execute(select_statement, parent_values).mappings().all()
         if len(open_rows) == 0:
             return {"status": "NO_OPEN_DISPONIBILIDAD"}
         if len(open_rows) > 1:
             return {"status": "MULTIPLE_OPEN_DISPONIBILIDAD"}
 
         current = open_rows[0]
-        if (current["estado_disponibilidad"] or "").strip().upper() != expected_current_state:
+        if (
+            current["estado_disponibilidad"] or ""
+        ).strip().upper() != expected_current_state:
             if expected_current_state == "DISPONIBLE":
                 return {"status": "CURRENT_NOT_DISPONIBLE"}
             return {"status": "CURRENT_NOT_EXPECTED_STATE"}
 
-        update_statement = text(
-            """
+        update_statement = text("""
             UPDATE disponibilidad
             SET
                 fecha_hasta = :fecha_hasta,
@@ -4222,28 +4250,30 @@ class ComercialRepository:
               AND version_registro = :version_registro_actual
               AND deleted_at IS NULL
             RETURNING id_disponibilidad
-            """
+            """)
+        updated = (
+            self.db.execute(
+                update_statement,
+                {
+                    "id_disponibilidad": current["id_disponibilidad"],
+                    "fecha_hasta": values["fecha_desde"],
+                    "version_registro_actual": current["version_registro"],
+                    "version_registro_nueva": current["version_registro"] + 1,
+                    "updated_at": values["updated_at"],
+                    "id_instalacion_ultima_modificacion": values[
+                        "id_instalacion_ultima_modificacion"
+                    ],
+                    "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
+                },
+            )
+            .mappings()
+            .one_or_none()
         )
-        updated = self.db.execute(
-            update_statement,
-            {
-                "id_disponibilidad": current["id_disponibilidad"],
-                "fecha_hasta": values["fecha_desde"],
-                "version_registro_actual": current["version_registro"],
-                "version_registro_nueva": current["version_registro"] + 1,
-                "updated_at": values["updated_at"],
-                "id_instalacion_ultima_modificacion": values[
-                    "id_instalacion_ultima_modificacion"
-                ],
-                "op_id_ultima_modificacion": values["op_id_ultima_modificacion"],
-            },
-        ).mappings().one_or_none()
         if updated is None:
             return {"status": "NO_OPEN_DISPONIBILIDAD"}
 
         self.db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO disponibilidad (
                     uid_global,
                     version_registro,
@@ -4278,8 +4308,7 @@ class ComercialRepository:
                     :motivo,
                     :observaciones
                 )
-                """
-            ),
+                """),
             {
                 "uid_global": values["uid_global"],
                 "version_registro": values["version_registro"],

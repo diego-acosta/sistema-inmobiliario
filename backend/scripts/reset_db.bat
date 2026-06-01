@@ -21,6 +21,7 @@ set PATCH_PLAN_PAGO_VENTA_METODO_PLAN_POR_BLOQUES_V2_FILE=%BACKEND_DIR%\database
 set PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloque_metodo_liquidacion_20260527.sql
 set PATCH_INDICES_FINANCIEROS_FILE=%BACKEND_DIR%\database\patch_indices_financieros_20260527.sql
 set PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloque_indexacion_20260528.sql
+set PATCH_RELACION_PERSONA_ROL_PORCENTAJE_FILE=%BACKEND_DIR%\database\patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -185,6 +186,15 @@ if errorlevel 1 (
 )
 
 echo.
+echo Aplicando patch porcentaje responsabilidad comprador en %DEV_DB%...
+%PGBIN%\psql -d %DEV_DB% -f "%PATCH_RELACION_PERSONA_ROL_PORCENTAJE_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch porcentaje responsabilidad comprador en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
 echo Aplicando seed minimo en %DEV_DB%...
 %PGBIN%\psql -d %DEV_DB% -f "%SEED_FILE%"
 if errorlevel 1 (
@@ -282,6 +292,15 @@ echo Aplicando patch indexacion por bloque en %TEST_DB%...
 %PGBIN%\psql -d %TEST_DB% -f "%PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch indexacion por bloque en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch porcentaje responsabilidad comprador en %TEST_DB%...
+%PGBIN%\psql -d %TEST_DB% -f "%PATCH_RELACION_PERSONA_ROL_PORCENTAJE_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch porcentaje responsabilidad comprador en %TEST_DB%
   pause
   exit /b 1
 )

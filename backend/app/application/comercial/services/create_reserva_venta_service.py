@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -7,7 +8,6 @@ from app.application.comercial.commands.create_reserva_venta import (
     CreateReservaVentaCommand,
 )
 from app.application.common.results import AppResult
-
 
 ESTADO_INICIAL_RESERVA_VENTA = "borrador"
 ESTADOS_RESERVA_CONFLICTIVOS = {
@@ -27,6 +27,7 @@ ESTADOS_VENTA_CONFLICTIVOS = {
 class ReservaVentaParticipacionCreatePayload:
     id_persona: int
     id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None
     tipo_relacion: str
     id_relacion: int
     fecha_desde: date
@@ -75,17 +76,13 @@ class ReservaVentaCreatePayload:
 
 
 class ComercialRepository(Protocol):
-    def inmueble_exists(self, id_inmueble: int) -> bool:
-        ...
+    def inmueble_exists(self, id_inmueble: int) -> bool: ...
 
-    def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool:
-        ...
+    def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool: ...
 
-    def persona_exists(self, id_persona: int) -> bool:
-        ...
+    def persona_exists(self, id_persona: int) -> bool: ...
 
-    def rol_participacion_exists(self, id_rol_participacion: int) -> bool:
-        ...
+    def rol_participacion_exists(self, id_rol_participacion: int) -> bool: ...
 
     def has_current_disponibilidad_disponible(
         self,
@@ -93,8 +90,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         at_datetime: datetime,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_current_disponibilidad_no_disponible(
         self,
@@ -102,8 +98,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         at_datetime: datetime,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_current_ocupacion_conflict(
         self,
@@ -111,8 +106,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         at_datetime: datetime,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_conflicting_active_venta(
         self,
@@ -120,8 +114,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         conflict_states: set[str],
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_conflicting_active_reserva(
         self,
@@ -129,8 +122,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         conflict_states: set[str],
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_conflicting_hierarchical_occupancy_or_sale_or_reserva(
         self,
@@ -141,16 +133,14 @@ class ComercialRepository(Protocol):
         venta_conflict_states: set[str],
         reserva_conflict_states: set[str],
         exclude_id_reserva_venta: int | None = None,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def create_reserva_venta(
         self,
         payload: ReservaVentaCreatePayload,
         objetos: list[ReservaVentaObjetoCreatePayload],
         participaciones: list[ReservaVentaParticipacionCreatePayload],
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class CreateReservaVentaService:
@@ -162,7 +152,10 @@ class CreateReservaVentaService:
         if not command.codigo_reserva.strip():
             return AppResult.fail("INVALID_REQUIRED_FIELDS")
 
-        if command.fecha_vencimiento and command.fecha_vencimiento < command.fecha_reserva:
+        if (
+            command.fecha_vencimiento
+            and command.fecha_vencimiento < command.fecha_reserva
+        ):
             return AppResult.fail("INVALID_DATE_RANGE")
 
         if not command.objetos:
@@ -182,7 +175,9 @@ class CreateReservaVentaService:
                     return AppResult.fail("NOT_FOUND_INMUEBLE")
             else:
                 object_key = ("unidad_funcional", objeto.id_unidad_funcional)
-                if not self.repository.unidad_funcional_exists(objeto.id_unidad_funcional):
+                if not self.repository.unidad_funcional_exists(
+                    objeto.id_unidad_funcional
+                ):
                     return AppResult.fail("NOT_FOUND_UNIDAD_FUNCIONAL")
 
             if object_key in seen_objects:
@@ -291,6 +286,7 @@ class CreateReservaVentaService:
                 ReservaVentaParticipacionCreatePayload(
                     id_persona=participacion.id_persona,
                     id_rol_participacion=participacion.id_rol_participacion,
+                    porcentaje_responsabilidad=participacion.porcentaje_responsabilidad,
                     tipo_relacion="reserva_venta",
                     id_relacion=0,
                     fecha_desde=participacion.fecha_desde
