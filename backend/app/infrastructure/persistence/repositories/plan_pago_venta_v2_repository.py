@@ -1054,6 +1054,10 @@ class PlanPagoVentaV2Repository:
                 rpr.id_relacion_persona_rol,
                 rpr.id_persona,
                 rp.codigo_rol,
+                -- Preparatory Plan Pago V2 support: relacion_persona_rol does not
+                -- persist financial responsibility percentages yet. Multi-buyer
+                -- sales therefore remain blocked by PORCENTAJE_COMPRADORES_NO_DEFINIDO
+                -- until a real persisted source is added and read here.
                 NULL::numeric AS porcentaje_responsabilidad
             FROM relacion_persona_rol rpr
             JOIN rol_participacion rp

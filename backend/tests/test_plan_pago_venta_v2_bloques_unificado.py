@@ -232,7 +232,16 @@ def _obligaciones_unificadas(db_session, *, id_venta: int) -> list[dict]:
 
 
 
-class _PlanPagoVentaV2RepositoryCompradoresOverride(PlanPagoVentaV2Repository):
+class _PlanPagoVentaV2RepositoryCompradoresConPorcentajeOverride(
+    PlanPagoVentaV2Repository
+):
+    """Override for motor/payload tests with synthetic percentages.
+
+    This does not represent the real sale flow: the production repository still
+    returns NULL percentage until responsibility is persisted and read from a
+    real source.
+    """
+
     def __init__(self, db_session, compradores: list[dict]) -> None:
         super().__init__(db_session)
         self._compradores = compradores
@@ -245,7 +254,9 @@ def _service_con_compradores(
     db_session, compradores: list[dict]
 ) -> GeneratePlanPagoVentaV2PorBloquesService:
     return GeneratePlanPagoVentaV2PorBloquesService(
-        repository=_PlanPagoVentaV2RepositoryCompradoresOverride(db_session, compradores)
+        repository=_PlanPagoVentaV2RepositoryCompradoresConPorcentajeOverride(
+            db_session, compradores
+        )
     )
 
 
@@ -668,7 +679,7 @@ def test_servicio_unificado_reejecutar_mismo_payload_no_duplica(db_session) -> N
     assert _count_obligados_plan_pago_v2(db_session, id_venta=id_venta) == 15
 
 
-def test_servicio_unificado_multi_comprador_crea_obligados_sin_duplicar(
+def test_motor_payload_obligados_con_porcentajes_inyectados_sin_duplicar(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-001")
@@ -706,7 +717,7 @@ def test_servicio_unificado_multi_comprador_crea_obligados_sin_duplicar(
     }
 
 
-def test_servicio_unificado_multi_comprador_idempotente_no_duplica_obligados(
+def test_motor_payload_obligados_inyectados_idempotente_no_duplica(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-002")
@@ -740,7 +751,7 @@ def test_servicio_unificado_multi_comprador_idempotente_no_duplica_obligados(
     assert _count_obligados_plan_pago_v2(db_session, id_venta=id_venta) == 30
 
 
-def test_servicio_unificado_multi_comprador_duplicado_devuelve_error_controlado(
+def test_resolver_compradores_inyectados_duplicado_devuelve_error_controlado(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-003")
@@ -771,7 +782,7 @@ def test_servicio_unificado_multi_comprador_duplicado_devuelve_error_controlado(
     ) == 0
 
 
-def test_servicio_unificado_multi_comprador_porcentajes_no_suman_100(
+def test_resolver_compradores_inyectados_porcentajes_no_suman_100(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-004")
@@ -803,7 +814,7 @@ def test_servicio_unificado_multi_comprador_porcentajes_no_suman_100(
     ) == 0
 
 
-def test_servicio_unificado_multi_comprador_sin_porcentaje_devuelve_error_controlado(
+def test_servicio_dos_compradores_reales_sin_porcentaje_devuelve_error_controlado(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-005")
