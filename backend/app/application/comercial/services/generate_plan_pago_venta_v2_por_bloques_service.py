@@ -26,6 +26,7 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     GeneracionCronogramaCreatePayload,
     ObligacionFinancieraIndexacionUpsertPayload,
     ObligacionCronogramaV2CreatePayload,
+    ObligadoCronogramaV2CreatePayload,
     PERIODICIDAD_MENSUAL,
     PlanPagoVentaBloqueIndexacionUpsertPayload,
     PlanPagoVentaBloqueUpsertPayload,
@@ -45,6 +46,7 @@ ERROR_OBLIGACION_INDEXACION_INCOMPATIBLE = (
     "PLAN_PAGO_VENTA_OBLIGACION_INDEXACION_INCOMPATIBLE"
 )
 ERROR_INDEXACION_AJUSTE_NEGATIVO = "INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO"
+PORCENTAJE_TOTAL_COMPRADORES = Decimal("100.00")
 
 
 class GeneratePlanPagoVentaV2PorBloquesService:
@@ -244,7 +246,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         )
 
         conceptos = self._resolve_conceptos(prepared_bloques)
-        comprador = self._resolve_comprador(command.id_venta)
+        compradores = self._resolve_compradores(command.id_venta)
 
         bloques_by_numero = {
             prepared.numero_bloque: bloque
@@ -261,7 +263,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
                     "id_generacion_cronograma_financiero"
                 ],
                 concepto=conceptos[obligacion_preview.concepto_financiero_codigo],
-                comprador=comprador,
+                compradores=compradores,
                 moneda=moneda,
                 now=now,
                 id_instalacion=id_instalacion,
@@ -497,7 +499,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         id_relacion_generadora: int,
         id_generacion_cronograma_financiero: int,
         concepto: dict[str, Any],
-        comprador: dict[str, Any],
+        compradores: list[dict[str, Any]],
         moneda: str,
         now: datetime,
         id_instalacion: int | None,
@@ -533,7 +535,7 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             estado_obligacion=ESTADO_OBLIGACION_PROYECTADA,
             id_concepto_financiero=concepto["id_concepto_financiero"],
             codigo_concepto_financiero=concepto["codigo_concepto_financiero"],
-            id_persona_obligado=comprador["id_persona"],
+            id_persona_obligado=compradores[0]["id_persona"],
             rol_obligado=ROL_OBLIGADO_COMPRADOR,
             created_at=now,
             updated_at=now,
@@ -542,6 +544,14 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             op_id_alta=op_id,
             op_id_ultima_modificacion=op_id,
             composiciones=composiciones,
+            obligados=[
+                ObligadoCronogramaV2CreatePayload(
+                    id_persona=comprador["id_persona"],
+                    rol_obligado=ROL_OBLIGADO_COMPRADOR,
+                    porcentaje_responsabilidad=comprador["porcentaje_responsabilidad"],
+                )
+                for comprador in compradores
+            ],
         )
 
     def _build_composiciones_obligacion(
@@ -742,14 +752,45 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             == ESTADO_PREVIEW_INDEXACION_PROYECTADA
         )
 
-    def _resolve_comprador(self, id_venta: int) -> dict[str, Any]:
+    def _resolve_compradores(self, id_venta: int) -> list[dict[str, Any]]:
         compradores = self.repository.get_compradores_financieros_venta(id_venta)
         if not compradores:
             raise ValueError("COMPRADOR_VENTA_NO_RESUELTO")
-        personas = {row["id_persona"] for row in compradores}
-        if len(personas) != 1 or len(compradores) != 1:
-            raise ValueError("COMPRADOR_VENTA_MULTIPLE_NO_SOPORTADO")
-        return compradores[0]
+
+        personas: set[int] = set()
+        normalizados: list[dict[str, Any]] = []
+        for comprador in compradores:
+            id_persona = comprador["id_persona"]
+            if id_persona in personas:
+                raise ValueError("COMPRADOR_DUPLICADO")
+            personas.add(id_persona)
+
+            porcentaje = self._decimal_or_none(
+                comprador.get("porcentaje_responsabilidad")
+            )
+            if porcentaje is None and len(compradores) == 1:
+                porcentaje = PORCENTAJE_TOTAL_COMPRADORES
+            elif porcentaje is None:
+                raise ValueError("PORCENTAJE_COMPRADORES_NO_DEFINIDO")
+            if porcentaje <= 0:
+                raise ValueError("PORCENTAJE_COMPRADOR_INVALIDO")
+            normalizados.append(
+                {
+                    **comprador,
+                    "porcentaje_responsabilidad": porcentaje,
+                }
+            )
+
+        total = sum(
+            (row["porcentaje_responsabilidad"] for row in normalizados),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"))
+        if total != PORCENTAJE_TOTAL_COMPRADORES:
+            raise ValueError("PORCENTAJE_COMPRADORES_NO_SUMA_100")
+        return normalizados
+
+    def _resolve_comprador(self, id_venta: int) -> dict[str, Any]:
+        return self._resolve_compradores(id_venta)[0]
 
     @staticmethod
     def _decimal_or_none(value: Any) -> Decimal | None:

@@ -1053,7 +1053,12 @@ class PlanPagoVentaV2Repository:
             SELECT
                 rpr.id_relacion_persona_rol,
                 rpr.id_persona,
-                rp.codigo_rol
+                rp.codigo_rol,
+                -- Preparatory Plan Pago V2 support: relacion_persona_rol does not
+                -- persist financial responsibility percentages yet. Multi-buyer
+                -- sales therefore remain blocked by PORCENTAJE_COMPRADORES_NO_DEFINIDO
+                -- until a real persisted source is added and read here.
+                NULL::numeric AS porcentaje_responsabilidad
             FROM relacion_persona_rol rpr
             JOIN rol_participacion rp
               ON rp.id_rol_participacion = rpr.id_rol_participacion
@@ -1155,6 +1160,7 @@ class PlanPagoVentaV2Repository:
                     ],
                     op_id_ultima_modificacion=values["op_id_ultima_modificacion"],
                 )
+                self._create_obligados(values, updated["id_obligacion_financiera"])
                 updated["__created"] = False
                 return updated
             if (
@@ -1166,6 +1172,7 @@ class PlanPagoVentaV2Repository:
                     "OBLIGACION_PLAN_PAGO_VENTA_BLOQUE_INCOMPATIBLE:"
                     f"{values['clave_funcional_origen']}"
                 )
+            self._create_obligados(values, existing["id_obligacion_financiera"])
             existing["__created"] = False
             return existing
 
@@ -1241,12 +1248,13 @@ class PlanPagoVentaV2Repository:
                 id_relacion_generadora=values["id_relacion_generadora"],
                 clave_funcional_origen=values["clave_funcional_origen"],
             )
+            self._create_obligados(values, existing["id_obligacion_financiera"])
             existing["__created"] = False
             return existing
 
         obligacion = dict(ob_row)
         self._create_composicion(values, obligacion["id_obligacion_financiera"])
-        self._create_obligado(values, obligacion["id_obligacion_financiera"])
+        self._create_obligados(values, obligacion["id_obligacion_financiera"])
         obligacion["__created"] = True
         return obligacion
 
@@ -1580,9 +1588,68 @@ class PlanPagoVentaV2Repository:
                 },
             )
 
-    def _create_obligado(
+    def _create_obligados(
         self, values: dict[str, Any], id_obligacion_financiera: int
     ) -> None:
+        obligados = values.get("obligados")
+        if not obligados:
+            if (
+                values.get("id_persona_obligado") is None
+                or values.get("rol_obligado") is None
+            ):
+                raise ValueError("OBLIGACION_OBLIGADO_REQUERIDO")
+            obligados = [
+                {
+                    "id_persona": values["id_persona_obligado"],
+                    "rol_obligado": values["rol_obligado"],
+                    "porcentaje_responsabilidad": Decimal("100.00"),
+                }
+            ]
+
+        expected: set[tuple[int, str]] = set()
+        roles: set[str] = set()
+        for obligado_payload in obligados:
+            obligado = self._values(obligado_payload)
+            expected.add((obligado["id_persona"], obligado["rol_obligado"]))
+            roles.add(obligado["rol_obligado"])
+            self._get_or_create_obligado(
+                values=values,
+                id_obligacion_financiera=id_obligacion_financiera,
+                id_persona=obligado["id_persona"],
+                rol_obligado=obligado["rol_obligado"],
+                porcentaje_responsabilidad=obligado["porcentaje_responsabilidad"],
+            )
+        self._validate_obligados_compatibles(
+            id_obligacion_financiera=id_obligacion_financiera,
+            roles=roles,
+            expected=expected,
+        )
+
+    def _get_or_create_obligado(
+        self,
+        *,
+        values: dict[str, Any],
+        id_obligacion_financiera: int,
+        id_persona: int,
+        rol_obligado: str,
+        porcentaje_responsabilidad: Decimal,
+    ) -> dict[str, Any]:
+        existing = self._get_obligado(
+            id_obligacion_financiera=id_obligacion_financiera,
+            id_persona=id_persona,
+            rol_obligado=rol_obligado,
+        )
+        porcentaje = Decimal(str(porcentaje_responsabilidad)).quantize(
+            Decimal("0.01")
+        )
+        if existing is not None:
+            existing_porcentaje = Decimal(
+                str(existing["porcentaje_responsabilidad"])
+            ).quantize(Decimal("0.01"))
+            if existing_porcentaje != porcentaje:
+                raise ValueError("OBLIGACION_OBLIGADO_INCOMPATIBLE")
+            return existing
+
         stmt = text("""
             INSERT INTO obligacion_obligado (
                 uid_global,
@@ -1608,15 +1675,87 @@ class PlanPagoVentaV2Repository:
                 :op_id_alta,
                 :op_id_ultima_modificacion,
                 :id_obligacion_financiera,
-                :id_persona_obligado,
+                :id_persona,
                 :rol_obligado,
-                100.00
+                :porcentaje_responsabilidad
             )
+            RETURNING
+                id_obligacion_obligado,
+                id_obligacion_financiera,
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
             """)
-        self.db.execute(
+        row = self.db.execute(
             stmt,
             {
                 **values,
                 "id_obligacion_financiera": id_obligacion_financiera,
+                "id_persona": id_persona,
+                "rol_obligado": rol_obligado,
+                "porcentaje_responsabilidad": porcentaje,
             },
-        )
+        ).mappings().one()
+        return dict(row)
+
+    def _validate_obligados_compatibles(
+        self,
+        *,
+        id_obligacion_financiera: int,
+        roles: set[str],
+        expected: set[tuple[int, str]],
+    ) -> None:
+        if not roles:
+            return
+        stmt = text("""
+            SELECT id_persona, rol_obligado
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND rol_obligado = ANY(:roles)
+              AND deleted_at IS NULL
+            """)
+        rows = self.db.execute(
+            stmt,
+            {
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "roles": list(roles),
+            },
+        ).mappings().all()
+        found = [(row["id_persona"], row["rol_obligado"]) for row in rows]
+        if len(found) != len(set(found)) or any(
+            row not in expected for row in found
+        ):
+            raise ValueError("OBLIGACION_OBLIGADO_INCOMPATIBLE")
+
+    def _get_obligado(
+        self, *, id_obligacion_financiera: int, id_persona: int, rol_obligado: str
+    ) -> dict[str, Any] | None:
+        stmt = text("""
+            SELECT
+                id_obligacion_obligado,
+                id_obligacion_financiera,
+                id_persona,
+                rol_obligado,
+                porcentaje_responsabilidad
+            FROM obligacion_obligado
+            WHERE id_obligacion_financiera = :id_obligacion_financiera
+              AND id_persona = :id_persona
+              AND rol_obligado = :rol_obligado
+              AND deleted_at IS NULL
+            ORDER BY id_obligacion_obligado ASC
+            LIMIT 1
+            """)
+        row = self.db.execute(
+            stmt,
+            {
+                "id_obligacion_financiera": id_obligacion_financiera,
+                "id_persona": id_persona,
+                "rol_obligado": rol_obligado,
+            },
+        ).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def _create_obligado(
+        self, values: dict[str, Any], id_obligacion_financiera: int
+    ) -> None:
+        self._create_obligados(values, id_obligacion_financiera)
