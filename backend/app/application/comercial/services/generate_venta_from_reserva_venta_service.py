@@ -15,7 +15,6 @@ from app.application.comercial.services.create_reserva_venta_service import (
 )
 from app.application.common.results import AppResult
 
-
 ESTADO_RESERVA_CONVERTIBLE = "confirmada"
 ESTADO_RESERVA_FINALIZADA = "finalizada"
 ESTADO_INICIAL_VENTA = "borrador"
@@ -61,6 +60,7 @@ class VentaFromReservaObjetoCreatePayload:
 class VentaFromReservaParticipacionCreatePayload:
     id_persona: int
     id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None
     tipo_relacion: str
     id_relacion: int
     fecha_desde: date | datetime
@@ -88,14 +88,11 @@ class ReservaVentaFinalizePayload:
 
 
 class ComercialRepository(Protocol):
-    def get_reserva_venta(self, id_reserva_venta: int) -> dict[str, Any] | None:
-        ...
+    def get_reserva_venta(self, id_reserva_venta: int) -> dict[str, Any] | None: ...
 
-    def inmueble_exists(self, id_inmueble: int) -> bool:
-        ...
+    def inmueble_exists(self, id_inmueble: int) -> bool: ...
 
-    def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool:
-        ...
+    def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool: ...
 
     def has_conflicting_active_venta(
         self,
@@ -103,8 +100,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         conflict_states: set[str],
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_conflicting_active_reserva(
         self,
@@ -113,14 +109,13 @@ class ComercialRepository(Protocol):
         id_unidad_funcional: int | None,
         conflict_states: set[str],
         exclude_id_reserva_venta: int | None = None,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
-    def venta_exists_for_reserva(self, id_reserva_venta: int) -> bool:
-        ...
+    def venta_exists_for_reserva(self, id_reserva_venta: int) -> bool: ...
 
-    def venta_codigo_exists(self, codigo_venta: str) -> bool:
-        ...
+    def venta_codigo_exists(self, codigo_venta: str) -> bool: ...
+
+    def get_rol_participacion_codigo(self, id_rol_participacion: int) -> str | None: ...
 
     def get_current_disponibilidad_state(
         self,
@@ -128,8 +123,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         at_datetime: datetime,
-    ) -> str | None:
-        ...
+    ) -> str | None: ...
 
     def generate_venta_from_reserva(
         self,
@@ -137,8 +131,7 @@ class ComercialRepository(Protocol):
         objetos: list[VentaFromReservaObjetoCreatePayload],
         participaciones: list[VentaFromReservaParticipacionCreatePayload],
         reserva_payload: ReservaVentaFinalizePayload,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
 
 class GenerateVentaFromReservaVentaService:
@@ -174,6 +167,15 @@ class GenerateVentaFromReservaVentaService:
             return AppResult.fail("RESERVA_WITHOUT_OBJECTS")
 
         seen_objects: set[tuple[str, int]] = set()
+        roles_por_participacion = self._roles_por_participacion(
+            reserva.get("participaciones", [])
+        )
+        porcentaje_error = self._validate_compradores_porcentaje(
+            reserva.get("participaciones", []), roles_por_participacion
+        )
+        if porcentaje_error is not None:
+            return AppResult.fail(porcentaje_error)
+
         for objeto in objetos:
             id_inmueble = objeto["id_inmueble"]
             id_unidad_funcional = objeto["id_unidad_funcional"]
@@ -204,7 +206,9 @@ class GenerateVentaFromReservaVentaService:
             id_inmueble = objeto["id_inmueble"]
             id_unidad_funcional = objeto["id_unidad_funcional"]
 
-            if id_inmueble is not None and not self.repository.inmueble_exists(id_inmueble):
+            if id_inmueble is not None and not self.repository.inmueble_exists(
+                id_inmueble
+            ):
                 return AppResult.fail("NOT_FOUND_INMUEBLE")
 
             if (
@@ -273,11 +277,22 @@ class GenerateVentaFromReservaVentaService:
             )
 
         participaciones_payload: list[VentaFromReservaParticipacionCreatePayload] = []
-        for participacion in reserva.get("participaciones", []):
+        for index, participacion in enumerate(reserva.get("participaciones", [])):
             participaciones_payload.append(
                 VentaFromReservaParticipacionCreatePayload(
                     id_persona=participacion["id_persona"],
                     id_rol_participacion=participacion["id_rol_participacion"],
+                    porcentaje_responsabilidad=(
+                        self._normalize_porcentaje_participacion_reserva(
+                            participacion.get("porcentaje_responsabilidad"),
+                            total_compradores=self._count_compradores(
+                                reserva.get("participaciones", []),
+                                roles_por_participacion,
+                            ),
+                        )
+                        if self._is_comprador(roles_por_participacion.get(index))
+                        else None
+                    ),
                     tipo_relacion="venta",
                     id_relacion=0,
                     fecha_desde=participacion["fecha_desde"],
@@ -321,6 +336,79 @@ class GenerateVentaFromReservaVentaService:
             return AppResult.fail("CONCURRENCY_ERROR")
 
         return AppResult.ok(result["data"])
+
+    def _roles_por_participacion(
+        self, participaciones: list[dict[str, Any]]
+    ) -> dict[int, str | None]:
+        return {
+            index: self.repository.get_rol_participacion_codigo(
+                participacion["id_rol_participacion"]
+            )
+            for index, participacion in enumerate(participaciones)
+        }
+
+    def _validate_compradores_porcentaje(
+        self,
+        participaciones: list[dict[str, Any]],
+        roles_por_participacion: dict[int, str | None],
+    ) -> str | None:
+        compradores = [
+            participacion
+            for index, participacion in enumerate(participaciones)
+            if self._is_comprador(roles_por_participacion.get(index))
+        ]
+        if not compradores:
+            return None
+
+        compradores_por_persona: set[int] = set()
+        porcentajes: list[Decimal] = []
+        for comprador in compradores:
+            id_persona = comprador["id_persona"]
+            if id_persona in compradores_por_persona:
+                return "COMPRADOR_DUPLICADO"
+            compradores_por_persona.add(id_persona)
+
+            porcentaje = self._normalize_porcentaje_participacion_reserva(
+                comprador.get("porcentaje_responsabilidad"),
+                total_compradores=len(compradores),
+            )
+            if porcentaje is None:
+                return "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+            if porcentaje <= Decimal("0.00") or porcentaje > Decimal("100.00"):
+                return "PORCENTAJE_COMPRADOR_INVALIDO"
+            porcentajes.append(porcentaje)
+
+        total = sum(porcentajes, Decimal("0.00")).quantize(Decimal("0.01"))
+        if total != Decimal("100.00"):
+            return "PORCENTAJE_COMPRADORES_NO_SUMA_100"
+        return None
+
+    @staticmethod
+    def _normalize_porcentaje_participacion_reserva(
+        porcentaje: Decimal | None, *, total_compradores: int
+    ) -> Decimal | None:
+        if porcentaje is None and total_compradores == 1:
+            return Decimal("100.00")
+        if porcentaje is None:
+            return None
+        return Decimal(str(porcentaje)).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _count_compradores(
+        participaciones: list[dict[str, Any]],
+        roles_por_participacion: dict[int, str | None],
+    ) -> int:
+        return sum(
+            1
+            for index, _participacion in enumerate(participaciones)
+            if GenerateVentaFromReservaVentaService._is_comprador(
+                roles_por_participacion.get(index)
+            )
+        )
+
+    @staticmethod
+    def _is_comprador(codigo_rol: str | None) -> bool:
+        return (codigo_rol or "").strip().upper() == "COMPRADOR"
 
     @staticmethod
     def _is_codigo_venta_duplicate(exc: IntegrityError) -> bool:

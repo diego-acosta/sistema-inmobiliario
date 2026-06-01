@@ -1,5 +1,6 @@
 from contextlib import AbstractContextManager
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -92,6 +93,10 @@ class ConfirmVentaDirectaCompletaService:
             != command.plan_pago_v2.monto_total_plan
         ):
             return AppResult.fail("MONTO_TOTAL_PLAN_MISMATCH")
+
+        compradores_error = self._validate_compradores(command)
+        if compradores_error is not None:
+            return AppResult.fail(compradores_error)
 
         tx_repository = _TransactionalComercialRepository(self.comercial_repository)
 
@@ -308,12 +313,56 @@ class ConfirmVentaDirectaCompletaService:
                 "op_id_ultima_modificacion": op_id,
                 "id_persona": comprador.id_persona,
                 "id_rol_participacion": comprador.id_rol_participacion,
+                "porcentaje_responsabilidad": self._normalize_porcentaje_comprador(
+                    comprador.porcentaje_responsabilidad,
+                    total_compradores=len(command.compradores),
+                ),
                 "fecha_desde": comprador.fecha_desde or date.today(),
                 "fecha_hasta": comprador.fecha_hasta,
                 "observaciones": comprador.observaciones,
             }
             for comprador in command.compradores
         ]
+
+    def _validate_compradores(
+        self, command: ConfirmVentaDirectaCompletaCommand
+    ) -> str | None:
+        if not command.compradores:
+            return "COMPRADORES_REQUERIDOS"
+
+        ids_persona: set[int] = set()
+        porcentajes: list[Decimal] = []
+        total_compradores = len(command.compradores)
+
+        for comprador in command.compradores:
+            if comprador.id_persona in ids_persona:
+                return "COMPRADOR_DUPLICADO"
+            ids_persona.add(comprador.id_persona)
+
+            porcentaje = self._normalize_porcentaje_comprador(
+                comprador.porcentaje_responsabilidad,
+                total_compradores=total_compradores,
+            )
+            if porcentaje is None:
+                return "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+            if porcentaje <= Decimal("0.00") or porcentaje > Decimal("100.00"):
+                return "PORCENTAJE_COMPRADOR_INVALIDO"
+            porcentajes.append(porcentaje)
+
+        total = sum(porcentajes, Decimal("0.00")).quantize(Decimal("0.01"))
+        if total != Decimal("100.00"):
+            return "PORCENTAJE_COMPRADORES_NO_SUMA_100"
+        return None
+
+    @staticmethod
+    def _normalize_porcentaje_comprador(
+        porcentaje: Decimal | None, *, total_compradores: int
+    ) -> Decimal | None:
+        if porcentaje is None:
+            if total_compradores == 1:
+                return Decimal("100.00")
+            return None
+        return Decimal(str(porcentaje)).quantize(Decimal("0.01"))
 
     def _op_id(self, command: ConfirmVentaDirectaCompletaCommand) -> UUID | None:
         return getattr(command.context, "op_id", None)

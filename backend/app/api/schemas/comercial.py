@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 class ReservaVentaParticipacionCreateRequest(BaseModel):
     id_persona: int
     id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None = None
     fecha_desde: date | None = None
     fecha_hasta: date | None = None
     observaciones: str | None = None
@@ -277,7 +278,9 @@ class ConfirmVentaCompletaDesdeReservaData(BaseModel):
     reserva_venta: ConfirmVentaCompletaReservaResumenData
     venta: ConfirmVentaCompletaVentaResumenData
     plan_pago_v2: ConfirmVentaCompletaPlanPagoV2ResumenData
-    generacion_cronograma_financiero: ConfirmVentaCompletaGeneracionCronogramaResumenData
+    generacion_cronograma_financiero: (
+        ConfirmVentaCompletaGeneracionCronogramaResumenData
+    )
     obligaciones: ConfirmVentaCompletaObligacionesResumenData
 
 
@@ -296,6 +299,7 @@ class ConfirmVentaDirectaCompletaObjetoRequest(BaseModel):
 class ConfirmVentaDirectaCompletaCompradorRequest(BaseModel):
     id_persona: int
     id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None = None
     fecha_desde: date | None = None
     fecha_hasta: date | None = None
     observaciones: str | None = None
@@ -328,7 +332,9 @@ class ConfirmVentaDirectaCompletaRequest(BaseModel):
 class ConfirmVentaDirectaCompletaData(BaseModel):
     venta: ConfirmVentaCompletaVentaResumenData
     plan_pago_v2: ConfirmVentaCompletaPlanPagoV2ResumenData
-    generacion_cronograma_financiero: ConfirmVentaCompletaGeneracionCronogramaResumenData
+    generacion_cronograma_financiero: (
+        ConfirmVentaCompletaGeneracionCronogramaResumenData
+    )
     obligaciones: ConfirmVentaCompletaObligacionesResumenData
 
 

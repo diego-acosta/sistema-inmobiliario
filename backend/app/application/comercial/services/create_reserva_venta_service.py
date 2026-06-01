@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -7,7 +8,6 @@ from app.application.comercial.commands.create_reserva_venta import (
     CreateReservaVentaCommand,
 )
 from app.application.common.results import AppResult
-
 
 ESTADO_INICIAL_RESERVA_VENTA = "borrador"
 ESTADOS_RESERVA_CONFLICTIVOS = {
@@ -27,6 +27,7 @@ ESTADOS_VENTA_CONFLICTIVOS = {
 class ReservaVentaParticipacionCreatePayload:
     id_persona: int
     id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None
     tipo_relacion: str
     id_relacion: int
     fecha_desde: date
@@ -75,17 +76,15 @@ class ReservaVentaCreatePayload:
 
 
 class ComercialRepository(Protocol):
-    def inmueble_exists(self, id_inmueble: int) -> bool:
-        ...
+    def inmueble_exists(self, id_inmueble: int) -> bool: ...
 
-    def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool:
-        ...
+    def unidad_funcional_exists(self, id_unidad_funcional: int) -> bool: ...
 
-    def persona_exists(self, id_persona: int) -> bool:
-        ...
+    def persona_exists(self, id_persona: int) -> bool: ...
 
-    def rol_participacion_exists(self, id_rol_participacion: int) -> bool:
-        ...
+    def rol_participacion_exists(self, id_rol_participacion: int) -> bool: ...
+
+    def get_rol_participacion_codigo(self, id_rol_participacion: int) -> str | None: ...
 
     def has_current_disponibilidad_disponible(
         self,
@@ -93,8 +92,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         at_datetime: datetime,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_current_disponibilidad_no_disponible(
         self,
@@ -102,8 +100,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         at_datetime: datetime,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_current_ocupacion_conflict(
         self,
@@ -111,8 +108,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         at_datetime: datetime,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_conflicting_active_venta(
         self,
@@ -120,8 +116,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         conflict_states: set[str],
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_conflicting_active_reserva(
         self,
@@ -129,8 +124,7 @@ class ComercialRepository(Protocol):
         id_inmueble: int | None,
         id_unidad_funcional: int | None,
         conflict_states: set[str],
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def has_conflicting_hierarchical_occupancy_or_sale_or_reserva(
         self,
@@ -141,16 +135,14 @@ class ComercialRepository(Protocol):
         venta_conflict_states: set[str],
         reserva_conflict_states: set[str],
         exclude_id_reserva_venta: int | None = None,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def create_reserva_venta(
         self,
         payload: ReservaVentaCreatePayload,
         objetos: list[ReservaVentaObjetoCreatePayload],
         participaciones: list[ReservaVentaParticipacionCreatePayload],
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class CreateReservaVentaService:
@@ -162,7 +154,10 @@ class CreateReservaVentaService:
         if not command.codigo_reserva.strip():
             return AppResult.fail("INVALID_REQUIRED_FIELDS")
 
-        if command.fecha_vencimiento and command.fecha_vencimiento < command.fecha_reserva:
+        if (
+            command.fecha_vencimiento
+            and command.fecha_vencimiento < command.fecha_reserva
+        ):
             return AppResult.fail("INVALID_DATE_RANGE")
 
         if not command.objetos:
@@ -182,23 +177,37 @@ class CreateReservaVentaService:
                     return AppResult.fail("NOT_FOUND_INMUEBLE")
             else:
                 object_key = ("unidad_funcional", objeto.id_unidad_funcional)
-                if not self.repository.unidad_funcional_exists(objeto.id_unidad_funcional):
+                if not self.repository.unidad_funcional_exists(
+                    objeto.id_unidad_funcional
+                ):
                     return AppResult.fail("NOT_FOUND_UNIDAD_FUNCIONAL")
 
             if object_key in seen_objects:
                 return AppResult.fail("DUPLICATE_OBJECT")
             seen_objects.add(object_key)
 
-        for participacion in command.participaciones:
+        roles_por_participacion: dict[int, str | None] = {}
+        for index, participacion in enumerate(command.participaciones):
             if not self.repository.persona_exists(participacion.id_persona):
                 return AppResult.fail("NOT_FOUND_PERSONA")
             if not self.repository.rol_participacion_exists(
                 participacion.id_rol_participacion
             ):
                 return AppResult.fail("NOT_FOUND_ROL_PARTICIPACION")
+            roles_por_participacion[index] = (
+                self.repository.get_rol_participacion_codigo(
+                    participacion.id_rol_participacion
+                )
+            )
             fecha_desde = participacion.fecha_desde or command.fecha_reserva.date()
             if participacion.fecha_hasta and participacion.fecha_hasta < fecha_desde:
                 return AppResult.fail("INVALID_PARTICIPACION_DATE_RANGE")
+
+        porcentaje_error = self._validate_compradores_porcentaje(
+            command, roles_por_participacion
+        )
+        if porcentaje_error is not None:
+            return AppResult.fail(porcentaje_error)
 
         for objeto in command.objetos:
             if self.repository.has_current_disponibilidad_no_disponible(
@@ -286,11 +295,18 @@ class CreateReservaVentaService:
             )
 
         participaciones_payload: list[ReservaVentaParticipacionCreatePayload] = []
-        for participacion in command.participaciones:
+        for index, participacion in enumerate(command.participaciones):
             participaciones_payload.append(
                 ReservaVentaParticipacionCreatePayload(
                     id_persona=participacion.id_persona,
                     id_rol_participacion=participacion.id_rol_participacion,
+                    porcentaje_responsabilidad=(
+                        self._normalize_porcentaje(
+                            participacion.porcentaje_responsabilidad
+                        )
+                        if self._is_comprador(roles_por_participacion.get(index))
+                        else None
+                    ),
                     tipo_relacion="reserva_venta",
                     id_relacion=0,
                     fecha_desde=participacion.fecha_desde
@@ -338,3 +354,54 @@ class CreateReservaVentaService:
                 "objetos": created_objetos,
             }
         )
+
+    def _validate_compradores_porcentaje(
+        self,
+        command: CreateReservaVentaCommand,
+        roles_por_participacion: dict[int, str | None],
+    ) -> str | None:
+        compradores = [
+            participacion
+            for index, participacion in enumerate(command.participaciones)
+            if self._is_comprador(roles_por_participacion.get(index))
+        ]
+        if not compradores:
+            return None
+
+        compradores_por_persona: set[int] = set()
+        porcentajes: list[Decimal] = []
+        for comprador in compradores:
+            if comprador.id_persona in compradores_por_persona:
+                return "COMPRADOR_DUPLICADO"
+            compradores_por_persona.add(comprador.id_persona)
+
+            porcentaje = self._normalize_porcentaje(
+                comprador.porcentaje_responsabilidad
+            )
+            if porcentaje is None:
+                if len(compradores) == 1:
+                    continue
+                return "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+            if porcentaje <= Decimal("0.00") or porcentaje > Decimal("100.00"):
+                return "PORCENTAJE_COMPRADOR_INVALIDO"
+            porcentajes.append(porcentaje)
+
+        if len(compradores) > 1 and len(porcentajes) != len(compradores):
+            return "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+
+        if len(compradores) > 1 or porcentajes:
+            total = sum(porcentajes, Decimal("0.00")).quantize(Decimal("0.01"))
+            if total != Decimal("100.00"):
+                return "PORCENTAJE_COMPRADORES_NO_SUMA_100"
+
+        return None
+
+    @staticmethod
+    def _normalize_porcentaje(porcentaje: Decimal | None) -> Decimal | None:
+        if porcentaje is None:
+            return None
+        return Decimal(str(porcentaje)).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _is_comprador(codigo_rol: str | None) -> bool:
+        return (codigo_rol or "").strip().upper() == "COMPRADOR"

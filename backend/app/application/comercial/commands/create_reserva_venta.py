@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 
 from app.application.common.commands import CommandContext
 
@@ -8,6 +9,7 @@ from app.application.common.commands import CommandContext
 class CreateReservaVentaParticipacionCommand:
     id_persona: int
     id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None
     fecha_desde: date | None
     fecha_hasta: date | None
     observaciones: str | None

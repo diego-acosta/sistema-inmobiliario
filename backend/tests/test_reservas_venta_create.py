@@ -484,6 +484,320 @@ def _payload_base(*, codigo_reserva: str, objetos: list[dict], id_persona: int, 
     }
 
 
+
+def _crear_base_reserva_comprador(
+    client,
+    db_session,
+    *,
+    codigo: str,
+) -> tuple[int, int, int]:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre=f"Comprador {codigo}", apellido="Reserva")
+    id_rol = _crear_rol_participacion_activo(
+        db_session,
+        id_rol_participacion=9800,
+        codigo_rol="COMPRADOR",
+    )
+    id_inmueble = _crear_inmueble(client, codigo=f"INM-RV-PCT-{codigo}")
+    _crear_disponibilidad(
+        client,
+        id_inmueble=id_inmueble,
+        estado_disponibilidad="DISPONIBLE",
+    )
+    return id_persona, id_rol, id_inmueble
+
+
+def _post_reserva_porcentaje(
+    client,
+    *,
+    codigo_reserva: str,
+    id_inmueble: int,
+    id_persona: int,
+    id_rol: int,
+    participaciones: list[dict] | None = None,
+):
+    payload = _payload_base(
+        codigo_reserva=codigo_reserva,
+        objetos=[
+            {
+                "id_inmueble": id_inmueble,
+                "id_unidad_funcional": None,
+                "observaciones": "Objeto con compradores",
+            }
+        ],
+        id_persona=id_persona,
+        id_rol=id_rol,
+    )
+    if participaciones is not None:
+        payload["participaciones"] = participaciones
+    return client.post("/api/v1/reservas-venta", headers=HEADERS, json=payload)
+
+
+def _assert_error_controlado(response, expected_error: str) -> None:
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert body["details"]["errors"] == [expected_error]
+
+
+def test_create_reserva_venta_comprador_unico_sin_porcentaje_funciona(
+    client, db_session
+) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="UNO-SIN"
+    )
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-UNO-SIN",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona,
+        id_rol=id_rol,
+    )
+
+    assert response.status_code == 201, response.text
+
+
+def test_create_reserva_venta_comprador_unico_porcentaje_100_funciona(
+    client, db_session
+) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="UNO-100"
+    )
+    participacion = {
+        "id_persona": id_persona,
+        "id_rol_participacion": id_rol,
+        "porcentaje_responsabilidad": "100.00",
+        "fecha_desde": "2026-04-21",
+        "fecha_hasta": None,
+        "observaciones": "Comprador 100",
+    }
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-UNO-100",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona,
+        id_rol=id_rol,
+        participaciones=[participacion],
+    )
+
+    assert response.status_code == 201, response.text
+
+
+def test_create_reserva_venta_comprador_unico_porcentaje_50_falla(
+    client, db_session
+) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="UNO-50"
+    )
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-UNO-50",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona,
+        id_rol=id_rol,
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "50.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 50",
+            }
+        ],
+    )
+
+    _assert_error_controlado(response, "PORCENTAJE_COMPRADORES_NO_SUMA_100")
+
+
+def test_create_reserva_venta_dos_compradores_50_50_funciona(
+    client, db_session
+) -> None:
+    id_persona_1, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="DOS-50"
+    )
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Reserva")
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-DOS-50",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona_1,
+        id_rol=id_rol,
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "50.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 1",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "50.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 2",
+            },
+        ],
+    )
+
+    assert response.status_code == 201, response.text
+
+
+def test_create_reserva_venta_dos_compradores_60_60_falla(client, db_session) -> None:
+    id_persona_1, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="DOS-60"
+    )
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Reserva")
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-DOS-60",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona_1,
+        id_rol=id_rol,
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "60.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 1",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "60.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 2",
+            },
+        ],
+    )
+
+    _assert_error_controlado(response, "PORCENTAJE_COMPRADORES_NO_SUMA_100")
+
+
+def test_create_reserva_venta_porcentaje_cero_falla(client, db_session) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="PCT-0"
+    )
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-0",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona,
+        id_rol=id_rol,
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "0.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador cero",
+            }
+        ],
+    )
+
+    _assert_error_controlado(response, "PORCENTAJE_COMPRADOR_INVALIDO")
+
+
+def test_create_reserva_venta_porcentaje_101_falla(client, db_session) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="PCT-101"
+    )
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-101",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona,
+        id_rol=id_rol,
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "101.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 101",
+            }
+        ],
+    )
+
+    _assert_error_controlado(response, "PORCENTAJE_COMPRADOR_INVALIDO")
+
+
+def test_create_reserva_venta_dos_compradores_uno_sin_porcentaje_falla(
+    client, db_session
+) -> None:
+    id_persona_1, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="DOS-FALTA"
+    )
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Reserva")
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-DOS-FALTA",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona_1,
+        id_rol=id_rol,
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": "50.00",
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 1",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "fecha_desde": "2026-04-21",
+                "fecha_hasta": None,
+                "observaciones": "Comprador 2",
+            },
+        ],
+    )
+
+    _assert_error_controlado(response, "PORCENTAJE_COMPRADORES_NO_DEFINIDO")
+
+
+def test_create_reserva_venta_comprador_duplicado_falla(client, db_session) -> None:
+    id_persona, id_rol, id_inmueble = _crear_base_reserva_comprador(
+        client, db_session, codigo="DUP"
+    )
+    participacion = {
+        "id_persona": id_persona,
+        "id_rol_participacion": id_rol,
+        "porcentaje_responsabilidad": "50.00",
+        "fecha_desde": "2026-04-21",
+        "fecha_hasta": None,
+        "observaciones": "Comprador duplicado",
+    }
+
+    response = _post_reserva_porcentaje(
+        client,
+        codigo_reserva="RV-PCT-DUP",
+        id_inmueble=id_inmueble,
+        id_persona=id_persona,
+        id_rol=id_rol,
+        participaciones=[participacion, {**participacion}],
+    )
+
+    _assert_error_controlado(response, "COMPRADOR_DUPLICADO")
+
+
 def test_create_reserva_venta_alta_exitosa_un_objeto(client, db_session) -> None:
     _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Grace", apellido="Hopper")

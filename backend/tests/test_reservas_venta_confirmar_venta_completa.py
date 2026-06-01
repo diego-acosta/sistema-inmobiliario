@@ -335,6 +335,139 @@ def test_confirmar_venta_completa_desde_reserva_exito(client, db_session) -> Non
     assert venta["estado_venta"] == "confirmada"
 
 
+def test_confirmar_venta_completa_desde_reserva_multiple_sin_porcentaje_falla(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona_1 = _crear_persona(client, nombre="Comprador A", apellido="Reserva")
+    id_persona_2 = _crear_persona(client, nombre="Comprador B", apellido="Reserva")
+    id_rol = _crear_rol_participacion_activo(
+        db_session,
+        id_rol_participacion=9810,
+        codigo_rol="COMPRADOR",
+    )
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-MC-SIN-PCT")
+    _crear_disponibilidad(
+        client,
+        id_inmueble=id_inmueble,
+        estado_disponibilidad="RESERVADA",
+    )
+    reserva = _insertar_reserva_para_generar_venta(
+        db_session,
+        codigo_reserva="RV-COMP-MC-SIN-PCT",
+        estado_reserva="confirmada",
+        objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None}],
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "fecha_desde": "2026-04-21",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "fecha_desde": "2026-04-21",
+            },
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=_payload(codigo_venta="V-COMP-MC-SIN-PCT", id_inmueble=id_inmueble),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+    ]
+    assert _venta_by_codigo(db_session, "V-COMP-MC-SIN-PCT") is None
+    assert _estado_reserva(db_session, reserva["id_reserva_venta"]) == "confirmada"
+
+
+def test_confirmar_venta_completa_desde_reserva_copia_porcentajes_y_genera_obligados(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona_1 = _crear_persona(client, nombre="Comprador A", apellido="Reserva")
+    id_persona_2 = _crear_persona(client, nombre="Comprador B", apellido="Reserva")
+    id_rol = _crear_rol_participacion_activo(
+        db_session,
+        id_rol_participacion=9811,
+        codigo_rol="COMPRADOR",
+    )
+    id_inmueble = _crear_inmueble(client, codigo="INM-RV-MC-PCT")
+    _crear_disponibilidad(
+        client,
+        id_inmueble=id_inmueble,
+        estado_disponibilidad="RESERVADA",
+    )
+    reserva = _insertar_reserva_para_generar_venta(
+        db_session,
+        codigo_reserva="RV-COMP-MC-PCT",
+        estado_reserva="confirmada",
+        objetos=[{"id_inmueble": id_inmueble, "id_unidad_funcional": None}],
+        participaciones=[
+            {
+                "id_persona": id_persona_1,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("60.00"),
+                "fecha_desde": "2026-04-21",
+            },
+            {
+                "id_persona": id_persona_2,
+                "id_rol_participacion": id_rol,
+                "porcentaje_responsabilidad": Decimal("40.00"),
+                "fecha_desde": "2026-04-21",
+            },
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=_payload(codigo_venta="V-COMP-MC-PCT", id_inmueble=id_inmueble),
+    )
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "V-COMP-MC-PCT")
+    assert venta is not None
+    porcentajes = (
+        db_session.execute(
+            text("""
+            SELECT porcentaje_responsabilidad
+            FROM relacion_persona_rol
+            WHERE tipo_relacion = 'venta'
+              AND id_relacion = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY id_persona
+            """),
+            {"id_venta": venta["id_venta"]},
+        )
+        .scalars()
+        .all()
+    )
+    obligados = db_session.execute(
+        text("""
+            SELECT COUNT(*)
+            FROM relacion_generadora rg
+            JOIN obligacion_financiera o
+              ON o.id_relacion_generadora = rg.id_relacion_generadora
+             AND o.deleted_at IS NULL
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = o.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+            WHERE rg.tipo_origen = 'venta'
+              AND rg.id_origen = :id_venta
+              AND rg.deleted_at IS NULL
+            """),
+        {"id_venta": venta["id_venta"]},
+    ).scalar_one()
+
+    assert porcentajes == [Decimal("60.00"), Decimal("40.00")]
+    assert obligados == 4
+
+
 def test_confirmar_venta_completa_falla_condiciones_hace_rollback(
     client, db_session
 ) -> None:

@@ -164,6 +164,75 @@ def _count_compradores(db_session, id_venta: int) -> int:
     ).scalar_one()
 
 
+def _porcentajes_compradores(db_session, id_venta: int) -> list[Decimal]:
+    rows = (
+        db_session.execute(
+            text("""
+            SELECT porcentaje_responsabilidad
+            FROM relacion_persona_rol
+            WHERE tipo_relacion = 'venta'
+              AND id_relacion = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY id_persona
+            """),
+            {"id_venta": id_venta},
+        )
+        .mappings()
+        .all()
+    )
+    return [row["porcentaje_responsabilidad"] for row in rows]
+
+
+def _obligados_porcentaje(db_session, id_venta: int) -> list[Decimal]:
+    rows = (
+        db_session.execute(
+            text("""
+            SELECT oo.porcentaje_responsabilidad
+            FROM relacion_generadora rg
+            JOIN obligacion_financiera o
+              ON o.id_relacion_generadora = rg.id_relacion_generadora
+             AND o.deleted_at IS NULL
+            JOIN obligacion_obligado oo
+              ON oo.id_obligacion_financiera = o.id_obligacion_financiera
+             AND oo.deleted_at IS NULL
+            WHERE rg.tipo_origen = 'venta'
+              AND rg.id_origen = :id_venta
+              AND rg.deleted_at IS NULL
+            ORDER BY o.numero_obligacion, oo.id_persona
+            """),
+            {"id_venta": id_venta},
+        )
+        .mappings()
+        .all()
+    )
+    return [row["porcentaje_responsabilidad"] for row in rows]
+
+
+def test_patch_porcentaje_responsabilidad_relacion_persona_rol_aplicado(
+    db_session,
+) -> None:
+    column_exists = db_session.execute(text("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'relacion_persona_rol'
+                  AND column_name = 'porcentaje_responsabilidad'
+            )
+            """)).scalar_one()
+    constraint_exists = db_session.execute(text("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'public.relacion_persona_rol'::regclass
+                  AND conname = 'chk_rpr_porcentaje_responsabilidad'
+            )
+            """)).scalar_one()
+
+    assert column_exists is True
+    assert constraint_exists is True
+
+
 def test_confirmar_venta_directa_completa_exito(client, db_session) -> None:
     base = _crear_base_directa(client, db_session, codigo="OK")
 
@@ -185,6 +254,153 @@ def test_confirmar_venta_directa_completa_exito(client, db_session) -> None:
     assert venta["estado_venta"] == "confirmada"
     assert _count_venta_objetos(db_session, venta["id_venta"]) == 1
     assert _count_compradores(db_session, venta["id_venta"]) == 1
+    assert _porcentajes_compradores(db_session, venta["id_venta"]) == [
+        Decimal("100.00")
+    ]
+
+
+def test_confirmar_venta_directa_completa_dos_compradores_50_50(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="MC-50")
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Directo")
+    payload = _payload(codigo_venta="VD-COMP-MC-50", **base)
+    payload["compradores"][0]["porcentaje_responsabilidad"] = "50.00"
+    payload["compradores"].append(
+        {
+            "id_persona": id_persona_2,
+            "id_rol_participacion": base["id_rol"],
+            "porcentaje_responsabilidad": "50.00",
+            "fecha_desde": "2026-05-22",
+            "fecha_hasta": None,
+            "observaciones": "Comprador secundario",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-MC-50")
+    assert venta is not None
+    assert _count_compradores(db_session, venta["id_venta"]) == 2
+    assert _porcentajes_compradores(db_session, venta["id_venta"]) == [
+        Decimal("50.00"),
+        Decimal("50.00"),
+    ]
+    assert _obligados_porcentaje(db_session, venta["id_venta"]) == [
+        Decimal("50.00"),
+        Decimal("50.00"),
+        Decimal("50.00"),
+        Decimal("50.00"),
+    ]
+
+
+def test_confirmar_venta_directa_completa_dos_compradores_70_30(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="MC-70")
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Directo")
+    payload = _payload(codigo_venta="VD-COMP-MC-70", **base)
+    payload["compradores"][0]["porcentaje_responsabilidad"] = "70.00"
+    payload["compradores"].append(
+        {
+            "id_persona": id_persona_2,
+            "id_rol_participacion": base["id_rol"],
+            "porcentaje_responsabilidad": "30.00",
+            "fecha_desde": "2026-05-22",
+            "fecha_hasta": None,
+            "observaciones": "Comprador secundario",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-MC-70")
+    assert venta is not None
+    assert _porcentajes_compradores(db_session, venta["id_venta"]) == [
+        Decimal("70.00"),
+        Decimal("30.00"),
+    ]
+
+
+def test_confirmar_venta_directa_completa_comprador_duplicado_falla(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="DUP")
+    payload = _payload(codigo_venta="VD-COMP-DUP", **base)
+    payload["compradores"][0]["porcentaje_responsabilidad"] = "50.00"
+    payload["compradores"].append({**payload["compradores"][0]})
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["COMPRADOR_DUPLICADO"]
+    assert _venta_by_codigo(db_session, "VD-COMP-DUP") is None
+
+
+def test_confirmar_venta_directa_completa_suma_90_falla(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="SUM90")
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Directo")
+    payload = _payload(codigo_venta="VD-COMP-SUM90", **base)
+    payload["compradores"][0]["porcentaje_responsabilidad"] = "60.00"
+    payload["compradores"].append(
+        {
+            "id_persona": id_persona_2,
+            "id_rol_participacion": base["id_rol"],
+            "porcentaje_responsabilidad": "30.00",
+            "fecha_desde": "2026-05-22",
+            "fecha_hasta": None,
+            "observaciones": "Comprador secundario",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "PORCENTAJE_COMPRADORES_NO_SUMA_100"
+    ]
+    assert _venta_by_codigo(db_session, "VD-COMP-SUM90") is None
+
+
+def test_confirmar_venta_directa_completa_porcentaje_cero_falla(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="PCT0")
+    payload = _payload(codigo_venta="VD-COMP-PCT0", **base)
+    payload["compradores"][0]["porcentaje_responsabilidad"] = "0.00"
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["PORCENTAJE_COMPRADOR_INVALIDO"]
+    assert _venta_by_codigo(db_session, "VD-COMP-PCT0") is None
+
+
+def test_confirmar_venta_directa_completa_multiple_sin_porcentaje_falla(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="SIN-PCT")
+    id_persona_2 = _crear_persona(client, nombre="Comprador 2", apellido="Directo")
+    payload = _payload(codigo_venta="VD-COMP-SIN-PCT", **base)
+    payload["compradores"].append(
+        {
+            "id_persona": id_persona_2,
+            "id_rol_participacion": base["id_rol"],
+            "fecha_desde": "2026-05-22",
+            "fecha_hasta": None,
+            "observaciones": "Comprador secundario",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "PORCENTAJE_COMPRADORES_NO_DEFINIDO"
+    ]
+    assert _venta_by_codigo(db_session, "VD-COMP-SIN-PCT") is None
 
 
 def test_confirmar_venta_directa_falla_condiciones_hace_rollback(

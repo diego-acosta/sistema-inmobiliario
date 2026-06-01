@@ -234,7 +234,6 @@ def _obligaciones_unificadas(db_session, *, id_venta: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-
 class _PlanPagoVentaV2RepositoryCompradoresConPorcentajeOverride(
     PlanPagoVentaV2Repository
 ):
@@ -264,8 +263,9 @@ def _service_con_compradores(
 
 
 def _obligados_plan_pago_v2(db_session, *, id_venta: int) -> list[dict]:
-    rows = db_session.execute(
-        text("""
+    rows = (
+        db_session.execute(
+            text("""
             SELECT
                 o.id_obligacion_financiera,
                 o.numero_obligacion,
@@ -284,8 +284,11 @@ def _obligados_plan_pago_v2(db_session, *, id_venta: int) -> list[dict]:
               AND rg.deleted_at IS NULL
             ORDER BY o.numero_obligacion, oo.id_persona
             """),
-        {"id_venta": id_venta},
-    ).mappings().all()
+            {"id_venta": id_venta},
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
@@ -688,12 +691,8 @@ def test_motor_payload_obligados_con_porcentajes_inyectados_sin_duplicar(
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-001")
     id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-001-A")
     id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-001-B")
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_1
-    )
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_2
-    )
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_1)
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_2)
     compradores = [
         {
             "id_relacion_persona_rol": 1,
@@ -721,9 +720,7 @@ def test_motor_payload_obligados_con_porcentajes_inyectados_sin_duplicar(
     obligados = _obligados_plan_pago_v2(db_session, id_venta=id_venta)
     assert len(obligados) == 30
     assert {row["rol_obligado"] for row in obligados} == {"COMPRADOR"}
-    assert {str(row["porcentaje_responsabilidad"]) for row in obligados} == {
-        "50.00"
-    }
+    assert {str(row["porcentaje_responsabilidad"]) for row in obligados} == {"50.00"}
 
 
 def test_motor_payload_obligados_inyectados_idempotente_no_duplica(
@@ -732,12 +729,8 @@ def test_motor_payload_obligados_inyectados_idempotente_no_duplica(
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-002")
     id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-002-A")
     id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-002-B")
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_1
-    )
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_2
-    )
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_1)
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_2)
     compradores = [
         {
             "id_relacion_persona_rol": 1,
@@ -760,9 +753,12 @@ def test_motor_payload_obligados_inyectados_idempotente_no_duplica(
 
     assert first.success, first.errors
     assert second.success, second.errors
-    assert _count_table_for_venta(
-        db_session, id_venta=id_venta, table_name="obligacion_financiera"
-    ) == 15
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 15
+    )
     assert _count_obligados_plan_pago_v2(db_session, id_venta=id_venta) == 30
 
 
@@ -792,9 +788,12 @@ def test_resolver_compradores_inyectados_duplicado_devuelve_error_controlado(
 
     assert not result.success
     assert result.errors == ["COMPRADOR_DUPLICADO"]
-    assert _count_table_for_venta(
-        db_session, id_venta=id_venta, table_name="obligacion_financiera"
-    ) == 0
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 0
+    )
 
 
 def test_resolver_compradores_inyectados_porcentajes_no_suman_100(
@@ -803,12 +802,8 @@ def test_resolver_compradores_inyectados_porcentajes_no_suman_100(
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-004")
     id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-004-A")
     id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-004-B")
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_1
-    )
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_2
-    )
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_1)
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_2)
     compradores = [
         {
             "id_relacion_persona_rol": 1,
@@ -830,9 +825,12 @@ def test_resolver_compradores_inyectados_porcentajes_no_suman_100(
 
     assert not result.success
     assert result.errors == ["PORCENTAJE_COMPRADORES_NO_SUMA_100"]
-    assert _count_table_for_venta(
-        db_session, id_venta=id_venta, table_name="obligacion_financiera"
-    ) == 0
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 0
+    )
 
 
 def test_servicio_dos_compradores_reales_sin_porcentaje_devuelve_error_controlado(
@@ -841,20 +839,66 @@ def test_servicio_dos_compradores_reales_sin_porcentaje_devuelve_error_controlad
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-005")
     id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-005-A")
     id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-005-B")
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_1
-    )
-    _vincular_comprador_venta(
-        db_session, id_venta=id_venta, id_persona=id_persona_2
-    )
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_1)
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_2)
 
     result = _service(db_session).execute(_command(id_venta=id_venta))
 
     assert not result.success
     assert result.errors == ["PORCENTAJE_COMPRADORES_NO_DEFINIDO"]
-    assert _count_table_for_venta(
-        db_session, id_venta=id_venta, table_name="obligacion_financiera"
-    ) == 0
+    assert (
+        _count_table_for_venta(
+            db_session, id_venta=id_venta, table_name="obligacion_financiera"
+        )
+        == 0
+    )
+
+
+def test_repository_lee_porcentajes_persistidos_y_genera_obligados_multiples(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-REAL")
+    id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-REAL-A")
+    id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-REAL-B")
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_1)
+    _vincular_comprador_venta(db_session, id_venta=id_venta, id_persona=id_persona_2)
+    db_session.execute(
+        text("""
+            UPDATE relacion_persona_rol
+            SET porcentaje_responsabilidad = CASE
+                    WHEN id_persona = :id_persona_1 THEN 70.00
+                    ELSE 30.00
+                END
+            WHERE tipo_relacion = 'venta'
+              AND id_relacion = :id_venta
+              AND id_persona IN (:id_persona_1, :id_persona_2)
+            """),
+        {
+            "id_venta": id_venta,
+            "id_persona_1": id_persona_1,
+            "id_persona_2": id_persona_2,
+        },
+    )
+
+    compradores = PlanPagoVentaV2Repository(
+        db_session
+    ).get_compradores_financieros_venta(id_venta)
+    result = _service(db_session).execute(_command(id_venta=id_venta))
+    retry = _service(db_session).execute(_command(id_venta=id_venta))
+
+    assert [row["porcentaje_responsabilidad"] for row in compradores] == [
+        Decimal("70.00"),
+        Decimal("30.00"),
+    ]
+    assert result.success, result.errors
+    assert retry.success, retry.errors
+    assert len(result.data["obligaciones"]) == 15
+    assert _count_obligados_plan_pago_v2(db_session, id_venta=id_venta) == 30
+    porcentajes = [
+        row["porcentaje_responsabilidad"]
+        for row in _obligados_plan_pago_v2(db_session, id_venta=id_venta)[:2]
+    ]
+    assert porcentajes == [Decimal("70.00"), Decimal("30.00")]
 
 
 def test_servicio_unificado_payload_distinto_con_plan_vivo_devuelve_conflicto(

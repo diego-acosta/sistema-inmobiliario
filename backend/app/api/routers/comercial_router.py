@@ -410,6 +410,7 @@ def create_reserva_venta(
             CreateReservaVentaParticipacionCommand(
                 id_persona=item.id_persona,
                 id_rol_participacion=item.id_rol_participacion,
+                porcentaje_responsabilidad=item.porcentaje_responsabilidad,
                 fecha_desde=item.fecha_desde,
                 fecha_hasta=item.fecha_hasta,
                 observaciones=item.observaciones,
@@ -1620,6 +1621,7 @@ def confirmar_venta_directa_completa(
             ConfirmVentaDirectaCompletaCompradorInput(
                 id_persona=item.id_persona,
                 id_rol_participacion=item.id_rol_participacion,
+                porcentaje_responsabilidad=item.porcentaje_responsabilidad,
                 fecha_desde=item.fecha_desde,
                 fecha_hasta=item.fecha_hasta,
                 observaciones=item.observaciones,

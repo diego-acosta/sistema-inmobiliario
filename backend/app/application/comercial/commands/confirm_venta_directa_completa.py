@@ -25,6 +25,7 @@ class ConfirmVentaDirectaCompletaObjetoInput:
 class ConfirmVentaDirectaCompletaCompradorInput:
     id_persona: int
     id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None
     fecha_desde: date | None
     fecha_hasta: date | None
     observaciones: str | None
