@@ -18,7 +18,10 @@ from app.application.common.commands import CommandContext
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
     PlanPagoVentaV2Repository,
 )
-from tests.test_fin_event_venta_confirmada import _vincular_comprador_venta
+from tests.test_fin_event_venta_confirmada import (
+    _crear_persona_minima,
+    _vincular_comprador_venta,
+)
 from tests.test_plan_pago_venta_v2_cuotas_iguales import (
     _bloques_plan_pago_venta_v2,
     _count_venta_plan_cuota,
@@ -683,8 +686,14 @@ def test_motor_payload_obligados_con_porcentajes_inyectados_sin_duplicar(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-001")
-    id_persona_1 = _vincular_comprador_venta(db_session, id_venta=id_venta)
-    id_persona_2 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-001-A")
+    id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-001-B")
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_1
+    )
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_2
+    )
     compradores = [
         {
             "id_relacion_persona_rol": 1,
@@ -721,8 +730,14 @@ def test_motor_payload_obligados_inyectados_idempotente_no_duplica(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-002")
-    id_persona_1 = _vincular_comprador_venta(db_session, id_venta=id_venta)
-    id_persona_2 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-002-A")
+    id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-002-B")
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_1
+    )
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_2
+    )
     compradores = [
         {
             "id_relacion_persona_rol": 1,
@@ -786,8 +801,14 @@ def test_resolver_compradores_inyectados_porcentajes_no_suman_100(
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-004")
-    id_persona_1 = _vincular_comprador_venta(db_session, id_venta=id_venta)
-    id_persona_2 = _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-004-A")
+    id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-004-B")
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_1
+    )
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_2
+    )
     compradores = [
         {
             "id_relacion_persona_rol": 1,
@@ -818,8 +839,14 @@ def test_servicio_dos_compradores_reales_sin_porcentaje_devuelve_error_controlad
     db_session,
 ) -> None:
     id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-MC-005")
-    _vincular_comprador_venta(db_session, id_venta=id_venta)
-    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_persona_1 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-005-A")
+    id_persona_2 = _crear_persona_minima(db_session, codigo="PER-PPV2-MC-005-B")
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_1
+    )
+    _vincular_comprador_venta(
+        db_session, id_venta=id_venta, id_persona=id_persona_2
+    )
 
     result = _service(db_session).execute(_command(id_venta=id_venta))
 
