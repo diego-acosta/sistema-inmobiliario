@@ -570,6 +570,19 @@ class PlanPagoVentaV2ObligacionComposicionData(BaseModel):
     moneda_componente: str
 
 
+class PlanPagoVentaV2ObligacionObligadoData(BaseModel):
+    id_obligacion_obligado: int
+    id_obligacion_financiera: int
+    id_persona: int
+    codigo_persona: str | None = None
+    nombre: str | None = None
+    apellido: str | None = None
+    razon_social: str | None = None
+    rol_obligado: str | None = None
+    porcentaje_responsabilidad: Decimal | None = None
+    importe_responsabilidad_informativo: Decimal | None = None
+
+
 class PlanPagoVentaV2ObligacionIndexacionData(BaseModel):
     id_obligacion_financiera_indexacion: int
     id_indice_financiero: int
@@ -586,6 +599,7 @@ class PlanPagoVentaV2ObligacionIndexacionData(BaseModel):
 
 class PlanPagoVentaV2ObligacionIntegralData(ObligacionCronogramaVentaPorBloquesV2Data):
     composiciones: list[PlanPagoVentaV2ObligacionComposicionData]
+    obligados: list[PlanPagoVentaV2ObligacionObligadoData]
     indexacion: PlanPagoVentaV2ObligacionIndexacionData | None = None
 
 
@@ -603,6 +617,8 @@ class PlanPagoVentaV2ResumenData(BaseModel):
     total_ajuste_indexacion: Decimal
     total_obligaciones: Decimal
     cantidad_obligaciones_con_indexacion: int
+    cantidad_obligados_total: int
+    cantidad_obligaciones_con_multiples_obligados: int
     cantidad_obligaciones_proyectadas_sin_indexacion: int
 
 
