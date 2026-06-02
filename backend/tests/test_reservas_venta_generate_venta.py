@@ -17,6 +17,7 @@ from tests.test_reservas_venta_create import (
     _crear_inmueble,
     _crear_persona,
     _crear_rol_participacion_activo,
+    _crear_unidad_funcional,
     _insertar_venta_conflictiva,
 )
 
