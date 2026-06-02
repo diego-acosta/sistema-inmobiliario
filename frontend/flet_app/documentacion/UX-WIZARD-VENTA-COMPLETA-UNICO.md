@@ -373,7 +373,7 @@ pendiente_disponible =
   total_venta_derivado_de_objetos
   - anticipo cargado
   - importes ya asignados a tramos anteriores
-  - refuerzos cargados si ya existen
+  - refuerzos cargados si ya existen como bloques libres separados
   - saldo final cargado si ya existe
 ```
 
@@ -389,9 +389,12 @@ Reglas del campo `Capital del tramo`:
 Luego de cargar o confirmar el capital del tramo, solicitar los parametros del
 tramo:
 
-- cantidad de cuotas;
+- cantidad total de cuotas del tramo;
 - primer vencimiento;
 - periodicidad, fijada por UX en `MENSUAL` para este flujo;
+- si usa cuotas refuerzo dentro del tramo;
+- cantidad de cuotas refuerzo;
+- ubicacion de cada refuerzo por numero de cuota/mes;
 - metodo de actualizacion:
   - `Cuotas fijas / sin interes`;
   - `Interes directo`;
@@ -402,11 +405,41 @@ Construccion interna comun del tramo:
 ```text
 tipo_bloque = TRAMO_CUOTAS
 importe_total_bloque = capital del tramo
-cantidad_cuotas = cantidad de cuotas
+cantidad_cuotas = cantidad total de cuotas del tramo
 fecha_primer_vencimiento = primer vencimiento
 periodicidad = MENSUAL
 metodo_liquidacion = SIN_INTERES | INTERES_DIRECTO | INDEXACION
 ```
+
+Semantica de cuotas refuerzo dentro del tramo:
+
+- Una cuota refuerzo forma parte de la cantidad total de cuotas del tramo; no se
+  agrega por fuera del total.
+- No interpretar `cantidad total = cuotas base + refuerzos`.
+- Interpretar `cantidad total = cuotas normales + cuotas refuerzo`.
+- El usuario no debe calcular manualmente cuanto capital dejar reservado para
+  refuerzos: carga el capital total del tramo y la composicion de cuotas; el
+  sistema deriva la composicion interna.
+- El sistema deriva:
+
+```text
+cantidad_cuotas_normales = cantidad_total_cuotas - cantidad_refuerzos
+cantidad_cuotas_refuerzo = cantidad_refuerzos
+```
+
+Ejemplo:
+
+```text
+Capital del tramo = 24.000.000
+Cantidad total de cuotas = 24
+Refuerzos = cuota 6 y cuota 12
+Resultado = 22 cuotas normales + 2 cuotas refuerzo = 24 cuotas totales
+```
+
+Si una cuota refuerzo se materializa tecnicamente como una obligacion separada
+con el mismo vencimiento que una cuota normal, esa obligacion de refuerzo
+representa una cuota dentro del total del plan/tramo, no una cuota adicional por
+fuera del total.
 
 Al guardar el tramo:
 
@@ -518,14 +551,19 @@ Reglas:
 
 #### 5.8 Refuerzos opcionales
 
-UI:
+Esta seccion mantiene la compatibilidad actual de refuerzos cargados como
+componentes separados del plan. No debe confundirse con la semantica deseada de
+`cuotas refuerzo dentro del tramo` definida en la seccion 5.5.
+
+UI de compatibilidad actual:
 
 - boton `Agregar refuerzo`;
 - importe;
 - vencimiento;
 - etiqueta.
 
-Construccion interna:
+Construccion interna actual, cuando el backend solo soporta refuerzo como bloque
+libre:
 
 ```text
 tipo_bloque = REFUERZO
@@ -533,6 +571,20 @@ importe_total_bloque = importe
 fecha_vencimiento = vencimiento
 etiqueta_bloque = etiqueta
 ```
+
+Brecha tecnica actual:
+
+- Si el backend actual solo soporta `REFUERZO` como bloque con importe y
+  vencimiento libre, ese modelo no representa completamente la semantica de
+  `cuota refuerzo dentro de la cantidad total`.
+- Puede requerirse un diseno backend futuro para soportar explicitamente:
+  - `cuota_asociada_numero`;
+  - tipo de cuota `REFUERZO` dentro del tramo;
+  - derivacion automatica de fecha/importe;
+  - cantidad total compuesta por cuotas normales + cuotas refuerzo.
+- Hasta que exista soporte explicito, la documentacion debe marcar esta
+  diferencia como brecha tecnica y no presentar los bloques `REFUERZO` libres
+  como equivalentes completos de cuotas refuerzo internas al tramo.
 
 #### 5.9 Saldo final opcional
 
@@ -568,6 +620,9 @@ Reglas del resumen:
 - La suma de componentes debe coincidir con `monto_total_plan`.
 - La diferencia debe quedar en cero antes de confirmar.
 - La cantidad de obligaciones es estimada/indicativa, no cronograma oficial.
+- Para tramos con cuotas refuerzo internas, la cantidad estimada del tramo se
+  interpreta como `cantidad total de cuotas`: no sumar refuerzos por fuera del
+  total.
 - No mostrar un cronograma local calculado.
 - No calcular interes localmente.
 - No calcular indexacion localmente.
@@ -606,6 +661,11 @@ genera_ajuste_por_diferencia
 
 Estos campos pertenecen al payload interno o a modo tecnico/debug. No deben
 convertirse en la experiencia principal de carga para el usuario comercial.
+
+Los campos necesarios para representar cuotas refuerzo internas al tramo
+(`cuota_asociada_numero`, tipo de cuota `REFUERZO` dentro del tramo y derivacion
+automatica de fecha/importe) se consideran brecha tecnica/futuro soporte hasta
+que exista contrato backend explicito.
 
 ### Paso 6 - Revision
 
