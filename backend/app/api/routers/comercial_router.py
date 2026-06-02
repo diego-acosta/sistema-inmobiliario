@@ -1554,6 +1554,23 @@ def confirmar_venta_completa_desde_reserva(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
+        if any(
+            error in result.errors
+            for error in [
+                "VALOR_ASIGNADO_OBJETO_REQUERIDO",
+                "VALOR_ASIGNADO_OBJETO_INVALIDO",
+                "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA",
+                "OBJETO_VENTA_DUPLICADO",
+                "OBJETO_VENTA_JERARQUIA_SOLAPADA",
+            ]
+        ):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Validacion de precio_asignado por objeto de venta invalida.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
         if any(error.startswith("NOT_FOUND") for error in result.errors):
             error = ErrorResponse(
                 error_code=result.errors[0],
@@ -1711,6 +1728,23 @@ def confirmar_venta_directa_completa(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
+        if any(
+            error in result.errors
+            for error in [
+                "VALOR_ASIGNADO_OBJETO_REQUERIDO",
+                "VALOR_ASIGNADO_OBJETO_INVALIDO",
+                "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA",
+                "OBJETO_VENTA_DUPLICADO",
+                "OBJETO_VENTA_JERARQUIA_SOLAPADA",
+            ]
+        ):
+            error = ErrorResponse(
+                error_code="APPLICATION_ERROR",
+                error_message="Validacion de precio_asignado por objeto de venta invalida.",
+                details={"errors": result.errors},
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
         if any(error.startswith("NOT_FOUND") for error in result.errors):
             error = ErrorResponse(
                 error_code=result.errors[0],
@@ -1840,7 +1874,10 @@ def generate_venta_from_reserva_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "INVALID_RESERVA_OBJECTS" in result.errors:
+        if (
+            "INVALID_RESERVA_OBJECTS" in result.errors
+            or "OBJETO_VENTA_JERARQUIA_SOLAPADA" in result.errors
+        ):
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La reserva presenta un detalle multiobjeto inconsistente.",
@@ -2150,7 +2187,10 @@ def define_condiciones_comerciales_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "DUPLICATE_OBJECT" in result.errors:
+        if (
+            "DUPLICATE_OBJECT" in result.errors
+            or "OBJETO_VENTA_DUPLICADO" in result.errors
+        ):
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="No puede repetirse el mismo objeto dentro de una misma venta.",
@@ -2158,7 +2198,10 @@ def define_condiciones_comerciales_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "INVALID_PRECIO_ASIGNADO" in result.errors:
+        if (
+            "INVALID_PRECIO_ASIGNADO" in result.errors
+            or "VALOR_ASIGNADO_OBJETO_INVALIDO" in result.errors
+        ):
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="precio_asignado debe ser mayor que cero para cada objeto.",
@@ -2174,7 +2217,10 @@ def define_condiciones_comerciales_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "INVALID_MONTO_TOTAL" in result.errors:
+        if (
+            "INVALID_MONTO_TOTAL" in result.errors
+            or "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA" in result.errors
+        ):
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La suma de precio_asignado debe coincidir exactamente con monto_total.",

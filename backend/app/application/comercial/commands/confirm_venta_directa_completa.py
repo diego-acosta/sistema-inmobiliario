@@ -17,7 +17,7 @@ class ConfirmVentaDirectaCompletaGenerarVentaInput:
 class ConfirmVentaDirectaCompletaObjetoInput:
     id_inmueble: int | None
     id_unidad_funcional: int | None
-    precio_asignado: Decimal
+    precio_asignado: Decimal | None
     observaciones: str | None
 
 

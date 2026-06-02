@@ -1,4 +1,5 @@
 from contextlib import AbstractContextManager
+from decimal import Decimal
 from typing import Any
 
 from app.application.comercial.commands.confirm_venta_completa_desde_reserva import (
@@ -102,10 +103,12 @@ class ConfirmVentaCompletaDesdeReservaService:
         if command.if_match_version_reserva is None:
             return AppResult.fail("CONCURRENCY_ERROR")
 
-        if (
-            command.condiciones_comerciales.monto_total
-            != command.plan_pago_v2.monto_total_plan
-        ):
+        total_derivado_result = self._normalizar_precios_y_total(command)
+        if not total_derivado_result.success or total_derivado_result.data is None:
+            return AppResult.fail(total_derivado_result.errors[0])
+
+        total_derivado = total_derivado_result.data
+        if total_derivado != command.plan_pago_v2.monto_total_plan:
             return AppResult.fail("MONTO_TOTAL_PLAN_MISMATCH")
 
         tx_repository = _TransactionalComercialRepository(self.comercial_repository)
@@ -264,6 +267,91 @@ class ConfirmVentaCompletaDesdeReservaService:
                 )
         except _StageFailed as exc:
             return AppResult.fail(exc.error)
+
+    def _normalizar_precios_y_total(
+        self, command: ConfirmVentaCompletaDesdeReservaCommand
+    ) -> AppResult[Decimal]:
+        if not command.condiciones_comerciales.objetos:
+            return AppResult.fail("VENTA_WITHOUT_OBJECTS")
+
+        monto_redundante = command.generar_venta.monto_total
+        if monto_redundante is None:
+            monto_redundante = command.condiciones_comerciales.monto_total
+
+        objetos = command.condiciones_comerciales.objetos
+        seen_objects: set[tuple[str, int]] = set()
+        ids_inmueble_payload: set[int] = set()
+        ids_unidad_funcional_payload: set[int] = set()
+        for objeto in objetos:
+            if (objeto.id_inmueble is None) == (objeto.id_unidad_funcional is None):
+                return AppResult.fail("INVALID_VENTA_OBJECTS")
+            object_key = (
+                ("inmueble", objeto.id_inmueble)
+                if objeto.id_inmueble is not None
+                else ("unidad_funcional", objeto.id_unidad_funcional)
+            )
+            if object_key in seen_objects:
+                return AppResult.fail("OBJETO_VENTA_DUPLICADO")
+            seen_objects.add(object_key)
+            if objeto.id_inmueble is not None:
+                ids_inmueble_payload.add(objeto.id_inmueble)
+            elif objeto.id_unidad_funcional is not None:
+                ids_unidad_funcional_payload.add(objeto.id_unidad_funcional)
+
+        if self._hay_solapamiento_jerarquico_objetos(
+            ids_inmueble_payload, ids_unidad_funcional_payload
+        ):
+            return AppResult.fail("OBJETO_VENTA_JERARQUIA_SOLAPADA")
+
+        precios: list[Decimal] = []
+        for objeto in objetos:
+            precio = objeto.precio_asignado
+            if precio is None:
+                if (
+                    len(command.condiciones_comerciales.objetos) == 1
+                    and monto_redundante is not None
+                ):
+                    precio = Decimal(str(monto_redundante))
+                    objeto.precio_asignado = precio
+                else:
+                    return AppResult.fail("VALOR_ASIGNADO_OBJETO_REQUERIDO")
+
+            precio_decimal = Decimal(str(precio))
+            if precio_decimal <= 0:
+                return AppResult.fail("VALOR_ASIGNADO_OBJETO_INVALIDO")
+            objeto.precio_asignado = precio_decimal
+            precios.append(precio_decimal)
+
+        total_derivado = sum(precios, Decimal("0"))
+        montos_redundantes = [
+            command.generar_venta.monto_total,
+            command.condiciones_comerciales.monto_total,
+        ]
+        for monto in montos_redundantes:
+            if monto is not None and Decimal(str(monto)) != total_derivado:
+                return AppResult.fail("SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA")
+
+        command.generar_venta.monto_total = total_derivado
+        command.condiciones_comerciales.monto_total = total_derivado
+        return AppResult.ok(total_derivado)
+
+    def _hay_solapamiento_jerarquico_objetos(
+        self,
+        ids_inmueble_payload: set[int],
+        ids_unidad_funcional_payload: set[int],
+    ) -> bool:
+        if not ids_inmueble_payload or not ids_unidad_funcional_payload:
+            return False
+
+        for id_unidad_funcional in ids_unidad_funcional_payload:
+            id_inmueble_padre = (
+                self.comercial_repository.get_id_inmueble_by_unidad_funcional(
+                    id_unidad_funcional
+                )
+            )
+            if id_inmueble_padre in ids_inmueble_payload:
+                return True
+        return False
 
     def _transaction(self) -> AbstractContextManager[Any]:
         if self.db.in_transaction():

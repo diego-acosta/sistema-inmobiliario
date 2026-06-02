@@ -3730,15 +3730,19 @@ class ComercialRepository:
 
             precio_asignado = values["precio_asignado"]
             if precio_asignado is None:
-                return "INVALID_MONTO_TOTAL"
-            total_objetos += Decimal(str(precio_asignado))
+                return "VALOR_ASIGNADO_OBJETO_REQUERIDO"
+            precio_decimal = Decimal(str(precio_asignado))
+            if precio_decimal <= 0:
+                return "VALOR_ASIGNADO_OBJETO_INVALIDO"
+            total_objetos += precio_decimal
 
         if total_objetos <= 0:
-            return "INVALID_MONTO_TOTAL"
+            return "VALOR_ASIGNADO_OBJETO_INVALIDO"
 
         monto_total = venta_values.get("monto_total")
         if monto_total is not None and Decimal(str(monto_total)) != total_objetos:
-            return "MONTO_TOTAL_OBJECTS_MISMATCH"
+            return "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA"
+        venta_values["monto_total"] = total_objetos
 
         if not compradores_values:
             return "COMPRADORES_REQUERIDOS"
@@ -3844,6 +3848,11 @@ class ComercialRepository:
             """)
         rows = self.db.execute(statement, {"id_inmueble": id_inmueble}).mappings().all()
         return [row["id_unidad_funcional"] for row in rows]
+
+    def get_id_inmueble_by_unidad_funcional(
+        self, id_unidad_funcional: int | None
+    ) -> int | None:
+        return self._get_parent_inmueble_for_unidad_funcional(id_unidad_funcional)
 
     def _get_parent_inmueble_for_unidad_funcional(
         self, id_unidad_funcional: int | None

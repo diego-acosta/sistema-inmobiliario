@@ -117,7 +117,7 @@ def _venta_by_codigo(db_session, codigo_venta: str):
     return (
         db_session.execute(
             text("""
-            SELECT id_venta, estado_venta, version_registro
+            SELECT id_venta, estado_venta, version_registro, monto_total
             FROM venta
             WHERE codigo_venta = :codigo_venta
               AND deleted_at IS NULL
@@ -127,6 +127,36 @@ def _venta_by_codigo(db_session, codigo_venta: str):
         .mappings()
         .one_or_none()
     )
+
+
+def _precios_objetos(db_session, id_venta: int) -> list[Decimal]:
+    rows = (
+        db_session.execute(
+            text("""
+            SELECT precio_asignado
+            FROM venta_objeto_inmobiliario
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY id_venta_objeto
+            """),
+            {"id_venta": id_venta},
+        )
+        .mappings()
+        .all()
+    )
+    return [row["precio_asignado"] for row in rows]
+
+
+def _monto_total_plan_by_venta(db_session, id_venta: int) -> Decimal:
+    return db_session.execute(
+        text("""
+            SELECT monto_total_plan
+            FROM plan_pago_venta
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            """),
+        {"id_venta": id_venta},
+    ).scalar_one()
 
 
 def _estado_reserva(db_session, id_reserva_venta: int) -> str:
@@ -333,6 +363,112 @@ def test_confirmar_venta_completa_desde_reserva_exito(client, db_session) -> Non
     venta = _venta_by_codigo(db_session, "V-COMP-OK")
     assert venta is not None
     assert venta["estado_venta"] == "confirmada"
+
+
+def test_confirmar_venta_completa_desde_reserva_un_objeto_defaulta_monto_total(
+    client, db_session
+) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-DEF-PRECIO")
+    payload = _payload(
+        codigo_venta="V-COMP-DEF-PRECIO", id_inmueble=reserva["id_inmueble"]
+    )
+    del payload["condiciones_comerciales"]["objetos"][0]["precio_asignado"]
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "V-COMP-DEF-PRECIO")
+    assert venta is not None
+    assert venta["monto_total"] == Decimal("150000.00")
+    assert _precios_objetos(db_session, venta["id_venta"]) == [Decimal("150000.00")]
+
+
+def test_confirmar_venta_completa_desde_reserva_multiobjeto_sin_asignacion_falla(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre="Comprador Multi", apellido="Reserva")
+    id_rol = _crear_rol_participacion_activo(
+        db_session,
+        id_rol_participacion=9821,
+        codigo_rol="COMPRADOR",
+    )
+    id_inmueble_1 = _crear_inmueble(client, codigo="INM-RV-SIN-PRECIO-1")
+    id_inmueble_2 = _crear_inmueble(client, codigo="INM-RV-SIN-PRECIO-2")
+    for id_inmueble in [id_inmueble_1, id_inmueble_2]:
+        _crear_disponibilidad(
+            client, id_inmueble=id_inmueble, estado_disponibilidad="RESERVADA"
+        )
+    reserva = _insertar_reserva_para_generar_venta(
+        db_session,
+        codigo_reserva="RV-COMP-SIN-PRECIO",
+        estado_reserva="confirmada",
+        objetos=[
+            {"id_inmueble": id_inmueble_1, "id_unidad_funcional": None},
+            {"id_inmueble": id_inmueble_2, "id_unidad_funcional": None},
+        ],
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": id_rol,
+                "fecha_desde": "2026-04-21",
+            }
+        ],
+    )
+    payload = _payload(codigo_venta="V-COMP-SIN-PRECIO", id_inmueble=id_inmueble_1)
+    payload["condiciones_comerciales"]["objetos"] = [
+        {"id_inmueble": id_inmueble_1, "id_unidad_funcional": None},
+        {"id_inmueble": id_inmueble_2, "id_unidad_funcional": None},
+    ]
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "VALOR_ASIGNADO_OBJETO_REQUERIDO"
+    ]
+    assert _venta_by_codigo(db_session, "V-COMP-SIN-PRECIO") is None
+    assert _estado_reserva(db_session, reserva["id_reserva_venta"]) == "confirmada"
+
+
+def test_confirmar_venta_completa_desde_reserva_plan_usa_total_derivado(
+    client, db_session
+) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-PLAN-DER")
+    payload = _payload(
+        codigo_venta="V-COMP-PLAN-DER", id_inmueble=reserva["id_inmueble"]
+    )
+    payload["generar_venta"].pop("monto_total")
+    payload["condiciones_comerciales"]["monto_total"] = "120000.00"
+    payload["condiciones_comerciales"]["importe_anticipo"] = "20000.00"
+    payload["condiciones_comerciales"]["importe_saldo"] = "100000.00"
+    payload["condiciones_comerciales"]["objetos"][0]["precio_asignado"] = "120000.00"
+    payload["plan_pago_v2"]["monto_total_plan"] = "120000.00"
+    payload["plan_pago_v2"]["bloques"][0]["importe_total_bloque"] = "20000.00"
+    payload["plan_pago_v2"]["bloques"][1]["importe_total_bloque"] = "100000.00"
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "V-COMP-PLAN-DER")
+    assert venta is not None
+    assert venta["monto_total"] == Decimal("120000.00")
+    assert _precios_objetos(db_session, venta["id_venta"]) == [Decimal("120000.00")]
+    assert _monto_total_plan_by_venta(db_session, venta["id_venta"]) == Decimal(
+        "120000.00"
+    )
 
 
 def test_confirmar_venta_completa_desde_reserva_multiple_sin_porcentaje_falla(

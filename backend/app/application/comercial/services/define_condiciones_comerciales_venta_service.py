@@ -128,24 +128,33 @@ class DefineCondicionesComercialesVentaService:
             if (objeto.id_inmueble is None) == (objeto.id_unidad_funcional is None):
                 return AppResult.fail("EXACTLY_ONE_OBJECT_PARENT_REQUIRED")
 
-            if objeto.precio_asignado <= 0:
-                return AppResult.fail("INVALID_PRECIO_ASIGNADO")
-
             object_key = (
                 ("inmueble", objeto.id_inmueble)
                 if objeto.id_inmueble is not None
                 else ("unidad_funcional", objeto.id_unidad_funcional)
             )
             if object_key in request_objects_by_key:
-                return AppResult.fail("DUPLICATE_OBJECT")
-            request_objects_by_key[object_key] = objeto.precio_asignado
+                return AppResult.fail("OBJETO_VENTA_DUPLICADO")
+
+            precio_asignado = objeto.precio_asignado
+            if precio_asignado is None:
+                if len(command.objetos) == 1 and command.monto_total is not None:
+                    precio_asignado = Decimal(str(command.monto_total))
+                else:
+                    return AppResult.fail("VALOR_ASIGNADO_OBJETO_REQUERIDO")
+
+            precio_decimal = Decimal(str(precio_asignado))
+            if precio_decimal <= 0:
+                return AppResult.fail("VALOR_ASIGNADO_OBJETO_INVALIDO")
+
+            request_objects_by_key[object_key] = precio_decimal
 
         if set(request_objects_by_key) != set(existing_objects_by_key):
             return AppResult.fail("MISSING_VENTA_OBJECTS")
 
         suma_precios = sum(request_objects_by_key.values(), start=Decimal("0"))
         if suma_precios != command.monto_total:
-            return AppResult.fail("INVALID_MONTO_TOTAL")
+            return AppResult.fail("SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA")
 
         plan_result = self._normalizar_plan(command)
         if not plan_result.success or plan_result.data is None:

@@ -149,7 +149,7 @@ class GenerateVentaFromReservaVentaRequest(BaseModel):
 class DefineCondicionesComercialesVentaObjetoRequest(BaseModel):
     id_inmueble: int | None = None
     id_unidad_funcional: int | None = None
-    precio_asignado: Decimal
+    precio_asignado: Decimal | None = None
 
 
 class DefineCondicionesComercialesVentaCuotaRequest(BaseModel):
@@ -292,7 +292,7 @@ class ConfirmVentaCompletaDesdeReservaResponse(BaseModel):
 class ConfirmVentaDirectaCompletaObjetoRequest(BaseModel):
     id_inmueble: int | None = None
     id_unidad_funcional: int | None = None
-    precio_asignado: Decimal
+    precio_asignado: Decimal | None = None
     observaciones: str | None = None
 
 

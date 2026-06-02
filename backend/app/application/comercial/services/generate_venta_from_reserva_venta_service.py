@@ -167,6 +167,8 @@ class GenerateVentaFromReservaVentaService:
             return AppResult.fail("RESERVA_WITHOUT_OBJECTS")
 
         seen_objects: set[tuple[str, int]] = set()
+        ids_inmueble_payload: set[int] = set()
+        ids_unidad_funcional_payload: set[int] = set()
         roles_por_participacion = self._roles_por_participacion(
             reserva.get("participaciones", [])
         )
@@ -191,6 +193,15 @@ class GenerateVentaFromReservaVentaService:
             if object_key in seen_objects:
                 return AppResult.fail("INVALID_RESERVA_OBJECTS")
             seen_objects.add(object_key)
+            if id_inmueble is not None:
+                ids_inmueble_payload.add(id_inmueble)
+            elif id_unidad_funcional is not None:
+                ids_unidad_funcional_payload.add(id_unidad_funcional)
+
+        if self._hay_solapamiento_jerarquico_objetos(
+            ids_inmueble_payload, ids_unidad_funcional_payload
+        ):
+            return AppResult.fail("OBJETO_VENTA_JERARQUIA_SOLAPADA")
 
         id_instalacion = getattr(command.context, "id_instalacion", None)
         if id_instalacion is None:
@@ -336,6 +347,22 @@ class GenerateVentaFromReservaVentaService:
             return AppResult.fail("CONCURRENCY_ERROR")
 
         return AppResult.ok(result["data"])
+
+    def _hay_solapamiento_jerarquico_objetos(
+        self,
+        ids_inmueble_payload: set[int],
+        ids_unidad_funcional_payload: set[int],
+    ) -> bool:
+        if not ids_inmueble_payload or not ids_unidad_funcional_payload:
+            return False
+
+        for id_unidad_funcional in ids_unidad_funcional_payload:
+            id_inmueble_padre = self.repository.get_id_inmueble_by_unidad_funcional(
+                id_unidad_funcional
+            )
+            if id_inmueble_padre in ids_inmueble_payload:
+                return True
+        return False
 
     def _roles_por_participacion(
         self, participaciones: list[dict[str, Any]]
