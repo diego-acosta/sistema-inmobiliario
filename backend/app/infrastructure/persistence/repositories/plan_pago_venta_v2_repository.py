@@ -77,11 +77,20 @@ class PlanPagoVentaV2Repository:
         composiciones = self.get_composiciones_obligaciones_plan_pago_venta_v2(
             id_plan_pago_venta
         )
+        obligados = self.get_obligados_obligaciones_plan_pago_venta_v2(
+            id_plan_pago_venta
+        )
         generaciones = self.get_generaciones_plan_pago_venta_v2(id_plan_pago_venta)
         resumen = self.get_resumen_plan_pago_venta_v2(id_plan_pago_venta)
 
         obligaciones_por_bloque: dict[int, list[dict[str, Any]]] = {}
         composiciones_por_obligacion: dict[int, list[dict[str, Any]]] = {}
+        obligados_por_obligacion: dict[int, list[dict[str, Any]]] = {}
+        for obligado in obligados:
+            obligados_por_obligacion.setdefault(
+                obligado["id_obligacion_financiera"], []
+            ).append(obligado)
+
         for composicion in composiciones:
             composiciones_por_obligacion.setdefault(
                 composicion["id_obligacion_financiera"], []
@@ -89,6 +98,9 @@ class PlanPagoVentaV2Repository:
 
         for obligacion in obligaciones:
             obligacion["composiciones"] = composiciones_por_obligacion.get(
+                obligacion["id_obligacion_financiera"], []
+            )
+            obligacion["obligados"] = obligados_por_obligacion.get(
                 obligacion["id_obligacion_financiera"], []
             )
             obligaciones_por_bloque.setdefault(
@@ -365,6 +377,45 @@ class PlanPagoVentaV2Repository:
         )
         return [dict(row) for row in rows]
 
+    def get_obligados_obligaciones_plan_pago_venta_v2(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text("""
+            SELECT
+                oo.id_obligacion_obligado,
+                oo.id_obligacion_financiera,
+                oo.id_persona,
+                p.codigo_persona,
+                p.nombre,
+                p.apellido,
+                p.razon_social,
+                oo.rol_obligado,
+                oo.porcentaje_responsabilidad,
+                CASE
+                    WHEN oo.porcentaje_responsabilidad IS NULL THEN NULL
+                    ELSE ROUND(o.importe_total * oo.porcentaje_responsabilidad / 100, 2)
+                END AS importe_responsabilidad_informativo
+            FROM obligacion_obligado oo
+            JOIN obligacion_financiera o
+              ON o.id_obligacion_financiera = oo.id_obligacion_financiera
+             AND o.deleted_at IS NULL
+            JOIN plan_pago_venta_bloque b
+              ON b.id_plan_pago_venta_bloque = o.id_plan_pago_venta_bloque
+             AND b.deleted_at IS NULL
+            LEFT JOIN persona p
+              ON p.id_persona = oo.id_persona
+             AND p.deleted_at IS NULL
+            WHERE b.id_plan_pago_venta = :id_plan_pago_venta
+              AND oo.deleted_at IS NULL
+            ORDER BY b.numero_bloque ASC, o.numero_obligacion ASC, oo.id_obligacion_obligado ASC
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
+
     def get_resumen_plan_pago_venta_v2(self, id_plan_pago_venta: int) -> dict[str, Any]:
         stmt = text("""
             WITH obligaciones AS (
@@ -386,6 +437,13 @@ class PlanPagoVentaV2Repository:
                   ON cf.id_concepto_financiero = co.id_concepto_financiero
                  AND cf.deleted_at IS NULL
                 WHERE co.deleted_at IS NULL
+            ), obligados AS (
+                SELECT oo.id_obligacion_financiera, COUNT(*) AS cantidad_obligados
+                FROM obligacion_obligado oo
+                JOIN obligaciones o
+                  ON o.id_obligacion_financiera = oo.id_obligacion_financiera
+                WHERE oo.deleted_at IS NULL
+                GROUP BY oo.id_obligacion_financiera
             ), indexaciones AS (
                 SELECT ofi.id_obligacion_financiera
                 FROM obligacion_financiera_indexacion ofi
@@ -418,6 +476,12 @@ class PlanPagoVentaV2Repository:
                 ), 0) AS total_ajuste_indexacion,
                 COALESCE((SELECT SUM(importe_total) FROM obligaciones), 0) AS total_obligaciones,
                 (SELECT COUNT(*) FROM indexaciones) AS cantidad_obligaciones_con_indexacion,
+                COALESCE((SELECT SUM(cantidad_obligados) FROM obligados), 0) AS cantidad_obligados_total,
+                (
+                    SELECT COUNT(*)
+                    FROM obligados
+                    WHERE cantidad_obligados > 1
+                ) AS cantidad_obligaciones_con_multiples_obligados,
                 (
                     SELECT COUNT(*)
                     FROM obligaciones o
