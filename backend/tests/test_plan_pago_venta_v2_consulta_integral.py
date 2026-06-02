@@ -286,6 +286,7 @@ def test_consulta_plan_con_dos_compradores_expone_obligados_sin_duplicar(
                     fecha_primer_vencimiento=date(2026, 6, 10),
                     periodicidad="MENSUAL",
                     regla_redondeo="ULTIMA_CUOTA",
+                    metodo_liquidacion=None,
                 )
             ],
         )
