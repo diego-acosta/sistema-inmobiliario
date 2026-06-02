@@ -280,9 +280,12 @@ def test_consulta_plan_con_dos_compradores_expone_obligados_sin_duplicar(
             monto_total_plan=Decimal("1000000.00"),
             bloques=[
                 PlanPagoVentaBloqueInput(
-                    tipo_bloque="CONTADO",
+                    tipo_bloque="TRAMO_CUOTAS",
                     importe_total_bloque=Decimal("1000000.00"),
-                    fecha_vencimiento=date(2026, 6, 10),
+                    cantidad_cuotas=1,
+                    fecha_primer_vencimiento=date(2026, 6, 10),
+                    periodicidad="MENSUAL",
+                    regla_redondeo="ULTIMA_CUOTA",
                 )
             ],
         )
