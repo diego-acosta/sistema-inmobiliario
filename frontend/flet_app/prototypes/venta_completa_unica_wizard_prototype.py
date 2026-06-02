@@ -187,9 +187,11 @@ class WizardState:
     last_status: int | None = None
     last_response: Any | None = None
     last_error: str | None = None
+    last_request: dict[str, Any] | None = None
     plan_status: int | None = None
     plan_response: Any | None = None
     plan_error: str | None = None
+    plan_request: dict[str, Any] | None = None
 
 
 @dataclass
@@ -641,7 +643,12 @@ class VentaCompletaUnicaWizardPrototype:
                     disabled=self.state.loading,
                     on_click=lambda _: self._confirmar(),
                 ),
-                ft.Text("La accion llama al backend real y muestra errores JSON o excepciones de red legibles."),
+                ft.Text(
+                    "Este boton ejecuta el POST real contra el backend configurado; "
+                    "no simula confirmacion ni genera venta local.",
+                    weight=ft.FontWeight.W_700,
+                ),
+                ft.Text("La accion muestra status HTTP, response JSON, error JSON o excepcion de red legible."),
             ],
         )
 
@@ -653,6 +660,13 @@ class VentaCompletaUnicaWizardPrototype:
             ft.Text(f"Estado de venta: {self._extract_estado_venta(self.state.last_response) or '-'}"),
             ft.Text(self._final_message(), weight=ft.FontWeight.W_700),
         ]
+        if self.state.last_request is not None:
+            controls.extend(
+                [
+                    ft.Text("Request de confirmacion ejecutado", weight=ft.FontWeight.W_700),
+                    _text_json(self.state.last_request),
+                ]
+            )
         if self.state.last_error:
             controls.append(ft.Text(self.state.last_error, color=ft.Colors.RED_700, selectable=True))
         if self.state.last_response is not None:
@@ -668,13 +682,22 @@ class VentaCompletaUnicaWizardPrototype:
         if self.state.plan_error:
             controls.append(ft.Text(self.state.plan_error, color=ft.Colors.RED_700, selectable=True))
         if self.state.plan_response is not None:
-            controls.extend(
-                [
-                    ft.Text(f"Status consulta Plan Pago V2: {self.state.plan_status or '-'}"),
-                    ft.Text("Consulta integral: resumen, bloques, obligaciones, composiciones, obligados por obligacion e indexacion si existe."),
-                    _text_json(self.state.plan_response),
-                ]
-            )
+            plan_controls: list[ft.Control] = [
+                ft.Text(f"Status consulta Plan Pago V2: {self.state.plan_status or '-'}"),
+                ft.Text(
+                    "Consulta integral: resumen, bloques, obligaciones, composiciones, "
+                    "obligados por obligacion e indexacion si existe."
+                ),
+            ]
+            if self.state.plan_request is not None:
+                plan_controls.extend(
+                    [
+                        ft.Text("Request de consulta ejecutado", weight=ft.FontWeight.W_700),
+                        _text_json(self.state.plan_request),
+                    ]
+                )
+            plan_controls.append(_text_json(self.state.plan_response))
+            controls.extend(plan_controls)
         return self._card("Paso 8 — Resultado", controls)
 
     def _summary_panel(self) -> ft.Control:
@@ -1127,14 +1150,23 @@ class VentaCompletaUnicaWizardPrototype:
         errors = self._step_errors(6)
         if errors:
             self.state.last_status = None
+            self.state.last_request = None
             self.state.last_response = {"errores_validacion_ux": errors}
             self.state.last_error = "No se envia al backend porque hay errores UX."
             self.state.current_step = 7
             self._render()
             return
+        path = self._endpoint_path()
+        headers = self._headers()
+        payload = self._build_payload()
+        self.state.plan_status = None
+        self.state.plan_response = None
+        self.state.plan_error = None
+        self.state.plan_request = None
+        self.state.last_request = self._request_snapshot("POST", path, headers, payload)
         self.state.loading = True
         self._render()
-        result = self._http_json("POST", self._endpoint_path(), headers=self._headers(), payload=self._build_payload())
+        result = self._http_json("POST", path, headers=headers, payload=payload)
         self.state.loading = False
         self.state.last_status = result.status_code
         self.state.last_response = result.data
@@ -1143,18 +1175,39 @@ class VentaCompletaUnicaWizardPrototype:
         self._render()
 
     def _consultar_plan_pago(self, id_venta: int) -> None:
+        path = f"/api/v1/ventas/{id_venta}/plan-pago-v2"
+        self.state.plan_request = self._request_snapshot("GET", path, {}, None)
         self.state.loading = True
         self._render()
-        result = self._http_json("GET", f"/api/v1/ventas/{id_venta}/plan-pago-v2", headers={}, payload=None)
+        result = self._http_json("GET", path, headers={}, payload=None)
         self.state.loading = False
         self.state.plan_status = result.status_code
         self.state.plan_response = result.data
         self.state.plan_error = result.error
         self._render()
 
+    def _request_snapshot(
+        self,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        payload: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        snapshot: dict[str, Any] = {
+            "method": method,
+            "url": self._absolute_url(path),
+            "headers": headers,
+            "nota": "Request real enviado por el boton; no es simulacion.",
+        }
+        if payload is not None:
+            snapshot["json"] = payload
+        return snapshot
+
+    def _absolute_url(self, path: str) -> str:
+        return f"{self.state.base_url.rstrip('/')}{path}"
+
     def _http_json(self, method: str, path: str, headers: dict[str, str], payload: dict[str, Any] | None) -> HttpResult:
-        base_url = self.state.base_url.rstrip("/")
-        url = f"{base_url}{path}"
+        url = self._absolute_url(path)
         request_headers = {"Content-Type": "application/json", **headers}
         requests_module = _requests_module()
         if requests_module is not None:
