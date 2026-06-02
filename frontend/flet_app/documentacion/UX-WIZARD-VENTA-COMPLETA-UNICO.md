@@ -270,38 +270,259 @@ Reglas:
 - La suma/precio de objetos debe ser coherente con monto total y condiciones
   comerciales antes de confirmar.
 
-### Paso 5 - Plan Pago V2
+### Paso 5 - Plan Pago V2 — carga comercial de forma de pago
 
-Debe usarse el mismo editor de plan para ambos origenes.
+Objetivo UX: el usuario debe cargar una forma de pago comercial, clara y
+usable. La pantalla no debe presentarse como editor tecnico de bloques. El
+sistema debe traducir la carga comercial al payload interno
+`plan_pago_v2.bloques` requerido por los endpoints compuestos.
 
-Tipos de bloque visibles:
+Debe usarse el mismo paso para ambos origenes (`RESERVA` y `DIRECTA`). La forma
+de pago y sus componentes pertenecen al contexto de venta del dominio
+`comercial`; el frontend no ejecuta pagos, no emite recibos, no calcula deuda y
+no reemplaza la generacion oficial de obligaciones del backend.
+
+#### 5.1 Forma de pago principal
+
+El usuario primero elige la forma de pago principal:
+
+- `Contado`;
+- `Financiado`.
+
+La eleccion gobierna que secciones comerciales se muestran y que estructura se
+construye internamente.
+
+#### 5.2 Si la forma de pago es Contado
+
+Mostrar un formulario simple con:
+
+- importe total;
+- fecha de pago/vencimiento;
+- observaciones opcionales.
+
+Reglas UX:
+
+- No permitir anticipo.
+- No permitir cuotas principales/tramos.
+- No permitir refuerzos.
+- No permitir saldo final.
+- No mostrar acciones de armado de componentes financiados.
+
+Construccion interna del payload:
 
 ```text
-CONTADO
-ANTICIPO
-TRAMO_CUOTAS
-REFUERZO
-SALDO
+plan_pago_v2.tipo_pago = CONTADO
+plan_pago_v2.bloques = [
+  {
+    tipo_bloque = CONTADO
+    importe_total_bloque = importe total
+    fecha_vencimiento = fecha de pago/vencimiento
+  }
+]
 ```
 
-Para `TRAMO_CUOTAS`, metodos de liquidacion:
+#### 5.3 Si la forma de pago es Financiado
+
+Mostrar secciones comerciales, no una lista tecnica de bloques:
+
+1. Anticipo opcional.
+2. Cuotas principales / tramos.
+3. Refuerzos opcionales.
+4. Saldo final opcional.
+
+Reglas UX:
+
+- No usar `Agregar bloque` como concepto principal del usuario.
+- Usar acciones comerciales como `Agregar tramo de cuotas` o
+  `Agregar refuerzo`.
+- La palabra `bloque` puede aparecer solo en modo tecnico/debug o en vistas de
+  diagnostico del payload, nunca como modelo mental principal del operador.
+- El payload interno final si debe ser `plan_pago_v2.bloques`.
+
+#### 5.4 Anticipo opcional
+
+UI:
+
+- switch/toggle `Tiene anticipo`;
+- importe anticipo;
+- vencimiento anticipo.
+
+Construccion interna:
 
 ```text
-SIN_INTERES
-INTERES_DIRECTO
-INDEXACION
+tipo_bloque = ANTICIPO
+importe_total_bloque = importe anticipo
+fecha_vencimiento = vencimiento anticipo
+```
+
+Si el switch esta apagado, no se debe enviar un componente de anticipo vacio.
+
+#### 5.5 Cuotas principales / tramos
+
+UI:
+
+- lista de tramos de cuotas;
+- boton `Agregar tramo de cuotas`.
+
+Campos por tramo:
+
+- capital del tramo;
+- cantidad de cuotas;
+- primer vencimiento;
+- periodicidad, fijada por UX en `MENSUAL` para este flujo;
+- metodo de actualizacion:
+  - `Cuotas fijas / sin interes`;
+  - `Interes directo`;
+  - `Indexado por indice`.
+
+Construccion interna comun del tramo:
+
+```text
+tipo_bloque = TRAMO_CUOTAS
+importe_total_bloque = capital del tramo
+cantidad_cuotas = cantidad de cuotas
+fecha_primer_vencimiento = primer vencimiento
+periodicidad = MENSUAL
+metodo_liquidacion = SIN_INTERES | INTERES_DIRECTO | INDEXACION
 ```
 
 Reglas:
 
-- `INTERES_DIRECTO` e `INDEXACION` son excluyentes dentro del mismo bloque.
-- Distintos bloques pueden usar metodos distintos.
+- `INTERES_DIRECTO` e `INDEXACION` son excluyentes dentro del mismo tramo.
+- Distintos tramos pueden usar metodos de liquidacion distintos.
 - `SIN_INTERES` no muestra campos de interes directo ni de indexacion.
-- `INTERES_DIRECTO` muestra/valida solo campos de interes directo.
-- `INDEXACION` muestra/valida solo campos de indexacion.
-- El payload `plan_pago_v2` debe ser identico en estructura para ambos origenes.
+- Al cambiar el metodo, la UI debe limpiar campos incompatibles del tramo antes
+  de construir el payload.
 
-Campos extendidos que el editor debe soportar por bloque cuando correspondan:
+#### 5.6 Interes directo
+
+Cuando el tramo usa `Interes directo`, mostrar:
+
+- tasa periodica;
+- cantidad de periodos;
+- ayuda: `Interes simple sobre capital inicial del tramo.`
+
+Construccion interna adicional:
+
+```text
+metodo_liquidacion = INTERES_DIRECTO
+base_calculo_interes = CAPITAL_INICIAL_BLOQUE
+```
+
+Reglas:
+
+- No calcular interes localmente.
+- No generar cronograma local.
+- No mezclar campos de indexacion en el mismo tramo.
+
+#### 5.7 Indexacion
+
+Cuando el tramo usa `Indexado por indice`, mostrar:
+
+- indice;
+- fecha base;
+- valor base;
+- ayuda: `El ajuste se calcula contra el indice publicado aplicable. No se
+  inventan valores futuros.`
+
+No mostrar como campos editables normales:
+
+- `modo_indexacion`;
+- `base_calculo_indexacion`;
+- `tipo_generacion_indexada`;
+- `politica_valor_no_disponible`;
+- `conserva_capital_original`;
+- `genera_ajuste_por_diferencia`.
+
+Construccion interna adicional:
+
+```text
+metodo_liquidacion = INDEXACION
+modo_indexacion = POR_COEFICIENTE
+base_calculo_indexacion = CAPITAL_INICIAL_BLOQUE
+tipo_generacion_indexada = DEFINITIVA
+politica_valor_no_disponible = ERROR_SI_NO_EXISTE
+conserva_capital_original = true
+genera_ajuste_por_diferencia = true
+```
+
+Reglas:
+
+- No calcular indexacion localmente.
+- No inventar valores futuros del indice.
+- No mezclar campos de interes directo en el mismo tramo.
+
+#### 5.8 Refuerzos opcionales
+
+UI:
+
+- boton `Agregar refuerzo`;
+- importe;
+- vencimiento;
+- etiqueta.
+
+Construccion interna:
+
+```text
+tipo_bloque = REFUERZO
+importe_total_bloque = importe
+fecha_vencimiento = vencimiento
+etiqueta_bloque = etiqueta
+```
+
+#### 5.9 Saldo final opcional
+
+UI:
+
+- switch/toggle `Tiene saldo final`;
+- importe saldo;
+- vencimiento saldo.
+
+Construccion interna:
+
+```text
+tipo_bloque = SALDO
+importe_total_bloque = importe saldo
+fecha_vencimiento = vencimiento saldo
+```
+
+Si el switch esta apagado, no se debe enviar un componente de saldo vacio.
+
+#### 5.10 Resumen del plan
+
+El paso debe mostrar un resumen comercial antes de permitir avanzar:
+
+- monto total de venta;
+- monto total del plan;
+- suma cargada;
+- diferencia;
+- cantidad estimada de obligaciones;
+- alertas de campos faltantes.
+
+Reglas del resumen:
+
+- La suma de componentes debe coincidir con `monto_total_plan`.
+- La diferencia debe quedar en cero antes de confirmar.
+- La cantidad de obligaciones es estimada/indicativa, no cronograma oficial.
+- No mostrar un cronograma local calculado.
+- No calcular interes localmente.
+- No calcular indexacion localmente.
+
+#### 5.11 Multi-comprador
+
+La distribucion por compradores no cambia la carga del plan de pago:
+
+- el plan se carga por el total de la venta;
+- la responsabilidad por comprador se toma desde los porcentajes definidos en
+  partes/compradores mediante `porcentaje_responsabilidad`;
+- no se crean cuotas separadas por comprador;
+- la consulta integral posterior puede mostrar obligados por obligacion, pero el
+  wizard no duplica componentes del plan por cada comprador.
+
+#### 5.12 Campos tecnicos soportados por el payload
+
+Aunque la UX sea comercial, el adapter debe poder construir los campos tecnicos
+que el backend soporta cuando correspondan:
 
 ```text
 metodo_liquidacion
@@ -318,6 +539,9 @@ politica_valor_no_disponible
 conserva_capital_original
 genera_ajuste_por_diferencia
 ```
+
+Estos campos pertenecen al payload interno o a modo tecnico/debug. No deben
+convertirse en la experiencia principal de carga para el usuario comercial.
 
 ### Paso 6 - Revision
 
