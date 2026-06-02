@@ -361,14 +361,34 @@ Si el switch esta apagado, no se debe enviar un componente de anticipo vacio.
 
 #### 5.5 Cuotas principales / tramos
 
-UI:
+Este subpaso no debe iniciar con un boton generico `Agregar tramo` que cree un
+formulario vacio. Al entrar en cuotas principales, el sistema debe mostrar un
+campo `Capital del tramo` precargado con el capital pendiente de asignar para
+que el operador confirme o reduzca el importe del primer tramo.
 
-- lista de tramos de cuotas;
-- boton `Agregar tramo de cuotas`.
+Calculo del capital pendiente de asignar:
 
-Campos por tramo:
+```text
+pendiente_disponible =
+  total_venta_derivado_de_objetos
+  - anticipo cargado
+  - importes ya asignados a tramos anteriores
+  - refuerzos cargados si ya existen
+  - saldo final cargado si ya existe
+```
 
-- capital del tramo;
+Reglas del campo `Capital del tramo`:
+
+- debe mostrarse al crear cada tramo de cuotas;
+- debe precargarse con `pendiente_disponible`;
+- puede editarse a un valor menor que el pendiente disponible;
+- no permite valores menores o iguales a cero;
+- no permite valores mayores que `pendiente_disponible`;
+- representa el capital comercial del bloque, no un cronograma calculado.
+
+Luego de cargar o confirmar el capital del tramo, solicitar los parametros del
+tramo:
+
 - cantidad de cuotas;
 - primer vencimiento;
 - periodicidad, fijada por UX en `MENSUAL` para este flujo;
@@ -388,6 +408,29 @@ periodicidad = MENSUAL
 metodo_liquidacion = SIN_INTERES | INTERES_DIRECTO | INDEXACION
 ```
 
+Al guardar el tramo:
+
+- restar `capital del tramo` del pendiente disponible;
+- mostrar un resumen con:
+  - total venta;
+  - anticipo;
+  - tramos cargados;
+  - refuerzos;
+  - saldo final;
+  - pendiente sin asignar.
+
+Reglas de continuidad del subpaso:
+
+- Si `pendiente sin asignar = 0`, permitir avanzar al siguiente subpaso de forma
+  automatica o con boton `Continuar`. No ofrecer crear otro tramo salvo que el
+  usuario edite o elimine uno anterior y vuelva a existir pendiente disponible.
+- Si `pendiente sin asignar > 0`, ofrecer las acciones:
+  - `Agregar otro tramo de cuotas`;
+  - `Continuar a refuerzos`;
+  - `Continuar a saldo final`.
+- Cuando exista pendiente sin asignar, aclarar que debera quedar asignado antes
+  de confirmar el plan.
+
 Reglas:
 
 - `INTERES_DIRECTO` e `INDEXACION` son excluyentes dentro del mismo tramo.
@@ -395,6 +438,9 @@ Reglas:
 - `SIN_INTERES` no muestra campos de interes directo ni de indexacion.
 - Al cambiar el metodo, la UI debe limpiar campos incompatibles del tramo antes
   de construir el payload.
+- No calcular cronograma local.
+- No calcular interes ni indexacion localmente.
+- Solo construir internamente los bloques `TRAMO_CUOTAS` correspondientes.
 
 #### 5.6 Interes directo
 
