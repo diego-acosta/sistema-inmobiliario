@@ -3730,15 +3730,19 @@ class ComercialRepository:
 
             precio_asignado = values["precio_asignado"]
             if precio_asignado is None:
-                return "INVALID_MONTO_TOTAL"
-            total_objetos += Decimal(str(precio_asignado))
+                return "VALOR_ASIGNADO_OBJETO_REQUERIDO"
+            precio_decimal = Decimal(str(precio_asignado))
+            if precio_decimal <= 0:
+                return "VALOR_ASIGNADO_OBJETO_INVALIDO"
+            total_objetos += precio_decimal
 
         if total_objetos <= 0:
-            return "INVALID_MONTO_TOTAL"
+            return "VALOR_ASIGNADO_OBJETO_INVALIDO"
 
         monto_total = venta_values.get("monto_total")
         if monto_total is not None and Decimal(str(monto_total)) != total_objetos:
-            return "MONTO_TOTAL_OBJECTS_MISMATCH"
+            return "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA"
+        venta_values["monto_total"] = total_objetos
 
         if not compradores_values:
             return "COMPRADORES_REQUERIDOS"

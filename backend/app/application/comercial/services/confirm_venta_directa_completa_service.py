@@ -88,10 +88,12 @@ class ConfirmVentaDirectaCompletaService:
         if id_instalacion is None:
             return AppResult.fail("X-Instalacion-Id es requerido.")
 
-        if (
-            command.condiciones_comerciales.monto_total
-            != command.plan_pago_v2.monto_total_plan
-        ):
+        total_derivado_result = self._normalizar_precios_y_total(command)
+        if not total_derivado_result.success or total_derivado_result.data is None:
+            return AppResult.fail(total_derivado_result.errors[0])
+
+        total_derivado = total_derivado_result.data
+        if total_derivado != command.plan_pago_v2.monto_total_plan:
             return AppResult.fail("MONTO_TOTAL_PLAN_MISMATCH")
 
         compradores_error = self._validate_compradores(command)
@@ -118,7 +120,7 @@ class ConfirmVentaDirectaCompletaService:
                         context=command.context,
                         id_venta=id_venta,
                         if_match_version=generated["data"]["version_registro"],
-                        monto_total=command.condiciones_comerciales.monto_total,
+                        monto_total=self._total_objetos(command),
                         tipo_plan_financiero=command.condiciones_comerciales.tipo_plan_financiero,
                         moneda=command.condiciones_comerciales.moneda,
                         importe_anticipo=command.condiciones_comerciales.importe_anticipo,
@@ -238,6 +240,63 @@ class ConfirmVentaDirectaCompletaService:
         except _StageFailed as exc:
             return AppResult.fail(exc.error)
 
+    def _normalizar_precios_y_total(
+        self, command: ConfirmVentaDirectaCompletaCommand
+    ) -> AppResult[Decimal]:
+        if not command.objetos:
+            return AppResult.fail("VENTA_WITHOUT_OBJECTS")
+
+        monto_redundante = command.generar_venta.monto_total
+        if monto_redundante is None:
+            monto_redundante = command.condiciones_comerciales.monto_total
+        precios: list[Decimal] = []
+        seen_objects: set[tuple[str, int]] = set()
+        for objeto in command.objetos:
+            if (objeto.id_inmueble is None) == (objeto.id_unidad_funcional is None):
+                return AppResult.fail("INVALID_VENTA_OBJECTS")
+            object_key = (
+                ("inmueble", objeto.id_inmueble)
+                if objeto.id_inmueble is not None
+                else ("unidad_funcional", objeto.id_unidad_funcional)
+            )
+            if object_key in seen_objects:
+                return AppResult.fail("OBJETO_VENTA_DUPLICADO")
+            seen_objects.add(object_key)
+
+            precio = objeto.precio_asignado
+            if precio is None:
+                if len(command.objetos) == 1 and monto_redundante is not None:
+                    precio = Decimal(str(monto_redundante))
+                    objeto.precio_asignado = precio
+                else:
+                    return AppResult.fail("VALOR_ASIGNADO_OBJETO_REQUERIDO")
+
+            precio_decimal = Decimal(str(precio))
+            if precio_decimal <= 0:
+                return AppResult.fail("VALOR_ASIGNADO_OBJETO_INVALIDO")
+            objeto.precio_asignado = precio_decimal
+            precios.append(precio_decimal)
+
+        total_derivado = sum(precios, Decimal("0"))
+        montos_redundantes = [
+            command.generar_venta.monto_total,
+            command.condiciones_comerciales.monto_total,
+        ]
+        for monto in montos_redundantes:
+            if monto is not None and Decimal(str(monto)) != total_derivado:
+                return AppResult.fail("SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA")
+
+        command.generar_venta.monto_total = total_derivado
+        command.condiciones_comerciales.monto_total = total_derivado
+        return AppResult.ok(total_derivado)
+
+    @staticmethod
+    def _total_objetos(command: ConfirmVentaDirectaCompletaCommand) -> Decimal:
+        return sum(
+            (Decimal(str(objeto.precio_asignado)) for objeto in command.objetos),
+            Decimal("0"),
+        )
+
     def _transaction(self) -> AbstractContextManager[Any]:
         if self.db.in_transaction():
             return self.db.begin_nested()
@@ -263,7 +322,7 @@ class ConfirmVentaDirectaCompletaService:
             "codigo_venta": command.generar_venta.codigo_venta,
             "fecha_venta": command.generar_venta.fecha_venta,
             "estado_venta": "borrador",
-            "monto_total": command.generar_venta.monto_total,
+            "monto_total": self._total_objetos(command),
             "observaciones": command.generar_venta.observaciones,
         }
 

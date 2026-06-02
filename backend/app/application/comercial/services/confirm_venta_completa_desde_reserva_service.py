@@ -1,4 +1,5 @@
 from contextlib import AbstractContextManager
+from decimal import Decimal
 from typing import Any
 
 from app.application.comercial.commands.confirm_venta_completa_desde_reserva import (
@@ -102,10 +103,12 @@ class ConfirmVentaCompletaDesdeReservaService:
         if command.if_match_version_reserva is None:
             return AppResult.fail("CONCURRENCY_ERROR")
 
-        if (
-            command.condiciones_comerciales.monto_total
-            != command.plan_pago_v2.monto_total_plan
-        ):
+        total_derivado_result = self._normalizar_precios_y_total(command)
+        if not total_derivado_result.success or total_derivado_result.data is None:
+            return AppResult.fail(total_derivado_result.errors[0])
+
+        total_derivado = total_derivado_result.data
+        if total_derivado != command.plan_pago_v2.monto_total_plan:
             return AppResult.fail("MONTO_TOTAL_PLAN_MISMATCH")
 
         tx_repository = _TransactionalComercialRepository(self.comercial_repository)
@@ -264,6 +267,48 @@ class ConfirmVentaCompletaDesdeReservaService:
                 )
         except _StageFailed as exc:
             return AppResult.fail(exc.error)
+
+    def _normalizar_precios_y_total(
+        self, command: ConfirmVentaCompletaDesdeReservaCommand
+    ) -> AppResult[Decimal]:
+        if not command.condiciones_comerciales.objetos:
+            return AppResult.fail("VENTA_WITHOUT_OBJECTS")
+
+        monto_redundante = command.generar_venta.monto_total
+        if monto_redundante is None:
+            monto_redundante = command.condiciones_comerciales.monto_total
+
+        precios: list[Decimal] = []
+        for objeto in command.condiciones_comerciales.objetos:
+            precio = objeto.precio_asignado
+            if precio is None:
+                if (
+                    len(command.condiciones_comerciales.objetos) == 1
+                    and monto_redundante is not None
+                ):
+                    precio = Decimal(str(monto_redundante))
+                    objeto.precio_asignado = precio
+                else:
+                    return AppResult.fail("VALOR_ASIGNADO_OBJETO_REQUERIDO")
+
+            precio_decimal = Decimal(str(precio))
+            if precio_decimal <= 0:
+                return AppResult.fail("VALOR_ASIGNADO_OBJETO_INVALIDO")
+            objeto.precio_asignado = precio_decimal
+            precios.append(precio_decimal)
+
+        total_derivado = sum(precios, Decimal("0"))
+        montos_redundantes = [
+            command.generar_venta.monto_total,
+            command.condiciones_comerciales.monto_total,
+        ]
+        for monto in montos_redundantes:
+            if monto is not None and Decimal(str(monto)) != total_derivado:
+                return AppResult.fail("SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA")
+
+        command.generar_venta.monto_total = total_derivado
+        command.condiciones_comerciales.monto_total = total_derivado
+        return AppResult.ok(total_derivado)
 
     def _transaction(self) -> AbstractContextManager[Any]:
         if self.db.in_transaction():

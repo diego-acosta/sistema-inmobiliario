@@ -121,7 +121,7 @@ def _venta_by_codigo(db_session, codigo_venta: str):
     return (
         db_session.execute(
             text("""
-            SELECT id_venta, id_reserva_venta, estado_venta, version_registro
+            SELECT id_venta, id_reserva_venta, estado_venta, version_registro, monto_total
             FROM venta
             WHERE codigo_venta = :codigo_venta
               AND deleted_at IS NULL
@@ -131,6 +131,36 @@ def _venta_by_codigo(db_session, codigo_venta: str):
         .mappings()
         .one_or_none()
     )
+
+
+def _precios_objetos(db_session, id_venta: int) -> list[Decimal]:
+    rows = (
+        db_session.execute(
+            text("""
+            SELECT precio_asignado
+            FROM venta_objeto_inmobiliario
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            ORDER BY id_venta_objeto
+            """),
+            {"id_venta": id_venta},
+        )
+        .mappings()
+        .all()
+    )
+    return [row["precio_asignado"] for row in rows]
+
+
+def _monto_total_plan_by_venta(db_session, id_venta: int) -> Decimal:
+    return db_session.execute(
+        text("""
+            SELECT monto_total_plan
+            FROM plan_pago_venta
+            WHERE id_venta = :id_venta
+              AND deleted_at IS NULL
+            """),
+        {"id_venta": id_venta},
+    ).scalar_one()
 
 
 def _count_obligaciones(db_session) -> int:
@@ -257,6 +287,137 @@ def test_confirmar_venta_directa_completa_exito(client, db_session) -> None:
     assert _porcentajes_compradores(db_session, venta["id_venta"]) == [
         Decimal("100.00")
     ]
+
+
+def test_confirmar_venta_directa_un_objeto_sin_precio_defaulta_monto_total(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="DEF-PRECIO")
+    payload = _payload(codigo_venta="VD-COMP-DEF-PRECIO", **base)
+    del payload["objetos"][0]["precio_asignado"]
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-DEF-PRECIO")
+    assert venta is not None
+    assert venta["monto_total"] == Decimal("150000.00")
+    assert _precios_objetos(db_session, venta["id_venta"]) == [Decimal("150000.00")]
+
+
+def test_confirmar_venta_directa_un_objeto_precio_distinto_de_monto_total_falla(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="PRECIO-MISMATCH")
+    payload = _payload(codigo_venta="VD-COMP-PRECIO-MISMATCH", **base)
+    payload["objetos"][0]["precio_asignado"] = "140000.00"
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA"
+    ]
+    assert _venta_by_codigo(db_session, "VD-COMP-PRECIO-MISMATCH") is None
+
+
+def test_confirmar_venta_directa_dos_objetos_60_40_deriva_total_y_plan(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="OBJ-60-40-A")
+    id_inmueble_2 = _crear_inmueble(client, codigo="INM-VD-COMP-OBJ-60-40-B")
+    _crear_disponibilidad(
+        client, id_inmueble=id_inmueble_2, estado_disponibilidad="DISPONIBLE"
+    )
+    payload = _payload(codigo_venta="VD-COMP-OBJ-60-40", **base)
+    payload["generar_venta"]["monto_total"] = "100.00"
+    payload["condiciones_comerciales"]["monto_total"] = "100.00"
+    payload["condiciones_comerciales"]["importe_anticipo"] = "60.00"
+    payload["condiciones_comerciales"]["importe_saldo"] = "40.00"
+    payload["plan_pago_v2"]["monto_total_plan"] = "100.00"
+    payload["plan_pago_v2"]["bloques"][0]["importe_total_bloque"] = "60.00"
+    payload["plan_pago_v2"]["bloques"][1]["importe_total_bloque"] = "40.00"
+    payload["objetos"][0]["precio_asignado"] = "60.00"
+    payload["objetos"].append(
+        {
+            "id_inmueble": id_inmueble_2,
+            "id_unidad_funcional": None,
+            "precio_asignado": "40.00",
+            "observaciones": "Objeto venta directa 2",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-OBJ-60-40")
+    assert venta is not None
+    assert venta["monto_total"] == Decimal("100.00")
+    assert _precios_objetos(db_session, venta["id_venta"]) == [
+        Decimal("60.00"),
+        Decimal("40.00"),
+    ]
+    assert _monto_total_plan_by_venta(db_session, venta["id_venta"]) == Decimal(
+        "100.00"
+    )
+
+
+def test_confirmar_venta_directa_dos_objetos_sin_precio_falla(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="OBJ-SIN-PRECIO-A")
+    id_inmueble_2 = _crear_inmueble(client, codigo="INM-VD-COMP-OBJ-SIN-PRECIO-B")
+    _crear_disponibilidad(
+        client, id_inmueble=id_inmueble_2, estado_disponibilidad="DISPONIBLE"
+    )
+    payload = _payload(codigo_venta="VD-COMP-OBJ-SIN-PRECIO", **base)
+    payload["objetos"].append(
+        {
+            "id_inmueble": id_inmueble_2,
+            "id_unidad_funcional": None,
+            "observaciones": "Objeto venta directa sin precio",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "VALOR_ASIGNADO_OBJETO_REQUERIDO"
+    ]
+    assert _venta_by_codigo(db_session, "VD-COMP-OBJ-SIN-PRECIO") is None
+
+
+def test_confirmar_venta_directa_suma_objetos_distinta_falla(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="SUMA-DISTINTA")
+    payload = _payload(codigo_venta="VD-COMP-SUMA-DISTINTA", **base)
+    payload["objetos"][0]["precio_asignado"] = "149999.99"
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA"
+    ]
+    assert _venta_by_codigo(db_session, "VD-COMP-SUMA-DISTINTA") is None
+
+
+def test_confirmar_venta_directa_precio_asignado_no_positivo_falla(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="PRECIO-CERO")
+    payload = _payload(codigo_venta="VD-COMP-PRECIO-CERO", **base)
+    payload["objetos"][0]["precio_asignado"] = "0.00"
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == [
+        "VALOR_ASIGNADO_OBJETO_INVALIDO"
+    ]
+    assert _venta_by_codigo(db_session, "VD-COMP-PRECIO-CERO") is None
 
 
 def test_confirmar_venta_directa_completa_dos_compradores_50_50(
@@ -414,7 +575,9 @@ def test_confirmar_venta_directa_falla_condiciones_hace_rollback(
     response = client.post(ENDPOINT, headers=HEADERS, json=payload)
 
     assert response.status_code == 400
-    assert response.json()["details"]["errors"] == ["INVALID_MONTO_TOTAL"]
+    assert response.json()["details"]["errors"] == [
+        "SUMA_VALORES_OBJETOS_NO_COINCIDE_MONTO_VENTA"
+    ]
     assert _venta_by_codigo(db_session, "VD-COMP-COND") is None
 
 

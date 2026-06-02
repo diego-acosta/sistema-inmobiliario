@@ -9,7 +9,7 @@ from app.application.common.commands import CommandContext
 class DefineCondicionesComercialesVentaObjetoCommand:
     id_inmueble: int | None
     id_unidad_funcional: int | None
-    precio_asignado: Decimal
+    precio_asignado: Decimal | None
 
 
 @dataclass(slots=True)
