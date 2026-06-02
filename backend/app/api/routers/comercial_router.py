@@ -1565,7 +1565,7 @@ def confirmar_venta_completa_desde_reserva(
             ]
         ):
             error = ErrorResponse(
-                error_code=result.errors[0],
+                error_code="APPLICATION_ERROR",
                 error_message="Validacion de precio_asignado por objeto de venta invalida.",
                 details={"errors": result.errors},
             )
@@ -1739,7 +1739,7 @@ def confirmar_venta_directa_completa(
             ]
         ):
             error = ErrorResponse(
-                error_code=result.errors[0],
+                error_code="APPLICATION_ERROR",
                 error_message="Validacion de precio_asignado por objeto de venta invalida.",
                 details={"errors": result.errors},
             )
@@ -1874,7 +1874,10 @@ def generate_venta_from_reserva_venta(
             )
             return JSONResponse(status_code=400, content=error.model_dump())
 
-        if "INVALID_RESERVA_OBJECTS" in result.errors:
+        if (
+            "INVALID_RESERVA_OBJECTS" in result.errors
+            or "OBJETO_VENTA_JERARQUIA_SOLAPADA" in result.errors
+        ):
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
                 error_message="La reserva presenta un detalle multiobjeto inconsistente.",

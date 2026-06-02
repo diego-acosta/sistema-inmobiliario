@@ -3849,6 +3849,11 @@ class ComercialRepository:
         rows = self.db.execute(statement, {"id_inmueble": id_inmueble}).mappings().all()
         return [row["id_unidad_funcional"] for row in rows]
 
+    def get_id_inmueble_by_unidad_funcional(
+        self, id_unidad_funcional: int | None
+    ) -> int | None:
+        return self._get_parent_inmueble_for_unidad_funcional(id_unidad_funcional)
+
     def _get_parent_inmueble_for_unidad_funcional(
         self, id_unidad_funcional: int | None
     ) -> int | None:

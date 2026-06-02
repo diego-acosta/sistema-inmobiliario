@@ -251,6 +251,8 @@ class ConfirmVentaDirectaCompletaService:
             monto_redundante = command.condiciones_comerciales.monto_total
         precios: list[Decimal] = []
         seen_objects: set[tuple[str, int]] = set()
+        ids_inmueble_payload: set[int] = set()
+        ids_unidad_funcional_payload: set[int] = set()
         for objeto in command.objetos:
             if (objeto.id_inmueble is None) == (objeto.id_unidad_funcional is None):
                 return AppResult.fail("INVALID_VENTA_OBJECTS")
@@ -262,7 +264,17 @@ class ConfirmVentaDirectaCompletaService:
             if object_key in seen_objects:
                 return AppResult.fail("OBJETO_VENTA_DUPLICADO")
             seen_objects.add(object_key)
+            if objeto.id_inmueble is not None:
+                ids_inmueble_payload.add(objeto.id_inmueble)
+            elif objeto.id_unidad_funcional is not None:
+                ids_unidad_funcional_payload.add(objeto.id_unidad_funcional)
 
+        if self._hay_solapamiento_jerarquico_objetos(
+            ids_inmueble_payload, ids_unidad_funcional_payload
+        ):
+            return AppResult.fail("OBJETO_VENTA_JERARQUIA_SOLAPADA")
+
+        for objeto in command.objetos:
             precio = objeto.precio_asignado
             if precio is None:
                 if len(command.objetos) == 1 and monto_redundante is not None:
@@ -289,6 +301,24 @@ class ConfirmVentaDirectaCompletaService:
         command.generar_venta.monto_total = total_derivado
         command.condiciones_comerciales.monto_total = total_derivado
         return AppResult.ok(total_derivado)
+
+    def _hay_solapamiento_jerarquico_objetos(
+        self,
+        ids_inmueble_payload: set[int],
+        ids_unidad_funcional_payload: set[int],
+    ) -> bool:
+        if not ids_inmueble_payload or not ids_unidad_funcional_payload:
+            return False
+
+        for id_unidad_funcional in ids_unidad_funcional_payload:
+            id_inmueble_padre = (
+                self.comercial_repository.get_id_inmueble_by_unidad_funcional(
+                    id_unidad_funcional
+                )
+            )
+            if id_inmueble_padre in ids_inmueble_payload:
+                return True
+        return False
 
     @staticmethod
     def _total_objetos(command: ConfirmVentaDirectaCompletaCommand) -> Decimal:

@@ -10,6 +10,7 @@ from tests.test_reservas_venta_create import (
     _crear_inmueble,
     _crear_persona,
     _crear_rol_participacion_activo,
+    _crear_unidad_funcional,
     _insertar_reserva_conflictiva,
     _insertar_venta_conflictiva,
 )
@@ -362,6 +363,142 @@ def test_confirmar_venta_directa_dos_objetos_60_40_deriva_total_y_plan(
     )
 
 
+def _ajustar_payload_multiobjeto_100(payload: dict[str, object]) -> None:
+    payload["generar_venta"]["monto_total"] = "100.00"
+    payload["condiciones_comerciales"]["monto_total"] = "100.00"
+    payload["condiciones_comerciales"]["importe_anticipo"] = "60.00"
+    payload["condiciones_comerciales"]["importe_saldo"] = "40.00"
+    payload["plan_pago_v2"]["monto_total_plan"] = "100.00"
+    payload["plan_pago_v2"]["bloques"][0]["importe_total_bloque"] = "60.00"
+    payload["plan_pago_v2"]["bloques"][1]["importe_total_bloque"] = "40.00"
+    payload["objetos"][0]["precio_asignado"] = "60.00"
+
+
+def test_confirmar_venta_directa_inmueble_y_uf_hija_falla_por_jerarquia_solapada(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="JER-HIJA")
+    id_unidad_funcional = _crear_unidad_funcional(
+        client, id_inmueble=base["id_inmueble"], codigo="UF-VD-JER-HIJA"
+    )
+    payload = _payload(codigo_venta="VD-COMP-JER-HIJA", **base)
+    _ajustar_payload_multiobjeto_100(payload)
+    payload["objetos"].append(
+        {
+            "id_inmueble": None,
+            "id_unidad_funcional": id_unidad_funcional,
+            "precio_asignado": "40.00",
+            "observaciones": "UF hija del inmueble payload",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["OBJETO_VENTA_JERARQUIA_SOLAPADA"]
+    assert _venta_by_codigo(db_session, "VD-COMP-JER-HIJA") is None
+
+
+def test_confirmar_venta_directa_inmueble_y_uf_de_otro_inmueble_no_falla_por_jerarquia(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="JER-OTRO-A")
+    id_inmueble_2 = _crear_inmueble(client, codigo="INM-VD-JER-OTRO-B")
+    id_unidad_funcional = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble_2, codigo="UF-VD-JER-OTRO"
+    )
+    _crear_disponibilidad(
+        client,
+        id_unidad_funcional=id_unidad_funcional,
+        estado_disponibilidad="DISPONIBLE",
+    )
+    payload = _payload(codigo_venta="VD-COMP-JER-OTRO", **base)
+    _ajustar_payload_multiobjeto_100(payload)
+    payload["objetos"].append(
+        {
+            "id_inmueble": None,
+            "id_unidad_funcional": id_unidad_funcional,
+            "precio_asignado": "40.00",
+            "observaciones": "UF de otro inmueble",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-JER-OTRO")
+    assert venta is not None
+    assert venta["monto_total"] == Decimal("100.00")
+
+
+def test_confirmar_venta_directa_dos_ufs_del_mismo_inmueble_siguen_permitidas(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="JER-UFS")
+    id_inmueble = _crear_inmueble(client, codigo="INM-VD-JER-UFS")
+    id_unidad_funcional_1 = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble, codigo="UF-VD-JER-UFS-1"
+    )
+    id_unidad_funcional_2 = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble, codigo="UF-VD-JER-UFS-2"
+    )
+    _crear_disponibilidad(
+        client,
+        id_unidad_funcional=id_unidad_funcional_1,
+        estado_disponibilidad="DISPONIBLE",
+    )
+    _crear_disponibilidad(
+        client,
+        id_unidad_funcional=id_unidad_funcional_2,
+        estado_disponibilidad="DISPONIBLE",
+    )
+    payload = _payload(codigo_venta="VD-COMP-JER-UFS", **base)
+    _ajustar_payload_multiobjeto_100(payload)
+    payload["objetos"] = [
+        {
+            "id_inmueble": None,
+            "id_unidad_funcional": id_unidad_funcional_1,
+            "precio_asignado": "60.00",
+            "observaciones": "UF 1",
+        },
+        {
+            "id_inmueble": None,
+            "id_unidad_funcional": id_unidad_funcional_2,
+            "precio_asignado": "40.00",
+            "observaciones": "UF 2",
+        },
+    ]
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-COMP-JER-UFS")
+    assert venta is not None
+    assert _count_venta_objetos(db_session, venta["id_venta"]) == 2
+
+
+def test_confirmar_venta_directa_objeto_duplicado_exactamente_sigue_fallando(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="OBJ-DUP")
+    payload = _payload(codigo_venta="VD-COMP-OBJ-DUP", **base)
+    _ajustar_payload_multiobjeto_100(payload)
+    payload["objetos"].append(
+        {
+            "id_inmueble": base["id_inmueble"],
+            "id_unidad_funcional": None,
+            "precio_asignado": "40.00",
+            "observaciones": "Duplicado exacto",
+        }
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["OBJETO_VENTA_DUPLICADO"]
+    assert _venta_by_codigo(db_session, "VD-COMP-OBJ-DUP") is None
+
+
 def test_confirmar_venta_directa_dos_objetos_sin_precio_falla(
     client, db_session
 ) -> None:
@@ -382,9 +519,7 @@ def test_confirmar_venta_directa_dos_objetos_sin_precio_falla(
     response = client.post(ENDPOINT, headers=HEADERS, json=payload)
 
     assert response.status_code == 400
-    assert response.json()["details"]["errors"] == [
-        "VALOR_ASIGNADO_OBJETO_REQUERIDO"
-    ]
+    assert response.json()["details"]["errors"] == ["VALOR_ASIGNADO_OBJETO_REQUERIDO"]
     assert _venta_by_codigo(db_session, "VD-COMP-OBJ-SIN-PRECIO") is None
 
 
@@ -414,9 +549,7 @@ def test_confirmar_venta_directa_precio_asignado_no_positivo_falla(
     response = client.post(ENDPOINT, headers=HEADERS, json=payload)
 
     assert response.status_code == 400
-    assert response.json()["details"]["errors"] == [
-        "VALOR_ASIGNADO_OBJETO_INVALIDO"
-    ]
+    assert response.json()["details"]["errors"] == ["VALOR_ASIGNADO_OBJETO_INVALIDO"]
     assert _venta_by_codigo(db_session, "VD-COMP-PRECIO-CERO") is None
 
 

@@ -719,6 +719,61 @@ def test_generate_venta_from_reserva_devuelve_404_si_no_existe(
     assert response.json()["error_code"] == "NOT_FOUND"
 
 
+def test_generate_venta_from_reserva_con_inmueble_y_uf_hija_falla_por_jerarquia(
+    client, db_session
+) -> None:
+    _apply_reserva_multiobjeto_patch(db_session)
+    id_persona = _crear_persona(client, nombre="Reserva", apellido="Jerarquia")
+    _crear_rol_participacion_activo(db_session, id_rol_participacion=9211)
+    id_inmueble = _crear_inmueble(client, codigo="INM-GEN-JER-HIJA")
+    id_unidad_funcional = _crear_unidad_funcional(
+        client, id_inmueble=id_inmueble, codigo="UF-GEN-JER-HIJA"
+    )
+    reserva = _insertar_reserva_para_generar_venta(
+        db_session,
+        codigo_reserva="RV-GEN-JER-HIJA",
+        estado_reserva="confirmada",
+        objetos=[
+            {
+                "id_inmueble": id_inmueble,
+                "id_unidad_funcional": None,
+                "observaciones": "Inmueble completo reservado",
+            },
+            {
+                "id_inmueble": None,
+                "id_unidad_funcional": id_unidad_funcional,
+                "observaciones": "UF hija reservada",
+            },
+        ],
+        participaciones=[
+            {
+                "id_persona": id_persona,
+                "id_rol_participacion": 9211,
+                "fecha_desde": datetime(2026, 4, 21, 0, 0, 0),
+                "fecha_hasta": None,
+                "observaciones": "Comprador",
+            }
+        ],
+    )
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/generar-venta",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=_payload_generar_venta(codigo_venta="V-GEN-JER-HIJA"),
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert body["details"]["errors"] == ["OBJETO_VENTA_JERARQUIA_SOLAPADA"]
+    assert (
+        db_session.execute(
+            text("SELECT COUNT(*) FROM venta WHERE codigo_venta = 'V-GEN-JER-HIJA'")
+        ).scalar_one()
+        == 0
+    )
+
+
 def test_generate_venta_from_reserva_devuelve_404_si_esta_eliminada(
     client, db_session
 ) -> None:
