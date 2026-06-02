@@ -31,8 +31,10 @@ No incluye:
 - cambios SQL;
 - cambios en tests backend;
 - implementacion UI productiva;
-- prototipos nuevos;
 - endpoints nuevos.
+
+Incluye como referencia tecnica el prototipo limpio no productivo
+`frontend/flet_app/prototypes/venta_completa_unica_wizard_prototype.py`.
 
 ## 3. Clasificacion y dominio
 
@@ -862,6 +864,40 @@ Reglas para ese futuro:
 - El borrador debe tener estado, persistencia y contratos propios si el backend
   lo soporta.
 - No se debe simular guardado de borrador con una venta real incompleta.
+
+
+## 13.1 Prototipo limpio Flet vigente
+
+El prototipo tecnico vigente del wizard unico es:
+
+```text
+frontend/flet_app/prototypes/venta_completa_unica_wizard_prototype.py
+```
+
+Este prototipo reemplaza el enfoque experimental que pedia
+`id_venta_backend` manual para probar Plan Pago V2 sobre una venta ya existente.
+La regla UX/tecnica vigente es que la venta no existe hasta confirmar el wizard
+completo y, por lo tanto, la pantalla no debe pedir `id_venta` ni
+`id_venta_backend` al usuario antes del submit.
+
+El prototipo mantiene un unico flujo por pasos. La eleccion `RESERVA` o
+`DIRECTA` solo cambia el adapter final:
+
+- `RESERVA`: llama a
+  `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`
+  y envia `If-Match-Version` de la reserva.
+- `DIRECTA`: llama a
+  `POST /api/v1/ventas/directa/confirmar-venta-completa` y no envia
+  `If-Match-Version` mientras el contrato actual no lo exija.
+
+El paso Plan Pago V2 del prototipo es de carga comercial y construye
+internamente `plan_pago_v2.bloques`. No es un editor tecnico de bloques para
+el usuario final.
+
+El prototipo no calcula cronograma local, no calcula interes directo local y no
+calcula indexacion local. Solo muestra resumen de suma cargada, diferencia y
+cantidad estimada de obligaciones; el cronograma y los ajustes dependen del
+backend.
 
 ## 14. Decision CORE-EF
 
