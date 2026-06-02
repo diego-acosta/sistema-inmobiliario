@@ -402,12 +402,18 @@ Cuando el tramo usa `Interes directo`, mostrar:
 - cantidad de periodos;
 - ayuda: `Interes simple sobre capital inicial del tramo.`
 
-Construccion interna adicional:
+Construccion interna adicional completa:
 
 ```text
 metodo_liquidacion = INTERES_DIRECTO
+tasa_interes_directo_periodica = tasa periodica ingresada
+cantidad_periodos = cantidad de periodos ingresada
 base_calculo_interes = CAPITAL_INICIAL_BLOQUE
 ```
+
+`tasa_interes_directo_periodica` y `cantidad_periodos` vienen de inputs
+visibles de la UI comercial del tramo. `base_calculo_interes` se completa
+internamente con el valor fijo `CAPITAL_INICIAL_BLOQUE`.
 
 Reglas:
 
@@ -434,10 +440,13 @@ No mostrar como campos editables normales:
 - `conserva_capital_original`;
 - `genera_ajuste_por_diferencia`.
 
-Construccion interna adicional:
+Construccion interna adicional completa:
 
 ```text
 metodo_liquidacion = INDEXACION
+id_indice_financiero = indice seleccionado
+fecha_base_indice = fecha base cargada
+valor_base_indice = valor base cargado
 modo_indexacion = POR_COEFICIENTE
 base_calculo_indexacion = CAPITAL_INICIAL_BLOQUE
 tipo_generacion_indexada = DEFINITIVA
@@ -445,6 +454,13 @@ politica_valor_no_disponible = ERROR_SI_NO_EXISTE
 conserva_capital_original = true
 genera_ajuste_por_diferencia = true
 ```
+
+`id_indice_financiero`, `fecha_base_indice` y `valor_base_indice` vienen de
+la seleccion/carga de indice visible en la UI comercial del tramo. Los defaults
+tecnicos (`modo_indexacion`, `base_calculo_indexacion`,
+`tipo_generacion_indexada`, `politica_valor_no_disponible`,
+`conserva_capital_original` y `genera_ajuste_por_diferencia`) se completan
+internamente y no son campos principales del usuario.
 
 Reglas:
 
