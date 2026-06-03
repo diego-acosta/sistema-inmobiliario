@@ -199,14 +199,7 @@ class VentaCompletaWizardV3Prototype:
         self.objeto_seleccionado: dict[str, Any] | None = None
         self.comprador_seleccionado: dict[str, Any] | None = None
         self.precio_objeto_value = ""
-        self.moneda_dropdown = ft.Dropdown(
-            label="Moneda",
-            value=self.state.moneda,
-            width=220,
-            options=self._build_moneda_options(),
-        )
-        self.moneda_dropdown.on_change = self._on_moneda_change
-        self.moneda_option_pending: str | None = None
+        self.moneda_selector_width = 220
         self.fecha_venta_display_value = ""
         self.fecha_venta_error: str | None = None
         self.fecha_venta_field = ft.TextField(
@@ -426,8 +419,6 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_initial_sale_data_step(self) -> ft.Control:
         currency_locked = self._currency_locked_by_objects()
-        self.moneda_dropdown.value = self.state.moneda
-        self.moneda_dropdown.disabled = currency_locked
         self.fecha_venta_field.value = self._date_display_value()
         self._sync_fecha_venta_feedback()
         self.codigo_venta_field.value = self.state.codigo_venta
@@ -451,7 +442,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     ft.Row(
                         controls=[
-                            self.moneda_dropdown,
+                            self._build_currency_selector(currency_locked),
                             ft.Column(
                                 controls=[
                                     ft.Row(
@@ -1101,56 +1092,47 @@ class VentaCompletaWizardV3Prototype:
         self.state.origen = origin
         self._render()
 
-    def _build_moneda_options(self) -> list[ft.dropdown.Option]:
-        options: list[ft.dropdown.Option] = []
-        for moneda in MONEDAS_DEMO:
-            option = ft.dropdown.Option(key=moneda, text=moneda, data=moneda)
-            option.on_click = lambda _, selected_moneda=moneda: self._on_moneda_option_click(selected_moneda)
-            options.append(option)
-        return options
+    def _build_currency_selector(self, currency_locked: bool) -> ft.Control:
+        return ft.Column(
+            controls=[
+                ft.Text("Moneda", size=12, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700),
+                ft.Row(
+                    controls=[self._build_currency_card(moneda, currency_locked) for moneda in MONEDAS_DEMO],
+                    spacing=8,
+                    wrap=True,
+                ),
+            ],
+            spacing=6,
+            width=self.moneda_selector_width,
+        )
 
-    def _on_moneda_option_click(self, selected_moneda: str) -> None:
-        self.moneda_option_pending = selected_moneda
-        if self._set_moneda(selected_moneda):
-            self._render()
-            return
-        self.moneda_dropdown.value = self.state.moneda
-        self._refresh_navigation_controls()
-        self.page.update()
+    def _build_currency_card(self, moneda: str, currency_locked: bool) -> ft.Control:
+        selected = self.state.moneda == moneda
+        if selected:
+            bgcolor = ft.Colors.BLUE_600 if not currency_locked else ft.Colors.BLUE_GREY_400
+            border_color = ft.Colors.BLUE_700 if not currency_locked else ft.Colors.BLUE_GREY_500
+            text_color = ft.Colors.WHITE
+        else:
+            bgcolor = ft.Colors.BLUE_GREY_50 if currency_locked else ft.Colors.WHITE
+            border_color = ft.Colors.BLUE_GREY_100 if currency_locked else ft.Colors.BLUE_200
+            text_color = ft.Colors.BLUE_GREY_500 if currency_locked else ft.Colors.BLUE_700
+        return ft.Container(
+            padding=ft.Padding(left=12, top=10, right=12, bottom=10),
+            border_radius=10,
+            bgcolor=bgcolor,
+            border=_border_all(2 if selected else 1, border_color),
+            on_click=None if currency_locked else lambda _, selected_moneda=moneda: self._select_moneda(selected_moneda),
+            content=ft.Text(moneda, weight=ft.FontWeight.W_700, color=text_color),
+        )
 
-    def _on_moneda_change(self, event: ft.ControlEvent) -> None:
-        selected_currency = self._moneda_from_event(event)
-        if self._set_moneda(selected_currency):
-            self._render()
-            return
-        event.control.value = self.state.moneda
-        self.moneda_dropdown.value = self.state.moneda
-        if self._currency_locked_by_objects():
-            self._render()
-            return
-        self._refresh_navigation_controls()
-        self.page.update()
-
-    def _moneda_from_event(self, event: ft.ControlEvent) -> str:
-        pending_value = str(self.moneda_option_pending or "").strip().upper()
-        self.moneda_option_pending = None
-        if pending_value in MONEDAS_DEMO:
-            return pending_value
-        event_data = str(getattr(event, "data", "") or "").strip().upper()
-        control_value = str(getattr(event.control, "value", "") or "").strip().upper()
-        if event_data in MONEDAS_DEMO:
-            return event_data
-        return control_value
-
-    def _set_moneda(self, value: str) -> bool:
-        selected_currency = str(value or "").strip().upper()
+    def _select_moneda(self, moneda: str) -> None:
+        selected_currency = str(moneda or "").strip().upper()
         if selected_currency not in MONEDAS_DEMO or self._currency_locked_by_objects():
-            self.moneda_dropdown.value = self.state.moneda
-            return False
+            self._render()
+            return
         self.state.moneda = selected_currency
-        self.moneda_dropdown.value = self.state.moneda
         self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
-        return True
+        self._render()
 
     def _on_fecha_venta_change(self, event: ft.ControlEvent) -> None:
         raw_value = str(event.control.value or "")
