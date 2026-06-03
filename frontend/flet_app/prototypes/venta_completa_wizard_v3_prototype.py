@@ -81,32 +81,56 @@ class VentaCompletaWizardV3Prototype:
 
     def run(self) -> None:
         self.page.title = "Wizard venta completa V3 - Origen"
-        self.page.padding = 20
-        self.page.scroll = ft.ScrollMode.AUTO
+        self.page.padding = 0
+        self.page.scroll = None
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self._render()
 
     def _render(self) -> None:
         self.page.controls.clear()
         self.page.add(
-            ft.Column(
-                controls=[
-                    self._build_header(),
-                    ft.Row(
-                        controls=[
-                            ft.Container(content=self._build_main_content(), expand=True),
-                            ft.Container(width=300, content=self._build_flow_state_panel()),
-                        ],
-                        spacing=16,
-                        vertical_alignment=ft.CrossAxisAlignment.START,
-                    ),
-                    self._build_navigation(),
-                ],
-                spacing=18,
+            ft.Container(
                 expand=True,
+                padding=20,
+                content=ft.Column(
+                    controls=[
+                        self._build_header(),
+                        self._build_center_area(),
+                        self._build_footer(),
+                    ],
+                    spacing=14,
+                    expand=True,
+                ),
             )
         )
         self.page.update()
+
+    def _build_center_area(self) -> ft.Control:
+        return ft.Row(
+            controls=[
+                ft.Container(
+                    expand=True,
+                    content=ft.Column(
+                        controls=[self._build_main_content()],
+                        scroll=ft.ScrollMode.AUTO,
+                        expand=True,
+                    ),
+                ),
+                ft.Container(width=300, content=self._build_flow_state_panel()),
+            ],
+            spacing=16,
+            expand=True,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+    def _build_footer(self) -> ft.Control:
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=self._build_navigation(),
+        )
 
     def _build_header(self) -> ft.Control:
         return ft.Column(
@@ -190,6 +214,7 @@ class VentaCompletaWizardV3Prototype:
                 records=DEMO_RESERVAS,
                 on_selection_change=self._on_reserva_selected,
             )
+            self._configure_reserva_selector_scroll()
 
         controls: list[ft.Control] = [
             ft.Text("Seleccionar reserva", size=24, weight=ft.FontWeight.W_700),
@@ -214,6 +239,12 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(controls=controls, spacing=14),
         )
+
+    def _configure_reserva_selector_scroll(self) -> None:
+        if self.reserva_selector is None:
+            return
+        self.reserva_selector.results_column.height = 260
+        self.reserva_selector.results_column.scroll = ft.ScrollMode.AUTO
 
     def _build_selected_reserva_card(self) -> ft.Control:
         reserva = self.state.reserva_demo or {}

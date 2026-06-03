@@ -262,6 +262,9 @@ Reglas:
 - `Anterior` vuelve a Pantalla 1 -- Origen.
 - El panel lateral muestra: origen `Desde reserva`, reserva pendiente o
   seleccionada y proximo paso `cargar objetos de venta`.
+- La lista del buscador debe tener alto maximo razonable y scroll interno o
+  quedar contenida dentro del area central scrolleable para no empujar el footer
+  de navegacion.
 - No pedir manualmente `id_reserva_venta` ni `If-Match-Version` como campos
   principales.
 
@@ -1033,7 +1036,10 @@ inicial (`RESERVA` o `DIRECTA`): si el usuario elige reserva, avanza a Pantalla
 `Paso 2 -- Objetos de venta pendiente`.
 
 Pantalla 1B reutiliza el buscador visual de reservas para seleccionar una
-reserva vigente sin pedir IDs tecnicos como campos principales.
+reserva vigente sin pedir IDs tecnicos como campos principales. El layout V3
+mantiene header superior, area central scrolleable con panel lateral y footer
+inferior fijo para que `Anterior` y `Siguiente` no salgan del viewport cuando el
+buscador tenga muchos resultados.
 
 El prototipo V3 no pide `id_venta`, no calcula cronograma local, no muestra
 forma de pago ni total derivado en Pantalla 1 y no implementa todavia la carga
