@@ -3,6 +3,9 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from app.application.common.commands import CommandContext
+from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
+    CuotaRefuerzoInput,
+)
 
 
 @dataclass(slots=True)
@@ -66,6 +69,7 @@ class ConfirmVentaCompletaPlanPagoBloqueInput:
     politica_valor_no_disponible: str | None = None
     conserva_capital_original: bool | None = None
     genera_ajuste_por_diferencia: bool | None = None
+    cuotas_refuerzo: list[CuotaRefuerzoInput] | None = None
     observaciones: str | None = None
 
 

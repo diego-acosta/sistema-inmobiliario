@@ -12,6 +12,7 @@ from app.application.comercial.commands.define_condiciones_comerciales_venta imp
     DefineCondicionesComercialesVentaObjetoCommand,
 )
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
+    CuotaRefuerzoInput,
     GeneratePlanPagoVentaV2PorBloquesCommand,
     PlanPagoVentaBloqueInput,
 )
@@ -198,6 +199,15 @@ class ConfirmVentaCompletaDesdeReservaService:
                                 politica_valor_no_disponible=bloque.politica_valor_no_disponible,
                                 conserva_capital_original=bloque.conserva_capital_original,
                                 genera_ajuste_por_diferencia=bloque.genera_ajuste_por_diferencia,
+                                cuotas_refuerzo=[
+                                    CuotaRefuerzoInput(
+                                        numero_cuota=cuota_refuerzo.numero_cuota,
+                                        etiqueta=cuota_refuerzo.etiqueta,
+                                        unidades_refuerzo=cuota_refuerzo.unidades_refuerzo,
+                                    )
+                                    for cuota_refuerzo in (bloque.cuotas_refuerzo or [])
+                                ]
+                                or None,
                                 observaciones=bloque.observaciones,
                             )
                             for bloque in command.plan_pago_v2.bloques
