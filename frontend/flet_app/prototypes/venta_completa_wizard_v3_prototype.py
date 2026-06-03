@@ -229,9 +229,6 @@ class VentaCompletaWizardV3Prototype:
                 ft.Colors.AMBER_200,
             ),
         ]
-        if self.state.reserva_demo is not None:
-            controls.append(self._build_selected_reserva_card())
-
         return ft.Container(
             padding=18,
             border_radius=14,
@@ -245,32 +242,6 @@ class VentaCompletaWizardV3Prototype:
             return
         self.reserva_selector.results_column.height = 260
         self.reserva_selector.results_column.scroll = ft.ScrollMode.AUTO
-
-    def _build_selected_reserva_card(self) -> ft.Control:
-        reserva = self.state.reserva_demo or {}
-        comprador = reserva.get("comprador") or reserva.get("reservante") or "-"
-        return ft.Container(
-            padding=14,
-            border_radius=12,
-            bgcolor=ft.Colors.GREEN_50,
-            border=_border_all(1, ft.Colors.GREEN_200),
-            content=ft.Column(
-                controls=[
-                    ft.Text("Reserva seleccionada", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_800),
-                    _info_row("Código", reserva.get("codigo_reserva")),
-                    _info_row("Comprador/reservante", comprador),
-                    _info_row("Objeto", reserva.get("objeto")),
-                    _info_row("Estado", reserva.get("estado")),
-                    _info_row("version_registro", self.state.version_registro),
-                    ft.Text(
-                        f"ID técnico secundario: id_reserva_venta {self.state.id_reserva_venta}",
-                        size=11,
-                        color=ft.Colors.BLUE_GREY_500,
-                    ),
-                ],
-                spacing=5,
-            ),
-        )
 
     def _build_step_two_placeholder(self) -> ft.Control:
         return ft.Container(

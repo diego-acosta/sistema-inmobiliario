@@ -253,8 +253,10 @@ Reglas:
 - Usar el buscador visual de reservas vigentes.
 - Al seleccionar reserva, guardar `id_reserva_venta`, `version_registro` y el
   texto visual de la reserva seleccionada.
-- Mostrar una card con codigo, comprador/reservante, objeto, estado,
-  `version_registro` e ID tecnico secundario.
+- Mantener el estado visual de seleccion propio del buscador; no duplicar debajo
+  una card adicional de `Reserva seleccionada`.
+- Mostrar la reserva seleccionada de forma resumida en el panel lateral
+  `Estado del flujo`.
 - Mostrar la ayuda `En la UI productiva este buscador se conectará al listado
   real de reservas vigentes.`.
 - `Siguiente` queda habilitado solo si hay reserva seleccionada y avanza al
