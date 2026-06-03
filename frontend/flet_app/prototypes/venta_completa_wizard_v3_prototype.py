@@ -129,6 +129,7 @@ class VentaCompletaWizardV3Prototype:
         self.reserva_selector: SearchSelectorDemo | None = None
         self.objeto_selector: SearchSelectorDemo | None = None
         self.objeto_seleccionado: dict[str, Any] | None = None
+        self.precio_objeto_value = ""
         self.precio_objeto_field = ft.TextField(
             label="Valor asignado al objeto",
             prefix_icon=ft.Icons.ATTACH_MONEY,
@@ -388,7 +389,7 @@ class VentaCompletaWizardV3Prototype:
                     ft.ElevatedButton(
                         "Agregar a la venta",
                         icon=ft.Icons.ADD,
-                        disabled=duplicate or self._parse_selected_price() is None,
+                        disabled=duplicate,
                         on_click=self._add_selected_object,
                     ),
                     ft.Text(
@@ -605,16 +606,16 @@ class VentaCompletaWizardV3Prototype:
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
         self.objeto_seleccionado = selected
+        self.precio_objeto_value = ""
         self.precio_objeto_field.value = ""
         self.precio_objeto_error = None
         self._render()
 
     def _on_precio_objeto_change(self, _: ft.ControlEvent) -> None:
-        self.precio_objeto_error = self._selected_price_validation_message(show_required=False)
-        self._render()
+        self.precio_objeto_value = str(self.precio_objeto_field.value or "")
 
     def _selected_price_validation_message(self, *, show_required: bool) -> str | None:
-        raw_value = str(self.precio_objeto_field.value or "").strip()
+        raw_value = self.precio_objeto_value.strip()
         if not raw_value:
             return "precio_asignado es obligatorio." if show_required else None
         if self._parse_selected_price() is None:
@@ -622,7 +623,7 @@ class VentaCompletaWizardV3Prototype:
         return None
 
     def _parse_selected_price(self) -> Decimal | None:
-        return _parse_decimal(self.precio_objeto_field.value)
+        return _parse_decimal(self.precio_objeto_value)
 
     def _is_duplicate_selected_object(self) -> bool:
         if self.objeto_seleccionado is None:
@@ -632,6 +633,7 @@ class VentaCompletaWizardV3Prototype:
     def _add_selected_object(self, _: ft.ControlEvent | None = None) -> None:
         if self.objeto_seleccionado is None:
             return
+        self.precio_objeto_value = str(self.precio_objeto_field.value or self.precio_objeto_value or "")
         self.precio_objeto_error = self._selected_price_validation_message(show_required=True)
         precio = self._parse_selected_price()
         if self.precio_objeto_error is not None or precio is None or self._is_duplicate_selected_object():
@@ -654,6 +656,7 @@ class VentaCompletaWizardV3Prototype:
         )
         self.objeto_seleccionado = None
         self.objeto_selector = None
+        self.precio_objeto_value = ""
         self.precio_objeto_field.value = ""
         self.precio_objeto_error = None
         self._render()
