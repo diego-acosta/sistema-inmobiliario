@@ -7,7 +7,7 @@ Uso:
 Alcance:
   - Prototipo UI aislado del dominio comercial, sin llamadas a backend.
   - Nueva base de iteracion pantalla por pantalla para venta completa V3.
-  - Implementa solo Pantalla 1 - Origen y un placeholder de Paso 2.
+  - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva y placeholder de Paso 2.
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - No pide id_venta, no calcula cronograma local y no implementa objetos todavia.
 """
@@ -23,6 +23,7 @@ from components.search_selector_demo import SearchSelectorDemo, create_search_se
 
 
 OrigenVenta = Literal["RESERVA", "DIRECTA"]
+PantallaWizard = Literal["ORIGEN", "SELECCIONAR_RESERVA", "OBJETOS_PLACEHOLDER"]
 
 
 DEMO_RESERVAS: list[dict[str, Any]] = [
@@ -58,7 +59,7 @@ DEMO_RESERVAS: list[dict[str, Any]] = [
 
 @dataclass
 class WizardVentaCompletaV3State:
-    """Estado minimo para Pantalla 1 - Origen.
+    """Estado minimo para Pantalla 1 - Origen y Pantalla 1B.
 
     La reserva seleccionada guarda los datos necesarios para continuar hacia el
     flujo desde reserva sin pedir campos tecnicos como entradas principales.
@@ -69,7 +70,7 @@ class WizardVentaCompletaV3State:
     version_registro: int | None = None
     texto_visual_reserva: str | None = None
     reserva_demo: dict[str, Any] | None = None
-    paso_actual: int = 1
+    pantalla_actual: PantallaWizard = "ORIGEN"
 
 
 class VentaCompletaWizardV3Prototype:
@@ -120,53 +121,45 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_main_content(self) -> ft.Control:
-        if self.state.paso_actual == 2:
+        if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
+            return self._build_reserva_selection_step()
+        if self.state.pantalla_actual == "OBJETOS_PLACEHOLDER":
             return self._build_step_two_placeholder()
         return self._build_origin_step()
 
     def _build_origin_step(self) -> ft.Control:
-        controls: list[ft.Control] = [
-            ft.Text("¿Cómo querés iniciar la venta?", size=24, weight=ft.FontWeight.W_700),
-            ft.Text(
-                "Elegí una alternativa para definir el contexto inicial. No se solicitan datos de pasos futuros.",
-                color=ft.Colors.BLUE_GREY_700,
-            ),
-            ft.Row(
-                controls=[
-                    self._build_origin_card(
-                        origin="RESERVA",
-                        title="Desde reserva existente",
-                        description="Usar una reserva vigente ya cargada.",
-                        icon=ft.Icons.BOOKMARK_OUTLINED,
-                    ),
-                    self._build_origin_card(
-                        origin="DIRECTA",
-                        title="Venta directa",
-                        description="Crear una venta sin reserva previa.",
-                        icon=ft.Icons.ADD_HOME_OUTLINED,
-                    ),
-                ],
-                spacing=14,
-            ),
-        ]
-
-        if self.state.origen == "RESERVA":
-            controls.append(self._build_reserva_section())
-        elif self.state.origen == "DIRECTA":
-            controls.append(
-                self._build_help_card(
-                    "Continuá para cargar los objetos de venta.",
-                    ft.Colors.BLUE_50,
-                    ft.Colors.BLUE_200,
-                )
-            )
-
         return ft.Container(
             padding=18,
             border_radius=14,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(controls=controls, spacing=14),
+            content=ft.Column(
+                controls=[
+                    ft.Text("¿Cómo querés iniciar la venta?", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Elegí una alternativa para definir el contexto inicial.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=[
+                            self._build_origin_card(
+                                origin="RESERVA",
+                                title="Desde reserva existente",
+                                description="Usar una reserva vigente ya cargada.",
+                                icon=ft.Icons.BOOKMARK_OUTLINED,
+                            ),
+                            self._build_origin_card(
+                                origin="DIRECTA",
+                                title="Venta directa",
+                                description="Crear una venta sin reserva previa.",
+                                icon=ft.Icons.ADD_HOME_OUTLINED,
+                            ),
+                        ],
+                        spacing=14,
+                    ),
+                ],
+                spacing=14,
+            ),
         )
 
     def _build_origin_card(self, *, origin: OrigenVenta, title: str, description: str, icon: str) -> ft.Control:
@@ -188,7 +181,7 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
-    def _build_reserva_section(self) -> ft.Control:
+    def _build_reserva_selection_step(self) -> ft.Control:
         if self.reserva_selector is None:
             self.reserva_selector = create_search_selector_demo(
                 title="Seleccionar reserva",
@@ -199,7 +192,11 @@ class VentaCompletaWizardV3Prototype:
             )
 
         controls: list[ft.Control] = [
-            ft.Text("Seleccionar reserva", size=20, weight=ft.FontWeight.W_700),
+            ft.Text("Seleccionar reserva", size=24, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Elegí una reserva vigente para continuar con la venta desde reserva.",
+                color=ft.Colors.BLUE_GREY_700,
+            ),
             self.reserva_selector.view(),
             self._build_help_card(
                 "En la UI productiva este buscador se conectará al listado real de reservas vigentes.",
@@ -211,10 +208,11 @@ class VentaCompletaWizardV3Prototype:
             controls.append(self._build_selected_reserva_card())
 
         return ft.Container(
-            padding=16,
-            border_radius=12,
-            bgcolor=ft.Colors.BLUE_GREY_50,
-            content=ft.Column(controls=controls, spacing=10),
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=14),
         )
 
     def _build_selected_reserva_card(self) -> ft.Control:
@@ -234,7 +232,7 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Estado", reserva.get("estado")),
                     _info_row("version_registro", self.state.version_registro),
                     ft.Text(
-                        f"Dato tecnico secundario: id_reserva_venta {self.state.id_reserva_venta}",
+                        f"ID técnico secundario: id_reserva_venta {self.state.id_reserva_venta}",
                         size=11,
                         color=ft.Colors.BLUE_GREY_500,
                     ),
@@ -266,7 +264,7 @@ class VentaCompletaWizardV3Prototype:
             ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
             _info_row("Origen", self._origin_label()),
         ]
-        if self.state.origen == "RESERVA":
+        if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             controls.append(_info_row("Reserva", self._reservation_status()))
         controls.append(_info_row("Próximo paso", self._next_step_label()))
 
@@ -287,7 +285,7 @@ class VentaCompletaWizardV3Prototype:
                 ft.OutlinedButton(
                     "Anterior",
                     icon=ft.Icons.ARROW_BACK,
-                    disabled=self.state.paso_actual == 1,
+                    disabled=self.state.pantalla_actual == "ORIGEN",
                     on_click=self._previous_step,
                 ),
                 ft.Container(expand=True),
@@ -331,21 +329,27 @@ class VentaCompletaWizardV3Prototype:
     def _next_step(self, _: ft.ControlEvent | None = None) -> None:
         if not self._can_advance():
             return
-        self.state.paso_actual = 2
+        if self.state.pantalla_actual == "ORIGEN" and self.state.origen == "RESERVA":
+            self.state.pantalla_actual = "SELECCIONAR_RESERVA"
+        else:
+            self.state.pantalla_actual = "OBJETOS_PLACEHOLDER"
         self._render()
 
     def _previous_step(self, _: ft.ControlEvent | None = None) -> None:
-        if self.state.paso_actual == 1:
+        if self.state.pantalla_actual == "ORIGEN":
             return
-        self.state.paso_actual = 1
+        if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
+            self.state.pantalla_actual = "ORIGEN"
+        elif self.state.origen == "RESERVA":
+            self.state.pantalla_actual = "SELECCIONAR_RESERVA"
+        else:
+            self.state.pantalla_actual = "ORIGEN"
         self._render()
 
     def _can_advance(self) -> bool:
-        if self.state.paso_actual != 1:
-            return False
-        if self.state.origen == "DIRECTA":
-            return True
-        if self.state.origen == "RESERVA":
+        if self.state.pantalla_actual == "ORIGEN":
+            return self.state.origen is not None
+        if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return self.state.id_reserva_venta is not None and self.state.version_registro is not None
         return False
 
@@ -357,14 +361,14 @@ class VentaCompletaWizardV3Prototype:
         return "No seleccionado"
 
     def _reservation_status(self) -> str:
-        if self.state.origen != "RESERVA":
-            return "No aplica"
-        return self.state.texto_visual_reserva or "Pendiente de selección"
+        return self.state.texto_visual_reserva or "pendiente de selección"
 
     def _next_step_label(self) -> str:
+        if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
+            return "cargar objetos de venta"
         if self.state.origen is None:
             return "elegir origen"
-        if self.state.origen == "RESERVA" and self.state.id_reserva_venta is None:
+        if self.state.origen == "RESERVA":
             return "seleccionar reserva"
         return "cargar objetos de venta"
 

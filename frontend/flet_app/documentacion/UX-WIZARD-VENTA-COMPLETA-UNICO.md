@@ -231,23 +231,39 @@ Reglas:
   dos tarjetas grandes: `Desde reserva existente` y `Venta directa`.
 - Mientras no se elija origen, `Siguiente` queda deshabilitado y no se muestran
   validaciones rojas.
-- Si `RESERVA`: mostrar `Seleccionar reserva` con buscador visual de reservas
-  vigentes. La UI guarda `id_reserva_venta`, `version_registro` y el texto
-  visual de la reserva seleccionada, pero no pide manualmente
-  `id_reserva_venta` ni `If-Match-Version` como campos principales.
-- Si `RESERVA` sin reserva seleccionada: `Siguiente` queda deshabilitado.
-- Si `RESERVA` con reserva seleccionada: mostrar una card con codigo,
-  comprador/reservante, objeto, estado y `version_registro`, y habilitar
-  `Siguiente` hacia el placeholder de Paso 2.
-- Si `DIRECTA`: no mostrar buscador de reserva, mostrar la ayuda `Continuá para
-  cargar los objetos de venta.` y habilitar `Siguiente` hacia el placeholder de
-  Paso 2.
+- Si `RESERVA`: `Siguiente` avanza a una pantalla intermedia `Pantalla 1B --
+  Seleccionar reserva`; el buscador de reserva no se despliega en Pantalla 1.
+- Si `DIRECTA`: `Siguiente` avanza directamente al placeholder de Paso 2.
 - No pedir `id_venta` manual.
-- No mostrar forma de pago, total derivado, cronograma local, validaciones de
-  pasos futuros ni errores tecnicos no aplicables en esta pantalla.
-- El panel lateral de esta pantalla se llama `Estado del flujo` y muestra solo:
-  origen, reserva si aplica y proximo paso (`elegir origen`,
-  `seleccionar reserva` o `cargar objetos de venta`).
+- No mostrar buscador de reserva, campos tecnicos, forma de pago, total
+  derivado, cronograma local, validaciones de pasos futuros ni errores tecnicos
+  no aplicables en esta pantalla.
+- El panel lateral de Pantalla 1 se llama `Estado del flujo` y muestra solo:
+  origen y proximo paso (`elegir origen`, `seleccionar reserva` o
+  `cargar objetos de venta`).
+
+### Pantalla 1B - Seleccionar reserva
+
+Objetivo: resolver la seleccion de reserva en una pantalla separada antes de
+cargar objetos de venta.
+
+Reglas:
+
+- Mostrar titulo `Seleccionar reserva`.
+- Usar el buscador visual de reservas vigentes.
+- Al seleccionar reserva, guardar `id_reserva_venta`, `version_registro` y el
+  texto visual de la reserva seleccionada.
+- Mostrar una card con codigo, comprador/reservante, objeto, estado,
+  `version_registro` e ID tecnico secundario.
+- Mostrar la ayuda `En la UI productiva este buscador se conectará al listado
+  real de reservas vigentes.`.
+- `Siguiente` queda habilitado solo si hay reserva seleccionada y avanza al
+  placeholder de Paso 2.
+- `Anterior` vuelve a Pantalla 1 -- Origen.
+- El panel lateral muestra: origen `Desde reserva`, reserva pendiente o
+  seleccionada y proximo paso `cargar objetos de venta`.
+- No pedir manualmente `id_reserva_venta` ni `If-Match-Version` como campos
+  principales.
 
 El Paso 2 de V3 queda por ahora como placeholder simple:
 `Paso 2 -- Objetos de venta pendiente`. No implementa objetos todavia.
@@ -1011,10 +1027,13 @@ es:
 frontend/flet_app/prototypes/venta_completa_wizard_v3_prototype.py
 ```
 
-El V3 inicia solamente con Pantalla 1 -- Origen. Esta pantalla define el
-contexto inicial (`RESERVA` o `DIRECTA`), reutiliza el buscador visual de
-reservas para el caso desde reserva y avanza solo a un placeholder de
+El V3 inicia con Pantalla 1 -- Origen. Esta pantalla solo define el contexto
+inicial (`RESERVA` o `DIRECTA`): si el usuario elige reserva, avanza a Pantalla
+1B -- Seleccionar reserva; si elige venta directa, avanza al placeholder
 `Paso 2 -- Objetos de venta pendiente`.
+
+Pantalla 1B reutiliza el buscador visual de reservas para seleccionar una
+reserva vigente sin pedir IDs tecnicos como campos principales.
 
 El prototipo V3 no pide `id_venta`, no calcula cronograma local, no muestra
 forma de pago ni total derivado en Pantalla 1 y no implementa todavia la carga
