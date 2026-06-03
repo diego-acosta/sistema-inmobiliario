@@ -12,6 +12,10 @@ Alcance:
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - No pide id_venta, no calcula cronograma local, deuda individual por comprador
     ni implementa datos comerciales, forma de pago, plan o pasos futuros.
+  - Nota compradores: el objetivo final para RESERVA es mostrar y validar
+    compradores heredados desde datos reales de reserva; este V3 los deja como
+    pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
+    buscador de persona y carga manual en estado local demo.
 """
 
 from __future__ import annotations
@@ -194,7 +198,6 @@ class VentaCompletaWizardV3Prototype:
         self.porcentaje_comprador_value = ""
         self.porcentaje_comprador_field = ft.TextField(
             label="Responsabilidad pactada (%)",
-            suffix_text="%",
             keyboard_type=ft.KeyboardType.NUMBER,
             on_change=self._on_porcentaje_comprador_change,
         )
@@ -624,48 +627,78 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_reserva_buyers_info_step(self) -> ft.Control:
         controls: list[ft.Control] = [
-            ft.Text("Compradores", size=24, weight=ft.FontWeight.W_700),
-            ft.Text(
-                "Seleccioná los compradores de la operación y definí la responsabilidad pactada de cada uno.",
-                color=ft.Colors.BLUE_GREY_700,
-            ),
+            ft.Text("Compradores de la reserva", size=24, weight=ft.FontWeight.W_700),
+            ft.Text("Los compradores se heredan de la reserva seleccionada.", color=ft.Colors.BLUE_GREY_700),
+            self._build_reserva_selected_card(),
+            self._build_inherited_buyers_pending_card(),
             self._build_help_card(
-                "Los compradores se tomarán de la reserva seleccionada.",
-                ft.Colors.BLUE_50,
-                ft.Colors.BLUE_200,
-            ),
-        ]
-        if self.state.texto_visual_reserva:
-            controls.append(
-                ft.Container(
-                    padding=14,
-                    border_radius=12,
-                    bgcolor=ft.Colors.WHITE,
-                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
-                    content=ft.Column(
-                        controls=[
-                            ft.Text("Reserva seleccionada", size=18, weight=ft.FontWeight.W_700),
-                            ft.Text(self.state.texto_visual_reserva, weight=ft.FontWeight.W_600),
-                            _info_row("id_reserva_venta", self.state.id_reserva_venta),
-                            _info_row("version_registro", self.state.version_registro),
-                        ],
-                        spacing=6,
-                    ),
-                )
-            )
-        controls.append(
-            self._build_help_card(
-                "No se cargarán compradores manuales ni se enviarán compradores en el payload futuro para ventas desde reserva.",
+                "No se cargarán compradores manuales, no se pedirá id_rol_participacion y no se enviarán compradores en el payload futuro para ventas desde reserva.",
                 ft.Colors.AMBER_50,
                 ft.Colors.AMBER_200,
-            )
-        )
+            ),
+        ]
         return ft.Container(
             padding=18,
             border_radius=14,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(controls=controls, spacing=14),
+        )
+
+    def _build_reserva_selected_card(self) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Reserva seleccionada", size=18, weight=ft.FontWeight.W_700),
+                    ft.Text(self.state.texto_visual_reserva or "Reserva pendiente", weight=ft.FontWeight.W_600),
+                    _info_row("id_reserva_venta", self.state.id_reserva_venta),
+                    _info_row("version_registro", self.state.version_registro),
+                ],
+                spacing=6,
+            ),
+        )
+
+    def _build_inherited_buyers_pending_card(self) -> ft.Control:
+        reserva_comprador = ""
+        if self.state.reserva_demo is not None:
+            reserva_comprador = str(self.state.reserva_demo.get("comprador") or "").strip()
+        pending_controls: list[ft.Control] = [
+            ft.Text("Compradores heredados", size=18, weight=ft.FontWeight.W_700),
+            ft.Container(
+                padding=12,
+                border_radius=10,
+                bgcolor=ft.Colors.BLUE_GREY_50,
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            reserva_comprador or "Pendiente de datos reales de compradores de la reserva.",
+                            weight=ft.FontWeight.W_600,
+                        ),
+                        ft.Text(
+                            "Pendiente/demo: la reserva demo solo expone un texto de comprador, no una lista validable de personas.",
+                            size=12,
+                            color=ft.Colors.BLUE_GREY_700,
+                        ),
+                    ],
+                    spacing=4,
+                ),
+            ),
+            ft.Text(
+                "En la integración productiva se mostrarán aquí los compradores precargados de la reserva y se validarán antes de confirmar.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+        ]
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=pending_controls, spacing=8),
         )
 
     def _configure_comprador_selector_scroll(self) -> None:
