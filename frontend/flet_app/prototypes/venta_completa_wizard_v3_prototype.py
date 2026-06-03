@@ -415,10 +415,17 @@ class VentaCompletaWizardV3Prototype:
         self.reserva_selector.results_column.scroll = ft.ScrollMode.AUTO
 
     def _build_initial_sale_data_step(self) -> ft.Control:
+        currency_locked = self._currency_locked_by_objects()
         self.moneda_dropdown.value = self.state.moneda
+        self.moneda_dropdown.disabled = currency_locked
         self.fecha_venta_field.value = self.state.fecha_venta
         self.codigo_venta_field.value = self.state.codigo_venta
         self.observaciones_field.value = self.state.observaciones_comerciales
+        currency_help = (
+            "La moneda no puede cambiarse porque ya hay objetos cargados. Para cambiarla, primero quitá los objetos de venta."
+            if currency_locked
+            else "Los valores asignados a los objetos se cargarán en esta moneda."
+        )
         return ft.Container(
             padding=18,
             border_radius=14,
@@ -437,9 +444,9 @@ class VentaCompletaWizardV3Prototype:
                         spacing=12,
                     ),
                     self._build_help_card(
-                        "Los valores asignados a los objetos se cargarán en esta moneda.",
-                        ft.Colors.BLUE_50,
-                        ft.Colors.BLUE_200,
+                        currency_help,
+                        ft.Colors.AMBER_50 if currency_locked else ft.Colors.BLUE_50,
+                        ft.Colors.AMBER_200 if currency_locked else ft.Colors.BLUE_200,
                     ),
                     self.observaciones_field,
                     self._build_help_card(
@@ -1061,6 +1068,11 @@ class VentaCompletaWizardV3Prototype:
         self._render()
 
     def _on_moneda_change(self, event: ft.ControlEvent) -> None:
+        if self._currency_locked_by_objects():
+            event.control.value = self.state.moneda
+            self.moneda_dropdown.value = self.state.moneda
+            self._render()
+            return
         self.state.moneda = str(event.control.value or "").strip().upper()
         self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
         self._render()
@@ -1141,6 +1153,9 @@ class VentaCompletaWizardV3Prototype:
                 return True
             return self._buyers_are_valid()
         return False
+
+    def _currency_locked_by_objects(self) -> bool:
+        return bool(self.state.objetos)
 
     def _has_valid_currency(self) -> bool:
         return self.state.moneda.strip().upper() in MONEDAS_DEMO
