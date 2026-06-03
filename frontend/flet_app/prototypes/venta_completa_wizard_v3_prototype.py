@@ -835,26 +835,43 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_buyers_summary(self) -> ft.Control:
         total = self._buyers_responsibility_total()
+        validation_error = self._buyers_validation_error(total)
+        has_error = validation_error is not None
+        controls: list[ft.Control] = [
+            ft.Text(
+                "Resumen de compradores",
+                size=18,
+                weight=ft.FontWeight.W_700,
+                color=ft.Colors.RED_900 if has_error else ft.Colors.GREEN_900,
+            ),
+            _info_row("Cantidad de compradores", len(self.state.compradores)),
+            _info_row("Suma de responsabilidad", self._buyers_responsibility_total_label(total)),
+            _info_row("Estado", self._buyers_responsibility_status(total)),
+        ]
+        if validation_error is not None:
+            controls.append(
+                ft.Container(
+                    padding=10,
+                    border_radius=8,
+                    bgcolor=ft.Colors.RED_50,
+                    border=_border_all(1, ft.Colors.RED_200),
+                    content=ft.Text(validation_error, color=ft.Colors.RED_800, weight=ft.FontWeight.W_600),
+                )
+            )
+        controls.append(
+            ft.OutlinedButton(
+                "Distribuir en partes iguales",
+                icon=ft.Icons.CALL_SPLIT,
+                disabled=not self.state.compradores,
+                on_click=self._distribute_buyers_equally,
+            )
+        )
         return ft.Container(
             padding=14,
             border_radius=12,
-            bgcolor=ft.Colors.GREEN_50,
-            border=_border_all(1, ft.Colors.GREEN_200),
-            content=ft.Column(
-                controls=[
-                    ft.Text("Resumen de compradores", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-                    _info_row("Cantidad de compradores", len(self.state.compradores)),
-                    _info_row("Suma de responsabilidad", self._buyers_responsibility_total_label(total)),
-                    _info_row("Estado", self._buyers_responsibility_status(total)),
-                    ft.OutlinedButton(
-                        "Distribuir en partes iguales",
-                        icon=ft.Icons.CALL_SPLIT,
-                        disabled=not self.state.compradores,
-                        on_click=self._distribute_buyers_equally,
-                    ),
-                ],
-                spacing=8,
-            ),
+            bgcolor=ft.Colors.RED_50 if has_error else ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.RED_200 if has_error else ft.Colors.GREEN_200),
+            content=ft.Column(controls=controls, spacing=8),
         )
 
     def _build_commercial_data_placeholder(self) -> ft.Control:
@@ -1193,30 +1210,54 @@ class VentaCompletaWizardV3Prototype:
         return f"{_format_decimal(total)}%"
 
     def _buyers_responsibility_status(self, total: Decimal | None) -> str:
+        validation_error = self._buyers_validation_error(total)
+        if validation_error is not None:
+            return "Responsabilidad inválida."
         if len(self.state.compradores) == 1 and not self.state.compradores[0].porcentaje_responsabilidad.strip():
             return "Se asumirá 100%."
-        if len(self.state.compradores) > 1:
-            return "La suma debe ser 100%."
-        if not self.state.compradores:
-            return "Compradores requeridos para venta directa."
-        return "La suma debe ser 100%."
+        if self.state.compradores:
+            return "Responsabilidad válida. Se puede continuar."
+        return "Compradores requeridos para venta directa."
 
-    def _buyers_are_valid(self) -> bool:
+    def _buyers_validation_error(self, total: Decimal | None = None) -> str | None:
+        if self.state.origen == "RESERVA":
+            return None
         if self.state.origen != "DIRECTA" or not self.state.compradores:
-            return False
+            return "Agregá al menos un comprador para continuar con una venta directa."
+
         seen_ids: set[int] = set()
         for comprador in self.state.compradores:
             if comprador.id_persona in seen_ids:
-                return False
+                return "No se puede duplicar id_persona entre compradores."
             seen_ids.add(comprador.id_persona)
             if not comprador.id_rol_participacion.strip():
-                return False
-            if len(self.state.compradores) > 1 and not comprador.porcentaje_responsabilidad.strip():
-                return False
-            if comprador.porcentaje_responsabilidad.strip() and _parse_percentage(comprador.porcentaje_responsabilidad) is None:
-                return False
-        total = self._buyers_responsibility_total()
-        return total == Decimal("100.00") or total == Decimal("100")
+                return "Todos los compradores deben tener id_rol_participacion del rol COMPRADOR."
+            percentage_raw = comprador.porcentaje_responsabilidad.strip()
+            if len(self.state.compradores) > 1 and not percentage_raw:
+                return "Con más de un comprador, todos deben informar porcentaje_responsabilidad."
+            if percentage_raw and _parse_percentage(percentage_raw) is None:
+                return "Cada porcentaje_responsabilidad debe ser mayor que 0 y menor o igual que 100."
+
+        if len(self.state.compradores) == 1:
+            percentage_raw = self.state.compradores[0].porcentaje_responsabilidad.strip()
+            if not percentage_raw:
+                return None
+            parsed = _parse_percentage(percentage_raw)
+            if parsed is None:
+                return "El porcentaje del comprador debe ser mayor que 0 y menor o igual que 100."
+            if _format_decimal(parsed) != "100.00":
+                return "Si hay un único comprador, el porcentaje informado debe ser 100.00 o quedar vacío para asumir 100%."
+            return None
+
+        total = self._buyers_responsibility_total() if total is None else total
+        if total is None:
+            return "La suma de responsabilidad no se puede calcular por porcentajes inválidos."
+        if _format_decimal(total) != "100.00":
+            return f"La suma de responsabilidad debe ser exactamente 100.00%; actual: {_format_decimal(total)}%."
+        return None
+
+    def _buyers_are_valid(self) -> bool:
+        return self._buyers_validation_error() is None
 
     def _origin_label(self) -> str:
         if self.state.origen == "RESERVA":
