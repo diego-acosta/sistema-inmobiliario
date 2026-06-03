@@ -192,6 +192,14 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesRequest(BaseModel):
     regla_redondeo: str = "ULTIMA_CUOTA"
 
 
+class CuotaRefuerzoV2Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    numero_cuota: int
+    etiqueta: str | None = None
+    unidades_refuerzo: Decimal | None = Decimal("1.00")
+
+
 class PlanPagoVentaBloqueV2Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -217,6 +225,7 @@ class PlanPagoVentaBloqueV2Request(BaseModel):
     politica_valor_no_disponible: str | None = None
     conserva_capital_original: bool | None = None
     genera_ajuste_por_diferencia: bool | None = None
+    cuotas_refuerzo: list[CuotaRefuerzoV2Request] | None = None
     observaciones: str | None = None
 
 
@@ -601,6 +610,7 @@ class PlanPagoVentaV2ObligacionIntegralData(ObligacionCronogramaVentaPorBloquesV
     composiciones: list[PlanPagoVentaV2ObligacionComposicionData]
     obligados: list[PlanPagoVentaV2ObligacionObligadoData]
     indexacion: PlanPagoVentaV2ObligacionIndexacionData | None = None
+    numero_cuota_asociada: int | None = None
 
 
 class PlanPagoVentaV2BloqueIntegralData(PlanPagoVentaBloqueV2Data):
@@ -687,6 +697,7 @@ class ObligacionPlanPagoVentaV2PreviewData(BaseModel):
     coeficiente_indexacion: Decimal | None = None
     capital_cuota: Decimal | None = None
     ajuste_indexacion_cuota: Decimal | None = None
+    numero_cuota_asociada: int | None = None
 
 
 class RedondeoPlanPagoVentaV2PreviewData(BaseModel):

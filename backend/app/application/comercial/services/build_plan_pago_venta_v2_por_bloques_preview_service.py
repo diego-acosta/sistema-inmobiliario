@@ -228,6 +228,8 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             and tipo_bloque != TIPO_BLOQUE_TRAMO_CUOTAS
         ):
             return "VALIDATION_ERROR"
+        if tipo_bloque != TIPO_BLOQUE_TRAMO_CUOTAS and bloque.cuotas_refuerzo:
+            return "CUOTA_REFUERZO_NO_COMPATIBLE_CON_TIPO_BLOQUE"
 
         if tipo_bloque == TIPO_BLOQUE_CONTADO:
             if tipo_pago != TIPO_PAGO_CONTADO:
@@ -259,12 +261,42 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             )
             if regla_redondeo != REGLA_REDONDEO_ULTIMA_CUOTA:
                 return "INVALID_REGLA_REDONDEO"
+            refuerzo_error = self._validate_cuotas_refuerzo_tramo(bloque)
+            if refuerzo_error is not None:
+                return refuerzo_error
             liquidacion_error = self._validate_metodo_liquidacion_tramo(bloque)
             if liquidacion_error is not None:
                 return liquidacion_error
             return None
 
         return self._validate_pago_unico(bloque)
+
+    def _validate_cuotas_refuerzo_tramo(
+        self, bloque: PlanPagoVentaBloqueInput
+    ) -> str | None:
+        cuotas_refuerzo = bloque.cuotas_refuerzo or []
+        if not cuotas_refuerzo:
+            return None
+        cantidad_cuotas = bloque.cantidad_cuotas or 0
+        if len(cuotas_refuerzo) > cantidad_cuotas:
+            return "CUOTA_REFUERZO_EXCEDE_CANTIDAD_CUOTAS"
+        numeros: set[int] = set()
+        for cuota_refuerzo in cuotas_refuerzo:
+            if (
+                cuota_refuerzo.numero_cuota <= 0
+                or cuota_refuerzo.numero_cuota > cantidad_cuotas
+            ):
+                return "CUOTA_REFUERZO_NUMERO_INVALIDO"
+            if cuota_refuerzo.numero_cuota in numeros:
+                return "CUOTA_REFUERZO_DUPLICADA"
+            numeros.add(cuota_refuerzo.numero_cuota)
+            unidades = cuota_refuerzo.unidades_refuerzo or Decimal("1.00")
+            if unidades <= 0:
+                return "CUOTA_REFUERZO_UNIDADES_INVALIDAS"
+            if unidades != Decimal("1.00"):
+                return "CUOTA_REFUERZO_UNIDADES_NO_SOPORTADAS"
+            cuota_refuerzo.unidades_refuerzo = unidades.quantize(Decimal("0.01"))
+        return None
 
     def _validate_metodo_liquidacion_tramo(
         self, bloque: PlanPagoVentaBloqueInput
@@ -457,12 +489,29 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                         capital_cuota=importe,
                         fecha_vencimiento=fecha_vencimiento,
                     )
+                    cuota_refuerzo = self._cuota_refuerzo_por_numero(bloque.input).get(
+                        cuota_numero
+                    )
+                    tipo_item = (
+                        TIPO_ITEM_REFUERZO
+                        if cuota_refuerzo is not None
+                        else TIPO_ITEM_CUOTA
+                    )
+                    etiqueta = (
+                        cuota_refuerzo.etiqueta
+                        if cuota_refuerzo is not None and cuota_refuerzo.etiqueta
+                        else (
+                            f"Refuerzo cuota {cuota_numero}"
+                            if cuota_refuerzo is not None
+                            else f"Cuota {cuota_numero}"
+                        )
+                    )
                     obligaciones.append(
                         PlanPagoVentaV2ObligacionPreview(
                             bloque=bloque,
                             numero_obligacion=len(obligaciones) + 1,
-                            tipo_item_cronograma=TIPO_ITEM_CUOTA,
-                            etiqueta_obligacion=f"Cuota {cuota_numero}",
+                            tipo_item_cronograma=tipo_item,
+                            etiqueta_obligacion=etiqueta,
                             item_numero=cuota_numero,
                             fecha_vencimiento=fecha_vencimiento,
                             importe_total=indexacion.get("importe_total", importe),
@@ -503,6 +552,15 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                 )
             )
         return obligaciones
+
+    @staticmethod
+    def _cuota_refuerzo_por_numero(
+        bloque: PlanPagoVentaBloqueInput,
+    ) -> dict[int, Any]:
+        return {
+            cuota_refuerzo.numero_cuota: cuota_refuerzo
+            for cuota_refuerzo in (bloque.cuotas_refuerzo or [])
+        }
 
     def _aplicar_resumen_indexacion(
         self,

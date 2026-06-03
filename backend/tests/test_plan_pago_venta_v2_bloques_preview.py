@@ -873,3 +873,107 @@ def test_preview_indexacion_sin_valores_devuelve_cuotas_proyectadas_sin_indice()
     assert result.data["total_con_indexacion"] == Decimal("3000.00")
     assert result.data["bloques"][0].cantidad_cuotas_con_indice == 0
     assert result.data["bloques"][0].cantidad_cuotas_proyectadas_sin_indice == 3
+
+
+def test_preview_tramo_cuotas_con_refuerzos_internos_no_agrega_obligaciones() -> None:
+    from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
+        CuotaRefuerzoInput,
+    )
+
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(
+            monto_total_plan=Decimal("24000000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("24000000.00"),
+                    cantidad_cuotas=24,
+                    fecha_primer_vencimiento=date(2026, 1, 10),
+                    periodicidad="MENSUAL",
+                    metodo_liquidacion="SIN_INTERES",
+                    cuotas_refuerzo=[
+                        CuotaRefuerzoInput(
+                            numero_cuota=6,
+                            unidades_refuerzo=Decimal("1.00"),
+                            etiqueta="Refuerzo cuota 6",
+                        ),
+                        CuotaRefuerzoInput(
+                            numero_cuota=12,
+                            unidades_refuerzo=Decimal("1.00"),
+                            etiqueta="Refuerzo cuota 12",
+                        ),
+                    ],
+                )
+            ],
+        )
+    )
+
+    assert result.success, result.errors
+    obligaciones = result.data["obligaciones"]
+    assert len(obligaciones) == 24
+    assert sum(1 for ob in obligaciones if ob.tipo_item_cronograma == "CUOTA") == 22
+    assert sum(1 for ob in obligaciones if ob.tipo_item_cronograma == "REFUERZO") == 2
+    assert sum((ob.importe_total for ob in obligaciones), Decimal("0.00")) == Decimal(
+        "24000000.00"
+    )
+    assert obligaciones[5].tipo_item_cronograma == "REFUERZO"
+    assert obligaciones[5].item_numero == 6
+    assert obligaciones[5].fecha_vencimiento == date(2026, 6, 10)
+    assert obligaciones[11].tipo_item_cronograma == "REFUERZO"
+    assert obligaciones[11].item_numero == 12
+    assert obligaciones[11].fecha_vencimiento == date(2026, 12, 10)
+
+
+def test_preview_valida_cuotas_refuerzo_internas() -> None:
+    from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
+        CuotaRefuerzoInput,
+    )
+
+    def _result(cuotas_refuerzo, *, tipo_bloque="TRAMO_CUOTAS"):
+        return BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+            _command(
+                monto_total_plan=Decimal("1000000.00"),
+                bloques=[
+                    PlanPagoVentaBloqueInput(
+                        tipo_bloque=tipo_bloque,
+                        importe_total_bloque=Decimal("1000000.00"),
+                        cantidad_cuotas=4 if tipo_bloque == "TRAMO_CUOTAS" else None,
+                        fecha_primer_vencimiento=(
+                            date(2026, 1, 10) if tipo_bloque == "TRAMO_CUOTAS" else None
+                        ),
+                        fecha_vencimiento=(
+                            date(2026, 1, 10) if tipo_bloque != "TRAMO_CUOTAS" else None
+                        ),
+                        periodicidad=(
+                            "MENSUAL" if tipo_bloque == "TRAMO_CUOTAS" else None
+                        ),
+                        cuotas_refuerzo=cuotas_refuerzo,
+                    )
+                ],
+            )
+        )
+
+    cases = [
+        ([CuotaRefuerzoInput(numero_cuota=0)], "CUOTA_REFUERZO_NUMERO_INVALIDO"),
+        ([CuotaRefuerzoInput(numero_cuota=5)], "CUOTA_REFUERZO_NUMERO_INVALIDO"),
+        (
+            [CuotaRefuerzoInput(numero_cuota=2), CuotaRefuerzoInput(numero_cuota=2)],
+            "CUOTA_REFUERZO_DUPLICADA",
+        ),
+        (
+            [CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=Decimal("0.00"))],
+            "CUOTA_REFUERZO_UNIDADES_INVALIDAS",
+        ),
+        (
+            [CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=Decimal("2.00"))],
+            "CUOTA_REFUERZO_UNIDADES_NO_SOPORTADAS",
+        ),
+    ]
+    for cuotas_refuerzo, expected_error in cases:
+        result = _result(cuotas_refuerzo)
+        assert not result.success
+        assert result.errors == [expected_error]
+
+    result = _result([CuotaRefuerzoInput(numero_cuota=1)], tipo_bloque="REFUERZO")
+    assert not result.success
+    assert result.errors == ["CUOTA_REFUERZO_NO_COMPATIBLE_CON_TIPO_BLOQUE"]
