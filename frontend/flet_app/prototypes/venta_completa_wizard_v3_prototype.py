@@ -1,4 +1,4 @@
-"""Prototipo Flet del wizard venta completa V3 - Pantalla 2: Objetos de venta.
+"""Prototipo Flet del wizard venta completa V3 - Pantalla 3: Compradores.
 
 Uso:
   cd frontend/flet_app
@@ -7,9 +7,11 @@ Uso:
 Alcance:
   - Prototipo UI aislado del dominio comercial, sin llamadas a backend.
   - Nueva base de iteracion pantalla por pantalla para venta completa V3.
-  - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva y Pantalla 2 - Objetos de venta.
+  - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva,
+    Pantalla 2 - Objetos de venta y Pantalla 3 - Compradores.
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
-  - No pide id_venta, no calcula cronograma local y no implementa compradores ni pasos futuros.
+  - No pide id_venta, no calcula cronograma local, deuda individual por comprador
+    ni implementa datos comerciales, forma de pago, plan o pasos futuros.
 """
 
 from __future__ import annotations
@@ -24,7 +26,13 @@ from components.search_selector_demo import SearchSelectorDemo, create_search_se
 
 
 OrigenVenta = Literal["RESERVA", "DIRECTA"]
-PantallaWizard = Literal["ORIGEN", "SELECCIONAR_RESERVA", "OBJETOS", "COMPRADORES_PLACEHOLDER"]
+PantallaWizard = Literal[
+    "ORIGEN",
+    "SELECCIONAR_RESERVA",
+    "OBJETOS",
+    "COMPRADORES",
+    "DATOS_COMERCIALES_PLACEHOLDER",
+]
 
 
 DEMO_RESERVAS: list[dict[str, Any]] = [
@@ -96,6 +104,41 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
 ]
 
 
+DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
+    {
+        "id_persona": 201,
+        "codigo_persona": "PER-000201",
+        "nombre": "Juan",
+        "apellido": "Perez",
+        "documento": "DNI 30111222",
+        "resumen": "Persona humana disponible para actuar como comprador demo.",
+    },
+    {
+        "id_persona": 202,
+        "codigo_persona": "PER-000202",
+        "nombre": "Maria",
+        "apellido": "Gomez",
+        "documento": "DNI 28999888",
+        "resumen": "Compradora demo para validar operaciones con mas de una persona.",
+    },
+    {
+        "id_persona": 203,
+        "codigo_persona": "PER-000203",
+        "nombre": "Sofia",
+        "apellido": "Martinez",
+        "documento": "DNI 33444555",
+        "resumen": "Persona demo con datos visibles sin priorizar el ID tecnico.",
+    },
+    {
+        "id_persona": 204,
+        "codigo_persona": "PER-000204",
+        "razon_social": "Constructora Rio Sur SA",
+        "documento": "CUIT 30-71112223-4",
+        "resumen": "Persona juridica demo para validar busqueda por razon social.",
+    },
+]
+
+
 @dataclass
 class ObjetoVentaWizardDraft:
     tipo_objeto: str
@@ -106,8 +149,16 @@ class ObjetoVentaWizardDraft:
 
 
 @dataclass
+class CompradorWizardDraft:
+    id_persona: int
+    texto_visual: str
+    porcentaje_responsabilidad: str
+    id_rol_participacion: str
+
+
+@dataclass
 class WizardVentaCompletaV3State:
-    """Estado minimo del wizard V3 hasta Pantalla 2 - Objetos de venta.
+    """Estado minimo del wizard V3 hasta Pantalla 3 - Compradores.
 
     Conserva origen/reserva y una lista de objetos comerciales demo con XOR
     visual entre inmueble y unidad funcional, sin persistencia ni backend.
@@ -119,6 +170,7 @@ class WizardVentaCompletaV3State:
     texto_visual_reserva: str | None = None
     reserva_demo: dict[str, Any] | None = None
     objetos: list[ObjetoVentaWizardDraft] = field(default_factory=list)
+    compradores: list[CompradorWizardDraft] = field(default_factory=list)
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -128,7 +180,9 @@ class VentaCompletaWizardV3Prototype:
         self.state = WizardVentaCompletaV3State()
         self.reserva_selector: SearchSelectorDemo | None = None
         self.objeto_selector: SearchSelectorDemo | None = None
+        self.comprador_selector: SearchSelectorDemo | None = None
         self.objeto_seleccionado: dict[str, Any] | None = None
+        self.comprador_seleccionado: dict[str, Any] | None = None
         self.precio_objeto_value = ""
         self.precio_objeto_field = ft.TextField(
             label="Valor asignado al objeto",
@@ -137,9 +191,23 @@ class VentaCompletaWizardV3Prototype:
             on_change=self._on_precio_objeto_change,
         )
         self.precio_objeto_error: str | None = None
+        self.porcentaje_comprador_value = ""
+        self.porcentaje_comprador_field = ft.TextField(
+            label="Responsabilidad pactada (%)",
+            suffix_text="%",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_porcentaje_comprador_change,
+        )
+        self.rol_comprador_value = ""
+        self.rol_comprador_field = ft.TextField(
+            label="ID rol comprador backend",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_rol_comprador_change,
+        )
+        self.comprador_error: str | None = None
 
     def run(self) -> None:
-        self.page.title = "Wizard venta completa V3 - Objetos"
+        self.page.title = "Wizard venta completa V3 - Compradores"
         self.page.padding = 0
         self.page.scroll = None
         self.page.theme_mode = ft.ThemeMode.LIGHT
@@ -208,8 +276,10 @@ class VentaCompletaWizardV3Prototype:
             return self._build_reserva_selection_step()
         if self.state.pantalla_actual == "OBJETOS":
             return self._build_objects_step()
-        if self.state.pantalla_actual == "COMPRADORES_PLACEHOLDER":
-            return self._build_buyers_placeholder()
+        if self.state.pantalla_actual == "COMPRADORES":
+            return self._build_buyers_step()
+        if self.state.pantalla_actual == "DATOS_COMERCIALES_PLACEHOLDER":
+            return self._build_commercial_data_placeholder()
         return self._build_origin_step()
 
     def _build_origin_step(self) -> ft.Control:
@@ -513,7 +583,248 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
-    def _build_buyers_placeholder(self) -> ft.Control:
+    def _build_buyers_step(self) -> ft.Control:
+        if self.state.origen == "RESERVA":
+            return self._build_reserva_buyers_info_step()
+
+        if self.comprador_selector is None:
+            self.comprador_selector = create_search_selector_demo(
+                title="Buscador de comprador/persona",
+                placeholder="Nombre, documento, código o dato visible del comprador",
+                selector_kind="persona",
+                records=DEMO_PERSONAS_COMPRADORAS,
+                on_selection_change=self._on_comprador_selected,
+            )
+            self._configure_comprador_selector_scroll()
+
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Compradores", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Seleccioná los compradores de la operación y definí la responsabilidad pactada de cada uno.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.Container(content=self.comprador_selector.view(), expand=True),
+                            ft.Container(width=380, content=self._build_buyers_side_panel()),
+                        ],
+                        spacing=14,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                ],
+                spacing=14,
+            ),
+        )
+
+    def _build_reserva_buyers_info_step(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Compradores", size=24, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Seleccioná los compradores de la operación y definí la responsabilidad pactada de cada uno.",
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            self._build_help_card(
+                "Los compradores se tomarán de la reserva seleccionada.",
+                ft.Colors.BLUE_50,
+                ft.Colors.BLUE_200,
+            ),
+        ]
+        if self.state.texto_visual_reserva:
+            controls.append(
+                ft.Container(
+                    padding=14,
+                    border_radius=12,
+                    bgcolor=ft.Colors.WHITE,
+                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                    content=ft.Column(
+                        controls=[
+                            ft.Text("Reserva seleccionada", size=18, weight=ft.FontWeight.W_700),
+                            ft.Text(self.state.texto_visual_reserva, weight=ft.FontWeight.W_600),
+                            _info_row("id_reserva_venta", self.state.id_reserva_venta),
+                            _info_row("version_registro", self.state.version_registro),
+                        ],
+                        spacing=6,
+                    ),
+                )
+            )
+        controls.append(
+            self._build_help_card(
+                "No se cargarán compradores manuales ni se enviarán compradores en el payload futuro para ventas desde reserva.",
+                ft.Colors.AMBER_50,
+                ft.Colors.AMBER_200,
+            )
+        )
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=14),
+        )
+
+    def _configure_comprador_selector_scroll(self) -> None:
+        if self.comprador_selector is None:
+            return
+        self.comprador_selector.results_column.height = 260
+        self.comprador_selector.results_column.scroll = ft.ScrollMode.AUTO
+
+    def _build_buyers_side_panel(self) -> ft.Control:
+        controls: list[ft.Control] = []
+        if self.comprador_seleccionado is not None:
+            controls.append(self._build_selected_buyer_panel())
+        controls.extend([self._build_added_buyers_list(), self._build_buyers_summary()])
+        return ft.Column(controls=controls, spacing=12)
+
+    def _build_selected_buyer_panel(self) -> ft.Control:
+        if self.comprador_seleccionado is None:
+            return ft.Container()
+
+        duplicate = self._is_duplicate_selected_buyer()
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_50,
+            border=_border_all(1, ft.Colors.BLUE_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Comprador seleccionado", size=18, weight=ft.FontWeight.W_700),
+                    ft.Text(str(self.comprador_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
+                    _badge(
+                        f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}",
+                        ft.Colors.BLUE_GREY_50,
+                        ft.Colors.BLUE_GREY_200,
+                    ),
+                    self.porcentaje_comprador_field,
+                    ft.Text(
+                        "Si es el único comprador, este campo puede quedar vacío y se asumirá 100%.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_600,
+                    ),
+                    self.rol_comprador_field,
+                    ft.Text("Debe corresponder al rol COMPRADOR.", size=12, color=ft.Colors.BLUE_GREY_600),
+                    ft.Row(
+                        controls=[
+                            ft.ElevatedButton(
+                                "Agregar comprador",
+                                icon=ft.Icons.PERSON_ADD_ALT_1,
+                                disabled=duplicate,
+                                on_click=self._add_selected_buyer,
+                            ),
+                            ft.OutlinedButton(
+                                "Limpiar selección",
+                                icon=ft.Icons.CLOSE,
+                                on_click=self._clear_selected_buyer,
+                            ),
+                        ],
+                        wrap=True,
+                        spacing=8,
+                    ),
+                    ft.Text(
+                        self.comprador_error or ("Este comprador ya fue agregado." if duplicate else ""),
+                        size=12,
+                        color=ft.Colors.RED_700,
+                    ),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_added_buyers_list(self) -> ft.Control:
+        if not self.state.compradores:
+            content: ft.Control = ft.Container(
+                padding=12,
+                border_radius=10,
+                bgcolor=ft.Colors.BLUE_GREY_50,
+                content=ft.Text("Todavía no agregaste compradores a la venta.", color=ft.Colors.BLUE_GREY_700),
+            )
+        else:
+            content = ft.Container(
+                height=240,
+                content=ft.Column(
+                    controls=[self._build_added_buyer_row(index, comprador) for index, comprador in enumerate(self.state.compradores)],
+                    spacing=8,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+            )
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[ft.Text("Compradores agregados", size=18, weight=ft.FontWeight.W_700), content],
+                spacing=8,
+            ),
+        )
+
+    def _build_added_buyer_row(self, index: int, comprador: CompradorWizardDraft) -> ft.Control:
+        porcentaje = comprador.porcentaje_responsabilidad or "vacío (se asumirá 100% si es único comprador)"
+        return ft.Container(
+            padding=12,
+            border_radius=10,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text(comprador.texto_visual, weight=ft.FontWeight.W_700),
+                            ft.Text(f"id_persona: {comprador.id_persona}", size=12, color=ft.Colors.BLUE_GREY_700),
+                            ft.Text(
+                                f"id_rol_participacion: {comprador.id_rol_participacion}",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
+                            ft.Text(
+                                f"porcentaje_responsabilidad: {porcentaje}",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
+                        ],
+                        spacing=3,
+                        expand=True,
+                    ),
+                    ft.OutlinedButton(
+                        "Quitar",
+                        icon=ft.Icons.DELETE_OUTLINE,
+                        on_click=lambda _, item_index=index: self._remove_buyer(item_index),
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+
+    def _build_buyers_summary(self) -> ft.Control:
+        total = self._buyers_responsibility_total()
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resumen de compradores", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    _info_row("Cantidad de compradores", len(self.state.compradores)),
+                    _info_row("Suma de responsabilidad", self._buyers_responsibility_total_label(total)),
+                    _info_row("Estado", self._buyers_responsibility_status(total)),
+                    ft.OutlinedButton(
+                        "Distribuir en partes iguales",
+                        icon=ft.Icons.CALL_SPLIT,
+                        disabled=not self.state.compradores,
+                        on_click=self._distribute_buyers_equally,
+                    ),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_commercial_data_placeholder(self) -> ft.Control:
         return ft.Container(
             padding=24,
             border_radius=14,
@@ -521,9 +832,9 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(
                 controls=[
-                    ft.Text("Paso 3 — Compradores pendiente", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text("Paso 4 — Datos comerciales pendiente", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Placeholder técnico: todavía no se implementa la carga de compradores.",
+                        "Placeholder técnico: todavía no se implementan datos comerciales, forma de pago, plan ni cronograma.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                 ],
@@ -542,6 +853,7 @@ class VentaCompletaWizardV3Prototype:
             [
                 _info_row("Objetos", len(self.state.objetos)),
                 _info_row("Total derivado", _format_decimal(self._objects_total())),
+                _info_row("Compradores", self._buyers_flow_status()),
                 _info_row("Próximo paso", self._next_step_label()),
             ]
         )
@@ -584,6 +896,9 @@ class VentaCompletaWizardV3Prototype:
             self.state.texto_visual_reserva = None
             self.state.reserva_demo = None
             self.reserva_selector = None
+            self.state.compradores.clear()
+            self.comprador_selector = None
+            self.comprador_seleccionado = None
         self.state.origen = origin
         self._render()
 
@@ -610,7 +925,9 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "ORIGEN" and self.state.origen == "RESERVA":
             self.state.pantalla_actual = "SELECCIONAR_RESERVA"
         elif self.state.pantalla_actual == "OBJETOS":
-            self.state.pantalla_actual = "COMPRADORES_PLACEHOLDER"
+            self.state.pantalla_actual = "COMPRADORES"
+        elif self.state.pantalla_actual == "COMPRADORES":
+            self.state.pantalla_actual = "DATOS_COMERCIALES_PLACEHOLDER"
         else:
             self.state.pantalla_actual = "OBJETOS"
         self._render()
@@ -620,7 +937,9 @@ class VentaCompletaWizardV3Prototype:
             return
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             self.state.pantalla_actual = "ORIGEN"
-        elif self.state.pantalla_actual == "COMPRADORES_PLACEHOLDER":
+        elif self.state.pantalla_actual == "DATOS_COMERCIALES_PLACEHOLDER":
+            self.state.pantalla_actual = "COMPRADORES"
+        elif self.state.pantalla_actual == "COMPRADORES":
             self.state.pantalla_actual = "OBJETOS"
         elif self.state.origen == "RESERVA":
             self.state.pantalla_actual = "SELECCIONAR_RESERVA"
@@ -637,6 +956,10 @@ class VentaCompletaWizardV3Prototype:
             return bool(self.state.objetos) and all(
                 _parse_decimal(objeto.precio_asignado) is not None for objeto in self.state.objetos
             )
+        if self.state.pantalla_actual == "COMPRADORES":
+            if self.state.origen == "RESERVA":
+                return True
+            return self._buyers_are_valid()
         return False
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
@@ -711,6 +1034,103 @@ class VentaCompletaWizardV3Prototype:
             self.state.objetos.pop(index)
         self._render()
 
+    def _on_comprador_selected(self, selected: dict[str, Any] | None) -> None:
+        self.comprador_seleccionado = selected
+        self.porcentaje_comprador_value = ""
+        self.porcentaje_comprador_field.value = ""
+        self.rol_comprador_value = ""
+        self.rol_comprador_field.value = ""
+        self.comprador_error = None
+        if self.comprador_selector is not None:
+            self.comprador_selector.selected_panel.visible = False
+        self._render()
+
+    def _clear_selected_buyer(self, _: ft.ControlEvent | None = None) -> None:
+        self.comprador_seleccionado = None
+        self.comprador_selector = None
+        self.porcentaje_comprador_value = ""
+        self.porcentaje_comprador_field.value = ""
+        self.rol_comprador_value = ""
+        self.rol_comprador_field.value = ""
+        self.comprador_error = None
+        self._render()
+
+    def _on_porcentaje_comprador_change(self, _: ft.ControlEvent) -> None:
+        self.porcentaje_comprador_value = str(self.porcentaje_comprador_field.value or "")
+
+    def _on_rol_comprador_change(self, _: ft.ControlEvent) -> None:
+        self.rol_comprador_value = str(self.rol_comprador_field.value or "")
+
+    def _selected_buyer_validation_message(self) -> str | None:
+        if self.comprador_seleccionado is None or self.comprador_seleccionado.get("id_persona") is None:
+            return "id_persona es obligatorio."
+        if self._is_duplicate_selected_buyer():
+            return "No se puede duplicar id_persona."
+        porcentaje_raw = self.porcentaje_comprador_value.strip()
+        if porcentaje_raw and _parse_percentage(porcentaje_raw) is None:
+            return "porcentaje_responsabilidad debe ser mayor que 0 y menor o igual que 100."
+        if not self.rol_comprador_value.strip():
+            return "id_rol_participacion es obligatorio y debe corresponder al rol COMPRADOR."
+        if not self.rol_comprador_value.strip().isdigit():
+            return "id_rol_participacion debe ser un ID numerico de backend."
+        return None
+
+    def _is_duplicate_selected_buyer(self) -> bool:
+        if self.comprador_seleccionado is None:
+            return False
+        selected_id = self.comprador_seleccionado.get("id_persona")
+        return any(comprador.id_persona == selected_id for comprador in self.state.compradores)
+
+    def _add_selected_buyer(self, _: ft.ControlEvent | None = None) -> None:
+        if self.comprador_seleccionado is None:
+            return
+        self.porcentaje_comprador_value = str(
+            self.porcentaje_comprador_field.value or self.porcentaje_comprador_value or ""
+        )
+        self.rol_comprador_value = str(self.rol_comprador_field.value or self.rol_comprador_value or "")
+        self.comprador_error = self._selected_buyer_validation_message()
+        if self.comprador_error is not None:
+            self._render()
+            return
+
+        porcentaje = self.porcentaje_comprador_value.strip()
+        parsed_percentage = _parse_percentage(porcentaje) if porcentaje else None
+        self.state.compradores.append(
+            CompradorWizardDraft(
+                id_persona=int(self.comprador_seleccionado.get("id_persona")),
+                texto_visual=str(self.comprador_seleccionado.get("texto_visual") or "-"),
+                porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
+                id_rol_participacion=self.rol_comprador_value.strip(),
+            )
+        )
+        self.comprador_seleccionado = None
+        self.comprador_selector = None
+        self.porcentaje_comprador_value = ""
+        self.porcentaje_comprador_field.value = ""
+        self.rol_comprador_value = ""
+        self.rol_comprador_field.value = ""
+        self.comprador_error = None
+        self._render()
+
+    def _remove_buyer(self, index: int) -> None:
+        if 0 <= index < len(self.state.compradores):
+            self.state.compradores.pop(index)
+        self._render()
+
+    def _distribute_buyers_equally(self, _: ft.ControlEvent | None = None) -> None:
+        if not self.state.compradores:
+            return
+        base = Decimal("100") / Decimal(len(self.state.compradores))
+        accumulated = Decimal("0")
+        for index, comprador in enumerate(self.state.compradores):
+            if index == len(self.state.compradores) - 1:
+                percentage = Decimal("100") - accumulated
+            else:
+                percentage = base.quantize(Decimal("0.01"))
+                accumulated += percentage
+            comprador.porcentaje_responsabilidad = _format_decimal(percentage)
+        self._render()
+
     def _objects_total(self) -> Decimal:
         total = Decimal("0")
         for objeto in self.state.objetos:
@@ -718,6 +1138,52 @@ class VentaCompletaWizardV3Prototype:
             if parsed is not None:
                 total += parsed
         return total
+
+    def _buyers_responsibility_total(self) -> Decimal | None:
+        total = Decimal("0")
+        has_percentage = False
+        for comprador in self.state.compradores:
+            if not comprador.porcentaje_responsabilidad.strip():
+                continue
+            parsed = _parse_percentage(comprador.porcentaje_responsabilidad)
+            if parsed is None:
+                return None
+            has_percentage = True
+            total += parsed
+        if len(self.state.compradores) == 1 and not has_percentage:
+            return Decimal("100")
+        return total
+
+    def _buyers_responsibility_total_label(self, total: Decimal | None) -> str:
+        if total is None:
+            return "inválida"
+        return f"{_format_decimal(total)}%"
+
+    def _buyers_responsibility_status(self, total: Decimal | None) -> str:
+        if len(self.state.compradores) == 1 and not self.state.compradores[0].porcentaje_responsabilidad.strip():
+            return "Se asumirá 100%."
+        if len(self.state.compradores) > 1:
+            return "La suma debe ser 100%."
+        if not self.state.compradores:
+            return "Compradores requeridos para venta directa."
+        return "La suma debe ser 100%."
+
+    def _buyers_are_valid(self) -> bool:
+        if self.state.origen != "DIRECTA" or not self.state.compradores:
+            return False
+        seen_ids: set[int] = set()
+        for comprador in self.state.compradores:
+            if comprador.id_persona in seen_ids:
+                return False
+            seen_ids.add(comprador.id_persona)
+            if not comprador.id_rol_participacion.strip():
+                return False
+            if len(self.state.compradores) > 1 and not comprador.porcentaje_responsabilidad.strip():
+                return False
+            if comprador.porcentaje_responsabilidad.strip() and _parse_percentage(comprador.porcentaje_responsabilidad) is None:
+                return False
+        total = self._buyers_responsibility_total()
+        return total == Decimal("100.00") or total == Decimal("100")
 
     def _origin_label(self) -> str:
         if self.state.origen == "RESERVA":
@@ -729,11 +1195,18 @@ class VentaCompletaWizardV3Prototype:
     def _reservation_status(self) -> str:
         return self.state.texto_visual_reserva or "pendiente de selección"
 
+    def _buyers_flow_status(self) -> str:
+        if self.state.origen == "RESERVA":
+            return "heredados de reserva"
+        return str(len(self.state.compradores))
+
     def _next_step_label(self) -> str:
         if self.state.pantalla_actual == "OBJETOS":
             return "cargar compradores" if self._can_advance() else "cargar objetos de venta"
-        if self.state.pantalla_actual == "COMPRADORES_PLACEHOLDER":
-            return "cargar compradores"
+        if self.state.pantalla_actual == "COMPRADORES":
+            return "cargar datos comerciales" if self._can_advance() else "cargar compradores"
+        if self.state.pantalla_actual == "DATOS_COMERCIALES_PLACEHOLDER":
+            return "cargar datos comerciales"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return "cargar objetos de venta"
         if self.state.origen is None:
@@ -758,6 +1231,13 @@ def _parse_decimal(value: Any) -> Decimal | None:
         if not parsed.is_finite() or parsed <= 0:
             return None
     except (InvalidOperation, ValueError):
+        return None
+    return parsed
+
+
+def _parse_percentage(value: Any) -> Decimal | None:
+    parsed = _parse_decimal(value)
+    if parsed is None or parsed > Decimal("100"):
         return None
     return parsed
 
