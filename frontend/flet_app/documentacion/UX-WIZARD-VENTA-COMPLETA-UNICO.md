@@ -36,6 +36,11 @@ No incluye:
 Incluye como referencia tecnica el prototipo limpio no productivo
 `frontend/flet_app/prototypes/venta_completa_unica_wizard_prototype.py`.
 
+Desde la iteracion V2, la base de trabajo del flujo UX definitivo pasa a ser
+`frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`. Este nuevo
+prototipo reemplaza al prototipo limpio inicial como base de iteracion funcional,
+manteniendo los prototipos anteriores solo como referencia historica/tecnica.
+
 ## 3. Clasificacion y dominio
 
 - Dominio correcto: `comercial`, porque reservas de venta, ventas, condiciones
@@ -205,6 +210,42 @@ Reglas del estado:
   modelo paralelo.
 - El estado puede tener campos visuales auxiliares, pero el submit debe filtrar
   solo campos aceptados por el contrato backend vigente.
+
+## 7.1 Prototipo V2 base de iteracion
+
+El prototipo V2 define el orden UX actualizado para venta completa:
+
+1. Origen.
+2. Objetos de venta.
+3. Compradores.
+4. Datos comerciales.
+5. Forma de pago.
+6. Plan de pago, solo para `FINANCIADO`.
+7. Revision.
+8. Confirmar.
+9. Resultado.
+
+Criterios incorporados por el V2:
+
+- `monto_total` deja de ser una entrada principal y se deriva como
+  `SUM(precio_asignado)` de los objetos.
+- Objetos y compradores se presentan como seleccion en modo demo/manual hasta
+  integrar endpoints de busqueda.
+- La venta directa y la venta desde reserva mantienen el mismo flujo visual y
+  solo cambian el adapter final.
+- El Plan Pago V2 se modela como subwizard de anticipo, tramos de cuotas y saldo
+  final. Las cuotas refuerzo internas se envian como `cuotas_refuerzo` dentro del
+  tramo, no como bloque `REFUERZO` libre.
+- La UI no calcula cronograma, interes directo ni indexacion localmente; esos
+  calculos pertenecen al backend.
+- La confirmacion ejecuta los endpoints reales y la consulta posterior usa
+  `GET /api/v1/ventas/{id_venta}/plan-pago-v2`.
+
+Archivo de referencia vigente:
+
+```text
+frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py
+```
 
 ## 8. Pasos del wizard unico
 
