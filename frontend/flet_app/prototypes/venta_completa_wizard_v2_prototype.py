@@ -169,7 +169,7 @@ class WizardState:
     current_step: int = 0
     plan_substep: int = 0
     base_url: str = DEFAULT_BASE_URL
-    origen: str = "RESERVA"
+    origen: str = ""
     id_reserva_venta: str = ""
     if_match_version: str = ""
     reserva_visual: str = ""
@@ -323,15 +323,30 @@ class VentaCompletaWizardV2Prototype:
         self._render()
 
     def _step_origen(self) -> ft.Control:
-        origen = _drop("Origen", list(ORIGENES), self.state.origen, width=180)
-        origen.on_change = lambda event: self._set_and_render(self._set_origen, event.control.value)
         controls: list[ft.Control] = [
-            origen,
-            self._notice("RESERVA exige id_reserva_venta e If-Match-Version. DIRECTA no pide reserva ni id_venta."),
+            ft.Text("Seleccioná cómo querés iniciar la venta.", size=16, weight=ft.FontWeight.W_700),
+            ft.Row(
+                controls=[
+                    self._origin_option_card(
+                        title="Desde reserva existente",
+                        description="Usar una reserva vigente ya cargada.",
+                        value="RESERVA",
+                    ),
+                    self._origin_option_card(
+                        title="Venta directa",
+                        description="Crear una venta sin reserva previa.",
+                        value="DIRECTA",
+                    ),
+                ],
+                wrap=True,
+                spacing=12,
+                run_spacing=12,
+            ),
         ]
         if self.state.origen == "RESERVA":
             controls.extend(
                 [
+                    self._notice("RESERVA exige id_reserva_venta e If-Match-Version antes de avanzar."),
                     ft.Row(
                         controls=[
                             self._field("id_reserva_venta", self.state.id_reserva_venta, lambda v: setattr(self.state, "id_reserva_venta", v), 190),
@@ -342,7 +357,31 @@ class VentaCompletaWizardV2Prototype:
                     self._field("Datos visuales opcionales de la reserva", self.state.reserva_visual, lambda v: setattr(self.state, "reserva_visual", v), 520),
                 ]
             )
+        if self.state.origen == "DIRECTA":
+            controls.append(self._notice("Venta directa: no se solicita reserva ni If-Match-Version. Podes avanzar a Objetos."))
         return self._card("Paso 1 — Origen", controls)
+
+    def _origin_option_card(self, title: str, description: str, value: str) -> ft.Control:
+        selected = self.state.origen == value
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(title, size=17, weight=ft.FontWeight.W_700),
+                    ft.Text(description),
+                    ft.Button("Seleccionado" if selected else "Elegir", on_click=lambda _, v=value: self._set_origen_and_render(v)),
+                ],
+                spacing=8,
+            ),
+            width=280,
+            padding=14,
+            border=_border_all(2 if selected else 1, ft.Colors.BLUE_500 if selected else ft.Colors.BLUE_GREY_100),
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_50 if selected else None,
+        )
+
+    def _set_origen_and_render(self, value: str) -> None:
+        self._set_origen(value)
+        self._render()
 
     def _set_origen(self, value: str) -> None:
         self.state.origen = value
@@ -762,7 +801,7 @@ class VentaCompletaWizardV2Prototype:
 
     def _commercial_summary(self) -> ft.Control:
         lines = [
-            f"Origen: {self.state.origen}",
+            f"Origen: {self.state.origen or 'No seleccionado'}",
             f"Total derivado: {_money(self._total_objetos())} {self.state.moneda}",
             f"Fecha venta: {self.state.fecha_venta}",
             f"Forma de pago: {self.state.forma_pago}",
@@ -857,23 +896,28 @@ class VentaCompletaWizardV2Prototype:
         assigned = self._assigned_total()
         controls: list[ft.Control] = [
             ft.Text("Panel de control", size=18, weight=ft.FontWeight.W_700),
-            ft.Text(f"Origen: {self.state.origen}"),
+            ft.Text(f"Origen: {self.state.origen or 'No seleccionado'}"),
             ft.Text(f"Forma pago: {self.state.forma_pago}"),
             ft.Text(f"Total derivado: {_money(total)}"),
             ft.Text(f"Total asignado plan: {_money(assigned)}"),
         ]
         if errors:
-            controls.append(ft.Text("Validaciones pendientes", color=ft.Colors.RED_700, weight=ft.FontWeight.W_700))
-            controls.extend([ft.Text(f"• {error}", color=ft.Colors.RED_700, size=12) for error in errors[:8]])
-            if len(errors) > 8:
-                controls.append(ft.Text(f"• ... {len(errors) - 8} mas", color=ft.Colors.RED_700, size=12))
+            if self.state.current_step == 0 and not self.state.origen:
+                controls.append(ft.Text("Seleccion pendiente", color=ft.Colors.BLUE_GREY_700, weight=ft.FontWeight.W_700))
+                controls.append(ft.Text(errors[0], color=ft.Colors.BLUE_GREY_700, size=12))
+            else:
+                controls.append(ft.Text("Validaciones pendientes", color=ft.Colors.RED_700, weight=ft.FontWeight.W_700))
+                controls.extend([ft.Text(f"• {error}", color=ft.Colors.RED_700, size=12) for error in errors[:8]])
+                if len(errors) > 8:
+                    controls.append(ft.Text(f"• ... {len(errors) - 8} mas", color=ft.Colors.RED_700, size=12))
         else:
             controls.append(ft.Text("Paso valido", color=ft.Colors.GREEN_700, weight=ft.FontWeight.W_700))
         return ft.Container(content=ft.Column(controls=controls, spacing=6), padding=14, border=_border_all(1, ft.Colors.BLUE_GREY_100), border_radius=12)
 
     def _nav_buttons(self) -> ft.Control:
         prev_disabled = self.state.current_step == 0 or self.state.loading
-        next_disabled = self.state.current_step >= len(STEPS) - 1 or self.state.loading
+        current_errors = self._step_errors(self.state.current_step)
+        next_disabled = self.state.current_step >= len(STEPS) - 1 or self.state.loading or bool(current_errors)
         return ft.Row(
             controls=[
                 ft.OutlinedButton("Anterior", disabled=prev_disabled, on_click=lambda _: self._move_step(-1)),
@@ -970,6 +1014,8 @@ class VentaCompletaWizardV2Prototype:
         return self._total_objetos() - self._anticipo_total() - self._tramos_total() - self._saldo_total()
 
     def _step_errors(self, step: int) -> list[str]:
+        if not self.state.origen and step != 0:
+            return []
         if step == 0:
             return self._origin_errors()
         if step == 1:
@@ -989,7 +1035,10 @@ class VentaCompletaWizardV2Prototype:
         return []
 
     def _all_errors(self) -> list[str]:
-        errors = self._origin_errors() + self._object_errors()
+        origin_errors = self._origin_errors()
+        if self.state.origen not in ORIGENES:
+            return origin_errors
+        errors = origin_errors + self._object_errors()
         if self.state.origen == "DIRECTA":
             errors += self._buyer_errors()
         errors += self._commercial_errors() + self._payment_form_errors() + self._plan_errors()
@@ -997,8 +1046,10 @@ class VentaCompletaWizardV2Prototype:
 
     def _origin_errors(self) -> list[str]:
         errors: list[str] = []
+        if not self.state.origen:
+            return ["Seleccioná cómo querés iniciar la venta."]
         if self.state.origen not in ORIGENES:
-            errors.append("Origen requerido.")
+            return ["Seleccioná cómo querés iniciar la venta."]
         if self.state.origen == "RESERVA":
             if _int_or_none(self.state.id_reserva_venta) is None:
                 errors.append("RESERVA requiere id_reserva_venta numerico.")
