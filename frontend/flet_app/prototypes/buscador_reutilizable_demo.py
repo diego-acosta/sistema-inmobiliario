@@ -20,6 +20,11 @@ import flet as ft
 from components.search_selector_demo import create_search_selector_demo
 
 
+def _border_all(width: int | float, color: ft.ColorValue) -> ft.Border:
+    side = ft.BorderSide(width, color)
+    return ft.Border(top=side, right=side, bottom=side, left=side)
+
+
 DEMO_RESERVAS: list[dict[str, Any]] = [
     {
         "id_reserva_venta": 101,
@@ -179,7 +184,7 @@ class BuscadorReutilizableDemo:
         return ft.Container(
             padding=16,
             border_radius=12,
-            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
             bgcolor=ft.Colors.BLUE_GREY_50,
             content=ft.Column(
                 controls=[
