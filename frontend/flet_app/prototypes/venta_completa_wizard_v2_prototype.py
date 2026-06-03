@@ -430,6 +430,13 @@ class VentaCompletaWizardV2Prototype:
                 "Esto define responsabilidad pactada sobre las obligaciones; no crea cuotas separadas por comprador."
             )
         ]
+        if self.state.origen == "RESERVA":
+            controls.append(
+                self._notice(
+                    "Origen RESERVA: los compradores se heredan de la reserva y no se envian en el payload de confirmacion. "
+                    "Esta pantalla queda como referencia visual y no bloquea el avance."
+                )
+            )
         for index, comprador in enumerate(self.state.compradores):
             controls.append(self._comprador_card(index, comprador))
         controls.extend(
@@ -444,6 +451,7 @@ class VentaCompletaWizardV2Prototype:
                 ),
                 ft.Text(f"Suma de responsabilidades: {_money(self._suma_responsabilidades())}%", weight=ft.FontWeight.W_700),
                 ft.Text("Un comprador sin porcentaje se asume 100%; varios compradores requieren porcentaje explicito y suma 100%."),
+                ft.Text("ID rol comprador backend: debe corresponder al rol COMPRADOR."),
             ]
         )
         return self._card("Paso 3 — Compradores", controls)
@@ -459,9 +467,11 @@ class VentaCompletaWizardV2Prototype:
                             self._field("ID persona backend", comprador.id_persona, lambda v, c=comprador: setattr(c, "id_persona", v), 190),
                             self._field("Nombre mostrado", comprador.nombre_visual, lambda v, c=comprador: setattr(c, "nombre_visual", v), 240),
                             self._field("porcentaje_responsabilidad", comprador.porcentaje_responsabilidad, lambda v, c=comprador: setattr(c, "porcentaje_responsabilidad", v), 250),
+                            self._field("ID rol comprador backend", comprador.id_rol_participacion, lambda v, c=comprador: setattr(c, "id_rol_participacion", v), 220),
                         ],
                         wrap=True,
                     ),
+                    ft.Text("Debe corresponder al rol COMPRADOR."),
                 ],
                 spacing=8,
             ),
@@ -965,7 +975,7 @@ class VentaCompletaWizardV2Prototype:
         if step == 1:
             return self._object_errors()
         if step == 2:
-            return self._buyer_errors()
+            return self._buyer_errors() if self.state.origen == "DIRECTA" else []
         if step == 3:
             return self._commercial_errors()
         if step == 4:
@@ -979,7 +989,11 @@ class VentaCompletaWizardV2Prototype:
         return []
 
     def _all_errors(self) -> list[str]:
-        return self._origin_errors() + self._object_errors() + self._buyer_errors() + self._commercial_errors() + self._payment_form_errors() + self._plan_errors()
+        errors = self._origin_errors() + self._object_errors()
+        if self.state.origen == "DIRECTA":
+            errors += self._buyer_errors()
+        errors += self._commercial_errors() + self._payment_form_errors() + self._plan_errors()
+        return errors
 
     def _origin_errors(self) -> list[str]:
         errors: list[str] = []
@@ -1028,6 +1042,8 @@ class VentaCompletaWizardV2Prototype:
                 errors.append(f"Comprador #{index}: id_persona duplicado.")
             else:
                 ids.add(id_persona)
+            if _int_or_none(comprador.id_rol_participacion) is None:
+                errors.append(f"Comprador #{index}: ID rol comprador backend requerido para DIRECTA.")
             pct = _decimal_or_none(comprador.porcentaje_responsabilidad)
             if len(self.state.compradores) == 1 and pct is None:
                 pct = Decimal("100")
