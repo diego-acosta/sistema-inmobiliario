@@ -321,22 +321,22 @@ class VentaCompletaWizardV3Prototype:
                 "Seleccioná los inmuebles o unidades funcionales incluidos en la operación y asigná el valor comercial de cada uno.",
                 color=ft.Colors.BLUE_GREY_700,
             ),
-            self.objeto_selector.view(),
+            ft.Row(
+                controls=[
+                    ft.Container(content=self.objeto_selector.view(), expand=True),
+                    ft.Container(width=340, content=self._build_selected_object_panel()),
+                ],
+                spacing=14,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+            self._build_help_card(
+                "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
+                ft.Colors.AMBER_50,
+                ft.Colors.AMBER_200,
+            ),
+            self._build_added_objects_list(),
+            self._build_objects_total_summary(),
         ]
-        selected_card = self._build_selected_object_card()
-        if selected_card is not None:
-            controls.append(selected_card)
-        controls.extend(
-            [
-                self._build_help_card(
-                    "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
-                    ft.Colors.AMBER_50,
-                    ft.Colors.AMBER_200,
-                ),
-                self._build_added_objects_list(),
-                self._build_objects_total_summary(),
-            ]
-        )
 
         return ft.Container(
             padding=18,
@@ -352,21 +352,31 @@ class VentaCompletaWizardV3Prototype:
         self.objeto_selector.results_column.height = 260
         self.objeto_selector.results_column.scroll = ft.ScrollMode.AUTO
 
-    def _build_selected_object_card(self) -> ft.Control | None:
+    def _build_selected_object_panel(self) -> ft.Control:
         if self.objeto_seleccionado is None:
-            return None
-        tipo_objeto = str(self.objeto_seleccionado.get("tipo_objeto") or "-")
-        id_label, id_value = _object_id_label_value(self.objeto_seleccionado)
-        duplicate = self._is_duplicate_selected_object()
-        price_error = self.precio_objeto_error or self._selected_price_validation_message(show_required=False)
-        return ft.Container(
-            padding=14,
-            border_radius=12,
-            bgcolor=ft.Colors.BLUE_50,
-            border=_border_all(1, ft.Colors.BLUE_200),
-            content=ft.Column(
+            panel_content = ft.Column(
                 controls=[
-                    ft.Text("Objeto seleccionado para agregar", size=18, weight=ft.FontWeight.W_700),
+                    ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
+                    ft.Container(
+                        padding=12,
+                        border_radius=10,
+                        bgcolor=ft.Colors.BLUE_GREY_50,
+                        content=ft.Text(
+                            "Seleccioná un inmueble o unidad funcional para asignarle valor.",
+                            color=ft.Colors.BLUE_GREY_700,
+                        ),
+                    ),
+                ],
+                spacing=10,
+            )
+        else:
+            tipo_objeto = str(self.objeto_seleccionado.get("tipo_objeto") or "-")
+            id_label, id_value = _object_id_label_value(self.objeto_seleccionado)
+            duplicate = self._is_duplicate_selected_object()
+            price_error = self.precio_objeto_error
+            panel_content = ft.Column(
+                controls=[
+                    ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
                     ft.Text(str(self.objeto_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
                     ft.Row(
                         controls=[
@@ -382,15 +392,26 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.precio_objeto_field,
                     ft.Text(
-                        price_error or "Ingresá un valor mayor que cero antes de agregar el objeto.",
+                        price_error or "Ingresá el valor comercial asignado a este objeto.",
                         size=12,
                         color=ft.Colors.RED_700 if price_error else ft.Colors.BLUE_GREY_600,
                     ),
-                    ft.ElevatedButton(
-                        "Agregar a la venta",
-                        icon=ft.Icons.ADD,
-                        disabled=duplicate,
-                        on_click=self._add_selected_object,
+                    ft.Row(
+                        controls=[
+                            ft.ElevatedButton(
+                                "Agregar a la venta",
+                                icon=ft.Icons.ADD,
+                                disabled=duplicate,
+                                on_click=self._add_selected_object,
+                            ),
+                            ft.OutlinedButton(
+                                "Limpiar selección",
+                                icon=ft.Icons.CLOSE,
+                                on_click=self._clear_selected_object,
+                            ),
+                        ],
+                        wrap=True,
+                        spacing=8,
                     ),
                     ft.Text(
                         "Este objeto ya fue agregado a la venta." if duplicate else "",
@@ -399,7 +420,13 @@ class VentaCompletaWizardV3Prototype:
                     ),
                 ],
                 spacing=8,
-            ),
+            )
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_50,
+            border=_border_all(1, ft.Colors.BLUE_200),
+            content=panel_content,
         )
 
     def _build_added_objects_list(self) -> ft.Control:
@@ -606,6 +633,16 @@ class VentaCompletaWizardV3Prototype:
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
         self.objeto_seleccionado = selected
+        self.precio_objeto_value = ""
+        self.precio_objeto_field.value = ""
+        self.precio_objeto_error = None
+        if self.objeto_selector is not None:
+            self.objeto_selector.selected_panel.visible = False
+        self._render()
+
+    def _clear_selected_object(self, _: ft.ControlEvent | None = None) -> None:
+        self.objeto_seleccionado = None
+        self.objeto_selector = None
         self.precio_objeto_value = ""
         self.precio_objeto_field.value = ""
         self.precio_objeto_error = None
