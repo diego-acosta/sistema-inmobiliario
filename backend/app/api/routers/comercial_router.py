@@ -1512,6 +1512,15 @@ def confirmar_venta_completa_desde_reserva(
                     politica_valor_no_disponible=item.politica_valor_no_disponible,
                     conserva_capital_original=item.conserva_capital_original,
                     genera_ajuste_por_diferencia=item.genera_ajuste_por_diferencia,
+                    cuotas_refuerzo=[
+                        CuotaRefuerzoInput(
+                            numero_cuota=cuota_refuerzo.numero_cuota,
+                            etiqueta=cuota_refuerzo.etiqueta,
+                            unidades_refuerzo=cuota_refuerzo.unidades_refuerzo,
+                        )
+                        for cuota_refuerzo in (item.cuotas_refuerzo or [])
+                    ]
+                    or None,
                     observaciones=item.observaciones,
                 )
                 for item in request.plan_pago_v2.bloques
@@ -1694,6 +1703,15 @@ def confirmar_venta_directa_completa(
                     politica_valor_no_disponible=item.politica_valor_no_disponible,
                     conserva_capital_original=item.conserva_capital_original,
                     genera_ajuste_por_diferencia=item.genera_ajuste_por_diferencia,
+                    cuotas_refuerzo=[
+                        CuotaRefuerzoInput(
+                            numero_cuota=cuota_refuerzo.numero_cuota,
+                            etiqueta=cuota_refuerzo.etiqueta,
+                            unidades_refuerzo=cuota_refuerzo.unidades_refuerzo,
+                        )
+                        for cuota_refuerzo in (item.cuotas_refuerzo or [])
+                    ]
+                    or None,
                     observaciones=item.observaciones,
                 )
                 for item in request.plan_pago_v2.bloques

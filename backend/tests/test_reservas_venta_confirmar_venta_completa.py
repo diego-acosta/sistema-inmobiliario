@@ -270,6 +270,46 @@ def _usar_plan_indexado(payload: dict[str, object], id_indice_financiero: int) -
     ]
 
 
+def _usar_plan_refuerzo_interno(payload: dict[str, object]) -> None:
+    payload["plan_pago_v2"]["bloques"] = [
+        {
+            "tipo_bloque": "TRAMO_CUOTAS",
+            "etiqueta_bloque": "Tramo con refuerzo interno",
+            "importe_total_bloque": "150000.00",
+            "cantidad_cuotas": 4,
+            "fecha_primer_vencimiento": "2026-06-10",
+            "periodicidad": "MENSUAL",
+            "metodo_liquidacion": "SIN_INTERES",
+            "cuotas_refuerzo": [
+                {
+                    "numero_cuota": 2,
+                    "etiqueta": "Refuerzo interno cuota 2",
+                    "unidades_refuerzo": "1.00",
+                }
+            ],
+        }
+    ]
+
+
+def _obligaciones_items_by_venta(db_session, id_venta: int) -> list[dict]:
+    return [
+        dict(row)
+        for row in db_session.execute(
+            text("""
+                SELECT o.numero_obligacion, o.tipo_item_cronograma, o.importe_total
+                FROM obligacion_financiera o
+                JOIN relacion_generadora rg
+                  ON rg.id_relacion_generadora = o.id_relacion_generadora
+                WHERE rg.tipo_origen = 'venta'
+                  AND rg.id_origen = :id_venta
+                  AND o.deleted_at IS NULL
+                ORDER BY o.numero_obligacion
+                """),
+            {"id_venta": id_venta},
+        ).mappings()
+    ]
+
+
 def _plan_bloques_by_venta(db_session, id_venta: int) -> list[dict]:
     return [
         dict(row)
@@ -432,9 +472,7 @@ def test_confirmar_venta_completa_desde_reserva_multiobjeto_sin_asignacion_falla
     )
 
     assert response.status_code == 400
-    assert response.json()["details"]["errors"] == [
-        "VALOR_ASIGNADO_OBJETO_REQUERIDO"
-    ]
+    assert response.json()["details"]["errors"] == ["VALOR_ASIGNADO_OBJETO_REQUERIDO"]
     assert _venta_by_codigo(db_session, "V-COMP-SIN-PRECIO") is None
     assert _estado_reserva(db_session, reserva["id_reserva_venta"]) == "confirmada"
 
@@ -879,3 +917,54 @@ def test_confirmar_venta_completa_desde_reserva_indexacion_invalida_rollback(
     assert _estado_reserva(db_session, reserva["id_reserva_venta"]) == "confirmada"
     assert _venta_by_codigo(db_session, "V-COMP-IX-NEG") is None
     assert _count_obligaciones(db_session) == before_obligaciones
+
+
+def test_confirmar_venta_completa_desde_reserva_propaga_refuerzo_interno(
+    client, db_session
+) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-REF")
+    payload = _payload(codigo_venta="V-COMP-REF", id_inmueble=reserva["id_inmueble"])
+    _usar_plan_refuerzo_interno(payload)
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["obligaciones"]["cantidad"] == 4
+    venta = _venta_by_codigo(db_session, "V-COMP-REF")
+    assert venta is not None
+    obligaciones = _obligaciones_items_by_venta(db_session, venta["id_venta"])
+    assert len(obligaciones) == 4
+    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 3
+    assert (
+        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO") == 1
+    )
+    assert obligaciones[1]["tipo_item_cronograma"] == "REFUERZO"
+    assert sum(
+        (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
+    ) == Decimal("150000.00")
+
+
+def test_confirmar_venta_completa_desde_reserva_refuerzo_duplicado_error_controlado(
+    client, db_session
+) -> None:
+    reserva = _crear_reserva_confirmada(client, db_session, codigo="RV-COMP-REF-DUP")
+    payload = _payload(
+        codigo_venta="V-COMP-REF-DUP", id_inmueble=reserva["id_inmueble"]
+    )
+    _usar_plan_refuerzo_interno(payload)
+    payload["plan_pago_v2"]["bloques"][0]["cuotas_refuerzo"].append({"numero_cuota": 2})
+
+    response = client.post(
+        f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}/confirmar-venta-completa",
+        headers={**HEADERS, "If-Match-Version": str(reserva["version_registro"])},
+        json=payload,
+    )
+
+    assert response.status_code == 400, response.text
+    assert "CUOTA_REFUERZO_DUPLICADA" in response.json()["details"]["errors"]
+    assert _estado_reserva(db_session, reserva["id_reserva_venta"]) == "confirmada"
+    assert _venta_by_codigo(db_session, "V-COMP-REF-DUP") is None

@@ -21,8 +21,10 @@ from tests.test_reservas_venta_confirmar_venta_completa import (
     _insertar_indice_financiero_minimo,
     _insertar_indice_financiero_valor,
     _plan_bloques_by_venta,
+    _obligaciones_items_by_venta,
     _usar_plan_indexado,
     _usar_plan_interes_directo,
+    _usar_plan_refuerzo_interno,
 )
 
 ENDPOINT = "/api/v1/ventas/directa/confirmar-venta-completa"
@@ -242,7 +244,8 @@ def _obligados_porcentaje(db_session, id_venta: int) -> list[Decimal]:
 def test_patch_porcentaje_responsabilidad_relacion_persona_rol_aplicado(
     db_session,
 ) -> None:
-    column_exists = db_session.execute(text("""
+    column_exists = db_session.execute(
+        text("""
             SELECT EXISTS (
                 SELECT 1
                 FROM information_schema.columns
@@ -250,15 +253,18 @@ def test_patch_porcentaje_responsabilidad_relacion_persona_rol_aplicado(
                   AND table_name = 'relacion_persona_rol'
                   AND column_name = 'porcentaje_responsabilidad'
             )
-            """)).scalar_one()
-    constraint_exists = db_session.execute(text("""
+            """)
+    ).scalar_one()
+    constraint_exists = db_session.execute(
+        text("""
             SELECT EXISTS (
                 SELECT 1
                 FROM pg_constraint
                 WHERE conrelid = 'public.relacion_persona_rol'::regclass
                   AND conname = 'chk_rpr_porcentaje_responsabilidad'
             )
-            """)).scalar_one()
+            """)
+    ).scalar_one()
 
     assert column_exists is True
     assert constraint_exists is True
@@ -927,3 +933,43 @@ def test_confirmar_venta_directa_completa_indexacion_invalida_rollback(
     )
     assert _venta_by_codigo(db_session, "VD-COMP-IX-NEG") is None
     assert _count_obligaciones(db_session) == before_obligaciones
+
+
+def test_confirmar_venta_directa_completa_propaga_refuerzo_interno(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="REF")
+    payload = _payload(codigo_venta="VD-COMP-REF", **base)
+    _usar_plan_refuerzo_interno(payload)
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["obligaciones"]["cantidad"] == 4
+    venta = _venta_by_codigo(db_session, "VD-COMP-REF")
+    assert venta is not None
+    obligaciones = _obligaciones_items_by_venta(db_session, venta["id_venta"])
+    assert len(obligaciones) == 4
+    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 3
+    assert (
+        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO") == 1
+    )
+    assert obligaciones[1]["tipo_item_cronograma"] == "REFUERZO"
+    assert sum(
+        (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
+    ) == Decimal("150000.00")
+
+
+def test_confirmar_venta_directa_completa_refuerzo_numero_invalido_error_controlado(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="REF-INV")
+    payload = _payload(codigo_venta="VD-COMP-REF-INV", **base)
+    _usar_plan_refuerzo_interno(payload)
+    payload["plan_pago_v2"]["bloques"][0]["cuotas_refuerzo"][0]["numero_cuota"] = 0
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400, response.text
+    assert "CUOTA_REFUERZO_NUMERO_INVALIDO" in response.json()["details"]["errors"]
+    assert _venta_by_codigo(db_session, "VD-COMP-REF-INV") is None
