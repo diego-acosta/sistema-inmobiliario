@@ -346,89 +346,76 @@ class VentaCompletaWizardV3Prototype:
         self.objeto_selector.results_column.scroll = ft.ScrollMode.AUTO
 
     def _build_objects_side_panel(self) -> ft.Control:
-        return ft.Column(
-            controls=[
-                self._build_selected_object_panel(),
-                self._build_help_card(
-                    "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
-                    ft.Colors.AMBER_50,
-                    ft.Colors.AMBER_200,
-                ),
-                self._build_added_objects_list(),
-                self._build_objects_total_summary(),
-            ],
-            spacing=12,
-        )
+        controls: list[ft.Control] = []
+        if self.objeto_seleccionado is not None:
+            controls.extend(
+                [
+                    self._build_selected_object_panel(),
+                    self._build_help_card(
+                        "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
+                        ft.Colors.AMBER_50,
+                        ft.Colors.AMBER_200,
+                    ),
+                ]
+            )
+        controls.extend([self._build_added_objects_list(), self._build_objects_total_summary()])
+        return ft.Column(controls=controls, spacing=12)
 
     def _build_selected_object_panel(self) -> ft.Control:
         if self.objeto_seleccionado is None:
-            panel_content = ft.Column(
-                controls=[
-                    ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
-                    ft.Container(
-                        padding=12,
-                        border_radius=10,
-                        bgcolor=ft.Colors.BLUE_GREY_50,
-                        content=ft.Text(
-                            "Seleccioná un inmueble o unidad funcional para asignarle valor.",
-                            color=ft.Colors.BLUE_GREY_700,
+            return ft.Container()
+
+        tipo_objeto = str(self.objeto_seleccionado.get("tipo_objeto") or "-")
+        id_label, id_value = _object_id_label_value(self.objeto_seleccionado)
+        duplicate = self._is_duplicate_selected_object()
+        price_error = self.precio_objeto_error
+        panel_content = ft.Column(
+            controls=[
+                ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
+                ft.Text(str(self.objeto_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
+                ft.Row(
+                    controls=[
+                        _badge(f"tipo_objeto: {tipo_objeto}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
+                        _badge(
+                            f"ID técnico secundario ({id_label}): {id_value}",
+                            ft.Colors.BLUE_GREY_50,
+                            ft.Colors.BLUE_GREY_200,
                         ),
-                    ),
-                ],
-                spacing=10,
-            )
-        else:
-            tipo_objeto = str(self.objeto_seleccionado.get("tipo_objeto") or "-")
-            id_label, id_value = _object_id_label_value(self.objeto_seleccionado)
-            duplicate = self._is_duplicate_selected_object()
-            price_error = self.precio_objeto_error
-            panel_content = ft.Column(
-                controls=[
-                    ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
-                    ft.Text(str(self.objeto_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
-                    ft.Row(
-                        controls=[
-                            _badge(f"tipo_objeto: {tipo_objeto}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
-                            _badge(
-                                f"ID técnico secundario ({id_label}): {id_value}",
-                                ft.Colors.BLUE_GREY_50,
-                                ft.Colors.BLUE_GREY_200,
-                            ),
-                        ],
-                        wrap=True,
-                        spacing=8,
-                    ),
-                    self.precio_objeto_field,
-                    ft.Text(
-                        price_error or "Ingresá el valor comercial asignado a este objeto.",
-                        size=12,
-                        color=ft.Colors.RED_700 if price_error else ft.Colors.BLUE_GREY_600,
-                    ),
-                    ft.Row(
-                        controls=[
-                            ft.ElevatedButton(
-                                "Agregar a la venta",
-                                icon=ft.Icons.ADD,
-                                disabled=duplicate,
-                                on_click=self._add_selected_object,
-                            ),
-                            ft.OutlinedButton(
-                                "Limpiar selección",
-                                icon=ft.Icons.CLOSE,
-                                on_click=self._clear_selected_object,
-                            ),
-                        ],
-                        wrap=True,
-                        spacing=8,
-                    ),
-                    ft.Text(
-                        "Este objeto ya fue agregado a la venta." if duplicate else "",
-                        size=12,
-                        color=ft.Colors.RED_700,
-                    ),
-                ],
-                spacing=8,
-            )
+                    ],
+                    wrap=True,
+                    spacing=8,
+                ),
+                self.precio_objeto_field,
+                ft.Text(
+                    price_error or "Ingresá el valor comercial asignado a este objeto.",
+                    size=12,
+                    color=ft.Colors.RED_700 if price_error else ft.Colors.BLUE_GREY_600,
+                ),
+                ft.Row(
+                    controls=[
+                        ft.ElevatedButton(
+                            "Agregar a la venta",
+                            icon=ft.Icons.ADD,
+                            disabled=duplicate,
+                            on_click=self._add_selected_object,
+                        ),
+                        ft.OutlinedButton(
+                            "Limpiar selección",
+                            icon=ft.Icons.CLOSE,
+                            on_click=self._clear_selected_object,
+                        ),
+                    ],
+                    wrap=True,
+                    spacing=8,
+                ),
+                ft.Text(
+                    "Este objeto ya fue agregado a la venta." if duplicate else "",
+                    size=12,
+                    color=ft.Colors.RED_700,
+                ),
+            ],
+            spacing=8,
+        )
         return ft.Container(
             padding=14,
             border_radius=12,
