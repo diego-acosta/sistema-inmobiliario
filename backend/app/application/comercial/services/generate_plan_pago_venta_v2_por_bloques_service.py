@@ -666,10 +666,63 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         )
         if len(existing) != len(expected):
             return False
-        return all(
+        bloques_compatibles = all(
             self._bloque_compatible(existing_bloque, expected_bloque)
             for existing_bloque, expected_bloque in zip(existing, expected, strict=True)
         )
+        if not bloques_compatibles:
+            return False
+        existing_obligaciones = (
+            self.repository.get_obligaciones_plan_pago_venta_v2_minimas(
+                plan_vivo["id_plan_pago_venta"]
+            )
+        )
+        if not existing_obligaciones:
+            return True
+        expected_obligaciones = expected_result.data["obligaciones"]
+        return self._obligaciones_compatibles(
+            id_plan_pago_venta=plan_vivo["id_plan_pago_venta"],
+            existing=existing_obligaciones,
+            expected=expected_obligaciones,
+        )
+
+    def _obligaciones_compatibles(
+        self,
+        *,
+        id_plan_pago_venta: int,
+        existing: list[dict[str, Any]],
+        expected: list[PlanPagoVentaV2ObligacionPreview],
+    ) -> bool:
+        if len(existing) != len(expected):
+            return False
+        expected_by_numero = {
+            obligacion.numero_obligacion: obligacion for obligacion in expected
+        }
+        for existing_obligacion in existing:
+            expected_obligacion = expected_by_numero.get(
+                existing_obligacion["numero_obligacion"]
+            )
+            if expected_obligacion is None:
+                return False
+            clave_funcional = (
+                f"PLAN_PAGO_VENTA:{id_plan_pago_venta}:"
+                f"BLOQUE:{expected_obligacion.bloque.numero_bloque}:"
+                f"{expected_obligacion.tipo_item_cronograma}:"
+                f"{expected_obligacion.item_numero}"
+            )
+            if (
+                existing_obligacion["tipo_item_cronograma"]
+                != expected_obligacion.tipo_item_cronograma
+                or existing_obligacion["etiqueta_obligacion"]
+                != expected_obligacion.etiqueta_obligacion
+                or existing_obligacion["clave_funcional_origen"] != clave_funcional
+                or existing_obligacion["fecha_vencimiento"]
+                != expected_obligacion.fecha_vencimiento
+                or self._decimal_or_none(existing_obligacion["importe_total"])
+                != self._decimal_or_none(expected_obligacion.importe_total)
+            ):
+                return False
+        return True
 
     def _bloque_compatible(
         self, existing: dict[str, Any], expected: PlanPagoVentaV2BloquePreview

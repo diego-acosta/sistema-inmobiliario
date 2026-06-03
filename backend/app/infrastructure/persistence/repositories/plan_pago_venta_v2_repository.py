@@ -276,6 +276,7 @@ class PlanPagoVentaV2Repository:
                 o.saldo_pendiente,
                 o.moneda,
                 o.estado_obligacion,
+                b.tipo_bloque AS tipo_bloque_bloque,
                 ofi.id_obligacion_financiera_indexacion,
                 ofi.id_indice_financiero,
                 ofi.id_indice_financiero_valor,
@@ -340,8 +341,30 @@ class PlanPagoVentaV2Repository:
                 ):
                     data.pop(key)
             data["indexacion"] = indexacion
+            tipo_bloque_bloque = data.pop("tipo_bloque_bloque")
+            data["numero_cuota_asociada"] = (
+                self._numero_cuota_asociada_desde_clave(
+                    data.get("clave_funcional_origen")
+                )
+                if tipo_bloque_bloque == "TRAMO_CUOTAS"
+                else None
+            )
             obligaciones.append(data)
         return obligaciones
+
+    @staticmethod
+    def _numero_cuota_asociada_desde_clave(
+        clave_funcional_origen: str | None,
+    ) -> int | None:
+        if not clave_funcional_origen:
+            return None
+        parts = clave_funcional_origen.split(":")
+        if len(parts) < 2 or parts[-2] not in {"CUOTA", "REFUERZO"}:
+            return None
+        try:
+            return int(parts[-1])
+        except ValueError:
+            return None
 
     def get_composiciones_obligaciones_plan_pago_venta_v2(
         self, id_plan_pago_venta: int
@@ -1060,6 +1083,32 @@ class PlanPagoVentaV2Repository:
         if value is None:
             return None
         return Decimal(str(value)).quantize(Decimal("0.00000001"))
+
+    def get_obligaciones_plan_pago_venta_v2_minimas(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        stmt = text("""
+            SELECT
+                o.numero_obligacion,
+                o.tipo_item_cronograma,
+                o.etiqueta_obligacion,
+                o.clave_funcional_origen,
+                o.fecha_vencimiento,
+                o.importe_total
+            FROM obligacion_financiera o
+            JOIN plan_pago_venta_bloque b
+              ON b.id_plan_pago_venta_bloque = o.id_plan_pago_venta_bloque
+             AND b.deleted_at IS NULL
+            WHERE b.id_plan_pago_venta = :id_plan_pago_venta
+              AND o.deleted_at IS NULL
+            ORDER BY o.numero_obligacion ASC
+            """)
+        rows = (
+            self.db.execute(stmt, {"id_plan_pago_venta": id_plan_pago_venta})
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
 
     def get_plan_pago_venta_bloques(
         self, id_plan_pago_venta: int

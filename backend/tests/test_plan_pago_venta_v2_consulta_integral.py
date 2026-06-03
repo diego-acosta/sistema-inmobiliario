@@ -4,7 +4,11 @@ from decimal import Decimal
 from sqlalchemy import text
 
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
+    CuotaRefuerzoInput,
     PlanPagoVentaBloqueInput,
+)
+from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
+    PlanPagoVentaV2Repository,
 )
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_fin_event_venta_confirmada import (
@@ -331,3 +335,59 @@ def test_consulta_venta_sin_plan_devuelve_error_controlado(client, db_session) -
 
     assert response.status_code == 404, response.text
     assert response.json()["error_code"] == "NOT_FOUND_PLAN_PAGO_V2"
+
+
+def test_consulta_integral_muestra_refuerzos_internos_en_tramo_cuotas(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-GET-REF-INT")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("6000000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("6000000.00"),
+                    cantidad_cuotas=6,
+                    fecha_primer_vencimiento=date(2026, 1, 10),
+                    periodicidad="MENSUAL",
+                    cuotas_refuerzo=[
+                        CuotaRefuerzoInput(numero_cuota=3, etiqueta="Refuerzo cuota 3"),
+                        CuotaRefuerzoInput(numero_cuota=6, etiqueta="Refuerzo cuota 6"),
+                    ],
+                )
+            ],
+        )
+    )
+    assert result.success, result.errors
+
+    integral = PlanPagoVentaV2Repository(db_session).get_plan_pago_venta_v2_integral(
+        id_venta
+    )
+
+    assert integral is not None
+    assert len(integral["bloques"]) == 1
+    bloque = integral["bloques"][0]
+    assert bloque["tipo_bloque"] == "TRAMO_CUOTAS"
+    obligaciones = bloque["obligaciones"]
+    assert len(obligaciones) == 6
+    assert (
+        sum(
+            1
+            for obligacion in obligaciones
+            if obligacion["tipo_item_cronograma"] == "CUOTA"
+        )
+        == 4
+    )
+    refuerzos = [
+        obligacion
+        for obligacion in obligaciones
+        if obligacion["tipo_item_cronograma"] == "REFUERZO"
+    ]
+    assert [obligacion["numero_cuota_asociada"] for obligacion in refuerzos] == [3, 6]
+    assert [obligacion["etiqueta_obligacion"] for obligacion in refuerzos] == [
+        "Refuerzo cuota 3",
+        "Refuerzo cuota 6",
+    ]

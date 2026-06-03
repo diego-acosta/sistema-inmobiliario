@@ -150,6 +150,7 @@ from app.application.comercial.commands.generate_plan_pago_venta_anticipo_mas_cu
 )
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
     GeneratePlanPagoVentaV2PorBloquesCommand,
+    CuotaRefuerzoInput,
     PlanPagoVentaBloqueInput,
 )
 from app.application.comercial.commands.update_reserva_venta import (
@@ -204,6 +205,7 @@ from app.application.comercial.services.generate_plan_pago_venta_anticipo_mas_cu
 from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
     BuildPlanPagoVentaV2PorBloquesPreviewService,
     METODO_PLAN_POR_BLOQUES,
+    TIPO_BLOQUE_TRAMO_CUOTAS,
 )
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
@@ -2335,6 +2337,15 @@ def _build_plan_pago_v2_por_bloques_command(
                 politica_valor_no_disponible=bloque.politica_valor_no_disponible,
                 conserva_capital_original=bloque.conserva_capital_original,
                 genera_ajuste_por_diferencia=bloque.genera_ajuste_por_diferencia,
+                cuotas_refuerzo=[
+                    CuotaRefuerzoInput(
+                        numero_cuota=cuota_refuerzo.numero_cuota,
+                        etiqueta=cuota_refuerzo.etiqueta,
+                        unidades_refuerzo=cuota_refuerzo.unidades_refuerzo,
+                    )
+                    for cuota_refuerzo in (bloque.cuotas_refuerzo or [])
+                ]
+                or None,
                 observaciones=bloque.observaciones,
             )
             for bloque in request.bloques
@@ -2414,6 +2425,11 @@ def _plan_pago_v2_preview_response_data(
                 "coeficiente_indexacion": obligacion.coeficiente_indexacion,
                 "capital_cuota": obligacion.capital_cuota,
                 "ajuste_indexacion_cuota": obligacion.ajuste_indexacion_cuota,
+                "numero_cuota_asociada": (
+                    obligacion.item_numero
+                    if obligacion.bloque.tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS
+                    else None
+                ),
             }
             for obligacion in preview["obligaciones"]
         ],

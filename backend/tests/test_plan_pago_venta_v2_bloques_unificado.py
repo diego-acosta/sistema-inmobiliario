@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import text
 
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import (
+    CuotaRefuerzoInput,
     GeneratePlanPagoVentaV2PorBloquesCommand,
     PlanPagoVentaBloqueInput,
 )
@@ -1785,3 +1786,89 @@ def test_repository_indexacion_compara_valor_base_indice_a_ocho_decimales(
         assert False, "expected incompatibility"
     except ValueError as exc:
         assert "valor_base_indice" in str(exc)
+
+
+def test_generate_tramo_cuotas_con_refuerzos_internos_persiste_sin_duplicar(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-REF-INT-001")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    command = _command(
+        id_venta=id_venta,
+        monto_total_plan=Decimal("24000000.00"),
+        bloques=[
+            PlanPagoVentaBloqueInput(
+                tipo_bloque="TRAMO_CUOTAS",
+                importe_total_bloque=Decimal("24000000.00"),
+                cantidad_cuotas=24,
+                fecha_primer_vencimiento=date(2026, 1, 10),
+                periodicidad="MENSUAL",
+                metodo_liquidacion="SIN_INTERES",
+                cuotas_refuerzo=[
+                    CuotaRefuerzoInput(
+                        numero_cuota=6,
+                        unidades_refuerzo=Decimal("1.00"),
+                        etiqueta="Refuerzo cuota 6",
+                    ),
+                    CuotaRefuerzoInput(
+                        numero_cuota=12,
+                        unidades_refuerzo=Decimal("1.00"),
+                        etiqueta="Refuerzo cuota 12",
+                    ),
+                ],
+            )
+        ],
+    )
+
+    first = _service(db_session).execute(command)
+    assert first.success, first.errors
+    second = _service(db_session).execute(command)
+    assert second.success, second.errors
+
+    obligaciones = _obligaciones_unificadas(db_session, id_venta=id_venta)
+    assert len(obligaciones) == 24
+    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 22
+    assert (
+        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO") == 2
+    )
+    assert {ob["tipo_bloque"] for ob in first.data["bloques"]} == {"TRAMO_CUOTAS"}
+    assert sum(
+        (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
+    ) == Decimal("24000000.00")
+
+
+def test_generate_reintento_con_configuracion_refuerzos_distinta_falla_controlado(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-REF-INT-002")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    base = PlanPagoVentaBloqueInput(
+        tipo_bloque="TRAMO_CUOTAS",
+        importe_total_bloque=Decimal("4000000.00"),
+        cantidad_cuotas=4,
+        fecha_primer_vencimiento=date(2026, 1, 10),
+        periodicidad="MENSUAL",
+        cuotas_refuerzo=[CuotaRefuerzoInput(numero_cuota=2)],
+    )
+    first = _service(db_session).execute(
+        _command(
+            id_venta=id_venta, monto_total_plan=Decimal("4000000.00"), bloques=[base]
+        )
+    )
+    assert first.success, first.errors
+
+    changed = PlanPagoVentaBloqueInput(
+        tipo_bloque="TRAMO_CUOTAS",
+        importe_total_bloque=Decimal("4000000.00"),
+        cantidad_cuotas=4,
+        fecha_primer_vencimiento=date(2026, 1, 10),
+        periodicidad="MENSUAL",
+        cuotas_refuerzo=[CuotaRefuerzoInput(numero_cuota=3)],
+    )
+    second = _service(db_session).execute(
+        _command(
+            id_venta=id_venta, monto_total_plan=Decimal("4000000.00"), bloques=[changed]
+        )
+    )
+    assert not second.success
+    assert second.errors == ["PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE"]

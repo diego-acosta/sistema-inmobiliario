@@ -6,6 +6,13 @@ from app.application.common.commands import CommandContext
 
 
 @dataclass(slots=True)
+class CuotaRefuerzoInput:
+    numero_cuota: int
+    etiqueta: str | None = None
+    unidades_refuerzo: Decimal | None = Decimal("1.00")
+
+
+@dataclass(slots=True)
 class PlanPagoVentaBloqueInput:
     tipo_bloque: str
     etiqueta_bloque: str | None = None
@@ -29,6 +36,7 @@ class PlanPagoVentaBloqueInput:
     politica_valor_no_disponible: str | None = None
     conserva_capital_original: bool | None = None
     genera_ajuste_por_diferencia: bool | None = None
+    cuotas_refuerzo: list[CuotaRefuerzoInput] | None = None
     observaciones: str | None = None
 
 
