@@ -203,8 +203,8 @@ class VentaCompletaWizardV3Prototype:
             value=self.state.moneda,
             width=220,
             options=[ft.dropdown.Option(moneda) for moneda in MONEDAS_DEMO],
-            on_change=self._on_moneda_change,
         )
+        self.moneda_dropdown.on_change = self._on_moneda_change
         self.fecha_venta_field = ft.TextField(
             label="Fecha de venta",
             hint_text="AAAA-MM-DD",
