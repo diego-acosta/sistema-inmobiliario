@@ -448,9 +448,9 @@ class VentaCompletaWizardV3Prototype:
                                     ft.Row(
                                         controls=[
                                             self.fecha_venta_field,
-                                            ft.OutlinedButton(
-                                                "Seleccionar fecha",
+                                            ft.IconButton(
                                                 icon=ft.Icons.CALENDAR_MONTH,
+                                                tooltip="Seleccionar fecha",
                                                 on_click=self._open_fecha_venta_picker,
                                             ),
                                         ],
