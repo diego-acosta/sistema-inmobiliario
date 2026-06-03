@@ -33,8 +33,14 @@ No incluye:
 - implementacion UI productiva;
 - endpoints nuevos.
 
-Incluye como referencia tecnica el prototipo limpio no productivo
-`frontend/flet_app/prototypes/venta_completa_unica_wizard_prototype.py`.
+Incluye como referencia tecnica vigente para la nueva iteracion pantalla por
+pantalla el prototipo no productivo
+`frontend/flet_app/prototypes/venta_completa_wizard_v3_prototype.py`.
+
+El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
+queda descartado como base principal y solo puede leerse como referencia
+historica si aparece en ramas o artefactos previos. El flujo V3 arranca por
+Pantalla 1 -- Origen y no copia el flujo completo de V2.
 
 ## 3. Clasificacion y dominio
 
@@ -212,15 +218,39 @@ Reglas del estado:
 
 Objetivo: definir el contexto de entrada sin crear otro wizard.
 
+El V3 comienza por Pantalla 1 -- Origen con estado inicial sin seleccion:
+`origen = None`. No debe preseleccionar `RESERVA` ni `DIRECTA`, no debe mostrar
+errores tecnicos iniciales y no debe exponer campos de pasos posteriores.
+
 Reglas:
 
 - Valores permitidos: `RESERVA` o `DIRECTA`.
 - Si viene desde boton de una reserva: `RESERVA` queda preseleccionado y la
   reserva queda precargada.
-- Si viene desde `Nueva venta`: permitir elegir `RESERVA` o `DIRECTA`.
-- Si `RESERVA`: seleccionar reserva vigente o usar la reserva precargada.
-- Si `DIRECTA`: continuar sin reserva.
+- Si viene desde `Nueva venta`: permitir elegir `RESERVA` o `DIRECTA` mediante
+  dos tarjetas grandes: `Desde reserva existente` y `Venta directa`.
+- Mientras no se elija origen, `Siguiente` queda deshabilitado y no se muestran
+  validaciones rojas.
+- Si `RESERVA`: mostrar `Seleccionar reserva` con buscador visual de reservas
+  vigentes. La UI guarda `id_reserva_venta`, `version_registro` y el texto
+  visual de la reserva seleccionada, pero no pide manualmente
+  `id_reserva_venta` ni `If-Match-Version` como campos principales.
+- Si `RESERVA` sin reserva seleccionada: `Siguiente` queda deshabilitado.
+- Si `RESERVA` con reserva seleccionada: mostrar una card con codigo,
+  comprador/reservante, objeto, estado y `version_registro`, y habilitar
+  `Siguiente` hacia el placeholder de Paso 2.
+- Si `DIRECTA`: no mostrar buscador de reserva, mostrar la ayuda `Continuá para
+  cargar los objetos de venta.` y habilitar `Siguiente` hacia el placeholder de
+  Paso 2.
 - No pedir `id_venta` manual.
+- No mostrar forma de pago, total derivado, cronograma local, validaciones de
+  pasos futuros ni errores tecnicos no aplicables en esta pantalla.
+- El panel lateral de esta pantalla se llama `Estado del flujo` y muestra solo:
+  origen, reserva si aplica y proximo paso (`elegir origen`,
+  `seleccionar reserva` o `cargar objetos de venta`).
+
+El Paso 2 de V3 queda por ahora como placeholder simple:
+`Paso 2 -- Objetos de venta pendiente`. No implementa objetos todavia.
 
 ### Paso 2 - Datos de venta
 
@@ -972,38 +1002,30 @@ Reglas para ese futuro:
 - No se debe simular guardado de borrador con una venta real incompleta.
 
 
-## 13.1 Prototipo limpio Flet vigente
+## 13.1 Prototipo Flet vigente para iteracion V3
 
-El prototipo tecnico vigente del wizard unico es:
+La nueva base tecnica vigente para iterar el wizard unico pantalla por pantalla
+es:
 
 ```text
-frontend/flet_app/prototypes/venta_completa_unica_wizard_prototype.py
+frontend/flet_app/prototypes/venta_completa_wizard_v3_prototype.py
 ```
 
-Este prototipo reemplaza el enfoque experimental que pedia
-`id_venta_backend` manual para probar Plan Pago V2 sobre una venta ya existente.
-La regla UX/tecnica vigente es que la venta no existe hasta confirmar el wizard
-completo y, por lo tanto, la pantalla no debe pedir `id_venta` ni
-`id_venta_backend` al usuario antes del submit.
+El V3 inicia solamente con Pantalla 1 -- Origen. Esta pantalla define el
+contexto inicial (`RESERVA` o `DIRECTA`), reutiliza el buscador visual de
+reservas para el caso desde reserva y avanza solo a un placeholder de
+`Paso 2 -- Objetos de venta pendiente`.
 
-El prototipo mantiene un unico flujo por pasos. La eleccion `RESERVA` o
-`DIRECTA` solo cambia el adapter final:
+El prototipo V3 no pide `id_venta`, no calcula cronograma local, no muestra
+forma de pago ni total derivado en Pantalla 1 y no implementa todavia la carga
+de objetos.
 
-- `RESERVA`: llama a
-  `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`
-  y envia `If-Match-Version` de la reserva.
-- `DIRECTA`: llama a
-  `POST /api/v1/ventas/directa/confirmar-venta-completa` y no envia
-  `If-Match-Version` mientras el contrato actual no lo exija.
-
-El paso Plan Pago V2 del prototipo es de carga comercial y construye
-internamente `plan_pago_v2.bloques`. No es un editor tecnico de bloques para
-el usuario final.
-
-El prototipo no calcula cronograma local, no calcula interes directo local y no
-calcula indexacion local. Solo muestra resumen de suma cargada, diferencia y
-cantidad estimada de obligaciones; el cronograma y los ajustes dependen del
-backend.
+El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
+queda descartado como base principal porque su flujo no representa la UX
+vigente; puede conservarse unicamente como referencia historica. El prototipo
+previo `frontend/flet_app/prototypes/venta_completa_unica_wizard_prototype.py`
+tambien queda como referencia tecnica anterior hasta que V3 complete las
+pantallas restantes.
 
 ## 14. Decision CORE-EF
 
