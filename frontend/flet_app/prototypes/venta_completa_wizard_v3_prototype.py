@@ -324,18 +324,11 @@ class VentaCompletaWizardV3Prototype:
             ft.Row(
                 controls=[
                     ft.Container(content=self.objeto_selector.view(), expand=True),
-                    ft.Container(width=340, content=self._build_selected_object_panel()),
+                    ft.Container(width=380, content=self._build_objects_side_panel()),
                 ],
                 spacing=14,
                 vertical_alignment=ft.CrossAxisAlignment.START,
             ),
-            self._build_help_card(
-                "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
-                ft.Colors.AMBER_50,
-                ft.Colors.AMBER_200,
-            ),
-            self._build_added_objects_list(),
-            self._build_objects_total_summary(),
         ]
 
         return ft.Container(
@@ -351,6 +344,21 @@ class VentaCompletaWizardV3Prototype:
             return
         self.objeto_selector.results_column.height = 260
         self.objeto_selector.results_column.scroll = ft.ScrollMode.AUTO
+
+    def _build_objects_side_panel(self) -> ft.Control:
+        return ft.Column(
+            controls=[
+                self._build_selected_object_panel(),
+                self._build_help_card(
+                    "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
+                    ft.Colors.AMBER_50,
+                    ft.Colors.AMBER_200,
+                ),
+                self._build_added_objects_list(),
+                self._build_objects_total_summary(),
+            ],
+            spacing=12,
+        )
 
     def _build_selected_object_panel(self) -> ft.Control:
         if self.objeto_seleccionado is None:
@@ -438,16 +446,29 @@ class VentaCompletaWizardV3Prototype:
                 content=ft.Text("Todavía no agregaste objetos a la venta.", color=ft.Colors.BLUE_GREY_700),
             )
         else:
-            content = ft.Column(
-                controls=[self._build_added_object_row(index, objeto) for index, objeto in enumerate(self.state.objetos)],
-                spacing=8,
+            content = ft.Container(
+                height=240,
+                content=ft.Column(
+                    controls=[
+                        self._build_added_object_row(index, objeto)
+                        for index, objeto in enumerate(self.state.objetos)
+                    ],
+                    spacing=8,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
             )
-        return ft.Column(
-            controls=[
-                ft.Text("Objetos agregados", size=18, weight=ft.FontWeight.W_700),
-                content,
-            ],
-            spacing=8,
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Objetos agregados", size=18, weight=ft.FontWeight.W_700),
+                    content,
+                ],
+                spacing=8,
+            ),
         )
 
     def _build_added_object_row(self, index: int, objeto: ObjetoVentaWizardDraft) -> ft.Control:
@@ -656,7 +677,7 @@ class VentaCompletaWizardV3Prototype:
         if not raw_value:
             return "precio_asignado es obligatorio." if show_required else None
         if self._parse_selected_price() is None:
-            return "precio_asignado debe ser mayor que cero."
+            return "precio_asignado debe ser un decimal finito mayor que cero."
         return None
 
     def _parse_selected_price(self) -> Decimal | None:
@@ -747,9 +768,9 @@ class VentaCompletaWizardV3Prototype:
 def _parse_decimal(value: Any) -> Decimal | None:
     try:
         parsed = Decimal(str(value or "").strip())
+        if not parsed.is_finite() or parsed <= 0:
+            return None
     except (InvalidOperation, ValueError):
-        return None
-    if parsed <= 0:
         return None
     return parsed
 
