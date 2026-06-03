@@ -1,4 +1,4 @@
-"""Prototipo Flet del wizard venta completa V3 - Pantalla 3: Compradores.
+"""Prototipo Flet del wizard venta completa V3 - Datos iniciales antes de objetos.
 
 Uso:
   cd frontend/flet_app
@@ -8,10 +8,12 @@ Alcance:
   - Prototipo UI aislado del dominio comercial, sin llamadas a backend.
   - Nueva base de iteracion pantalla por pantalla para venta completa V3.
   - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva,
-    Pantalla 2 - Objetos de venta y Pantalla 3 - Compradores.
+    Pantalla 2 - Datos iniciales de venta, Pantalla 3 - Objetos de venta
+    y Pantalla 4 - Compradores.
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
-  - No pide id_venta, no calcula cronograma local, deuda individual por comprador
-    ni implementa datos comerciales, forma de pago, plan o pasos futuros.
+  - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
+    no calcula cronograma local, deuda individual por comprador ni implementa datos
+    comerciales completos, forma de pago, plan o pasos futuros.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
     pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
@@ -21,6 +23,7 @@ Alcance:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
@@ -33,10 +36,14 @@ OrigenVenta = Literal["RESERVA", "DIRECTA"]
 PantallaWizard = Literal[
     "ORIGEN",
     "SELECCIONAR_RESERVA",
+    "DATOS_INICIALES",
     "OBJETOS",
     "COMPRADORES",
-    "DATOS_COMERCIALES_PLACEHOLDER",
+    "OBSERVACIONES_COMERCIALES_PLACEHOLDER",
 ]
+
+
+MONEDAS_DEMO = ["ARS", "USD", "EUR"]
 
 
 DEMO_RESERVAS: list[dict[str, Any]] = [
@@ -173,6 +180,10 @@ class WizardVentaCompletaV3State:
     version_registro: int | None = None
     texto_visual_reserva: str | None = None
     reserva_demo: dict[str, Any] | None = None
+    moneda: str = "ARS"
+    fecha_venta_iso: str = ""
+    codigo_venta: str = ""
+    observaciones_comerciales: str = ""
     objetos: list[ObjetoVentaWizardDraft] = field(default_factory=list)
     compradores: list[CompradorWizardDraft] = field(default_factory=list)
     pantalla_actual: PantallaWizard = "ORIGEN"
@@ -188,8 +199,34 @@ class VentaCompletaWizardV3Prototype:
         self.objeto_seleccionado: dict[str, Any] | None = None
         self.comprador_seleccionado: dict[str, Any] | None = None
         self.precio_objeto_value = ""
+        self.moneda_selector_width = 220
+        self.fecha_venta_display_value = ""
+        self.fecha_venta_error: str | None = None
+        self.fecha_venta_field = ft.TextField(
+            label="Fecha de venta",
+            hint_text="DD/MM/AAAA",
+            width=220,
+            on_change=self._on_fecha_venta_change,
+        )
+        self.fecha_venta_feedback = ft.Text(
+            "Formato: DD/MM/AAAA",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.codigo_venta_field = ft.TextField(
+            label="Código de venta (si corresponde)",
+            width=280,
+            on_change=self._on_codigo_venta_change,
+        )
+        self.observaciones_field = ft.TextField(
+            label="Observaciones comerciales opcionales",
+            multiline=True,
+            min_lines=3,
+            max_lines=5,
+            on_change=self._on_observaciones_change,
+        )
         self.precio_objeto_field = ft.TextField(
-            label="Valor asignado al objeto",
+            label=f"Valor asignado al objeto ({self.state.moneda})",
             prefix_icon=ft.Icons.ATTACH_MONEY,
             keyboard_type=ft.KeyboardType.NUMBER,
             on_change=self._on_precio_objeto_change,
@@ -208,9 +245,10 @@ class VentaCompletaWizardV3Prototype:
             on_change=self._on_rol_comprador_change,
         )
         self.comprador_error: str | None = None
+        self.next_button: ft.ElevatedButton | None = None
 
     def run(self) -> None:
-        self.page.title = "Wizard venta completa V3 - Compradores"
+        self.page.title = "Wizard venta completa V3 - Datos iniciales"
         self.page.padding = 0
         self.page.scroll = None
         self.page.theme_mode = ft.ThemeMode.LIGHT
@@ -277,12 +315,14 @@ class VentaCompletaWizardV3Prototype:
     def _build_main_content(self) -> ft.Control:
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return self._build_reserva_selection_step()
+        if self.state.pantalla_actual == "DATOS_INICIALES":
+            return self._build_initial_sale_data_step()
         if self.state.pantalla_actual == "OBJETOS":
             return self._build_objects_step()
         if self.state.pantalla_actual == "COMPRADORES":
             return self._build_buyers_step()
-        if self.state.pantalla_actual == "DATOS_COMERCIALES_PLACEHOLDER":
-            return self._build_commercial_data_placeholder()
+        if self.state.pantalla_actual == "OBSERVACIONES_COMERCIALES_PLACEHOLDER":
+            return self._build_commercial_observations_placeholder()
         return self._build_origin_step()
 
     def _build_origin_step(self) -> ft.Control:
@@ -377,7 +417,90 @@ class VentaCompletaWizardV3Prototype:
         self.reserva_selector.results_column.height = 260
         self.reserva_selector.results_column.scroll = ft.ScrollMode.AUTO
 
+    def _build_initial_sale_data_step(self) -> ft.Control:
+        currency_locked = self._currency_locked_by_objects()
+        self.fecha_venta_field.value = self._date_display_value()
+        self._sync_fecha_venta_feedback()
+        self.codigo_venta_field.value = self.state.codigo_venta
+        self.observaciones_field.value = self.state.observaciones_comerciales
+        currency_help = (
+            "La moneda no puede cambiarse porque ya hay objetos cargados. Para cambiarla, primero quitá los objetos de venta."
+            if currency_locked
+            else "Los valores asignados a los objetos se cargarán en esta moneda."
+        )
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Datos iniciales de venta", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Definí la moneda antes de cargar objetos para que cada precio_asignado tenga contexto comercial.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=[
+                            self._build_currency_selector(currency_locked),
+                            ft.Column(
+                                controls=[
+                                    ft.Row(
+                                        controls=[
+                                            self.fecha_venta_field,
+                                            ft.IconButton(
+                                                icon=ft.Icons.CALENDAR_MONTH,
+                                                tooltip="Seleccionar fecha",
+                                                on_click=self._open_fecha_venta_picker,
+                                            ),
+                                        ],
+                                        wrap=True,
+                                        spacing=8,
+                                    ),
+                                    self.fecha_venta_feedback,
+                                ],
+                                spacing=4,
+                            ),
+                            self.codigo_venta_field,
+                        ],
+                        wrap=True,
+                        spacing=12,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self._build_help_card(
+                        currency_help,
+                        ft.Colors.AMBER_50 if currency_locked else ft.Colors.BLUE_50,
+                        ft.Colors.AMBER_200 if currency_locked else ft.Colors.BLUE_200,
+                    ),
+                    self.observaciones_field,
+                    self._build_help_card(
+                        "La moneda se conservará para el payload futuro de generar_venta, condiciones_comerciales y plan_pago_v2. La fecha se muestra como DD/MM/AAAA y se conserva internamente como YYYY-MM-DD. No se implementan forma de pago, plan ni cronograma local en este prototipo.",
+                        ft.Colors.AMBER_50,
+                        ft.Colors.AMBER_200,
+                    ),
+                ],
+                spacing=14,
+            ),
+        )
+
     def _build_objects_step(self) -> ft.Control:
+        if not self._has_valid_currency():
+            return ft.Container(
+                padding=18,
+                border_radius=14,
+                bgcolor=ft.Colors.RED_50,
+                border=_border_all(1, ft.Colors.RED_200),
+                content=ft.Column(
+                    controls=[
+                        ft.Text("Objetos de venta bloqueado", size=24, weight=ft.FontWeight.W_700),
+                        ft.Text(
+                            "Seleccioná una moneda válida en Datos iniciales de venta antes de cargar objetos.",
+                            color=ft.Colors.RED_800,
+                        ),
+                    ],
+                    spacing=10,
+                ),
+            )
         if self.objeto_selector is None:
             self.objeto_selector = create_search_selector_demo(
                 title="Buscador de objeto inmobiliario",
@@ -391,8 +514,13 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Objetos de venta", size=24, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Seleccioná los inmuebles o unidades funcionales incluidos en la operación y asigná el valor comercial de cada uno.",
+                f"Seleccioná los inmuebles o unidades funcionales incluidos en la operación y asigná el valor comercial de cada uno en {self._currency_label()}.",
                 color=ft.Colors.BLUE_GREY_700,
+            ),
+            self._build_help_card(
+                "Los valores asignados a los objetos se cargarán en esta moneda.",
+                ft.Colors.BLUE_50,
+                ft.Colors.BLUE_200,
             ),
             ft.Row(
                 controls=[
@@ -442,6 +570,7 @@ class VentaCompletaWizardV3Prototype:
         id_label, id_value = _object_id_label_value(self.objeto_seleccionado)
         duplicate = self._is_duplicate_selected_object()
         price_error = self.precio_objeto_error
+        self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
         panel_content = ft.Column(
             controls=[
                 ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
@@ -550,7 +679,7 @@ class VentaCompletaWizardV3Prototype:
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
                             ft.Text(
-                                f"precio_asignado: {_format_money(objeto.precio_asignado)}",
+                                f"precio_asignado ({self._currency_label()}): {_format_money(objeto.precio_asignado)}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
@@ -578,9 +707,15 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(
                 controls=[
                     ft.Text("Resumen de objetos", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    ft.Text(
+                        f"Total derivado: {self._format_money_with_currency(total)}",
+                        size=16,
+                        weight=ft.FontWeight.W_700,
+                        color=ft.Colors.GREEN_900,
+                    ),
                     _info_row("Cantidad de objetos", len(self.state.objetos)),
-                    _info_row("Suma precio_asignado", _format_decimal(total)),
-                    _info_row("Total de venta derivado de objetos", _format_decimal(total)),
+                    _info_row("Suma precio_asignado", self._format_money_with_currency(total)),
+                    _info_row("Total derivado", self._format_money_with_currency(total)),
                 ],
                 spacing=8,
             ),
@@ -874,7 +1009,7 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(controls=controls, spacing=8),
         )
 
-    def _build_commercial_data_placeholder(self) -> ft.Control:
+    def _build_commercial_observations_placeholder(self) -> ft.Control:
         return ft.Container(
             padding=24,
             border_radius=14,
@@ -882,11 +1017,14 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(
                 controls=[
-                    ft.Text("Paso 4 — Datos comerciales pendiente", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text("Observaciones comerciales", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Placeholder técnico: todavía no se implementan datos comerciales, forma de pago, plan ni cronograma.",
+                        "Placeholder futuro: los datos comerciales complementarios quedan pendientes. No se pide monto_total manual ni moneda nuevamente.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
+                    _info_row("Moneda definida", self._currency_label()),
+                    _info_row("Total derivado desde objetos", self._format_money_with_currency(self._objects_total())),
+                    _info_row("Observaciones iniciales", self.state.observaciones_comerciales or "sin observaciones"),
                 ],
                 spacing=8,
             ),
@@ -901,8 +1039,9 @@ class VentaCompletaWizardV3Prototype:
             controls.append(_info_row("Reserva", self._reservation_status()))
         controls.extend(
             [
+                _info_row("Moneda", self._currency_label()),
                 _info_row("Objetos", len(self.state.objetos)),
-                _info_row("Total derivado", _format_decimal(self._objects_total())),
+                _info_row("Total derivado", self._format_money_with_currency(self._objects_total())),
                 _info_row("Compradores", self._buyers_flow_status()),
                 _info_row("Próximo paso", self._next_step_label()),
             ]
@@ -920,6 +1059,12 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_navigation(self) -> ft.Control:
+        self.next_button = ft.ElevatedButton(
+            "Siguiente",
+            icon=ft.Icons.ARROW_FORWARD,
+            disabled=not self._can_advance(),
+            on_click=self._next_step,
+        )
         return ft.Row(
             controls=[
                 ft.OutlinedButton(
@@ -929,12 +1074,7 @@ class VentaCompletaWizardV3Prototype:
                     on_click=self._previous_step,
                 ),
                 ft.Container(expand=True),
-                ft.ElevatedButton(
-                    "Siguiente",
-                    icon=ft.Icons.ARROW_FORWARD,
-                    disabled=not self._can_advance(),
-                    on_click=self._next_step,
-                ),
+                self.next_button,
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
@@ -951,6 +1091,114 @@ class VentaCompletaWizardV3Prototype:
             self.comprador_seleccionado = None
         self.state.origen = origin
         self._render()
+
+    def _build_currency_selector(self, currency_locked: bool) -> ft.Control:
+        return ft.Column(
+            controls=[
+                ft.Text("Moneda", size=12, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700),
+                ft.Row(
+                    controls=[self._build_currency_card(moneda, currency_locked) for moneda in MONEDAS_DEMO],
+                    spacing=8,
+                    wrap=True,
+                ),
+            ],
+            spacing=6,
+            width=self.moneda_selector_width,
+        )
+
+    def _build_currency_card(self, moneda: str, currency_locked: bool) -> ft.Control:
+        selected = self.state.moneda == moneda
+        if selected:
+            bgcolor = ft.Colors.BLUE_600 if not currency_locked else ft.Colors.BLUE_GREY_400
+            border_color = ft.Colors.BLUE_700 if not currency_locked else ft.Colors.BLUE_GREY_500
+            text_color = ft.Colors.WHITE
+        else:
+            bgcolor = ft.Colors.BLUE_GREY_50 if currency_locked else ft.Colors.WHITE
+            border_color = ft.Colors.BLUE_GREY_100 if currency_locked else ft.Colors.BLUE_200
+            text_color = ft.Colors.BLUE_GREY_500 if currency_locked else ft.Colors.BLUE_700
+        return ft.Container(
+            padding=ft.Padding(left=12, top=10, right=12, bottom=10),
+            border_radius=10,
+            bgcolor=bgcolor,
+            border=_border_all(2 if selected else 1, border_color),
+            on_click=None if currency_locked else lambda _, selected_moneda=moneda: self._select_moneda(selected_moneda),
+            content=ft.Text(moneda, weight=ft.FontWeight.W_700, color=text_color),
+        )
+
+    def _select_moneda(self, moneda: str) -> None:
+        selected_currency = str(moneda or "").strip().upper()
+        if selected_currency not in MONEDAS_DEMO or self._currency_locked_by_objects():
+            self._render()
+            return
+        self.state.moneda = selected_currency
+        self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
+        self._render()
+
+    def _on_fecha_venta_change(self, event: ft.ControlEvent) -> None:
+        raw_value = str(event.control.value or "")
+        self.fecha_venta_display_value = raw_value
+        if not raw_value.strip():
+            self.state.fecha_venta_iso = ""
+            self.fecha_venta_error = None
+        else:
+            parsed_date = _parse_date_ar(raw_value)
+            if parsed_date is None:
+                self.fecha_venta_error = "Fecha inválida. Usá formato DD/MM/AAAA."
+            else:
+                self.state.fecha_venta_iso = parsed_date
+                self.fecha_venta_display_value = _format_date_ar(parsed_date)
+                event.control.value = self.fecha_venta_display_value
+                self.fecha_venta_error = None
+        self._sync_fecha_venta_feedback()
+        self._refresh_navigation_controls()
+        self.page.update()
+
+    def _open_fecha_venta_picker(self, _: ft.ControlEvent | None = None) -> None:
+        if not hasattr(ft, "DatePicker"):
+            if self.fecha_venta_error is None:
+                self.fecha_venta_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.fecha_venta_feedback.color = ft.Colors.AMBER_800
+            self._refresh_navigation_controls()
+            self.page.update()
+            return
+        selected_date = _date_from_iso(self.state.fecha_venta_iso) or date.today()
+        try:
+            picker = ft.DatePicker(
+                value=selected_date,
+                first_date=date(1900, 1, 1),
+                last_date=date(2100, 12, 31),
+            )
+            picker.on_change = self._on_fecha_picker_change
+            self.page.overlay.append(picker)
+            picker.open = True
+            self.page.update()
+        except Exception:
+            if self.fecha_venta_error is None:
+                self.fecha_venta_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.fecha_venta_feedback.color = ft.Colors.AMBER_800
+            self._refresh_navigation_controls()
+            self.page.update()
+
+    def _on_fecha_picker_change(self, event: ft.ControlEvent) -> None:
+        selected_date = getattr(event.control, "value", None)
+        if selected_date is None:
+            return
+        if isinstance(selected_date, datetime):
+            selected_date = selected_date.date()
+        if isinstance(selected_date, date):
+            self.state.fecha_venta_iso = selected_date.isoformat()
+            self.fecha_venta_display_value = _format_date_ar(self.state.fecha_venta_iso)
+            self.fecha_venta_field.value = self.fecha_venta_display_value
+            self.fecha_venta_error = None
+            self._sync_fecha_venta_feedback()
+            self._refresh_navigation_controls()
+            self.page.update()
+
+    def _on_codigo_venta_change(self, event: ft.ControlEvent) -> None:
+        self.state.codigo_venta = str(event.control.value or "")
+
+    def _on_observaciones_change(self, event: ft.ControlEvent) -> None:
+        self.state.observaciones_comerciales = str(event.control.value or "")
 
     def _on_reserva_selected(self, selected: dict[str, Any] | None) -> None:
         if selected is None:
@@ -974,12 +1222,14 @@ class VentaCompletaWizardV3Prototype:
             return
         if self.state.pantalla_actual == "ORIGEN" and self.state.origen == "RESERVA":
             self.state.pantalla_actual = "SELECCIONAR_RESERVA"
+        elif self.state.pantalla_actual in {"ORIGEN", "SELECCIONAR_RESERVA"}:
+            self.state.pantalla_actual = "DATOS_INICIALES"
+        elif self.state.pantalla_actual == "DATOS_INICIALES":
+            self.state.pantalla_actual = "OBJETOS"
         elif self.state.pantalla_actual == "OBJETOS":
             self.state.pantalla_actual = "COMPRADORES"
         elif self.state.pantalla_actual == "COMPRADORES":
-            self.state.pantalla_actual = "DATOS_COMERCIALES_PLACEHOLDER"
-        else:
-            self.state.pantalla_actual = "OBJETOS"
+            self.state.pantalla_actual = "OBSERVACIONES_COMERCIALES_PLACEHOLDER"
         self._render()
 
     def _previous_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -987,11 +1237,13 @@ class VentaCompletaWizardV3Prototype:
             return
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             self.state.pantalla_actual = "ORIGEN"
-        elif self.state.pantalla_actual == "DATOS_COMERCIALES_PLACEHOLDER":
+        elif self.state.pantalla_actual == "OBSERVACIONES_COMERCIALES_PLACEHOLDER":
             self.state.pantalla_actual = "COMPRADORES"
         elif self.state.pantalla_actual == "COMPRADORES":
             self.state.pantalla_actual = "OBJETOS"
-        elif self.state.origen == "RESERVA":
+        elif self.state.pantalla_actual == "OBJETOS":
+            self.state.pantalla_actual = "DATOS_INICIALES"
+        elif self.state.pantalla_actual == "DATOS_INICIALES" and self.state.origen == "RESERVA":
             self.state.pantalla_actual = "SELECCIONAR_RESERVA"
         else:
             self.state.pantalla_actual = "ORIGEN"
@@ -1002,7 +1254,11 @@ class VentaCompletaWizardV3Prototype:
             return self.state.origen is not None
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return self.state.id_reserva_venta is not None and self.state.version_registro is not None
+        if self.state.pantalla_actual == "DATOS_INICIALES":
+            return self._has_valid_currency() and self.fecha_venta_error is None
         if self.state.pantalla_actual == "OBJETOS":
+            if not self._has_valid_currency():
+                return False
             return bool(self.state.objetos) and all(
                 _parse_decimal(objeto.precio_asignado) is not None for objeto in self.state.objetos
             )
@@ -1011,6 +1267,35 @@ class VentaCompletaWizardV3Prototype:
                 return True
             return self._buyers_are_valid()
         return False
+
+    def _date_display_value(self) -> str:
+        if self.fecha_venta_error is not None:
+            return self.fecha_venta_display_value
+        return _format_date_ar(self.state.fecha_venta_iso)
+
+    def _sync_fecha_venta_feedback(self) -> None:
+        if self.fecha_venta_error is not None:
+            self.fecha_venta_feedback.value = self.fecha_venta_error
+            self.fecha_venta_feedback.color = ft.Colors.RED_700
+            return
+        self.fecha_venta_feedback.value = "Formato: DD/MM/AAAA"
+        self.fecha_venta_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _refresh_navigation_controls(self) -> None:
+        if self.next_button is not None:
+            self.next_button.disabled = not self._can_advance()
+
+    def _currency_locked_by_objects(self) -> bool:
+        return bool(self.state.objetos)
+
+    def _has_valid_currency(self) -> bool:
+        return self.state.moneda.strip().upper() in MONEDAS_DEMO
+
+    def _currency_label(self) -> str:
+        return self.state.moneda.strip().upper() or "sin moneda"
+
+    def _format_money_with_currency(self, value: Decimal) -> str:
+        return f"{self._currency_label()} {_format_decimal(value)}"
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
         self.objeto_seleccionado = selected
@@ -1275,19 +1560,21 @@ class VentaCompletaWizardV3Prototype:
         return str(len(self.state.compradores))
 
     def _next_step_label(self) -> str:
+        if self.state.pantalla_actual == "DATOS_INICIALES":
+            return "cargar objetos de venta" if self._can_advance() else "seleccionar moneda"
         if self.state.pantalla_actual == "OBJETOS":
             return "cargar compradores" if self._can_advance() else "cargar objetos de venta"
         if self.state.pantalla_actual == "COMPRADORES":
-            return "cargar datos comerciales" if self._can_advance() else "cargar compradores"
-        if self.state.pantalla_actual == "DATOS_COMERCIALES_PLACEHOLDER":
-            return "cargar datos comerciales"
+            return "revisar observaciones comerciales" if self._can_advance() else "cargar compradores"
+        if self.state.pantalla_actual == "OBSERVACIONES_COMERCIALES_PLACEHOLDER":
+            return "forma de pago pendiente"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
-            return "cargar objetos de venta"
+            return "cargar datos iniciales"
         if self.state.origen is None:
             return "elegir origen"
         if self.state.origen == "RESERVA":
             return "seleccionar reserva"
-        return "cargar objetos de venta"
+        return "cargar datos iniciales"
 
     def _build_help_card(self, text: str, bgcolor: ft.ColorValue, border_color: ft.ColorValue) -> ft.Control:
         return ft.Container(
@@ -1297,6 +1584,36 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, border_color),
             content=ft.Text(text, color=ft.Colors.BLUE_GREY_800),
         )
+
+
+def _format_date_ar(iso_date: str | None) -> str:
+    text = str(iso_date or "").strip()
+    if not text:
+        return ""
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return text
+
+
+def _parse_date_ar(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return datetime.strptime(text, "%d/%m/%Y").date().isoformat()
+    except ValueError:
+        return None
+
+
+def _date_from_iso(iso_date: str | None) -> date | None:
+    text = str(iso_date or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _parse_decimal(value: Any) -> Decimal | None:
