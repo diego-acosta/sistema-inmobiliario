@@ -974,6 +974,16 @@ def test_preview_valida_cuotas_refuerzo_internas() -> None:
         assert not result.success
         assert result.errors == [expected_error]
 
+    result = _result([CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=None)])
+    assert result.success, result.errors
+    assert result.data["obligaciones"][0].tipo_item_cronograma == "REFUERZO"
+
+    result = _result(
+        [CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=Decimal("1.00"))]
+    )
+    assert result.success, result.errors
+    assert result.data["obligaciones"][0].tipo_item_cronograma == "REFUERZO"
+
     result = _result([CuotaRefuerzoInput(numero_cuota=1)], tipo_bloque="REFUERZO")
     assert not result.success
     assert result.errors == ["CUOTA_REFUERZO_NO_COMPATIBLE_CON_TIPO_BLOQUE"]

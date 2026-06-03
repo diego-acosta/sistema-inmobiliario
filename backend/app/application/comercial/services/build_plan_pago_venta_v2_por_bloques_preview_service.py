@@ -290,7 +290,11 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             if cuota_refuerzo.numero_cuota in numeros:
                 return "CUOTA_REFUERZO_DUPLICADA"
             numeros.add(cuota_refuerzo.numero_cuota)
-            unidades = cuota_refuerzo.unidades_refuerzo or Decimal("1.00")
+            unidades = (
+                Decimal("1.00")
+                if cuota_refuerzo.unidades_refuerzo is None
+                else cuota_refuerzo.unidades_refuerzo
+            )
             if unidades <= 0:
                 return "CUOTA_REFUERZO_UNIDADES_INVALIDAS"
             if unidades != Decimal("1.00"):
