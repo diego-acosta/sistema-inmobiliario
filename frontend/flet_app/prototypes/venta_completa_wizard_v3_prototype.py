@@ -14,7 +14,8 @@ Alcance:
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
     comerciales completos, subwizard de financiacion, cronograma local, plan financiado
-    ni pasos futuros.
+    ni cronograma local, interes, indexacion, refuerzos internos, saldo final
+    ni revision/confirmacion.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
     pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
@@ -43,7 +44,8 @@ PantallaWizard = Literal[
     "COMPRADORES",
     "FORMA_PAGO",
     "PLAN_ANTICIPO",
-    "PLAN_TRAMOS_PLACEHOLDER",
+    "PLAN_TRAMOS",
+    "PLAN_SALDO_PLACEHOLDER",
     "PASO_6_PLACEHOLDER",
 ]
 
@@ -173,6 +175,16 @@ class CompradorWizardDraft:
 
 
 @dataclass
+class TramoCuotasWizardDraft:
+    importe_total_bloque: str
+    cantidad_cuotas: int
+    fecha_primer_vencimiento_iso: str
+    fecha_primer_vencimiento_display: str
+    periodicidad: Literal["MENSUAL"] = "MENSUAL"
+    metodo_liquidacion: Literal["SIN_INTERES"] = "SIN_INTERES"
+
+
+@dataclass
 class WizardVentaCompletaV3State:
     """Estado minimo del wizard V3 hasta Pantalla 3 - Compradores.
 
@@ -201,6 +213,14 @@ class WizardVentaCompletaV3State:
     fecha_anticipo_display: str = ""
     fecha_anticipo_error: str | None = None
     importe_anticipo_error: str | None = None
+    tramos_cuotas: list[TramoCuotasWizardDraft] = field(default_factory=list)
+    tramo_capital_value: str = ""
+    tramo_cantidad_cuotas_value: str = ""
+    tramo_fecha_display: str = ""
+    tramo_fecha_iso: str = ""
+    tramo_capital_error: str | None = None
+    tramo_cantidad_error: str | None = None
+    tramo_fecha_error: str | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -293,6 +313,38 @@ class VentaCompletaWizardV3Prototype:
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
+        self.tramo_capital_field = ft.TextField(
+            label="Capital del tramo",
+            prefix_icon=ft.Icons.ATTACH_MONEY,
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_tramo_capital_change,
+        )
+        self.tramo_capital_feedback = ft.Text(
+            "Podés asignar todo el capital restante o un valor menor.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_cantidad_field = ft.TextField(
+            label="Cantidad total de cuotas",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_tramo_cantidad_change,
+        )
+        self.tramo_cantidad_feedback = ft.Text(
+            "Ingresá un número entero mayor que 0.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_fecha_field = ft.TextField(
+            label="Primer vencimiento",
+            hint_text="DD/MM/AAAA",
+            width=240,
+            on_change=self._on_tramo_fecha_change,
+        )
+        self.tramo_fecha_feedback = ft.Text(
+            "Formato: DD/MM/AAAA",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
         self.anticipo_actual_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
         self.capital_pendiente_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
         self.next_button: ft.ElevatedButton | None = None
@@ -375,7 +427,9 @@ class VentaCompletaWizardV3Prototype:
             return self._build_payment_method_step()
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
             return self._build_financed_plan_advance_step()
-        if self.state.pantalla_actual in {"PLAN_TRAMOS_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
+        if self.state.pantalla_actual == "PLAN_TRAMOS":
+            return self._build_financed_plan_installments_step()
+        if self.state.pantalla_actual in {"PLAN_SALDO_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
             return self._build_step_6_placeholder()
         return self._build_origin_step()
 
@@ -1304,10 +1358,197 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
+
+    def _build_financed_plan_installments_step(self) -> ft.Control:
+        self._sync_installment_form_controls()
+        capital_base = self._capital_pending_after_advance()
+        capital_assigned = self._capital_assigned_to_installments()
+        capital_remaining = self._capital_remaining_for_installments()
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Plan de pago — Tramos de cuotas", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Asigná el capital pendiente a uno o más tramos de cuotas. El plan no calcula cronograma local; solo prepara los datos para Plan Pago V2.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    self._build_installments_top_summary(capital_base, capital_assigned, capital_remaining),
+                    self._build_installment_form_section(),
+                    self._build_added_installments_list(),
+                    self._build_installments_bottom_summary(capital_base, capital_assigned, capital_remaining),
+                ],
+                spacing=14,
+            ),
+        )
+
+    def _build_installments_top_summary(
+        self,
+        capital_base: Decimal,
+        capital_assigned: Decimal,
+        capital_remaining: Decimal,
+    ) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resumen de capital", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    _info_row("Total derivado de objetos", self._format_money_with_currency(self._objects_total())),
+                    _info_row("Anticipo", self._format_money_with_currency(self._valid_advance_amount_or_zero())),
+                    _info_row("Capital pendiente para asignar a tramos", self._format_money_with_currency(capital_base)),
+                    _info_row("Capital ya asignado a tramos", self._format_money_with_currency(capital_assigned)),
+                    _info_row("Capital restante", self._format_money_with_currency(capital_remaining)),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_installment_form_section(self) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Crear tramo", size=18, weight=ft.FontWeight.W_700),
+                    self.tramo_capital_field,
+                    self.tramo_capital_feedback,
+                    self.tramo_cantidad_field,
+                    self.tramo_cantidad_feedback,
+                    ft.Row(
+                        controls=[
+                            self.tramo_fecha_field,
+                            ft.IconButton(
+                                icon=ft.Icons.CALENDAR_MONTH,
+                                tooltip="Abrir calendario",
+                                on_click=self._open_tramo_fecha_picker,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self.tramo_fecha_feedback,
+                    _info_row("Periodicidad", "MENSUAL"),
+                    _info_row("Método", "Cuotas fijas / sin interés"),
+                    ft.ElevatedButton(
+                        "Agregar tramo",
+                        icon=ft.Icons.ADD,
+                        on_click=self._add_installment_block,
+                    ),
+                    ft.Text(
+                        "Construcción futura del bloque: tipo_bloque TRAMO_CUOTAS, importe_total_bloque, cantidad_cuotas, fecha_primer_vencimiento, periodicidad MENSUAL y metodo_liquidacion SIN_INTERES.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_added_installments_list(self) -> ft.Control:
+        if not self.state.tramos_cuotas:
+            content: ft.Control = ft.Container(
+                padding=12,
+                border_radius=10,
+                bgcolor=ft.Colors.BLUE_GREY_50,
+                content=ft.Text("Todavía no agregaste tramos de cuotas.", color=ft.Colors.BLUE_GREY_700),
+            )
+        else:
+            content = ft.Container(
+                height=260,
+                content=ft.Column(
+                    controls=[
+                        self._build_added_installment_row(index, tramo)
+                        for index, tramo in enumerate(self.state.tramos_cuotas)
+                    ],
+                    spacing=8,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+            )
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[ft.Text("Tramos agregados", size=18, weight=ft.FontWeight.W_700), content],
+                spacing=8,
+            ),
+        )
+
+    def _build_added_installment_row(self, index: int, tramo: TramoCuotasWizardDraft) -> ft.Control:
+        return ft.Container(
+            padding=12,
+            border_radius=10,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text(f"Tramo {index + 1}", weight=ft.FontWeight.W_700),
+                            ft.Text(
+                                f"Capital del tramo: {self._format_money_with_currency(_parse_decimal(tramo.importe_total_bloque) or Decimal('0'))}",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
+                            ft.Text(f"Cantidad de cuotas: {tramo.cantidad_cuotas}", size=12, color=ft.Colors.BLUE_GREY_700),
+                            ft.Text(
+                                f"Primer vencimiento: {tramo.fecha_primer_vencimiento_display}",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
+                            ft.Text(f"Periodicidad: {tramo.periodicidad}", size=12, color=ft.Colors.BLUE_GREY_700),
+                            ft.Text(f"Método: {tramo.metodo_liquidacion}", size=12, color=ft.Colors.BLUE_GREY_700),
+                        ],
+                        spacing=3,
+                        expand=True,
+                    ),
+                    ft.OutlinedButton(
+                        "Quitar",
+                        icon=ft.Icons.DELETE_OUTLINE,
+                        on_click=lambda _, item_index=index: self._remove_installment_block(item_index),
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+
+    def _build_installments_bottom_summary(
+        self,
+        capital_base: Decimal,
+        capital_assigned: Decimal,
+        capital_remaining: Decimal,
+    ) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_50,
+            border=_border_all(1, ft.Colors.BLUE_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resumen de tramos", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_900),
+                    _info_row("Capital base", self._format_money_with_currency(capital_base)),
+                    _info_row("Capital asignado", self._format_money_with_currency(capital_assigned)),
+                    _info_row("Capital restante", self._format_money_with_currency(capital_remaining)),
+                    _info_row("Cantidad de tramos", len(self.state.tramos_cuotas)),
+                    _info_row("Cantidad estimada de obligaciones", self._installments_obligations_count()),
+                ],
+                spacing=8,
+            ),
+        )
+
     def _build_step_6_placeholder(self) -> ft.Control:
-        if self.state.pantalla_actual == "PLAN_TRAMOS_PLACEHOLDER":
-            title = "Pantalla 6B — Tramos de cuotas pendiente"
-            description = "Placeholder futuro: acá se cargarán tramos de cuotas sin calcular cronograma local, interés ni indexación."
+        if self.state.pantalla_actual == "PLAN_SALDO_PLACEHOLDER":
+            title = "Pantalla 6C — Saldo final pendiente"
+            description = "Placeholder futuro: acá se cargará saldo final o revisión pendiente sin calcular cronograma local."
         elif self.state.forma_pago == "FINANCIADO":
             title = "Paso 6 — Plan de pago pendiente"
             description = "Placeholder futuro: acá se continuará el subwizard de financiación sin calcular cronograma local."
@@ -1337,7 +1578,10 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     _info_row("Anticipo", self._advance_status()),
-                    _info_row("Pendiente", self._format_money_with_currency(self._capital_pending_after_advance())),
+                    _info_row("Capital pendiente después de anticipo", self._format_money_with_currency(self._capital_pending_after_advance())),
+                    _info_row("Tramos", len(self.state.tramos_cuotas)),
+                    _info_row("Capital asignado", self._format_money_with_currency(self._capital_assigned_to_installments())),
+                    _info_row("Capital restante", self._format_money_with_currency(self._capital_remaining_for_installments())),
                 ]
             )
         return controls
@@ -1362,7 +1606,13 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     _info_row("Anticipo", self._advance_status()),
-                    _info_row("Pendiente", self._format_money_with_currency(self._capital_pending_after_advance())),
+                    _info_row(
+                        "Capital pendiente después de anticipo",
+                        self._format_money_with_currency(self._capital_pending_after_advance()),
+                    ),
+                    _info_row("Tramos", len(self.state.tramos_cuotas)),
+                    _info_row("Capital asignado", self._format_money_with_currency(self._capital_assigned_to_installments())),
+                    _info_row("Capital restante", self._format_money_with_currency(self._capital_remaining_for_installments())),
                 ]
             )
         controls.append(_info_row("Próximo paso", self._next_step_label()))
@@ -1556,7 +1806,9 @@ class VentaCompletaWizardV3Prototype:
             else:
                 self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
-            self.state.pantalla_actual = "PLAN_TRAMOS_PLACEHOLDER"
+            self.state.pantalla_actual = "PLAN_TRAMOS"
+        elif self.state.pantalla_actual == "PLAN_TRAMOS":
+            self.state.pantalla_actual = "PLAN_SALDO_PLACEHOLDER"
         self._render()
 
     def _previous_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -1564,8 +1816,10 @@ class VentaCompletaWizardV3Prototype:
             return
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             self.state.pantalla_actual = "ORIGEN"
-        elif self.state.pantalla_actual == "PLAN_TRAMOS_PLACEHOLDER":
+        elif self.state.pantalla_actual == "PLAN_TRAMOS":
             self.state.pantalla_actual = "PLAN_ANTICIPO"
+        elif self.state.pantalla_actual == "PLAN_SALDO_PLACEHOLDER":
+            self.state.pantalla_actual = "PLAN_TRAMOS"
         elif self.state.pantalla_actual in {"PLAN_ANTICIPO", "PASO_6_PLACEHOLDER"}:
             self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "FORMA_PAGO":
@@ -1605,6 +1859,8 @@ class VentaCompletaWizardV3Prototype:
             return False
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
             return self._advance_is_valid()
+        if self.state.pantalla_actual == "PLAN_TRAMOS":
+            return self._installments_are_complete()
         return False
 
     def _date_display_value(self) -> str:
@@ -1646,6 +1902,8 @@ class VentaCompletaWizardV3Prototype:
         self.state.importe_anticipo_error = None
         self.importe_anticipo_field.value = ""
         self.fecha_anticipo_field.value = ""
+        self.state.tramos_cuotas.clear()
+        self._clear_installment_form_state()
 
     def _cash_payment_date_display_value(self) -> str:
         if self.state.fecha_pago_contado_error is not None:
@@ -1884,6 +2142,200 @@ class VentaCompletaWizardV3Prototype:
             return
         self.fecha_anticipo_feedback.value = "Formato: DD/MM/AAAA"
         self.fecha_anticipo_feedback.color = ft.Colors.BLUE_GREY_600
+
+
+    def _sync_installment_form_controls(self) -> None:
+        remaining = self._capital_remaining_for_installments()
+        self.tramo_capital_field.value = self.state.tramo_capital_value
+        self.tramo_capital_field.hint_text = self._format_money_with_currency(remaining)
+        self.tramo_cantidad_field.value = self.state.tramo_cantidad_cuotas_value
+        self.tramo_fecha_field.value = self._installment_date_display_value()
+        self._sync_tramo_capital_feedback()
+        self._sync_tramo_cantidad_feedback()
+        self._sync_tramo_fecha_feedback()
+
+    def _on_tramo_capital_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_capital_value = str(event.control.value or "")
+        self.state.tramo_capital_error = None
+
+    def _on_tramo_cantidad_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_cantidad_cuotas_value = str(event.control.value or "")
+        self.state.tramo_cantidad_error = None
+
+    def _on_tramo_fecha_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_fecha_display = str(event.control.value or "")
+        self.state.tramo_fecha_iso = ""
+        self.state.tramo_fecha_error = None
+
+    def _open_tramo_fecha_picker(self, _: ft.ControlEvent | None = None) -> None:
+        if not hasattr(ft, "DatePicker"):
+            if self.state.tramo_fecha_error is None:
+                self.tramo_fecha_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.tramo_fecha_feedback.color = ft.Colors.AMBER_800
+            self.page.update()
+            return
+        selected_date = _date_from_iso(self.state.tramo_fecha_iso) or date.today()
+        try:
+            picker = ft.DatePicker(
+                value=selected_date,
+                first_date=date(1900, 1, 1),
+                last_date=date(2100, 12, 31),
+            )
+            picker.on_change = self._on_tramo_fecha_picker_change
+            self.page.overlay.append(picker)
+            picker.open = True
+            self.page.update()
+        except Exception:
+            if self.state.tramo_fecha_error is None:
+                self.tramo_fecha_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.tramo_fecha_feedback.color = ft.Colors.AMBER_800
+            self.page.update()
+
+    def _on_tramo_fecha_picker_change(self, event: ft.ControlEvent) -> None:
+        selected_date = getattr(event.control, "value", None)
+        if selected_date is None:
+            return
+        if isinstance(selected_date, datetime):
+            selected_date = selected_date.date()
+        if isinstance(selected_date, date):
+            self.state.tramo_fecha_iso = selected_date.isoformat()
+            self.state.tramo_fecha_display = _format_date_ar(self.state.tramo_fecha_iso)
+            self.tramo_fecha_field.value = self.state.tramo_fecha_display
+            self.state.tramo_fecha_error = None
+            self._sync_tramo_fecha_feedback()
+            self.page.update()
+
+    def _add_installment_block(self, _: ft.ControlEvent | None = None) -> None:
+        capital = self._validate_installment_capital()
+        quantity = self._validate_installment_quantity()
+        due_date_iso = self._validate_installment_date()
+        if capital is None or quantity is None or due_date_iso is None:
+            self._render()
+            return
+        self.state.tramos_cuotas.append(
+            TramoCuotasWizardDraft(
+                importe_total_bloque=_format_decimal(capital),
+                cantidad_cuotas=quantity,
+                fecha_primer_vencimiento_iso=due_date_iso,
+                fecha_primer_vencimiento_display=_format_date_ar(due_date_iso),
+            )
+        )
+        self._clear_installment_form_state()
+        self._render()
+
+    def _remove_installment_block(self, index: int) -> None:
+        if 0 <= index < len(self.state.tramos_cuotas):
+            self.state.tramos_cuotas.pop(index)
+            self._clear_installment_errors()
+            self._render()
+
+    def _validate_installment_capital(self) -> Decimal | None:
+        raw_value = self.state.tramo_capital_value.strip()
+        if not raw_value:
+            self.state.tramo_capital_error = "El capital del tramo es requerido."
+            return None
+        parsed = _parse_decimal(raw_value)
+        if parsed is None:
+            self.state.tramo_capital_error = "El capital del tramo debe ser un número finito mayor que 0."
+            return None
+        remaining = self._capital_remaining_for_installments()
+        if parsed > remaining:
+            self.state.tramo_capital_error = "El capital del tramo no puede superar el capital restante."
+            return None
+        self.state.tramo_capital_error = None
+        return parsed
+
+    def _validate_installment_quantity(self) -> int | None:
+        raw_value = self.state.tramo_cantidad_cuotas_value.strip()
+        if not raw_value:
+            self.state.tramo_cantidad_error = "La cantidad total de cuotas es requerida."
+            return None
+        try:
+            quantity = int(raw_value)
+        except ValueError:
+            self.state.tramo_cantidad_error = "La cantidad total de cuotas debe ser un entero mayor que 0."
+            return None
+        if str(quantity) != raw_value or quantity <= 0:
+            self.state.tramo_cantidad_error = "La cantidad total de cuotas debe ser un entero mayor que 0."
+            return None
+        self.state.tramo_cantidad_error = None
+        return quantity
+
+    def _validate_installment_date(self) -> str | None:
+        raw_value = self.state.tramo_fecha_display.strip()
+        if not raw_value:
+            self.state.tramo_fecha_error = "El primer vencimiento es requerido."
+            return None
+        parsed_date = _parse_date_ar_strict(raw_value)
+        if parsed_date is None:
+            self.state.tramo_fecha_error = "Fecha inválida. Usá formato DD/MM/AAAA."
+            self.state.tramo_fecha_iso = ""
+            return None
+        self.state.tramo_fecha_iso = parsed_date
+        self.state.tramo_fecha_display = _format_date_ar(parsed_date)
+        self.state.tramo_fecha_error = None
+        return parsed_date
+
+    def _clear_installment_form_state(self) -> None:
+        self.state.tramo_capital_value = ""
+        self.state.tramo_cantidad_cuotas_value = ""
+        self.state.tramo_fecha_display = ""
+        self.state.tramo_fecha_iso = ""
+        self._clear_installment_errors()
+        self.tramo_capital_field.value = ""
+        self.tramo_cantidad_field.value = ""
+        self.tramo_fecha_field.value = ""
+
+    def _clear_installment_errors(self) -> None:
+        self.state.tramo_capital_error = None
+        self.state.tramo_cantidad_error = None
+        self.state.tramo_fecha_error = None
+
+    def _installment_date_display_value(self) -> str:
+        if self.state.tramo_fecha_error is not None:
+            return self.state.tramo_fecha_display
+        return self.state.tramo_fecha_display or _format_date_ar(self.state.tramo_fecha_iso)
+
+    def _sync_tramo_capital_feedback(self) -> None:
+        if self.state.tramo_capital_error is not None:
+            self.tramo_capital_feedback.value = self.state.tramo_capital_error
+            self.tramo_capital_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_capital_feedback.value = "Podés asignar todo el capital restante o un valor menor."
+        self.tramo_capital_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_tramo_cantidad_feedback(self) -> None:
+        if self.state.tramo_cantidad_error is not None:
+            self.tramo_cantidad_feedback.value = self.state.tramo_cantidad_error
+            self.tramo_cantidad_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_cantidad_feedback.value = "Ingresá un número entero mayor que 0."
+        self.tramo_cantidad_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_tramo_fecha_feedback(self) -> None:
+        if self.state.tramo_fecha_error is not None:
+            self.tramo_fecha_feedback.value = self.state.tramo_fecha_error
+            self.tramo_fecha_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_fecha_feedback.value = "Formato: DD/MM/AAAA"
+        self.tramo_fecha_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _capital_assigned_to_installments(self) -> Decimal:
+        total = Decimal("0")
+        for tramo in self.state.tramos_cuotas:
+            parsed = _parse_decimal(tramo.importe_total_bloque)
+            if parsed is not None:
+                total += parsed
+        return total
+
+    def _capital_remaining_for_installments(self) -> Decimal:
+        return self._capital_pending_after_advance() - self._capital_assigned_to_installments()
+
+    def _installments_obligations_count(self) -> int:
+        return sum(tramo.cantidad_cuotas for tramo in self.state.tramos_cuotas)
+
+    def _installments_are_complete(self) -> bool:
+        return bool(self.state.tramos_cuotas) and self._capital_remaining_for_installments() == Decimal("0")
 
     def _currency_locked_by_objects(self) -> bool:
         return bool(self.state.objetos)
@@ -2181,9 +2633,9 @@ class VentaCompletaWizardV3Prototype:
             return "elegir forma de pago"
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
             return "cargar tramos de cuotas" if self._can_advance() else "completar anticipo"
-        if self.state.pantalla_actual == "PLAN_TRAMOS_PLACEHOLDER":
-            return "pendiente"
-        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
+        if self.state.pantalla_actual == "PLAN_TRAMOS":
+            return "cargar saldo final / revisión pendiente" if self._can_advance() else "cargar tramos de cuotas"
+        if self.state.pantalla_actual in {"PLAN_SALDO_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
             return "pendiente"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return "cargar datos iniciales"
