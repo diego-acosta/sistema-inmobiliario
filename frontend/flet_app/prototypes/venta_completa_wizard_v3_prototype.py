@@ -8,12 +8,13 @@ Alcance:
   - Prototipo UI aislado del dominio comercial, sin llamadas a backend.
   - Nueva base de iteracion pantalla por pantalla para venta completa V3.
   - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva,
-    Pantalla 2 - Datos iniciales de venta, Pantalla 3 - Objetos de venta
-    y Pantalla 4 - Compradores.
+    Pantalla 2 - Datos iniciales de venta, Pantalla 3 - Objetos de venta,
+    Pantalla 4 - Compradores y Pantalla 5 - Forma de pago.
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
-    comerciales completos, forma de pago, plan o pasos futuros.
+    comerciales completos, subwizard de financiacion, cronograma local, plan financiado
+    ni pasos futuros.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
     pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
@@ -33,13 +34,15 @@ from components.search_selector_demo import SearchSelectorDemo, create_search_se
 
 
 OrigenVenta = Literal["RESERVA", "DIRECTA"]
+FormaPagoWizard = Literal["CONTADO", "FINANCIADO"]
 PantallaWizard = Literal[
     "ORIGEN",
     "SELECCIONAR_RESERVA",
     "DATOS_INICIALES",
     "OBJETOS",
     "COMPRADORES",
-    "OBSERVACIONES_COMERCIALES_PLACEHOLDER",
+    "FORMA_PAGO",
+    "PASO_6_PLACEHOLDER",
 ]
 
 
@@ -186,6 +189,10 @@ class WizardVentaCompletaV3State:
     observaciones_comerciales: str = ""
     objetos: list[ObjetoVentaWizardDraft] = field(default_factory=list)
     compradores: list[CompradorWizardDraft] = field(default_factory=list)
+    forma_pago: FormaPagoWizard | None = None
+    fecha_pago_contado_iso: str = ""
+    fecha_pago_contado_display: str = ""
+    fecha_pago_contado_error: str | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -245,6 +252,17 @@ class VentaCompletaWizardV3Prototype:
             on_change=self._on_rol_comprador_change,
         )
         self.comprador_error: str | None = None
+        self.fecha_pago_contado_field = ft.TextField(
+            label="Fecha de pago / vencimiento",
+            hint_text="DD/MM/AAAA",
+            width=240,
+            on_change=self._on_fecha_pago_contado_change,
+        )
+        self.fecha_pago_contado_feedback = ft.Text(
+            "Formato: DD/MM/AAAA",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
         self.next_button: ft.ElevatedButton | None = None
 
     def run(self) -> None:
@@ -321,8 +339,10 @@ class VentaCompletaWizardV3Prototype:
             return self._build_objects_step()
         if self.state.pantalla_actual == "COMPRADORES":
             return self._build_buyers_step()
-        if self.state.pantalla_actual == "OBSERVACIONES_COMERCIALES_PLACEHOLDER":
-            return self._build_commercial_observations_placeholder()
+        if self.state.pantalla_actual == "FORMA_PAGO":
+            return self._build_payment_method_step()
+        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
+            return self._build_step_6_placeholder()
         return self._build_origin_step()
 
     def _build_origin_step(self) -> ft.Control:
@@ -1009,7 +1029,136 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(controls=controls, spacing=8),
         )
 
-    def _build_commercial_observations_placeholder(self) -> ft.Control:
+    def _build_payment_method_step(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Forma de pago", size=24, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Elegí cómo se pagará la operación. El total surge de los objetos seleccionados.",
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            self._build_payment_total_card(),
+            ft.Row(
+                controls=[
+                    self._build_payment_method_card(
+                        payment_method="CONTADO",
+                        title="Contado",
+                        description="El total se paga en una única obligación.",
+                        icon=ft.Icons.PAYMENTS_OUTLINED,
+                    ),
+                    self._build_payment_method_card(
+                        payment_method="FINANCIADO",
+                        title="Financiado",
+                        description="El total se estructura en anticipo, cuotas, refuerzos y/o saldo.",
+                        icon=ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED,
+                    ),
+                ],
+                spacing=14,
+            ),
+        ]
+        if self.state.forma_pago == "CONTADO":
+            controls.append(self._build_cash_payment_data_section())
+        elif self.state.forma_pago == "FINANCIADO":
+            controls.append(
+                self._build_help_card(
+                    "El plan se cargará en el siguiente paso.",
+                    ft.Colors.BLUE_50,
+                    ft.Colors.BLUE_200,
+                )
+            )
+
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=14),
+        )
+
+    def _build_payment_total_card(self) -> ft.Control:
+        total = self._objects_total()
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Total derivado de la venta", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    _info_row("Moneda seleccionada", self._currency_label()),
+                    _info_row("Total de venta derivado de objetos", self._format_money_with_currency(total)),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_payment_method_card(
+        self,
+        *,
+        payment_method: FormaPagoWizard,
+        title: str,
+        description: str,
+        icon: str,
+    ) -> ft.Control:
+        selected = self.state.forma_pago == payment_method
+        return ft.Container(
+            expand=True,
+            padding=18,
+            border_radius=14,
+            border=_border_all(2 if selected else 1, ft.Colors.BLUE_500 if selected else ft.Colors.BLUE_GREY_100),
+            bgcolor=ft.Colors.BLUE_50 if selected else ft.Colors.WHITE,
+            on_click=lambda _, selected_method=payment_method: self._select_payment_method(selected_method),
+            content=ft.Column(
+                controls=[
+                    ft.Icon(icon, size=32, color=ft.Colors.BLUE_700 if selected else ft.Colors.BLUE_GREY_500),
+                    ft.Text(title, size=18, weight=ft.FontWeight.W_700),
+                    ft.Text(description, color=ft.Colors.BLUE_GREY_700),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_cash_payment_data_section(self) -> ft.Control:
+        self.fecha_pago_contado_field.value = self._cash_payment_date_display_value()
+        self._sync_fecha_pago_contado_feedback()
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Datos de pago contado", size=18, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Construcción futura: tipo_pago CONTADO, monto_total_plan igual al total derivado y bloque único CONTADO con fecha de vencimiento.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=[
+                            self.fecha_pago_contado_field,
+                            ft.IconButton(
+                                icon=ft.Icons.CALENDAR_MONTH,
+                                tooltip="Abrir calendario",
+                                on_click=self._open_fecha_pago_contado_picker,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self.fecha_pago_contado_feedback,
+                    _info_row("Monto total plan futuro", self._format_money_with_currency(self._objects_total())),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_step_6_placeholder(self) -> ft.Control:
+        if self.state.forma_pago == "FINANCIADO":
+            title = "Paso 6 — Plan de pago pendiente"
+            description = "Placeholder futuro: acá se cargará el subwizard de financiación sin calcular cronograma local."
+        else:
+            title = "Paso 6 — Revisión de venta pendiente"
+            description = "Placeholder futuro: acá se revisará la venta contado antes de confirmar, sin mostrar payload final."
         return ft.Container(
             padding=24,
             border_radius=14,
@@ -1017,14 +1166,11 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(
                 controls=[
-                    ft.Text("Observaciones comerciales", size=24, weight=ft.FontWeight.W_700),
-                    ft.Text(
-                        "Placeholder futuro: los datos comerciales complementarios quedan pendientes. No se pide monto_total manual ni moneda nuevamente.",
-                        color=ft.Colors.BLUE_GREY_700,
-                    ),
+                    ft.Text(title, size=24, weight=ft.FontWeight.W_700),
+                    ft.Text(description, color=ft.Colors.BLUE_GREY_700),
+                    _info_row("Forma de pago", self._payment_method_status()),
                     _info_row("Moneda definida", self._currency_label()),
                     _info_row("Total derivado desde objetos", self._format_money_with_currency(self._objects_total())),
-                    _info_row("Observaciones iniciales", self.state.observaciones_comerciales or "sin observaciones"),
                 ],
                 spacing=8,
             ),
@@ -1043,6 +1189,7 @@ class VentaCompletaWizardV3Prototype:
                 _info_row("Objetos", len(self.state.objetos)),
                 _info_row("Total derivado", self._format_money_with_currency(self._objects_total())),
                 _info_row("Compradores", self._buyers_flow_status()),
+                _info_row("Forma de pago", self._payment_method_status()),
                 _info_row("Próximo paso", self._next_step_label()),
             ]
         )
@@ -1229,7 +1376,9 @@ class VentaCompletaWizardV3Prototype:
         elif self.state.pantalla_actual == "OBJETOS":
             self.state.pantalla_actual = "COMPRADORES"
         elif self.state.pantalla_actual == "COMPRADORES":
-            self.state.pantalla_actual = "OBSERVACIONES_COMERCIALES_PLACEHOLDER"
+            self.state.pantalla_actual = "FORMA_PAGO"
+        elif self.state.pantalla_actual == "FORMA_PAGO":
+            self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
         self._render()
 
     def _previous_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -1237,7 +1386,9 @@ class VentaCompletaWizardV3Prototype:
             return
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             self.state.pantalla_actual = "ORIGEN"
-        elif self.state.pantalla_actual == "OBSERVACIONES_COMERCIALES_PLACEHOLDER":
+        elif self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
+            self.state.pantalla_actual = "FORMA_PAGO"
+        elif self.state.pantalla_actual == "FORMA_PAGO":
             self.state.pantalla_actual = "COMPRADORES"
         elif self.state.pantalla_actual == "COMPRADORES":
             self.state.pantalla_actual = "OBJETOS"
@@ -1266,6 +1417,12 @@ class VentaCompletaWizardV3Prototype:
             if self.state.origen == "RESERVA":
                 return True
             return self._buyers_are_valid()
+        if self.state.pantalla_actual == "FORMA_PAGO":
+            if self.state.forma_pago == "FINANCIADO":
+                return True
+            if self.state.forma_pago == "CONTADO":
+                return bool(self.state.fecha_pago_contado_iso) and self.state.fecha_pago_contado_error is None
+            return False
         return False
 
     def _date_display_value(self) -> str:
@@ -1284,6 +1441,90 @@ class VentaCompletaWizardV3Prototype:
     def _refresh_navigation_controls(self) -> None:
         if self.next_button is not None:
             self.next_button.disabled = not self._can_advance()
+
+    def _select_payment_method(self, payment_method: FormaPagoWizard) -> None:
+        if payment_method not in {"CONTADO", "FINANCIADO"}:
+            return
+        self.state.forma_pago = payment_method
+        if payment_method == "FINANCIADO":
+            self.state.fecha_pago_contado_iso = ""
+            self.state.fecha_pago_contado_display = ""
+            self.state.fecha_pago_contado_error = None
+            self.fecha_pago_contado_field.value = ""
+        self._render()
+
+    def _cash_payment_date_display_value(self) -> str:
+        if self.state.fecha_pago_contado_error is not None:
+            return self.state.fecha_pago_contado_display
+        return _format_date_ar(self.state.fecha_pago_contado_iso)
+
+    def _on_fecha_pago_contado_change(self, event: ft.ControlEvent) -> None:
+        raw_value = str(event.control.value or "")
+        self.state.fecha_pago_contado_display = raw_value
+        if not raw_value.strip():
+            self.state.fecha_pago_contado_iso = ""
+            self.state.fecha_pago_contado_error = None
+        else:
+            parsed_date = _parse_date_ar(raw_value)
+            if parsed_date is None:
+                self.state.fecha_pago_contado_error = "Fecha inválida. Usá formato DD/MM/AAAA."
+            else:
+                self.state.fecha_pago_contado_iso = parsed_date
+                self.state.fecha_pago_contado_display = _format_date_ar(parsed_date)
+                event.control.value = self.state.fecha_pago_contado_display
+                self.state.fecha_pago_contado_error = None
+        self._sync_fecha_pago_contado_feedback()
+        self._refresh_navigation_controls()
+        self.page.update()
+
+    def _open_fecha_pago_contado_picker(self, _: ft.ControlEvent | None = None) -> None:
+        if not hasattr(ft, "DatePicker"):
+            if self.state.fecha_pago_contado_error is None:
+                self.fecha_pago_contado_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.fecha_pago_contado_feedback.color = ft.Colors.AMBER_800
+            self._refresh_navigation_controls()
+            self.page.update()
+            return
+        selected_date = _date_from_iso(self.state.fecha_pago_contado_iso) or date.today()
+        try:
+            picker = ft.DatePicker(
+                value=selected_date,
+                first_date=date(1900, 1, 1),
+                last_date=date(2100, 12, 31),
+            )
+            picker.on_change = self._on_fecha_pago_contado_picker_change
+            self.page.overlay.append(picker)
+            picker.open = True
+            self.page.update()
+        except Exception:
+            if self.state.fecha_pago_contado_error is None:
+                self.fecha_pago_contado_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.fecha_pago_contado_feedback.color = ft.Colors.AMBER_800
+            self._refresh_navigation_controls()
+            self.page.update()
+
+    def _on_fecha_pago_contado_picker_change(self, event: ft.ControlEvent) -> None:
+        selected_date = getattr(event.control, "value", None)
+        if selected_date is None:
+            return
+        if isinstance(selected_date, datetime):
+            selected_date = selected_date.date()
+        if isinstance(selected_date, date):
+            self.state.fecha_pago_contado_iso = selected_date.isoformat()
+            self.state.fecha_pago_contado_display = _format_date_ar(self.state.fecha_pago_contado_iso)
+            self.fecha_pago_contado_field.value = self.state.fecha_pago_contado_display
+            self.state.fecha_pago_contado_error = None
+            self._sync_fecha_pago_contado_feedback()
+            self._refresh_navigation_controls()
+            self.page.update()
+
+    def _sync_fecha_pago_contado_feedback(self) -> None:
+        if self.state.fecha_pago_contado_error is not None:
+            self.fecha_pago_contado_feedback.value = self.state.fecha_pago_contado_error
+            self.fecha_pago_contado_feedback.color = ft.Colors.RED_700
+            return
+        self.fecha_pago_contado_feedback.value = "Formato: DD/MM/AAAA"
+        self.fecha_pago_contado_feedback.color = ft.Colors.BLUE_GREY_600
 
     def _currency_locked_by_objects(self) -> bool:
         return bool(self.state.objetos)
@@ -1559,15 +1800,28 @@ class VentaCompletaWizardV3Prototype:
             return "heredados de reserva"
         return str(len(self.state.compradores))
 
+    def _payment_method_status(self) -> str:
+        if self.state.forma_pago == "CONTADO":
+            return "contado"
+        if self.state.forma_pago == "FINANCIADO":
+            return "financiado"
+        return "pendiente"
+
     def _next_step_label(self) -> str:
         if self.state.pantalla_actual == "DATOS_INICIALES":
             return "cargar objetos de venta" if self._can_advance() else "seleccionar moneda"
         if self.state.pantalla_actual == "OBJETOS":
             return "cargar compradores" if self._can_advance() else "cargar objetos de venta"
         if self.state.pantalla_actual == "COMPRADORES":
-            return "revisar observaciones comerciales" if self._can_advance() else "cargar compradores"
-        if self.state.pantalla_actual == "OBSERVACIONES_COMERCIALES_PLACEHOLDER":
-            return "forma de pago pendiente"
+            return "elegir forma de pago" if self._can_advance() else "cargar compradores"
+        if self.state.pantalla_actual == "FORMA_PAGO":
+            if self.state.forma_pago == "CONTADO":
+                return "revisar venta" if self._can_advance() else "cargar fecha de pago contado"
+            if self.state.forma_pago == "FINANCIADO":
+                return "cargar plan de pago"
+            return "elegir forma de pago"
+        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
+            return "pendiente"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return "cargar datos iniciales"
         if self.state.origen is None:
