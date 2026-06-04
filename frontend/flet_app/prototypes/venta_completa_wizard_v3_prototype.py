@@ -15,7 +15,8 @@ Alcance:
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
     comerciales completos, cronograma local, cálculo local de interés o indexación,
-    refuerzos internos, saldo final ni revision/confirmacion.
+    saldo final ni revision/confirmacion. Incluye draft UI de refuerzos internos
+    dentro de tramos sin calcular importes por cuota.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
     pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
@@ -177,6 +178,13 @@ class CompradorWizardDraft:
 
 
 @dataclass
+class CuotaRefuerzoWizardDraft:
+    numero_cuota: int
+    etiqueta: str
+    unidades_refuerzo: str = "1.00"
+
+
+@dataclass
 class TramoCuotasWizardDraft:
     importe_total_bloque: str
     cantidad_cuotas: int
@@ -191,6 +199,7 @@ class TramoCuotasWizardDraft:
     fecha_base_indice_iso: str | None = None
     fecha_base_indice_display: str | None = None
     valor_base_indice: str | None = None
+    cuotas_refuerzo: list[CuotaRefuerzoWizardDraft] = field(default_factory=list)
 
 
 @dataclass
@@ -234,6 +243,11 @@ class WizardVentaCompletaV3State:
     tramo_fecha_base_indice_display: str = ""
     tramo_fecha_base_indice_iso: str = ""
     tramo_valor_base_indice_value: str = ""
+    tramo_usa_refuerzos: bool = False
+    refuerzo_numero_cuota_value: str = ""
+    refuerzo_etiqueta_value: str = ""
+    refuerzo_numero_error: str | None = None
+    tramo_cuotas_refuerzo_draft: list[CuotaRefuerzoWizardDraft] = field(default_factory=list)
     tramo_capital_error: str | None = None
     tramo_cantidad_error: str | None = None
     tramo_fecha_error: str | None = None
@@ -414,6 +428,20 @@ class VentaCompletaWizardV3Prototype:
             "Ingresá un valor numérico mayor que 0.",
             size=12,
             color=ft.Colors.BLUE_GREY_600,
+        )
+        self.refuerzo_numero_cuota_field = ft.TextField(
+            label="Número de cuota",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_refuerzo_numero_cuota_change,
+        )
+        self.refuerzo_numero_feedback = ft.Text(
+            "Ingresá una cuota dentro de la cantidad total del tramo.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.refuerzo_etiqueta_field = ft.TextField(
+            label="Etiqueta opcional",
+            on_change=self._on_refuerzo_etiqueta_change,
         )
         self.anticipo_actual_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
         self.capital_pendiente_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
@@ -1559,6 +1587,7 @@ class VentaCompletaWizardV3Prototype:
                     self.tramo_fecha_feedback,
                     _info_row("Periodicidad", "MENSUAL"),
                     self._build_installment_liquidation_section(),
+                    self._build_installment_reinforcement_section(),
                     ft.Row(
                         controls=[
                             ft.Button(
@@ -1693,6 +1722,150 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
+    def _build_installment_reinforcement_section(self) -> ft.Control:
+        method_allows_reinforcements = self._installment_method_allows_reinforcements()
+        controls: list[ft.Control] = [
+            ft.Text("Cuotas refuerzo", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Las cuotas refuerzo forman parte de la cantidad total de cuotas. No agregan cuotas por fuera del tramo.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+        ]
+        if not method_allows_reinforcements:
+            controls.append(
+                self._build_help_card(
+                    "Las cuotas refuerzo no están habilitadas para tramos con interés directo en esta versión del wizard.",
+                    ft.Colors.AMBER_50,
+                    ft.Colors.AMBER_200,
+                )
+            )
+        else:
+            controls.extend(
+                [
+                    ft.Text("¿Usa cuotas refuerzo?", weight=ft.FontWeight.W_700),
+                    ft.Row(
+                        controls=[
+                            self._build_reinforcement_toggle_card(False, "No"),
+                            self._build_reinforcement_toggle_card(True, "Sí"),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                ]
+            )
+            if self.state.tramo_usa_refuerzos:
+                controls.extend(
+                    [
+                        _info_row("Cantidad total de cuotas del tramo", self.state.tramo_cantidad_cuotas_value or "pendiente"),
+                        ft.Text(
+                            "Elegí en qué número de cuota se ubicará cada refuerzo.",
+                            size=12,
+                            color=ft.Colors.BLUE_GREY_700,
+                        ),
+                        ft.Row(
+                            controls=[
+                                ft.Column(
+                                    controls=[self.refuerzo_numero_cuota_field, self.refuerzo_numero_feedback],
+                                    spacing=4,
+                                    expand=True,
+                                ),
+                                ft.Column(controls=[self.refuerzo_etiqueta_field], spacing=4, expand=True),
+                            ],
+                            spacing=10,
+                            wrap=True,
+                        ),
+                        ft.Button(
+                            "Agregar refuerzo",
+                            icon=ft.Icons.ADD,
+                            on_click=self._add_installment_reinforcement,
+                        ),
+                        self._build_installment_reinforcements_list(),
+                        self._build_installment_reinforcements_summary(),
+                    ]
+                )
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _build_reinforcement_toggle_card(self, value: bool, title: str) -> ft.Control:
+        selected = self.state.tramo_usa_refuerzos == value
+        return ft.Container(
+            width=120,
+            padding=12,
+            border_radius=12,
+            border=_border_all(2 if selected else 1, ft.Colors.BLUE_500 if selected else ft.Colors.BLUE_GREY_100),
+            bgcolor=ft.Colors.BLUE_50 if selected else ft.Colors.WHITE,
+            on_click=lambda _, selected_value=value: self._select_installment_reinforcements_usage(selected_value),
+            content=ft.Text(title, weight=ft.FontWeight.W_700),
+        )
+
+    def _build_installment_reinforcements_list(self) -> ft.Control:
+        if not self.state.tramo_cuotas_refuerzo_draft:
+            return ft.Container(
+                padding=10,
+                border_radius=10,
+                bgcolor=ft.Colors.BLUE_GREY_50,
+                content=ft.Text("Todavía no agregaste cuotas refuerzo.", size=12, color=ft.Colors.BLUE_GREY_700),
+            )
+        return ft.Column(
+            controls=[
+                self._build_installment_reinforcement_row(index, reinforcement)
+                for index, reinforcement in enumerate(self.state.tramo_cuotas_refuerzo_draft)
+            ],
+            spacing=6,
+        )
+
+    def _build_installment_reinforcement_row(self, index: int, reinforcement: CuotaRefuerzoWizardDraft) -> ft.Control:
+        label_parts = [f"Cuota {reinforcement.numero_cuota}"]
+        if reinforcement.etiqueta:
+            label_parts.append(reinforcement.etiqueta)
+        return ft.Container(
+            padding=10,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Row(
+                controls=[
+                    ft.Text(" — ".join(label_parts), expand=True),
+                    ft.OutlinedButton(
+                        "Quitar",
+                        icon=ft.Icons.DELETE_OUTLINE,
+                        on_click=lambda _, item_index=index: self._remove_installment_reinforcement(item_index),
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+
+    def _build_installment_reinforcements_summary(self) -> ft.Control:
+        quantity = self._current_installment_quantity_or_zero()
+        reinforcements = len(self.state.tramo_cuotas_refuerzo_draft)
+        normal_estimated = max(quantity - reinforcements, 0)
+        return ft.Container(
+            padding=10,
+            border_radius=10,
+            bgcolor=ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            content=ft.Column(
+                controls=[
+                    _info_row("Cuotas totales", quantity),
+                    _info_row("Refuerzos", reinforcements),
+                    _info_row("Cuotas normales estimadas", normal_estimated),
+                    ft.Text(
+                        f"El total de cuotas del tramo sigue siendo {quantity}.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                ],
+                spacing=6,
+            ),
+        )
+
     def _build_added_installments_list(self) -> ft.Control:
         if not self.state.tramos_cuotas:
             content: ft.Control = ft.Container(
@@ -1761,6 +1934,17 @@ class VentaCompletaWizardV3Prototype:
                                     )
                                 ]
                                 if self._installment_liquidation_secondary_text(tramo)
+                                else []
+                            ),
+                            *(
+                                [
+                                    ft.Text(
+                                        self._installment_reinforcements_list_text(tramo),
+                                        size=12,
+                                        color=ft.Colors.BLUE_GREY_700,
+                                    )
+                                ]
+                                if tramo.cuotas_refuerzo
                                 else []
                             ),
                         ],
@@ -2422,6 +2606,8 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_id_indice_financiero_field.value = self.state.tramo_id_indice_financiero_value
         self.tramo_fecha_base_indice_field.value = self._installment_index_base_date_display_value()
         self.tramo_valor_base_indice_field.value = self.state.tramo_valor_base_indice_value
+        self.refuerzo_numero_cuota_field.value = self.state.refuerzo_numero_cuota_value
+        self.refuerzo_etiqueta_field.value = self.state.refuerzo_etiqueta_value
         self._sync_tramo_capital_feedback()
         self._sync_tramo_cantidad_feedback()
         self._sync_tramo_fecha_feedback()
@@ -2429,6 +2615,7 @@ class VentaCompletaWizardV3Prototype:
         self._sync_tramo_id_indice_financiero_feedback()
         self._sync_tramo_fecha_base_indice_feedback()
         self._sync_tramo_valor_base_indice_feedback()
+        self._sync_refuerzo_numero_feedback()
 
     def _on_tramo_capital_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_capital_value = str(event.control.value or "")
@@ -2437,6 +2624,7 @@ class VentaCompletaWizardV3Prototype:
     def _on_tramo_cantidad_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_cantidad_cuotas_value = str(event.control.value or "")
         self.state.tramo_cantidad_error = None
+        self.state.refuerzo_numero_error = None
 
     def _on_tramo_fecha_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_fecha_display = str(event.control.value or "")
@@ -2452,6 +2640,8 @@ class VentaCompletaWizardV3Prototype:
             self._clear_installment_interest_fields()
         if previous_method == "INDEXACION" or method != "INDEXACION":
             self._clear_installment_index_fields()
+        if method == "INTERES_DIRECTO":
+            self._clear_installment_reinforcements()
         self._render()
 
     def _on_tramo_tasa_interes_change(self, event: ft.ControlEvent) -> None:
@@ -2473,6 +2663,42 @@ class VentaCompletaWizardV3Prototype:
     def _on_tramo_valor_base_indice_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_valor_base_indice_value = str(event.control.value or "")
         self.state.tramo_valor_base_indice_error = None
+
+    def _on_refuerzo_numero_cuota_change(self, event: ft.ControlEvent) -> None:
+        self.state.refuerzo_numero_cuota_value = str(event.control.value or "")
+        self.state.refuerzo_numero_error = None
+
+    def _on_refuerzo_etiqueta_change(self, event: ft.ControlEvent) -> None:
+        self.state.refuerzo_etiqueta_value = str(event.control.value or "")
+
+    def _select_installment_reinforcements_usage(self, value: bool) -> None:
+        if not self._installment_method_allows_reinforcements():
+            self._clear_installment_reinforcements()
+            self._render()
+            return
+        self.state.tramo_usa_refuerzos = value
+        if not value:
+            self._clear_installment_reinforcements()
+        self._render()
+
+    def _add_installment_reinforcement(self, _: ft.ControlEvent | None = None) -> None:
+        reinforcement = self._validate_new_installment_reinforcement()
+        if reinforcement is None:
+            self._sync_refuerzo_numero_feedback()
+            self.page.update()
+            return
+        self.state.tramo_cuotas_refuerzo_draft.append(reinforcement)
+        self.state.tramo_cuotas_refuerzo_draft.sort(key=lambda item: item.numero_cuota)
+        self.state.refuerzo_numero_cuota_value = ""
+        self.state.refuerzo_etiqueta_value = ""
+        self.state.refuerzo_numero_error = None
+        self._render()
+
+    def _remove_installment_reinforcement(self, index: int) -> None:
+        if 0 <= index < len(self.state.tramo_cuotas_refuerzo_draft):
+            self.state.tramo_cuotas_refuerzo_draft.pop(index)
+            self.state.refuerzo_numero_error = None
+            self._render()
 
     def _open_tramo_fecha_picker(self, _: ft.ControlEvent | None = None) -> None:
         if not hasattr(ft, "DatePicker"):
@@ -2567,7 +2793,14 @@ class VentaCompletaWizardV3Prototype:
         quantity = self._validate_installment_quantity()
         due_date_iso = self._validate_installment_date()
         liquidation_data = self._validate_installment_liquidation_method(quantity)
-        if capital is None or quantity is None or due_date_iso is None or liquidation_data is None:
+        reinforcement_data = self._validate_installment_reinforcements_for_save(quantity)
+        if (
+            capital is None
+            or quantity is None
+            or due_date_iso is None
+            or liquidation_data is None
+            or reinforcement_data is None
+        ):
             self._render()
             return
         self.state.tramos_cuotas.append(
@@ -2577,6 +2810,7 @@ class VentaCompletaWizardV3Prototype:
                 fecha_primer_vencimiento_iso=due_date_iso,
                 fecha_primer_vencimiento_display=_format_date_ar(due_date_iso),
                 metodo_liquidacion=self.state.tramo_metodo_liquidacion,
+                cuotas_refuerzo=reinforcement_data,
                 **liquidation_data,
             )
         )
@@ -2712,6 +2946,92 @@ class VentaCompletaWizardV3Prototype:
             "valor_base_indice": raw_base_value,
         }
 
+    def _validate_new_installment_reinforcement(self) -> CuotaRefuerzoWizardDraft | None:
+        quantity = self._current_installment_quantity_or_zero()
+        raw_number = self.state.refuerzo_numero_cuota_value.strip()
+        parsed_number = self._parse_positive_integer(raw_number) if raw_number else None
+        if not raw_number:
+            self.state.refuerzo_numero_error = "El número de cuota es requerido."
+            return None
+        if parsed_number is None:
+            self.state.refuerzo_numero_error = "El número de cuota debe ser un entero mayor o igual a 1."
+            return None
+        if quantity <= 0:
+            self.state.refuerzo_numero_error = "Ingresá primero una cantidad total de cuotas válida para el tramo."
+            return None
+        if parsed_number > quantity:
+            self.state.refuerzo_numero_error = "El número de cuota no puede superar la cantidad total del tramo."
+            return None
+        if any(item.numero_cuota == parsed_number for item in self.state.tramo_cuotas_refuerzo_draft):
+            self.state.refuerzo_numero_error = "Ya existe una cuota refuerzo en ese número de cuota."
+            return None
+        self.state.refuerzo_numero_error = None
+        return CuotaRefuerzoWizardDraft(
+            numero_cuota=parsed_number,
+            etiqueta=self.state.refuerzo_etiqueta_value.strip(),
+            unidades_refuerzo="1.00",
+        )
+
+    def _validate_installment_reinforcements_for_save(
+        self,
+        quantity: int | None,
+    ) -> list[CuotaRefuerzoWizardDraft] | None:
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            if self.state.tramo_cuotas_refuerzo_draft:
+                self.state.refuerzo_numero_error = "Interés directo no permite cuotas refuerzo en esta versión."
+                return None
+            self._clear_installment_reinforcements()
+            return []
+        if not self.state.tramo_usa_refuerzos:
+            self._clear_installment_reinforcements()
+            return []
+        if quantity is None:
+            self.state.refuerzo_numero_error = "Corregí la cantidad total de cuotas antes de guardar refuerzos."
+            return None
+        numbers = [item.numero_cuota for item in self.state.tramo_cuotas_refuerzo_draft]
+        if len(numbers) > quantity:
+            self.state.refuerzo_numero_error = "La cantidad de refuerzos no puede superar la cantidad total de cuotas."
+            return None
+        if len(numbers) != len(set(numbers)):
+            self.state.refuerzo_numero_error = "No puede haber cuotas refuerzo duplicadas."
+            return None
+        if any(number < 1 or number > quantity for number in numbers):
+            self.state.refuerzo_numero_error = "Hay cuotas refuerzo fuera del rango de la cantidad total del tramo."
+            return None
+        self.state.refuerzo_numero_error = None
+        return [
+            CuotaRefuerzoWizardDraft(
+                numero_cuota=item.numero_cuota,
+                etiqueta=item.etiqueta.strip(),
+                unidades_refuerzo="1.00",
+            )
+            for item in self.state.tramo_cuotas_refuerzo_draft
+        ]
+
+    def _sync_refuerzo_numero_feedback(self) -> None:
+        if self.state.refuerzo_numero_error is not None:
+            self.refuerzo_numero_feedback.value = self.state.refuerzo_numero_error
+            self.refuerzo_numero_feedback.color = ft.Colors.RED_700
+            return
+        self.refuerzo_numero_feedback.value = "Ingresá una cuota dentro de la cantidad total del tramo."
+        self.refuerzo_numero_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _clear_installment_reinforcements(self) -> None:
+        self.state.tramo_usa_refuerzos = False
+        self.state.refuerzo_numero_cuota_value = ""
+        self.state.refuerzo_etiqueta_value = ""
+        self.state.refuerzo_numero_error = None
+        self.state.tramo_cuotas_refuerzo_draft.clear()
+        self.refuerzo_numero_cuota_field.value = ""
+        self.refuerzo_etiqueta_field.value = ""
+
+    def _current_installment_quantity_or_zero(self) -> int:
+        parsed = self._parse_positive_integer(self.state.tramo_cantidad_cuotas_value.strip())
+        return parsed or 0
+
+    def _installment_method_allows_reinforcements(self) -> bool:
+        return self.state.tramo_metodo_liquidacion in {"SIN_INTERES", "INDEXACION"}
+
     @staticmethod
     def _parse_positive_integer(raw_value: str) -> int | None:
         try:
@@ -2728,6 +3048,7 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_fecha_display = ""
         self.state.tramo_fecha_iso = ""
         self.state.tramo_metodo_liquidacion = "SIN_INTERES"
+        self._clear_installment_reinforcements()
         self._clear_installment_interest_fields()
         self._clear_installment_index_fields()
         self._clear_installment_errors()
@@ -2741,6 +3062,7 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_fecha_error = None
         self._clear_installment_interest_errors()
         self._clear_installment_index_errors()
+        self.state.refuerzo_numero_error = None
 
     def _clear_installment_interest_fields(self) -> None:
         self.state.tramo_tasa_interes_value = ""
@@ -2850,6 +3172,16 @@ class VentaCompletaWizardV3Prototype:
             index_label = tramo.codigo_indice_visual or f"ID {tramo.id_indice_financiero or '-'}"
             return f"Índice: {index_label} · fecha base: {tramo.fecha_base_indice_display or '-'}"
         return ""
+
+    @staticmethod
+    def _installment_reinforcements_list_text(tramo: TramoCuotasWizardDraft) -> str:
+        if not tramo.cuotas_refuerzo:
+            return ""
+        ordered_numbers = sorted(item.numero_cuota for item in tramo.cuotas_refuerzo)
+        if len(ordered_numbers) <= 3:
+            numbers_text = ", ".join(f"cuota {number}" for number in ordered_numbers)
+            return f"Refuerzos: {numbers_text}"
+        return f"Refuerzos internos: {len(ordered_numbers)}"
 
     def _capital_assigned_to_installments(self) -> Decimal:
         total = Decimal("0")
