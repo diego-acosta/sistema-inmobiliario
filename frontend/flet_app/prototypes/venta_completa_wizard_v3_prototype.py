@@ -45,6 +45,7 @@ PantallaWizard = Literal[
     "FORMA_PAGO",
     "PLAN_ANTICIPO",
     "PLAN_TRAMOS",
+    "PLAN_TRAMO_FORM",
     "PLAN_SALDO_PLACEHOLDER",
     "PASO_6_PLACEHOLDER",
 ]
@@ -429,6 +430,8 @@ class VentaCompletaWizardV3Prototype:
             return self._build_financed_plan_advance_step()
         if self.state.pantalla_actual == "PLAN_TRAMOS":
             return self._build_financed_plan_installments_step()
+        if self.state.pantalla_actual == "PLAN_TRAMO_FORM":
+            return self._build_financed_plan_installment_form_step()
         if self.state.pantalla_actual in {"PLAN_SALDO_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
             return self._build_step_6_placeholder()
         return self._build_origin_step()
@@ -1360,7 +1363,6 @@ class VentaCompletaWizardV3Prototype:
 
 
     def _build_financed_plan_installments_step(self) -> ft.Control:
-        self._sync_installment_form_controls()
         capital_base = self._capital_pending_after_advance()
         capital_assigned = self._capital_assigned_to_installments()
         capital_remaining = self._capital_remaining_for_installments()
@@ -1386,8 +1388,8 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_600,
                     ),
                     self._build_installments_top_summary(capital_base, capital_assigned, capital_remaining),
-                    self._build_installment_form_section(),
                     self._build_added_installments_list(),
+                    self._build_add_installment_button(),
                     self._build_installments_bottom_summary(capital_base, capital_assigned, capital_remaining),
                 ],
                 spacing=14,
@@ -1410,16 +1412,54 @@ class VentaCompletaWizardV3Prototype:
                     ft.Text("Resumen de capital", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
                     _info_row("Total derivado de objetos", self._format_money_with_currency(self._objects_total())),
                     _info_row("Anticipo", self._format_money_with_currency(self._valid_advance_amount_or_zero())),
-                    _info_row("Capital pendiente para asignar a tramos", self._format_money_with_currency(capital_base)),
-                    _info_row("Capital ya asignado a tramos", self._format_money_with_currency(capital_assigned)),
+                    _info_row("Capital pendiente después de anticipo", self._format_money_with_currency(capital_base)),
+                    _info_row("Capital asignado a tramos", self._format_money_with_currency(capital_assigned)),
                     _info_row("Capital restante", self._format_money_with_currency(capital_remaining)),
-                    ft.Text(
-                        "Si queda capital restante, se completará en los pasos posteriores de saldo/refuerzo.",
-                        size=12,
-                        color=ft.Colors.BLUE_GREY_700,
+                    *(
+                        [
+                            ft.Text(
+                                "El capital restante se completará en los pasos siguientes.",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_700,
+                            )
+                        ]
+                        if capital_remaining > Decimal("0")
+                        else []
                     ),
                 ],
                 spacing=8,
+            ),
+        )
+
+
+    def _build_add_installment_button(self) -> ft.Control:
+        return ft.Row(
+            controls=[
+                ft.ElevatedButton(
+                    "Agregar tramo",
+                    icon=ft.Icons.ADD,
+                    on_click=self._open_installment_form_step,
+                ),
+            ],
+        )
+
+    def _build_financed_plan_installment_form_step(self) -> ft.Control:
+        self._sync_installment_form_controls()
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Cargar tramo de cuotas", size=24, weight=ft.FontWeight.W_700),
+                    _info_row(
+                        "Capital disponible para asignar",
+                        self._format_money_with_currency(self._capital_remaining_for_installments()),
+                    ),
+                    self._build_installment_form_section(),
+                ],
+                spacing=14,
             ),
         )
 
@@ -1431,7 +1471,6 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(
                 controls=[
-                    ft.Text("Crear tramo", size=18, weight=ft.FontWeight.W_700),
                     self.tramo_capital_field,
                     self.tramo_capital_feedback,
                     self.tramo_cantidad_field,
@@ -1451,15 +1490,21 @@ class VentaCompletaWizardV3Prototype:
                     self.tramo_fecha_feedback,
                     _info_row("Periodicidad", "MENSUAL"),
                     _info_row("Método", "Cuotas fijas / sin interés"),
-                    ft.ElevatedButton(
-                        "Agregar tramo",
-                        icon=ft.Icons.ADD,
-                        on_click=self._add_installment_block,
-                    ),
-                    ft.Text(
-                        "Construcción futura del bloque: tipo_bloque TRAMO_CUOTAS, importe_total_bloque, cantidad_cuotas, fecha_primer_vencimiento, periodicidad MENSUAL y metodo_liquidacion SIN_INTERES.",
-                        size=12,
-                        color=ft.Colors.BLUE_GREY_700,
+                    ft.Row(
+                        controls=[
+                            ft.ElevatedButton(
+                                "Guardar tramo",
+                                icon=ft.Icons.SAVE,
+                                on_click=self._add_installment_block,
+                            ),
+                            ft.OutlinedButton(
+                                "Cancelar",
+                                icon=ft.Icons.CLOSE,
+                                on_click=self._cancel_installment_form_step,
+                            ),
+                        ],
+                        wrap=True,
+                        spacing=8,
                     ),
                 ],
                 spacing=8,
@@ -1554,10 +1599,16 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Capital restante", self._format_money_with_currency(capital_remaining)),
                     _info_row("Cantidad de tramos", len(self.state.tramos_cuotas)),
                     _info_row("Cantidad estimada de obligaciones", self._installments_obligations_count()),
-                    ft.Text(
-                        "El capital restante no bloquea este paso; queda reservado para cargar saldo final o refuerzos más adelante.",
-                        size=12,
-                        color=ft.Colors.BLUE_GREY_700,
+                    *(
+                        [
+                            ft.Text(
+                                "El capital restante se completará en los pasos siguientes.",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_700,
+                            )
+                        ]
+                        if capital_remaining > Decimal("0")
+                        else []
                     ),
                 ],
                 spacing=8,
@@ -1832,6 +1883,9 @@ class VentaCompletaWizardV3Prototype:
             return
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             self.state.pantalla_actual = "ORIGEN"
+        elif self.state.pantalla_actual == "PLAN_TRAMO_FORM":
+            self._clear_installment_form_state()
+            self.state.pantalla_actual = "PLAN_TRAMOS"
         elif self.state.pantalla_actual == "PLAN_TRAMOS":
             self.state.pantalla_actual = "PLAN_ANTICIPO"
         elif self.state.pantalla_actual == "PLAN_SALDO_PLACEHOLDER":
@@ -2221,6 +2275,17 @@ class VentaCompletaWizardV3Prototype:
             self._sync_tramo_fecha_feedback()
             self.page.update()
 
+
+    def _open_installment_form_step(self, _: ft.ControlEvent | None = None) -> None:
+        self._clear_installment_form_state()
+        self.state.pantalla_actual = "PLAN_TRAMO_FORM"
+        self._render()
+
+    def _cancel_installment_form_step(self, _: ft.ControlEvent | None = None) -> None:
+        self._clear_installment_form_state()
+        self.state.pantalla_actual = "PLAN_TRAMOS"
+        self._render()
+
     def _add_installment_block(self, _: ft.ControlEvent | None = None) -> None:
         capital = self._validate_installment_capital()
         quantity = self._validate_installment_quantity()
@@ -2237,6 +2302,7 @@ class VentaCompletaWizardV3Prototype:
             )
         )
         self._clear_installment_form_state()
+        self.state.pantalla_actual = "PLAN_TRAMOS"
         self._render()
 
     def _remove_installment_block(self, index: int) -> None:
@@ -2650,7 +2716,9 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
             return "cargar tramos de cuotas" if self._can_advance() else "completar anticipo"
         if self.state.pantalla_actual == "PLAN_TRAMOS":
-            return "cargar saldo final / revisión pendiente" if self._can_advance() else "cargar tramos de cuotas"
+            return "cargar saldo final / revisión pendiente" if self._can_advance() else "agregar tramo"
+        if self.state.pantalla_actual == "PLAN_TRAMO_FORM":
+            return "guardar tramo o cancelar"
         if self.state.pantalla_actual in {"PLAN_SALDO_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
             return "pendiente"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
