@@ -9,13 +9,13 @@ Alcance:
   - Nueva base de iteracion pantalla por pantalla para venta completa V3.
   - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva,
     Pantalla 2 - Datos iniciales de venta, Pantalla 3 - Objetos de venta,
-    Pantalla 4 - Compradores y Pantalla 5 - Forma de pago.
+    Pantalla 4 - Compradores, Pantalla 5 - Forma de pago y avance UI de
+    Plan Pago V2 con anticipo y tramos con método de liquidación.
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
-    comerciales completos, subwizard de financiacion, cronograma local, plan financiado
-    ni cronograma local, interes, indexacion, refuerzos internos, saldo final
-    ni revision/confirmacion.
+    comerciales completos, cronograma local, cálculo local de interés o indexación,
+    refuerzos internos, saldo final ni revision/confirmacion.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
     pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
@@ -36,6 +36,7 @@ from components.search_selector_demo import SearchSelectorDemo, create_search_se
 
 OrigenVenta = Literal["RESERVA", "DIRECTA"]
 FormaPagoWizard = Literal["CONTADO", "FINANCIADO"]
+MetodoLiquidacionTramoWizard = Literal["SIN_INTERES", "INTERES_DIRECTO", "INDEXACION"]
 PantallaWizard = Literal[
     "ORIGEN",
     "SELECCIONAR_RESERVA",
@@ -182,7 +183,14 @@ class TramoCuotasWizardDraft:
     fecha_primer_vencimiento_iso: str
     fecha_primer_vencimiento_display: str
     periodicidad: Literal["MENSUAL"] = "MENSUAL"
-    metodo_liquidacion: Literal["SIN_INTERES"] = "SIN_INTERES"
+    metodo_liquidacion: MetodoLiquidacionTramoWizard = "SIN_INTERES"
+    tasa_interes_directo_periodica: str | None = None
+    cantidad_periodos: str | None = None
+    id_indice_financiero: str | None = None
+    codigo_indice_visual: str | None = None
+    fecha_base_indice_iso: str | None = None
+    fecha_base_indice_display: str | None = None
+    valor_base_indice: str | None = None
 
 
 @dataclass
@@ -219,9 +227,22 @@ class WizardVentaCompletaV3State:
     tramo_cantidad_cuotas_value: str = ""
     tramo_fecha_display: str = ""
     tramo_fecha_iso: str = ""
+    tramo_metodo_liquidacion: MetodoLiquidacionTramoWizard = "SIN_INTERES"
+    tramo_tasa_interes_value: str = ""
+    tramo_cantidad_periodos_value: str = ""
+    tramo_id_indice_financiero_value: str = ""
+    tramo_codigo_indice_visual_value: str = ""
+    tramo_fecha_base_indice_display: str = ""
+    tramo_fecha_base_indice_iso: str = ""
+    tramo_valor_base_indice_value: str = ""
     tramo_capital_error: str | None = None
     tramo_cantidad_error: str | None = None
     tramo_fecha_error: str | None = None
+    tramo_tasa_interes_error: str | None = None
+    tramo_cantidad_periodos_error: str | None = None
+    tramo_id_indice_financiero_error: str | None = None
+    tramo_fecha_base_indice_error: str | None = None
+    tramo_valor_base_indice_error: str | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -343,6 +364,66 @@ class VentaCompletaWizardV3Prototype:
         )
         self.tramo_fecha_feedback = ft.Text(
             "Formato: DD/MM/AAAA",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_tasa_interes_field = ft.TextField(
+            label="Tasa periódica",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_tramo_tasa_interes_change,
+        )
+        self.tramo_tasa_interes_feedback = ft.Text(
+            "Ingresá una tasa numérica mayor que 0.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_cantidad_periodos_field = ft.TextField(
+            label="Cantidad de períodos",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_tramo_cantidad_periodos_change,
+        )
+        self.tramo_cantidad_periodos_feedback = ft.Text(
+            "Ingresá un número entero mayor que 0.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_codigo_indice_visual_field = ft.TextField(
+            label="Código/índice visual",
+            on_change=self._on_tramo_codigo_indice_visual_change,
+        )
+        self.tramo_codigo_indice_visual_feedback = ft.Text(
+            "Opcional. Se usa solo para identificar el índice en pantalla.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_id_indice_financiero_field = ft.TextField(
+            label="ID índice financiero backend",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_tramo_id_indice_financiero_change,
+        )
+        self.tramo_id_indice_financiero_feedback = ft.Text(
+            "Ingresá el identificador numérico del índice financiero.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_fecha_base_indice_field = ft.TextField(
+            label="Fecha base índice",
+            hint_text="DD/MM/AAAA",
+            width=240,
+            on_change=self._on_tramo_fecha_base_indice_change,
+        )
+        self.tramo_fecha_base_indice_feedback = ft.Text(
+            "Formato: DD/MM/AAAA",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.tramo_valor_base_indice_field = ft.TextField(
+            label="Valor base índice",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_tramo_valor_base_indice_change,
+        )
+        self.tramo_valor_base_indice_feedback = ft.Text(
+            "Ingresá un valor numérico mayor que 0.",
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
@@ -1379,7 +1460,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Text(
-                        "En esta primera versión del prototipo, los tramos se cargan como cuotas fijas / sin interés.",
+                        "La pantalla de tramos mantiene el resumen/listado; la actualización se define al cargar cada tramo.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Text(
@@ -1489,7 +1570,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.tramo_fecha_feedback,
                     _info_row("Periodicidad", "MENSUAL"),
-                    _info_row("Método", "Cuotas fijas / sin interés"),
+                    self._build_installment_liquidation_section(),
                     ft.Row(
                         controls=[
                             ft.Button(
@@ -1508,6 +1589,116 @@ class VentaCompletaWizardV3Prototype:
                     ),
                 ],
                 spacing=8,
+            ),
+        )
+
+    def _build_installment_liquidation_section(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Método de actualización", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Elegí cómo se liquidará este tramo. El prototipo conserva los datos, pero no calcula cronogramas, intereses ni indexaciones localmente.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            ft.Row(
+                controls=[
+                    self._build_liquidation_method_card(
+                        method="SIN_INTERES",
+                        title="Cuotas fijas / sin interés",
+                        description="Todas las cuotas del tramo mantienen el mismo capital base.",
+                        icon=ft.Icons.LOCK_OUTLINE,
+                    ),
+                    self._build_liquidation_method_card(
+                        method="INTERES_DIRECTO",
+                        title="Interés directo",
+                        description="Aplica interés simple sobre el capital inicial del tramo.",
+                        icon=ft.Icons.PERCENT,
+                    ),
+                    self._build_liquidation_method_card(
+                        method="INDEXACION",
+                        title="Indexado por índice",
+                        description="Actualiza las cuotas usando un índice financiero publicado.",
+                        icon=ft.Icons.TRENDING_UP,
+                    ),
+                ],
+                spacing=10,
+                wrap=True,
+            ),
+        ]
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            controls.extend(
+                [
+                    self._build_help_card(
+                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. No se calcula interés localmente.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_100,
+                    ),
+                    self.tramo_tasa_interes_field,
+                    self.tramo_tasa_interes_feedback,
+                    self.tramo_cantidad_periodos_field,
+                    self.tramo_cantidad_periodos_feedback,
+                ]
+            )
+        if self.state.tramo_metodo_liquidacion == "INDEXACION":
+            controls.extend(
+                [
+                    self._build_help_card(
+                        "Defaults futuros: POR_COEFICIENTE, CAPITAL_INICIAL_BLOQUE, DEFINITIVA, ERROR_SI_NO_EXISTE, conserva capital original y genera ajuste por diferencia.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_100,
+                    ),
+                    self.tramo_codigo_indice_visual_field,
+                    self.tramo_codigo_indice_visual_feedback,
+                    self.tramo_id_indice_financiero_field,
+                    self.tramo_id_indice_financiero_feedback,
+                    ft.Row(
+                        controls=[
+                            self.tramo_fecha_base_indice_field,
+                            ft.IconButton(
+                                icon=ft.Icons.CALENDAR_MONTH,
+                                tooltip="Abrir calendario",
+                                on_click=self._open_tramo_fecha_base_indice_picker,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self.tramo_fecha_base_indice_feedback,
+                    self.tramo_valor_base_indice_field,
+                    self.tramo_valor_base_indice_feedback,
+                ]
+            )
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _build_liquidation_method_card(
+        self,
+        *,
+        method: MetodoLiquidacionTramoWizard,
+        title: str,
+        description: str,
+        icon: str,
+    ) -> ft.Control:
+        selected = self.state.tramo_metodo_liquidacion == method
+        return ft.Container(
+            width=220,
+            padding=12,
+            border_radius=12,
+            border=_border_all(2 if selected else 1, ft.Colors.BLUE_500 if selected else ft.Colors.BLUE_GREY_100),
+            bgcolor=ft.Colors.BLUE_50 if selected else ft.Colors.WHITE,
+            on_click=lambda _, selected_method=method: self._select_installment_liquidation_method(selected_method),
+            content=ft.Column(
+                controls=[
+                    ft.Icon(icon, size=24, color=ft.Colors.BLUE_700 if selected else ft.Colors.BLUE_GREY_500),
+                    ft.Text(title, weight=ft.FontWeight.W_700),
+                    ft.Text(description, size=12, color=ft.Colors.BLUE_GREY_700),
+                ],
+                spacing=6,
             ),
         )
 
@@ -1565,7 +1756,22 @@ class VentaCompletaWizardV3Prototype:
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
                             ft.Text(f"Periodicidad: {tramo.periodicidad}", size=12, color=ft.Colors.BLUE_GREY_700),
-                            ft.Text(f"Método: {tramo.metodo_liquidacion}", size=12, color=ft.Colors.BLUE_GREY_700),
+                            ft.Text(
+                                f"Método: {self._installment_liquidation_label(tramo.metodo_liquidacion)}",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
+                            *(
+                                [
+                                    ft.Text(
+                                        self._installment_liquidation_secondary_text(tramo),
+                                        size=12,
+                                        color=ft.Colors.BLUE_GREY_700,
+                                    )
+                                ]
+                                if self._installment_liquidation_secondary_text(tramo)
+                                else []
+                            ),
                         ],
                         spacing=3,
                         expand=True,
@@ -2220,9 +2426,20 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_capital_field.hint_text = self._format_money_with_currency(remaining)
         self.tramo_cantidad_field.value = self.state.tramo_cantidad_cuotas_value
         self.tramo_fecha_field.value = self._installment_date_display_value()
+        self.tramo_tasa_interes_field.value = self.state.tramo_tasa_interes_value
+        self.tramo_cantidad_periodos_field.value = self.state.tramo_cantidad_periodos_value
+        self.tramo_codigo_indice_visual_field.value = self.state.tramo_codigo_indice_visual_value
+        self.tramo_id_indice_financiero_field.value = self.state.tramo_id_indice_financiero_value
+        self.tramo_fecha_base_indice_field.value = self._installment_index_base_date_display_value()
+        self.tramo_valor_base_indice_field.value = self.state.tramo_valor_base_indice_value
         self._sync_tramo_capital_feedback()
         self._sync_tramo_cantidad_feedback()
         self._sync_tramo_fecha_feedback()
+        self._sync_tramo_tasa_interes_feedback()
+        self._sync_tramo_cantidad_periodos_feedback()
+        self._sync_tramo_id_indice_financiero_feedback()
+        self._sync_tramo_fecha_base_indice_feedback()
+        self._sync_tramo_valor_base_indice_feedback()
 
     def _on_tramo_capital_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_capital_value = str(event.control.value or "")
@@ -2236,6 +2453,41 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_fecha_display = str(event.control.value or "")
         self.state.tramo_fecha_iso = ""
         self.state.tramo_fecha_error = None
+
+    def _select_installment_liquidation_method(self, method: MetodoLiquidacionTramoWizard) -> None:
+        previous_method = self.state.tramo_metodo_liquidacion
+        if previous_method == method:
+            return
+        self.state.tramo_metodo_liquidacion = method
+        if previous_method == "INTERES_DIRECTO" or method != "INTERES_DIRECTO":
+            self._clear_installment_interest_fields()
+        if previous_method == "INDEXACION" or method != "INDEXACION":
+            self._clear_installment_index_fields()
+        self._render()
+
+    def _on_tramo_tasa_interes_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_tasa_interes_value = str(event.control.value or "")
+        self.state.tramo_tasa_interes_error = None
+
+    def _on_tramo_cantidad_periodos_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_cantidad_periodos_value = str(event.control.value or "")
+        self.state.tramo_cantidad_periodos_error = None
+
+    def _on_tramo_codigo_indice_visual_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_codigo_indice_visual_value = str(event.control.value or "")
+
+    def _on_tramo_id_indice_financiero_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_id_indice_financiero_value = str(event.control.value or "")
+        self.state.tramo_id_indice_financiero_error = None
+
+    def _on_tramo_fecha_base_indice_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_fecha_base_indice_display = str(event.control.value or "")
+        self.state.tramo_fecha_base_indice_iso = ""
+        self.state.tramo_fecha_base_indice_error = None
+
+    def _on_tramo_valor_base_indice_change(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_valor_base_indice_value = str(event.control.value or "")
+        self.state.tramo_valor_base_indice_error = None
 
     def _open_tramo_fecha_picker(self, _: ft.ControlEvent | None = None) -> None:
         if not hasattr(ft, "DatePicker"):
@@ -2276,6 +2528,45 @@ class VentaCompletaWizardV3Prototype:
             self.page.update()
 
 
+    def _open_tramo_fecha_base_indice_picker(self, _: ft.ControlEvent | None = None) -> None:
+        if not hasattr(ft, "DatePicker"):
+            if self.state.tramo_fecha_base_indice_error is None:
+                self.tramo_fecha_base_indice_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.tramo_fecha_base_indice_feedback.color = ft.Colors.AMBER_800
+            self.page.update()
+            return
+        selected_date = _date_from_iso(self.state.tramo_fecha_base_indice_iso) or date.today()
+        try:
+            picker = ft.DatePicker(
+                value=selected_date,
+                first_date=date(1900, 1, 1),
+                last_date=date(2100, 12, 31),
+            )
+            picker.on_change = self._on_tramo_fecha_base_indice_picker_change
+            self.page.overlay.append(picker)
+            picker.open = True
+            self.page.update()
+        except Exception:
+            if self.state.tramo_fecha_base_indice_error is None:
+                self.tramo_fecha_base_indice_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.tramo_fecha_base_indice_feedback.color = ft.Colors.AMBER_800
+            self.page.update()
+
+    def _on_tramo_fecha_base_indice_picker_change(self, event: ft.ControlEvent) -> None:
+        selected_date = getattr(event.control, "value", None)
+        if selected_date is None:
+            return
+        if isinstance(selected_date, datetime):
+            selected_date = selected_date.date()
+        if isinstance(selected_date, date):
+            self.state.tramo_fecha_base_indice_iso = selected_date.isoformat()
+            self.state.tramo_fecha_base_indice_display = _format_date_ar(self.state.tramo_fecha_base_indice_iso)
+            self.tramo_fecha_base_indice_field.value = self.state.tramo_fecha_base_indice_display
+            self.state.tramo_fecha_base_indice_error = None
+            self._sync_tramo_fecha_base_indice_feedback()
+            self.page.update()
+
+
     def _open_installment_form_step(self, _: ft.ControlEvent | None = None) -> None:
         self._clear_installment_form_state()
         self.state.pantalla_actual = "PLAN_TRAMO_FORM"
@@ -2290,7 +2581,8 @@ class VentaCompletaWizardV3Prototype:
         capital = self._validate_installment_capital()
         quantity = self._validate_installment_quantity()
         due_date_iso = self._validate_installment_date()
-        if capital is None or quantity is None or due_date_iso is None:
+        liquidation_data = self._validate_installment_liquidation_method()
+        if capital is None or quantity is None or due_date_iso is None or liquidation_data is None:
             self._render()
             return
         self.state.tramos_cuotas.append(
@@ -2299,6 +2591,8 @@ class VentaCompletaWizardV3Prototype:
                 cantidad_cuotas=quantity,
                 fecha_primer_vencimiento_iso=due_date_iso,
                 fecha_primer_vencimiento_display=_format_date_ar(due_date_iso),
+                metodo_liquidacion=self.state.tramo_metodo_liquidacion,
+                **liquidation_data,
             )
         )
         self._clear_installment_form_state()
@@ -2358,11 +2652,108 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_fecha_error = None
         return parsed_date
 
+    def _validate_installment_liquidation_method(self) -> dict[str, str | None] | None:
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            return self._validate_installment_direct_interest_fields()
+        if self.state.tramo_metodo_liquidacion == "INDEXACION":
+            return self._validate_installment_index_fields()
+        self._clear_installment_interest_errors()
+        self._clear_installment_index_errors()
+        return {}
+
+    def _validate_installment_direct_interest_fields(self) -> dict[str, str | None] | None:
+        raw_rate = self.state.tramo_tasa_interes_value.strip()
+        raw_periods = self.state.tramo_cantidad_periodos_value.strip()
+        rate = _parse_decimal(raw_rate) if raw_rate else None
+        periods = self._parse_positive_integer(raw_periods) if raw_periods else None
+
+        if not raw_rate:
+            self.state.tramo_tasa_interes_error = "La tasa periódica es requerida."
+        elif rate is None:
+            self.state.tramo_tasa_interes_error = "La tasa periódica debe ser un número finito mayor que 0."
+        else:
+            self.state.tramo_tasa_interes_error = None
+
+        if not raw_periods:
+            self.state.tramo_cantidad_periodos_error = "La cantidad de períodos es requerida."
+        elif periods is None:
+            self.state.tramo_cantidad_periodos_error = "La cantidad de períodos debe ser un entero mayor que 0."
+        else:
+            self.state.tramo_cantidad_periodos_error = None
+
+        if self.state.tramo_tasa_interes_error is not None or self.state.tramo_cantidad_periodos_error is not None:
+            return None
+        self._clear_installment_index_errors()
+        return {
+            "tasa_interes_directo_periodica": raw_rate,
+            "cantidad_periodos": raw_periods,
+        }
+
+    def _validate_installment_index_fields(self) -> dict[str, str | None] | None:
+        raw_index_id = self.state.tramo_id_indice_financiero_value.strip()
+        raw_date = self.state.tramo_fecha_base_indice_display.strip()
+        raw_base_value = self.state.tramo_valor_base_indice_value.strip()
+        index_id = self._parse_positive_integer(raw_index_id) if raw_index_id else None
+        parsed_date = _parse_date_ar_strict(raw_date) if raw_date else None
+        base_value = _parse_decimal(raw_base_value) if raw_base_value else None
+
+        if not raw_index_id:
+            self.state.tramo_id_indice_financiero_error = "El ID índice financiero backend es requerido."
+        elif index_id is None:
+            self.state.tramo_id_indice_financiero_error = "El ID índice financiero backend debe ser un entero mayor que 0."
+        else:
+            self.state.tramo_id_indice_financiero_error = None
+
+        if not raw_date:
+            self.state.tramo_fecha_base_indice_error = "La fecha base índice es requerida."
+        elif parsed_date is None:
+            self.state.tramo_fecha_base_indice_error = "Fecha inválida. Usá formato DD/MM/AAAA."
+            self.state.tramo_fecha_base_indice_iso = ""
+        else:
+            self.state.tramo_fecha_base_indice_error = None
+            self.state.tramo_fecha_base_indice_iso = parsed_date
+            self.state.tramo_fecha_base_indice_display = _format_date_ar(parsed_date)
+
+        if not raw_base_value:
+            self.state.tramo_valor_base_indice_error = "El valor base índice es requerido."
+        elif base_value is None:
+            self.state.tramo_valor_base_indice_error = "El valor base índice debe ser un número finito mayor que 0."
+        else:
+            self.state.tramo_valor_base_indice_error = None
+
+        if (
+            self.state.tramo_id_indice_financiero_error is not None
+            or self.state.tramo_fecha_base_indice_error is not None
+            or self.state.tramo_valor_base_indice_error is not None
+        ):
+            return None
+        self._clear_installment_interest_errors()
+        return {
+            "id_indice_financiero": raw_index_id,
+            "codigo_indice_visual": self.state.tramo_codigo_indice_visual_value.strip() or None,
+            "fecha_base_indice_iso": self.state.tramo_fecha_base_indice_iso,
+            "fecha_base_indice_display": self.state.tramo_fecha_base_indice_display,
+            "valor_base_indice": raw_base_value,
+        }
+
+    @staticmethod
+    def _parse_positive_integer(raw_value: str) -> int | None:
+        try:
+            parsed = int(raw_value)
+        except ValueError:
+            return None
+        if str(parsed) != raw_value or parsed <= 0:
+            return None
+        return parsed
+
     def _clear_installment_form_state(self) -> None:
         self.state.tramo_capital_value = ""
         self.state.tramo_cantidad_cuotas_value = ""
         self.state.tramo_fecha_display = ""
         self.state.tramo_fecha_iso = ""
+        self.state.tramo_metodo_liquidacion = "SIN_INTERES"
+        self._clear_installment_interest_fields()
+        self._clear_installment_index_fields()
         self._clear_installment_errors()
         self.tramo_capital_field.value = ""
         self.tramo_cantidad_field.value = ""
@@ -2372,11 +2763,46 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_capital_error = None
         self.state.tramo_cantidad_error = None
         self.state.tramo_fecha_error = None
+        self._clear_installment_interest_errors()
+        self._clear_installment_index_errors()
+
+    def _clear_installment_interest_fields(self) -> None:
+        self.state.tramo_tasa_interes_value = ""
+        self.state.tramo_cantidad_periodos_value = ""
+        self._clear_installment_interest_errors()
+        self.tramo_tasa_interes_field.value = ""
+        self.tramo_cantidad_periodos_field.value = ""
+
+    def _clear_installment_interest_errors(self) -> None:
+        self.state.tramo_tasa_interes_error = None
+        self.state.tramo_cantidad_periodos_error = None
+
+    def _clear_installment_index_fields(self) -> None:
+        self.state.tramo_id_indice_financiero_value = ""
+        self.state.tramo_codigo_indice_visual_value = ""
+        self.state.tramo_fecha_base_indice_display = ""
+        self.state.tramo_fecha_base_indice_iso = ""
+        self.state.tramo_valor_base_indice_value = ""
+        self._clear_installment_index_errors()
+        self.tramo_id_indice_financiero_field.value = ""
+        self.tramo_codigo_indice_visual_field.value = ""
+        self.tramo_fecha_base_indice_field.value = ""
+        self.tramo_valor_base_indice_field.value = ""
+
+    def _clear_installment_index_errors(self) -> None:
+        self.state.tramo_id_indice_financiero_error = None
+        self.state.tramo_fecha_base_indice_error = None
+        self.state.tramo_valor_base_indice_error = None
 
     def _installment_date_display_value(self) -> str:
         if self.state.tramo_fecha_error is not None:
             return self.state.tramo_fecha_display
         return self.state.tramo_fecha_display or _format_date_ar(self.state.tramo_fecha_iso)
+
+    def _installment_index_base_date_display_value(self) -> str:
+        if self.state.tramo_fecha_base_indice_error is not None:
+            return self.state.tramo_fecha_base_indice_display
+        return self.state.tramo_fecha_base_indice_display or _format_date_ar(self.state.tramo_fecha_base_indice_iso)
 
     def _sync_tramo_capital_feedback(self) -> None:
         if self.state.tramo_capital_error is not None:
@@ -2401,6 +2827,64 @@ class VentaCompletaWizardV3Prototype:
             return
         self.tramo_fecha_feedback.value = "Formato: DD/MM/AAAA"
         self.tramo_fecha_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_tramo_tasa_interes_feedback(self) -> None:
+        if self.state.tramo_tasa_interes_error is not None:
+            self.tramo_tasa_interes_feedback.value = self.state.tramo_tasa_interes_error
+            self.tramo_tasa_interes_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_tasa_interes_feedback.value = "Ingresá una tasa numérica mayor que 0."
+        self.tramo_tasa_interes_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_tramo_cantidad_periodos_feedback(self) -> None:
+        if self.state.tramo_cantidad_periodos_error is not None:
+            self.tramo_cantidad_periodos_feedback.value = self.state.tramo_cantidad_periodos_error
+            self.tramo_cantidad_periodos_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_cantidad_periodos_feedback.value = "Ingresá un número entero mayor que 0."
+        self.tramo_cantidad_periodos_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_tramo_id_indice_financiero_feedback(self) -> None:
+        if self.state.tramo_id_indice_financiero_error is not None:
+            self.tramo_id_indice_financiero_feedback.value = self.state.tramo_id_indice_financiero_error
+            self.tramo_id_indice_financiero_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_id_indice_financiero_feedback.value = "Ingresá el identificador numérico del índice financiero."
+        self.tramo_id_indice_financiero_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_tramo_fecha_base_indice_feedback(self) -> None:
+        if self.state.tramo_fecha_base_indice_error is not None:
+            self.tramo_fecha_base_indice_feedback.value = self.state.tramo_fecha_base_indice_error
+            self.tramo_fecha_base_indice_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_fecha_base_indice_feedback.value = "Formato: DD/MM/AAAA"
+        self.tramo_fecha_base_indice_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_tramo_valor_base_indice_feedback(self) -> None:
+        if self.state.tramo_valor_base_indice_error is not None:
+            self.tramo_valor_base_indice_feedback.value = self.state.tramo_valor_base_indice_error
+            self.tramo_valor_base_indice_feedback.color = ft.Colors.RED_700
+            return
+        self.tramo_valor_base_indice_feedback.value = "Ingresá un valor numérico mayor que 0."
+        self.tramo_valor_base_indice_feedback.color = ft.Colors.BLUE_GREY_600
+
+    @staticmethod
+    def _installment_liquidation_label(method: MetodoLiquidacionTramoWizard) -> str:
+        labels = {
+            "SIN_INTERES": "Cuotas fijas",
+            "INTERES_DIRECTO": "Interés directo",
+            "INDEXACION": "Indexado",
+        }
+        return labels[method]
+
+    @staticmethod
+    def _installment_liquidation_secondary_text(tramo: TramoCuotasWizardDraft) -> str:
+        if tramo.metodo_liquidacion == "INTERES_DIRECTO":
+            return f"Tasa periódica: {tramo.tasa_interes_directo_periodica or '-'} · períodos: {tramo.cantidad_periodos or '-'}"
+        if tramo.metodo_liquidacion == "INDEXACION":
+            index_label = tramo.codigo_indice_visual or f"ID {tramo.id_indice_financiero or '-'}"
+            return f"Índice: {index_label} · fecha base: {tramo.fecha_base_indice_display or '-'}"
+        return ""
 
     def _capital_assigned_to_installments(self) -> Decimal:
         total = Decimal("0")
