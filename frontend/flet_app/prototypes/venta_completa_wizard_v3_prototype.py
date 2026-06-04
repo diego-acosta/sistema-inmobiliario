@@ -42,6 +42,8 @@ PantallaWizard = Literal[
     "OBJETOS",
     "COMPRADORES",
     "FORMA_PAGO",
+    "PLAN_ANTICIPO",
+    "PLAN_TRAMOS_PLACEHOLDER",
     "PASO_6_PLACEHOLDER",
 ]
 
@@ -193,6 +195,12 @@ class WizardVentaCompletaV3State:
     fecha_pago_contado_iso: str = ""
     fecha_pago_contado_display: str = ""
     fecha_pago_contado_error: str | None = None
+    tiene_anticipo: bool = False
+    importe_anticipo: str = ""
+    fecha_anticipo_iso: str = ""
+    fecha_anticipo_display: str = ""
+    fecha_anticipo_error: str | None = None
+    importe_anticipo_error: str | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -263,6 +271,30 @@ class VentaCompletaWizardV3Prototype:
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
+        self.importe_anticipo_field = ft.TextField(
+            label="Importe anticipo",
+            prefix_icon=ft.Icons.ATTACH_MONEY,
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_importe_anticipo_change,
+        )
+        self.importe_anticipo_feedback = ft.Text(
+            "Ingresá un importe mayor que 0 y menor o igual al total derivado.",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.fecha_anticipo_field = ft.TextField(
+            label="Fecha vencimiento anticipo",
+            hint_text="DD/MM/AAAA",
+            width=240,
+            on_change=self._on_fecha_anticipo_change,
+        )
+        self.fecha_anticipo_feedback = ft.Text(
+            "Formato: DD/MM/AAAA",
+            size=12,
+            color=ft.Colors.BLUE_GREY_600,
+        )
+        self.anticipo_actual_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
+        self.capital_pendiente_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
         self.next_button: ft.ElevatedButton | None = None
 
     def run(self) -> None:
@@ -341,7 +373,9 @@ class VentaCompletaWizardV3Prototype:
             return self._build_buyers_step()
         if self.state.pantalla_actual == "FORMA_PAGO":
             return self._build_payment_method_step()
-        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
+        if self.state.pantalla_actual == "PLAN_ANTICIPO":
+            return self._build_financed_plan_advance_step()
+        if self.state.pantalla_actual in {"PLAN_TRAMOS_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
             return self._build_step_6_placeholder()
         return self._build_origin_step()
 
@@ -1152,10 +1186,131 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
+    def _build_financed_plan_advance_step(self) -> ft.Control:
+        self._validate_advance_state()
+        self.importe_anticipo_field.value = self.state.importe_anticipo
+        self.fecha_anticipo_field.value = self._advance_date_display_value()
+        self._sync_importe_anticipo_feedback()
+        self._sync_fecha_anticipo_feedback()
+        total = self._objects_total()
+        advance = self._valid_advance_amount_or_zero()
+        pending = total - advance
+        controls: list[ft.Control] = [
+            ft.Text("Plan de pago — Anticipo", size=24, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Definí si la operación tendrá anticipo. El saldo restante se asignará luego a cuotas, refuerzos o saldo final.",
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            self._build_advance_summary_card(total, advance, pending),
+            ft.Text("¿Tiene anticipo?", size=16, weight=ft.FontWeight.W_700),
+            ft.Row(
+                controls=[
+                    self._build_advance_toggle_card(has_advance=False, label="No"),
+                    self._build_advance_toggle_card(has_advance=True, label="Sí"),
+                ],
+                spacing=12,
+            ),
+        ]
+        if self.state.tiene_anticipo:
+            controls.append(self._build_advance_form_section())
+        else:
+            controls.append(
+                self._build_help_card(
+                    "Todo el total quedará pendiente para cuotas, refuerzos o saldo final.",
+                    ft.Colors.BLUE_50,
+                    ft.Colors.BLUE_200,
+                )
+            )
+
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=14),
+        )
+
+    def _build_advance_summary_card(self, total: Decimal, advance: Decimal, pending: Decimal) -> ft.Control:
+        self.anticipo_actual_summary_value.value = self._format_money_with_currency(advance)
+        self.capital_pendiente_summary_value.value = self._format_money_with_currency(pending)
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resumen visual del plan", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    _info_row("Total de venta derivado de objetos", self._format_money_with_currency(total)),
+                    _info_row_control("Anticipo actual", self.anticipo_actual_summary_value),
+                    _info_row_control("Capital pendiente después de anticipo", self.capital_pendiente_summary_value),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_advance_toggle_card(self, *, has_advance: bool, label: str) -> ft.Control:
+        selected = self.state.tiene_anticipo == has_advance
+        return ft.Container(
+            width=140,
+            padding=14,
+            border_radius=12,
+            border=_border_all(2 if selected else 1, ft.Colors.BLUE_500 if selected else ft.Colors.BLUE_GREY_100),
+            bgcolor=ft.Colors.BLUE_50 if selected else ft.Colors.WHITE,
+            on_click=lambda _, selected_value=has_advance: self._select_tiene_anticipo(selected_value),
+            content=ft.Row(
+                controls=[
+                    ft.Icon(
+                        ft.Icons.CHECK_CIRCLE if selected else ft.Icons.RADIO_BUTTON_UNCHECKED,
+                        color=ft.Colors.BLUE_700 if selected else ft.Colors.BLUE_GREY_500,
+                    ),
+                    ft.Text(label, weight=ft.FontWeight.W_700),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_advance_form_section(self) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Datos del anticipo", size=18, weight=ft.FontWeight.W_700),
+                    self.importe_anticipo_field,
+                    self.importe_anticipo_feedback,
+                    ft.Row(
+                        controls=[
+                            self.fecha_anticipo_field,
+                            ft.IconButton(
+                                icon=ft.Icons.CALENDAR_MONTH,
+                                tooltip="Abrir calendario",
+                                on_click=self._open_fecha_anticipo_picker,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self.fecha_anticipo_feedback,
+                    ft.Text(
+                        "El anticipo se incluirá como bloque ANTICIPO del Plan Pago V2.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                ],
+                spacing=8,
+            ),
+        )
+
     def _build_step_6_placeholder(self) -> ft.Control:
-        if self.state.forma_pago == "FINANCIADO":
+        if self.state.pantalla_actual == "PLAN_TRAMOS_PLACEHOLDER":
+            title = "Pantalla 6B — Tramos de cuotas pendiente"
+            description = "Placeholder futuro: acá se cargarán tramos de cuotas sin calcular cronograma local, interés ni indexación."
+        elif self.state.forma_pago == "FINANCIADO":
             title = "Paso 6 — Plan de pago pendiente"
-            description = "Placeholder futuro: acá se cargará el subwizard de financiación sin calcular cronograma local."
+            description = "Placeholder futuro: acá se continuará el subwizard de financiación sin calcular cronograma local."
         else:
             title = "Paso 6 — Revisión de venta pendiente"
             description = "Placeholder futuro: acá se revisará la venta contado antes de confirmar, sin mostrar payload final."
@@ -1171,6 +1326,8 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Forma de pago", self._payment_method_status()),
                     _info_row("Moneda definida", self._currency_label()),
                     _info_row("Total derivado desde objetos", self._format_money_with_currency(self._objects_total())),
+                    _info_row("Anticipo", self._advance_status()),
+                    _info_row("Pendiente", self._format_money_with_currency(self._capital_pending_after_advance())),
                 ],
                 spacing=8,
             ),
@@ -1190,9 +1347,16 @@ class VentaCompletaWizardV3Prototype:
                 _info_row("Total derivado", self._format_money_with_currency(self._objects_total())),
                 _info_row("Compradores", self._buyers_flow_status()),
                 _info_row("Forma de pago", self._payment_method_status()),
-                _info_row("Próximo paso", self._next_step_label()),
             ]
         )
+        if self.state.forma_pago == "FINANCIADO":
+            controls.extend(
+                [
+                    _info_row("Anticipo", self._advance_status()),
+                    _info_row("Pendiente", self._format_money_with_currency(self._capital_pending_after_advance())),
+                ]
+            )
+        controls.append(_info_row("Próximo paso", self._next_step_label()))
 
         return ft.Container(
             padding=16,
@@ -1378,7 +1542,12 @@ class VentaCompletaWizardV3Prototype:
         elif self.state.pantalla_actual == "COMPRADORES":
             self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "FORMA_PAGO":
-            self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
+            if self.state.forma_pago == "FINANCIADO":
+                self.state.pantalla_actual = "PLAN_ANTICIPO"
+            else:
+                self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
+        elif self.state.pantalla_actual == "PLAN_ANTICIPO":
+            self.state.pantalla_actual = "PLAN_TRAMOS_PLACEHOLDER"
         self._render()
 
     def _previous_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -1386,7 +1555,9 @@ class VentaCompletaWizardV3Prototype:
             return
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             self.state.pantalla_actual = "ORIGEN"
-        elif self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
+        elif self.state.pantalla_actual == "PLAN_TRAMOS_PLACEHOLDER":
+            self.state.pantalla_actual = "PLAN_ANTICIPO"
+        elif self.state.pantalla_actual in {"PLAN_ANTICIPO", "PASO_6_PLACEHOLDER"}:
             self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "FORMA_PAGO":
             self.state.pantalla_actual = "COMPRADORES"
@@ -1423,6 +1594,8 @@ class VentaCompletaWizardV3Prototype:
             if self.state.forma_pago == "CONTADO":
                 return bool(self.state.fecha_pago_contado_iso) and self.state.fecha_pago_contado_error is None
             return False
+        if self.state.pantalla_actual == "PLAN_ANTICIPO":
+            return self._advance_is_valid()
         return False
 
     def _date_display_value(self) -> str:
@@ -1525,6 +1698,171 @@ class VentaCompletaWizardV3Prototype:
             return
         self.fecha_pago_contado_feedback.value = "Formato: DD/MM/AAAA"
         self.fecha_pago_contado_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _select_tiene_anticipo(self, has_advance: bool) -> None:
+        self.state.tiene_anticipo = has_advance
+        if not has_advance:
+            self.state.importe_anticipo_error = None
+            self.state.fecha_anticipo_error = None
+        else:
+            self._validate_advance_state()
+        self._render()
+
+    def _on_importe_anticipo_change(self, event: ft.ControlEvent) -> None:
+        self.state.importe_anticipo = str(event.control.value or "")
+        self._validate_advance_amount()
+        self._sync_importe_anticipo_feedback()
+        self._sync_advance_visual_amounts()
+        self._refresh_navigation_controls()
+        self.page.update()
+
+    def _on_fecha_anticipo_change(self, event: ft.ControlEvent) -> None:
+        raw_value = str(event.control.value or "")
+        self.state.fecha_anticipo_display = raw_value
+        if not raw_value.strip():
+            self.state.fecha_anticipo_iso = ""
+            self.state.fecha_anticipo_error = "La fecha vencimiento anticipo es requerida."
+        else:
+            parsed_date = _parse_date_ar_strict(raw_value)
+            if parsed_date is None:
+                self.state.fecha_anticipo_iso = ""
+                self.state.fecha_anticipo_error = "Fecha inválida. Usá formato DD/MM/AAAA."
+            else:
+                self.state.fecha_anticipo_iso = parsed_date
+                self.state.fecha_anticipo_display = _format_date_ar(parsed_date)
+                event.control.value = self.state.fecha_anticipo_display
+                self.state.fecha_anticipo_error = None
+        self._sync_fecha_anticipo_feedback()
+        self._refresh_navigation_controls()
+        self.page.update()
+
+    def _open_fecha_anticipo_picker(self, _: ft.ControlEvent | None = None) -> None:
+        if not hasattr(ft, "DatePicker"):
+            if self.state.fecha_anticipo_error is None:
+                self.fecha_anticipo_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.fecha_anticipo_feedback.color = ft.Colors.AMBER_800
+            self._refresh_navigation_controls()
+            self.page.update()
+            return
+        selected_date = _date_from_iso(self.state.fecha_anticipo_iso) or date.today()
+        try:
+            picker = ft.DatePicker(
+                value=selected_date,
+                first_date=date(1900, 1, 1),
+                last_date=date(2100, 12, 31),
+            )
+            picker.on_change = self._on_fecha_anticipo_picker_change
+            self.page.overlay.append(picker)
+            picker.open = True
+            self.page.update()
+        except Exception:
+            if self.state.fecha_anticipo_error is None:
+                self.fecha_anticipo_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
+                self.fecha_anticipo_feedback.color = ft.Colors.AMBER_800
+            self._refresh_navigation_controls()
+            self.page.update()
+
+    def _on_fecha_anticipo_picker_change(self, event: ft.ControlEvent) -> None:
+        selected_date = getattr(event.control, "value", None)
+        if selected_date is None:
+            return
+        if isinstance(selected_date, datetime):
+            selected_date = selected_date.date()
+        if isinstance(selected_date, date):
+            self.state.fecha_anticipo_iso = selected_date.isoformat()
+            self.state.fecha_anticipo_display = _format_date_ar(self.state.fecha_anticipo_iso)
+            self.fecha_anticipo_field.value = self.state.fecha_anticipo_display
+            self.state.fecha_anticipo_error = None
+            self._sync_fecha_anticipo_feedback()
+            self._refresh_navigation_controls()
+            self.page.update()
+
+    def _advance_date_display_value(self) -> str:
+        if self.state.fecha_anticipo_error is not None:
+            return self.state.fecha_anticipo_display
+        return _format_date_ar(self.state.fecha_anticipo_iso)
+
+    def _validate_advance_state(self) -> None:
+        if not self.state.tiene_anticipo:
+            self.state.importe_anticipo_error = None
+            self.state.fecha_anticipo_error = None
+            return
+        self._validate_advance_amount()
+        if not self.state.fecha_anticipo_display.strip() and not self.state.fecha_anticipo_iso:
+            self.state.fecha_anticipo_error = "La fecha vencimiento anticipo es requerida."
+        elif self.state.fecha_anticipo_display.strip() and _parse_date_ar_strict(self.state.fecha_anticipo_display) is None:
+            self.state.fecha_anticipo_error = "Fecha inválida. Usá formato DD/MM/AAAA."
+
+    def _validate_advance_amount(self) -> Decimal | None:
+        if not self.state.tiene_anticipo:
+            self.state.importe_anticipo_error = None
+            return None
+        raw_value = self.state.importe_anticipo.strip()
+        total = self._objects_total()
+        if not raw_value:
+            self.state.importe_anticipo_error = "El importe anticipo es requerido."
+            return None
+        parsed = _parse_decimal(raw_value)
+        if parsed is None:
+            self.state.importe_anticipo_error = "El importe debe ser un número finito mayor que 0."
+            return None
+        if parsed > total:
+            self.state.importe_anticipo_error = "El importe anticipo no puede superar el total derivado."
+            return None
+        self.state.importe_anticipo_error = None
+        return parsed
+
+    def _advance_is_valid(self) -> bool:
+        self._validate_advance_state()
+        if not self.state.tiene_anticipo:
+            return True
+        return (
+            self.state.importe_anticipo_error is None
+            and self.state.fecha_anticipo_error is None
+            and self._validate_advance_amount() is not None
+            and bool(self.state.fecha_anticipo_iso)
+        )
+
+    def _valid_advance_amount_or_zero(self) -> Decimal:
+        if not self.state.tiene_anticipo:
+            return Decimal("0")
+        parsed = _parse_decimal(self.state.importe_anticipo)
+        if parsed is None or parsed > self._objects_total():
+            return Decimal("0")
+        return parsed
+
+    def _capital_pending_after_advance(self) -> Decimal:
+        return self._objects_total() - self._valid_advance_amount_or_zero()
+
+    def _advance_status(self) -> str:
+        if not self.state.tiene_anticipo:
+            return "No"
+        parsed = _parse_decimal(self.state.importe_anticipo)
+        if parsed is None:
+            return "importe pendiente"
+        return self._format_money_with_currency(parsed)
+
+    def _sync_importe_anticipo_feedback(self) -> None:
+        if self.state.importe_anticipo_error is not None:
+            self.importe_anticipo_feedback.value = self.state.importe_anticipo_error
+            self.importe_anticipo_feedback.color = ft.Colors.RED_700
+            return
+        self.importe_anticipo_feedback.value = "Ingresá un importe mayor que 0 y menor o igual al total derivado."
+        self.importe_anticipo_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _sync_advance_visual_amounts(self) -> None:
+        advance = self._valid_advance_amount_or_zero()
+        pending = self._objects_total() - advance
+        self.anticipo_actual_summary_value.value = self._format_money_with_currency(advance)
+        self.capital_pendiente_summary_value.value = self._format_money_with_currency(pending)
+
+    def _sync_fecha_anticipo_feedback(self) -> None:
+        if self.state.fecha_anticipo_error is not None:
+            self.fecha_anticipo_feedback.value = self.state.fecha_anticipo_error
+            self.fecha_anticipo_feedback.color = ft.Colors.RED_700
+            return
+        self.fecha_anticipo_feedback.value = "Formato: DD/MM/AAAA"
+        self.fecha_anticipo_feedback.color = ft.Colors.BLUE_GREY_600
 
     def _currency_locked_by_objects(self) -> bool:
         return bool(self.state.objetos)
@@ -1818,8 +2156,12 @@ class VentaCompletaWizardV3Prototype:
             if self.state.forma_pago == "CONTADO":
                 return "revisar venta" if self._can_advance() else "cargar fecha de pago contado"
             if self.state.forma_pago == "FINANCIADO":
-                return "cargar plan de pago"
+                return "cargar anticipo"
             return "elegir forma de pago"
+        if self.state.pantalla_actual == "PLAN_ANTICIPO":
+            return "cargar tramos de cuotas" if self._can_advance() else "completar anticipo"
+        if self.state.pantalla_actual == "PLAN_TRAMOS_PLACEHOLDER":
+            return "pendiente"
         if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
             return "pendiente"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
@@ -1858,6 +2200,18 @@ def _parse_date_ar(value: Any) -> str | None:
         return datetime.strptime(text, "%d/%m/%Y").date().isoformat()
     except ValueError:
         return None
+
+
+def _parse_date_ar_strict(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) != 10 or text[2] != "/" or text[5] != "/":
+        return None
+    day, month, year = text[:2], text[3:5], text[6:]
+    if not (day.isdigit() and month.isdigit() and year.isdigit()):
+        return None
+    return _parse_date_ar(text)
 
 
 def _date_from_iso(iso_date: str | None) -> date | None:
@@ -1926,10 +2280,17 @@ def _border_all(width: int | float, color: ft.ColorValue) -> ft.Border:
 
 
 def _info_row(label: str, value: Any) -> ft.Control:
+    return _info_row_control(
+        label,
+        ft.Text(str(value if value not in (None, "") else "-"), color=ft.Colors.BLUE_GREY_900, expand=True),
+    )
+
+
+def _info_row_control(label: str, value_control: ft.Control) -> ft.Control:
     return ft.Row(
         controls=[
             ft.Text(f"{label}:", weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700),
-            ft.Text(str(value if value not in (None, "") else "-"), color=ft.Colors.BLUE_GREY_900, expand=True),
+            value_control,
         ],
         spacing=6,
         vertical_alignment=ft.CrossAxisAlignment.START,
