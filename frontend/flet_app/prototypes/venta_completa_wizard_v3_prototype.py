@@ -348,7 +348,7 @@ class VentaCompletaWizardV3Prototype:
         )
         self.anticipo_actual_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
         self.capital_pendiente_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
-        self.next_button: ft.ElevatedButton | None = None
+        self.next_button: ft.Button | None = None
 
     def run(self) -> None:
         self.page.title = "Wizard venta completa V3 - Datos iniciales"
@@ -706,7 +706,7 @@ class VentaCompletaWizardV3Prototype:
                 ),
                 ft.Row(
                     controls=[
-                        ft.ElevatedButton(
+                        ft.Button(
                             "Agregar a la venta",
                             icon=ft.Icons.ADD,
                             disabled=duplicate,
@@ -989,7 +989,7 @@ class VentaCompletaWizardV3Prototype:
                     ft.Text("Debe corresponder al rol COMPRADOR.", size=12, color=ft.Colors.BLUE_GREY_600),
                     ft.Row(
                         controls=[
-                            ft.ElevatedButton(
+                            ft.Button(
                                 "Agregar comprador",
                                 icon=ft.Icons.PERSON_ADD_ALT_1,
                                 disabled=duplicate,
@@ -1435,7 +1435,7 @@ class VentaCompletaWizardV3Prototype:
     def _build_add_installment_button(self) -> ft.Control:
         return ft.Row(
             controls=[
-                ft.ElevatedButton(
+                ft.Button(
                     "Agregar tramo",
                     icon=ft.Icons.ADD,
                     on_click=self._open_installment_form_step,
@@ -1492,7 +1492,7 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Método", "Cuotas fijas / sin interés"),
                     ft.Row(
                         controls=[
-                            ft.ElevatedButton(
+                            ft.Button(
                                 "Guardar tramo",
                                 icon=ft.Icons.SAVE,
                                 on_click=self._add_installment_block,
@@ -1696,7 +1696,7 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_navigation(self) -> ft.Control:
-        self.next_button = ft.ElevatedButton(
+        self.next_button = ft.Button(
             "Siguiente",
             icon=ft.Icons.ARROW_FORWARD,
             disabled=not self._can_advance(),
