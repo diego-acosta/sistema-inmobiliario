@@ -1320,18 +1320,27 @@ class VentaCompletaWizardV3Prototype:
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(
-                controls=[
-                    ft.Text(title, size=24, weight=ft.FontWeight.W_700),
-                    ft.Text(description, color=ft.Colors.BLUE_GREY_700),
-                    _info_row("Forma de pago", self._payment_method_status()),
-                    _info_row("Moneda definida", self._currency_label()),
-                    _info_row("Total derivado desde objetos", self._format_money_with_currency(self._objects_total())),
-                    _info_row("Anticipo", self._advance_status()),
-                    _info_row("Pendiente", self._format_money_with_currency(self._capital_pending_after_advance())),
-                ],
+                controls=self._build_step_6_placeholder_rows(title, description),
                 spacing=8,
             ),
         )
+
+    def _build_step_6_placeholder_rows(self, title: str, description: str) -> list[ft.Control]:
+        controls: list[ft.Control] = [
+            ft.Text(title, size=24, weight=ft.FontWeight.W_700),
+            ft.Text(description, color=ft.Colors.BLUE_GREY_700),
+            _info_row("Forma de pago", self._payment_method_status()),
+            _info_row("Moneda definida", self._currency_label()),
+            _info_row("Total derivado desde objetos", self._format_money_with_currency(self._objects_total())),
+        ]
+        if self.state.forma_pago == "FINANCIADO":
+            controls.extend(
+                [
+                    _info_row("Anticipo", self._advance_status()),
+                    _info_row("Pendiente", self._format_money_with_currency(self._capital_pending_after_advance())),
+                ]
+            )
+        return controls
 
     def _build_flow_state_panel(self) -> ft.Control:
         controls: list[ft.Control] = [
@@ -1624,7 +1633,19 @@ class VentaCompletaWizardV3Prototype:
             self.state.fecha_pago_contado_display = ""
             self.state.fecha_pago_contado_error = None
             self.fecha_pago_contado_field.value = ""
+        if payment_method == "CONTADO":
+            self._clear_advance_state()
         self._render()
+
+    def _clear_advance_state(self) -> None:
+        self.state.tiene_anticipo = False
+        self.state.importe_anticipo = ""
+        self.state.fecha_anticipo_iso = ""
+        self.state.fecha_anticipo_display = ""
+        self.state.fecha_anticipo_error = None
+        self.state.importe_anticipo_error = None
+        self.importe_anticipo_field.value = ""
+        self.fecha_anticipo_field.value = ""
 
     def _cash_payment_date_display_value(self) -> str:
         if self.state.fecha_pago_contado_error is not None:
