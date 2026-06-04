@@ -229,7 +229,6 @@ class WizardVentaCompletaV3State:
     tramo_fecha_iso: str = ""
     tramo_metodo_liquidacion: MetodoLiquidacionTramoWizard = "SIN_INTERES"
     tramo_tasa_interes_value: str = ""
-    tramo_cantidad_periodos_value: str = ""
     tramo_id_indice_financiero_value: str = ""
     tramo_codigo_indice_visual_value: str = ""
     tramo_fecha_base_indice_display: str = ""
@@ -239,7 +238,6 @@ class WizardVentaCompletaV3State:
     tramo_cantidad_error: str | None = None
     tramo_fecha_error: str | None = None
     tramo_tasa_interes_error: str | None = None
-    tramo_cantidad_periodos_error: str | None = None
     tramo_id_indice_financiero_error: str | None = None
     tramo_fecha_base_indice_error: str | None = None
     tramo_valor_base_indice_error: str | None = None
@@ -374,16 +372,6 @@ class VentaCompletaWizardV3Prototype:
         )
         self.tramo_tasa_interes_feedback = ft.Text(
             "Ingresá una tasa numérica mayor que 0.",
-            size=12,
-            color=ft.Colors.BLUE_GREY_600,
-        )
-        self.tramo_cantidad_periodos_field = ft.TextField(
-            label="Cantidad de períodos",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            on_change=self._on_tramo_cantidad_periodos_change,
-        )
-        self.tramo_cantidad_periodos_feedback = ft.Text(
-            "Ingresá un número entero mayor que 0.",
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
@@ -1635,8 +1623,11 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.tramo_tasa_interes_field,
                     self.tramo_tasa_interes_feedback,
-                    self.tramo_cantidad_periodos_field,
-                    self.tramo_cantidad_periodos_feedback,
+                    ft.Text(
+                        "La tasa se aplicará por cada período/cuota del tramo.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
                 ]
             )
         if self.state.tramo_metodo_liquidacion == "INDEXACION":
@@ -2427,7 +2418,6 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_cantidad_field.value = self.state.tramo_cantidad_cuotas_value
         self.tramo_fecha_field.value = self._installment_date_display_value()
         self.tramo_tasa_interes_field.value = self.state.tramo_tasa_interes_value
-        self.tramo_cantidad_periodos_field.value = self.state.tramo_cantidad_periodos_value
         self.tramo_codigo_indice_visual_field.value = self.state.tramo_codigo_indice_visual_value
         self.tramo_id_indice_financiero_field.value = self.state.tramo_id_indice_financiero_value
         self.tramo_fecha_base_indice_field.value = self._installment_index_base_date_display_value()
@@ -2436,7 +2426,6 @@ class VentaCompletaWizardV3Prototype:
         self._sync_tramo_cantidad_feedback()
         self._sync_tramo_fecha_feedback()
         self._sync_tramo_tasa_interes_feedback()
-        self._sync_tramo_cantidad_periodos_feedback()
         self._sync_tramo_id_indice_financiero_feedback()
         self._sync_tramo_fecha_base_indice_feedback()
         self._sync_tramo_valor_base_indice_feedback()
@@ -2468,10 +2457,6 @@ class VentaCompletaWizardV3Prototype:
     def _on_tramo_tasa_interes_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_tasa_interes_value = str(event.control.value or "")
         self.state.tramo_tasa_interes_error = None
-
-    def _on_tramo_cantidad_periodos_change(self, event: ft.ControlEvent) -> None:
-        self.state.tramo_cantidad_periodos_value = str(event.control.value or "")
-        self.state.tramo_cantidad_periodos_error = None
 
     def _on_tramo_codigo_indice_visual_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_codigo_indice_visual_value = str(event.control.value or "")
@@ -2581,7 +2566,7 @@ class VentaCompletaWizardV3Prototype:
         capital = self._validate_installment_capital()
         quantity = self._validate_installment_quantity()
         due_date_iso = self._validate_installment_date()
-        liquidation_data = self._validate_installment_liquidation_method()
+        liquidation_data = self._validate_installment_liquidation_method(quantity)
         if capital is None or quantity is None or due_date_iso is None or liquidation_data is None:
             self._render()
             return
@@ -2652,20 +2637,18 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_fecha_error = None
         return parsed_date
 
-    def _validate_installment_liquidation_method(self) -> dict[str, str | None] | None:
+    def _validate_installment_liquidation_method(self, quantity: int | None) -> dict[str, str | None] | None:
         if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
-            return self._validate_installment_direct_interest_fields()
+            return self._validate_installment_direct_interest_fields(quantity)
         if self.state.tramo_metodo_liquidacion == "INDEXACION":
             return self._validate_installment_index_fields()
         self._clear_installment_interest_errors()
         self._clear_installment_index_errors()
         return {}
 
-    def _validate_installment_direct_interest_fields(self) -> dict[str, str | None] | None:
+    def _validate_installment_direct_interest_fields(self, quantity: int | None) -> dict[str, str | None] | None:
         raw_rate = self.state.tramo_tasa_interes_value.strip()
-        raw_periods = self.state.tramo_cantidad_periodos_value.strip()
         rate = _parse_decimal(raw_rate) if raw_rate else None
-        periods = self._parse_positive_integer(raw_periods) if raw_periods else None
 
         if not raw_rate:
             self.state.tramo_tasa_interes_error = "La tasa periódica es requerida."
@@ -2674,19 +2657,12 @@ class VentaCompletaWizardV3Prototype:
         else:
             self.state.tramo_tasa_interes_error = None
 
-        if not raw_periods:
-            self.state.tramo_cantidad_periodos_error = "La cantidad de períodos es requerida."
-        elif periods is None:
-            self.state.tramo_cantidad_periodos_error = "La cantidad de períodos debe ser un entero mayor que 0."
-        else:
-            self.state.tramo_cantidad_periodos_error = None
-
-        if self.state.tramo_tasa_interes_error is not None or self.state.tramo_cantidad_periodos_error is not None:
+        if self.state.tramo_tasa_interes_error is not None or quantity is None:
             return None
         self._clear_installment_index_errors()
         return {
             "tasa_interes_directo_periodica": raw_rate,
-            "cantidad_periodos": raw_periods,
+            "cantidad_periodos": str(quantity),
         }
 
     def _validate_installment_index_fields(self) -> dict[str, str | None] | None:
@@ -2768,14 +2744,11 @@ class VentaCompletaWizardV3Prototype:
 
     def _clear_installment_interest_fields(self) -> None:
         self.state.tramo_tasa_interes_value = ""
-        self.state.tramo_cantidad_periodos_value = ""
         self._clear_installment_interest_errors()
         self.tramo_tasa_interes_field.value = ""
-        self.tramo_cantidad_periodos_field.value = ""
 
     def _clear_installment_interest_errors(self) -> None:
         self.state.tramo_tasa_interes_error = None
-        self.state.tramo_cantidad_periodos_error = None
 
     def _clear_installment_index_fields(self) -> None:
         self.state.tramo_id_indice_financiero_value = ""
@@ -2836,14 +2809,6 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_tasa_interes_feedback.value = "Ingresá una tasa numérica mayor que 0."
         self.tramo_tasa_interes_feedback.color = ft.Colors.BLUE_GREY_600
 
-    def _sync_tramo_cantidad_periodos_feedback(self) -> None:
-        if self.state.tramo_cantidad_periodos_error is not None:
-            self.tramo_cantidad_periodos_feedback.value = self.state.tramo_cantidad_periodos_error
-            self.tramo_cantidad_periodos_feedback.color = ft.Colors.RED_700
-            return
-        self.tramo_cantidad_periodos_feedback.value = "Ingresá un número entero mayor que 0."
-        self.tramo_cantidad_periodos_feedback.color = ft.Colors.BLUE_GREY_600
-
     def _sync_tramo_id_indice_financiero_feedback(self) -> None:
         if self.state.tramo_id_indice_financiero_error is not None:
             self.tramo_id_indice_financiero_feedback.value = self.state.tramo_id_indice_financiero_error
@@ -2880,7 +2845,7 @@ class VentaCompletaWizardV3Prototype:
     @staticmethod
     def _installment_liquidation_secondary_text(tramo: TramoCuotasWizardDraft) -> str:
         if tramo.metodo_liquidacion == "INTERES_DIRECTO":
-            return f"Tasa periódica: {tramo.tasa_interes_directo_periodica or '-'} · períodos: {tramo.cantidad_periodos or '-'}"
+            return f"Tasa: {tramo.tasa_interes_directo_periodica or '-'} — Períodos: {tramo.cantidad_periodos or tramo.cantidad_cuotas}"
         if tramo.metodo_liquidacion == "INDEXACION":
             index_label = tramo.codigo_indice_visual or f"ID {tramo.id_indice_financiero or '-'}"
             return f"Índice: {index_label} · fecha base: {tramo.fecha_base_indice_display or '-'}"
