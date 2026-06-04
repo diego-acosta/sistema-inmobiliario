@@ -1413,6 +1413,11 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Capital pendiente para asignar a tramos", self._format_money_with_currency(capital_base)),
                     _info_row("Capital ya asignado a tramos", self._format_money_with_currency(capital_assigned)),
                     _info_row("Capital restante", self._format_money_with_currency(capital_remaining)),
+                    ft.Text(
+                        "Si queda capital restante, se completará en los pasos posteriores de saldo/refuerzo.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
                 ],
                 spacing=8,
             ),
@@ -1549,6 +1554,11 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Capital restante", self._format_money_with_currency(capital_remaining)),
                     _info_row("Cantidad de tramos", len(self.state.tramos_cuotas)),
                     _info_row("Cantidad estimada de obligaciones", self._installments_obligations_count()),
+                    ft.Text(
+                        "El capital restante no bloquea este paso; queda reservado para cargar saldo final o refuerzos más adelante.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
                 ],
                 spacing=8,
             ),
@@ -1866,7 +1876,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
             return self._advance_is_valid()
         if self.state.pantalla_actual == "PLAN_TRAMOS":
-            return self._installments_are_complete()
+            return self._installments_can_advance()
         return False
 
     def _date_display_value(self) -> str:
@@ -2340,8 +2350,8 @@ class VentaCompletaWizardV3Prototype:
     def _installments_obligations_count(self) -> int:
         return sum(tramo.cantidad_cuotas for tramo in self.state.tramos_cuotas)
 
-    def _installments_are_complete(self) -> bool:
-        return bool(self.state.tramos_cuotas) and self._capital_remaining_for_installments() == Decimal("0")
+    def _installments_can_advance(self) -> bool:
+        return bool(self.state.tramos_cuotas) and self._capital_remaining_for_installments() >= Decimal("0")
 
     def _currency_locked_by_objects(self) -> bool:
         return bool(self.state.objetos)
