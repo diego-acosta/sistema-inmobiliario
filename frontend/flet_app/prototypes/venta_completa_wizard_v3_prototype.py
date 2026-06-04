@@ -1373,8 +1373,17 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Plan de pago — Tramos de cuotas", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Asigná el capital pendiente a uno o más tramos de cuotas. El plan no calcula cronograma local; solo prepara los datos para Plan Pago V2.",
+                        "Un tramo es un grupo de cuotas con las mismas condiciones. Podés financiar todo el saldo en un solo tramo o en varios tramos diferentes.",
                         color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Text(
+                        "En esta primera versión del prototipo, los tramos se cargan como cuotas fijas / sin interés.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Text(
+                        "No se calcula cronograma local; la pantalla solo prepara datos para Plan Pago V2.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_600,
                     ),
                     self._build_installments_top_summary(capital_base, capital_assigned, capital_remaining),
                     self._build_installment_form_section(),
@@ -1589,33 +1598,30 @@ class VentaCompletaWizardV3Prototype:
     def _build_flow_state_panel(self) -> ft.Control:
         controls: list[ft.Control] = [
             ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
-            _info_row("Origen", self._origin_label()),
+            _flow_info_row("Origen", self._origin_label()),
         ]
         if self.state.origen == "RESERVA" or self.state.pantalla_actual == "SELECCIONAR_RESERVA":
-            controls.append(_info_row("Reserva", self._reservation_status()))
+            controls.append(_flow_info_row("Reserva", self._reservation_status()))
         controls.extend(
             [
-                _info_row("Moneda", self._currency_label()),
-                _info_row("Objetos", len(self.state.objetos)),
-                _info_row("Total derivado", self._format_money_with_currency(self._objects_total())),
-                _info_row("Compradores", self._buyers_flow_status()),
-                _info_row("Forma de pago", self._payment_method_status()),
+                _flow_info_row("Moneda", self._currency_label()),
+                _flow_info_row("Objetos", len(self.state.objetos)),
+                _flow_info_row("Total", self._format_money_with_currency(self._objects_total())),
+                _flow_info_row("Compradores", self._buyers_flow_status()),
+                _flow_info_row("Forma pago", self._payment_method_status()),
             ]
         )
         if self.state.forma_pago == "FINANCIADO":
             controls.extend(
                 [
-                    _info_row("Anticipo", self._advance_status()),
-                    _info_row(
-                        "Capital pendiente después de anticipo",
-                        self._format_money_with_currency(self._capital_pending_after_advance()),
-                    ),
-                    _info_row("Tramos", len(self.state.tramos_cuotas)),
-                    _info_row("Capital asignado", self._format_money_with_currency(self._capital_assigned_to_installments())),
-                    _info_row("Capital restante", self._format_money_with_currency(self._capital_remaining_for_installments())),
+                    _flow_info_row("Anticipo", self._advance_status()),
+                    _flow_info_row("Pendiente anticipo", self._format_money_with_currency(self._capital_pending_after_advance())),
+                    _flow_info_row("Tramos", len(self.state.tramos_cuotas)),
+                    _flow_info_row("Asignado", self._format_money_with_currency(self._capital_assigned_to_installments())),
+                    _flow_info_row("Restante", self._format_money_with_currency(self._capital_remaining_for_installments())),
                 ]
             )
-        controls.append(_info_row("Próximo paso", self._next_step_label()))
+        controls.append(_flow_info_row("Próximo", self._next_step_label(), value_no_wrap=False))
 
         return ft.Container(
             padding=16,
@@ -2756,6 +2762,31 @@ def _info_row(label: str, value: Any) -> ft.Control:
     return _info_row_control(
         label,
         ft.Text(str(value if value not in (None, "") else "-"), color=ft.Colors.BLUE_GREY_900, expand=True),
+    )
+
+
+def _flow_info_row(label: str, value: Any, *, value_no_wrap: bool = True) -> ft.Control:
+    display_value = str(value if value not in (None, "") else "-")
+    return ft.Row(
+        controls=[
+            ft.Container(
+                width=132,
+                content=ft.Text(
+                    f"{label}:",
+                    weight=ft.FontWeight.W_700,
+                    color=ft.Colors.BLUE_GREY_700,
+                    no_wrap=True,
+                ),
+            ),
+            ft.Text(
+                display_value,
+                color=ft.Colors.BLUE_GREY_900,
+                expand=True,
+                no_wrap=value_no_wrap,
+            ),
+        ],
+        spacing=6,
+        vertical_alignment=ft.CrossAxisAlignment.START,
     )
 
 
