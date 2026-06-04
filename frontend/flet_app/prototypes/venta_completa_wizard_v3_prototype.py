@@ -431,6 +431,7 @@ class VentaCompletaWizardV3Prototype:
         )
         self.refuerzo_numero_cuota_field = ft.TextField(
             label="Número de cuota",
+            width=180,
             keyboard_type=ft.KeyboardType.NUMBER,
             on_change=self._on_refuerzo_numero_cuota_change,
         )
@@ -441,6 +442,7 @@ class VentaCompletaWizardV3Prototype:
         )
         self.refuerzo_etiqueta_field = ft.TextField(
             label="Etiqueta opcional",
+            width=280,
             on_change=self._on_refuerzo_etiqueta_change,
         )
         self.anticipo_actual_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
@@ -1755,41 +1757,60 @@ class VentaCompletaWizardV3Prototype:
                 ]
             )
             if self.state.tramo_usa_refuerzos:
-                controls.extend(
-                    [
-                        _info_row("Cantidad total de cuotas del tramo", self.state.tramo_cantidad_cuotas_value or "pendiente"),
-                        ft.Text(
-                            "Elegí en qué número de cuota se ubicará cada refuerzo.",
-                            size=12,
-                            color=ft.Colors.BLUE_GREY_700,
-                        ),
-                        ft.Row(
-                            controls=[
-                                ft.Column(
-                                    controls=[self.refuerzo_numero_cuota_field, self.refuerzo_numero_feedback],
-                                    spacing=4,
-                                    expand=True,
-                                ),
-                                ft.Column(controls=[self.refuerzo_etiqueta_field], spacing=4, expand=True),
-                            ],
-                            spacing=10,
-                            wrap=True,
-                        ),
-                        ft.Button(
-                            "Agregar refuerzo",
-                            icon=ft.Icons.ADD,
-                            on_click=self._add_installment_reinforcement,
-                        ),
-                        self._build_installment_reinforcements_list(),
-                        self._build_installment_reinforcements_summary(),
-                    ]
-                )
+                controls.append(self._build_installment_reinforcement_editor())
         return ft.Container(
             padding=12,
             border_radius=12,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _build_installment_reinforcement_editor(self) -> ft.Control:
+        return ft.Container(
+            padding=10,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    _info_row("Cantidad total de cuotas del tramo", self.state.tramo_cantidad_cuotas_value or "pendiente"),
+                    ft.Text(
+                        "Elegí en qué número de cuota se ubicará cada refuerzo.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.Column(
+                                controls=[self.refuerzo_numero_cuota_field, self.refuerzo_numero_feedback],
+                                spacing=4,
+                                tight=True,
+                            ),
+                            ft.Column(
+                                controls=[self.refuerzo_etiqueta_field],
+                                spacing=4,
+                                tight=True,
+                            ),
+                            ft.Container(
+                                padding=ft.padding.only(top=4),
+                                content=ft.Button(
+                                    "Agregar refuerzo",
+                                    icon=ft.Icons.ADD,
+                                    on_click=self._add_installment_reinforcement,
+                                ),
+                            ),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self._build_installment_reinforcements_list(),
+                    self._build_installment_reinforcements_summary(),
+                ],
+                spacing=8,
+                tight=True,
+            ),
         )
 
     def _build_reinforcement_toggle_card(self, value: bool, title: str) -> ft.Control:
@@ -1806,12 +1827,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_installment_reinforcements_list(self) -> ft.Control:
         if not self.state.tramo_cuotas_refuerzo_draft:
-            return ft.Container(
-                padding=10,
-                border_radius=10,
-                bgcolor=ft.Colors.BLUE_GREY_50,
-                content=ft.Text("Todavía no agregaste cuotas refuerzo.", size=12, color=ft.Colors.BLUE_GREY_700),
-            )
+            return ft.Text("Todavía no agregaste cuotas refuerzo.", size=12, color=ft.Colors.BLUE_GREY_700)
         return ft.Column(
             controls=[
                 self._build_installment_reinforcement_row(index, reinforcement)
