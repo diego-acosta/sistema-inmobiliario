@@ -1418,7 +1418,7 @@ class VentaCompletaWizardV3Prototype:
                     *(
                         [
                             ft.Text(
-                                "El capital restante se completará en los pasos siguientes.",
+                                "Todavía queda capital por financiar. Agregá otro tramo o ajustá los tramos existentes hasta cubrir todo el capital pendiente.",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             )
@@ -1602,7 +1602,7 @@ class VentaCompletaWizardV3Prototype:
                     *(
                         [
                             ft.Text(
-                                "El capital restante se completará en los pasos siguientes.",
+                                "Todavía queda capital por financiar. Agregá otro tramo o ajustá los tramos existentes hasta cubrir todo el capital pendiente.",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             )
@@ -2417,7 +2417,7 @@ class VentaCompletaWizardV3Prototype:
         return sum(tramo.cantidad_cuotas for tramo in self.state.tramos_cuotas)
 
     def _installments_can_advance(self) -> bool:
-        return bool(self.state.tramos_cuotas) and self._capital_remaining_for_installments() >= Decimal("0")
+        return bool(self.state.tramos_cuotas) and self._capital_remaining_for_installments() == Decimal("0")
 
     def _currency_locked_by_objects(self) -> bool:
         return bool(self.state.objetos)
@@ -2716,7 +2716,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
             return "cargar tramos de cuotas" if self._can_advance() else "completar anticipo"
         if self.state.pantalla_actual == "PLAN_TRAMOS":
-            return "cargar saldo final / revisión pendiente" if self._can_advance() else "agregar tramo"
+            return "cargar saldo final / revisión pendiente" if self._can_advance() else "cubrir capital pendiente"
         if self.state.pantalla_actual == "PLAN_TRAMO_FORM":
             return "guardar tramo o cancelar"
         if self.state.pantalla_actual in {"PLAN_SALDO_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
