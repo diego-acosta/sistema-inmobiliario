@@ -50,6 +50,7 @@ PantallaWizard = Literal[
     "PLAN_TRAMOS",
     "PLAN_TRAMO_FORM",
     "PLAN_RESUMEN",
+    "REVISION_GENERAL",
     "PASO_6_PLACEHOLDER",
 ]
 
@@ -540,6 +541,8 @@ class VentaCompletaWizardV3Prototype:
             return self._build_financed_plan_installment_form_step()
         if self.state.pantalla_actual == "PLAN_RESUMEN":
             return self._build_financed_plan_summary_step()
+        if self.state.pantalla_actual == "REVISION_GENERAL":
+            return self._build_general_review_step()
         if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
             return self._build_step_6_placeholder()
         return self._build_origin_step()
@@ -2247,13 +2250,232 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
-    def _build_step_6_placeholder(self) -> ft.Control:
-        if self.state.forma_pago == "FINANCIADO":
-            title = "Revisión general de venta pendiente"
-            description = "Placeholder futuro: acá se revisará la venta financiada antes de confirmar, sin mostrar payload final."
+    def _build_general_review_step(self) -> ft.Control:
+        errors = self._general_review_errors()
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Revisión general de venta", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Revisá los datos principales de la operación antes de confirmar la venta.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    self._build_review_origin_section(),
+                    self._build_review_initial_data_section(),
+                    self._build_review_objects_section(),
+                    self._build_review_buyers_section(),
+                    self._build_review_payment_section(),
+                    self._build_review_validation_panel(errors),
+                    ft.Text(
+                        "No se confirma la venta, no se envía POST, no se calcula cronograma, interés, indexación ni obligaciones localmente.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_600,
+                    ),
+                ],
+                spacing=14,
+            ),
+        )
+
+    def _build_review_origin_section(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("1. Origen", size=18, weight=ft.FontWeight.W_700),
+            _info_row("Origen", self._origin_label()),
+        ]
+        if self.state.origen == "RESERVA":
+            controls.extend(
+                [
+                    _info_row("Reserva seleccionada", self.state.texto_visual_reserva or "Reserva pendiente"),
+                    _info_row("id_reserva_venta", self.state.id_reserva_venta),
+                    _info_row("version_registro", self.state.version_registro),
+                ]
+            )
+        return self._build_review_section_container(controls)
+
+    def _build_review_initial_data_section(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("2. Datos iniciales", size=18, weight=ft.FontWeight.W_700),
+            _info_row("Código de venta", self.state.codigo_venta or "Sin código informado"),
+            _info_row("Fecha de venta", _format_date_ar(self.state.fecha_venta_iso) or "Fecha pendiente"),
+            _info_row("Moneda", self._currency_label()),
+        ]
+        if self.state.observaciones_comerciales.strip():
+            controls.append(_info_row("Observaciones comerciales", self.state.observaciones_comerciales.strip()))
+        return self._build_review_section_container(controls)
+
+    def _build_review_objects_section(self) -> ft.Control:
+        object_controls: list[ft.Control] = []
+        for index, objeto in enumerate(self.state.objetos):
+            id_label = "id_unidad_funcional" if objeto.tipo_objeto == "UNIDAD_FUNCIONAL" else "id_inmueble"
+            technical_id = objeto.id_unidad_funcional if objeto.tipo_objeto == "UNIDAD_FUNCIONAL" else objeto.id_inmueble
+            object_controls.append(
+                ft.Container(
+                    padding=12,
+                    border_radius=10,
+                    bgcolor=ft.Colors.BLUE_GREY_50,
+                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                    content=ft.Column(
+                        controls=[
+                            ft.Text(f"Objeto {index + 1}: {objeto.texto_visual}", weight=ft.FontWeight.W_700),
+                            _info_row("tipo_objeto", objeto.tipo_objeto),
+                            _info_row(id_label, technical_id),
+                            _info_row("precio_asignado", self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal("0"))),
+                        ],
+                        spacing=5,
+                    ),
+                )
+            )
+        if not object_controls:
+            object_controls.append(ft.Text("No hay objetos de venta cargados.", color=ft.Colors.RED_700))
+        controls: list[ft.Control] = [
+            ft.Text("3. Objetos de venta", size=18, weight=ft.FontWeight.W_700),
+            ft.Column(controls=object_controls, spacing=8),
+            _info_row("Cantidad de objetos", len(self.state.objetos)),
+            _info_row("Total derivado de objetos", self._format_money_with_currency(self._objects_total())),
+        ]
+        return self._build_review_section_container(controls)
+
+    def _build_review_buyers_section(self) -> ft.Control:
+        controls: list[ft.Control] = [ft.Text("4. Compradores", size=18, weight=ft.FontWeight.W_700)]
+        if self.state.origen == "RESERVA":
+            controls.append(ft.Text("Los compradores se tomarán de la reserva seleccionada.", color=ft.Colors.BLUE_GREY_800))
+            if self.state.texto_visual_reserva:
+                controls.append(_info_row("Reserva", self.state.texto_visual_reserva))
+            if self.state.reserva_demo is not None:
+                controls.append(_info_row("Texto visual comprador reserva", self.state.reserva_demo.get("comprador") or "-"))
         else:
-            title = "Paso 6 — Revisión de venta pendiente"
-            description = "Placeholder futuro: acá se revisará la venta contado antes de confirmar, sin mostrar payload final."
+            buyer_controls: list[ft.Control] = []
+            for index, comprador in enumerate(self.state.compradores):
+                buyer_controls.append(
+                    ft.Container(
+                        padding=12,
+                        border_radius=10,
+                        bgcolor=ft.Colors.BLUE_GREY_50,
+                        border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                        content=ft.Column(
+                            controls=[
+                                ft.Text(f"Comprador {index + 1}: {comprador.texto_visual}", weight=ft.FontWeight.W_700),
+                                _info_row("id_persona", comprador.id_persona),
+                                _info_row("id_rol_participacion", comprador.id_rol_participacion),
+                                _info_row("porcentaje_responsabilidad", comprador.porcentaje_responsabilidad or "100.00"),
+                            ],
+                            spacing=5,
+                        ),
+                    )
+                )
+            if buyer_controls:
+                controls.append(ft.Column(controls=buyer_controls, spacing=8))
+            else:
+                controls.append(ft.Text("No hay compradores manuales cargados.", color=ft.Colors.RED_700))
+            controls.append(_info_row("Suma de responsabilidad", self._buyers_responsibility_total_label(self._buyers_responsibility_total())))
+        return self._build_review_section_container(controls)
+
+    def _build_review_payment_section(self) -> ft.Control:
+        controls: list[ft.Control] = [ft.Text("5. Forma de pago", size=18, weight=ft.FontWeight.W_700)]
+        if self.state.forma_pago == "CONTADO":
+            controls.extend(
+                [
+                    _info_row("Forma de pago", "Contado"),
+                    _info_row("Total a pagar", self._format_money_with_currency(self._objects_total())),
+                    _info_row("Fecha de pago / vencimiento", self.state.fecha_pago_contado_display or _format_date_ar(self.state.fecha_pago_contado_iso)),
+                    self._build_help_card(
+                        "Se generará un único bloque CONTADO por el total de la venta.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_200,
+                    ),
+                ]
+            )
+        elif self.state.forma_pago == "FINANCIADO":
+            difference = self._financed_plan_difference()
+            controls.extend(
+                [
+                    _info_row("Forma de pago", "Financiado"),
+                    _info_row("Anticipo", self._format_money_with_currency(self._valid_advance_amount_or_zero())),
+                    _info_row("Tramos", len(self.state.tramos_cuotas)),
+                    _info_row("Total asignado", self._format_money_with_currency(self._financed_plan_total_assigned())),
+                    _info_row("Diferencia", self._format_money_with_currency(difference)),
+                    self._build_financed_plan_general_summary_card(),
+                    self._build_financed_plan_advance_summary_card(),
+                    self._build_financed_plan_installments_summary_cards(),
+                    self._build_financed_plan_validation_panel(difference),
+                ]
+            )
+        else:
+            controls.append(ft.Text("Forma de pago pendiente.", color=ft.Colors.RED_700))
+        return self._build_review_section_container(controls)
+
+    def _build_review_validation_panel(self, errors: list[str]) -> ft.Control:
+        valid = not errors
+        if valid:
+            controls: list[ft.Control] = [
+                ft.Text("6. Validación general", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                ft.Text("La venta está lista para confirmar.", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+            ]
+            bgcolor = ft.Colors.GREEN_50
+            border_color = ft.Colors.GREEN_300
+        else:
+            controls = [
+                ft.Text("6. Validación general", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.RED_900),
+                ft.Text("Faltan datos o hay pendientes antes de confirmar.", weight=ft.FontWeight.W_700, color=ft.Colors.RED_900),
+                ft.Column(controls=[ft.Text(f"• {error}", color=ft.Colors.RED_800) for error in errors], spacing=4),
+            ]
+            bgcolor = ft.Colors.RED_50
+            border_color = ft.Colors.RED_300
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=bgcolor,
+            border=_border_all(1, border_color),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _build_review_section_container(self, controls: list[ft.Control]) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _general_review_errors(self) -> list[str]:
+        errors: list[str] = []
+        if self.state.origen not in {"DIRECTA", "RESERVA"}:
+            errors.append("Seleccioná un origen válido.")
+        if self.state.origen == "RESERVA" and (self.state.id_reserva_venta is None or self.state.version_registro is None):
+            errors.append("Seleccioná una reserva con id_reserva_venta y version_registro.")
+        if not self._has_valid_currency():
+            errors.append("Seleccioná una moneda válida.")
+        if not self.state.fecha_venta_iso or self.fecha_venta_error is not None:
+            errors.append("Cargá una fecha_venta válida.")
+        if not self.state.objetos:
+            errors.append("Cargá al menos un objeto de venta.")
+        invalid_objects = [objeto for objeto in self.state.objetos if _parse_money_decimal(objeto.precio_asignado) is None]
+        if invalid_objects:
+            errors.append("Todos los objetos deben tener precio_asignado válido.")
+        if self._objects_total() <= Decimal("0"):
+            errors.append("El total derivado de objetos debe ser mayor que 0.")
+        if self.state.origen == "DIRECTA":
+            buyer_error = self._buyers_validation_error()
+            if buyer_error is not None:
+                errors.append(buyer_error)
+        if self.state.forma_pago not in {"CONTADO", "FINANCIADO"}:
+            errors.append("Elegí una forma de pago.")
+        if self.state.forma_pago == "CONTADO" and (not self.state.fecha_pago_contado_iso or self.state.fecha_pago_contado_error is not None):
+            errors.append("Cargá una fecha de pago contado válida.")
+        if self.state.forma_pago == "FINANCIADO" and self._financed_plan_difference() != Decimal("0"):
+            errors.append("El plan financiado debe estar completo con diferencia 0.")
+        return errors
+
+    def _general_review_is_valid(self) -> bool:
+        return not self._general_review_errors()
+
+    def _build_step_6_placeholder(self) -> ft.Control:
+        title = "Confirmación pendiente"
+        description = "Placeholder futuro: acá se confirmará la venta. Este prototipo todavía no hace POST ni genera payload final completo."
         return ft.Container(
             padding=24,
             border_radius=14,
@@ -2299,6 +2521,7 @@ class VentaCompletaWizardV3Prototype:
                 _flow_info_row("Total", self._format_money_with_currency(self._objects_total())),
                 _flow_info_row("Compradores", self._buyers_flow_status()),
                 _flow_info_row("Forma de pago", self._payment_method_status()),
+                _flow_info_row("Estado de revisión", self._review_flow_status(), value_no_wrap=False),
             ]
         )
         if self.state.forma_pago == "FINANCIADO":
@@ -2499,12 +2722,14 @@ class VentaCompletaWizardV3Prototype:
             if self.state.forma_pago == "FINANCIADO":
                 self.state.pantalla_actual = "PLAN_ANTICIPO"
             else:
-                self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
+                self.state.pantalla_actual = "REVISION_GENERAL"
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
             self.state.pantalla_actual = "PLAN_TRAMOS"
         elif self.state.pantalla_actual == "PLAN_TRAMOS":
             self.state.pantalla_actual = "PLAN_RESUMEN"
         elif self.state.pantalla_actual == "PLAN_RESUMEN":
+            self.state.pantalla_actual = "REVISION_GENERAL"
+        elif self.state.pantalla_actual == "REVISION_GENERAL":
             self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
         self._render()
 
@@ -2520,9 +2745,13 @@ class VentaCompletaWizardV3Prototype:
             self.state.pantalla_actual = "PLAN_ANTICIPO"
         elif self.state.pantalla_actual == "PLAN_RESUMEN":
             self.state.pantalla_actual = "PLAN_TRAMOS"
-        elif self.state.pantalla_actual == "PASO_6_PLACEHOLDER" and self.state.forma_pago == "FINANCIADO":
+        elif self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
+            self.state.pantalla_actual = "REVISION_GENERAL"
+        elif self.state.pantalla_actual == "REVISION_GENERAL" and self.state.forma_pago == "FINANCIADO":
             self.state.pantalla_actual = "PLAN_RESUMEN"
-        elif self.state.pantalla_actual in {"PLAN_ANTICIPO", "PASO_6_PLACEHOLDER"}:
+        elif self.state.pantalla_actual == "REVISION_GENERAL":
+            self.state.pantalla_actual = "FORMA_PAGO"
+        elif self.state.pantalla_actual == "PLAN_ANTICIPO":
             self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "FORMA_PAGO":
             self.state.pantalla_actual = "COMPRADORES"
@@ -2565,6 +2794,8 @@ class VentaCompletaWizardV3Prototype:
             return self._installments_can_advance()
         if self.state.pantalla_actual == "PLAN_RESUMEN":
             return self._financed_plan_difference() == Decimal("0")
+        if self.state.pantalla_actual == "REVISION_GENERAL":
+            return self._general_review_is_valid()
         return False
 
     def _date_display_value(self) -> str:
@@ -3848,6 +4079,11 @@ class VentaCompletaWizardV3Prototype:
             return "financiado"
         return "pendiente"
 
+    def _review_flow_status(self) -> str:
+        if self.state.pantalla_actual in {"REVISION_GENERAL", "PASO_6_PLACEHOLDER"} and self._general_review_is_valid():
+            return "lista para confirmar"
+        return "pendiente"
+
     def _next_step_label(self) -> str:
         if self.state.pantalla_actual == "DATOS_INICIALES":
             return "cargar objetos de venta" if self._can_advance() else "seleccionar moneda"
@@ -3869,6 +4105,8 @@ class VentaCompletaWizardV3Prototype:
             return "guardar tramo o cancelar"
         if self.state.pantalla_actual == "PLAN_RESUMEN":
             return "revisión general de venta" if self._can_advance() else "ajustar diferencia del plan"
+        if self.state.pantalla_actual == "REVISION_GENERAL":
+            return "confirmar venta" if self._can_advance() else "resolver pendientes de revisión"
         if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
             return "pendiente"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
