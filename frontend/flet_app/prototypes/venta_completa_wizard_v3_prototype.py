@@ -1746,22 +1746,15 @@ class VentaCompletaWizardV3Prototype:
                     ft.Colors.AMBER_200,
                 )
             )
+        elif self.state.tramo_usa_refuerzos:
+            controls.append(self._build_installment_reinforcement_two_column_layout())
         else:
             controls.extend(
                 [
                     ft.Text("¿Usa cuotas refuerzo?", weight=ft.FontWeight.W_700),
-                    ft.Row(
-                        controls=[
-                            self._build_reinforcement_toggle_card(False, "No"),
-                            self._build_reinforcement_toggle_card(True, "Sí"),
-                        ],
-                        spacing=10,
-                        wrap=True,
-                    ),
+                    self._build_installment_reinforcement_toggle_row(),
                 ]
             )
-            if self.state.tramo_usa_refuerzos:
-                controls.append(self._build_installment_reinforcement_editor())
         return ft.Container(
             padding=12,
             border_radius=12,
@@ -1770,10 +1763,23 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(controls=controls, spacing=8),
         )
 
-    def _build_installment_reinforcement_editor(self) -> ft.Control:
+    def _build_installment_reinforcement_two_column_layout(self) -> ft.Control:
         reinforcement_count = self._current_reinforcement_count_or_none()
-        editor_controls: list[ft.Control] = [
-            _info_row("Cantidad total de cuotas del tramo", self.state.tramo_cantidad_cuotas_value or "pendiente"),
+        columns: list[ft.Control] = [self._build_installment_reinforcement_left_column(reinforcement_count)]
+        if reinforcement_count is not None:
+            columns.append(self._build_installment_reinforcement_right_column(reinforcement_count))
+        return ft.Row(
+            controls=columns,
+            spacing=12,
+            run_spacing=12,
+            wrap=True,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+    def _build_installment_reinforcement_left_column(self, reinforcement_count: int | None) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("¿Usa cuotas refuerzo?", weight=ft.FontWeight.W_700),
+            self._build_installment_reinforcement_toggle_row(),
             ft.Column(
                 controls=[self.refuerzo_cantidad_field, self.refuerzo_cantidad_feedback],
                 spacing=4,
@@ -1781,17 +1787,33 @@ class VentaCompletaWizardV3Prototype:
             ),
         ]
         if reinforcement_count is None:
-            editor_controls.append(
+            controls.append(
                 ft.Text(
-                    "Ingresá una cantidad válida de refuerzos para habilitar la carga de ubicaciones.",
+                    "Ingresá una cantidad válida de refuerzos para habilitar la selección de cuotas posibles.",
                     size=12,
                     color=ft.Colors.BLUE_GREY_700,
                 )
             )
         else:
-            editor_controls.extend(
-                [
-                    self._build_installment_reinforcements_summary(reinforcement_count),
+            controls.append(self._build_installment_reinforcements_summary(reinforcement_count))
+        return ft.Container(
+            width=360,
+            padding=10,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=8, tight=True),
+        )
+
+    def _build_installment_reinforcement_right_column(self, reinforcement_count: int) -> ft.Control:
+        return ft.Container(
+            width=520,
+            padding=10,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
                     ft.Text(
                         "Asigná cada refuerzo a una posición válida de la duración efectiva.",
                         size=12,
@@ -1800,18 +1822,20 @@ class VentaCompletaWizardV3Prototype:
                     self._build_installment_reinforcement_position_picker(reinforcement_count),
                     self.refuerzo_numero_feedback,
                     self._build_installment_reinforcement_selection_status(reinforcement_count),
-                ]
-            )
-        return ft.Container(
-            padding=10,
-            border_radius=10,
-            bgcolor=ft.Colors.BLUE_GREY_50,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=editor_controls,
+                ],
                 spacing=8,
                 tight=True,
             ),
+        )
+
+    def _build_installment_reinforcement_toggle_row(self) -> ft.Control:
+        return ft.Row(
+            controls=[
+                self._build_reinforcement_toggle_card(False, "No"),
+                self._build_reinforcement_toggle_card(True, "Sí"),
+            ],
+            spacing=10,
+            wrap=True,
         )
 
     def _build_reinforcement_toggle_card(self, value: bool, title: str) -> ft.Control:
