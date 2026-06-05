@@ -1584,7 +1584,6 @@ class VentaCompletaWizardV3Prototype:
                         wrap=True,
                         vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
-                    self._build_installment_reinforcement_section(),
                     ft.Row(
                         controls=[
                             ft.Button(
@@ -1642,7 +1641,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_installment_liquidation_section(self) -> ft.Control:
         controls: list[ft.Control] = [
-            ft.Text("Método de actualización", size=18, weight=ft.FontWeight.W_700),
+            ft.Text("Método de financiación", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
                 "Elegí cómo se liquidará este tramo. El prototipo conserva los datos, pero no calcula cronogramas, intereses ni indexaciones localmente.",
                 size=12,
@@ -1719,6 +1718,7 @@ class VentaCompletaWizardV3Prototype:
                     self.tramo_valor_base_indice_feedback,
                 ]
             )
+        controls.append(self._build_installment_reinforcement_method_controls())
         return ft.Container(
             width=760,
             padding=12,
@@ -1726,6 +1726,56 @@ class VentaCompletaWizardV3Prototype:
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(controls=controls, spacing=8, tight=True),
+        )
+
+    def _build_installment_reinforcement_method_controls(self) -> ft.Control:
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            return ft.Text(
+                "Las cuotas refuerzo no están disponibles para interés directo.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_600,
+            )
+        if not self.state.tramo_usa_refuerzos:
+            return ft.Row(
+                controls=[
+                    ft.OutlinedButton(
+                        "Agregar cuotas refuerzo",
+                        icon=ft.Icons.ADD,
+                        on_click=lambda _: self._select_installment_reinforcements_usage(True),
+                    )
+                ],
+                wrap=True,
+            )
+        return ft.Container(
+            padding=10,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Text("Cuotas refuerzo", size=16, weight=ft.FontWeight.W_700, expand=True),
+                            ft.OutlinedButton(
+                                "Quitar refuerzos",
+                                icon=ft.Icons.CLOSE,
+                                on_click=lambda _: self._select_installment_reinforcements_usage(False),
+                            ),
+                        ],
+                        spacing=8,
+                        wrap=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Text(
+                        "Las cuotas refuerzo forman parte de la cantidad total de cuotas. No agregan cuotas por fuera del tramo.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    self._build_installment_reinforcement_two_column_layout(),
+                ],
+                spacing=8,
+                tight=True,
+            ),
         )
 
     def _build_liquidation_method_card(
@@ -1754,41 +1804,6 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
-    def _build_installment_reinforcement_section(self) -> ft.Control:
-        method_allows_reinforcements = self._installment_method_allows_reinforcements()
-        controls: list[ft.Control] = [
-            ft.Text("Cuotas refuerzo", size=18, weight=ft.FontWeight.W_700),
-            ft.Text(
-                "Las cuotas refuerzo forman parte de la cantidad total de cuotas. No agregan cuotas por fuera del tramo.",
-                size=12,
-                color=ft.Colors.BLUE_GREY_700,
-            ),
-        ]
-        if not method_allows_reinforcements:
-            controls.append(
-                self._build_help_card(
-                    "Las cuotas refuerzo no están habilitadas para tramos con interés directo en esta versión del wizard.",
-                    ft.Colors.AMBER_50,
-                    ft.Colors.AMBER_200,
-                )
-            )
-        elif self.state.tramo_usa_refuerzos:
-            controls.append(self._build_installment_reinforcement_two_column_layout())
-        else:
-            controls.extend(
-                [
-                    ft.Text("¿Usa cuotas refuerzo?", weight=ft.FontWeight.W_700),
-                    self._build_installment_reinforcement_toggle_row(),
-                ]
-            )
-        return ft.Container(
-            padding=12,
-            border_radius=12,
-            bgcolor=ft.Colors.WHITE,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(controls=controls, spacing=8),
-        )
-
     def _build_installment_reinforcement_two_column_layout(self) -> ft.Control:
         reinforcement_count = self._current_reinforcement_count_or_none()
         columns: list[ft.Control] = [self._build_installment_reinforcement_left_column(reinforcement_count)]
@@ -1804,8 +1819,6 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_installment_reinforcement_left_column(self, reinforcement_count: int | None) -> ft.Control:
         controls: list[ft.Control] = [
-            ft.Text("¿Usa cuotas refuerzo?", weight=ft.FontWeight.W_700),
-            self._build_installment_reinforcement_toggle_row(),
             ft.Column(
                 controls=[self.refuerzo_cantidad_field, self.refuerzo_cantidad_feedback],
                 spacing=4,
@@ -1852,28 +1865,6 @@ class VentaCompletaWizardV3Prototype:
                 spacing=8,
                 tight=True,
             ),
-        )
-
-    def _build_installment_reinforcement_toggle_row(self) -> ft.Control:
-        return ft.Row(
-            controls=[
-                self._build_reinforcement_toggle_card(False, "No"),
-                self._build_reinforcement_toggle_card(True, "Sí"),
-            ],
-            spacing=10,
-            wrap=True,
-        )
-
-    def _build_reinforcement_toggle_card(self, value: bool, title: str) -> ft.Control:
-        selected = self.state.tramo_usa_refuerzos == value
-        return ft.Container(
-            width=120,
-            padding=12,
-            border_radius=12,
-            border=_border_all(2 if selected else 1, ft.Colors.BLUE_500 if selected else ft.Colors.BLUE_GREY_100),
-            bgcolor=ft.Colors.BLUE_50 if selected else ft.Colors.WHITE,
-            on_click=lambda _, selected_value=value: self._select_installment_reinforcements_usage(selected_value),
-            content=ft.Text(title, weight=ft.FontWeight.W_700),
         )
 
     def _build_installment_reinforcement_position_picker(self, reinforcement_count: int) -> ft.Control:
