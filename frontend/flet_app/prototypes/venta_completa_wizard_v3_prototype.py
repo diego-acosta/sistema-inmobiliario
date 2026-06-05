@@ -15,7 +15,7 @@ Alcance:
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
-    comerciales completos, cronograma local, cálculo local de interés o indexación,
+    comerciales completos, cronograma definitivo, indexación local ni preview backend,
     revision/confirmacion. Incluye draft UI de refuerzos internos
     dentro de tramos sin calcular importes por cuota.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
@@ -303,8 +303,10 @@ class VentaCompletaWizardV3Prototype:
         self.precio_objeto_field = ft.TextField(
             label=f"Valor asignado al objeto ({self.state.moneda})",
             prefix_icon=ft.Icons.ATTACH_MONEY,
-            keyboard_type=ft.KeyboardType.NUMBER,
+            keyboard_type=ft.KeyboardType.TEXT,
             on_change=self._on_precio_objeto_change,
+            on_blur=self._on_precio_objeto_commit,
+            on_submit=self._on_precio_objeto_commit,
         )
         self.precio_objeto_error: str | None = None
         self.porcentaje_comprador_value = ""
@@ -334,8 +336,10 @@ class VentaCompletaWizardV3Prototype:
         self.importe_anticipo_field = ft.TextField(
             label="Importe anticipo",
             prefix_icon=ft.Icons.ATTACH_MONEY,
-            keyboard_type=ft.KeyboardType.NUMBER,
+            keyboard_type=ft.KeyboardType.TEXT,
             on_change=self._on_importe_anticipo_change,
+            on_blur=self._on_importe_anticipo_commit,
+            on_submit=self._on_importe_anticipo_commit,
         )
         self.importe_anticipo_feedback = ft.Text(
             "Ingresá un importe mayor que 0 y menor o igual al total derivado.",
@@ -356,8 +360,10 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_capital_field = ft.TextField(
             label="Capital del tramo",
             prefix_icon=ft.Icons.ATTACH_MONEY,
-            keyboard_type=ft.KeyboardType.NUMBER,
+            keyboard_type=ft.KeyboardType.TEXT,
             on_change=self._on_tramo_capital_change,
+            on_blur=self._on_tramo_capital_commit,
+            on_submit=self._on_tramo_capital_commit,
         )
         self.tramo_capital_feedback = ft.Text(
             "Podés asignar todo el capital restante o un valor menor.",
@@ -455,6 +461,10 @@ class VentaCompletaWizardV3Prototype:
         )
         self.anticipo_actual_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
         self.capital_pendiente_summary_value = ft.Text(color=ft.Colors.BLUE_GREY_900, expand=True)
+        self.tramo_cuota_estimada_feedback = ft.Text(
+            color=ft.Colors.BLUE_GREY_800,
+            selectable=True,
+        )
         self.next_button: ft.Button | None = None
 
     def run(self) -> None:
@@ -901,7 +911,7 @@ class VentaCompletaWizardV3Prototype:
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
                             ft.Text(
-                                f"precio_asignado ({self._currency_label()}): {_format_money(objeto.precio_asignado)}",
+                                f"precio_asignado: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
@@ -1641,8 +1651,32 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.tramo_fecha_feedback,
                     _info_row("Periodicidad", "MENSUAL"),
+                    self._build_installment_estimate_card(),
                 ],
                 spacing=8,
+                tight=True,
+            ),
+        )
+
+
+    def _build_installment_estimate_card(self) -> ft.Control:
+        self._sync_installment_estimate_feedback()
+        return ft.Container(
+            padding=12,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_50,
+            border=_border_all(1, ft.Colors.BLUE_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Estimación visual de cuota", weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_900),
+                    self.tramo_cuota_estimada_feedback,
+                    ft.Text(
+                        "Estimación visual. El cálculo definitivo se validará con backend en la simulación/confirmación.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                ],
+                spacing=6,
                 tight=True,
             ),
         )
@@ -1684,7 +1718,7 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     self._build_help_card(
-                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. No se calcula interés localmente.",
+                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. Solo se muestra una estimación visual simple; el cálculo definitivo queda para backend.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_100,
                     ),
@@ -2112,7 +2146,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_financed_plan_installments_summary_cards(),
                     self._build_financed_plan_validation_panel(difference),
                     ft.Text(
-                        "Este prototipo no calcula cronograma, intereses, indexaciones, obligaciones, divisiones por comprador ni divisiones por objeto.",
+                        "Este prototipo no calcula cronograma definitivo, indexaciones, obligaciones, divisiones por comprador ni divisiones por objeto.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2271,7 +2305,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_review_payment_section(),
                     self._build_review_validation_panel(errors),
                     ft.Text(
-                        "No se confirma la venta, no se envía POST, no se calcula cronograma, interés, indexación ni obligaciones localmente.",
+                        "No se confirma la venta, no se envía POST, no se calcula cronograma definitivo, indexación ni obligaciones localmente.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2930,6 +2964,17 @@ class VentaCompletaWizardV3Prototype:
         self._refresh_navigation_controls()
         self.page.update()
 
+    def _on_importe_anticipo_commit(self, event: ft.ControlEvent) -> None:
+        self.state.importe_anticipo = str(event.control.value or self.state.importe_anticipo or "")
+        parsed = self._validate_advance_amount()
+        if parsed is not None:
+            self.state.importe_anticipo = _format_money(parsed)
+            event.control.value = self.state.importe_anticipo
+        self._sync_importe_anticipo_feedback()
+        self._sync_advance_visual_amounts()
+        self._refresh_navigation_controls()
+        self.page.update()
+
     def _on_fecha_anticipo_change(self, event: ft.ControlEvent) -> None:
         raw_value = str(event.control.value or "")
         self.state.fecha_anticipo_display = raw_value
@@ -3108,10 +3153,22 @@ class VentaCompletaWizardV3Prototype:
         self._sync_tramo_valor_base_indice_feedback()
         self._sync_refuerzo_cantidad_feedback()
         self._sync_refuerzo_numero_feedback()
+        self._sync_installment_estimate_feedback()
 
     def _on_tramo_capital_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_capital_value = str(event.control.value or "")
         self.state.tramo_capital_error = None
+        self._sync_installment_estimate_feedback()
+        self.page.update()
+
+    def _on_tramo_capital_commit(self, event: ft.ControlEvent) -> None:
+        self.state.tramo_capital_value = str(event.control.value or self.state.tramo_capital_value or "")
+        parsed = _parse_money_decimal(self.state.tramo_capital_value)
+        if parsed is not None:
+            self.state.tramo_capital_value = _format_money(parsed)
+            event.control.value = self.state.tramo_capital_value
+        self._sync_installment_estimate_feedback()
+        self.page.update()
 
     def _on_tramo_cantidad_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_cantidad_cuotas_value = str(event.control.value or "")
@@ -3119,6 +3176,8 @@ class VentaCompletaWizardV3Prototype:
         self.state.refuerzo_cantidad_error = None
         self.state.refuerzo_numero_error = None
         self._discard_reinforcement_locations_outside_effective_duration()
+        self._sync_installment_estimate_feedback()
+        self.page.update()
 
     def _on_tramo_fecha_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_fecha_display = str(event.control.value or "")
@@ -3141,6 +3200,8 @@ class VentaCompletaWizardV3Prototype:
     def _on_tramo_tasa_interes_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_tasa_interes_value = str(event.control.value or "")
         self.state.tramo_tasa_interes_error = None
+        self._sync_installment_estimate_feedback()
+        self.page.update()
 
     def _on_tramo_codigo_indice_visual_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_codigo_indice_visual_value = str(event.control.value or "")
@@ -3675,6 +3736,43 @@ class VentaCompletaWizardV3Prototype:
             return self.state.tramo_fecha_base_indice_display
         return self.state.tramo_fecha_base_indice_display or _format_date_ar(self.state.tramo_fecha_base_indice_iso)
 
+
+    def _sync_installment_estimate_feedback(self) -> None:
+        lines = self._installment_estimate_lines()
+        if lines:
+            self.tramo_cuota_estimada_feedback.value = "\n".join(lines)
+            self.tramo_cuota_estimada_feedback.color = ft.Colors.BLUE_GREY_900
+            return
+        self.tramo_cuota_estimada_feedback.value = "Ingresá capital del tramo y cantidad de cuotas para ver una estimación simple."
+        self.tramo_cuota_estimada_feedback.color = ft.Colors.BLUE_GREY_600
+
+    def _installment_estimate_lines(self) -> list[str]:
+        capital = _parse_money_decimal(self.state.tramo_capital_value)
+        quantity = self._parse_positive_integer(self.state.tramo_cantidad_cuotas_value.strip())
+        if capital is None or quantity is None or quantity <= 0:
+            return []
+        cuota_base = (capital / Decimal(quantity)).quantize(MONEY_DECIMAL_QUANTUM)
+        if self.state.tramo_metodo_liquidacion == "INDEXACION":
+            return [
+                f"Cuota base estimada antes de actualización: {self._format_money_with_currency(cuota_base)}",
+                "No se calcula indexación localmente.",
+            ]
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            rate = _parse_decimal(self.state.tramo_tasa_interes_value.strip())
+            if rate is None:
+                return [
+                    f"Cuota base estimada: {self._format_money_with_currency(cuota_base)}",
+                    "Ingresá una tasa periódica válida para estimar el interés directo.",
+                ]
+            interest_total = (capital * rate * Decimal(quantity) / Decimal("100")).quantize(MONEY_DECIMAL_QUANTUM)
+            total_with_interest = (capital + interest_total).quantize(MONEY_DECIMAL_QUANTUM)
+            installment_with_interest = (total_with_interest / Decimal(quantity)).quantize(MONEY_DECIMAL_QUANTUM)
+            return [
+                f"Total estimado con interés: {self._format_money_with_currency(total_with_interest)}",
+                f"Cuota estimada con interés: {self._format_money_with_currency(installment_with_interest)}",
+            ]
+        return [f"Cuota base estimada: {self._format_money_with_currency(cuota_base)}"]
+
     def _sync_tramo_capital_feedback(self) -> None:
         if self.state.tramo_capital_error is not None:
             self.tramo_capital_feedback.value = self.state.tramo_capital_error
@@ -3803,7 +3901,7 @@ class VentaCompletaWizardV3Prototype:
         return self.state.moneda.strip().upper() or "sin moneda"
 
     def _format_money_with_currency(self, value: Decimal) -> str:
-        return f"{self._currency_label()} {_format_decimal(value)}"
+        return f"{self._currency_label()} {_format_money(value)}"
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
         self.objeto_seleccionado = selected
@@ -3824,6 +3922,15 @@ class VentaCompletaWizardV3Prototype:
 
     def _on_precio_objeto_change(self, _: ft.ControlEvent) -> None:
         self.precio_objeto_value = str(self.precio_objeto_field.value or "")
+
+    def _on_precio_objeto_commit(self, event: ft.ControlEvent) -> None:
+        self.precio_objeto_value = str(event.control.value or self.precio_objeto_value or "")
+        parsed = _parse_money_decimal(self.precio_objeto_value)
+        if parsed is not None:
+            self.precio_objeto_value = _format_money(parsed)
+            event.control.value = self.precio_objeto_value
+        self.precio_objeto_error = self._selected_price_validation_message(show_required=False)
+        self.page.update()
 
     def _selected_price_validation_message(self, *, show_required: bool) -> str | None:
         raw_value = self.precio_objeto_value.strip()
@@ -4183,9 +4290,55 @@ def _has_max_two_decimal_places(value: Decimal) -> bool:
     return value.as_tuple().exponent >= -2
 
 
+def _normalize_money_text(value: Any) -> str | None:
+    text = str(value or "").strip().replace(" ", "")
+    if not text:
+        return ""
+    if text[0] in "+-":
+        return None
+    if any(character not in "0123456789.," for character in text):
+        return None
+
+    has_comma = "," in text
+    has_dot = "." in text
+    if has_comma:
+        if text.count(",") > 1:
+            return None
+        integer_part, decimal_part = text.split(",", 1)
+        if decimal_part and not decimal_part.isdigit():
+            return None
+        integer_digits = integer_part.replace(".", "")
+        if not integer_digits.isdigit():
+            return None
+        return f"{integer_digits}.{decimal_part}" if decimal_part else integer_digits
+
+    if has_dot:
+        parts = text.split(".")
+        if any(not part.isdigit() for part in parts):
+            return None
+        if len(parts) > 2:
+            if any(len(part) != 3 for part in parts[1:]):
+                return None
+            return "".join(parts)
+        integer_part, suffix = parts
+        if len(suffix) == 3 and len(integer_part) <= 3:
+            return integer_part + suffix
+        return text
+
+    if not text.isdigit():
+        return None
+    return text
+
+
 def _parse_money_decimal(value: Any) -> Decimal | None:
-    parsed = _parse_decimal(value)
-    if parsed is None or not _has_max_two_decimal_places(parsed):
+    normalized = _normalize_money_text(value)
+    if not normalized:
+        return None
+    try:
+        parsed = Decimal(normalized)
+    except (InvalidOperation, ValueError):
+        return None
+    if not parsed.is_finite() or parsed <= 0 or not _has_max_two_decimal_places(parsed):
         return None
     return parsed.quantize(MONEY_DECIMAL_QUANTUM)
 
@@ -4193,8 +4346,14 @@ def _parse_money_decimal(value: Any) -> Decimal | None:
 def _money_amount_validation_error(raw_value: str, *, empty_message: str, invalid_message: str) -> str | None:
     if not raw_value:
         return empty_message
-    parsed = _parse_decimal(raw_value)
-    if parsed is None:
+    normalized = _normalize_money_text(raw_value)
+    if not normalized:
+        return invalid_message
+    try:
+        parsed = Decimal(normalized)
+    except (InvalidOperation, ValueError):
+        return invalid_message
+    if not parsed.is_finite() or parsed <= 0:
         return invalid_message
     if not _has_max_two_decimal_places(parsed):
         return MONEY_PRECISION_ERROR
@@ -4213,8 +4372,18 @@ def _format_decimal(value: Decimal) -> str:
 
 
 def _format_money(value: Any) -> str:
-    parsed = _parse_money_decimal(value)
-    return _format_decimal(parsed) if parsed is not None else str(value or "-")
+    if isinstance(value, Decimal):
+        parsed = value if value.is_finite() and value >= 0 else None
+    else:
+        parsed = _parse_money_decimal(value)
+    if parsed is None:
+        return str(value or "-")
+    integer_part, decimal_part = _format_decimal(parsed).split(".")
+    groups: list[str] = []
+    while integer_part:
+        groups.append(integer_part[-3:])
+        integer_part = integer_part[:-3]
+    return f"{'.'.join(reversed(groups))},{decimal_part}"
 
 
 def _object_id_label_value(payload: dict[str, Any]) -> tuple[str, Any]:
