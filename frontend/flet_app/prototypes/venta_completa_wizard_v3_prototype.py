@@ -10,12 +10,13 @@ Alcance:
   - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva,
     Pantalla 2 - Datos iniciales de venta, Pantalla 3 - Objetos de venta,
     Pantalla 4 - Compradores, Pantalla 5 - Forma de pago y avance UI de
-    Plan Pago V2 con anticipo y tramos con método de liquidación.
+    Plan Pago V2 con anticipo, tramos con método de liquidación y resumen
+    del plan financiado.
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
     comerciales completos, cronograma local, cálculo local de interés o indexación,
-    saldo final ni revision/confirmacion. Incluye draft UI de refuerzos internos
+    revision/confirmacion. Incluye draft UI de refuerzos internos
     dentro de tramos sin calcular importes por cuota.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
@@ -48,7 +49,7 @@ PantallaWizard = Literal[
     "PLAN_ANTICIPO",
     "PLAN_TRAMOS",
     "PLAN_TRAMO_FORM",
-    "PLAN_SALDO_PLACEHOLDER",
+    "PLAN_RESUMEN",
     "PASO_6_PLACEHOLDER",
 ]
 
@@ -535,7 +536,9 @@ class VentaCompletaWizardV3Prototype:
             return self._build_financed_plan_installments_step()
         if self.state.pantalla_actual == "PLAN_TRAMO_FORM":
             return self._build_financed_plan_installment_form_step()
-        if self.state.pantalla_actual in {"PLAN_SALDO_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
+        if self.state.pantalla_actual == "PLAN_RESUMEN":
+            return self._build_financed_plan_summary_step()
+        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
             return self._build_step_6_placeholder()
         return self._build_origin_step()
 
@@ -1358,7 +1361,7 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Plan de pago — Anticipo", size=24, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Definí si la operación tendrá anticipo. El saldo restante se asignará luego a cuotas, refuerzos o saldo final.",
+                "Definí si la operación tendrá anticipo. El saldo restante se asignará luego a tramos de cuotas y refuerzos internos.",
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._build_advance_summary_card(total, advance, pending),
@@ -1376,7 +1379,7 @@ class VentaCompletaWizardV3Prototype:
         else:
             controls.append(
                 self._build_help_card(
-                    "Todo el total quedará pendiente para cuotas, refuerzos o saldo final.",
+                    "Todo el total quedará pendiente para tramos de cuotas y refuerzos internos.",
                     ft.Colors.BLUE_50,
                     ft.Colors.BLUE_200,
                 )
@@ -2085,13 +2088,167 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
+    def _build_financed_plan_summary_step(self) -> ft.Control:
+        difference = self._financed_plan_difference()
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resumen del plan financiado", size=24, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Revisá la estructura financiera cargada antes de pasar a la revisión general de la venta.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    self._build_financed_plan_general_summary_card(),
+                    self._build_financed_plan_advance_summary_card(),
+                    self._build_financed_plan_installments_summary_cards(),
+                    self._build_financed_plan_validation_panel(difference),
+                    ft.Text(
+                        "Este prototipo no calcula cronograma, intereses, indexaciones, obligaciones, divisiones por comprador ni divisiones por objeto.",
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_600,
+                    ),
+                ],
+                spacing=14,
+            ),
+        )
+
+    def _build_financed_plan_general_summary_card(self) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_50,
+            border=_border_all(1, ft.Colors.BLUE_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resumen general", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_900),
+                    _info_row("Total de venta derivado de objetos", self._format_money_with_currency(self._objects_total())),
+                    _info_row("Anticipo", self._format_money_with_currency(self._valid_advance_amount_or_zero())),
+                    _info_row("Capital financiado en tramos", self._format_money_with_currency(self._capital_assigned_to_installments())),
+                    _info_row("Total asignado", self._format_money_with_currency(self._financed_plan_total_assigned())),
+                    _info_row("Diferencia", self._format_money_with_currency(self._financed_plan_difference())),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _build_financed_plan_advance_summary_card(self) -> ft.Control:
+        controls: list[ft.Control] = [ft.Text("Anticipo", size=18, weight=ft.FontWeight.W_700)]
+        if self.state.tiene_anticipo:
+            controls.extend(
+                [
+                    _info_row("Importe", self._format_money_with_currency(self._valid_advance_amount_or_zero())),
+                    _info_row("Vencimiento", self.state.fecha_anticipo_display or _format_date_ar(self.state.fecha_anticipo_iso)),
+                ]
+            )
+        else:
+            controls.append(ft.Text("Sin anticipo", color=ft.Colors.BLUE_GREY_700))
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _build_financed_plan_installments_summary_cards(self) -> ft.Control:
+        if not self.state.tramos_cuotas:
+            content: ft.Control = ft.Text("Sin tramos cargados.", color=ft.Colors.BLUE_GREY_700)
+        else:
+            content = ft.Column(
+                controls=[
+                    self._build_financed_plan_installment_summary_card(index, tramo)
+                    for index, tramo in enumerate(self.state.tramos_cuotas)
+                ],
+                spacing=10,
+            )
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[ft.Text("Tramos", size=18, weight=ft.FontWeight.W_700), content],
+                spacing=10,
+            ),
+        )
+
+    def _build_financed_plan_installment_summary_card(self, index: int, tramo: TramoCuotasWizardDraft) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text(f"Tramo {index + 1}", weight=ft.FontWeight.W_700),
+            _info_row("Capital del tramo", self._format_money_with_currency(_parse_decimal(tramo.importe_total_bloque) or Decimal("0"))),
+            _info_row("Cantidad total de cuotas", tramo.cantidad_cuotas),
+            _info_row("Primer vencimiento", tramo.fecha_primer_vencimiento_display),
+            _info_row("Periodicidad", tramo.periodicidad),
+            _info_row("Método", self._installment_liquidation_label(tramo.metodo_liquidacion)),
+        ]
+        if tramo.metodo_liquidacion == "INTERES_DIRECTO":
+            controls.extend(
+                [
+                    _info_row("Tasa periódica", tramo.tasa_interes_directo_periodica or "-"),
+                    _info_row("Períodos derivados", tramo.cantidad_periodos or tramo.cantidad_cuotas),
+                ]
+            )
+        if tramo.metodo_liquidacion == "INDEXACION":
+            controls.extend(
+                [
+                    _info_row("Índice visual o ID índice", tramo.codigo_indice_visual or f"ID {tramo.id_indice_financiero or '-'}"),
+                    _info_row("Fecha base", tramo.fecha_base_indice_display or "-"),
+                    _info_row("Valor base", tramo.valor_base_indice or "-"),
+                ]
+            )
+        if tramo.cuotas_refuerzo:
+            controls.extend(
+                [
+                    _info_row("Refuerzos", self._installment_reinforcements_list_text(tramo)),
+                    _info_row("Duración efectiva", self._installment_reinforcements_duration_value(tramo)),
+                ]
+            )
+        else:
+            controls.append(ft.Text("Sin cuotas refuerzo.", color=ft.Colors.BLUE_GREY_700))
+        return ft.Container(
+            padding=12,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=6),
+        )
+
+    def _build_financed_plan_validation_panel(self, difference: Decimal) -> ft.Control:
+        complete = difference == Decimal("0")
+        if complete:
+            bgcolor = ft.Colors.GREEN_50
+            border_color = ft.Colors.GREEN_300
+            title = "Plan financiero completo."
+            detail = "La diferencia es 0; podés pasar a la revisión general de la venta."
+            text_color = ft.Colors.GREEN_900
+        else:
+            bgcolor = ft.Colors.AMBER_50
+            border_color = ft.Colors.AMBER_300
+            title = "El plan no cubre el total de venta."
+            detail = f"Diferencia: {self._format_money_with_currency(difference)}. Ajustá anticipo o tramos para continuar."
+            text_color = ft.Colors.AMBER_900
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=bgcolor,
+            border=_border_all(1, border_color),
+            content=ft.Column(
+                controls=[
+                    ft.Text(title, size=18, weight=ft.FontWeight.W_700, color=text_color),
+                    ft.Text(detail, color=text_color),
+                ],
+                spacing=6,
+            ),
+        )
+
     def _build_step_6_placeholder(self) -> ft.Control:
-        if self.state.pantalla_actual == "PLAN_SALDO_PLACEHOLDER":
-            title = "Pantalla 6C — Saldo final pendiente"
-            description = "Placeholder futuro: acá se cargará saldo final o revisión pendiente sin calcular cronograma local."
-        elif self.state.forma_pago == "FINANCIADO":
-            title = "Paso 6 — Plan de pago pendiente"
-            description = "Placeholder futuro: acá se continuará el subwizard de financiación sin calcular cronograma local."
+        if self.state.forma_pago == "FINANCIADO":
+            title = "Revisión general de venta pendiente"
+            description = "Placeholder futuro: acá se revisará la venta financiada antes de confirmar, sin mostrar payload final."
         else:
             title = "Paso 6 — Revisión de venta pendiente"
             description = "Placeholder futuro: acá se revisará la venta contado antes de confirmar, sin mostrar payload final."
@@ -2139,20 +2296,19 @@ class VentaCompletaWizardV3Prototype:
                 _flow_info_row("Objetos", len(self.state.objetos)),
                 _flow_info_row("Total", self._format_money_with_currency(self._objects_total())),
                 _flow_info_row("Compradores", self._buyers_flow_status()),
-                _flow_info_row("Forma pago", self._payment_method_status()),
+                _flow_info_row("Forma de pago", self._payment_method_status()),
             ]
         )
         if self.state.forma_pago == "FINANCIADO":
             controls.extend(
                 [
                     _flow_info_row("Anticipo", self._advance_status()),
-                    _flow_info_row("Pendiente anticipo", self._format_money_with_currency(self._capital_pending_after_advance())),
                     _flow_info_row("Tramos", len(self.state.tramos_cuotas)),
-                    _flow_info_row("Asignado", self._format_money_with_currency(self._capital_assigned_to_installments())),
-                    _flow_info_row("Restante", self._format_money_with_currency(self._capital_remaining_for_installments())),
+                    _flow_info_row("Total asignado", self._format_money_with_currency(self._financed_plan_total_assigned())),
+                    _flow_info_row("Diferencia", self._format_money_with_currency(self._financed_plan_difference())),
                 ]
             )
-        controls.append(_flow_info_row("Próximo", self._next_step_label(), value_no_wrap=False))
+        controls.append(_flow_info_row("Próximo paso", self._next_step_label(), value_no_wrap=False))
 
         return ft.Container(
             padding=16,
@@ -2345,7 +2501,9 @@ class VentaCompletaWizardV3Prototype:
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
             self.state.pantalla_actual = "PLAN_TRAMOS"
         elif self.state.pantalla_actual == "PLAN_TRAMOS":
-            self.state.pantalla_actual = "PLAN_SALDO_PLACEHOLDER"
+            self.state.pantalla_actual = "PLAN_RESUMEN"
+        elif self.state.pantalla_actual == "PLAN_RESUMEN":
+            self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
         self._render()
 
     def _previous_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -2358,8 +2516,10 @@ class VentaCompletaWizardV3Prototype:
             self.state.pantalla_actual = "PLAN_TRAMOS"
         elif self.state.pantalla_actual == "PLAN_TRAMOS":
             self.state.pantalla_actual = "PLAN_ANTICIPO"
-        elif self.state.pantalla_actual == "PLAN_SALDO_PLACEHOLDER":
+        elif self.state.pantalla_actual == "PLAN_RESUMEN":
             self.state.pantalla_actual = "PLAN_TRAMOS"
+        elif self.state.pantalla_actual == "PASO_6_PLACEHOLDER" and self.state.forma_pago == "FINANCIADO":
+            self.state.pantalla_actual = "PLAN_RESUMEN"
         elif self.state.pantalla_actual in {"PLAN_ANTICIPO", "PASO_6_PLACEHOLDER"}:
             self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "FORMA_PAGO":
@@ -2401,6 +2561,8 @@ class VentaCompletaWizardV3Prototype:
             return self._advance_is_valid()
         if self.state.pantalla_actual == "PLAN_TRAMOS":
             return self._installments_can_advance()
+        if self.state.pantalla_actual == "PLAN_RESUMEN":
+            return self._financed_plan_difference() == Decimal("0")
         return False
 
     def _date_display_value(self) -> str:
@@ -3323,9 +3485,9 @@ class VentaCompletaWizardV3Prototype:
     @staticmethod
     def _installment_liquidation_label(method: MetodoLiquidacionTramoWizard) -> str:
         labels = {
-            "SIN_INTERES": "Cuotas fijas",
+            "SIN_INTERES": "Cuotas fijas / sin interés",
             "INTERES_DIRECTO": "Interés directo",
-            "INDEXACION": "Indexado",
+            "INDEXACION": "Indexado por índice",
         }
         return labels[method]
 
@@ -3349,11 +3511,15 @@ class VentaCompletaWizardV3Prototype:
         return f"Refuerzos internos: {len(ordered_numbers)}"
 
     @staticmethod
+    def _installment_reinforcements_duration_value(tramo: TramoCuotasWizardDraft) -> str:
+        effective_duration = max(tramo.cantidad_cuotas - len(tramo.cuotas_refuerzo), 0)
+        return f"{effective_duration} vencimientos"
+
+    @staticmethod
     def _installment_reinforcements_duration_text(tramo: TramoCuotasWizardDraft) -> str:
         if not tramo.cuotas_refuerzo:
             return ""
-        effective_duration = max(tramo.cantidad_cuotas - len(tramo.cuotas_refuerzo), 0)
-        return f"Duración efectiva: {effective_duration} vencimientos"
+        return f"Duración efectiva: {VentaCompletaWizardV3Prototype._installment_reinforcements_duration_value(tramo)}"
 
     def _capital_assigned_to_installments(self) -> Decimal:
         total = Decimal("0")
@@ -3366,11 +3532,17 @@ class VentaCompletaWizardV3Prototype:
     def _capital_remaining_for_installments(self) -> Decimal:
         return self._capital_pending_after_advance() - self._capital_assigned_to_installments()
 
+    def _financed_plan_total_assigned(self) -> Decimal:
+        return self._valid_advance_amount_or_zero() + self._capital_assigned_to_installments()
+
+    def _financed_plan_difference(self) -> Decimal:
+        return self._objects_total() - self._financed_plan_total_assigned()
+
     def _installments_obligations_count(self) -> int:
         return sum(tramo.cantidad_cuotas for tramo in self.state.tramos_cuotas)
 
     def _installments_can_advance(self) -> bool:
-        return bool(self.state.tramos_cuotas) and self._capital_remaining_for_installments() == Decimal("0")
+        return bool(self.state.tramos_cuotas)
 
     def _currency_locked_by_objects(self) -> bool:
         return bool(self.state.objetos)
@@ -3669,10 +3841,12 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
             return "cargar tramos de cuotas" if self._can_advance() else "completar anticipo"
         if self.state.pantalla_actual == "PLAN_TRAMOS":
-            return "cargar saldo final / revisión pendiente" if self._can_advance() else "cubrir capital pendiente"
+            return "revisar plan financiado" if self._can_advance() else "cargar tramos de cuotas"
         if self.state.pantalla_actual == "PLAN_TRAMO_FORM":
             return "guardar tramo o cancelar"
-        if self.state.pantalla_actual in {"PLAN_SALDO_PLACEHOLDER", "PASO_6_PLACEHOLDER"}:
+        if self.state.pantalla_actual == "PLAN_RESUMEN":
+            return "revisión general de venta" if self._can_advance() else "ajustar diferencia del plan"
+        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
             return "pendiente"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return "cargar datos iniciales"
