@@ -1574,25 +1574,16 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(
                 controls=[
-                    self.tramo_capital_field,
-                    self.tramo_capital_feedback,
-                    self.tramo_cantidad_field,
-                    self.tramo_cantidad_feedback,
                     ft.Row(
                         controls=[
-                            self.tramo_fecha_field,
-                            ft.IconButton(
-                                icon=ft.Icons.CALENDAR_MONTH,
-                                tooltip="Abrir calendario",
-                                on_click=self._open_tramo_fecha_picker,
-                            ),
+                            self._build_installment_basic_fields_section(),
+                            self._build_installment_liquidation_section(),
                         ],
-                        spacing=8,
+                        spacing=12,
+                        run_spacing=12,
+                        wrap=True,
                         vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
-                    self.tramo_fecha_feedback,
-                    _info_row("Periodicidad", "MENSUAL"),
-                    self._build_installment_liquidation_section(),
                     self._build_installment_reinforcement_section(),
                     ft.Row(
                         controls=[
@@ -1611,7 +1602,41 @@ class VentaCompletaWizardV3Prototype:
                         spacing=8,
                     ),
                 ],
+                spacing=10,
+            ),
+        )
+
+    def _build_installment_basic_fields_section(self) -> ft.Control:
+        return ft.Container(
+            width=360,
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Datos del tramo", size=18, weight=ft.FontWeight.W_700),
+                    self.tramo_capital_field,
+                    self.tramo_capital_feedback,
+                    self.tramo_cantidad_field,
+                    self.tramo_cantidad_feedback,
+                    ft.Row(
+                        controls=[
+                            self.tramo_fecha_field,
+                            ft.IconButton(
+                                icon=ft.Icons.CALENDAR_MONTH,
+                                tooltip="Abrir calendario",
+                                on_click=self._open_tramo_fecha_picker,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self.tramo_fecha_feedback,
+                    _info_row("Periodicidad", "MENSUAL"),
+                ],
                 spacing=8,
+                tight=True,
             ),
         )
 
@@ -1695,11 +1720,12 @@ class VentaCompletaWizardV3Prototype:
                 ]
             )
         return ft.Container(
+            width=760,
             padding=12,
             border_radius=12,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(controls=controls, spacing=8),
+            content=ft.Column(controls=controls, spacing=8, tight=True),
         )
 
     def _build_liquidation_method_card(
