@@ -55,6 +55,8 @@ PantallaWizard = Literal[
 
 
 MONEDAS_DEMO = ["ARS", "USD", "EUR"]
+MONEY_DECIMAL_QUANTUM = Decimal("0.01")
+MONEY_PRECISION_ERROR = "El importe debe tener como máximo 2 decimales."
 
 
 DEMO_RESERVAS: list[dict[str, Any]] = [
@@ -1996,7 +1998,7 @@ class VentaCompletaWizardV3Prototype:
                         controls=[
                             ft.Text(f"Tramo {index + 1}", weight=ft.FontWeight.W_700),
                             ft.Text(
-                                f"Capital del tramo: {self._format_money_with_currency(_parse_decimal(tramo.importe_total_bloque) or Decimal('0'))}",
+                                f"Capital del tramo: {self._format_money_with_currency(_parse_money_decimal(tramo.importe_total_bloque) or Decimal('0'))}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
@@ -2179,7 +2181,7 @@ class VentaCompletaWizardV3Prototype:
     def _build_financed_plan_installment_summary_card(self, index: int, tramo: TramoCuotasWizardDraft) -> ft.Control:
         controls: list[ft.Control] = [
             ft.Text(f"Tramo {index + 1}", weight=ft.FontWeight.W_700),
-            _info_row("Capital del tramo", self._format_money_with_currency(_parse_decimal(tramo.importe_total_bloque) or Decimal("0"))),
+            _info_row("Capital del tramo", self._format_money_with_currency(_parse_money_decimal(tramo.importe_total_bloque) or Decimal("0"))),
             _info_row("Cantidad total de cuotas", tramo.cantidad_cuotas),
             _info_row("Primer vencimiento", tramo.fecha_primer_vencimiento_display),
             _info_row("Periodicidad", tramo.periodicidad),
@@ -2545,7 +2547,7 @@ class VentaCompletaWizardV3Prototype:
             if not self._has_valid_currency():
                 return False
             return bool(self.state.objetos) and all(
-                _parse_decimal(objeto.precio_asignado) is not None for objeto in self.state.objetos
+                _parse_money_decimal(objeto.precio_asignado) is not None for objeto in self.state.objetos
             )
         if self.state.pantalla_actual == "COMPRADORES":
             if self.state.origen == "RESERVA":
@@ -2783,7 +2785,15 @@ class VentaCompletaWizardV3Prototype:
         if not raw_value:
             self.state.importe_anticipo_error = "El importe anticipo es requerido."
             return None
-        parsed = _parse_decimal(raw_value)
+        validation_error = _money_amount_validation_error(
+            raw_value,
+            empty_message="El importe anticipo es requerido.",
+            invalid_message="El importe debe ser un número finito mayor que 0.",
+        )
+        if validation_error is not None:
+            self.state.importe_anticipo_error = validation_error
+            return None
+        parsed = _parse_money_decimal(raw_value)
         if parsed is None:
             self.state.importe_anticipo_error = "El importe debe ser un número finito mayor que 0."
             return None
@@ -2807,7 +2817,7 @@ class VentaCompletaWizardV3Prototype:
     def _valid_advance_amount_or_zero(self) -> Decimal:
         if not self.state.tiene_anticipo:
             return Decimal("0")
-        parsed = _parse_decimal(self.state.importe_anticipo)
+        parsed = _parse_money_decimal(self.state.importe_anticipo)
         if parsed is None or parsed > self._objects_total():
             return Decimal("0")
         return parsed
@@ -2818,7 +2828,7 @@ class VentaCompletaWizardV3Prototype:
     def _advance_status(self) -> str:
         if not self.state.tiene_anticipo:
             return "No"
-        parsed = _parse_decimal(self.state.importe_anticipo)
+        parsed = _parse_money_decimal(self.state.importe_anticipo)
         if parsed is None:
             return "importe pendiente"
         return self._format_money_with_currency(parsed)
@@ -2828,7 +2838,7 @@ class VentaCompletaWizardV3Prototype:
             self.importe_anticipo_feedback.value = self.state.importe_anticipo_error
             self.importe_anticipo_feedback.color = ft.Colors.RED_700
             return
-        self.importe_anticipo_feedback.value = "Ingresá un importe mayor que 0 y menor o igual al total derivado."
+        self.importe_anticipo_feedback.value = "Ingresá un importe mayor que 0, con máximo 2 decimales, y menor o igual al total derivado."
         self.importe_anticipo_feedback.color = ft.Colors.BLUE_GREY_600
 
     def _sync_advance_visual_amounts(self) -> None:
@@ -3114,7 +3124,15 @@ class VentaCompletaWizardV3Prototype:
         if not raw_value:
             self.state.tramo_capital_error = "El capital del tramo es requerido."
             return None
-        parsed = _parse_decimal(raw_value)
+        validation_error = _money_amount_validation_error(
+            raw_value,
+            empty_message="El capital del tramo es requerido.",
+            invalid_message="El capital del tramo debe ser un número finito mayor que 0.",
+        )
+        if validation_error is not None:
+            self.state.tramo_capital_error = validation_error
+            return None
+        parsed = _parse_money_decimal(raw_value)
         if parsed is None:
             self.state.tramo_capital_error = "El capital del tramo debe ser un número finito mayor que 0."
             return None
@@ -3431,7 +3449,7 @@ class VentaCompletaWizardV3Prototype:
             self.tramo_capital_feedback.value = self.state.tramo_capital_error
             self.tramo_capital_feedback.color = ft.Colors.RED_700
             return
-        self.tramo_capital_feedback.value = "Podés asignar todo el capital restante o un valor menor."
+        self.tramo_capital_feedback.value = "Podés asignar todo el capital restante o un valor menor, con máximo 2 decimales."
         self.tramo_capital_feedback.color = ft.Colors.BLUE_GREY_600
 
     def _sync_tramo_cantidad_feedback(self) -> None:
@@ -3524,7 +3542,7 @@ class VentaCompletaWizardV3Prototype:
     def _capital_assigned_to_installments(self) -> Decimal:
         total = Decimal("0")
         for tramo in self.state.tramos_cuotas:
-            parsed = _parse_decimal(tramo.importe_total_bloque)
+            parsed = _parse_money_decimal(tramo.importe_total_bloque)
             if parsed is not None:
                 total += parsed
         return total
@@ -3580,12 +3598,17 @@ class VentaCompletaWizardV3Prototype:
         raw_value = self.precio_objeto_value.strip()
         if not raw_value:
             return "precio_asignado es obligatorio." if show_required else None
-        if self._parse_selected_price() is None:
-            return "precio_asignado debe ser un decimal finito mayor que cero."
+        validation_error = _money_amount_validation_error(
+            raw_value,
+            empty_message="precio_asignado es obligatorio.",
+            invalid_message="precio_asignado debe ser un decimal finito mayor que cero.",
+        )
+        if validation_error is not None:
+            return validation_error
         return None
 
     def _parse_selected_price(self) -> Decimal | None:
-        return _parse_decimal(self.precio_objeto_value)
+        return _parse_money_decimal(self.precio_objeto_value)
 
     def _is_duplicate_selected_object(self) -> bool:
         if self.objeto_seleccionado is None:
@@ -3728,7 +3751,7 @@ class VentaCompletaWizardV3Prototype:
     def _objects_total(self) -> Decimal:
         total = Decimal("0")
         for objeto in self.state.objetos:
-            parsed = _parse_decimal(objeto.precio_asignado)
+            parsed = _parse_money_decimal(objeto.precio_asignado)
             if parsed is not None:
                 total += parsed
         return total
@@ -3918,6 +3941,28 @@ def _parse_decimal(value: Any) -> Decimal | None:
     return parsed
 
 
+def _has_max_two_decimal_places(value: Decimal) -> bool:
+    return value.as_tuple().exponent >= -2
+
+
+def _parse_money_decimal(value: Any) -> Decimal | None:
+    parsed = _parse_decimal(value)
+    if parsed is None or not _has_max_two_decimal_places(parsed):
+        return None
+    return parsed.quantize(MONEY_DECIMAL_QUANTUM)
+
+
+def _money_amount_validation_error(raw_value: str, *, empty_message: str, invalid_message: str) -> str | None:
+    if not raw_value:
+        return empty_message
+    parsed = _parse_decimal(raw_value)
+    if parsed is None:
+        return invalid_message
+    if not _has_max_two_decimal_places(parsed):
+        return MONEY_PRECISION_ERROR
+    return None
+
+
 def _parse_percentage(value: Any) -> Decimal | None:
     parsed = _parse_decimal(value)
     if parsed is None or parsed > Decimal("100"):
@@ -3926,11 +3971,11 @@ def _parse_percentage(value: Any) -> Decimal | None:
 
 
 def _format_decimal(value: Decimal) -> str:
-    return format(value.quantize(Decimal("0.01")), "f")
+    return format(value.quantize(MONEY_DECIMAL_QUANTUM), "f")
 
 
 def _format_money(value: Any) -> str:
-    parsed = _parse_decimal(value)
+    parsed = _parse_money_decimal(value)
     return _format_decimal(parsed) if parsed is not None else str(value or "-")
 
 
