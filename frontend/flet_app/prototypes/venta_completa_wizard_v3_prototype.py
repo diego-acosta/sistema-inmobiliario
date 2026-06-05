@@ -1746,36 +1746,30 @@ class VentaCompletaWizardV3Prototype:
                 ],
                 wrap=True,
             )
-        return ft.Container(
-            padding=10,
-            border_radius=10,
-            bgcolor=ft.Colors.BLUE_GREY_50,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Text("Cuotas refuerzo", size=16, weight=ft.FontWeight.W_700, expand=True),
-                            ft.OutlinedButton(
-                                "Quitar refuerzos",
-                                icon=ft.Icons.CLOSE,
-                                on_click=lambda _: self._select_installment_reinforcements_usage(False),
-                            ),
-                        ],
-                        spacing=8,
-                        wrap=True,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    ft.Text(
-                        "Las cuotas refuerzo forman parte de la cantidad total de cuotas. No agregan cuotas por fuera del tramo.",
-                        size=12,
-                        color=ft.Colors.BLUE_GREY_700,
-                    ),
-                    self._build_installment_reinforcement_two_column_layout(),
-                ],
-                spacing=8,
-                tight=True,
-            ),
+        return ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Text("Cuotas refuerzo", size=16, weight=ft.FontWeight.W_700),
+                        ft.OutlinedButton(
+                            "Quitar refuerzos",
+                            icon=ft.Icons.CLOSE,
+                            on_click=lambda _: self._select_installment_reinforcements_usage(False),
+                        ),
+                    ],
+                    spacing=8,
+                    wrap=True,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Text(
+                    "Las cuotas refuerzo forman parte de la cantidad total de cuotas. No agregan cuotas por fuera del tramo.",
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
+                self._build_installment_reinforcement_two_column_layout(),
+            ],
+            spacing=8,
+            tight=True,
         )
 
     def _build_liquidation_method_card(
@@ -1835,36 +1829,23 @@ class VentaCompletaWizardV3Prototype:
             )
         else:
             controls.append(self._build_installment_reinforcements_summary(reinforcement_count))
-        return ft.Container(
-            width=360,
-            padding=10,
-            border_radius=10,
-            bgcolor=ft.Colors.BLUE_GREY_50,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(controls=controls, spacing=8, tight=True),
-        )
+        return ft.Column(controls=controls, width=360, spacing=8, tight=True)
 
     def _build_installment_reinforcement_right_column(self, reinforcement_count: int) -> ft.Control:
-        return ft.Container(
+        return ft.Column(
+            controls=[
+                ft.Text(
+                    "Asigná cada refuerzo a una posición válida de la duración efectiva.",
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
+                self._build_installment_reinforcement_position_picker(reinforcement_count),
+                self.refuerzo_numero_feedback,
+                self._build_installment_reinforcement_selection_status(reinforcement_count),
+            ],
             width=520,
-            padding=10,
-            border_radius=10,
-            bgcolor=ft.Colors.BLUE_GREY_50,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=[
-                    ft.Text(
-                        "Asigná cada refuerzo a una posición válida de la duración efectiva.",
-                        size=12,
-                        color=ft.Colors.BLUE_GREY_700,
-                    ),
-                    self._build_installment_reinforcement_position_picker(reinforcement_count),
-                    self.refuerzo_numero_feedback,
-                    self._build_installment_reinforcement_selection_status(reinforcement_count),
-                ],
-                spacing=8,
-                tight=True,
-            ),
+            spacing=8,
+            tight=True,
         )
 
     def _build_installment_reinforcement_position_picker(self, reinforcement_count: int) -> ft.Control:
