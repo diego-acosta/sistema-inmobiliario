@@ -4371,19 +4371,40 @@ def _format_decimal(value: Decimal) -> str:
     return format(value.quantize(MONEY_DECIMAL_QUANTUM), "f")
 
 
-def _format_money(value: Any) -> str:
+def _parse_money_display_decimal(value: Any) -> Decimal | None:
     if isinstance(value, Decimal):
-        parsed = value if value.is_finite() and value >= 0 else None
+        parsed = value
     else:
-        parsed = _parse_money_decimal(value)
+        raw_text = str(value or "").strip()
+        if not raw_text:
+            return None
+        sign = ""
+        if raw_text[0] == "-":
+            sign = "-"
+            raw_text = raw_text[1:]
+        normalized = _normalize_money_text(raw_text)
+        if not normalized:
+            return None
+        try:
+            parsed = Decimal(f"{sign}{normalized}")
+        except (InvalidOperation, ValueError):
+            return None
+    if not parsed.is_finite():
+        return None
+    return parsed.quantize(MONEY_DECIMAL_QUANTUM)
+
+
+def _format_money(value: Any) -> str:
+    parsed = _parse_money_display_decimal(value)
     if parsed is None:
         return str(value or "-")
-    integer_part, decimal_part = _format_decimal(parsed).split(".")
+    sign = "-" if parsed < Decimal("0") else ""
+    integer_part, decimal_part = _format_decimal(abs(parsed)).split(".")
     groups: list[str] = []
     while integer_part:
         groups.append(integer_part[-3:])
         integer_part = integer_part[:-3]
-    return f"{'.'.join(reversed(groups))},{decimal_part}"
+    return f"{sign}{'.'.join(reversed(groups))},{decimal_part}"
 
 
 def _object_id_label_value(payload: dict[str, Any]) -> tuple[str, Any]:
