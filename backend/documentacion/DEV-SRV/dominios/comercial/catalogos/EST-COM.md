@@ -17,6 +17,8 @@ Incluye reservas, ventas, instrumentos, cesiones, escrituracion y rescisiones.
 - descripcion: la entidad fue creada pero aun no alcanzo un estado operativo consolidado.
 - estado_inicial: si
 - estado_final: no
+- decision_comercial: para `venta`, queda como estado historico/heredado o pendiente de revision; no aplica como estado normal para guardar progreso del Wizard Venta Completa V3.
+- observaciones: el progreso del Wizard Venta Completa V3 debe modelarse fuera de `venta`, mediante una entidad conceptual separada como `borrador_venta_wizard`.
 
 ### EST-COM-002 - Activa
 - codigo: activa
@@ -52,6 +54,16 @@ Incluye reservas, ventas, instrumentos, cesiones, escrituracion y rescisiones.
 - observaciones: aplica cuando exista politica temporal de vencimiento de reserva.
 
 ## B. Estados de ventas
+
+### Decision vigente para venta real
+
+La entidad `venta` representa una operacion comercial confirmada o ya formalmente existente dentro del dominio `comercial`. Para el flujo Wizard Venta Completa V3, los estados principales de `venta` son:
+
+- `confirmada`;
+- `cancelada`;
+- `finalizada`.
+
+`borrador` no debe usarse como estado normal de `venta` para persistir progreso de carga del Wizard Venta Completa V3. Si el codigo `borrador` se conserva en este catalogo por compatibilidad historica, debe interpretarse como no aplicable al flujo Wizard Venta Completa V3 o pendiente de revision funcional.
 
 ### EST-COM-006 - En proceso
 - codigo: en_proceso
@@ -232,6 +244,43 @@ Incluye reservas, ventas, instrumentos, cesiones, escrituracion y rescisiones.
 - descripcion: se detecto reutilizacion de op_id con diferencias incompatibles respecto de la operacion original.
 - estado_inicial: no
 - estado_final: si
+
+---
+
+## H. Estados de borrador de Wizard Venta Completa V3
+
+### EST-COM-027 - En carga
+- codigo: en_carga
+- tipo: entidad
+- aplica_a: borrador_venta_wizard
+- descripcion: el usuario guardo progreso del wizard y puede retomarlo antes de confirmar la venta.
+- estado_inicial: si
+- estado_final: no
+
+### EST-COM-028 - Descartado
+- codigo: descartado
+- tipo: entidad
+- aplica_a: borrador_venta_wizard
+- descripcion: el progreso guardado fue descartado y no se concretara como venta.
+- estado_inicial: no
+- estado_final: si
+
+### EST-COM-029 - Convertido
+- codigo: convertido
+- tipo: entidad
+- aplica_a: borrador_venta_wizard
+- descripcion: el progreso guardado fue usado para confirmar una venta real y queda trazado como convertido.
+- estado_inicial: no
+- estado_final: si
+
+### EST-COM-030 - Vencido
+- codigo: vencido
+- tipo: entidad
+- aplica_a: borrador_venta_wizard
+- descripcion: el progreso guardado perdio vigencia por una politica temporal del wizard.
+- estado_inicial: no
+- estado_final: si
+- observaciones: aplica solo si se define una politica temporal para borradores de wizard.
 
 ---
 

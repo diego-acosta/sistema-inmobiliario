@@ -57,15 +57,25 @@ Pantalla 1 -- Origen y no copia el flujo completo de V2.
   obligaciones; la UI no ejecuta pagos, caja, imputaciones ni recibos.
 - La consulta posterior `GET /api/v1/ventas/{id_venta}/plan-pago-v2` es lectura
   sobre la venta confirmada; no reemplaza el command de confirmacion.
+- Preview Plan Pago V2 previo a confirmacion es `PREVIEW_READLIKE`: no crea
+  venta, no genera obligaciones reales y no cambia estados comerciales.
 
 ## 4. Contratos backend existentes que guian el diseno
 
-El wizard debe adaptarse a los endpoints compuestos reales existentes:
+El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:
 
 ```text
 POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa
 POST /api/v1/ventas/directa/confirmar-venta-completa
 ```
+
+Para preview previo a confirmacion, el endpoint objetivo del Wizard Venta Completa V3 debe ser sin `id_venta`, porque la venta real todavia no existe:
+
+```text
+POST /api/v1/ventas/plan-pago-v2/preview
+```
+
+Estado de implementacion: pendiente/no implementado en el router actual. No debe reemplazarse con `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview` usando un `id_venta` ficticio, porque ese contrato corresponde a una venta ya persistida.
 
 Ambos endpoints reciben `plan_pago_v2` con bloques y propagan los metodos de
 liquidacion:
@@ -206,6 +216,9 @@ Reglas del estado:
 
 - No existe `id_venta` manual, porque la venta todavia no existe antes de
   confirmar.
+- El estado local del wizard no es una `venta` en estado `borrador`; solo es
+  estado transitorio de UI mientras no exista persistencia especifica de
+  `borrador_venta_wizard`.
 - `plan_pago_v2` es el mismo subestado para ambos origenes.
 - Los datos precargados desde reserva alimentan el mismo estado; no crean un
   modelo paralelo.
@@ -733,8 +746,18 @@ Mostrar resumen de:
 
 La revision debe indicar que se ejecutara una operacion compuesta transaccional.
 No debe mostrar un cronograma local falso ni prometer cuotas calculadas por el
-frontend. Si se muestra algun resumen de bloques, debe rotularse como resumen de
-payload, no como cronograma oficial.
+frontend. Si se muestra algun resumen de bloques sin respuesta de preview
+backend, debe rotularse como resumen de payload, no como cronograma oficial.
+
+Si se incorpora preview previo a confirmacion, debe consumirse el endpoint
+objetivo sin `id_venta`:
+
+```text
+POST /api/v1/ventas/plan-pago-v2/preview
+```
+
+Ese preview es `PREVIEW_READLIKE`: no crea venta, no genera obligaciones reales,
+no cambia estados comerciales y no exige headers write.
 
 ### Paso 7 - Confirmar
 
@@ -767,8 +790,11 @@ En caso OK, mostrar:
 
 - venta confirmada;
 - identificador de venta si viene en response;
-- plan generado;
+- objetos de venta creados;
+- compradores creados;
+- Plan Pago V2 real generado;
 - obligaciones generadas;
+- disponibilidad/estado actualizado cuando corresponda;
 - estado de reserva si aplica;
 - accion/link para consultar plan:
 
@@ -1005,23 +1031,44 @@ El wizard unico no hace:
 - endpoints nuevos;
 - documental real ni administrativo nuevo.
 
-## 13. Borrador futuro
+## 13. Borrador de wizard
 
-Si en el futuro se permite guardar borrador, debe ser un flujo explicito
-soportado por backend y debe guardar el estado completo del wizard:
+La venta real no se guarda como borrador en la tabla `venta` durante el Wizard
+Venta Completa V3. La `venta` se persiste recien al confirmar y, cuando nace
+desde el wizard completo, nace `confirmada`.
+
+Si se permite guardar progreso, debe ser un flujo explicito soportado por
+backend mediante una entidad separada, por ejemplo `borrador_venta_wizard`, que
+guarde el estado completo del wizard:
 
 ```text
-venta + partes + objetos + condiciones_comerciales + plan_pago_v2 + bloques
+borrador_venta_wizard + partes + objetos + condiciones_comerciales + plan_pago_v2 + bloques
 ```
 
-Reglas para ese futuro:
+Uso conceptual de `borrador_venta_wizard`:
 
+- guardar progreso de carga;
+- retomar despues;
+- descartar si no se concreta;
+- convertir en `venta` confirmada al finalizar.
+
+Estados sugeridos:
+
+- `en_carga`;
+- `descartado`;
+- `convertido`;
+- `vencido`.
+
+Reglas:
+
+- `borrador_venta_wizard` no es `venta`.
+- No genera obligaciones.
+- No genera Plan Pago V2 real.
+- No cambia disponibilidad definitiva.
+- No genera rescision.
+- No debe confundirse con `venta` `cancelada`.
 - No debe existir una venta confirmada sin forma/plan de pago.
-- Un borrador no equivale a venta confirmada.
-- El borrador debe tener estado, persistencia y contratos propios si el backend
-  lo soporta.
 - No se debe simular guardado de borrador con una venta real incompleta.
-
 
 ## 13.1 Prototipo Flet vigente para iteracion V3
 
@@ -1056,19 +1103,24 @@ pantallas restantes.
 
 ## 14. Decision CORE-EF
 
-Naturaleza del endpoint de confirmacion:
+Naturaleza de endpoints:
 
 - `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`:
   `COMMAND_WRITE_NEGOCIO`.
 - `POST /api/v1/ventas/directa/confirmar-venta-completa`:
   `COMMAND_WRITE_NEGOCIO`.
+- `POST /api/v1/ventas/plan-pago-v2/preview`: `PREVIEW_READLIKE`; endpoint
+  objetivo pendiente/no implementado para preview previo a confirmacion sin
+  `id_venta`.
 
 Headers:
 
-- Ambos requieren `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`,
-  `X-Instalacion-Id`.
+- Los endpoints de confirmacion requieren `X-Op-Id`, `X-Usuario-Id`,
+  `X-Sucursal-Id`, `X-Instalacion-Id`.
 - Desde reserva requiere ademas `If-Match-Version` de `reserva_venta`.
 - Directa no requiere `If-Match-Version` segun contrato actual.
+- Preview previo a confirmacion no debe exigir headers write por ser
+  `PREVIEW_READLIKE`.
 
 Idempotencia:
 
@@ -1102,6 +1154,9 @@ Rollback/transaccion:
 
 - La confirmacion es una operacion compuesta transaccional ejecutada por
   backend.
+- Al confirmar se crea la venta `confirmada`, se crean objetos de venta y
+  compradores, se genera Plan Pago V2 real, se generan obligaciones y se
+  actualiza disponibilidad/estado cuando corresponda.
 - La UI debe mostrarlo en revision y no intentar compensaciones locales.
 
 Tests ejecutados para este PR documental:
