@@ -6,15 +6,15 @@ Esta auditoría revisa el soporte backend actual de preview/simulación de Plan 
 
 Conclusión: **Opción B**.
 
-El endpoint actual existe y la simulación interna es read-like, no persiste plan, venta ni obligaciones, y ya calcula cronograma simulado para `SIN_INTERES`, `INTERES_DIRECTO`, `INDEXACION`, anticipo, contado, tramos, saldo y cuotas_refuerzo internas. Sin embargo, el contrato HTTP público vigente está montado bajo una venta existente:
+El endpoint actual existe y es read-like/no persistente: no persiste plan, venta ni obligaciones, y ya calcula cronograma simulado para `SIN_INTERES`, `INTERES_DIRECTO`, `INDEXACION`, anticipo, contado, tramos, saldo y cuotas_refuerzo internas. El problema auditado no es persistencia ni side effects, sino que el contrato HTTP público vigente está montado bajo una venta existente:
 
 ```text
 POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview
 ```
 
-Por esa razón **no debe integrarse como endpoint objetivo del Wizard Venta Completa V3 antes de crear/persistir la venta**, porque el wizard todavía no tiene `id_venta` real y no debe inventar un identificador para cumplir una ruta que semánticamente pertenece a una venta persistida.
+Por esa razón **no debe integrarse como endpoint objetivo del Wizard Venta Completa V3 antes de confirmar**, porque en ese momento la venta todavía no existe, el wizard no tiene `id_venta` real y no debe inventar un identificador para cumplir una ruta que semánticamente pertenece a una venta persistida.
 
-Se recomienda crear un endpoint nuevo de preview sin venta persistida:
+Se recomienda crear un endpoint nuevo de preview sin `id_venta` en path:
 
 ```text
 POST /api/v1/ventas/plan-pago-v2/preview
@@ -83,7 +83,7 @@ PreviewPlanPagoVentaV2PorBloquesResponse
 
 ### 4.2 Naturaleza del endpoint actual
 
-- Es un preview/simulación, no un command de persistencia.
+- Es un preview/simulación read-like, no un command de persistencia; el endpoint actual no persiste datos.
 - No exige headers CORE-EF write (`X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`) en el router actual.
 - No exige `If-Match-Version`.
 - Construye un command con `id_venta` recibido por path.
@@ -345,12 +345,12 @@ Esa ampliación debe ser solo simulada y no debe persistir `composicion_obligaci
 | 1 | Qué endpoint HTTP existe hoy para preview de Plan Pago V2. | `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview`. |
 | 2 | Qué payload espera. | `tipo_pago`, `monto_total_plan`, `moneda`, `bloques`, `observaciones`; cada bloque acepta tipo, importes, fechas, cuotas, método de liquidación, interés directo, indexación y `cuotas_refuerzo`. |
 | 3 | Si requiere `id_venta` existente. | A nivel HTTP sí requiere `id_venta` en la ruta. La implementación auditada no valida existencia de venta antes de simular, pero el contrato público presupone un identificador de venta. |
-| 4 | Si puede usarse antes de crear/persistir la venta. | No como endpoint objetivo del Wizard V3. Técnicamente no persiste, pero semánticamente requiere `{id_venta}` y devuelve `id_venta`; usar un dummy sería inválido. |
+| 4 | Si puede usarse antes de crear/persistir la venta. | No como endpoint objetivo del Wizard V3. El motivo no es persistencia: el endpoint actual es read-like/no persistente. El bloqueo es contractual, porque requiere `{id_venta}` en path y devuelve `id_venta`; antes de confirmar no existe una venta real y usar un dummy sería inválido. |
 | 5 | Si acepta `monto_total_plan`, `moneda` y bloques sin `id_venta` real. | El body sí acepta esos campos sin ids internos; la ruta no permite omitir `id_venta`. |
 | 6 | Si soporta `cuotas_refuerzo` internas. | Sí, para `TRAMO_CUOTAS`, con validaciones de rango, duplicados y unidades. |
 | 7 | Si devuelve obligaciones/cuotas simuladas. | Sí, devuelve `obligaciones` simuladas con número, bloque, tipo item, vencimiento, importe, moneda y datos de indexación cuando aplica. |
 | 8 | Si devuelve composiciones. | Parcial/no. Devuelve `concepto_financiero_codigo`, pero no lista `composiciones` simuladas por obligación. |
-| 9 | Si devuelve datos de interés directo. | Sí, en bloques (`metodo_liquidacion`, `tasa_interes_directo_periodica`, `cantidad_periodos`, `base_calculo_interes`) y en totales (`total_con_interes`). |
+| 9 | Si devuelve datos de interés directo. | Sí, en bloques (`metodo_liquidacion`, `tasa_interes_directo_periodica`, `cantidad_periodos`, `base_calculo_interes`) y en el total raíz `total_con_interes`; el contrato actual no devuelve `total_con_interes` por bloque. |
 | 10 | Si devuelve datos de indexación. | Sí, en bloques y obligaciones: estado, índice, valor base, valor aplicado, coeficiente, capital, ajuste y totales. |
 | 11 | Si devuelve errores funcionales útiles para UI. | Sí parcialmente. Errores del servicio salen como HTTP 400 `APPLICATION_ERROR` con `details.errors`; errores de schema salen como 422; excepciones no controladas serían 500. |
 | 12 | Si el preview hace lecturas de índices reales o solo usa valores base enviados. | Hace lecturas read-only de índices publicados cuando se inyecta `IndiceFinancieroRepository`; si no encuentra valor aplicable, proyecta sin inventar índice usando el capital/base enviada. |
@@ -511,11 +511,11 @@ Para el endpoint nuevo sin `id_venta`:
 
 ## 13. Conclusión
 
-El backend ya tiene un motor de preview útil y cubierto por tests para Plan Pago V2 por bloques, incluyendo interés directo, indexación, tramos y cuotas_refuerzo internas. La limitación principal no está en el cálculo sino en el contrato HTTP público actual: exige `{id_venta}` en la ruta y devuelve `id_venta`, lo que lo vuelve inadecuado como integración directa del Wizard Venta Completa V3 antes de confirmar.
+El backend ya tiene un motor de preview útil, read-like/no persistente y cubierto por tests para Plan Pago V2 por bloques, incluyendo interés directo, indexación, tramos y cuotas_refuerzo internas. La limitación principal no está en persistencia ni en el cálculo, sino en el contrato HTTP público actual: exige `{id_venta}` en la ruta y devuelve `id_venta`, lo que lo vuelve inadecuado como integración directa del Wizard Venta Completa V3 antes de confirmar.
 
 Decisión final: **Opción B**.
 
-Implementar un endpoint nuevo sin venta persistida:
+Implementar un endpoint nuevo sin `id_venta` en path:
 
 ```text
 POST /api/v1/ventas/plan-pago-v2/preview
