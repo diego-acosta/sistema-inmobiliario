@@ -15,9 +15,12 @@ Alcance:
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
-    comerciales completos, cronograma definitivo, indexación local ni preview backend,
-    revision/confirmacion. Incluye draft UI de refuerzos internos
-    dentro de tramos sin calcular importes por cuota.
+    comerciales completos, cronograma definitivo, interés/indexación local ni preview
+    backend, revision/confirmacion. Incluye draft UI de refuerzos internos
+    dentro de tramos sin calcular importes financieros definitivos.
+  - El frontend comercial no calcula resultados financieros definitivos: interés,
+    indexación y cronograma se delegarán al preview backend de Plan Pago V2.
+    La versión productiva debe mostrar esos resultados cuando integre esa simulación.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
     pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
@@ -1685,7 +1688,7 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Método de financiación", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Elegí cómo se liquidará este tramo. El prototipo conserva los datos, pero no calcula cronogramas, intereses ni indexaciones localmente.",
+                "Elegí cómo se liquidará este tramo. El prototipo conserva los datos; interés, indexación y cronograma se mostrarán desde el preview backend en la versión productiva.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -1700,7 +1703,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_liquidation_method_card(
                         method="INTERES_DIRECTO",
                         title="Interés directo",
-                        description="Aplica interés simple sobre el capital inicial del tramo.",
+                        description="Captura la tasa para la futura simulación backend del Plan Pago V2.",
                         icon=ft.Icons.PERCENT,
                     ),
                     self._build_liquidation_method_card(
@@ -1718,7 +1721,7 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     self._build_help_card(
-                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. Solo se muestra una estimación visual simple; el cálculo definitivo queda para backend.",
+                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. El prototipo solo muestra cuota base sin interés; total y cuota con interés se delegan al preview backend.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_100,
                     ),
@@ -3758,18 +3761,9 @@ class VentaCompletaWizardV3Prototype:
                 "No se calcula indexación localmente.",
             ]
         if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
-            rate = _parse_decimal(self.state.tramo_tasa_interes_value.strip())
-            if rate is None:
-                return [
-                    f"Cuota base estimada: {self._format_money_with_currency(cuota_base)}",
-                    "Ingresá una tasa periódica válida para estimar el interés directo.",
-                ]
-            interest_total = (capital * rate * Decimal(quantity) / Decimal("100")).quantize(MONEY_DECIMAL_QUANTUM)
-            total_with_interest = (capital + interest_total).quantize(MONEY_DECIMAL_QUANTUM)
-            installment_with_interest = (total_with_interest / Decimal(quantity)).quantize(MONEY_DECIMAL_QUANTUM)
             return [
-                f"Total estimado con interés: {self._format_money_with_currency(total_with_interest)}",
-                f"Cuota estimada con interés: {self._format_money_with_currency(installment_with_interest)}",
+                f"Cuota base sin interés: {self._format_money_with_currency(cuota_base)}",
+                "En la versión final, la cuota con interés se mostrará desde la simulación backend del Plan Pago V2.",
             ]
         return [f"Cuota base estimada: {self._format_money_with_currency(cuota_base)}"]
 
