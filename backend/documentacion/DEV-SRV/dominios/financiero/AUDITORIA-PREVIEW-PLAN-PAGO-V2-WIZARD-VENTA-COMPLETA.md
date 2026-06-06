@@ -185,7 +185,7 @@ Reglas auditadas:
 - Requiere `tasa_interes_directo_periodica`, `cantidad_periodos` y `base_calculo_interes`.
 - La base válida implementada es `CAPITAL_INICIAL_BLOQUE`.
 - No permite mezclar configuración de indexación en el mismo bloque.
-- Devuelve `total_con_interes` y campos de interés directo en cada bloque.
+- Devuelve `total_con_interes` a nivel raíz de la respuesta preview y devuelve los parámetros de interés directo en cada bloque. El contrato actual no expone `total_con_interes` por bloque.
 
 ### 5.6 Bloque `TRAMO_CUOTAS` con indexación
 
@@ -298,6 +298,8 @@ Cada bloque simulado devuelve, entre otros:
 - cantidad de cuotas con índice y proyectadas sin índice.
 - `concepto_financiero_codigo`.
 
+Los bloques **no** exponen hoy `total_con_interes` por bloque. Ese total existe en la raíz de la respuesta preview como total agregado del plan. Si el Wizard V3 necesitara mostrar total con interés por tramo/bloque, debería tratarse como una brecha futura/mejora de contrato y no como comportamiento actual.
+
 ### 6.2 Obligaciones/cuotas simuladas devueltas
 
 Cada obligación simulada devuelve, entre otros:
@@ -361,7 +363,7 @@ Esa ampliación debe ser solo simulada y no debe persistir `composicion_obligaci
 | Funcionalidad | Estado actual | Observación |
 | --- | --- | --- |
 | `SIN_INTERES` | soportado | Default cuando no se informa `metodo_liquidacion`; genera cuotas por capital. |
-| `INTERES_DIRECTO` | soportado en preview | Calcula total con interés directo sobre `CAPITAL_INICIAL_BLOQUE` y propaga campos. |
+| `INTERES_DIRECTO` | soportado en preview | Calcula `total_con_interes` agregado a nivel raíz sobre `CAPITAL_INICIAL_BLOQUE` y propaga parámetros del método en el bloque; no expone `total_con_interes` por bloque. |
 | `INDEXACION` | soportado en preview | Consulta índice publicado y calcula ajuste; si no hay índice, marca `PROYECTADA_SIN_INDICE`. |
 | Cuotas_refuerzo internas | soportado | Dentro de `TRAMO_CUOTAS`; no agrega cuotas, convierte posiciones en `REFUERZO`. |
 | Anticipo | soportado | Bloque `ANTICIPO`, obligación simulada con `ANTICIPO_VENTA`. |
