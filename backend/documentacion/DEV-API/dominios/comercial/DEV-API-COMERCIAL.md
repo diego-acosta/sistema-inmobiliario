@@ -569,6 +569,8 @@ Implementado y disponible hoy:
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple`
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/anticipo-mas-cuotas-iguales`
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/generar`
+- `POST /api/v1/ventas/plan-pago-v2/preview`
+- `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview`
 - `GET /api/v1/ventas/{id_venta}/plan-pago-v2`
 
 Alineacion con bloques V2:
@@ -581,6 +583,64 @@ Alineacion con bloques V2:
 - `id_plan_pago_venta_bloque` es trazabilidad de origen comercial-financiero; no es clave idempotente.
 - `clave_funcional_origen` sigue siendo la clave idempotente financiera por obligacion.
 - El endpoint unificado recibe bloques desde el cliente y reutiliza el motor interno `PLAN_POR_BLOQUES`.
+
+#### `POST /api/v1/ventas/plan-pago-v2/preview`
+
+Estado:
+- implementado en #164 como preview/simulacion de Plan Pago V2 por bloques sin venta persistida
+- clasificacion CORE-EF: `PREVIEW_READLIKE`
+- uso principal: Wizard Venta Completa V3 antes de confirmar, cuando todavia no existe `id_venta`
+- no requiere headers write (`X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`) ni `If-Match-Version`
+
+Request:
+- mismo body que `PreviewPlanPagoVentaV2PorBloquesRequest` usado por el preview V2 por bloques existente
+- no se informa `id_venta` en path ni en body
+- no se debe enviar un `id_venta` ficticio para previsualizar desde el wizard
+- soporta los bloques/metodos vigentes del preview V2: `CONTADO`, `ANTICIPO`, `TRAMO_CUOTAS`, `SIN_INTERES`, `INTERES_DIRECTO`, `INDEXACION` y `cuotas_refuerzo` internas
+
+Response `200`:
+- envelope `{"ok": true, "data": ...}`
+- devuelve la misma simulacion funcional que el preview V2 por bloques existente: `metodo_plan_pago`, `tipo_pago`, `moneda`, `monto_total_plan`, totales, `bloques`, `obligaciones` y `redondeos`
+- la respuesta no incluye `id_venta` porque no existe venta persistida
+- expone `total_con_interes` en raiz cuando aplica `INTERES_DIRECTO`
+- expone `total_con_indexacion`, `total_ajuste_indexacion` y datos de indexacion por bloque/obligacion cuando aplica `INDEXACION`
+- expone `numero_cuota_asociada` en obligaciones de tramo cuando corresponde, incluyendo posiciones `REFUERZO`
+
+Reglas read-like:
+- no crea `venta`
+- no crea `plan_pago_venta` ni `plan_pago_venta_bloque`
+- no crea `relacion_generadora`
+- no crea `obligacion_financiera`, `composicion_obligacion` ni `obligacion_obligado`
+- no modifica disponibilidad ni objetos inmobiliarios
+- no registra compradores
+- no genera outbox
+- si consulta indices financieros, la lectura es read-only
+
+Errores posibles:
+- `400 APPLICATION_ERROR` con `ErrorResponse`: validaciones funcionales del preview, por ejemplo suma de bloques inconsistente, bloque invalido, configuracion invalida de interes/indexacion o cuotas_refuerzo invalidas
+- `422`: validacion de schema del request
+- `500 INTERNAL_ERROR` con `ErrorResponse`: error inesperado
+
+#### `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview`
+
+Estado:
+- implementado como preview/simulacion de Plan Pago V2 por bloques vinculado a una venta persistida
+- clasificacion CORE-EF: `PREVIEW_READLIKE`
+- se mantiene por compatibilidad/no regresion
+- conserva `id_venta` en la respuesta
+- no debe usarse con IDs ficticios desde el Wizard Venta Completa V3 antes de confirmar; para ese caso usar `POST /api/v1/ventas/plan-pago-v2/preview`
+- no requiere headers write (`X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`) ni `If-Match-Version`
+
+Request:
+- mismo body que `POST /api/v1/ventas/plan-pago-v2/preview`, pero con `id_venta` real en path
+
+Response `200`:
+- igual al preview sin venta, pero incluye `id_venta` en `data`
+
+Errores posibles:
+- `400 APPLICATION_ERROR` con `ErrorResponse`: validaciones funcionales del preview
+- `422`: validacion de schema del request
+- `500 INTERNAL_ERROR` con `ErrorResponse`: error inesperado
 
 #### `GET /api/v1/ventas/{id_venta}/plan-pago-v2`
 
