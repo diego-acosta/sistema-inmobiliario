@@ -173,7 +173,7 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
     def _validate(
         self, command: GeneratePlanPagoVentaV2PorBloquesCommand
     ) -> str | None:
-        if command.id_venta <= 0:
+        if command.id_venta is not None and command.id_venta <= 0:
             return "INVALID_VENTA"
         if command.monto_total_plan <= 0:
             return "INVALID_MONTO_TOTAL_PLAN"

@@ -77,7 +77,33 @@ Para el Wizard Venta Completa V3 antes de confirmar, el endpoint objetivo debe s
 POST /api/v1/ventas/plan-pago-v2/preview
 ```
 
-Estado de implementacion: pendiente/no implementado en el router actual. El endpoint existente con `id_venta` en path pertenece a preview sobre una venta ya persistida y no debe usarse con IDs ficticios para el wizard antes de confirmar.
+Estado de implementacion: implementado en #164. Este endpoint es el contrato principal del Wizard Venta Completa V3 para simular Plan Pago V2 antes de confirmar la venta.
+
+Reglas del preview sin venta:
+
+- naturaleza CORE-EF: `PREVIEW_READLIKE`;
+- no requiere `id_venta` en path ni en body;
+- no crea `venta`;
+- no crea Plan Pago V2 real (`plan_pago_venta` ni `plan_pago_venta_bloque`);
+- no crea `relacion_generadora`;
+- no crea `obligacion_financiera`, `composicion_obligacion` ni `obligacion_obligado`;
+- no modifica disponibilidad ni objetos inmobiliarios;
+- no registra compradores;
+- no genera outbox;
+- no exige headers write (`X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`);
+- no exige `If-Match-Version`.
+
+El endpoint existente con `id_venta` en path pertenece a preview sobre una venta ya persistida y no debe usarse con IDs ficticios para el wizard antes de confirmar:
+
+```text
+POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview
+```
+
+Uso del endpoint legacy:
+
+- preview vinculado a una venta persistida;
+- conserva `id_venta` en la respuesta;
+- sigue existiendo por compatibilidad/no regresion.
 
 ### Confirmacion de venta completa
 
@@ -279,7 +305,6 @@ Permite visualizar la informacion y estado de la venta.
 ## Pendientes abiertos
 - revisar flujos historicos que conservan `venta.borrador` para separarlos del Wizard Venta Completa V3
 - implementar, si se aprueba, `borrador_venta_wizard` con persistencia y contratos propios
-- implementar, si se aprueba, `POST /api/v1/ventas/plan-pago-v2/preview` sin `id_venta` para preview previo a confirmacion
 - definicion completa del ciclo de estados de venta fuera del Wizard Venta Completa V3
 - reglas de cancelacion y reversion
 - relacion exacta entre venta y condiciones comerciales

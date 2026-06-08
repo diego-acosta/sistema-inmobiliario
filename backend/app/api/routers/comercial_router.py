@@ -49,6 +49,7 @@ from app.api.schemas.comercial import (
     GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
     PreviewPlanPagoVentaV2PorBloquesRequest,
     PreviewPlanPagoVentaV2PorBloquesResponse,
+    PreviewPlanPagoVentaV2SinVentaResponse,
     InstrumentoCompraventaData,
     InstrumentoCompraventaListData,
     InstrumentoCompraventaListResponse,
@@ -2321,7 +2322,7 @@ def define_condiciones_comerciales_venta(
 
 def _build_plan_pago_v2_por_bloques_command(
     *,
-    id_venta: int,
+    id_venta: int | None,
     request: GeneratePlanPagoVentaV2PorBloquesRequest,
     context: CommandContext,
 ) -> GeneratePlanPagoVentaV2PorBloquesCommand:
@@ -2376,9 +2377,9 @@ def _plan_pago_v2_preview_response_data(
     *,
     command: GeneratePlanPagoVentaV2PorBloquesCommand,
     preview: dict,
+    include_id_venta: bool = True,
 ) -> dict:
-    return {
-        "id_venta": command.id_venta,
+    data = {
         "metodo_plan_pago": METODO_PLAN_POR_BLOQUES,
         "tipo_pago": command.tipo_pago.strip().upper(),
         "moneda": command.moneda.strip().upper(),
@@ -2452,6 +2453,9 @@ def _plan_pago_v2_preview_response_data(
             for obligacion in preview["obligaciones"]
         ],
     }
+    if include_id_venta:
+        data["id_venta"] = command.id_venta
+    return data
 
 
 @router.get(
@@ -2497,6 +2501,51 @@ def get_plan_pago_venta_v2_integral(
 
     return PlanPagoVentaV2IntegralResponse(
         data=PlanPagoVentaV2IntegralData(**result.data)
+    )
+
+
+@router.post(
+    "/api/v1/ventas/plan-pago-v2/preview",
+    response_model=PreviewPlanPagoVentaV2SinVentaResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def preview_plan_pago_venta_v2_por_bloques_sin_venta(
+    request: PreviewPlanPagoVentaV2PorBloquesRequest,
+    db: Session = Depends(get_db),
+) -> PreviewPlanPagoVentaV2SinVentaResponse | JSONResponse:
+    command = _build_plan_pago_v2_por_bloques_command(
+        id_venta=None,
+        request=request,
+        context=CommandContext(),
+    )
+    service = BuildPlanPagoVentaV2PorBloquesPreviewService(
+        indice_financiero_query=IndiceFinancieroRepository(db)
+    )
+
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo previsualizar el plan de pago V2 por bloques.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return PreviewPlanPagoVentaV2SinVentaResponse(
+        data=_plan_pago_v2_preview_response_data(
+            command=command, preview=result.data, include_id_venta=False
+        )
     )
 
 

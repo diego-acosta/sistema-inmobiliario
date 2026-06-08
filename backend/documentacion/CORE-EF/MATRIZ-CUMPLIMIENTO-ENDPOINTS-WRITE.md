@@ -35,6 +35,7 @@
 | comercial | POST | /api/v1/ventas/directa/confirmar-venta-completa | confirmar_venta_directa_completa | CUMPLE | CUMPLE | CUMPLE | CUMPLE | NO CUMPLE | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | sí (referencias en backend/tests) | PARCIAL | Validación profunda repository/SQL pendiente en este incremento. |
 | comercial | POST | /api/v1/reservas-venta/{id_reserva_venta}/generar-venta | generate_venta_from_reserva_venta | CUMPLE | CUMPLE | CUMPLE | CUMPLE | CUMPLE | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | sí (referencias en backend/tests) | PARCIAL | Validación profunda repository/SQL pendiente en este incremento. |
 | comercial | POST | /api/v1/ventas/{id_venta}/definir-condiciones-comerciales | define_condiciones_comerciales_venta | CUMPLE | CUMPLE | CUMPLE | CUMPLE | CUMPLE | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | NO_CONFIRMADO | PARCIAL | Validación profunda repository/SQL pendiente en este incremento. |
+| comercial | POST | /api/v1/ventas/plan-pago-v2/preview | preview_plan_pago_venta_v2_por_bloques_sin_venta | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | sí (referencias en backend/tests) | PREVIEW_READLIKE | NO APLICA | Implementado en #164. Preview sin venta persistida para Wizard Venta Completa V3; persistencia negocio: no; outbox: no; lock lógico: no; versionado: no. |
 | comercial | POST | /api/v1/ventas/{id_venta}/plan-pago-v2/preview | preview_plan_pago_venta_v2_por_bloques | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | NO APLICA | sí (referencias en backend/tests) | PREVIEW_READLIKE | NO APLICA | Endpoint POST de preview: no confirmado como write persistente de negocio. |
 | comercial | POST | /api/v1/ventas/{id_venta}/plan-pago-v2/generar | generate_plan_pago_venta_v2_por_bloques | CUMPLE | CUMPLE | CUMPLE | CUMPLE | NO CUMPLE | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | sí (referencias en backend/tests) | PARCIAL | Validación profunda repository/SQL pendiente en este incremento. |
 | comercial | POST | /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple | generate_plan_pago_venta_cuotas_iguales_simple | CUMPLE | CUMPLE | CUMPLE | CUMPLE | NO CUMPLE | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | sí (referencias en backend/tests) | PARCIAL | Validación profunda repository/SQL pendiente en este incremento. |
@@ -119,6 +120,7 @@
 | locativo | POST | /api/v1/solicitudes-alquiler/{id_solicitud_alquiler}/convertir-a-reserva | convertir_solicitud_alquiler_a_reserva | CUMPLE | CUMPLE | CUMPLE | CUMPLE | NO CUMPLE | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | no confirmado | NO_CONFIRMADO | PARCIAL | Validación profunda repository/SQL pendiente en este incremento. |
 
 ## Endpoints reclasificados en este incremento
+- `/api/v1/ventas/plan-pago-v2/preview` → `PREVIEW_READLIKE`; implementado en #164 como preview sin venta persistida para Wizard Venta Completa V3; controles write (`X-Op-Id`, outbox, idempotencia, `If-Match-Version`) se marcan **NO APLICA** porque no persiste negocio.
 - `/api/v1/ventas/{id_venta}/plan-pago-v2/preview` → `PREVIEW_READLIKE`; controles write (`X-Op-Id`, outbox, idempotencia, `If-Match-Version`) se marcan **NO APLICA** hasta confirmar persistencia.
 - `/api/v1/financiero/personas/{id_persona}/simular-pago` → `SIMULACION_READLIKE`; se evita penalizar como **NO CUMPLE** por ausencia de headers write en un flujo de simulación.
 - `/api/v1/financiero/inbox` → `COMMAND_WRITE_TECNICO`; se distingue de command de negocio y se evalúa con criterio técnico.
@@ -164,6 +166,7 @@ Se consideran migrados/actualizados en alcance **HTTP/headers y contrato de erro
 
 ### 2) Read-like / simulación (no write de negocio)
 Quedan explícitamente fuera del grupo de migración HTTP/headers de write de negocio:
+- `POST /api/v1/ventas/plan-pago-v2/preview` → **PREVIEW_READLIKE** (preview sin venta persistida para Wizard Venta Completa V3, implementado en #164).
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview` → **PREVIEW_READLIKE**.
 - `POST /api/v1/financiero/personas/{id_persona}/simular-pago` → **SIMULACION_READLIKE**.
 - **Recibo de pago agrupado**: actualmente se trata como salida **read-like**/consulta; **no** constituye comprobante fiscal persistido.

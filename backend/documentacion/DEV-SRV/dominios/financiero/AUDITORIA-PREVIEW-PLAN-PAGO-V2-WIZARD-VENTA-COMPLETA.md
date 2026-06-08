@@ -14,13 +14,13 @@ POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview
 
 Por esa razón **no debe integrarse como endpoint objetivo del Wizard Venta Completa V3 antes de confirmar**, porque en ese momento la venta todavía no existe, el wizard no tiene `id_venta` real y no debe inventar un identificador para cumplir una ruta que semánticamente pertenece a una venta persistida.
 
-Se recomienda crear un endpoint nuevo de preview sin `id_venta` en path:
+Estado posterior a #164: se implemento el endpoint nuevo de preview sin `id_venta` en path:
 
 ```text
 POST /api/v1/ventas/plan-pago-v2/preview
 ```
 
-El endpoint nuevo debería reutilizar el mismo motor de preview, aceptar el mismo cuerpo `plan_pago_v2` sin `id_venta` en path ni body, devolver simulación sin side effects y mantener clasificación CORE-EF `PREVIEW_READLIKE`.
+El endpoint implementado reutiliza el mismo motor de preview, acepta el mismo cuerpo `plan_pago_v2` sin `id_venta` en path ni body, devuelve simulación sin side effects y mantiene clasificación CORE-EF `PREVIEW_READLIKE`. La respuesta del endpoint sin venta no incluye `id_venta`.
 
 ## 2. Alcance y fuentes revisadas
 
@@ -342,11 +342,11 @@ Esa ampliación debe ser solo simulada y no debe persistir `composicion_obligaci
 
 | # | Pregunta | Respuesta |
 | --- | --- | --- |
-| 1 | Qué endpoint HTTP existe hoy para preview de Plan Pago V2. | `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview`. |
+| 1 | Qué endpoint HTTP existe hoy para preview de Plan Pago V2. | Existen dos contratos: `POST /api/v1/ventas/plan-pago-v2/preview` implementado en #164 para preview sin venta persistida, y `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview` como preview legacy vinculado a venta persistida. |
 | 2 | Qué payload espera. | `tipo_pago`, `monto_total_plan`, `moneda`, `bloques`, `observaciones`; cada bloque acepta tipo, importes, fechas, cuotas, método de liquidación, interés directo, indexación y `cuotas_refuerzo`. |
-| 3 | Si requiere `id_venta` existente. | A nivel HTTP sí requiere `id_venta` en la ruta. La implementación auditada no valida existencia de venta antes de simular, pero el contrato público presupone un identificador de venta. |
-| 4 | Si puede usarse antes de crear/persistir la venta. | No como endpoint objetivo del Wizard V3. El motivo no es persistencia: el endpoint actual es read-like/no persistente. El bloqueo es contractual, porque requiere `{id_venta}` en path y devuelve `id_venta`; antes de confirmar no existe una venta real y usar un dummy sería inválido. |
-| 5 | Si acepta `monto_total_plan`, `moneda` y bloques sin `id_venta` real. | El body sí acepta esos campos sin ids internos; la ruta no permite omitir `id_venta`. |
+| 3 | Si requiere `id_venta` existente. | El endpoint sin venta implementado en #164 no requiere `id_venta`. El endpoint legacy con `{id_venta}` presupone un identificador de venta persistida y conserva `id_venta` en la respuesta. |
+| 4 | Si puede usarse antes de crear/persistir la venta. | Sí, mediante `POST /api/v1/ventas/plan-pago-v2/preview` implementado en #164. No debe usarse el endpoint legacy con `{id_venta}` ni IDs ficticios antes de confirmar. |
+| 5 | Si acepta `monto_total_plan`, `moneda` y bloques sin `id_venta` real. | Sí. El endpoint sin venta acepta el mismo body del preview V2 por bloques, sin `id_venta` en path ni body. |
 | 6 | Si soporta `cuotas_refuerzo` internas. | Sí, para `TRAMO_CUOTAS`, con validaciones de rango, duplicados y unidades. |
 | 7 | Si devuelve obligaciones/cuotas simuladas. | Sí, devuelve `obligaciones` simuladas con número, bloque, tipo item, vencimiento, importe, moneda y datos de indexación cuando aplica. |
 | 8 | Si devuelve composiciones. | Parcial/no. Devuelve `concepto_financiero_codigo`, pero no lista `composiciones` simuladas por obligación. |
@@ -355,8 +355,8 @@ Esa ampliación debe ser solo simulada y no debe persistir `composicion_obligaci
 | 11 | Si devuelve errores funcionales útiles para UI. | Sí parcialmente. Errores del servicio salen como HTTP 400 `APPLICATION_ERROR` con `details.errors`; errores de schema salen como 422; excepciones no controladas serían 500. |
 | 12 | Si el preview hace lecturas de índices reales o solo usa valores base enviados. | Hace lecturas read-only de índices publicados cuando se inyecta `IndiceFinancieroRepository`; si no encuentra valor aplicable, proyecta sin inventar índice usando el capital/base enviada. |
 | 13 | Si el preview tiene side effects o es puramente read-like. | Es read-like para plan/venta/obligaciones. Los tests verifican que no persiste plan, bloques, generación, obligaciones, composiciones ni obligados. La consulta de índices es solo lectura. |
-| 14 | Qué necesita el Wizard V3 para consumirlo. | Un endpoint sin `id_venta`, payload derivado de `plan_pago_v2` del wizard, respuesta con cronograma simulado, errores UI-friendly y, si se requiere, composiciones simuladas explícitas. |
-| 15 | Si hace falta un endpoint nuevo de preview de venta completa sin persistir. | Sí. Se recomienda `POST /api/v1/ventas/plan-pago-v2/preview` como mínimo para plan; si el wizard necesita validar toda la venta en conjunto, un preview de venta completa puede ser una etapa posterior. |
+| 14 | Qué necesita el Wizard V3 para consumirlo. | Debe consumir `POST /api/v1/ventas/plan-pago-v2/preview`, mapear su `plan_pago_v2` al body del preview, tratar la respuesta como simulación no confirmada y no enviar `id_venta` ficticio. |
+| 15 | Si hace falta un endpoint nuevo de preview de venta completa sin persistir. | Para plan de pago, el mínimo ya está implementado en #164 como `POST /api/v1/ventas/plan-pago-v2/preview`. Si el wizard necesita validar toda la venta en conjunto, un preview de venta completa puede ser una etapa posterior. |
 
 ## 8. Soporte funcional auditado
 
@@ -463,7 +463,7 @@ Ese endpoint debería orquestar validaciones read-only y reutilizar el preview d
 
 ## 10. Decisión CORE-EF
 
-Clasificación del endpoint actual y del endpoint sugerido:
+Clasificación del endpoint legacy y del endpoint sin venta implementado en #164:
 
 ```text
 PREVIEW_READLIKE
@@ -480,9 +480,9 @@ PREVIEW_READLIKE
 | Rollback/transacción | NO APLICA para negocio: no hay frontera transaccional de escritura. Si consulta índices, la operación es read-only. |
 | Errores | Debe devolver `ErrorResponse` funcional para validaciones y nunca 500 por payload inválido esperado. |
 
-## 11. Tests futuros recomendados
+## 11. Cobertura esperada/implementada para el endpoint sin venta
 
-Para el endpoint nuevo sin `id_venta`:
+El PR #164 agrega cobertura para el endpoint nuevo sin `id_venta` sobre estos escenarios:
 
 1. Preview sin `id_venta` con `SIN_INTERES`.
 2. Preview sin `id_venta` con `INTERES_DIRECTO`.
@@ -511,14 +511,14 @@ Para el endpoint nuevo sin `id_venta`:
 
 ## 13. Conclusión
 
-El backend ya tiene un motor de preview útil, read-like/no persistente y cubierto por tests para Plan Pago V2 por bloques, incluyendo interés directo, indexación, tramos y cuotas_refuerzo internas. La limitación principal no está en persistencia ni en el cálculo, sino en el contrato HTTP público actual: exige `{id_venta}` en la ruta y devuelve `id_venta`, lo que lo vuelve inadecuado como integración directa del Wizard Venta Completa V3 antes de confirmar.
+El backend ya tiene un motor de preview útil, read-like/no persistente y cubierto por tests para Plan Pago V2 por bloques, incluyendo interés directo, indexación, tramos y cuotas_refuerzo internas. La limitación auditada no estaba en persistencia ni en el cálculo, sino en el contrato HTTP público anterior: exigía `{id_venta}` en la ruta y devolvía `id_venta`, lo que lo volvía inadecuado como integración directa del Wizard Venta Completa V3 antes de confirmar.
 
 Decisión final: **Opción B**.
 
-Implementar un endpoint nuevo sin `id_venta` en path:
+Endpoint implementado en #164 sin `id_venta` en path:
 
 ```text
 POST /api/v1/ventas/plan-pago-v2/preview
 ```
 
-El nuevo endpoint debe reutilizar el servicio de preview, mantener naturaleza `PREVIEW_READLIKE`, no exigir headers write, no persistir entidades, no generar outbox, leer índices solo de forma read-only y devolver errores funcionales útiles para UI.
+El nuevo endpoint reutiliza el servicio de preview, mantiene naturaleza `PREVIEW_READLIKE`, no exige headers write, no persiste entidades, no genera outbox, lee índices solo de forma read-only y devuelve errores funcionales útiles para UI.

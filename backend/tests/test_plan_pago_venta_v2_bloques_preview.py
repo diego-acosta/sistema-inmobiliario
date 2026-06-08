@@ -63,6 +63,258 @@ def _payload_tramo_por_capital_total() -> dict:
     }
 
 
+URL_SIN_VENTA = "/api/v1/ventas/plan-pago-v2/preview"
+
+
+def _payload_contado() -> dict:
+    return {
+        "tipo_pago": "CONTADO",
+        "monto_total_plan": "10000000.00",
+        "moneda": "ARS",
+        "bloques": [
+            {
+                "tipo_bloque": "CONTADO",
+                "importe_total_bloque": "10000000.00",
+                "fecha_vencimiento": "2026-07-10",
+            }
+        ],
+        "observaciones": None,
+    }
+
+
+def _payload_financiado_sin_interes() -> dict:
+    return {
+        "tipo_pago": "FINANCIADO",
+        "monto_total_plan": "10000000.00",
+        "moneda": "ARS",
+        "bloques": [
+            {
+                "tipo_bloque": "ANTICIPO",
+                "importe_total_bloque": "3000000.00",
+                "fecha_vencimiento": "2026-07-10",
+            },
+            {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "importe_total_bloque": "7000000.00",
+                "cantidad_cuotas": 12,
+                "fecha_primer_vencimiento": "2026-08-10",
+                "periodicidad": "MENSUAL",
+                "metodo_liquidacion": "SIN_INTERES",
+            },
+        ],
+        "observaciones": None,
+    }
+
+
+def _preview_side_effect_tables(db_session) -> list[str]:
+    tables = [
+        "venta",
+        "plan_pago_venta",
+        "plan_pago_venta_bloque",
+        "relacion_generadora",
+        "obligacion_financiera",
+        "composicion_obligacion",
+        "obligacion_obligado",
+    ]
+    if db_session.execute(text("SELECT to_regclass('public.outbox_event')")).scalar():
+        tables.append("outbox_event")
+    return tables
+
+
+def _counts(db_session, tables: list[str]) -> dict[str, int]:
+    return {table: _count(db_session, table) for table in tables}
+
+
+def test_endpoint_preview_sin_id_venta_contado_no_devuelve_id_venta_ni_persiste(
+    db_session, client
+) -> None:
+    tables = _preview_side_effect_tables(db_session)
+    before = _counts(db_session, tables)
+
+    response = client.post(URL_SIN_VENTA, json=_payload_contado())
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert "id_venta" not in data
+    assert data["metodo_plan_pago"] == "PLAN_POR_BLOQUES"
+    assert data["tipo_pago"] == "CONTADO"
+    assert data["total_calculado"] == "10000000.00"
+    assert data["total_con_interes"] == "10000000.00"
+    assert len(data["bloques"]) == 1
+    assert len(data["obligaciones"]) == 1
+    assert data["obligaciones"][0]["tipo_item_cronograma"] == "SALDO"
+    assert data["obligaciones"][0]["fecha_vencimiento"] == "2026-07-10"
+    assert data["obligaciones"][0]["importe_total"] == "10000000.00"
+    assert _counts(db_session, tables) == before
+
+
+def test_endpoint_preview_sin_id_venta_financiado_sin_interes_devuelve_cuotas(
+    db_session, client
+) -> None:
+    tables = _preview_side_effect_tables(db_session)
+    before = _counts(db_session, tables)
+
+    response = client.post(URL_SIN_VENTA, json=_payload_financiado_sin_interes())
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert "id_venta" not in data
+    assert data["tipo_pago"] == "FINANCIADO"
+    assert data["total_calculado"] == "10000000.00"
+    assert len(data["bloques"]) == 2
+    assert len(data["obligaciones"]) == 13
+    assert data["obligaciones"][0]["tipo_item_cronograma"] == "ANTICIPO"
+    assert data["obligaciones"][0]["importe_total"] == "3000000.00"
+    cuotas = data["obligaciones"][1:]
+    assert all(cuota["tipo_item_cronograma"] == "CUOTA" for cuota in cuotas)
+    assert sum(Decimal(cuota["importe_total"]) for cuota in cuotas) == Decimal(
+        "7000000.00"
+    )
+    assert _counts(db_session, tables) == before
+
+
+def test_endpoint_preview_sin_id_venta_interes_directo_devuelve_total_raiz(
+    db_session, client
+) -> None:
+    tables = _preview_side_effect_tables(db_session)
+    before = _counts(db_session, tables)
+    payload = _payload_tramo_por_capital_total()
+    payload["monto_total_plan"] = "1000000.00"
+    payload["bloques"][0].update(
+        {
+            "importe_total_bloque": "1000000.00",
+            "cantidad_cuotas": 12,
+            "metodo_liquidacion": "INTERES_DIRECTO",
+            "tasa_interes_directo_periodica": "0.02",
+            "cantidad_periodos": 12,
+            "base_calculo_interes": "CAPITAL_INICIAL_BLOQUE",
+        }
+    )
+
+    response = client.post(URL_SIN_VENTA, json=payload)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert "id_venta" not in data
+    assert data["total_calculado"] == "1000000.00"
+    assert data["total_con_interes"] == "1240000.00"
+    assert len(data["obligaciones"]) == 12
+    assert sum(
+        Decimal(obligacion["importe_total"])
+        for obligacion in data["obligaciones"]
+    ) == Decimal("1240000.00")
+    assert _counts(db_session, tables) == before
+
+
+def test_endpoint_preview_sin_id_venta_indexacion_lee_indices_readonly_y_no_persiste(
+    db_session, client
+) -> None:
+    id_indice = _crear_indice_preview(db_session, "IPC_PREVIEW_SIN_VENTA")
+    id_valor = _crear_valor_indice_preview(
+        db_session, id_indice, "2026-08-10", "110.00000000"
+    )
+    tables = _preview_side_effect_tables(db_session)
+    before = _counts(db_session, tables)
+    payload = _payload_tramo_por_capital_total()
+    payload["monto_total_plan"] = "1000.00"
+    payload["bloques"][0].update(
+        {
+            "importe_total_bloque": "1000.00",
+            "cantidad_cuotas": 1,
+            "fecha_primer_vencimiento": "2026-08-10",
+            "metodo_liquidacion": "INDEXACION",
+            "id_indice_financiero": id_indice,
+            "fecha_base_indice": "2026-05-01",
+            "valor_base_indice": "100.00000000",
+            "modo_indexacion": "POR_COEFICIENTE",
+            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+            "tipo_generacion_indexada": "DEFINITIVA",
+            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    )
+
+    response = client.post(URL_SIN_VENTA, json=payload)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert "id_venta" not in data
+    assert data["total_calculado"] == "1000.00"
+    assert data["total_ajuste_indexacion"] == "100.00"
+    assert data["total_con_indexacion"] == "1100.00"
+    obligacion = data["obligaciones"][0]
+    assert obligacion["estado_preview_indexacion"] == "CON_INDICE_APLICADO"
+    assert obligacion["id_indice_financiero"] == id_indice
+    assert obligacion["id_indice_financiero_valor"] == id_valor
+    assert obligacion["coeficiente_indexacion"] == "1.10000000"
+    assert _counts(db_session, tables) == before
+
+
+def test_endpoint_preview_sin_id_venta_cuotas_refuerzo_internas(
+    client,
+) -> None:
+    payload = _payload_tramo_por_capital_total()
+    payload["monto_total_plan"] = "24000000.00"
+    payload["bloques"][0].update(
+        {
+            "importe_total_bloque": "24000000.00",
+            "cantidad_cuotas": 24,
+            "fecha_primer_vencimiento": "2026-01-10",
+            "metodo_liquidacion": "SIN_INTERES",
+            "cuotas_refuerzo": [
+                {
+                    "numero_cuota": 6,
+                    "etiqueta": "Refuerzo cuota 6",
+                    "unidades_refuerzo": "1.00",
+                },
+                {
+                    "numero_cuota": 12,
+                    "etiqueta": "Refuerzo cuota 12",
+                    "unidades_refuerzo": "1.00",
+                },
+            ],
+        }
+    )
+
+    response = client.post(URL_SIN_VENTA, json=payload)
+
+    assert response.status_code == 200, response.text
+    obligaciones = response.json()["data"]["obligaciones"]
+    assert len(obligaciones) == 24
+    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 22
+    assert (
+        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO")
+        == 2
+    )
+    assert obligaciones[5]["tipo_item_cronograma"] == "REFUERZO"
+    assert obligaciones[5]["numero_cuota_asociada"] == 6
+    assert obligaciones[11]["tipo_item_cronograma"] == "REFUERZO"
+    assert obligaciones[11]["numero_cuota_asociada"] == 12
+
+
+def test_endpoint_preview_sin_id_venta_payload_invalido_devuelve_error(
+    client,
+) -> None:
+    payload = _payload_financiado_sin_interes()
+    payload["monto_total_plan"] = "9999999.99"
+
+    response = client.post(URL_SIN_VENTA, json=payload)
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error_code"] == "APPLICATION_ERROR"
+    assert body["details"]["errors"] == ["SUMA_BLOQUES_INVALIDA"]
+
+
+def test_endpoint_preview_con_id_venta_sigue_devolviendo_id_venta(client) -> None:
+    response = client.post(URL.format(id_venta=1), json=_payload_contado())
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["id_venta"] == 1
+    assert data["total_calculado"] == "10000000.00"
+
 def test_preview_tramo_por_capital_total_ajusta_ultima_cuota_y_suma_exacta() -> None:
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(_command())
 
