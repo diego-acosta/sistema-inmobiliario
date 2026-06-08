@@ -75,7 +75,7 @@ Para preview previo a confirmacion, el endpoint objetivo del Wizard Venta Comple
 POST /api/v1/ventas/plan-pago-v2/preview
 ```
 
-Estado de implementacion: pendiente/no implementado en el router actual. No debe reemplazarse con `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview` usando un `id_venta` ficticio, porque ese contrato corresponde a una venta ya persistida.
+Estado de implementacion: implementado en backend por #164 y consumido por el prototipo V3 desde la revision/preview del plan. No debe reemplazarse con `POST /api/v1/ventas/{id_venta}/plan-pago-v2/preview` usando un `id_venta` ficticio, porque ese contrato corresponde a una venta ya persistida. El response del preview sin venta no incluye `id_venta`.
 
 Ambos endpoints reciben `plan_pago_v2` con bloques y propagan los metodos de
 liquidacion:
@@ -757,7 +757,11 @@ POST /api/v1/ventas/plan-pago-v2/preview
 ```
 
 Ese preview es `PREVIEW_READLIKE`: no crea venta, no genera obligaciones reales,
-no cambia estados comerciales y no exige headers write.
+no cambia estados comerciales y no exige headers write. La UI debe construir el
+payload desde el estado local del wizard, mostrar errores `ErrorResponse` 400 al
+usuario, manejar errores de conexion de forma controlada y recordar que el
+response esperado no trae `id_venta`. La confirmacion real queda como paso
+posterior y no se dispara desde la accion de preview.
 
 ### Paso 7 - Confirmar
 
@@ -1090,9 +1094,11 @@ mantiene header superior, area central scrolleable con panel lateral y footer
 inferior fijo para que `Anterior` y `Siguiente` no salgan del viewport cuando el
 buscador tenga muchos resultados.
 
-El prototipo V3 no pide `id_venta`, no calcula cronograma local, no muestra
-forma de pago ni total derivado en Pantalla 1 y no implementa todavia la carga
-de objetos.
+El prototipo V3 no pide `id_venta`, no calcula cronograma local y no persiste
+venta durante la carga. En la pantalla de resumen/revision permite simular el
+Plan Pago V2 consumiendo `POST /api/v1/ventas/plan-pago-v2/preview` con el
+estado local del wizard; el preview no crea venta y su response no incluye
+`id_venta`. La confirmacion de venta real sigue pendiente como paso posterior.
 
 El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
 queda descartado como base principal porque su flujo no representa la UX
@@ -1110,8 +1116,8 @@ Naturaleza de endpoints:
 - `POST /api/v1/ventas/directa/confirmar-venta-completa`:
   `COMMAND_WRITE_NEGOCIO`.
 - `POST /api/v1/ventas/plan-pago-v2/preview`: `PREVIEW_READLIKE`; endpoint
-  objetivo pendiente/no implementado para preview previo a confirmacion sin
-  `id_venta`.
+  implementado para preview previo a confirmacion sin `id_venta`. No persiste
+  venta, no genera obligaciones reales y no requiere headers write.
 
 Headers:
 
