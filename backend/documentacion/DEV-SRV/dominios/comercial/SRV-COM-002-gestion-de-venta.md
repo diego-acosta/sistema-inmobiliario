@@ -26,18 +26,83 @@ No cubre:
 - reserva_venta
 - persona
 
+## Decision vigente: venta real, borrador de wizard y preview
+
+### Venta real
+
+La entidad `venta` representa una operacion comercial confirmada o ya formalmente existente. En el Wizard Venta Completa V3, la `venta` real no se persiste durante la carga del formulario: se crea recien al confirmar y, cuando se crea desde el wizard completo, nace en estado `confirmada`.
+
+Estados principales de `venta` para el flujo Wizard Venta Completa V3:
+
+- `confirmada`;
+- `cancelada`;
+- `finalizada`.
+
+`borrador` no debe usarse como estado normal de `venta` para guardar progreso del Wizard Venta Completa V3. Si se conserva en contratos o flujos historicos, queda clasificado como compatibilidad heredada o pendiente de revision, no como modelo principal del wizard completo.
+
+### Borrador de Wizard Venta Completa V3
+
+Si el usuario necesita guardar progreso de carga, el concepto debe modelarse como una entidad separada, por ejemplo `borrador_venta_wizard`. Clasificacion: soporte UX/tecnico del flujo comercial; no es nucleo `venta` y no redefine la semantica de la venta real.
+
+Uso conceptual de `borrador_venta_wizard`:
+
+- guardar progreso de carga;
+- retomar despues;
+- descartar si no se concreta;
+- convertirse en `venta` confirmada al finalizar.
+
+Estados sugeridos:
+
+- `en_carga`;
+- `descartado`;
+- `convertido`;
+- `vencido`.
+
+Restricciones:
+
+- `borrador_venta_wizard` no es `venta`;
+- no genera obligaciones;
+- no genera Plan Pago V2 real;
+- no cambia disponibilidad definitiva;
+- no genera rescision;
+- no debe confundirse con una `venta` `cancelada`.
+
+### Preview previo a confirmacion
+
+Preview Plan Pago V2 no crea `venta`, no genera obligaciones reales y no cambia estados comerciales. Su clasificacion CORE-EF es `PREVIEW_READLIKE`, por lo que no debe forzar headers write.
+
+Para el Wizard Venta Completa V3 antes de confirmar, el endpoint objetivo debe ser sin `id_venta` porque la venta todavia no existe:
+
+```text
+POST /api/v1/ventas/plan-pago-v2/preview
+```
+
+Estado de implementacion: pendiente/no implementado en el router actual. El endpoint existente con `id_venta` en path pertenece a preview sobre una venta ya persistida y no debe usarse con IDs ficticios para el wizard antes de confirmar.
+
+### Confirmacion de venta completa
+
+Al confirmar una venta completa, el backend debe ejecutar la operacion compuesta correspondiente:
+
+- crear `venta` en estado `confirmada`;
+- crear objetos de venta;
+- crear compradores;
+- crear Plan Pago V2 real;
+- generar obligaciones;
+- actualizar disponibilidad/estado cuando corresponda.
+
 ## Modos del servicio
 
 ### Alta
 Permite registrar una nueva operacion de venta.
 
-Alcance implementado actual para alta derivada:
+Alcance implementado actual para alta derivada heredada:
 - una `venta` puede generarse desde una `reserva_venta` `confirmada`
-- en esa conversion la `venta` nace en estado `borrador`
+- en esa conversion heredada la `venta` nace en estado `borrador`
 - la `venta` conserva referencia explicita a la reserva origen
 - la conversion copia objetos y participaciones vigentes de la reserva
 - la conversion no crea `ocupacion`
 - la conversion no genera obligaciones financieras ni `relacion_generadora`
+- este comportamiento no es el modelo principal del Wizard Venta Completa V3, donde la venta se persiste recien al confirmar y nace `confirmada`
 
 ### Integracion financiera V1
 
@@ -212,7 +277,10 @@ Permite visualizar la informacion y estado de la venta.
 - DER inmobiliario
 
 ## Pendientes abiertos
-- definicion completa del ciclo de estados de venta
+- revisar flujos historicos que conservan `venta.borrador` para separarlos del Wizard Venta Completa V3
+- implementar, si se aprueba, `borrador_venta_wizard` con persistencia y contratos propios
+- implementar, si se aprueba, `POST /api/v1/ventas/plan-pago-v2/preview` sin `id_venta` para preview previo a confirmacion
+- definicion completa del ciclo de estados de venta fuera del Wizard Venta Completa V3
 - reglas de cancelacion y reversion
 - relacion exacta entre venta y condiciones comerciales
 - integracion avanzada con el dominio financiero para cuotas y saldo extraordinario

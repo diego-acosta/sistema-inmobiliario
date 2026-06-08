@@ -17,6 +17,8 @@ Incluye reservas, ventas, instrumentos, cesiones, escrituracion y rescisiones.
 - descripcion: la entidad fue creada pero aun no alcanzo un estado operativo consolidado.
 - estado_inicial: si
 - estado_final: no
+- decision_comercial: para `venta`, queda como estado historico/heredado o pendiente de revision; no aplica como estado normal para guardar progreso del Wizard Venta Completa V3.
+- observaciones: el progreso del Wizard Venta Completa V3 debe modelarse fuera de `venta`, mediante una entidad conceptual separada como `borrador_venta_wizard`.
 
 ### EST-COM-002 - Activa
 - codigo: activa
@@ -52,6 +54,16 @@ Incluye reservas, ventas, instrumentos, cesiones, escrituracion y rescisiones.
 - observaciones: aplica cuando exista politica temporal de vencimiento de reserva.
 
 ## B. Estados de ventas
+
+### Decision vigente para venta real
+
+La entidad `venta` representa una operacion comercial confirmada o ya formalmente existente dentro del dominio `comercial`. Para el flujo Wizard Venta Completa V3, los estados principales de `venta` son:
+
+- `confirmada`;
+- `cancelada`;
+- `finalizada`.
+
+`borrador` no debe usarse como estado normal de `venta` para persistir progreso de carga del Wizard Venta Completa V3. Si el codigo `borrador` se conserva en este catalogo por compatibilidad historica, debe interpretarse como no aplicable al flujo Wizard Venta Completa V3 o pendiente de revision funcional.
 
 ### EST-COM-006 - En proceso
 - codigo: en_proceso
@@ -232,6 +244,27 @@ Incluye reservas, ventas, instrumentos, cesiones, escrituracion y rescisiones.
 - descripcion: se detecto reutilizacion de op_id con diferencias incompatibles respecto de la operacion original.
 - estado_inicial: no
 - estado_final: si
+
+---
+
+## H. Pendiente: estados sugeridos para futura entidad `borrador_venta_wizard`
+
+Los siguientes codigos son candidatos conceptuales para una futura entidad
+`borrador_venta_wizard`:
+
+- `en_carga`;
+- `descartado`;
+- `convertido`;
+- `vencido`.
+
+Estos estados no forman parte todavia del catalogo formal implementable
+`EST-COM-XXX`, porque actualmente no existe tabla, API, servicio ni tests para
+`borrador_venta_wizard`. Deberan formalizarse como entradas `EST-COM` solo si se
+implementa esa entidad con persistencia, contratos y cobertura de tests.
+
+Esta nota no cambia la decision vigente: `venta.borrador` no es el flujo
+principal del Wizard Venta Completa V3, la venta nace `confirmada` al confirmar
+venta completa, y el progreso del wizard no es una `venta`.
 
 ---
 
