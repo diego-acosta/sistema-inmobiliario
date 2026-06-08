@@ -247,40 +247,24 @@ La entidad `venta` representa una operacion comercial confirmada o ya formalment
 
 ---
 
-## H. Estados de borrador de Wizard Venta Completa V3
+## H. Pendiente: estados sugeridos para futura entidad `borrador_venta_wizard`
 
-### EST-COM-027 - En carga
-- codigo: en_carga
-- tipo: entidad
-- aplica_a: borrador_venta_wizard
-- descripcion: el usuario guardo progreso del wizard y puede retomarlo antes de confirmar la venta.
-- estado_inicial: si
-- estado_final: no
+Los siguientes codigos son candidatos conceptuales para una futura entidad
+`borrador_venta_wizard`:
 
-### EST-COM-028 - Descartado
-- codigo: descartado
-- tipo: entidad
-- aplica_a: borrador_venta_wizard
-- descripcion: el progreso guardado fue descartado y no se concretara como venta.
-- estado_inicial: no
-- estado_final: si
+- `en_carga`;
+- `descartado`;
+- `convertido`;
+- `vencido`.
 
-### EST-COM-029 - Convertido
-- codigo: convertido
-- tipo: entidad
-- aplica_a: borrador_venta_wizard
-- descripcion: el progreso guardado fue usado para confirmar una venta real y queda trazado como convertido.
-- estado_inicial: no
-- estado_final: si
+Estos estados no forman parte todavia del catalogo formal implementable
+`EST-COM-XXX`, porque actualmente no existe tabla, API, servicio ni tests para
+`borrador_venta_wizard`. Deberan formalizarse como entradas `EST-COM` solo si se
+implementa esa entidad con persistencia, contratos y cobertura de tests.
 
-### EST-COM-030 - Vencido
-- codigo: vencido
-- tipo: entidad
-- aplica_a: borrador_venta_wizard
-- descripcion: el progreso guardado perdio vigencia por una politica temporal del wizard.
-- estado_inicial: no
-- estado_final: si
-- observaciones: aplica solo si se define una politica temporal para borradores de wizard.
+Esta nota no cambia la decision vigente: `venta.borrador` no es el flujo
+principal del Wizard Venta Completa V3, la venta nace `confirmada` al confirmar
+venta completa, y el progreso del wizard no es una `venta`.
 
 ---
 
