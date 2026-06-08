@@ -758,10 +758,33 @@ POST /api/v1/ventas/plan-pago-v2/preview
 
 Ese preview es `PREVIEW_READLIKE`: no crea venta, no genera obligaciones reales,
 no cambia estados comerciales y no exige headers write. La UI debe construir el
-payload desde el estado local del wizard, mostrar errores `ErrorResponse` 400 al
-usuario, manejar errores de conexion de forma controlada y recordar que el
-response esperado no trae `id_venta`. La confirmacion real queda como paso
-posterior y no se dispara desde la accion de preview.
+payload desde el estado local del wizard y ejecutar el preview automaticamente
+al presionar `Siguiente` desde la edicion del plan contado o desde el resumen
+del plan financiado completo. Si el backend responde OK, el wizard avanza a la
+pantalla obligatoria `PREVIEW_PLAN_PAGO`; si devuelve `ErrorResponse` 400 o hay
+error de conexion, el wizard permanece en la pantalla actual y muestra un error
+controlado. El response esperado no trae `id_venta`. La confirmacion real queda
+como paso posterior y no se dispara desde el preview.
+
+### Paso 6B - PREVIEW_PLAN_PAGO
+
+Pantalla obligatoria previa a la revision general. Muestra el resultado backend
+del preview sin venta persistida:
+
+- `total_calculado`;
+- `total_con_interes`;
+- `total_ajuste_indexacion`;
+- `total_con_indexacion`;
+- cantidad de obligaciones simuladas;
+- listado simple de obligaciones con `fecha_vencimiento`,
+  `tipo_item_cronograma`, `numero_cuota_asociada` si existe e `importe_total`.
+
+Los items `REFUERZO` deben mostrarse visualmente como `Refuerzo`. Desde esta
+pantalla, `Anterior` vuelve a la edicion del plan correspondiente y `Siguiente`
+avanza a la revision general solo si el preview no esta desactualizado. Si el
+usuario vuelve atras y modifica objetos, moneda, forma de pago, anticipo o
+tramos, el preview queda `stale` y debe recalcularse avanzando nuevamente desde
+la edicion del plan.
 
 ### Paso 7 - Confirmar
 
@@ -1095,10 +1118,11 @@ inferior fijo para que `Anterior` y `Siguiente` no salgan del viewport cuando el
 buscador tenga muchos resultados.
 
 El prototipo V3 no pide `id_venta`, no calcula cronograma local y no persiste
-venta durante la carga. En la pantalla de resumen/revision permite simular el
-Plan Pago V2 consumiendo `POST /api/v1/ventas/plan-pago-v2/preview` con el
-estado local del wizard; el preview no crea venta y su response no incluye
-`id_venta`. La confirmacion de venta real sigue pendiente como paso posterior.
+venta durante la carga. Al presionar `Siguiente` desde la edicion del plan,
+ejecuta automaticamente `POST /api/v1/ventas/plan-pago-v2/preview` con el
+estado local del wizard y avanza a `PREVIEW_PLAN_PAGO` si el backend responde
+OK; el preview no crea venta y su response no incluye `id_venta`. La
+confirmacion de venta real sigue pendiente como paso posterior.
 
 El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
 queda descartado como base principal porque su flujo no representa la UX
