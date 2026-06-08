@@ -706,8 +706,7 @@ class RedondeoPlanPagoVentaV2PreviewData(BaseModel):
     ajuste_ultima_cuota: Decimal
 
 
-class PreviewPlanPagoVentaV2PorBloquesData(BaseModel):
-    id_venta: int
+class PreviewPlanPagoVentaV2PorBloquesBaseData(BaseModel):
     metodo_plan_pago: str
     tipo_pago: str
     moneda: str
@@ -722,9 +721,22 @@ class PreviewPlanPagoVentaV2PorBloquesData(BaseModel):
     redondeos: list[RedondeoPlanPagoVentaV2PreviewData]
 
 
+class PreviewPlanPagoVentaV2PorBloquesData(PreviewPlanPagoVentaV2PorBloquesBaseData):
+    id_venta: int
+
+
+class PreviewPlanPagoVentaV2SinVentaData(PreviewPlanPagoVentaV2PorBloquesBaseData):
+    pass
+
+
 class PreviewPlanPagoVentaV2PorBloquesResponse(BaseModel):
     ok: Literal[True] = True
     data: PreviewPlanPagoVentaV2PorBloquesData
+
+
+class PreviewPlanPagoVentaV2SinVentaResponse(BaseModel):
+    ok: Literal[True] = True
+    data: PreviewPlanPagoVentaV2SinVentaData
 
 
 class ConfirmVentaData(GenerateVentaFromReservaVentaData):

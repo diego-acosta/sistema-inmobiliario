@@ -43,7 +43,7 @@ class PlanPagoVentaBloqueInput:
 @dataclass(slots=True)
 class GeneratePlanPagoVentaV2PorBloquesCommand:
     context: CommandContext
-    id_venta: int
+    id_venta: int | None
     tipo_pago: str
     monto_total_plan: Decimal
     moneda: str
