@@ -611,17 +611,25 @@ class GeneratePlanPagoVentaV2PorBloquesService:
         interes_total = (capital_total * tasa * periodos).quantize(Decimal("0.01"))
         capital_cuota_base = (capital_total / cantidad).quantize(Decimal("0.01"))
         interes_cuota_base = (interes_total / cantidad).quantize(Decimal("0.01"))
-        idx = Decimal(obligacion_preview.item_numero)
-        if idx < cantidad:
-            capital = capital_cuota_base
-            interes = interes_cuota_base
-        else:
-            capital = (capital_total - capital_cuota_base * (cantidad - 1)).quantize(
-                Decimal("0.01")
-            )
-            interes = (interes_total - interes_cuota_base * (cantidad - 1)).quantize(
-                Decimal("0.01")
-            )
+        indices_unidades = self._indices_unidades_financieras_obligacion(
+            bloque_input, obligacion_preview.item_numero
+        )
+        capital = Decimal("0.00")
+        interes = Decimal("0.00")
+        for indice_unidad in indices_unidades:
+            idx = Decimal(indice_unidad)
+            if idx < cantidad:
+                capital += capital_cuota_base
+                interes += interes_cuota_base
+            else:
+                capital += (
+                    capital_total - capital_cuota_base * (cantidad - 1)
+                ).quantize(Decimal("0.01"))
+                interes += (
+                    interes_total - interes_cuota_base * (cantidad - 1)
+                ).quantize(Decimal("0.01"))
+        capital = capital.quantize(Decimal("0.01"))
+        interes = interes.quantize(Decimal("0.01"))
         return [
             {
                 "id_concepto_financiero": concepto_capital["id_concepto_financiero"],
@@ -638,6 +646,28 @@ class GeneratePlanPagoVentaV2PorBloquesService:
                 "importe_componente": interes,
             },
         ]
+
+    @staticmethod
+    def _indices_unidades_financieras_obligacion(
+        bloque_input: Any, item_numero: int
+    ) -> list[int]:
+        refuerzos_por_cuota = {
+            cuota_refuerzo.numero_cuota
+            for cuota_refuerzo in (bloque_input.cuotas_refuerzo or [])
+        }
+        cantidad_cuotas_normales = (bloque_input.cantidad_cuotas or 0) - len(
+            refuerzos_por_cuota
+        )
+        indice_unidad = 1
+        for cuota_numero in range(1, cantidad_cuotas_normales + 1):
+            indices = [indice_unidad]
+            indice_unidad += 1
+            if cuota_numero in refuerzos_por_cuota:
+                indices.append(indice_unidad)
+                indice_unidad += 1
+            if cuota_numero == item_numero:
+                return indices
+        return [item_numero]
 
     def _plan_vivo_compatible(
         self,

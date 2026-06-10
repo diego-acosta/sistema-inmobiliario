@@ -492,29 +492,25 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                     fecha_vencimiento = add_months(
                         bloque.input.fecha_primer_vencimiento, cuota_numero - 1
                     )
+                    importe = next(importes_items)
+                    etiqueta = f"Cuota {cuota_numero}"
+                    cuota_refuerzo = refuerzos_por_cuota.get(cuota_numero)
+                    if cuota_refuerzo is not None:
+                        importe = (importe + next(importes_items)).quantize(
+                            Decimal("0.01")
+                        )
+                        detalle_refuerzo = (
+                            cuota_refuerzo.etiqueta or f"Refuerzo cuota {cuota_numero}"
+                        )
+                        etiqueta = f"{etiqueta} (incluye {detalle_refuerzo})"
                     obligaciones.append(
                         self._build_obligacion_tramo(
                             bloque=bloque,
                             tipo_item=TIPO_ITEM_CUOTA,
-                            etiqueta=f"Cuota {cuota_numero}",
+                            etiqueta=etiqueta,
                             item_numero=cuota_numero,
                             fecha_vencimiento=fecha_vencimiento,
-                            importe=next(importes_items),
-                            numero_obligacion=len(obligaciones) + 1,
-                        )
-                    )
-                    cuota_refuerzo = refuerzos_por_cuota.get(cuota_numero)
-                    if cuota_refuerzo is None:
-                        continue
-                    obligaciones.append(
-                        self._build_obligacion_tramo(
-                            bloque=bloque,
-                            tipo_item=TIPO_ITEM_REFUERZO,
-                            etiqueta=cuota_refuerzo.etiqueta
-                            or f"Refuerzo cuota {cuota_numero}",
-                            item_numero=cuota_numero,
-                            fecha_vencimiento=fecha_vencimiento,
-                            importe=next(importes_items),
+                            importe=importe,
                             numero_obligacion=len(obligaciones) + 1,
                         )
                     )

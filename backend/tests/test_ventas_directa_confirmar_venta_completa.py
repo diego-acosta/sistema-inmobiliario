@@ -945,17 +945,13 @@ def test_confirmar_venta_directa_completa_propaga_refuerzo_interno(
     response = client.post(ENDPOINT, headers=HEADERS, json=payload)
 
     assert response.status_code == 200, response.text
-    assert response.json()["data"]["obligaciones"]["cantidad"] == 4
+    assert response.json()["data"]["obligaciones"]["cantidad"] == 3
     venta = _venta_by_codigo(db_session, "VD-COMP-REF")
     assert venta is not None
     obligaciones = _obligaciones_items_by_venta(db_session, venta["id_venta"])
-    assert len(obligaciones) == 4
-    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 3
-    assert (
-        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO") == 1
-    )
-    assert obligaciones[1]["tipo_item_cronograma"] == "CUOTA"
-    assert obligaciones[2]["tipo_item_cronograma"] == "REFUERZO"
+    assert len(obligaciones) == 3
+    assert all(ob["tipo_item_cronograma"] == "CUOTA" for ob in obligaciones)
+    assert obligaciones[1]["importe_total"] == Decimal("75000.00")
     assert sum(
         (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
     ) == Decimal("150000.00")

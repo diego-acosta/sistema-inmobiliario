@@ -280,23 +280,18 @@ def test_endpoint_preview_sin_id_venta_cuotas_refuerzo_internas(
 
     assert response.status_code == 200, response.text
     obligaciones = response.json()["data"]["obligaciones"]
-    assert len(obligaciones) == 12
-    cuotas = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA"]
-    refuerzos = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO"]
-    assert len(cuotas) == 10
-    assert len(refuerzos) == 2
-    assert {cuota["item_numero"] for cuota in cuotas} == set(range(1, 11))
-    assert not any(cuota["item_numero"] in {11, 12} for cuota in cuotas)
-    cuota_5 = next(cuota for cuota in cuotas if cuota["item_numero"] == 5)
-    refuerzo_5 = next(
-        refuerzo for refuerzo in refuerzos if refuerzo["numero_cuota_asociada"] == 5
-    )
-    cuota_10 = next(cuota for cuota in cuotas if cuota["item_numero"] == 10)
-    refuerzo_10 = next(
-        refuerzo for refuerzo in refuerzos if refuerzo["numero_cuota_asociada"] == 10
-    )
-    assert refuerzo_5["fecha_vencimiento"] == cuota_5["fecha_vencimiento"]
-    assert refuerzo_10["fecha_vencimiento"] == cuota_10["fecha_vencimiento"]
+    assert len(obligaciones) == 10
+    assert all(ob["tipo_item_cronograma"] == "CUOTA" for ob in obligaciones)
+    assert {cuota["item_numero"] for cuota in obligaciones} == set(range(1, 11))
+    assert not any(cuota["item_numero"] in {11, 12} for cuota in obligaciones)
+    cuota_5 = next(cuota for cuota in obligaciones if cuota["item_numero"] == 5)
+    cuota_10 = next(cuota for cuota in obligaciones if cuota["item_numero"] == 10)
+    assert cuota_5["fecha_vencimiento"] == "2026-05-10"
+    assert cuota_10["fecha_vencimiento"] == "2026-10-10"
+    assert cuota_5["importe_total"] == "2000000.00"
+    assert cuota_10["importe_total"] == "2000000.00"
+    assert "Refuerzo cuota 5" in cuota_5["etiqueta_obligacion"]
+    assert "Refuerzo cuota 10" in cuota_10["etiqueta_obligacion"]
     assert sum(Decimal(ob["importe_total"]) for ob in obligaciones) == Decimal(
         "12000000.00"
     )
@@ -1196,19 +1191,18 @@ def test_preview_tramo_cuotas_con_refuerzos_internos_no_agrega_obligaciones() ->
 
     assert result.success, result.errors
     obligaciones = result.data["obligaciones"]
-    assert len(obligaciones) == 12
-    cuotas = [ob for ob in obligaciones if ob.tipo_item_cronograma == "CUOTA"]
-    refuerzos = [ob for ob in obligaciones if ob.tipo_item_cronograma == "REFUERZO"]
-    assert len(cuotas) == 10
-    assert len(refuerzos) == 2
-    assert {cuota.item_numero for cuota in cuotas} == set(range(1, 11))
-    assert not any(cuota.item_numero in {11, 12} for cuota in cuotas)
-    cuota_5 = next(cuota for cuota in cuotas if cuota.item_numero == 5)
-    refuerzo_5 = next(refuerzo for refuerzo in refuerzos if refuerzo.item_numero == 5)
-    cuota_10 = next(cuota for cuota in cuotas if cuota.item_numero == 10)
-    refuerzo_10 = next(refuerzo for refuerzo in refuerzos if refuerzo.item_numero == 10)
-    assert refuerzo_5.fecha_vencimiento == cuota_5.fecha_vencimiento
-    assert refuerzo_10.fecha_vencimiento == cuota_10.fecha_vencimiento
+    assert len(obligaciones) == 10
+    assert all(ob.tipo_item_cronograma == "CUOTA" for ob in obligaciones)
+    assert {cuota.item_numero for cuota in obligaciones} == set(range(1, 11))
+    assert not any(cuota.item_numero in {11, 12} for cuota in obligaciones)
+    cuota_5 = next(cuota for cuota in obligaciones if cuota.item_numero == 5)
+    cuota_10 = next(cuota for cuota in obligaciones if cuota.item_numero == 10)
+    assert cuota_5.fecha_vencimiento == date(2026, 5, 10)
+    assert cuota_10.fecha_vencimiento == date(2026, 10, 10)
+    assert cuota_5.importe_total == Decimal("2000000.00")
+    assert cuota_10.importe_total == Decimal("2000000.00")
+    assert "Refuerzo cuota 5" in cuota_5.etiqueta_obligacion
+    assert "Refuerzo cuota 10" in cuota_10.etiqueta_obligacion
     assert sum((ob.importe_total for ob in obligaciones), Decimal("0.00")) == Decimal(
         "12000000.00"
     )
@@ -1266,15 +1260,23 @@ def test_preview_valida_cuotas_refuerzo_internas() -> None:
 
     result = _result([CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=None)])
     assert result.success, result.errors
-    assert result.data["obligaciones"][0].tipo_item_cronograma == "CUOTA"
-    assert result.data["obligaciones"][1].tipo_item_cronograma == "REFUERZO"
+    assert len(result.data["obligaciones"]) == 3
+    assert all(
+        obligacion.tipo_item_cronograma == "CUOTA"
+        for obligacion in result.data["obligaciones"]
+    )
+    assert result.data["obligaciones"][0].importe_total == Decimal("500000.00")
 
     result = _result(
         [CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=Decimal("1.00"))]
     )
     assert result.success, result.errors
-    assert result.data["obligaciones"][0].tipo_item_cronograma == "CUOTA"
-    assert result.data["obligaciones"][1].tipo_item_cronograma == "REFUERZO"
+    assert len(result.data["obligaciones"]) == 3
+    assert all(
+        obligacion.tipo_item_cronograma == "CUOTA"
+        for obligacion in result.data["obligaciones"]
+    )
+    assert result.data["obligaciones"][0].importe_total == Decimal("500000.00")
 
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
         _command(

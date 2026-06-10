@@ -1826,17 +1826,20 @@ def test_generate_tramo_cuotas_con_refuerzos_internos_persiste_sin_duplicar(
     assert second.success, second.errors
 
     obligaciones = _obligaciones_unificadas(db_session, id_venta=id_venta)
-    assert len(obligaciones) == 12
-    cuotas = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA"]
-    refuerzos = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO"]
-    assert len(cuotas) == 10
-    assert len(refuerzos) == 2
-    assert not any("CUOTA:11" in ob["clave_funcional_origen"] for ob in cuotas)
-    assert not any("CUOTA:12" in ob["clave_funcional_origen"] for ob in cuotas)
-    assert any("CUOTA:5" in ob["clave_funcional_origen"] for ob in cuotas)
-    assert any("REFUERZO:5" in ob["clave_funcional_origen"] for ob in refuerzos)
-    assert any("CUOTA:10" in ob["clave_funcional_origen"] for ob in cuotas)
-    assert any("REFUERZO:10" in ob["clave_funcional_origen"] for ob in refuerzos)
+    assert len(obligaciones) == 10
+    assert all(ob["tipo_item_cronograma"] == "CUOTA" for ob in obligaciones)
+    assert not any("CUOTA:11" in ob["clave_funcional_origen"] for ob in obligaciones)
+    assert not any("CUOTA:12" in ob["clave_funcional_origen"] for ob in obligaciones)
+    cuota_5 = next(
+        ob for ob in obligaciones if "CUOTA:5" in ob["clave_funcional_origen"]
+    )
+    cuota_10 = next(
+        ob for ob in obligaciones if "CUOTA:10" in ob["clave_funcional_origen"]
+    )
+    assert cuota_5["importe_total"] == Decimal("2000000.00")
+    assert cuota_10["importe_total"] == Decimal("2000000.00")
+    assert "Refuerzo cuota 5" in cuota_5["etiqueta_obligacion"]
+    assert "Refuerzo cuota 10" in cuota_10["etiqueta_obligacion"]
     assert {ob["tipo_bloque"] for ob in first.data["bloques"]} == {"TRAMO_CUOTAS"}
     assert sum(
         (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
