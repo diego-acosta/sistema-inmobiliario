@@ -200,8 +200,7 @@ def test_endpoint_preview_sin_id_venta_interes_directo_devuelve_total_raiz(
     assert data["total_con_interes"] == "1240000.00"
     assert len(data["obligaciones"]) == 12
     assert sum(
-        Decimal(obligacion["importe_total"])
-        for obligacion in data["obligaciones"]
+        Decimal(obligacion["importe_total"]) for obligacion in data["obligaciones"]
     ) == Decimal("1240000.00")
     assert _counts(db_session, tables) == before
 
@@ -255,22 +254,22 @@ def test_endpoint_preview_sin_id_venta_cuotas_refuerzo_internas(
     client,
 ) -> None:
     payload = _payload_tramo_por_capital_total()
-    payload["monto_total_plan"] = "24000000.00"
+    payload["monto_total_plan"] = "12000000.00"
     payload["bloques"][0].update(
         {
-            "importe_total_bloque": "24000000.00",
-            "cantidad_cuotas": 24,
+            "importe_total_bloque": "12000000.00",
+            "cantidad_cuotas": 12,
             "fecha_primer_vencimiento": "2026-01-10",
             "metodo_liquidacion": "SIN_INTERES",
             "cuotas_refuerzo": [
                 {
-                    "numero_cuota": 6,
-                    "etiqueta": "Refuerzo cuota 6",
+                    "numero_cuota": 5,
+                    "etiqueta": "Refuerzo cuota 5",
                     "unidades_refuerzo": "1.00",
                 },
                 {
-                    "numero_cuota": 12,
-                    "etiqueta": "Refuerzo cuota 12",
+                    "numero_cuota": 10,
+                    "etiqueta": "Refuerzo cuota 10",
                     "unidades_refuerzo": "1.00",
                 },
             ],
@@ -281,16 +280,50 @@ def test_endpoint_preview_sin_id_venta_cuotas_refuerzo_internas(
 
     assert response.status_code == 200, response.text
     obligaciones = response.json()["data"]["obligaciones"]
-    assert len(obligaciones) == 24
-    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 22
-    assert (
-        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO")
-        == 2
+    assert len(obligaciones) == 12
+    cuotas = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA"]
+    refuerzos = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO"]
+    assert len(cuotas) == 10
+    assert len(refuerzos) == 2
+    assert {cuota["item_numero"] for cuota in cuotas} == set(range(1, 11))
+    assert not any(cuota["item_numero"] in {11, 12} for cuota in cuotas)
+    cuota_5 = next(cuota for cuota in cuotas if cuota["item_numero"] == 5)
+    refuerzo_5 = next(
+        refuerzo for refuerzo in refuerzos if refuerzo["numero_cuota_asociada"] == 5
     )
-    assert obligaciones[5]["tipo_item_cronograma"] == "REFUERZO"
-    assert obligaciones[5]["numero_cuota_asociada"] == 6
-    assert obligaciones[11]["tipo_item_cronograma"] == "REFUERZO"
-    assert obligaciones[11]["numero_cuota_asociada"] == 12
+    cuota_10 = next(cuota for cuota in cuotas if cuota["item_numero"] == 10)
+    refuerzo_10 = next(
+        refuerzo for refuerzo in refuerzos if refuerzo["numero_cuota_asociada"] == 10
+    )
+    assert refuerzo_5["fecha_vencimiento"] == cuota_5["fecha_vencimiento"]
+    assert refuerzo_10["fecha_vencimiento"] == cuota_10["fecha_vencimiento"]
+    assert sum(Decimal(ob["importe_total"]) for ob in obligaciones) == Decimal(
+        "12000000.00"
+    )
+
+
+def test_endpoint_preview_sin_id_venta_rechaza_refuerzo_fuera_de_cuotas_normales(
+    client,
+) -> None:
+    payload = _payload_tramo_por_capital_total()
+    payload["monto_total_plan"] = "12000000.00"
+    payload["bloques"][0].update(
+        {
+            "importe_total_bloque": "12000000.00",
+            "cantidad_cuotas": 12,
+            "fecha_primer_vencimiento": "2026-01-10",
+            "metodo_liquidacion": "SIN_INTERES",
+            "cuotas_refuerzo": [
+                {"numero_cuota": 5, "unidades_refuerzo": "1.00"},
+                {"numero_cuota": 11, "unidades_refuerzo": "1.00"},
+            ],
+        }
+    )
+
+    response = client.post(URL_SIN_VENTA, json=payload)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["details"]["errors"] == ["CUOTA_REFUERZO_NUMERO_INVALIDO"]
 
 
 def test_endpoint_preview_sin_id_venta_payload_invalido_devuelve_error(
@@ -314,6 +347,7 @@ def test_endpoint_preview_con_id_venta_sigue_devolviendo_id_venta(client) -> Non
     data = response.json()["data"]
     assert data["id_venta"] == 1
     assert data["total_calculado"] == "10000000.00"
+
 
 def test_preview_tramo_por_capital_total_ajusta_ultima_cuota_y_suma_exacta() -> None:
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(_command())
@@ -1134,25 +1168,25 @@ def test_preview_tramo_cuotas_con_refuerzos_internos_no_agrega_obligaciones() ->
 
     result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
         _command(
-            monto_total_plan=Decimal("24000000.00"),
+            monto_total_plan=Decimal("12000000.00"),
             bloques=[
                 PlanPagoVentaBloqueInput(
                     tipo_bloque="TRAMO_CUOTAS",
-                    importe_total_bloque=Decimal("24000000.00"),
-                    cantidad_cuotas=24,
+                    importe_total_bloque=Decimal("12000000.00"),
+                    cantidad_cuotas=12,
                     fecha_primer_vencimiento=date(2026, 1, 10),
                     periodicidad="MENSUAL",
                     metodo_liquidacion="SIN_INTERES",
                     cuotas_refuerzo=[
                         CuotaRefuerzoInput(
-                            numero_cuota=6,
+                            numero_cuota=5,
                             unidades_refuerzo=Decimal("1.00"),
-                            etiqueta="Refuerzo cuota 6",
+                            etiqueta="Refuerzo cuota 5",
                         ),
                         CuotaRefuerzoInput(
-                            numero_cuota=12,
+                            numero_cuota=10,
                             unidades_refuerzo=Decimal("1.00"),
-                            etiqueta="Refuerzo cuota 12",
+                            etiqueta="Refuerzo cuota 10",
                         ),
                     ],
                 )
@@ -1162,18 +1196,22 @@ def test_preview_tramo_cuotas_con_refuerzos_internos_no_agrega_obligaciones() ->
 
     assert result.success, result.errors
     obligaciones = result.data["obligaciones"]
-    assert len(obligaciones) == 24
-    assert sum(1 for ob in obligaciones if ob.tipo_item_cronograma == "CUOTA") == 22
-    assert sum(1 for ob in obligaciones if ob.tipo_item_cronograma == "REFUERZO") == 2
+    assert len(obligaciones) == 12
+    cuotas = [ob for ob in obligaciones if ob.tipo_item_cronograma == "CUOTA"]
+    refuerzos = [ob for ob in obligaciones if ob.tipo_item_cronograma == "REFUERZO"]
+    assert len(cuotas) == 10
+    assert len(refuerzos) == 2
+    assert {cuota.item_numero for cuota in cuotas} == set(range(1, 11))
+    assert not any(cuota.item_numero in {11, 12} for cuota in cuotas)
+    cuota_5 = next(cuota for cuota in cuotas if cuota.item_numero == 5)
+    refuerzo_5 = next(refuerzo for refuerzo in refuerzos if refuerzo.item_numero == 5)
+    cuota_10 = next(cuota for cuota in cuotas if cuota.item_numero == 10)
+    refuerzo_10 = next(refuerzo for refuerzo in refuerzos if refuerzo.item_numero == 10)
+    assert refuerzo_5.fecha_vencimiento == cuota_5.fecha_vencimiento
+    assert refuerzo_10.fecha_vencimiento == cuota_10.fecha_vencimiento
     assert sum((ob.importe_total for ob in obligaciones), Decimal("0.00")) == Decimal(
-        "24000000.00"
+        "12000000.00"
     )
-    assert obligaciones[5].tipo_item_cronograma == "REFUERZO"
-    assert obligaciones[5].item_numero == 6
-    assert obligaciones[5].fecha_vencimiento == date(2026, 6, 10)
-    assert obligaciones[11].tipo_item_cronograma == "REFUERZO"
-    assert obligaciones[11].item_numero == 12
-    assert obligaciones[11].fecha_vencimiento == date(2026, 12, 10)
 
 
 def test_preview_valida_cuotas_refuerzo_internas() -> None:
@@ -1207,7 +1245,7 @@ def test_preview_valida_cuotas_refuerzo_internas() -> None:
 
     cases = [
         ([CuotaRefuerzoInput(numero_cuota=0)], "CUOTA_REFUERZO_NUMERO_INVALIDO"),
-        ([CuotaRefuerzoInput(numero_cuota=5)], "CUOTA_REFUERZO_NUMERO_INVALIDO"),
+        ([CuotaRefuerzoInput(numero_cuota=4)], "CUOTA_REFUERZO_NUMERO_INVALIDO"),
         (
             [CuotaRefuerzoInput(numero_cuota=2), CuotaRefuerzoInput(numero_cuota=2)],
             "CUOTA_REFUERZO_DUPLICADA",
@@ -1228,13 +1266,36 @@ def test_preview_valida_cuotas_refuerzo_internas() -> None:
 
     result = _result([CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=None)])
     assert result.success, result.errors
-    assert result.data["obligaciones"][0].tipo_item_cronograma == "REFUERZO"
+    assert result.data["obligaciones"][0].tipo_item_cronograma == "CUOTA"
+    assert result.data["obligaciones"][1].tipo_item_cronograma == "REFUERZO"
 
     result = _result(
         [CuotaRefuerzoInput(numero_cuota=1, unidades_refuerzo=Decimal("1.00"))]
     )
     assert result.success, result.errors
-    assert result.data["obligaciones"][0].tipo_item_cronograma == "REFUERZO"
+    assert result.data["obligaciones"][0].tipo_item_cronograma == "CUOTA"
+    assert result.data["obligaciones"][1].tipo_item_cronograma == "REFUERZO"
+
+    result = BuildPlanPagoVentaV2PorBloquesPreviewService().execute(
+        _command(
+            monto_total_plan=Decimal("12000000.00"),
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque="TRAMO_CUOTAS",
+                    importe_total_bloque=Decimal("12000000.00"),
+                    cantidad_cuotas=12,
+                    fecha_primer_vencimiento=date(2026, 1, 10),
+                    periodicidad="MENSUAL",
+                    cuotas_refuerzo=[
+                        CuotaRefuerzoInput(numero_cuota=5),
+                        CuotaRefuerzoInput(numero_cuota=11),
+                    ],
+                )
+            ],
+        )
+    )
+    assert not result.success
+    assert result.errors == ["CUOTA_REFUERZO_NUMERO_INVALIDO"]
 
     result = _result([CuotaRefuerzoInput(numero_cuota=1)], tipo_bloque="REFUERZO")
     assert not result.success

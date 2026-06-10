@@ -954,7 +954,8 @@ def test_confirmar_venta_directa_completa_propaga_refuerzo_interno(
     assert (
         sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO") == 1
     )
-    assert obligaciones[1]["tipo_item_cronograma"] == "REFUERZO"
+    assert obligaciones[1]["tipo_item_cronograma"] == "CUOTA"
+    assert obligaciones[2]["tipo_item_cronograma"] == "REFUERZO"
     assert sum(
         (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
     ) == Decimal("150000.00")

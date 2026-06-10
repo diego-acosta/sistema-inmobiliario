@@ -1795,25 +1795,25 @@ def test_generate_tramo_cuotas_con_refuerzos_internos_persiste_sin_duplicar(
     _vincular_comprador_venta(db_session, id_venta=id_venta)
     command = _command(
         id_venta=id_venta,
-        monto_total_plan=Decimal("24000000.00"),
+        monto_total_plan=Decimal("12000000.00"),
         bloques=[
             PlanPagoVentaBloqueInput(
                 tipo_bloque="TRAMO_CUOTAS",
-                importe_total_bloque=Decimal("24000000.00"),
-                cantidad_cuotas=24,
+                importe_total_bloque=Decimal("12000000.00"),
+                cantidad_cuotas=12,
                 fecha_primer_vencimiento=date(2026, 1, 10),
                 periodicidad="MENSUAL",
                 metodo_liquidacion="SIN_INTERES",
                 cuotas_refuerzo=[
                     CuotaRefuerzoInput(
-                        numero_cuota=6,
+                        numero_cuota=5,
                         unidades_refuerzo=Decimal("1.00"),
-                        etiqueta="Refuerzo cuota 6",
+                        etiqueta="Refuerzo cuota 5",
                     ),
                     CuotaRefuerzoInput(
-                        numero_cuota=12,
+                        numero_cuota=10,
                         unidades_refuerzo=Decimal("1.00"),
-                        etiqueta="Refuerzo cuota 12",
+                        etiqueta="Refuerzo cuota 10",
                     ),
                 ],
             )
@@ -1826,15 +1826,21 @@ def test_generate_tramo_cuotas_con_refuerzos_internos_persiste_sin_duplicar(
     assert second.success, second.errors
 
     obligaciones = _obligaciones_unificadas(db_session, id_venta=id_venta)
-    assert len(obligaciones) == 24
-    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 22
-    assert (
-        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO") == 2
-    )
+    assert len(obligaciones) == 12
+    cuotas = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA"]
+    refuerzos = [ob for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO"]
+    assert len(cuotas) == 10
+    assert len(refuerzos) == 2
+    assert not any("CUOTA:11" in ob["clave_funcional_origen"] for ob in cuotas)
+    assert not any("CUOTA:12" in ob["clave_funcional_origen"] for ob in cuotas)
+    assert any("CUOTA:5" in ob["clave_funcional_origen"] for ob in cuotas)
+    assert any("REFUERZO:5" in ob["clave_funcional_origen"] for ob in refuerzos)
+    assert any("CUOTA:10" in ob["clave_funcional_origen"] for ob in cuotas)
+    assert any("REFUERZO:10" in ob["clave_funcional_origen"] for ob in refuerzos)
     assert {ob["tipo_bloque"] for ob in first.data["bloques"]} == {"TRAMO_CUOTAS"}
     assert sum(
         (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
-    ) == Decimal("24000000.00")
+    ) == Decimal("12000000.00")
 
 
 def test_generate_reintento_con_configuracion_refuerzos_distinta_falla_controlado(
