@@ -776,11 +776,12 @@ del preview sin venta persistida:
 - `total_ajuste_indexacion`;
 - `total_con_indexacion`;
 - cantidad de obligaciones simuladas;
-- listado simple de obligaciones con `fecha_vencimiento`,
-  `tipo_item_cronograma`, `numero_cuota_asociada` si existe e `importe_total`.
+- cronograma simulado en tabla compacta y scrolleable con columnas `#`,
+  `Fecha vencimiento`, `Tipo`, `Cuota` e `Importe`.
 
-Los items `REFUERZO` deben mostrarse visualmente como `Refuerzo`. Desde esta
-pantalla, `Anterior` vuelve a la edicion del plan correspondiente y `Siguiente`
+Los items `REFUERZO` deben mostrarse visualmente como `Refuerzo` dentro de la
+tabla, sin volver a cards por obligacion. Desde esta pantalla, `Anterior` vuelve
+a la edicion del plan correspondiente y `Siguiente`
 avanza a la revision general solo si el preview no esta desactualizado. Si el
 usuario vuelve atras y modifica objetos, moneda, forma de pago, anticipo o
 tramos, el preview queda `stale` y debe recalcularse avanzando nuevamente desde

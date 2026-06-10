@@ -2569,38 +2569,7 @@ class VentaCompletaWizardV3Prototype:
                 spacing=6,
             ),
         )
-        rows: list[ft.Control] = []
-        for index, obligacion in enumerate(obligaciones):
-            if not isinstance(obligacion, dict):
-                continue
-            item_type = str(obligacion.get("tipo_item_cronograma") or "-")
-            item_label = "Refuerzo" if item_type == "REFUERZO" else item_type
-            rows.append(
-                ft.Container(
-                    padding=10,
-                    border_radius=8,
-                    bgcolor=ft.Colors.AMBER_50 if item_type == "REFUERZO" else ft.Colors.BLUE_GREY_50,
-                    border=_border_all(1, ft.Colors.AMBER_200 if item_type == "REFUERZO" else ft.Colors.BLUE_GREY_100),
-                    content=ft.Column(
-                        controls=[
-                            ft.Text(f"#{index + 1} · {item_label}", weight=ft.FontWeight.W_700),
-                            _info_row("fecha_vencimiento", obligacion.get("fecha_vencimiento") or "-"),
-                            _info_row("tipo_item_cronograma", item_label),
-                            _info_row("numero_cuota_asociada", obligacion.get("numero_cuota_asociada") or "-"),
-                            _info_row("importe_total", obligacion.get("importe_total") or "-"),
-                        ],
-                        spacing=4,
-                    ),
-                )
-            )
-        obligations_control: ft.Control
-        if rows:
-            obligations_control = ft.Container(
-                height=360,
-                content=ft.Column(controls=rows, spacing=8, scroll=ft.ScrollMode.AUTO),
-            )
-        else:
-            obligations_control = ft.Text("El preview no devolvió obligaciones simuladas.", color=ft.Colors.BLUE_GREY_700)
+        obligations_control = self._build_plan_preview_obligations_table(obligaciones)
         return [
             summary,
             ft.Column(
@@ -2611,6 +2580,69 @@ class VentaCompletaWizardV3Prototype:
                 spacing=8,
             ),
         ]
+
+    def _build_plan_preview_obligations_table(self, obligaciones: list[Any]) -> ft.Control:
+        rows: list[ft.DataRow] = []
+        for index, obligacion in enumerate(obligaciones):
+            if not isinstance(obligacion, dict):
+                continue
+            item_type = str(obligacion.get("tipo_item_cronograma") or "-")
+            is_reinforcement = item_type == "REFUERZO"
+            type_text = ft.Text(
+                self._preview_obligation_type_label(item_type),
+                weight=ft.FontWeight.W_700 if is_reinforcement else None,
+                color=ft.Colors.AMBER_900 if is_reinforcement else ft.Colors.BLUE_GREY_900,
+            )
+            rows.append(
+                ft.DataRow(
+                    color=ft.Colors.AMBER_50 if is_reinforcement else None,
+                    cells=[
+                        ft.DataCell(ft.Text(str(index + 1))),
+                        ft.DataCell(ft.Text(_format_date_ar(str(obligacion.get("fecha_vencimiento") or "")) or "-")),
+                        ft.DataCell(type_text),
+                        ft.DataCell(ft.Text(str(obligacion.get("numero_cuota_asociada") or "-"))),
+                        ft.DataCell(ft.Text(self._format_preview_obligation_amount(obligacion.get("importe_total")))),
+                    ],
+                )
+            )
+        if not rows:
+            return ft.Text("El preview no devolvió obligaciones simuladas.", color=ft.Colors.BLUE_GREY_700)
+        return ft.Container(
+            height=400,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=8,
+            content=ft.Column(
+                controls=[
+                    ft.DataTable(
+                        columns=[
+                            ft.DataColumn(ft.Text("#")),
+                            ft.DataColumn(ft.Text("Fecha vencimiento")),
+                            ft.DataColumn(ft.Text("Tipo")),
+                            ft.DataColumn(ft.Text("Cuota")),
+                            ft.DataColumn(ft.Text("Importe")),
+                        ],
+                        rows=rows,
+                    )
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            ),
+        )
+
+    def _format_preview_obligation_amount(self, value: Any) -> str:
+        parsed = _parse_money_decimal(str(value or ""))
+        if parsed is None:
+            return str(value or "-")
+        return self._format_money_with_currency(parsed)
+
+    @staticmethod
+    def _preview_obligation_type_label(item_type: str) -> str:
+        labels = {
+            "ANTICIPO": "Anticipo",
+            "CUOTA": "Cuota",
+            "REFUERZO": "Refuerzo",
+            "SALDO": "Saldo",
+        }
+        return labels.get(item_type, item_type or "-")
 
     def _run_plan_payment_preview_before_next(self) -> bool:
         validation_error = self._preview_local_validation_error()
