@@ -278,13 +278,15 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         if not cuotas_refuerzo:
             return None
         cantidad_cuotas = bloque.cantidad_cuotas or 0
-        if len(cuotas_refuerzo) > cantidad_cuotas:
+        cantidad_refuerzos = len(cuotas_refuerzo)
+        cantidad_cuotas_normales = cantidad_cuotas - cantidad_refuerzos
+        if cantidad_refuerzos > cantidad_cuotas:
             return "CUOTA_REFUERZO_EXCEDE_CANTIDAD_CUOTAS"
         numeros: set[int] = set()
         for cuota_refuerzo in cuotas_refuerzo:
             if (
                 cuota_refuerzo.numero_cuota <= 0
-                or cuota_refuerzo.numero_cuota > cantidad_cuotas
+                or cuota_refuerzo.numero_cuota > cantidad_cuotas_normales
             ):
                 return "CUOTA_REFUERZO_NUMERO_INVALIDO"
             if cuota_refuerzo.numero_cuota in numeros:
@@ -483,62 +485,33 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         obligaciones: list[PlanPagoVentaV2ObligacionPreview] = []
         for bloque in bloques:
             if bloque.tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
-                importes = self._importes_cuotas(bloque.input)
-                for cuota_numero, importe in enumerate(importes, start=1):
+                importes_items = iter(self._importes_cuotas(bloque.input))
+                refuerzos_por_cuota = self._cuota_refuerzo_por_numero(bloque.input)
+                cantidad_cuotas_normales = self._cantidad_cuotas_normales(bloque.input)
+                for cuota_numero in range(1, cantidad_cuotas_normales + 1):
                     fecha_vencimiento = add_months(
                         bloque.input.fecha_primer_vencimiento, cuota_numero - 1
                     )
-                    indexacion = self._preview_indexacion_cuota(
-                        bloque.input,
-                        capital_cuota=importe,
-                        fecha_vencimiento=fecha_vencimiento,
-                    )
-                    cuota_refuerzo = self._cuota_refuerzo_por_numero(bloque.input).get(
-                        cuota_numero
-                    )
-                    tipo_item = (
-                        TIPO_ITEM_REFUERZO
-                        if cuota_refuerzo is not None
-                        else TIPO_ITEM_CUOTA
-                    )
-                    etiqueta = (
-                        cuota_refuerzo.etiqueta
-                        if cuota_refuerzo is not None and cuota_refuerzo.etiqueta
-                        else (
-                            f"Refuerzo cuota {cuota_numero}"
-                            if cuota_refuerzo is not None
-                            else f"Cuota {cuota_numero}"
+                    importe = next(importes_items)
+                    etiqueta = f"Cuota {cuota_numero}"
+                    cuota_refuerzo = refuerzos_por_cuota.get(cuota_numero)
+                    if cuota_refuerzo is not None:
+                        importe = (importe + next(importes_items)).quantize(
+                            Decimal("0.01")
                         )
-                    )
+                        detalle_refuerzo = (
+                            cuota_refuerzo.etiqueta or f"Refuerzo cuota {cuota_numero}"
+                        )
+                        etiqueta = f"{etiqueta} (incluye {detalle_refuerzo})"
                     obligaciones.append(
-                        PlanPagoVentaV2ObligacionPreview(
+                        self._build_obligacion_tramo(
                             bloque=bloque,
-                            numero_obligacion=len(obligaciones) + 1,
-                            tipo_item_cronograma=tipo_item,
-                            etiqueta_obligacion=etiqueta,
+                            tipo_item=TIPO_ITEM_CUOTA,
+                            etiqueta=etiqueta,
                             item_numero=cuota_numero,
                             fecha_vencimiento=fecha_vencimiento,
-                            importe_total=indexacion.get("importe_total", importe),
-                            concepto_financiero_codigo=bloque.concepto_financiero_codigo,
-                            estado_preview_indexacion=indexacion.get(
-                                "estado_preview_indexacion"
-                            ),
-                            id_indice_financiero=indexacion.get("id_indice_financiero"),
-                            id_indice_financiero_valor=indexacion.get(
-                                "id_indice_financiero_valor"
-                            ),
-                            fecha_valor_indice=indexacion.get("fecha_valor_indice"),
-                            valor_base_indice=indexacion.get("valor_base_indice"),
-                            valor_aplicado_indice=indexacion.get(
-                                "valor_aplicado_indice"
-                            ),
-                            coeficiente_indexacion=indexacion.get(
-                                "coeficiente_indexacion"
-                            ),
-                            capital_cuota=indexacion.get("capital_cuota"),
-                            ajuste_indexacion_cuota=indexacion.get(
-                                "ajuste_indexacion_cuota"
-                            ),
+                            importe=importe,
+                            numero_obligacion=len(obligaciones) + 1,
                         )
                     )
                 continue
@@ -556,6 +529,42 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                 )
             )
         return obligaciones
+
+    def _build_obligacion_tramo(
+        self,
+        *,
+        bloque: PlanPagoVentaV2BloquePreview,
+        tipo_item: str,
+        etiqueta: str,
+        item_numero: int,
+        fecha_vencimiento: date,
+        importe: Decimal,
+        numero_obligacion: int,
+    ) -> PlanPagoVentaV2ObligacionPreview:
+        indexacion = self._preview_indexacion_cuota(
+            bloque.input,
+            capital_cuota=importe,
+            fecha_vencimiento=fecha_vencimiento,
+        )
+        return PlanPagoVentaV2ObligacionPreview(
+            bloque=bloque,
+            numero_obligacion=numero_obligacion,
+            tipo_item_cronograma=tipo_item,
+            etiqueta_obligacion=etiqueta,
+            item_numero=item_numero,
+            fecha_vencimiento=fecha_vencimiento,
+            importe_total=indexacion.get("importe_total", importe),
+            concepto_financiero_codigo=bloque.concepto_financiero_codigo,
+            estado_preview_indexacion=indexacion.get("estado_preview_indexacion"),
+            id_indice_financiero=indexacion.get("id_indice_financiero"),
+            id_indice_financiero_valor=indexacion.get("id_indice_financiero_valor"),
+            fecha_valor_indice=indexacion.get("fecha_valor_indice"),
+            valor_base_indice=indexacion.get("valor_base_indice"),
+            valor_aplicado_indice=indexacion.get("valor_aplicado_indice"),
+            coeficiente_indexacion=indexacion.get("coeficiente_indexacion"),
+            capital_cuota=indexacion.get("capital_cuota"),
+            ajuste_indexacion_cuota=indexacion.get("ajuste_indexacion_cuota"),
+        )
 
     @staticmethod
     def _cuota_refuerzo_por_numero(
@@ -636,6 +645,10 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             "ajuste_indexacion_cuota": resultado.ajuste_indexacion_cuota,
             "importe_total": resultado.importe_total,
         }
+
+    @staticmethod
+    def _cantidad_cuotas_normales(bloque: PlanPagoVentaBloqueInput) -> int:
+        return (bloque.cantidad_cuotas or 0) - len(bloque.cuotas_refuerzo or [])
 
     def _importes_cuotas(self, bloque: PlanPagoVentaBloqueInput) -> list[Decimal]:
         if self._tramo_usa_interes_directo(bloque):
