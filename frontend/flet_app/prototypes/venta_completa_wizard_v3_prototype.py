@@ -370,6 +370,50 @@ class VentaCompletaWizardV3Prototype:
             on_change=self._on_rol_comprador_change,
         )
         self.comprador_error: str | None = None
+        self.manual_object_type_value: Literal["INMUEBLE", "UNIDAD_FUNCIONAL"] = "INMUEBLE"
+        self.manual_object_id_value = ""
+        self.manual_object_text_value = ""
+        self.manual_object_price_value = ""
+        self.manual_object_error: str | None = None
+        self.manual_object_id_field = ft.TextField(
+            label="ID persistido del objeto",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_object_id_change,
+        )
+        self.manual_object_text_field = ft.TextField(
+            label="Texto visual del objeto",
+            on_change=self._on_manual_object_text_change,
+        )
+        self.manual_object_price_field = ft.TextField(
+            label="precio_asignado",
+            prefix_icon=ft.Icons.ATTACH_MONEY,
+            keyboard_type=ft.KeyboardType.TEXT,
+            on_change=self._on_manual_object_price_change,
+        )
+        self.manual_buyer_id_value = ""
+        self.manual_buyer_text_value = ""
+        self.manual_buyer_role_value = ""
+        self.manual_buyer_percentage_value = ""
+        self.manual_buyer_error: str | None = None
+        self.manual_buyer_id_field = ft.TextField(
+            label="id_persona persistido",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_buyer_id_change,
+        )
+        self.manual_buyer_text_field = ft.TextField(
+            label="Texto visual comprador",
+            on_change=self._on_manual_buyer_text_change,
+        )
+        self.manual_buyer_role_field = ft.TextField(
+            label="id_rol_participacion persistido",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_buyer_role_change,
+        )
+        self.manual_buyer_percentage_field = ft.TextField(
+            label="Responsabilidad pactada (%)",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_buyer_percentage_change,
+        )
         self.fecha_pago_contado_field = ft.TextField(
             label="Fecha de pago / vencimiento",
             hint_text="DD/MM/AAAA",
@@ -841,8 +885,63 @@ class VentaCompletaWizardV3Prototype:
                     ),
                 ]
             )
-        controls.extend([self._build_added_objects_list(), self._build_objects_total_summary()])
+        controls.extend([self._build_manual_object_persisted_panel(), self._build_added_objects_list(), self._build_objects_total_summary()])
         return ft.Column(controls=controls, spacing=12)
+
+    def _build_manual_object_persisted_panel(self) -> ft.Control:
+        self.manual_object_id_field.label = (
+            "id_unidad_funcional persistido"
+            if self.manual_object_type_value == "UNIDAD_FUNCIONAL"
+            else "id_inmueble persistido"
+        )
+        self.manual_object_price_field.label = f"precio_asignado ({self._currency_label()})"
+        type_controls = ft.Row(
+            controls=[
+                self._build_manual_object_type_card("INMUEBLE"),
+                self._build_manual_object_type_card("UNIDAD_FUNCIONAL"),
+            ],
+            spacing=8,
+            wrap=True,
+        )
+        controls: list[ft.Control] = [
+            ft.Text("Modo técnico/dev: objeto persistido", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Usá esta carga solo para probar confirmación real end-to-end con IDs ya persistidos en backend. No inventa ni valida existencia antes del POST.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            type_controls,
+            self.manual_object_id_field,
+            self.manual_object_text_field,
+            self.manual_object_price_field,
+        ]
+        if self.manual_object_error is not None:
+            controls.append(ft.Text(self.manual_object_error, size=12, color=ft.Colors.RED_700))
+        controls.append(
+            ft.Button(
+                "Agregar objeto persistido",
+                icon=ft.Icons.ADD,
+                on_click=self._add_manual_persisted_object,
+            )
+        )
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.TEAL_50,
+            border=_border_all(1, ft.Colors.TEAL_200),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _build_manual_object_type_card(self, tipo_objeto: Literal["INMUEBLE", "UNIDAD_FUNCIONAL"]) -> ft.Control:
+        selected = self.manual_object_type_value == tipo_objeto
+        return ft.Container(
+            padding=ft.Padding(left=10, top=8, right=10, bottom=8),
+            border_radius=10,
+            bgcolor=ft.Colors.TEAL_600 if selected else ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.TEAL_700 if selected else ft.Colors.TEAL_200),
+            on_click=lambda _, selected_type=tipo_objeto: self._select_manual_object_type(selected_type),
+            content=ft.Text(tipo_objeto, weight=ft.FontWeight.W_700, color=ft.Colors.WHITE if selected else ft.Colors.TEAL_800),
+        )
 
     def _build_selected_object_panel(self) -> ft.Control:
         if self.objeto_seleccionado is None:
@@ -1128,8 +1227,43 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = []
         if self.comprador_seleccionado is not None:
             controls.append(self._build_selected_buyer_panel())
-        controls.extend([self._build_added_buyers_list(), self._build_buyers_summary()])
+        controls.extend([self._build_manual_buyer_persisted_panel(), self._build_added_buyers_list(), self._build_buyers_summary()])
         return ft.Column(controls=controls, spacing=12)
+
+    def _build_manual_buyer_persisted_panel(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Modo técnico/dev: comprador persistido", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Usá esta carga solo para probar confirmación real end-to-end con persona y rol ya persistidos en backend.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            self.manual_buyer_id_field,
+            self.manual_buyer_text_field,
+            self.manual_buyer_role_field,
+            self.manual_buyer_percentage_field,
+            ft.Text(
+                "Si es el único comprador, el porcentaje puede quedar vacío y se asumirá 100%.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_600,
+            ),
+        ]
+        if self.manual_buyer_error is not None:
+            controls.append(ft.Text(self.manual_buyer_error, size=12, color=ft.Colors.RED_700))
+        controls.append(
+            ft.Button(
+                "Agregar comprador persistido",
+                icon=ft.Icons.PERSON_ADD_ALT_1,
+                on_click=self._add_manual_persisted_buyer,
+            )
+        )
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.TEAL_50,
+            border=_border_all(1, ft.Colors.TEAL_200),
+            content=ft.Column(controls=controls, spacing=8),
+        )
 
     def _build_selected_buyer_panel(self) -> ft.Control:
         if self.comprador_seleccionado is None:
@@ -4551,6 +4685,80 @@ class VentaCompletaWizardV3Prototype:
     def _format_money_with_currency(self, value: Decimal) -> str:
         return f"{self._currency_label()} {_format_money(value)}"
 
+    def _select_manual_object_type(self, tipo_objeto: Literal["INMUEBLE", "UNIDAD_FUNCIONAL"]) -> None:
+        self.manual_object_type_value = tipo_objeto
+        self.manual_object_error = None
+        self._render()
+
+    def _on_manual_object_id_change(self, event: ft.ControlEvent) -> None:
+        self.manual_object_id_value = str(event.control.value or "")
+
+    def _on_manual_object_text_change(self, event: ft.ControlEvent) -> None:
+        self.manual_object_text_value = str(event.control.value or "")
+
+    def _on_manual_object_price_change(self, event: ft.ControlEvent) -> None:
+        self.manual_object_price_value = str(event.control.value or "")
+
+    def _manual_object_payload(self) -> dict[str, Any] | None:
+        object_id = self.manual_object_id_value.strip()
+        if not object_id.isdigit() or int(object_id) <= 0:
+            return None
+        payload: dict[str, Any] = {
+            "tipo_objeto": self.manual_object_type_value,
+            "texto_visual": self.manual_object_text_value.strip(),
+        }
+        if self.manual_object_type_value == "UNIDAD_FUNCIONAL":
+            payload["id_unidad_funcional"] = int(object_id)
+            payload["id_inmueble"] = None
+        else:
+            payload["id_inmueble"] = int(object_id)
+            payload["id_unidad_funcional"] = None
+        return payload
+
+    def _manual_object_validation_message(self) -> str | None:
+        payload = self._manual_object_payload()
+        if payload is None:
+            return "Ingresá un ID técnico persistido mayor que 0."
+        if not self.manual_object_text_value.strip():
+            return "Ingresá un texto visual para reconocer el objeto persistido."
+        price = _parse_money_decimal(self.manual_object_price_value)
+        if price is None:
+            return "precio_asignado debe ser un decimal finito mayor que cero y con hasta 2 decimales."
+        if any(_same_object_payload(objeto, payload) for objeto in self.state.objetos):
+            return "Ese objeto persistido ya fue agregado a la venta."
+        return None
+
+    def _add_manual_persisted_object(self, _: ft.ControlEvent | None = None) -> None:
+        self.manual_object_id_value = str(self.manual_object_id_field.value or self.manual_object_id_value or "")
+        self.manual_object_text_value = str(self.manual_object_text_field.value or self.manual_object_text_value or "")
+        self.manual_object_price_value = str(self.manual_object_price_field.value or self.manual_object_price_value or "")
+        self.manual_object_error = self._manual_object_validation_message()
+        payload = self._manual_object_payload()
+        price = _parse_money_decimal(self.manual_object_price_value)
+        if self.manual_object_error is not None or payload is None or price is None:
+            self._render()
+            return
+        self._mark_plan_preview_stale()
+        self.state.objetos.append(
+            ObjetoVentaWizardDraft(
+                tipo_objeto=self.manual_object_type_value,
+                id_inmueble=payload.get("id_inmueble"),
+                id_unidad_funcional=payload.get("id_unidad_funcional"),
+                texto_visual=self.manual_object_text_value.strip(),
+                precio_asignado=_format_decimal(price),
+                source="manual",
+                persisted=True,
+            )
+        )
+        self.manual_object_id_value = ""
+        self.manual_object_text_value = ""
+        self.manual_object_price_value = ""
+        self.manual_object_id_field.value = ""
+        self.manual_object_text_field.value = ""
+        self.manual_object_price_field.value = ""
+        self.manual_object_error = None
+        self._render()
+
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
         self.objeto_seleccionado = selected
         self.precio_objeto_value = ""
@@ -4639,6 +4847,67 @@ class VentaCompletaWizardV3Prototype:
         if 0 <= index < len(self.state.objetos):
             self.state.objetos.pop(index)
             self._mark_plan_preview_stale()
+        self._render()
+
+    def _on_manual_buyer_id_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_id_value = str(event.control.value or "")
+
+    def _on_manual_buyer_text_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_text_value = str(event.control.value or "")
+
+    def _on_manual_buyer_role_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_role_value = str(event.control.value or "")
+
+    def _on_manual_buyer_percentage_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_percentage_value = str(event.control.value or "")
+
+    def _manual_buyer_validation_message(self) -> str | None:
+        person_id = self.manual_buyer_id_value.strip()
+        if not person_id.isdigit() or int(person_id) <= 0:
+            return "Ingresá un id_persona persistido mayor que 0."
+        if any(comprador.id_persona == int(person_id) for comprador in self.state.compradores):
+            return "Ese id_persona ya fue agregado como comprador."
+        if not self.manual_buyer_text_value.strip():
+            return "Ingresá un texto visual para reconocer el comprador persistido."
+        role_id = self.manual_buyer_role_value.strip()
+        if not role_id.isdigit() or int(role_id) <= 0:
+            return "Ingresá un id_rol_participacion persistido mayor que 0."
+        percentage = self.manual_buyer_percentage_value.strip()
+        if percentage and _parse_percentage(percentage) is None:
+            return "porcentaje_responsabilidad debe ser mayor que 0 y menor o igual que 100."
+        return None
+
+    def _add_manual_persisted_buyer(self, _: ft.ControlEvent | None = None) -> None:
+        self.manual_buyer_id_value = str(self.manual_buyer_id_field.value or self.manual_buyer_id_value or "")
+        self.manual_buyer_text_value = str(self.manual_buyer_text_field.value or self.manual_buyer_text_value or "")
+        self.manual_buyer_role_value = str(self.manual_buyer_role_field.value or self.manual_buyer_role_value or "")
+        self.manual_buyer_percentage_value = str(self.manual_buyer_percentage_field.value or self.manual_buyer_percentage_value or "")
+        self.manual_buyer_error = self._manual_buyer_validation_message()
+        if self.manual_buyer_error is not None:
+            self._render()
+            return
+        percentage = self.manual_buyer_percentage_value.strip()
+        parsed_percentage = _parse_percentage(percentage) if percentage else None
+        self.state.compradores.append(
+            CompradorWizardDraft(
+                id_persona=int(self.manual_buyer_id_value.strip()),
+                texto_visual=self.manual_buyer_text_value.strip(),
+                porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
+                id_rol_participacion=self.manual_buyer_role_value.strip(),
+                source="manual",
+                persisted=True,
+            )
+        )
+        self._mark_plan_preview_stale()
+        self.manual_buyer_id_value = ""
+        self.manual_buyer_text_value = ""
+        self.manual_buyer_role_value = ""
+        self.manual_buyer_percentage_value = ""
+        self.manual_buyer_id_field.value = ""
+        self.manual_buyer_text_field.value = ""
+        self.manual_buyer_role_field.value = ""
+        self.manual_buyer_percentage_field.value = ""
+        self.manual_buyer_error = None
         self._render()
 
     def _on_comprador_selected(self, selected: dict[str, Any] | None) -> None:
