@@ -289,6 +289,23 @@ class ApiClient:
             json=payload,
         )
 
+    def confirmar_venta_directa_completa(
+        self,
+        payload: dict[str, Any],
+        op_id: str | None = None,
+    ) -> ApiResult:
+        x_op_id = self._valid_or_new_uuid(op_id)
+        return self._post(
+            "/api/v1/ventas/directa/confirmar-venta-completa",
+            headers={
+                "X-Op-Id": x_op_id,
+                "X-Usuario-Id": "1",
+                "X-Sucursal-Id": "1",
+                "X-Instalacion-Id": "1",
+            },
+            json=payload,
+        )
+
     def confirmar_venta_completa_desde_reserva(
         self,
         id_reserva_venta: int,

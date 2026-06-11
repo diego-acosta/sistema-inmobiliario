@@ -796,12 +796,23 @@ recalcularse avanzando nuevamente desde la edicion del plan.
 La confirmacion construye el payload desde el mismo estado del wizard y llama al
 adapter final segun `origen`.
 
+Estado V3 vigente: este PR conecta solo la confirmacion real de `DIRECTA` contra
+`POST /api/v1/ventas/directa/confirmar-venta-completa`. La confirmacion desde
+`RESERVA` queda pendiente hasta integrar datos reales de compradores/reserva y
+mantener el adapter separado.
+
 Reglas comunes:
 
 - Enviar `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`.
 - Bloquear submit si falta algun header CORE-EF requerido.
 - Preservar la respuesta/error estandar del backend; no traducir errores de
   contrato a mensajes que oculten el campo invalido.
+- Exigir `preview_data` vigente antes de confirmar: si `preview_data` es `None`
+  o `preview_stale = true`, el boton `Confirmar venta` permanece bloqueado.
+- La venta se crea recien al presionar `Confirmar venta`; el wizard no persiste
+  borrador de venta ni usa `id_venta` ficticio durante la carga o el preview.
+- La accion final se ejecuta desde `REVISION_GENERAL`; no avanza a placeholders
+  posteriores cuando el submit esta conectado.
 
 Reglas por origen:
 
@@ -833,6 +844,13 @@ En caso OK, mostrar:
 ```text
 GET /api/v1/ventas/{id_venta}/plan-pago-v2
 ```
+
+En V3, la pantalla final `VENTA_CONFIRMADA` debe mostrar confirmacion exitosa,
+`id_venta`/estado/version si vienen en response, estado/id de Plan Pago V2,
+cantidad de obligaciones generadas y resumen comercial basico: origen, objetos,
+compradores, forma de pago y total. Si el POST falla, la UI permanece en
+`REVISION_GENERAL`, conserva el estado cargado, muestra el `ErrorResponse` o el
+error de conexion y no marca la venta como confirmada.
 
 La consulta se habilita solo si el response permite obtener `id_venta`.
 
@@ -1127,7 +1145,10 @@ venta durante la carga. Al presionar `Siguiente` desde la edicion del plan,
 ejecuta automaticamente `POST /api/v1/ventas/plan-pago-v2/preview` con el
 estado local del wizard y avanza a `PREVIEW_PLAN_PAGO` si el backend responde
 OK; el preview no crea venta y su response no incluye `id_venta`. La
-confirmacion de venta real sigue pendiente como paso posterior.
+confirmacion de venta directa real se ejecuta desde `REVISION_GENERAL` con el
+boton `Confirmar venta` contra
+`POST /api/v1/ventas/directa/confirmar-venta-completa`, siempre que el preview
+este vigente. La confirmacion desde reserva queda pendiente y separada.
 
 El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
 queda descartado como base principal porque su flujo no representa la UX
@@ -1156,6 +1177,10 @@ Headers:
 - Directa no requiere `If-Match-Version` segun contrato actual.
 - Preview previo a confirmacion no debe exigir headers write por ser
   `PREVIEW_READLIKE`.
+- En el prototipo Flet actual, `ApiClient` genera `X-Op-Id` y usa placeholders
+  visibles/configurables de desarrollo (`X-Usuario-Id=1`, `X-Sucursal-Id=1`,
+  `X-Instalacion-Id=1`) hasta integrar contexto real de sesion, sucursal e
+  instalacion. No deben interpretarse como datos productivos silenciosos.
 
 Idempotencia:
 
@@ -1194,10 +1219,11 @@ Rollback/transaccion:
   actualiza disponibilidad/estado cuando corresponda.
 - La UI debe mostrarlo en revision y no intentar compensaciones locales.
 
-Tests ejecutados para este PR documental:
+Tests requeridos para este PR de frontend:
 
-- No aplica `pytest`, porque no se modifica backend, SQL ni tests.
-- Validacion requerida: `git diff --check`.
+- `python -m compileall -q frontend/flet_app`.
+- Backend pytest es opcional si no se modifica backend; los tests existentes de
+  contrato siguen siendo la referencia de regresion.
 
 ## 15. Validacion contra implementacion y tests existentes
 
