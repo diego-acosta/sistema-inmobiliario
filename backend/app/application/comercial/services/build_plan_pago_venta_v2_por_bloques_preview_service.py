@@ -278,14 +278,13 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         if not cuotas_refuerzo:
             return None
         cantidad_cuotas = bloque.cantidad_cuotas or 0
-        cantidad_cuotas_normales = cantidad_cuotas - len(cuotas_refuerzo)
-        if cantidad_cuotas_normales <= 0:
+        if len(cuotas_refuerzo) > cantidad_cuotas:
             return "CUOTA_REFUERZO_EXCEDE_CANTIDAD_CUOTAS"
         numeros: set[int] = set()
         for cuota_refuerzo in cuotas_refuerzo:
             if (
                 cuota_refuerzo.numero_cuota <= 0
-                or cuota_refuerzo.numero_cuota > cantidad_cuotas_normales
+                or cuota_refuerzo.numero_cuota > cantidad_cuotas
             ):
                 return "CUOTA_REFUERZO_NUMERO_INVALIDO"
             if cuota_refuerzo.numero_cuota in numeros:
@@ -485,7 +484,6 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         for bloque in bloques:
             if bloque.tipo_bloque == TIPO_BLOQUE_TRAMO_CUOTAS:
                 importes = self._importes_cuotas(bloque.input)
-                refuerzos_por_numero = self._cuota_refuerzo_por_numero(bloque.input)
                 for cuota_numero, importe in enumerate(importes, start=1):
                     fecha_vencimiento = add_months(
                         bloque.input.fecha_primer_vencimiento, cuota_numero - 1
@@ -495,15 +493,28 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
                         capital_cuota=importe,
                         fecha_vencimiento=fecha_vencimiento,
                     )
-                    cuota_refuerzo = refuerzos_por_numero.get(cuota_numero)
-                    etiqueta = self._etiqueta_cuota_tramo(
-                        cuota_numero, cuota_refuerzo=cuota_refuerzo
+                    cuota_refuerzo = self._cuota_refuerzo_por_numero(bloque.input).get(
+                        cuota_numero
+                    )
+                    tipo_item = (
+                        TIPO_ITEM_REFUERZO
+                        if cuota_refuerzo is not None
+                        else TIPO_ITEM_CUOTA
+                    )
+                    etiqueta = (
+                        cuota_refuerzo.etiqueta
+                        if cuota_refuerzo is not None and cuota_refuerzo.etiqueta
+                        else (
+                            f"Refuerzo cuota {cuota_numero}"
+                            if cuota_refuerzo is not None
+                            else f"Cuota {cuota_numero}"
+                        )
                     )
                     obligaciones.append(
                         PlanPagoVentaV2ObligacionPreview(
                             bloque=bloque,
                             numero_obligacion=len(obligaciones) + 1,
-                            tipo_item_cronograma=TIPO_ITEM_CUOTA,
+                            tipo_item_cronograma=tipo_item,
                             etiqueta_obligacion=etiqueta,
                             item_numero=cuota_numero,
                             fecha_vencimiento=fecha_vencimiento,
@@ -554,15 +565,6 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             cuota_refuerzo.numero_cuota: cuota_refuerzo
             for cuota_refuerzo in (bloque.cuotas_refuerzo or [])
         }
-
-    @staticmethod
-    def _etiqueta_cuota_tramo(cuota_numero: int, *, cuota_refuerzo: Any | None) -> str:
-        if cuota_refuerzo is None:
-            return f"Cuota {cuota_numero}"
-        etiqueta_refuerzo = (cuota_refuerzo.etiqueta or "").strip()
-        if not etiqueta_refuerzo:
-            etiqueta_refuerzo = f"Refuerzo cuota {cuota_numero}"
-        return f"Cuota {cuota_numero} (incluye {etiqueta_refuerzo})"
 
     def _aplicar_resumen_indexacion(
         self,
@@ -637,17 +639,13 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
 
     def _importes_cuotas(self, bloque: PlanPagoVentaBloqueInput) -> list[Decimal]:
         if self._tramo_usa_interes_directo(bloque):
-            importes_financieros = self._importes_cuotas_interes_directo(bloque)
-        elif self._tramo_usa_capital_total(bloque):
-            importes_financieros = self._importes_cuotas_por_total(bloque)
-        else:
-            importes_financieros = [
-                (bloque.importe_cuota or Decimal("0.00")).quantize(Decimal("0.01"))
-                for _ in range(bloque.cantidad_cuotas or 0)
-            ]
-        return self._acumular_importes_refuerzo_en_cuotas_visibles(
-            bloque, importes_financieros
-        )
+            return self._importes_cuotas_interes_directo(bloque)
+        if self._tramo_usa_capital_total(bloque):
+            return self._importes_cuotas_por_total(bloque)
+        return [
+            (bloque.importe_cuota or Decimal("0.00")).quantize(Decimal("0.01"))
+            for _ in range(bloque.cantidad_cuotas or 0)
+        ]
 
     def _importes_cuotas_por_total(
         self, bloque: PlanPagoVentaBloqueInput
@@ -687,30 +685,6 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
         return (total / Decimal(bloque.cantidad_cuotas or 1)).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
-
-    def _acumular_importes_refuerzo_en_cuotas_visibles(
-        self, bloque: PlanPagoVentaBloqueInput, importes_financieros: list[Decimal]
-    ) -> list[Decimal]:
-        refuerzos_por_numero = self._cuota_refuerzo_por_numero(bloque)
-        if not refuerzos_por_numero:
-            return importes_financieros
-        cantidad_cuotas_normales = self._cantidad_cuotas_normales_tramo(bloque)
-        importes_visibles: list[Decimal] = []
-        indice_financiero = 0
-        for cuota_numero in range(1, cantidad_cuotas_normales + 1):
-            importe = importes_financieros[indice_financiero]
-            indice_financiero += 1
-            if cuota_numero in refuerzos_por_numero:
-                importe = (importe + importes_financieros[indice_financiero]).quantize(
-                    Decimal("0.01")
-                )
-                indice_financiero += 1
-            importes_visibles.append(importe.quantize(Decimal("0.01")))
-        return importes_visibles
-
-    @staticmethod
-    def _cantidad_cuotas_normales_tramo(bloque: PlanPagoVentaBloqueInput) -> int:
-        return (bloque.cantidad_cuotas or 0) - len(bloque.cuotas_refuerzo or [])
 
     @staticmethod
     def _tramo_usa_capital_total(bloque: PlanPagoVentaBloqueInput) -> bool:

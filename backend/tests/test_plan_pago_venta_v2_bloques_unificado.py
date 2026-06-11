@@ -1826,12 +1826,11 @@ def test_generate_tramo_cuotas_con_refuerzos_internos_persiste_sin_duplicar(
     assert second.success, second.errors
 
     obligaciones = _obligaciones_unificadas(db_session, id_venta=id_venta)
-    assert len(obligaciones) == 22
-    assert all(ob["tipo_item_cronograma"] == "CUOTA" for ob in obligaciones)
-    assert "incluye Refuerzo cuota 6" in obligaciones[5]["etiqueta_obligacion"]
-    assert obligaciones[5]["importe_total"] == Decimal("2000000.00")
-    assert "incluye Refuerzo cuota 12" in obligaciones[11]["etiqueta_obligacion"]
-    assert obligaciones[11]["importe_total"] == Decimal("2000000.00")
+    assert len(obligaciones) == 24
+    assert sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "CUOTA") == 22
+    assert (
+        sum(1 for ob in obligaciones if ob["tipo_item_cronograma"] == "REFUERZO") == 2
+    )
     assert {ob["tipo_bloque"] for ob in first.data["bloques"]} == {"TRAMO_CUOTAS"}
     assert sum(
         (ob["importe_total"] for ob in obligaciones), Decimal("0.00")
