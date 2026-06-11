@@ -804,6 +804,9 @@ mantener el adapter separado.
 Reglas comunes:
 
 - Enviar `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`.
+- Preservar un `X-Op-Id` estable por intento de confirmacion mientras el payload
+  canonico no cambie; ante retry por timeout, conexion, 409, 500 o resultado sin
+  certeza de commit, reusar el mismo op id.
 - Bloquear submit si falta algun header CORE-EF requerido.
 - Preservar la respuesta/error estandar del backend; no traducir errores de
   contrato a mensajes que oculten el campo invalido.
@@ -813,6 +816,9 @@ Reglas comunes:
   borrador de venta ni usa `id_venta` ficticio durante la carga o el preview.
 - La accion final se ejecuta desde `REVISION_GENERAL`; no avanza a placeholders
   posteriores cuando el submit esta conectado.
+- Bloquear la confirmacion real si algun objeto o comprador proviene de datos
+  demo/no persistidos. En ese caso, el preview puede seguir usandose como flujo
+  visual, pero no debe ejecutarse el POST de confirmacion.
 
 Reglas por origen:
 
@@ -1148,7 +1154,10 @@ OK; el preview no crea venta y su response no incluye `id_venta`. La
 confirmacion de venta directa real se ejecuta desde `REVISION_GENERAL` con el
 boton `Confirmar venta` contra
 `POST /api/v1/ventas/directa/confirmar-venta-completa`, siempre que el preview
-este vigente. La confirmacion desde reserva queda pendiente y separada.
+este vigente y los objetos/compradores seleccionados esten marcados como
+persistidos/backend. Los registros demo del prototipo quedan marcados como
+`persisted = false` y solo sirven para probar el flujo visual/preview; bloquean
+la confirmacion real. La confirmacion desde reserva queda pendiente y separada.
 
 El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
 queda descartado como base principal porque su flujo no representa la UX
@@ -1187,6 +1196,9 @@ Idempotencia:
 - Aplica como command sincronizable con `X-Op-Id`.
 - Criterio UX: la UI debe generar/conservar un `X-Op-Id` por intento de
   confirmacion y no cambiarlo durante reintentos del mismo submit.
+- La firma del intento se calcula sobre JSON canonico del payload
+  (`sort_keys=True`); si el payload cambia, se descarta el op id anterior y se
+  genera uno nuevo para el siguiente submit.
 - Misma operacion funcional con payload distinto debe tratarse como nuevo
   intento operativo desde UI, salvo que backend indique otra regla.
 - No declarar cumplimiento profundo adicional sin evidencia del endpoint.

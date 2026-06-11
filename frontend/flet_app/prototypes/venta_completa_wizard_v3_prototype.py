@@ -31,11 +31,13 @@ Alcance:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import sys
 from typing import Any, Literal
+from uuid import uuid4
 
 import flet as ft
 
@@ -113,6 +115,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "descripcion": "Lote 12 - Manzana B",
         "estado": "DISPONIBLE",
         "resumen": "Inmueble completo disponible para la operación comercial demo.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "tipo_objeto": "INMUEBLE",
@@ -121,6 +125,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "descripcion": "Macrolote 2",
         "estado": "DISPONIBLE",
         "resumen": "Macrolote demo para validar carga multiobjeto sin backend.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "tipo_objeto": "UNIDAD_FUNCIONAL",
@@ -130,6 +136,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "inmueble_padre": "Edificio Norte",
         "estado": "DISPONIBLE",
         "resumen": "Unidad funcional demo dentro del edificio norte.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "tipo_objeto": "UNIDAD_FUNCIONAL",
@@ -139,6 +147,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "inmueble_padre": "Edificio Norte",
         "estado": "RESERVABLE",
         "resumen": "Unidad funcional demo para validar selección por buscador visual.",
+        "source": "demo",
+        "persisted": False,
     },
 ]
 
@@ -151,6 +161,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "apellido": "Perez",
         "documento": "DNI 30111222",
         "resumen": "Persona humana disponible para actuar como comprador demo.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "id_persona": 202,
@@ -159,6 +171,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "apellido": "Gomez",
         "documento": "DNI 28999888",
         "resumen": "Compradora demo para validar operaciones con mas de una persona.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "id_persona": 203,
@@ -167,6 +181,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "apellido": "Martinez",
         "documento": "DNI 33444555",
         "resumen": "Persona demo con datos visibles sin priorizar el ID tecnico.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "id_persona": 204,
@@ -174,6 +190,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "razon_social": "Constructora Rio Sur SA",
         "documento": "CUIT 30-71112223-4",
         "resumen": "Persona juridica demo para validar busqueda por razon social.",
+        "source": "demo",
+        "persisted": False,
     },
 ]
 
@@ -185,6 +203,8 @@ class ObjetoVentaWizardDraft:
     id_unidad_funcional: int | None
     texto_visual: str
     precio_asignado: str
+    source: str = "demo"
+    persisted: bool = False
 
 
 @dataclass
@@ -193,6 +213,8 @@ class CompradorWizardDraft:
     texto_visual: str
     porcentaje_responsabilidad: str
     id_rol_participacion: str
+    source: str = "demo"
+    persisted: bool = False
 
 
 @dataclass
@@ -284,6 +306,8 @@ class WizardVentaCompletaV3State:
     confirm_data: dict[str, Any] | None = None
     confirm_error: str | None = None
     confirm_status_code: int | None = None
+    confirm_op_id: str | None = None
+    confirm_payload_signature: str | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -2386,6 +2410,7 @@ class VentaCompletaWizardV3Prototype:
                             _info_row("tipo_objeto", objeto.tipo_objeto),
                             _info_row(id_label, technical_id),
                             _info_row("precio_asignado", self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal("0"))),
+                            _info_row("Origen dato", self._record_source_label(objeto.source, objeto.persisted)),
                         ],
                         spacing=5,
                     ),
@@ -2424,6 +2449,7 @@ class VentaCompletaWizardV3Prototype:
                                 _info_row("id_persona", comprador.id_persona),
                                 _info_row("id_rol_participacion", comprador.id_rol_participacion),
                                 _info_row("porcentaje_responsabilidad", comprador.porcentaje_responsabilidad or "100.00"),
+                                _info_row("Origen dato", self._record_source_label(comprador.source, comprador.persisted)),
                             ],
                             spacing=5,
                         ),
@@ -2844,6 +2870,16 @@ class VentaCompletaWizardV3Prototype:
             },
         }
 
+    def _confirm_payload_signature(self, payload: dict[str, Any]) -> str:
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    def _ensure_confirm_op_id_for_payload(self, payload: dict[str, Any]) -> str:
+        signature = self._confirm_payload_signature(payload)
+        if self.state.confirm_op_id is None or self.state.confirm_payload_signature != signature:
+            self.state.confirm_op_id = str(uuid4())
+            self.state.confirm_payload_signature = signature
+        return self.state.confirm_op_id
+
     def _build_confirm_sale_commercial_conditions(self, total_decimal: Decimal) -> dict[str, Any]:
         total = _format_decimal(total_decimal)
         if self.state.forma_pago == "CONTADO":
@@ -2873,16 +2909,22 @@ class VentaCompletaWizardV3Prototype:
 
     def _confirm_sale(self, _: ft.ControlEvent | None = None) -> None:
         if not self._can_confirm_sale():
-            self.state.confirm_error = "No se puede confirmar: resolvé validaciones y recalculá el preview si está desactualizado."
+            persisted_errors = self._non_persisted_confirmation_errors()
+            if persisted_errors:
+                self.state.confirm_error = "La confirmación real requiere objetos y compradores persistidos en backend. Los datos demo solo sirven para probar el flujo visual."
+            else:
+                self.state.confirm_error = "No se puede confirmar: resolvé validaciones y recalculá el preview si está desactualizado."
             self._render()
             return
 
         payload = self._build_confirm_sale_payload()
+        confirm_op_id = self._ensure_confirm_op_id_for_payload(payload)
         self.state.confirm_loading = True
+        self.state.confirm_data = None
         self.state.confirm_error = None
         self.state.confirm_status_code = None
         self._render()
-        result = self.api.confirmar_venta_directa_completa(payload)
+        result = self.api.confirmar_venta_directa_completa(payload, op_id=confirm_op_id)
         self.state.confirm_loading = False
         self.state.confirm_status_code = result.status_code
         if result.success and isinstance(result.data, dict):
@@ -2914,10 +2956,17 @@ class VentaCompletaWizardV3Prototype:
             parts.append(result.error_message)
         return " ".join(parts)
 
+    def _reset_confirm_attempt(self, *, clear_error: bool = True) -> None:
+        self.state.confirm_op_id = None
+        self.state.confirm_payload_signature = None
+        self.state.confirm_data = None
+        self.state.confirm_status_code = None
+        if clear_error:
+            self.state.confirm_error = None
+
     def _mark_plan_preview_stale(self, clear_error: bool = True) -> None:
         self.state.preview_stale = True
-        self.state.confirm_error = None
-        self.state.confirm_status_code = None
+        self._reset_confirm_attempt(clear_error=clear_error)
         if clear_error:
             self.state.preview_error = None
 
@@ -2967,12 +3016,22 @@ class VentaCompletaWizardV3Prototype:
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
             )
+        persisted_errors = self._non_persisted_confirmation_errors()
+        if persisted_errors:
+            controls.append(
+                self._build_help_card(
+                    "La confirmación real requiere objetos y compradores persistidos en backend. Los datos demo solo sirven para probar el flujo visual.",
+                    ft.Colors.AMBER_50,
+                    ft.Colors.AMBER_200,
+                )
+            )
+            controls.append(ft.Column(controls=[ft.Text(f"• {error}", color=ft.Colors.AMBER_900) for error in persisted_errors], spacing=4))
         if self.state.confirm_error is not None:
             controls.append(self._build_help_card(self.state.confirm_error, ft.Colors.RED_50, ft.Colors.RED_200))
         elif self._can_confirm_sale():
             controls.append(self._build_help_card("Preview vigente y revisión completa. Podés presionar Confirmar venta.", ft.Colors.GREEN_50, ft.Colors.GREEN_200))
         else:
-            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener preview vigente y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
+            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener preview vigente, datos persistidos en backend y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
         return self._build_review_section_container(controls)
 
     def _build_review_section_container(self, controls: list[ft.Control]) -> ft.Control:
@@ -2983,6 +3042,27 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(controls=controls, spacing=8),
         )
+
+    def _non_persisted_confirmation_errors(self) -> list[str]:
+        errors: list[str] = []
+        if self.state.origen != "DIRECTA":
+            return errors
+        demo_objects = [objeto.texto_visual for objeto in self.state.objetos if not objeto.persisted]
+        if demo_objects:
+            errors.append("Objetos no persistidos/demo: " + ", ".join(demo_objects))
+        demo_buyers = [comprador.texto_visual for comprador in self.state.compradores if not comprador.persisted]
+        if demo_buyers:
+            errors.append("Compradores no persistidos/demo: " + ", ".join(demo_buyers))
+        return errors
+
+    def _has_only_persisted_confirmation_records(self) -> bool:
+        return not self._non_persisted_confirmation_errors()
+
+    @staticmethod
+    def _record_source_label(source: str, persisted: bool) -> str:
+        if persisted:
+            return f"backend/persistido ({source or 'backend'})"
+        return f"demo/no persistido ({source or 'demo'})"
 
     def _general_review_errors(self) -> list[str]:
         errors: list[str] = []
@@ -3009,6 +3089,7 @@ class VentaCompletaWizardV3Prototype:
             buyer_error = self._buyers_validation_error()
             if buyer_error is not None:
                 errors.append(buyer_error)
+            errors.extend(self._non_persisted_confirmation_errors())
         if self.state.forma_pago not in {"CONTADO", "FINANCIADO"}:
             errors.append("Elegí una forma de pago.")
         if self.state.forma_pago == "CONTADO" and (not self.state.fecha_pago_contado_iso or self.state.fecha_pago_contado_error is not None):
@@ -3032,6 +3113,7 @@ class VentaCompletaWizardV3Prototype:
             and self.state.preview_data is not None
             and not self.state.preview_stale
             and self.state.origen == "DIRECTA"
+            and self._has_only_persisted_confirmation_records()
         )
 
     def _build_confirmed_sale_step(self) -> ft.Control:
@@ -3264,6 +3346,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _on_codigo_venta_change(self, event: ft.ControlEvent) -> None:
         self.state.codigo_venta = str(event.control.value or "")
+        self._reset_confirm_attempt()
 
     def _on_observaciones_change(self, event: ft.ControlEvent) -> None:
         self.state.observaciones_comerciales = str(event.control.value or "")
@@ -4541,6 +4624,8 @@ class VentaCompletaWizardV3Prototype:
                 id_unidad_funcional=id_unidad_funcional,
                 texto_visual=str(self.objeto_seleccionado.get("texto_visual") or "-"),
                 precio_asignado=_format_decimal(precio),
+                source=str(self.objeto_seleccionado.get("source") or "demo"),
+                persisted=bool(self.objeto_seleccionado.get("persisted", False)),
             )
         )
         self.objeto_seleccionado = None
@@ -4623,6 +4708,8 @@ class VentaCompletaWizardV3Prototype:
                 texto_visual=str(self.comprador_seleccionado.get("texto_visual") or "-"),
                 porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
                 id_rol_participacion=self.rol_comprador_value.strip(),
+                source=str(self.comprador_seleccionado.get("source") or "demo"),
+                persisted=bool(self.comprador_seleccionado.get("persisted", False)),
             )
         )
         self._mark_plan_preview_stale()
