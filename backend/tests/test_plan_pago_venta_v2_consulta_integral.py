@@ -355,7 +355,7 @@ def test_consulta_integral_muestra_refuerzos_internos_en_tramo_cuotas(
                     periodicidad="MENSUAL",
                     cuotas_refuerzo=[
                         CuotaRefuerzoInput(numero_cuota=3, etiqueta="Refuerzo cuota 3"),
-                        CuotaRefuerzoInput(numero_cuota=6, etiqueta="Refuerzo cuota 6"),
+                        CuotaRefuerzoInput(numero_cuota=4, etiqueta="Refuerzo cuota 4"),
                     ],
                 )
             ],
@@ -371,23 +371,35 @@ def test_consulta_integral_muestra_refuerzos_internos_en_tramo_cuotas(
     assert len(integral["bloques"]) == 1
     bloque = integral["bloques"][0]
     assert bloque["tipo_bloque"] == "TRAMO_CUOTAS"
+    assert bloque["cantidad_cuotas"] == 6
     obligaciones = bloque["obligaciones"]
-    assert len(obligaciones) == 6
-    assert (
-        sum(
-            1
-            for obligacion in obligaciones
-            if obligacion["tipo_item_cronograma"] == "CUOTA"
-        )
-        == 4
+    assert len(obligaciones) == 4
+    assert all(
+        obligacion["tipo_item_cronograma"] == "CUOTA" for obligacion in obligaciones
     )
-    refuerzos = [
+    assert [obligacion["numero_cuota_asociada"] for obligacion in obligaciones] == [
+        1,
+        2,
+        3,
+        4,
+    ]
+    assert not any(
+        obligacion["numero_cuota_asociada"] in {5, 6} for obligacion in obligaciones
+    )
+    cuota_3 = next(
         obligacion
         for obligacion in obligaciones
-        if obligacion["tipo_item_cronograma"] == "REFUERZO"
-    ]
-    assert [obligacion["numero_cuota_asociada"] for obligacion in refuerzos] == [3, 6]
-    assert [obligacion["etiqueta_obligacion"] for obligacion in refuerzos] == [
-        "Refuerzo cuota 3",
-        "Refuerzo cuota 6",
-    ]
+        if obligacion["numero_cuota_asociada"] == 3
+    )
+    cuota_4 = next(
+        obligacion
+        for obligacion in obligaciones
+        if obligacion["numero_cuota_asociada"] == 4
+    )
+    assert cuota_3["importe_total"] == Decimal("2000000.00")
+    assert cuota_4["importe_total"] == Decimal("2000000.00")
+    assert "Refuerzo cuota 3" in cuota_3["etiqueta_obligacion"]
+    assert "Refuerzo cuota 4" in cuota_4["etiqueta_obligacion"]
+    assert sum(
+        (obligacion["importe_total"] for obligacion in obligaciones), Decimal("0.00")
+    ) == Decimal("6000000.00")
