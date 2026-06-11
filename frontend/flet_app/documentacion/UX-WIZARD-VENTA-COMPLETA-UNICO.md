@@ -819,6 +819,9 @@ Reglas comunes:
 - Bloquear la confirmacion real si algun objeto o comprador proviene de datos
   demo/no persistidos. En ese caso, el preview puede seguir usandose como flujo
   visual, pero no debe ejecutarse el POST de confirmacion.
+- El flujo principal debe usar selectores backend para objeto y comprador reales;
+  el usuario no debe escribir manualmente `id_inmueble`, `id_unidad_funcional` ni
+  `id_persona` en el camino principal de confirmacion.
 - Mientras no exista selector productivo conectado a backend para todos los datos,
   el prototipo puede ofrecer un modo tecnico/dev visible para cargar IDs reales
   persistidos; esos registros deben marcarse `source = "manual"` y
@@ -1161,12 +1164,11 @@ boton `Confirmar venta` contra
 este vigente y los objetos/compradores seleccionados esten marcados como
 persistidos/backend. Los registros demo del prototipo quedan marcados como
 `persisted = false` y solo sirven para probar el flujo visual/preview; bloquean
-la confirmacion real. Para habilitar una prueba end-to-end antes de integrar
-selectores reales, V3 expone un modo tecnico/dev visible para cargar manualmente
-`tipo_objeto`, `id_inmueble`/`id_unidad_funcional`, `id_persona`,
-`id_rol_participacion`, porcentajes y precios ya persistidos; esos registros
-entran al estado como `source = "manual"` y `persisted = true`. La confirmacion
-desde reserva queda pendiente y separada.
+la confirmacion real. El modo tecnico/dev manual queda como fallback avanzado, no como camino
+principal. Como no hay API propia confirmada para listar el catalogo
+`rol_participacion`, el prototipo conserva la carga manual de
+`id_rol_participacion` con advertencia tecnica hasta integrar un selector real
+de roles. La confirmacion desde reserva queda pendiente y separada.
 
 El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
 queda descartado como base principal porque su flujo no representa la UX

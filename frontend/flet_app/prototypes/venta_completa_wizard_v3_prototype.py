@@ -321,6 +321,12 @@ class VentaCompletaWizardV3Prototype:
         self.comprador_selector: SearchSelectorDemo | None = None
         self.objeto_seleccionado: dict[str, Any] | None = None
         self.comprador_seleccionado: dict[str, Any] | None = None
+        self.backend_object_records: list[dict[str, Any]] = []
+        self.backend_object_error: str | None = None
+        self.backend_objects_loaded = False
+        self.backend_buyer_records: list[dict[str, Any]] = []
+        self.backend_buyer_error: str | None = None
+        self.backend_buyers_loaded = False
         self.precio_objeto_value = ""
         self.moneda_selector_width = 220
         self.fecha_venta_display_value = ""
@@ -809,6 +815,139 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
+    def _load_backend_object_records_if_needed(self) -> None:
+        if self.backend_objects_loaded:
+            return
+        self.backend_objects_loaded = True
+        records: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        inmuebles_result = self.api.listar_inmuebles(limit=50)
+        if inmuebles_result.success:
+            records.extend(self._backend_inmueble_record(item) for item in self._api_items(inmuebles_result.data))
+        else:
+            errors.append(self._backend_selector_error("inmuebles", inmuebles_result))
+
+        unidades_result = self.api.listar_unidades_funcionales(limit=50)
+        if unidades_result.success:
+            records.extend(self._backend_unidad_funcional_record(item) for item in self._api_items(unidades_result.data))
+        else:
+            errors.append(self._backend_selector_error("unidades funcionales", unidades_result))
+
+        self.backend_object_records = records
+        self.backend_object_error = " ".join(errors) if errors else None
+
+    def _load_backend_buyer_records_if_needed(self) -> None:
+        if self.backend_buyers_loaded:
+            return
+        self.backend_buyers_loaded = True
+        result = self.api.buscar_personas(limit=50)
+        if result.success:
+            self.backend_buyer_records = [self._backend_persona_record(item) for item in self._api_items(result.data)]
+            self.backend_buyer_error = None
+            return
+        self.backend_buyer_records = []
+        self.backend_buyer_error = self._backend_selector_error("personas", result)
+
+    def _backend_object_selector_records(self) -> list[dict[str, Any]]:
+        self._load_backend_object_records_if_needed()
+        return [*self.backend_object_records, *DEMO_OBJETOS_INMOBILIARIOS]
+
+    def _backend_buyer_selector_records(self) -> list[dict[str, Any]]:
+        self._load_backend_buyer_records_if_needed()
+        return [*self.backend_buyer_records, *DEMO_PERSONAS_COMPRADORAS]
+
+    @staticmethod
+    def _api_items(data: Any) -> list[dict[str, Any]]:
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            items = data.get("items")
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+            nested_data = data.get("data")
+            if isinstance(nested_data, list):
+                return [item for item in nested_data if isinstance(item, dict)]
+            if isinstance(nested_data, dict):
+                nested_items = nested_data.get("items")
+                if isinstance(nested_items, list):
+                    return [item for item in nested_items if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _backend_selector_error(label: str, result: ApiResult) -> str:
+        parts = [f"No se pudieron cargar {label} reales desde backend."]
+        if result.status_code is not None:
+            parts.append(f"HTTP {result.status_code}.")
+        if result.error_code:
+            parts.append(f"{result.error_code}.")
+        if result.error_message:
+            parts.append(result.error_message)
+        return " ".join(parts)
+
+    @staticmethod
+    def _availability_label(value: Any) -> str:
+        if isinstance(value, dict):
+            return str(
+                value.get("estado_disponibilidad")
+                or value.get("estado")
+                or value.get("codigo")
+                or ""
+            ).strip()
+        return str(value or "").strip()
+
+    def _backend_inmueble_record(self, item: dict[str, Any]) -> dict[str, Any]:
+        codigo = str(item.get("codigo_inmueble") or item.get("codigo") or item.get("id_inmueble") or "").strip()
+        descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble backend").strip()
+        disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        return {
+            "tipo_objeto": "INMUEBLE",
+            "id_inmueble": item.get("id_inmueble"),
+            "codigo": codigo,
+            "descripcion": descripcion,
+            "estado": disponibilidad or item.get("estado_administrativo") or "backend",
+            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble persistido en backend."),
+            "source": "backend",
+            "persisted": True,
+        }
+
+    def _backend_unidad_funcional_record(self, item: dict[str, Any]) -> dict[str, Any]:
+        codigo = str(item.get("codigo_unidad_funcional") or item.get("codigo_unidad") or item.get("id_unidad_funcional") or "").strip()
+        descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional backend").strip()
+        inmueble = item.get("inmueble") if isinstance(item.get("inmueble"), dict) else {}
+        disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        return {
+            "tipo_objeto": "UNIDAD_FUNCIONAL",
+            "id_unidad_funcional": item.get("id_unidad_funcional"),
+            "codigo": codigo,
+            "descripcion": descripcion,
+            "inmueble_padre": inmueble.get("codigo_inmueble") or inmueble.get("nombre_inmueble") or item.get("id_inmueble"),
+            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "backend",
+            "resumen": str(item.get("observaciones") or "Unidad funcional persistida en backend."),
+            "source": "backend",
+            "persisted": True,
+        }
+
+    @staticmethod
+    def _backend_persona_record(item: dict[str, Any]) -> dict[str, Any]:
+        documento = item.get("documento_principal") if isinstance(item.get("documento_principal"), dict) else {}
+        document_label = " ".join(
+            part
+            for part in [str(documento.get("tipo_documento") or "").strip(), str(documento.get("numero_documento") or "").strip()]
+            if part
+        )
+        return {
+            "id_persona": item.get("id_persona"),
+            "codigo_persona": str(item.get("id_persona") or ""),
+            "nombre": item.get("display_name") or item.get("nombre"),
+            "apellido": None if item.get("display_name") else item.get("apellido"),
+            "razon_social": item.get("razon_social"),
+            "documento": document_label or item.get("cuit_cuil") or "",
+            "resumen": f"Persona persistida en backend · estado: {item.get('estado_persona') or '-'}",
+            "source": "backend",
+            "persisted": True,
+        }
+
     def _build_objects_step(self) -> ft.Control:
         if not self._has_valid_currency():
             return ft.Container(
@@ -829,10 +968,10 @@ class VentaCompletaWizardV3Prototype:
             )
         if self.objeto_selector is None:
             self.objeto_selector = create_search_selector_demo(
-                title="Buscador de objeto inmobiliario",
+                title="Buscador de objeto inmobiliario real",
                 placeholder="Código, descripción, tipo o ID técnico del objeto",
                 selector_kind="objeto",
-                records=DEMO_OBJETOS_INMOBILIARIOS,
+                records=self._backend_object_selector_records(),
                 on_selection_change=self._on_objeto_selected,
             )
             self._configure_objeto_selector_scroll()
@@ -844,9 +983,14 @@ class VentaCompletaWizardV3Prototype:
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._build_help_card(
-                "Los valores asignados a los objetos se cargarán en esta moneda.",
+                "El buscador prioriza registros reales del backend (source=backend, persisted=True). Los registros demo quedan solo para flujo visual/preview y bloquean confirmación real.",
                 ft.Colors.BLUE_50,
                 ft.Colors.BLUE_200,
+            ),
+            *(
+                [self._build_help_card(self.backend_object_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)]
+                if self.backend_object_error is not None
+                else []
             ),
             ft.Row(
                 controls=[
@@ -963,6 +1107,14 @@ class VentaCompletaWizardV3Prototype:
                             f"ID técnico secundario ({id_label}): {id_value}",
                             ft.Colors.BLUE_GREY_50,
                             ft.Colors.BLUE_GREY_200,
+                        ),
+                        _badge(
+                            self._record_source_label(
+                                str(self.objeto_seleccionado.get("source") or "demo"),
+                                bool(self.objeto_seleccionado.get("persisted", False)),
+                            ),
+                            ft.Colors.GREEN_50 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_50,
+                            ft.Colors.GREEN_200 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_200,
                         ),
                     ],
                     wrap=True,
@@ -1108,10 +1260,10 @@ class VentaCompletaWizardV3Prototype:
 
         if self.comprador_selector is None:
             self.comprador_selector = create_search_selector_demo(
-                title="Buscador de comprador/persona",
+                title="Buscador de persona real",
                 placeholder="Nombre, documento, código o dato visible del comprador",
                 selector_kind="persona",
-                records=DEMO_PERSONAS_COMPRADORAS,
+                records=self._backend_buyer_selector_records(),
                 on_selection_change=self._on_comprador_selected,
             )
             self._configure_comprador_selector_scroll()
@@ -1125,8 +1277,18 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Compradores", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Seleccioná los compradores de la operación y definí la responsabilidad pactada de cada uno.",
+                        "Seleccioná personas reales del backend y definí la responsabilidad pactada de cada comprador.",
                         color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    self._build_help_card(
+                        "El buscador prioriza personas reales del backend (source=backend, persisted=True). Las personas demo quedan solo para flujo visual/preview y bloquean confirmación real.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_200,
+                    ),
+                    *(
+                        [self._build_help_card(self.backend_buyer_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)]
+                        if self.backend_buyer_error is not None
+                        else []
                     ),
                     ft.Row(
                         controls=[
@@ -1279,10 +1441,24 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Comprador seleccionado", size=18, weight=ft.FontWeight.W_700),
                     ft.Text(str(self.comprador_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
-                    _badge(
-                        f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}",
-                        ft.Colors.BLUE_GREY_50,
-                        ft.Colors.BLUE_GREY_200,
+                    ft.Row(
+                        controls=[
+                            _badge(
+                                f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}",
+                                ft.Colors.BLUE_GREY_50,
+                                ft.Colors.BLUE_GREY_200,
+                            ),
+                            _badge(
+                                self._record_source_label(
+                                    str(self.comprador_seleccionado.get("source") or "demo"),
+                                    bool(self.comprador_seleccionado.get("persisted", False)),
+                                ),
+                                ft.Colors.GREEN_50 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_50,
+                                ft.Colors.GREEN_200 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_200,
+                            ),
+                        ],
+                        spacing=8,
+                        wrap=True,
                     ),
                     self.porcentaje_comprador_field,
                     ft.Text(
