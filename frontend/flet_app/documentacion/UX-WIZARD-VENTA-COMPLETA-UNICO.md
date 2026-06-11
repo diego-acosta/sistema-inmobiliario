@@ -779,13 +779,17 @@ del preview sin venta persistida:
 - cronograma simulado en tabla compacta y scrolleable con columnas `#`,
   `Fecha vencimiento`, `Tipo`, `Cuota` e `Importe`.
 
-Los items `REFUERZO` deben mostrarse visualmente como `Refuerzo` dentro de la
-tabla, sin volver a cards por obligacion. Desde esta pantalla, `Anterior` vuelve
-a la edicion del plan correspondiente y `Siguiente`
-avanza a la revision general solo si el preview no esta desactualizado. Si el
-usuario vuelve atras y modifica objetos, moneda, forma de pago, anticipo o
-tramos, el preview queda `stale` y debe recalcularse avanzando nuevamente desde
-la edicion del plan.
+Luego de #166, los refuerzos internos no se esperan como obligaciones
+`REFUERZO` separadas para este preview: se acumulan en la obligacion `CUOTA`
+asociada. La tabla debe marcar esas cuotas como reforzadas usando
+`etiqueta_obligacion` cuando incluya refuerzo, por ejemplo con texto distintivo
+o fondo suave. Si por compatibilidad legacy llegara un item `REFUERZO`, debe
+seguirse mostrando visualmente como `Refuerzo` dentro de la tabla, sin volver a
+cards por obligacion. Desde esta pantalla, `Anterior` vuelve a la edicion del
+plan correspondiente y `Siguiente` avanza a la revision general solo si el
+preview no esta desactualizado. Si el usuario vuelve atras y modifica objetos,
+moneda, forma de pago, anticipo o tramos, el preview queda `stale` y debe
+recalcularse avanzando nuevamente desde la edicion del plan.
 
 ### Paso 7 - Confirmar
 

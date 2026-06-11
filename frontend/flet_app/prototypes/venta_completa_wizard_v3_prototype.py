@@ -2587,11 +2587,13 @@ class VentaCompletaWizardV3Prototype:
             if not isinstance(obligacion, dict):
                 continue
             item_type = str(obligacion.get("tipo_item_cronograma") or "-")
-            is_reinforcement = item_type == "REFUERZO"
-            type_text = ft.Text(
-                self._preview_obligation_type_label(item_type),
-                weight=ft.FontWeight.W_700 if is_reinforcement else None,
-                color=ft.Colors.AMBER_900 if is_reinforcement else ft.Colors.BLUE_GREY_900,
+            obligation_label = str(obligacion.get("etiqueta_obligacion") or "").strip()
+            has_accumulated_reinforcement = self._preview_obligation_has_accumulated_reinforcement(obligation_label)
+            is_reinforcement = item_type == "REFUERZO" or has_accumulated_reinforcement
+            type_cell = self._build_preview_obligation_type_cell(
+                item_type=item_type,
+                obligation_label=obligation_label,
+                has_accumulated_reinforcement=has_accumulated_reinforcement,
             )
             rows.append(
                 ft.DataRow(
@@ -2599,7 +2601,7 @@ class VentaCompletaWizardV3Prototype:
                     cells=[
                         ft.DataCell(ft.Text(str(index + 1))),
                         ft.DataCell(ft.Text(_format_date_ar(str(obligacion.get("fecha_vencimiento") or "")) or "-")),
-                        ft.DataCell(type_text),
+                        ft.DataCell(type_cell),
                         ft.DataCell(ft.Text(str(obligacion.get("numero_cuota_asociada") or "-"))),
                         ft.DataCell(ft.Text(self._format_preview_obligation_amount(obligacion.get("importe_total")))),
                     ],
@@ -2627,6 +2629,34 @@ class VentaCompletaWizardV3Prototype:
                 scroll=ft.ScrollMode.AUTO,
             ),
         )
+
+    def _build_preview_obligation_type_cell(
+        self,
+        *,
+        item_type: str,
+        obligation_label: str,
+        has_accumulated_reinforcement: bool,
+    ) -> ft.Control:
+        type_label = self._preview_obligation_type_label(item_type)
+        if has_accumulated_reinforcement and item_type == "CUOTA":
+            type_label = "Cuota reforzada"
+        is_reinforcement = item_type == "REFUERZO" or has_accumulated_reinforcement
+        controls: list[ft.Control] = [
+            ft.Text(
+                type_label,
+                weight=ft.FontWeight.W_700 if is_reinforcement else None,
+                color=ft.Colors.AMBER_900 if is_reinforcement else ft.Colors.BLUE_GREY_900,
+            )
+        ]
+        if obligation_label and has_accumulated_reinforcement:
+            controls.append(ft.Text(obligation_label, size=11, color=ft.Colors.AMBER_900))
+        elif obligation_label and item_type == "REFUERZO":
+            controls.append(ft.Text(obligation_label, size=11, color=ft.Colors.AMBER_900))
+        return ft.Column(controls=controls, spacing=2)
+
+    @staticmethod
+    def _preview_obligation_has_accumulated_reinforcement(obligation_label: str) -> bool:
+        return "refuerzo" in obligation_label.lower()
 
     def _format_preview_obligation_amount(self, value: Any) -> str:
         parsed = _parse_money_decimal(str(value or ""))
