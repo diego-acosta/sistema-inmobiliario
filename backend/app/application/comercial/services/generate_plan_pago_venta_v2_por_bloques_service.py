@@ -602,26 +602,9 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             return composiciones
         if metodo != METODO_LIQUIDACION_INTERES_DIRECTO:
             return None
-        cantidad = Decimal(bloque_input.cantidad_cuotas or 1)
-        tasa = bloque_input.tasa_interes_directo_periodica or Decimal("0.00")
-        periodos = Decimal(bloque_input.cantidad_periodos or 0)
-        capital_total = (bloque_input.importe_total_bloque or Decimal("0.00")).quantize(
-            Decimal("0.01")
+        capital, interes = self._componentes_interes_directo_obligacion(
+            bloque_input, obligacion_preview.item_numero
         )
-        interes_total = (capital_total * tasa * periodos).quantize(Decimal("0.01"))
-        capital_cuota_base = (capital_total / cantidad).quantize(Decimal("0.01"))
-        interes_cuota_base = (interes_total / cantidad).quantize(Decimal("0.01"))
-        idx = Decimal(obligacion_preview.item_numero)
-        if idx < cantidad:
-            capital = capital_cuota_base
-            interes = interes_cuota_base
-        else:
-            capital = (capital_total - capital_cuota_base * (cantidad - 1)).quantize(
-                Decimal("0.01")
-            )
-            interes = (interes_total - interes_cuota_base * (cantidad - 1)).quantize(
-                Decimal("0.01")
-            )
         return [
             {
                 "id_concepto_financiero": concepto_capital["id_concepto_financiero"],
@@ -791,6 +774,55 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             and (bloque.input.metodo_liquidacion or "").strip().upper()
             == METODO_LIQUIDACION_INDEXACION
         )
+
+    def _componentes_interes_directo_obligacion(
+        self, bloque_input: PlanPagoVentaBloqueInput, item_numero: int
+    ) -> tuple[Decimal, Decimal]:
+        cantidad_total = bloque_input.cantidad_cuotas or 1
+        tasa = bloque_input.tasa_interes_directo_periodica or Decimal("0.00")
+        periodos = Decimal(bloque_input.cantidad_periodos or 0)
+        capital_total = (bloque_input.importe_total_bloque or Decimal("0.00")).quantize(
+            Decimal("0.01")
+        )
+        interes_total = (capital_total * tasa * periodos).quantize(Decimal("0.01"))
+        capitales = self._importes_por_unidades_financieras(
+            capital_total, cantidad_total
+        )
+        intereses = self._importes_por_unidades_financieras(
+            interes_total, cantidad_total
+        )
+        refuerzos = {
+            cuota_refuerzo.numero_cuota
+            for cuota_refuerzo in (bloque_input.cuotas_refuerzo or [])
+        }
+        cantidad_visible = cantidad_total - len(refuerzos)
+        indice_financiero = 0
+        for cuota_numero in range(1, cantidad_visible + 1):
+            capital = capitales[indice_financiero]
+            interes = intereses[indice_financiero]
+            indice_financiero += 1
+            if cuota_numero in refuerzos:
+                capital = (capital + capitales[indice_financiero]).quantize(
+                    Decimal("0.01")
+                )
+                interes = (interes + intereses[indice_financiero]).quantize(
+                    Decimal("0.01")
+                )
+                indice_financiero += 1
+            if cuota_numero == item_numero:
+                return capital, interes
+        return Decimal("0.00"), Decimal("0.00")
+
+    @staticmethod
+    def _importes_por_unidades_financieras(
+        total: Decimal, cantidad: int
+    ) -> list[Decimal]:
+        base = (total / Decimal(cantidad or 1)).quantize(Decimal("0.01"))
+        importes = [base for _ in range(max(cantidad - 1, 0))]
+        importes.append(
+            (total - sum(importes, Decimal("0.00"))).quantize(Decimal("0.01"))
+        )
+        return importes
 
     @staticmethod
     def _obligacion_indexacion_sin_indice(
