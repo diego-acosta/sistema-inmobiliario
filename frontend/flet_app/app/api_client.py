@@ -259,6 +259,14 @@ class ApiClient:
     def get_venta_detalle_integral(self, id_venta: int) -> ApiResult:
         return self._get(f"/api/v1/ventas/{id_venta}/detalle-integral")
 
+    def preview_plan_pago_venta_v2_sin_venta(
+        self, payload: dict[str, Any]
+    ) -> ApiResult:
+        return self._post(
+            "/api/v1/ventas/plan-pago-v2/preview",
+            json=payload,
+        )
+
     def preview_plan_pago_venta_v2_por_bloques(
         self, id_venta: int, payload: dict[str, Any]
     ) -> ApiResult:

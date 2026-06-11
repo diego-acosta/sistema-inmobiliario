@@ -5,7 +5,7 @@ Uso:
   python prototypes/venta_completa_wizard_v3_prototype.py
 
 Alcance:
-  - Prototipo UI aislado del dominio comercial, sin llamadas a backend.
+  - Prototipo UI aislado del dominio comercial, con preview real read-like de Plan Pago V2 sin id_venta.
   - Nueva base de iteracion pantalla por pantalla para venta completa V3.
   - Implementa Pantalla 1 - Origen, Pantalla 1B - Seleccionar reserva,
     Pantalla 2 - Datos iniciales de venta, Pantalla 3 - Objetos de venta,
@@ -15,8 +15,8 @@ Alcance:
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
-    comerciales completos, cronograma definitivo, interés/indexación local ni preview
-    backend, revision/confirmacion. Incluye draft UI de refuerzos internos
+    comerciales completos, cronograma definitivo, interés/indexación local ni confirmación.
+    Incluye preview backend sin venta persistida y draft UI de refuerzos internos
     dentro de tramos sin calcular importes financieros definitivos.
   - El frontend comercial no calcula resultados financieros definitivos: interés,
     indexación y cronograma se delegarán al preview backend de Plan Pago V2.
@@ -32,10 +32,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
+import sys
 from typing import Any, Literal
 
 import flet as ft
 
+PROTOTYPES_DIR = Path(__file__).resolve().parent
+FLET_APP_ROOT = PROTOTYPES_DIR.parent
+for import_path in (str(FLET_APP_ROOT), str(PROTOTYPES_DIR)):
+    if import_path not in sys.path:
+        sys.path.insert(0, import_path)
+
+from app.api_client import ApiClient, ApiResult
 from components.search_selector_demo import SearchSelectorDemo, create_search_selector_demo
 
 
@@ -53,6 +62,7 @@ PantallaWizard = Literal[
     "PLAN_TRAMOS",
     "PLAN_TRAMO_FORM",
     "PLAN_RESUMEN",
+    "PREVIEW_PLAN_PAGO",
     "REVISION_GENERAL",
     "PASO_6_PLACEHOLDER",
 ]
@@ -264,6 +274,11 @@ class WizardVentaCompletaV3State:
     tramo_id_indice_financiero_error: str | None = None
     tramo_fecha_base_indice_error: str | None = None
     tramo_valor_base_indice_error: str | None = None
+    preview_loading: bool = False
+    preview_data: dict[str, Any] | None = None
+    preview_error: str | None = None
+    preview_status_code: int | None = None
+    preview_stale: bool = True
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -271,6 +286,7 @@ class VentaCompletaWizardV3Prototype:
     def __init__(self, page: ft.Page) -> None:
         self.page = page
         self.state = WizardVentaCompletaV3State()
+        self.api = ApiClient(timeout=20.0)
         self.reserva_selector: SearchSelectorDemo | None = None
         self.objeto_selector: SearchSelectorDemo | None = None
         self.comprador_selector: SearchSelectorDemo | None = None
@@ -554,6 +570,8 @@ class VentaCompletaWizardV3Prototype:
             return self._build_financed_plan_installment_form_step()
         if self.state.pantalla_actual == "PLAN_RESUMEN":
             return self._build_financed_plan_summary_step()
+        if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
+            return self._build_plan_payment_preview_step()
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return self._build_general_review_step()
         if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
@@ -1362,6 +1380,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.fecha_pago_contado_feedback,
                     _info_row("Monto total plan futuro", self._format_money_with_currency(self._objects_total())),
+                    self._build_plan_preview_status_section(),
                 ],
                 spacing=8,
             ),
@@ -2148,8 +2167,9 @@ class VentaCompletaWizardV3Prototype:
                     self._build_financed_plan_advance_summary_card(),
                     self._build_financed_plan_installments_summary_cards(),
                     self._build_financed_plan_validation_panel(difference),
+                    self._build_plan_preview_status_section(),
                     ft.Text(
-                        "Este prototipo no calcula cronograma definitivo, indexaciones, obligaciones, divisiones por comprador ni divisiones por objeto.",
+                        "Al presionar Siguiente se calculará el preview backend obligatorio. Este prototipo no calcula cronograma definitivo, indexaciones, obligaciones, divisiones por comprador ni divisiones por objeto; muestra el preview devuelto por backend cuando se calcula.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2308,7 +2328,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_review_payment_section(),
                     self._build_review_validation_panel(errors),
                     ft.Text(
-                        "No se confirma la venta, no se envía POST, no se calcula cronograma definitivo, indexación ni obligaciones localmente.",
+                        "No se confirma la venta ni se persiste borrador. El único POST de esta pantalla es el preview read-like sin id_venta cuando el usuario simula el plan.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2419,7 +2439,7 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Total a pagar", self._format_money_with_currency(self._objects_total())),
                     _info_row("Fecha de pago / vencimiento", self.state.fecha_pago_contado_display or _format_date_ar(self.state.fecha_pago_contado_iso)),
                     self._build_help_card(
-                        "Se generará un único bloque CONTADO por el total de la venta.",
+                        "Preview Plan Pago V2 calculado previamente sin id_venta; la venta aún no fue persistida.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -2438,11 +2458,351 @@ class VentaCompletaWizardV3Prototype:
                     self._build_financed_plan_advance_summary_card(),
                     self._build_financed_plan_installments_summary_cards(),
                     self._build_financed_plan_validation_panel(difference),
+                    self._build_help_card(
+                        "Preview Plan Pago V2 calculado previamente sin id_venta; la venta aún no fue persistida.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_200,
+                    ),
                 ]
             )
         else:
             controls.append(ft.Text("Forma de pago pendiente.", color=ft.Colors.RED_700))
         return self._build_review_section_container(controls)
+
+
+    def _build_plan_preview_status_section(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Preview Plan Pago V2", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Al presionar Siguiente se ejecuta automáticamente el preview backend sin id_venta. No crea venta ni obligaciones reales.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+        ]
+        if self.state.preview_loading:
+            controls.append(
+                ft.Row(
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Consultando preview del backend...")],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+        if self.state.preview_error is not None:
+            controls.append(self._build_help_card(self.state.preview_error, ft.Colors.RED_50, ft.Colors.RED_200))
+        elif self.state.preview_data is not None and self.state.preview_stale:
+            controls.append(self._build_help_card("El preview anterior quedó desactualizado. Presioná Siguiente desde esta pantalla para recalcularlo antes de revisar la venta.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
+        else:
+            controls.append(
+                ft.Text(
+                    "El preview es obligatorio para avanzar a la revisión general.",
+                    color=ft.Colors.BLUE_GREY_700,
+                )
+            )
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=10),
+        )
+
+    def _build_plan_payment_preview_step(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Preview del plan de pago", size=24, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Resultado backend del preview Plan Pago V2 sin venta persistida. Este paso es obligatorio antes de la revisión general.",
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+        ]
+        if self.state.preview_loading:
+            controls.append(
+                ft.Row(
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Consultando preview del backend...")],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+        if self.state.preview_error is not None:
+            controls.append(self._build_help_card(self.state.preview_error, ft.Colors.RED_50, ft.Colors.RED_200))
+        if self.state.preview_stale:
+            controls.append(
+                self._build_help_card(
+                    "Este preview está desactualizado porque cambió el plan o sus datos base. Volvé con Anterior y presioná Siguiente desde la edición del plan para recalcularlo.",
+                    ft.Colors.AMBER_50,
+                    ft.Colors.AMBER_200,
+                )
+            )
+        if self.state.preview_data is not None:
+            controls.extend(self._build_plan_preview_result_controls(self.state.preview_data))
+        else:
+            controls.append(
+                ft.Text(
+                    "Todavía no hay preview backend cargado. Volvé a la edición del plan y avanzá con Siguiente para calcularlo.",
+                    color=ft.Colors.BLUE_GREY_700,
+                )
+            )
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=14),
+        )
+
+    def _build_plan_preview_result_controls(self, data: dict[str, Any]) -> list[ft.Control]:
+        obligaciones = data.get("obligaciones") if isinstance(data.get("obligaciones"), list) else []
+        summary = ft.Container(
+            padding=12,
+            border_radius=10,
+            bgcolor=ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resultado del preview", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    _info_row("Status HTTP", self.state.preview_status_code or "-"),
+                    _info_row("total_calculado", data.get("total_calculado") or "-"),
+                    _info_row("total_con_interes", data.get("total_con_interes") or "-"),
+                    _info_row("total_ajuste_indexacion", data.get("total_ajuste_indexacion") or "0.00"),
+                    _info_row("total_con_indexacion", data.get("total_con_indexacion") or "-"),
+                    _info_row("Obligaciones simuladas", len(obligaciones)),
+                ],
+                spacing=6,
+            ),
+        )
+        obligations_control = self._build_plan_preview_obligations_table(obligaciones)
+        return [
+            summary,
+            ft.Column(
+                controls=[
+                    ft.Text("Obligaciones simuladas", weight=ft.FontWeight.W_700),
+                    obligations_control,
+                ],
+                spacing=8,
+            ),
+        ]
+
+    def _build_plan_preview_obligations_table(self, obligaciones: list[Any]) -> ft.Control:
+        rows: list[ft.DataRow] = []
+        for index, obligacion in enumerate(obligaciones):
+            if not isinstance(obligacion, dict):
+                continue
+            item_type = str(obligacion.get("tipo_item_cronograma") or "-")
+            obligation_label = str(obligacion.get("etiqueta_obligacion") or "").strip()
+            has_accumulated_reinforcement = self._preview_obligation_has_accumulated_reinforcement(obligation_label)
+            is_reinforcement = item_type == "REFUERZO" or has_accumulated_reinforcement
+            type_cell = self._build_preview_obligation_type_cell(
+                item_type=item_type,
+                obligation_label=obligation_label,
+                has_accumulated_reinforcement=has_accumulated_reinforcement,
+            )
+            rows.append(
+                ft.DataRow(
+                    color=ft.Colors.AMBER_50 if is_reinforcement else None,
+                    cells=[
+                        ft.DataCell(ft.Text(str(index + 1))),
+                        ft.DataCell(ft.Text(_format_date_ar(str(obligacion.get("fecha_vencimiento") or "")) or "-")),
+                        ft.DataCell(type_cell),
+                        ft.DataCell(ft.Text(str(obligacion.get("numero_cuota_asociada") or "-"))),
+                        ft.DataCell(ft.Text(self._format_preview_obligation_amount(obligacion.get("importe_total")))),
+                    ],
+                )
+            )
+        if not rows:
+            return ft.Text("El preview no devolvió obligaciones simuladas.", color=ft.Colors.BLUE_GREY_700)
+        return ft.Container(
+            height=400,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=8,
+            content=ft.Column(
+                controls=[
+                    ft.DataTable(
+                        columns=[
+                            ft.DataColumn(ft.Text("#")),
+                            ft.DataColumn(ft.Text("Fecha vencimiento")),
+                            ft.DataColumn(ft.Text("Tipo")),
+                            ft.DataColumn(ft.Text("Cuota")),
+                            ft.DataColumn(ft.Text("Importe")),
+                        ],
+                        rows=rows,
+                    )
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            ),
+        )
+
+    def _build_preview_obligation_type_cell(
+        self,
+        *,
+        item_type: str,
+        obligation_label: str,
+        has_accumulated_reinforcement: bool,
+    ) -> ft.Control:
+        type_label = self._preview_obligation_type_label(item_type)
+        if has_accumulated_reinforcement and item_type == "CUOTA":
+            type_label = "Cuota reforzada"
+        is_reinforcement = item_type == "REFUERZO" or has_accumulated_reinforcement
+        controls: list[ft.Control] = [
+            ft.Text(
+                type_label,
+                weight=ft.FontWeight.W_700 if is_reinforcement else None,
+                color=ft.Colors.AMBER_900 if is_reinforcement else ft.Colors.BLUE_GREY_900,
+            )
+        ]
+        if obligation_label and has_accumulated_reinforcement:
+            controls.append(ft.Text(obligation_label, size=11, color=ft.Colors.AMBER_900))
+        elif obligation_label and item_type == "REFUERZO":
+            controls.append(ft.Text(obligation_label, size=11, color=ft.Colors.AMBER_900))
+        return ft.Column(controls=controls, spacing=2)
+
+    @staticmethod
+    def _preview_obligation_has_accumulated_reinforcement(obligation_label: str) -> bool:
+        return "refuerzo" in obligation_label.lower()
+
+    def _format_preview_obligation_amount(self, value: Any) -> str:
+        parsed = _parse_money_decimal(str(value or ""))
+        if parsed is None:
+            return str(value or "-")
+        return self._format_money_with_currency(parsed)
+
+    @staticmethod
+    def _preview_obligation_type_label(item_type: str) -> str:
+        labels = {
+            "ANTICIPO": "Anticipo",
+            "CUOTA": "Cuota",
+            "REFUERZO": "Refuerzo",
+            "SALDO": "Saldo",
+        }
+        return labels.get(item_type, item_type or "-")
+
+    def _run_plan_payment_preview_before_next(self) -> bool:
+        validation_error = self._preview_local_validation_error()
+        if validation_error is not None:
+            self.state.preview_error = validation_error
+            self.state.preview_status_code = None
+            self.state.preview_loading = False
+            self._render()
+            return False
+        payload = self._build_plan_payment_preview_payload()
+        self.state.preview_loading = True
+        self.state.preview_error = None
+        self._render()
+        result = self.api.preview_plan_pago_venta_v2_sin_venta(payload)
+        self.state.preview_loading = False
+        self.state.preview_status_code = result.status_code
+        if result.success and isinstance(result.data, dict):
+            self.state.preview_data = result.data
+            self.state.preview_error = None
+            self.state.preview_stale = False
+            return True
+        self.state.preview_error = self._preview_error_message(result)
+        return False
+
+    def _preview_error_message(self, result: ApiResult) -> str:
+        parts = ["No se pudo obtener el preview del plan."]
+        if result.status_code is not None:
+            parts.append(f"HTTP {result.status_code}.")
+        if result.error_code:
+            parts.append(f"{result.error_code}.")
+        if result.error_message:
+            parts.append(result.error_message)
+        return " ".join(parts)
+
+    def _preview_local_validation_error(self) -> str | None:
+        if not self.state.objetos or self._objects_total() <= Decimal("0"):
+            return "Cargá objetos de venta con total mayor que 0 antes de calcular el preview del plan."
+        if self.state.forma_pago not in {"CONTADO", "FINANCIADO"}:
+            return "Elegí una forma de pago antes de calcular el preview del plan."
+        if self.state.forma_pago == "CONTADO":
+            if not self.state.fecha_pago_contado_iso or self.state.fecha_pago_contado_error is not None:
+                return "Para contado, cargá una fecha de pago / vencimiento válida."
+            return None
+        if self.state.tiene_anticipo and not self._advance_is_valid():
+            return "Completá un anticipo válido o marcá Sin anticipo antes de calcular el preview."
+        if not self.state.tramos_cuotas:
+            return "Para financiado, cargá al menos un tramo de cuotas antes de calcular el preview."
+        if self._financed_plan_difference() != Decimal("0"):
+            return "El plan financiado debe cubrir exactamente el capital pendiente; la diferencia debe ser 0."
+        return None
+
+    def _build_plan_payment_preview_payload(self) -> dict[str, Any]:
+        total = _format_decimal(self._objects_total())
+        if self.state.forma_pago == "CONTADO":
+            return {
+                "tipo_pago": "CONTADO",
+                "monto_total_plan": total,
+                "moneda": self._currency_label(),
+                "bloques": [
+                    {
+                        "tipo_bloque": "CONTADO",
+                        "importe_total_bloque": total,
+                        "fecha_vencimiento": self.state.fecha_pago_contado_iso,
+                    }
+                ],
+                "observaciones": self.state.observaciones_comerciales.strip() or None,
+            }
+        bloques: list[dict[str, Any]] = []
+        advance = self._valid_advance_amount_or_zero()
+        if self.state.tiene_anticipo and advance > Decimal("0"):
+            bloques.append(
+                {
+                    "tipo_bloque": "ANTICIPO",
+                    "importe_total_bloque": _format_decimal(advance),
+                    "fecha_vencimiento": self.state.fecha_anticipo_iso,
+                }
+            )
+        for tramo in self.state.tramos_cuotas:
+            block: dict[str, Any] = {
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "importe_total_bloque": tramo.importe_total_bloque,
+                "cantidad_cuotas": tramo.cantidad_cuotas,
+                "fecha_primer_vencimiento": tramo.fecha_primer_vencimiento_iso,
+                "periodicidad": tramo.periodicidad,
+                "metodo_liquidacion": tramo.metodo_liquidacion,
+            }
+            if tramo.metodo_liquidacion == "INTERES_DIRECTO":
+                block.update(
+                    {
+                        "tasa_interes_directo_periodica": tramo.tasa_interes_directo_periodica,
+                        "cantidad_periodos": int(tramo.cantidad_periodos or tramo.cantidad_cuotas),
+                        "base_calculo_interes": "CAPITAL_INICIAL_BLOQUE",
+                    }
+                )
+            if tramo.metodo_liquidacion == "INDEXACION":
+                block.update(
+                    {
+                        "id_indice_financiero": int(tramo.id_indice_financiero or "0"),
+                        "fecha_base_indice": tramo.fecha_base_indice_iso,
+                        "valor_base_indice": tramo.valor_base_indice,
+                        "modo_indexacion": "POR_COEFICIENTE",
+                        "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+                        "tipo_generacion_indexada": "DEFINITIVA",
+                        "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+                        "conserva_capital_original": True,
+                        "genera_ajuste_por_diferencia": True,
+                    }
+                )
+            if tramo.cuotas_refuerzo:
+                block["cuotas_refuerzo"] = [
+                    {
+                        "numero_cuota": refuerzo.numero_cuota,
+                        "etiqueta": refuerzo.etiqueta,
+                        "unidades_refuerzo": refuerzo.unidades_refuerzo,
+                    }
+                    for refuerzo in tramo.cuotas_refuerzo
+                ]
+            bloques.append(block)
+        return {
+            "tipo_pago": "FINANCIADO",
+            "monto_total_plan": total,
+            "moneda": self._currency_label(),
+            "bloques": bloques,
+            "observaciones": self.state.observaciones_comerciales.strip() or None,
+        }
+
+    def _mark_plan_preview_stale(self, clear_error: bool = True) -> None:
+        self.state.preview_stale = True
+        if clear_error:
+            self.state.preview_error = None
 
     def _build_review_validation_panel(self, errors: list[str]) -> ft.Control:
         valid = not errors
@@ -2587,7 +2947,7 @@ class VentaCompletaWizardV3Prototype:
         self.next_button = ft.Button(
             "Siguiente",
             icon=ft.Icons.ARROW_FORWARD,
-            disabled=not self._can_advance(),
+            disabled=self.state.preview_loading or not self._can_advance(),
             on_click=self._next_step,
         )
         return ft.Row(
@@ -2657,6 +3017,7 @@ class VentaCompletaWizardV3Prototype:
             return
         self.state.moneda = selected_currency
         self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
+        self._mark_plan_preview_stale()
         self._render()
 
     def _on_fecha_venta_change(self, event: ft.ControlEvent) -> None:
@@ -2758,13 +3119,26 @@ class VentaCompletaWizardV3Prototype:
         elif self.state.pantalla_actual == "FORMA_PAGO":
             if self.state.forma_pago == "FINANCIADO":
                 self.state.pantalla_actual = "PLAN_ANTICIPO"
+            elif self._run_plan_payment_preview_before_next():
+                self.state.pantalla_actual = "PREVIEW_PLAN_PAGO"
             else:
-                self.state.pantalla_actual = "REVISION_GENERAL"
+                self._render()
+                return
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
             self.state.pantalla_actual = "PLAN_TRAMOS"
         elif self.state.pantalla_actual == "PLAN_TRAMOS":
             self.state.pantalla_actual = "PLAN_RESUMEN"
         elif self.state.pantalla_actual == "PLAN_RESUMEN":
+            if self._run_plan_payment_preview_before_next():
+                self.state.pantalla_actual = "PREVIEW_PLAN_PAGO"
+            else:
+                self._render()
+                return
+        elif self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
+            if self.state.preview_stale:
+                self.state.preview_error = "El preview está desactualizado. Volvé a la edición del plan y avanzá con Siguiente para recalcularlo."
+                self._render()
+                return
             self.state.pantalla_actual = "REVISION_GENERAL"
         elif self.state.pantalla_actual == "REVISION_GENERAL":
             self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
@@ -2782,12 +3156,14 @@ class VentaCompletaWizardV3Prototype:
             self.state.pantalla_actual = "PLAN_ANTICIPO"
         elif self.state.pantalla_actual == "PLAN_RESUMEN":
             self.state.pantalla_actual = "PLAN_TRAMOS"
+        elif self.state.pantalla_actual == "PREVIEW_PLAN_PAGO" and self.state.forma_pago == "FINANCIADO":
+            self.state.pantalla_actual = "PLAN_RESUMEN"
+        elif self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
+            self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
             self.state.pantalla_actual = "REVISION_GENERAL"
-        elif self.state.pantalla_actual == "REVISION_GENERAL" and self.state.forma_pago == "FINANCIADO":
-            self.state.pantalla_actual = "PLAN_RESUMEN"
         elif self.state.pantalla_actual == "REVISION_GENERAL":
-            self.state.pantalla_actual = "FORMA_PAGO"
+            self.state.pantalla_actual = "PREVIEW_PLAN_PAGO"
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
             self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "FORMA_PAGO":
@@ -2831,6 +3207,8 @@ class VentaCompletaWizardV3Prototype:
             return self._installments_can_advance()
         if self.state.pantalla_actual == "PLAN_RESUMEN":
             return self._financed_plan_difference() == Decimal("0")
+        if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
+            return self.state.preview_data is not None and not self.state.preview_stale
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return self._general_review_is_valid()
         return False
@@ -2850,12 +3228,13 @@ class VentaCompletaWizardV3Prototype:
 
     def _refresh_navigation_controls(self) -> None:
         if self.next_button is not None:
-            self.next_button.disabled = not self._can_advance()
+            self.next_button.disabled = self.state.preview_loading or not self._can_advance()
 
     def _select_payment_method(self, payment_method: FormaPagoWizard) -> None:
         if payment_method not in {"CONTADO", "FINANCIADO"}:
             return
         self.state.forma_pago = payment_method
+        self._mark_plan_preview_stale()
         if payment_method == "FINANCIADO":
             self.state.fecha_pago_contado_iso = ""
             self.state.fecha_pago_contado_display = ""
@@ -2897,6 +3276,7 @@ class VentaCompletaWizardV3Prototype:
                 self.state.fecha_pago_contado_display = _format_date_ar(parsed_date)
                 event.control.value = self.state.fecha_pago_contado_display
                 self.state.fecha_pago_contado_error = None
+        self._mark_plan_preview_stale()
         self._sync_fecha_pago_contado_feedback()
         self._refresh_navigation_controls()
         self.page.update()
@@ -2938,6 +3318,7 @@ class VentaCompletaWizardV3Prototype:
             self.state.fecha_pago_contado_display = _format_date_ar(self.state.fecha_pago_contado_iso)
             self.fecha_pago_contado_field.value = self.state.fecha_pago_contado_display
             self.state.fecha_pago_contado_error = None
+            self._mark_plan_preview_stale()
             self._sync_fecha_pago_contado_feedback()
             self._refresh_navigation_controls()
             self.page.update()
@@ -2952,6 +3333,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _select_tiene_anticipo(self, has_advance: bool) -> None:
         self.state.tiene_anticipo = has_advance
+        self._mark_plan_preview_stale()
         if not has_advance:
             self.state.importe_anticipo_error = None
             self.state.fecha_anticipo_error = None
@@ -2961,6 +3343,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _on_importe_anticipo_change(self, event: ft.ControlEvent) -> None:
         self.state.importe_anticipo = str(event.control.value or "")
+        self._mark_plan_preview_stale()
         self._validate_advance_amount()
         self._sync_importe_anticipo_feedback()
         self._sync_advance_visual_amounts()
@@ -2994,6 +3377,7 @@ class VentaCompletaWizardV3Prototype:
                 self.state.fecha_anticipo_display = _format_date_ar(parsed_date)
                 event.control.value = self.state.fecha_anticipo_display
                 self.state.fecha_anticipo_error = None
+        self._mark_plan_preview_stale()
         self._sync_fecha_anticipo_feedback()
         self._refresh_navigation_controls()
         self.page.update()
@@ -3035,6 +3419,7 @@ class VentaCompletaWizardV3Prototype:
             self.state.fecha_anticipo_display = _format_date_ar(self.state.fecha_anticipo_iso)
             self.fecha_anticipo_field.value = self.state.fecha_anticipo_display
             self.state.fecha_anticipo_error = None
+            self._mark_plan_preview_stale()
             self._sync_fecha_anticipo_feedback()
             self._refresh_navigation_controls()
             self.page.update()
@@ -3393,6 +3778,7 @@ class VentaCompletaWizardV3Prototype:
         ):
             self._render()
             return
+        self._mark_plan_preview_stale()
         self.state.tramos_cuotas.append(
             TramoCuotasWizardDraft(
                 importe_total_bloque=_format_decimal(capital),
@@ -3411,6 +3797,7 @@ class VentaCompletaWizardV3Prototype:
     def _remove_installment_block(self, index: int) -> None:
         if 0 <= index < len(self.state.tramos_cuotas):
             self.state.tramos_cuotas.pop(index)
+            self._mark_plan_preview_stale()
             self._clear_installment_errors()
             self._render()
 
@@ -3962,6 +4349,7 @@ class VentaCompletaWizardV3Prototype:
         id_unidad_funcional = (
             self.objeto_seleccionado.get("id_unidad_funcional") if tipo_objeto == "UNIDAD_FUNCIONAL" else None
         )
+        self._mark_plan_preview_stale()
         self.state.objetos.append(
             ObjetoVentaWizardDraft(
                 tipo_objeto=tipo_objeto,
@@ -3981,6 +4369,7 @@ class VentaCompletaWizardV3Prototype:
     def _remove_object(self, index: int) -> None:
         if 0 <= index < len(self.state.objetos):
             self.state.objetos.pop(index)
+            self._mark_plan_preview_stale()
         self._render()
 
     def _on_comprador_selected(self, selected: dict[str, Any] | None) -> None:
@@ -4183,6 +4572,10 @@ class VentaCompletaWizardV3Prototype:
     def _review_flow_status(self) -> str:
         if self.state.pantalla_actual in {"REVISION_GENERAL", "PASO_6_PLACEHOLDER"} and self._general_review_is_valid():
             return "lista para confirmar"
+        if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO" and self.state.preview_data is not None and not self.state.preview_stale:
+            return "preview calculado"
+        if self.state.preview_stale and self.state.preview_data is not None:
+            return "preview desactualizado"
         return "pendiente"
 
     def _next_step_label(self) -> str:
@@ -4194,7 +4587,7 @@ class VentaCompletaWizardV3Prototype:
             return "elegir forma de pago" if self._can_advance() else "cargar compradores"
         if self.state.pantalla_actual == "FORMA_PAGO":
             if self.state.forma_pago == "CONTADO":
-                return "revisar venta" if self._can_advance() else "cargar fecha de pago contado"
+                return "calcular preview del plan" if self._can_advance() else "cargar fecha de pago contado"
             if self.state.forma_pago == "FINANCIADO":
                 return "cargar anticipo"
             return "elegir forma de pago"
@@ -4205,7 +4598,9 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "PLAN_TRAMO_FORM":
             return "guardar tramo o cancelar"
         if self.state.pantalla_actual == "PLAN_RESUMEN":
-            return "revisión general de venta" if self._can_advance() else "ajustar diferencia del plan"
+            return "calcular preview del plan" if self._can_advance() else "ajustar diferencia del plan"
+        if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
+            return "revisión general de venta" if self._can_advance() else "recalcular preview del plan"
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return "confirmar venta" if self._can_advance() else "resolver pendientes de revisión"
         if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
