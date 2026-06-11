@@ -3199,23 +3199,63 @@ class VentaCompletaWizardV3Prototype:
                 "moneda": self._currency_label(),
                 "importe_anticipo": None,
                 "fecha_vencimiento_anticipo": None,
-                "importe_saldo": total,
-                "fecha_vencimiento_saldo": self.state.fecha_pago_contado_iso,
+                "importe_saldo": None,
+                "fecha_vencimiento_saldo": None,
                 "cuotas": [],
             }
 
         advance = self._valid_advance_amount_or_zero()
+        has_advance = self.state.tiene_anticipo and advance > Decimal("0")
         first_installment_date = self.state.tramos_cuotas[0].fecha_primer_vencimiento_iso if self.state.tramos_cuotas else None
+        if has_advance:
+            return {
+                "monto_total": total,
+                "tipo_plan_financiero": "ANTICIPO_Y_SALDO",
+                "moneda": self._currency_label(),
+                "importe_anticipo": _format_decimal(advance),
+                "fecha_vencimiento_anticipo": self.state.fecha_anticipo_iso,
+                "importe_saldo": _format_decimal(total_decimal - advance),
+                "fecha_vencimiento_saldo": first_installment_date,
+                "cuotas": [],
+            }
+
         return {
             "monto_total": total,
-            "tipo_plan_financiero": "FINANCIADO",
+            "tipo_plan_financiero": "CUOTAS_FIJAS",
             "moneda": self._currency_label(),
-            "importe_anticipo": _format_decimal(advance) if self.state.tiene_anticipo and advance > Decimal("0") else None,
-            "fecha_vencimiento_anticipo": self.state.fecha_anticipo_iso if self.state.tiene_anticipo and advance > Decimal("0") else None,
-            "importe_saldo": _format_decimal(total_decimal - advance),
-            "fecha_vencimiento_saldo": first_installment_date,
-            "cuotas": [],
+            "importe_anticipo": None,
+            "fecha_vencimiento_anticipo": None,
+            "importe_saldo": None,
+            "fecha_vencimiento_saldo": None,
+            "cuotas": self._build_legacy_fixed_installments_for_conditions(),
         }
+
+    def _build_legacy_fixed_installments_for_conditions(self) -> list[dict[str, Any]]:
+        cuotas: list[dict[str, Any]] = []
+        next_number = 1
+        for tramo in self.state.tramos_cuotas:
+            block_total = Decimal(str(tramo.importe_total_bloque))
+            base_amount = (block_total / Decimal(tramo.cantidad_cuotas)).quantize(MONEY_DECIMAL_QUANTUM)
+            accumulated = Decimal("0")
+            first_due_date = _date_from_iso(tramo.fecha_primer_vencimiento_iso)
+            for index in range(tramo.cantidad_cuotas):
+                if index == tramo.cantidad_cuotas - 1:
+                    amount = (block_total - accumulated).quantize(MONEY_DECIMAL_QUANTUM)
+                else:
+                    amount = base_amount
+                    accumulated += amount
+                due_date = _add_months(first_due_date, index).isoformat() if first_due_date is not None else tramo.fecha_primer_vencimiento_iso
+                cuotas.append(
+                    {
+                        "numero_cuota": next_number,
+                        "importe_cuota": _format_decimal(amount),
+                        "fecha_vencimiento": due_date,
+                        "moneda": self._currency_label(),
+                        "observaciones": "Compatibilidad legacy de condiciones comerciales; Plan Pago V2 define el cronograma real.",
+                    }
+                )
+                next_number += 1
+        return cuotas
 
     def _confirm_sale(self, _: ft.ControlEvent | None = None) -> None:
         if not self._can_confirm_sale():
@@ -5384,6 +5424,19 @@ def _date_from_iso(iso_date: str | None) -> date | None:
         return datetime.strptime(text, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    days_by_month = [31, 29 if _is_leap_year(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    day = min(value.day, days_by_month[month - 1])
+    return date(year, month, day)
+
+
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
 def _parse_decimal(value: Any) -> Decimal | None:

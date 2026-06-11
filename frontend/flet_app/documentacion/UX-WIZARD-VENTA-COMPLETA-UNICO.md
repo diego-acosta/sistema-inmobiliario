@@ -1000,6 +1000,12 @@ Notas:
 - No se envia `If-Match-Version` mientras el contrato actual directo no lo
   exponga.
 - `objetos[]` y `compradores[]` viven en el nivel superior del body directo.
+- `condiciones_comerciales.tipo_plan_financiero` usa el catalogo comercial
+  legacy aceptado por backend: `CONTADO`, `ANTICIPO_Y_SALDO` o `CUOTAS_FIJAS`.
+  No debe enviarse `FINANCIADO` en ese campo.
+- `plan_pago_v2.tipo_pago` usa el catalogo de Plan Pago V2 (`CONTADO` o
+  `FINANCIADO`) y no debe confundirse con el catalogo legacy de
+  `condiciones_comerciales`.
 
 ## 10. Payload `plan_pago_v2` comun
 
