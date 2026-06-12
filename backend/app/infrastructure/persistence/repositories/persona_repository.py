@@ -376,6 +376,34 @@ class PersonaRepository(BaseRepository[Any]):
         result = self.db.execute(statement, {"id_persona": id_persona}).scalar_one_or_none()
         return result is not None
 
+    def list_roles_participacion(
+        self, codigo: str | None = None
+    ) -> list[dict[str, Any]]:
+        filters = ["deleted_at IS NULL"]
+        params: dict[str, Any] = {}
+        if codigo is not None and codigo.strip():
+            filters.append("UPPER(codigo_rol) = :codigo")
+            params["codigo"] = codigo.strip().upper()
+
+        statement = text(
+            f"""
+            SELECT id_rol_participacion, codigo_rol, nombre_rol, deleted_at
+            FROM rol_participacion
+            WHERE {' AND '.join(filters)}
+            ORDER BY codigo_rol, id_rol_participacion
+            """
+        )
+        rows = self.db.execute(statement, params).mappings().all()
+        return [
+            {
+                "id_rol_participacion": row["id_rol_participacion"],
+                "codigo_rol": row["codigo_rol"],
+                "nombre_rol": row["nombre_rol"],
+                "deleted_at": row["deleted_at"],
+            }
+            for row in rows
+        ]
+
     def rol_participacion_exists(self, id_rol_participacion: int) -> bool:
         statement = text(
             """

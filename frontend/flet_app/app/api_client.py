@@ -61,6 +61,14 @@ class ApiClient:
             offset=offset,
         )
 
+    def listar_roles_participacion(
+        self, *, codigo: str | None = None
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/roles-participacion",
+            params={"codigo": codigo or None},
+        )
+
     def get_estado_cuenta_persona(
         self,
         id_persona: int,
