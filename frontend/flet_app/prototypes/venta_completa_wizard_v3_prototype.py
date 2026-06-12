@@ -24,8 +24,8 @@ Alcance:
     La versión productiva debe mostrar esos resultados cuando integre esa simulación.
   - Nota compradores: el objetivo final para RESERVA es mostrar y validar
     compradores heredados desde datos reales de reserva; este V3 los deja como
-    pendiente visual hasta integrar backend/buscador real. DIRECTA si usa
-    buscador de persona y carga manual en estado local demo.
+    pendiente visual hasta integrar backend/buscador real. DIRECTA usa personas
+    reales del backend o modo tecnico/dev explicito con IDs ya persistidos.
 """
 
 from __future__ import annotations
@@ -107,95 +107,6 @@ DEMO_RESERVAS: list[dict[str, Any]] = [
 ]
 
 
-DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
-    {
-        "tipo_objeto": "INMUEBLE",
-        "id_inmueble": 501,
-        "codigo": "INM-LOTE-12",
-        "descripcion": "Lote 12 - Manzana B",
-        "estado": "DISPONIBLE",
-        "resumen": "Inmueble completo disponible para la operación comercial demo.",
-        "source": "demo",
-        "persisted": False,
-    },
-    {
-        "tipo_objeto": "INMUEBLE",
-        "id_inmueble": 502,
-        "codigo": "INM-MACRO-02",
-        "descripcion": "Macrolote 2",
-        "estado": "DISPONIBLE",
-        "resumen": "Macrolote demo para validar carga multiobjeto sin backend.",
-        "source": "demo",
-        "persisted": False,
-    },
-    {
-        "tipo_objeto": "UNIDAD_FUNCIONAL",
-        "id_unidad_funcional": 701,
-        "codigo": "UF-3A",
-        "descripcion": "Unidad funcional 3A",
-        "inmueble_padre": "Edificio Norte",
-        "estado": "DISPONIBLE",
-        "resumen": "Unidad funcional demo dentro del edificio norte.",
-        "source": "demo",
-        "persisted": False,
-    },
-    {
-        "tipo_objeto": "UNIDAD_FUNCIONAL",
-        "id_unidad_funcional": 702,
-        "codigo": "UF-4B",
-        "descripcion": "Unidad funcional 4B",
-        "inmueble_padre": "Edificio Norte",
-        "estado": "RESERVABLE",
-        "resumen": "Unidad funcional demo para validar selección por buscador visual.",
-        "source": "demo",
-        "persisted": False,
-    },
-]
-
-
-DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
-    {
-        "id_persona": 201,
-        "codigo_persona": "PER-000201",
-        "nombre": "Juan",
-        "apellido": "Perez",
-        "documento": "DNI 30111222",
-        "resumen": "Persona humana disponible para actuar como comprador demo.",
-        "source": "demo",
-        "persisted": False,
-    },
-    {
-        "id_persona": 202,
-        "codigo_persona": "PER-000202",
-        "nombre": "Maria",
-        "apellido": "Gomez",
-        "documento": "DNI 28999888",
-        "resumen": "Compradora demo para validar operaciones con mas de una persona.",
-        "source": "demo",
-        "persisted": False,
-    },
-    {
-        "id_persona": 203,
-        "codigo_persona": "PER-000203",
-        "nombre": "Sofia",
-        "apellido": "Martinez",
-        "documento": "DNI 33444555",
-        "resumen": "Persona demo con datos visibles sin priorizar el ID tecnico.",
-        "source": "demo",
-        "persisted": False,
-    },
-    {
-        "id_persona": 204,
-        "codigo_persona": "PER-000204",
-        "razon_social": "Constructora Rio Sur SA",
-        "documento": "CUIT 30-71112223-4",
-        "resumen": "Persona juridica demo para validar busqueda por razon social.",
-        "source": "demo",
-        "persisted": False,
-    },
-]
-
-
 @dataclass
 class ObjetoVentaWizardDraft:
     tipo_objeto: str
@@ -203,7 +114,7 @@ class ObjetoVentaWizardDraft:
     id_unidad_funcional: int | None
     texto_visual: str
     precio_asignado: str
-    source: str = "demo"
+    source: str = "manual"
     persisted: bool = False
 
 
@@ -213,7 +124,7 @@ class CompradorWizardDraft:
     texto_visual: str
     porcentaje_responsabilidad: str
     id_rol_participacion: str
-    source: str = "demo"
+    source: str = "manual"
     persisted: bool = False
 
 
@@ -246,8 +157,8 @@ class TramoCuotasWizardDraft:
 class WizardVentaCompletaV3State:
     """Estado minimo del wizard V3 hasta Pantalla 3 - Compradores.
 
-    Conserva origen/reserva y una lista de objetos comerciales demo con XOR
-    visual entre inmueble y unidad funcional, sin persistencia ni backend.
+    Conserva origen/reserva y listas seleccionadas desde backend real o modo
+    tecnico/dev explicito con IDs persistidos.
     """
 
     origen: OrigenVenta | None = None
@@ -840,7 +751,12 @@ class VentaCompletaWizardV3Prototype:
             errors.append(self._backend_selector_error("unidades funcionales", unidades_result))
 
         self.backend_object_records = records
-        self.backend_object_error = " ".join(errors) if errors else None
+        if errors:
+            self.backend_object_error = " ".join(errors)
+        elif not records:
+            self.backend_object_error = "No se encontraron registros reales en backend."
+        else:
+            self.backend_object_error = None
 
     def _load_backend_buyer_records_if_needed(self) -> None:
         if self.backend_buyers_loaded:
@@ -849,18 +765,22 @@ class VentaCompletaWizardV3Prototype:
         result = self.api.buscar_personas(limit=50)
         if result.success:
             self.backend_buyer_records = [self._backend_persona_record(item) for item in self._api_items(result.data)]
-            self.backend_buyer_error = None
+            self.backend_buyer_error = (
+                None
+                if self.backend_buyer_records
+                else "No se encontraron registros reales en backend."
+            )
             return
         self.backend_buyer_records = []
         self.backend_buyer_error = self._backend_selector_error("personas", result)
 
     def _backend_object_selector_records(self) -> list[dict[str, Any]]:
         self._load_backend_object_records_if_needed()
-        return [*self.backend_object_records, *DEMO_OBJETOS_INMOBILIARIOS]
+        return list(self.backend_object_records)
 
     def _backend_buyer_selector_records(self) -> list[dict[str, Any]]:
         self._load_backend_buyer_records_if_needed()
-        return [*self.backend_buyer_records, *DEMO_PERSONAS_COMPRADORAS]
+        return list(self.backend_buyer_records)
 
     @staticmethod
     def _api_items(data: Any) -> list[dict[str, Any]]:
@@ -988,7 +908,7 @@ class VentaCompletaWizardV3Prototype:
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._build_help_card(
-                "El buscador prioriza registros reales del backend (source=backend, persisted=True). Los registros demo quedan solo para flujo visual/preview y bloquean confirmación real.",
+                "El buscador usa solo registros reales del backend (source=backend, persisted=True). Si no aparecen resultados, cargá datos reales primero o usá el modo técnico/dev con IDs persistidos.",
                 ft.Colors.BLUE_50,
                 ft.Colors.BLUE_200,
             ),
@@ -1115,7 +1035,7 @@ class VentaCompletaWizardV3Prototype:
                         ),
                         _badge(
                             self._record_source_label(
-                                str(self.objeto_seleccionado.get("source") or "demo"),
+                                str(self.objeto_seleccionado.get("source") or "backend"),
                                 bool(self.objeto_seleccionado.get("persisted", False)),
                             ),
                             ft.Colors.GREEN_50 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_50,
@@ -1286,7 +1206,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     self._build_help_card(
-                        "El buscador prioriza personas reales del backend (source=backend, persisted=True). Las personas demo quedan solo para flujo visual/preview y bloquean confirmación real.",
+                        "El buscador usa solo personas reales del backend (source=backend, persisted=True). Si no aparecen resultados, cargá personas reales primero o usá el modo técnico/dev con IDs persistidos.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -1455,7 +1375,7 @@ class VentaCompletaWizardV3Prototype:
                             ),
                             _badge(
                                 self._record_source_label(
-                                    str(self.comprador_seleccionado.get("source") or "demo"),
+                                    str(self.comprador_seleccionado.get("source") or "backend"),
                                     bool(self.comprador_seleccionado.get("persisted", False)),
                                 ),
                                 ft.Colors.GREEN_50 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_50,
@@ -3263,7 +3183,7 @@ class VentaCompletaWizardV3Prototype:
         if not self._can_confirm_sale():
             persisted_errors = self._non_persisted_confirmation_errors()
             if persisted_errors:
-                self.state.confirm_error = "La confirmación real requiere objetos y compradores persistidos en backend. Los datos demo solo sirven para probar el flujo visual."
+                self.state.confirm_error = "La confirmación real requiere objetos y compradores persistidos en backend o cargados en modo técnico/dev con IDs reales."
             else:
                 self.state.confirm_error = "No se puede confirmar: resolvé validaciones y recalculá el preview si está desactualizado."
             self._render()
@@ -3491,7 +3411,7 @@ class VentaCompletaWizardV3Prototype:
         if persisted_errors:
             controls.append(
                 self._build_help_card(
-                    "La confirmación real requiere objetos y compradores persistidos en backend. Los datos demo solo sirven para probar el flujo visual.",
+                    "La confirmación real requiere objetos y compradores persistidos en backend o cargados en modo técnico/dev con IDs reales.",
                     ft.Colors.AMBER_50,
                     ft.Colors.AMBER_200,
                 )
@@ -3518,12 +3438,12 @@ class VentaCompletaWizardV3Prototype:
         errors: list[str] = []
         if self.state.origen != "DIRECTA":
             return errors
-        demo_objects = [objeto.texto_visual for objeto in self.state.objetos if not objeto.persisted]
-        if demo_objects:
-            errors.append("Objetos no persistidos/demo: " + ", ".join(demo_objects))
-        demo_buyers = [comprador.texto_visual for comprador in self.state.compradores if not comprador.persisted]
-        if demo_buyers:
-            errors.append("Compradores no persistidos/demo: " + ", ".join(demo_buyers))
+        non_persisted_objects = [objeto.texto_visual for objeto in self.state.objetos if not objeto.persisted]
+        if non_persisted_objects:
+            errors.append("Objetos no persistidos: " + ", ".join(non_persisted_objects))
+        non_persisted_buyers = [comprador.texto_visual for comprador in self.state.compradores if not comprador.persisted]
+        if non_persisted_buyers:
+            errors.append("Compradores no persistidos: " + ", ".join(non_persisted_buyers))
         return errors
 
     def _has_only_persisted_confirmation_records(self) -> bool:
@@ -3533,7 +3453,7 @@ class VentaCompletaWizardV3Prototype:
     def _record_source_label(source: str, persisted: bool) -> str:
         if persisted:
             return f"backend/persistido ({source or 'backend'})"
-        return f"demo/no persistido ({source or 'demo'})"
+        return f"no persistido ({source or 'manual'})"
 
     def _general_review_errors(self) -> list[str]:
         errors: list[str] = []
@@ -5190,7 +5110,7 @@ class VentaCompletaWizardV3Prototype:
                 id_unidad_funcional=id_unidad_funcional,
                 texto_visual=str(self.objeto_seleccionado.get("texto_visual") or "-"),
                 precio_asignado=_format_decimal(precio),
-                source=str(self.objeto_seleccionado.get("source") or "demo"),
+                source=str(self.objeto_seleccionado.get("source") or "backend"),
                 persisted=bool(self.objeto_seleccionado.get("persisted", False)),
             )
         )
@@ -5335,7 +5255,7 @@ class VentaCompletaWizardV3Prototype:
                 texto_visual=str(self.comprador_seleccionado.get("texto_visual") or "-"),
                 porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
                 id_rol_participacion=self.rol_comprador_value.strip(),
-                source=str(self.comprador_seleccionado.get("source") or "demo"),
+                source=str(self.comprador_seleccionado.get("source") or "backend"),
                 persisted=bool(self.comprador_seleccionado.get("persisted", False)),
             )
         )

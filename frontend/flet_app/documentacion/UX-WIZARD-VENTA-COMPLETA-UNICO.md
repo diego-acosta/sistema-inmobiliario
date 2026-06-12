@@ -827,9 +827,9 @@ Reglas comunes:
   borrador de venta ni usa `id_venta` ficticio durante la carga o el preview.
 - La accion final se ejecuta desde `REVISION_GENERAL`; no avanza a placeholders
   posteriores cuando el submit esta conectado.
-- Bloquear la confirmacion real si algun objeto o comprador proviene de datos
-  demo/no persistidos. En ese caso, el preview puede seguir usandose como flujo
-  visual, pero no debe ejecutarse el POST de confirmacion.
+- Bloquear la confirmacion real si algun objeto o comprador no esta persistido.
+  El flujo principal usa datos reales del backend; el modo tecnico/dev manual es
+  solo fallback para pruebas con IDs reales persistidos.
 - El flujo principal debe usar selectores backend para objeto y comprador reales;
   el usuario no debe escribir manualmente `id_inmueble`, `id_unidad_funcional` ni
   `id_persona` en el camino principal de confirmacion.
@@ -1183,10 +1183,11 @@ confirmacion de venta directa real se ejecuta desde `REVISION_GENERAL` con el
 boton `Confirmar venta` contra
 `POST /api/v1/ventas/directa/confirmar-venta-completa`, siempre que el preview
 este vigente y los objetos/compradores seleccionados esten marcados como
-persistidos/backend. Los registros demo del prototipo quedan marcados como
-`persisted = false` y solo sirven para probar el flujo visual/preview; bloquean
-la confirmacion real. El modo tecnico/dev manual queda como fallback avanzado, no como camino
-principal. Como no hay API propia confirmada para listar el catalogo
+persistidos/backend. El Wizard V3 ya no carga datos demo hardcodeados de
+objetos ni compradores; si backend no devuelve registros, el usuario debe crear
+o cargar datos reales primero. El modo tecnico/dev manual queda como fallback
+avanzado para pruebas con IDs reales persistidos, no como camino principal. Como
+no hay API propia confirmada para listar el catalogo
 `rol_participacion`, el prototipo conserva la carga manual de
 `id_rol_participacion` con advertencia tecnica hasta integrar un selector real
 de roles. La confirmacion desde reserva queda pendiente y separada.
