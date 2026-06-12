@@ -71,6 +71,8 @@ def reserva_record(data: dict[str, Any]) -> SearchSelectorRecord:
             "id_reserva_venta": data.get("id_reserva_venta"),
             "version_registro": version,
             "texto_visual": primary,
+            "source": data.get("source") or "demo",
+            "persisted": bool(data.get("persisted", False)),
         },
     )
 
@@ -100,6 +102,8 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
         "tipo": "OBJETO_INMOBILIARIO",
         "tipo_objeto": tipo_objeto,
         "texto_visual": primary,
+        "source": data.get("source") or "demo",
+        "persisted": bool(data.get("persisted", False)),
     }
     if tipo_objeto == "UNIDAD_FUNCIONAL":
         payload["id_unidad_funcional"] = id_correspondiente
@@ -147,6 +151,8 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
             "tipo": "PERSONA",
             "id_persona": data.get("id_persona"),
             "texto_visual": primary,
+            "source": data.get("source") or "demo",
+            "persisted": bool(data.get("persisted", False)),
         },
     )
 

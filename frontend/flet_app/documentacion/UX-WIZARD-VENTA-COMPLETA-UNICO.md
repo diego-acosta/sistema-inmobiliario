@@ -796,12 +796,36 @@ recalcularse avanzando nuevamente desde la edicion del plan.
 La confirmacion construye el payload desde el mismo estado del wizard y llama al
 adapter final segun `origen`.
 
+Estado V3 vigente: este PR conecta solo la confirmacion real de `DIRECTA` contra
+`POST /api/v1/ventas/directa/confirmar-venta-completa`. La confirmacion desde
+`RESERVA` queda pendiente hasta integrar datos reales de compradores/reserva y
+mantener el adapter separado.
+
 Reglas comunes:
 
 - Enviar `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`.
+- Preservar un `X-Op-Id` estable por intento de confirmacion mientras el payload
+  canonico no cambie; ante retry por timeout, conexion, 409, 500 o resultado sin
+  certeza de commit, reusar el mismo op id.
 - Bloquear submit si falta algun header CORE-EF requerido.
 - Preservar la respuesta/error estandar del backend; no traducir errores de
   contrato a mensajes que oculten el campo invalido.
+- Exigir `preview_data` vigente antes de confirmar: si `preview_data` es `None`
+  o `preview_stale = true`, el boton `Confirmar venta` permanece bloqueado.
+- La venta se crea recien al presionar `Confirmar venta`; el wizard no persiste
+  borrador de venta ni usa `id_venta` ficticio durante la carga o el preview.
+- La accion final se ejecuta desde `REVISION_GENERAL`; no avanza a placeholders
+  posteriores cuando el submit esta conectado.
+- Bloquear la confirmacion real si algun objeto o comprador proviene de datos
+  demo/no persistidos. En ese caso, el preview puede seguir usandose como flujo
+  visual, pero no debe ejecutarse el POST de confirmacion.
+- El flujo principal debe usar selectores backend para objeto y comprador reales;
+  el usuario no debe escribir manualmente `id_inmueble`, `id_unidad_funcional` ni
+  `id_persona` en el camino principal de confirmacion.
+- Mientras no exista selector productivo conectado a backend para todos los datos,
+  el prototipo puede ofrecer un modo tecnico/dev visible para cargar IDs reales
+  persistidos; esos registros deben marcarse `source = "manual"` y
+  `persisted = true`.
 
 Reglas por origen:
 
@@ -833,6 +857,13 @@ En caso OK, mostrar:
 ```text
 GET /api/v1/ventas/{id_venta}/plan-pago-v2
 ```
+
+En V3, la pantalla final `VENTA_CONFIRMADA` debe mostrar confirmacion exitosa,
+`id_venta`/estado/version si vienen en response, estado/id de Plan Pago V2,
+cantidad de obligaciones generadas y resumen comercial basico: origen, objetos,
+compradores, forma de pago y total. Si el POST falla, la UI permanece en
+`REVISION_GENERAL`, conserva el estado cargado, muestra el `ErrorResponse` o el
+error de conexion y no marca la venta como confirmada.
 
 La consulta se habilita solo si el response permite obtener `id_venta`.
 
@@ -969,6 +1000,16 @@ Notas:
 - No se envia `If-Match-Version` mientras el contrato actual directo no lo
   exponga.
 - `objetos[]` y `compradores[]` viven en el nivel superior del body directo.
+- `condiciones_comerciales.tipo_plan_financiero` usa el catalogo comercial
+  legacy aceptado por backend: `CONTADO`, `ANTICIPO_Y_SALDO` o `CUOTAS_FIJAS`.
+  No debe enviarse `FINANCIADO` en ese campo.
+- En el Wizard V3, una venta `FINANCIADO` con tramos/cuotas se adapta en
+  `condiciones_comerciales` como `CUOTAS_FIJAS`; si existe anticipo, se refleja
+  como una cuota fija legacy para que la suma de cuotas coincida con el total.
+- `plan_pago_v2.tipo_pago` usa el catalogo de Plan Pago V2 (`CONTADO` o
+  `FINANCIADO`) y no debe confundirse con el catalogo legacy de
+  `condiciones_comerciales`. El cronograma financiero real sigue estando en
+  `plan_pago_v2`.
 
 ## 10. Payload `plan_pago_v2` comun
 
@@ -1127,7 +1168,17 @@ venta durante la carga. Al presionar `Siguiente` desde la edicion del plan,
 ejecuta automaticamente `POST /api/v1/ventas/plan-pago-v2/preview` con el
 estado local del wizard y avanza a `PREVIEW_PLAN_PAGO` si el backend responde
 OK; el preview no crea venta y su response no incluye `id_venta`. La
-confirmacion de venta real sigue pendiente como paso posterior.
+confirmacion de venta directa real se ejecuta desde `REVISION_GENERAL` con el
+boton `Confirmar venta` contra
+`POST /api/v1/ventas/directa/confirmar-venta-completa`, siempre que el preview
+este vigente y los objetos/compradores seleccionados esten marcados como
+persistidos/backend. Los registros demo del prototipo quedan marcados como
+`persisted = false` y solo sirven para probar el flujo visual/preview; bloquean
+la confirmacion real. El modo tecnico/dev manual queda como fallback avanzado, no como camino
+principal. Como no hay API propia confirmada para listar el catalogo
+`rol_participacion`, el prototipo conserva la carga manual de
+`id_rol_participacion` con advertencia tecnica hasta integrar un selector real
+de roles. La confirmacion desde reserva queda pendiente y separada.
 
 El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
 queda descartado como base principal porque su flujo no representa la UX
@@ -1156,12 +1207,19 @@ Headers:
 - Directa no requiere `If-Match-Version` segun contrato actual.
 - Preview previo a confirmacion no debe exigir headers write por ser
   `PREVIEW_READLIKE`.
+- En el prototipo Flet actual, `ApiClient` genera `X-Op-Id` y usa placeholders
+  visibles/configurables de desarrollo (`X-Usuario-Id=1`, `X-Sucursal-Id=1`,
+  `X-Instalacion-Id=1`) hasta integrar contexto real de sesion, sucursal e
+  instalacion. No deben interpretarse como datos productivos silenciosos.
 
 Idempotencia:
 
 - Aplica como command sincronizable con `X-Op-Id`.
 - Criterio UX: la UI debe generar/conservar un `X-Op-Id` por intento de
   confirmacion y no cambiarlo durante reintentos del mismo submit.
+- La firma del intento se calcula sobre JSON canonico del payload
+  (`sort_keys=True`); si el payload cambia, se descarta el op id anterior y se
+  genera uno nuevo para el siguiente submit.
 - Misma operacion funcional con payload distinto debe tratarse como nuevo
   intento operativo desde UI, salvo que backend indique otra regla.
 - No declarar cumplimiento profundo adicional sin evidencia del endpoint.
@@ -1194,10 +1252,11 @@ Rollback/transaccion:
   actualiza disponibilidad/estado cuando corresponda.
 - La UI debe mostrarlo en revision y no intentar compensaciones locales.
 
-Tests ejecutados para este PR documental:
+Tests requeridos para este PR de frontend:
 
-- No aplica `pytest`, porque no se modifica backend, SQL ni tests.
-- Validacion requerida: `git diff --check`.
+- `python -m compileall -q frontend/flet_app`.
+- Backend pytest es opcional si no se modifica backend; los tests existentes de
+  contrato siguen siendo la referencia de regresion.
 
 ## 15. Validacion contra implementacion y tests existentes
 

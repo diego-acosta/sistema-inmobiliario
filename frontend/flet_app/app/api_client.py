@@ -44,6 +44,23 @@ class ApiClient:
     def get_persona_detalle_integral(self, id_persona: int) -> ApiResult:
         return self._get(f"/api/v1/personas/{id_persona}/detalle-integral")
 
+    def buscar_personas(
+        self,
+        *,
+        q: str | None = None,
+        tipo_persona: str | None = None,
+        estado_persona: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self.get_personas(
+            q=q,
+            tipo_persona=tipo_persona,
+            estado_persona=estado_persona,
+            limit=limit,
+            offset=offset,
+        )
+
     def get_estado_cuenta_persona(
         self,
         id_persona: int,
@@ -134,6 +151,27 @@ class ApiClient:
     def get_inmueble_detalle_integral(self, id_inmueble: int) -> ApiResult:
         return self._get(f"/api/v1/inmuebles/{id_inmueble}/detalle-integral")
 
+    def listar_inmuebles(
+        self,
+        *,
+        q: str | None = None,
+        estado_administrativo: str | None = None,
+        estado_juridico: str | None = None,
+        disponibilidad_actual: str | None = None,
+        ocupacion_actual: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self.get_inmuebles(
+            q=q,
+            estado_administrativo=estado_administrativo,
+            estado_juridico=estado_juridico,
+            disponibilidad_actual=disponibilidad_actual,
+            ocupacion_actual=ocupacion_actual,
+            limit=limit,
+            offset=offset,
+        )
+
     def get_unidades_funcionales(
         self,
         *,
@@ -165,6 +203,29 @@ class ApiClient:
     ) -> ApiResult:
         return self._get(
             f"/api/v1/unidades-funcionales/{id_unidad_funcional}/detalle-integral"
+        )
+
+    def listar_unidades_funcionales(
+        self,
+        *,
+        q: str | None = None,
+        id_inmueble: int | None = None,
+        estado_administrativo: str | None = None,
+        estado_operativo: str | None = None,
+        disponibilidad_actual: str | None = None,
+        ocupacion_actual: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ApiResult:
+        return self.get_unidades_funcionales(
+            q=q,
+            id_inmueble=id_inmueble,
+            estado_administrativo=estado_administrativo,
+            estado_operativo=estado_operativo,
+            disponibilidad_actual=disponibilidad_actual,
+            ocupacion_actual=ocupacion_actual,
+            limit=limit,
+            offset=offset,
         )
 
     def get_contratos_alquiler(
@@ -282,6 +343,23 @@ class ApiClient:
             f"/api/v1/ventas/{id_venta}/plan-pago-v2/generar",
             headers={
                 "X-Op-Id": str(uuid4()),
+                "X-Usuario-Id": "1",
+                "X-Sucursal-Id": "1",
+                "X-Instalacion-Id": "1",
+            },
+            json=payload,
+        )
+
+    def confirmar_venta_directa_completa(
+        self,
+        payload: dict[str, Any],
+        op_id: str | None = None,
+    ) -> ApiResult:
+        x_op_id = self._valid_or_new_uuid(op_id)
+        return self._post(
+            "/api/v1/ventas/directa/confirmar-venta-completa",
+            headers={
+                "X-Op-Id": x_op_id,
                 "X-Usuario-Id": "1",
                 "X-Sucursal-Id": "1",
                 "X-Instalacion-Id": "1",

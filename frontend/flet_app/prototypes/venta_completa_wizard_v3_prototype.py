@@ -15,8 +15,9 @@ Alcance:
   - No modifica backend, SQL, caja, pagos, recibos ni documental.
   - Pide moneda antes de cargar precio_asignado por objeto; no pide id_venta,
     no calcula cronograma local, deuda individual por comprador ni implementa datos
-    comerciales completos, cronograma definitivo, interés/indexación local ni confirmación.
-    Incluye preview backend sin venta persistida y draft UI de refuerzos internos
+    comerciales completos, cronograma definitivo, interés/indexación local.
+    Incluye preview backend sin venta persistida, confirmación real de venta directa
+    al final del flujo y draft UI de refuerzos internos
     dentro de tramos sin calcular importes financieros definitivos.
   - El frontend comercial no calcula resultados financieros definitivos: interés,
     indexación y cronograma se delegarán al preview backend de Plan Pago V2.
@@ -30,11 +31,13 @@ Alcance:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import sys
 from typing import Any, Literal
+from uuid import uuid4
 
 import flet as ft
 
@@ -64,7 +67,7 @@ PantallaWizard = Literal[
     "PLAN_RESUMEN",
     "PREVIEW_PLAN_PAGO",
     "REVISION_GENERAL",
-    "PASO_6_PLACEHOLDER",
+    "VENTA_CONFIRMADA",
 ]
 
 
@@ -112,6 +115,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "descripcion": "Lote 12 - Manzana B",
         "estado": "DISPONIBLE",
         "resumen": "Inmueble completo disponible para la operación comercial demo.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "tipo_objeto": "INMUEBLE",
@@ -120,6 +125,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "descripcion": "Macrolote 2",
         "estado": "DISPONIBLE",
         "resumen": "Macrolote demo para validar carga multiobjeto sin backend.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "tipo_objeto": "UNIDAD_FUNCIONAL",
@@ -129,6 +136,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "inmueble_padre": "Edificio Norte",
         "estado": "DISPONIBLE",
         "resumen": "Unidad funcional demo dentro del edificio norte.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "tipo_objeto": "UNIDAD_FUNCIONAL",
@@ -138,6 +147,8 @@ DEMO_OBJETOS_INMOBILIARIOS: list[dict[str, Any]] = [
         "inmueble_padre": "Edificio Norte",
         "estado": "RESERVABLE",
         "resumen": "Unidad funcional demo para validar selección por buscador visual.",
+        "source": "demo",
+        "persisted": False,
     },
 ]
 
@@ -150,6 +161,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "apellido": "Perez",
         "documento": "DNI 30111222",
         "resumen": "Persona humana disponible para actuar como comprador demo.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "id_persona": 202,
@@ -158,6 +171,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "apellido": "Gomez",
         "documento": "DNI 28999888",
         "resumen": "Compradora demo para validar operaciones con mas de una persona.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "id_persona": 203,
@@ -166,6 +181,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "apellido": "Martinez",
         "documento": "DNI 33444555",
         "resumen": "Persona demo con datos visibles sin priorizar el ID tecnico.",
+        "source": "demo",
+        "persisted": False,
     },
     {
         "id_persona": 204,
@@ -173,6 +190,8 @@ DEMO_PERSONAS_COMPRADORAS: list[dict[str, Any]] = [
         "razon_social": "Constructora Rio Sur SA",
         "documento": "CUIT 30-71112223-4",
         "resumen": "Persona juridica demo para validar busqueda por razon social.",
+        "source": "demo",
+        "persisted": False,
     },
 ]
 
@@ -184,6 +203,8 @@ class ObjetoVentaWizardDraft:
     id_unidad_funcional: int | None
     texto_visual: str
     precio_asignado: str
+    source: str = "demo"
+    persisted: bool = False
 
 
 @dataclass
@@ -192,6 +213,8 @@ class CompradorWizardDraft:
     texto_visual: str
     porcentaje_responsabilidad: str
     id_rol_participacion: str
+    source: str = "demo"
+    persisted: bool = False
 
 
 @dataclass
@@ -279,6 +302,12 @@ class WizardVentaCompletaV3State:
     preview_error: str | None = None
     preview_status_code: int | None = None
     preview_stale: bool = True
+    confirm_loading: bool = False
+    confirm_data: dict[str, Any] | None = None
+    confirm_error: str | None = None
+    confirm_status_code: int | None = None
+    confirm_op_id: str | None = None
+    confirm_payload_signature: str | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -292,6 +321,12 @@ class VentaCompletaWizardV3Prototype:
         self.comprador_selector: SearchSelectorDemo | None = None
         self.objeto_seleccionado: dict[str, Any] | None = None
         self.comprador_seleccionado: dict[str, Any] | None = None
+        self.backend_object_records: list[dict[str, Any]] = []
+        self.backend_object_error: str | None = None
+        self.backend_objects_loaded = False
+        self.backend_buyer_records: list[dict[str, Any]] = []
+        self.backend_buyer_error: str | None = None
+        self.backend_buyers_loaded = False
         self.precio_objeto_value = ""
         self.moneda_selector_width = 220
         self.fecha_venta_display_value = ""
@@ -341,6 +376,50 @@ class VentaCompletaWizardV3Prototype:
             on_change=self._on_rol_comprador_change,
         )
         self.comprador_error: str | None = None
+        self.manual_object_type_value: Literal["INMUEBLE", "UNIDAD_FUNCIONAL"] = "INMUEBLE"
+        self.manual_object_id_value = ""
+        self.manual_object_text_value = ""
+        self.manual_object_price_value = ""
+        self.manual_object_error: str | None = None
+        self.manual_object_id_field = ft.TextField(
+            label="ID persistido del objeto",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_object_id_change,
+        )
+        self.manual_object_text_field = ft.TextField(
+            label="Texto visual del objeto",
+            on_change=self._on_manual_object_text_change,
+        )
+        self.manual_object_price_field = ft.TextField(
+            label="precio_asignado",
+            prefix_icon=ft.Icons.ATTACH_MONEY,
+            keyboard_type=ft.KeyboardType.TEXT,
+            on_change=self._on_manual_object_price_change,
+        )
+        self.manual_buyer_id_value = ""
+        self.manual_buyer_text_value = ""
+        self.manual_buyer_role_value = ""
+        self.manual_buyer_percentage_value = ""
+        self.manual_buyer_error: str | None = None
+        self.manual_buyer_id_field = ft.TextField(
+            label="id_persona persistido",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_buyer_id_change,
+        )
+        self.manual_buyer_text_field = ft.TextField(
+            label="Texto visual comprador",
+            on_change=self._on_manual_buyer_text_change,
+        )
+        self.manual_buyer_role_field = ft.TextField(
+            label="id_rol_participacion persistido",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_buyer_role_change,
+        )
+        self.manual_buyer_percentage_field = ft.TextField(
+            label="Responsabilidad pactada (%)",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            on_change=self._on_manual_buyer_percentage_change,
+        )
         self.fecha_pago_contado_field = ft.TextField(
             label="Fecha de pago / vencimiento",
             hint_text="DD/MM/AAAA",
@@ -574,8 +653,8 @@ class VentaCompletaWizardV3Prototype:
             return self._build_plan_payment_preview_step()
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return self._build_general_review_step()
-        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
-            return self._build_step_6_placeholder()
+        if self.state.pantalla_actual == "VENTA_CONFIRMADA":
+            return self._build_confirmed_sale_step()
         return self._build_origin_step()
 
     def _build_origin_step(self) -> ft.Control:
@@ -736,6 +815,139 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
+    def _load_backend_object_records_if_needed(self) -> None:
+        if self.backend_objects_loaded:
+            return
+        self.backend_objects_loaded = True
+        records: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        inmuebles_result = self.api.listar_inmuebles(limit=50)
+        if inmuebles_result.success:
+            records.extend(self._backend_inmueble_record(item) for item in self._api_items(inmuebles_result.data))
+        else:
+            errors.append(self._backend_selector_error("inmuebles", inmuebles_result))
+
+        unidades_result = self.api.listar_unidades_funcionales(limit=50)
+        if unidades_result.success:
+            records.extend(self._backend_unidad_funcional_record(item) for item in self._api_items(unidades_result.data))
+        else:
+            errors.append(self._backend_selector_error("unidades funcionales", unidades_result))
+
+        self.backend_object_records = records
+        self.backend_object_error = " ".join(errors) if errors else None
+
+    def _load_backend_buyer_records_if_needed(self) -> None:
+        if self.backend_buyers_loaded:
+            return
+        self.backend_buyers_loaded = True
+        result = self.api.buscar_personas(limit=50)
+        if result.success:
+            self.backend_buyer_records = [self._backend_persona_record(item) for item in self._api_items(result.data)]
+            self.backend_buyer_error = None
+            return
+        self.backend_buyer_records = []
+        self.backend_buyer_error = self._backend_selector_error("personas", result)
+
+    def _backend_object_selector_records(self) -> list[dict[str, Any]]:
+        self._load_backend_object_records_if_needed()
+        return [*self.backend_object_records, *DEMO_OBJETOS_INMOBILIARIOS]
+
+    def _backend_buyer_selector_records(self) -> list[dict[str, Any]]:
+        self._load_backend_buyer_records_if_needed()
+        return [*self.backend_buyer_records, *DEMO_PERSONAS_COMPRADORAS]
+
+    @staticmethod
+    def _api_items(data: Any) -> list[dict[str, Any]]:
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            items = data.get("items")
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+            nested_data = data.get("data")
+            if isinstance(nested_data, list):
+                return [item for item in nested_data if isinstance(item, dict)]
+            if isinstance(nested_data, dict):
+                nested_items = nested_data.get("items")
+                if isinstance(nested_items, list):
+                    return [item for item in nested_items if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _backend_selector_error(label: str, result: ApiResult) -> str:
+        parts = [f"No se pudieron cargar {label} reales desde backend."]
+        if result.status_code is not None:
+            parts.append(f"HTTP {result.status_code}.")
+        if result.error_code:
+            parts.append(f"{result.error_code}.")
+        if result.error_message:
+            parts.append(result.error_message)
+        return " ".join(parts)
+
+    @staticmethod
+    def _availability_label(value: Any) -> str:
+        if isinstance(value, dict):
+            return str(
+                value.get("estado_disponibilidad")
+                or value.get("estado")
+                or value.get("codigo")
+                or ""
+            ).strip()
+        return str(value or "").strip()
+
+    def _backend_inmueble_record(self, item: dict[str, Any]) -> dict[str, Any]:
+        codigo = str(item.get("codigo_inmueble") or item.get("codigo") or item.get("id_inmueble") or "").strip()
+        descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble backend").strip()
+        disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        return {
+            "tipo_objeto": "INMUEBLE",
+            "id_inmueble": item.get("id_inmueble"),
+            "codigo": codigo,
+            "descripcion": descripcion,
+            "estado": disponibilidad or item.get("estado_administrativo") or "backend",
+            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble persistido en backend."),
+            "source": "backend",
+            "persisted": True,
+        }
+
+    def _backend_unidad_funcional_record(self, item: dict[str, Any]) -> dict[str, Any]:
+        codigo = str(item.get("codigo_unidad_funcional") or item.get("codigo_unidad") or item.get("id_unidad_funcional") or "").strip()
+        descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional backend").strip()
+        inmueble = item.get("inmueble") if isinstance(item.get("inmueble"), dict) else {}
+        disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        return {
+            "tipo_objeto": "UNIDAD_FUNCIONAL",
+            "id_unidad_funcional": item.get("id_unidad_funcional"),
+            "codigo": codigo,
+            "descripcion": descripcion,
+            "inmueble_padre": inmueble.get("codigo_inmueble") or inmueble.get("nombre_inmueble") or item.get("id_inmueble"),
+            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "backend",
+            "resumen": str(item.get("observaciones") or "Unidad funcional persistida en backend."),
+            "source": "backend",
+            "persisted": True,
+        }
+
+    @staticmethod
+    def _backend_persona_record(item: dict[str, Any]) -> dict[str, Any]:
+        documento = item.get("documento_principal") if isinstance(item.get("documento_principal"), dict) else {}
+        document_label = " ".join(
+            part
+            for part in [str(documento.get("tipo_documento") or "").strip(), str(documento.get("numero_documento") or "").strip()]
+            if part
+        )
+        return {
+            "id_persona": item.get("id_persona"),
+            "codigo_persona": str(item.get("id_persona") or ""),
+            "nombre": item.get("display_name") or item.get("nombre"),
+            "apellido": None if item.get("display_name") else item.get("apellido"),
+            "razon_social": item.get("razon_social"),
+            "documento": document_label or item.get("cuit_cuil") or "",
+            "resumen": f"Persona persistida en backend · estado: {item.get('estado_persona') or '-'}",
+            "source": "backend",
+            "persisted": True,
+        }
+
     def _build_objects_step(self) -> ft.Control:
         if not self._has_valid_currency():
             return ft.Container(
@@ -756,10 +968,10 @@ class VentaCompletaWizardV3Prototype:
             )
         if self.objeto_selector is None:
             self.objeto_selector = create_search_selector_demo(
-                title="Buscador de objeto inmobiliario",
+                title="Buscador de objeto inmobiliario real",
                 placeholder="Código, descripción, tipo o ID técnico del objeto",
                 selector_kind="objeto",
-                records=DEMO_OBJETOS_INMOBILIARIOS,
+                records=self._backend_object_selector_records(),
                 on_selection_change=self._on_objeto_selected,
             )
             self._configure_objeto_selector_scroll()
@@ -771,9 +983,14 @@ class VentaCompletaWizardV3Prototype:
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._build_help_card(
-                "Los valores asignados a los objetos se cargarán en esta moneda.",
+                "El buscador prioriza registros reales del backend (source=backend, persisted=True). Los registros demo quedan solo para flujo visual/preview y bloquean confirmación real.",
                 ft.Colors.BLUE_50,
                 ft.Colors.BLUE_200,
+            ),
+            *(
+                [self._build_help_card(self.backend_object_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)]
+                if self.backend_object_error is not None
+                else []
             ),
             ft.Row(
                 controls=[
@@ -812,8 +1029,63 @@ class VentaCompletaWizardV3Prototype:
                     ),
                 ]
             )
-        controls.extend([self._build_added_objects_list(), self._build_objects_total_summary()])
+        controls.extend([self._build_manual_object_persisted_panel(), self._build_added_objects_list(), self._build_objects_total_summary()])
         return ft.Column(controls=controls, spacing=12)
+
+    def _build_manual_object_persisted_panel(self) -> ft.Control:
+        self.manual_object_id_field.label = (
+            "id_unidad_funcional persistido"
+            if self.manual_object_type_value == "UNIDAD_FUNCIONAL"
+            else "id_inmueble persistido"
+        )
+        self.manual_object_price_field.label = f"precio_asignado ({self._currency_label()})"
+        type_controls = ft.Row(
+            controls=[
+                self._build_manual_object_type_card("INMUEBLE"),
+                self._build_manual_object_type_card("UNIDAD_FUNCIONAL"),
+            ],
+            spacing=8,
+            wrap=True,
+        )
+        controls: list[ft.Control] = [
+            ft.Text("Modo técnico/dev: objeto persistido", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Usá esta carga solo para probar confirmación real end-to-end con IDs ya persistidos en backend. No inventa ni valida existencia antes del POST.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            type_controls,
+            self.manual_object_id_field,
+            self.manual_object_text_field,
+            self.manual_object_price_field,
+        ]
+        if self.manual_object_error is not None:
+            controls.append(ft.Text(self.manual_object_error, size=12, color=ft.Colors.RED_700))
+        controls.append(
+            ft.Button(
+                "Agregar objeto persistido",
+                icon=ft.Icons.ADD,
+                on_click=self._add_manual_persisted_object,
+            )
+        )
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.TEAL_50,
+            border=_border_all(1, ft.Colors.TEAL_200),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+    def _build_manual_object_type_card(self, tipo_objeto: Literal["INMUEBLE", "UNIDAD_FUNCIONAL"]) -> ft.Control:
+        selected = self.manual_object_type_value == tipo_objeto
+        return ft.Container(
+            padding=ft.Padding(left=10, top=8, right=10, bottom=8),
+            border_radius=10,
+            bgcolor=ft.Colors.TEAL_600 if selected else ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.TEAL_700 if selected else ft.Colors.TEAL_200),
+            on_click=lambda _, selected_type=tipo_objeto: self._select_manual_object_type(selected_type),
+            content=ft.Text(tipo_objeto, weight=ft.FontWeight.W_700, color=ft.Colors.WHITE if selected else ft.Colors.TEAL_800),
+        )
 
     def _build_selected_object_panel(self) -> ft.Control:
         if self.objeto_seleccionado is None:
@@ -835,6 +1107,14 @@ class VentaCompletaWizardV3Prototype:
                             f"ID técnico secundario ({id_label}): {id_value}",
                             ft.Colors.BLUE_GREY_50,
                             ft.Colors.BLUE_GREY_200,
+                        ),
+                        _badge(
+                            self._record_source_label(
+                                str(self.objeto_seleccionado.get("source") or "demo"),
+                                bool(self.objeto_seleccionado.get("persisted", False)),
+                            ),
+                            ft.Colors.GREEN_50 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_50,
+                            ft.Colors.GREEN_200 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_200,
                         ),
                     ],
                     wrap=True,
@@ -980,10 +1260,10 @@ class VentaCompletaWizardV3Prototype:
 
         if self.comprador_selector is None:
             self.comprador_selector = create_search_selector_demo(
-                title="Buscador de comprador/persona",
+                title="Buscador de persona real",
                 placeholder="Nombre, documento, código o dato visible del comprador",
                 selector_kind="persona",
-                records=DEMO_PERSONAS_COMPRADORAS,
+                records=self._backend_buyer_selector_records(),
                 on_selection_change=self._on_comprador_selected,
             )
             self._configure_comprador_selector_scroll()
@@ -997,8 +1277,18 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Compradores", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Seleccioná los compradores de la operación y definí la responsabilidad pactada de cada uno.",
+                        "Seleccioná personas reales del backend y definí la responsabilidad pactada de cada comprador.",
                         color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    self._build_help_card(
+                        "El buscador prioriza personas reales del backend (source=backend, persisted=True). Las personas demo quedan solo para flujo visual/preview y bloquean confirmación real.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_200,
+                    ),
+                    *(
+                        [self._build_help_card(self.backend_buyer_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)]
+                        if self.backend_buyer_error is not None
+                        else []
                     ),
                     ft.Row(
                         controls=[
@@ -1099,8 +1389,43 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = []
         if self.comprador_seleccionado is not None:
             controls.append(self._build_selected_buyer_panel())
-        controls.extend([self._build_added_buyers_list(), self._build_buyers_summary()])
+        controls.extend([self._build_manual_buyer_persisted_panel(), self._build_added_buyers_list(), self._build_buyers_summary()])
         return ft.Column(controls=controls, spacing=12)
+
+    def _build_manual_buyer_persisted_panel(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Modo técnico/dev: comprador persistido", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Usá esta carga solo para probar confirmación real end-to-end con persona y rol ya persistidos en backend.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            self.manual_buyer_id_field,
+            self.manual_buyer_text_field,
+            self.manual_buyer_role_field,
+            self.manual_buyer_percentage_field,
+            ft.Text(
+                "Si es el único comprador, el porcentaje puede quedar vacío y se asumirá 100%.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_600,
+            ),
+        ]
+        if self.manual_buyer_error is not None:
+            controls.append(ft.Text(self.manual_buyer_error, size=12, color=ft.Colors.RED_700))
+        controls.append(
+            ft.Button(
+                "Agregar comprador persistido",
+                icon=ft.Icons.PERSON_ADD_ALT_1,
+                on_click=self._add_manual_persisted_buyer,
+            )
+        )
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.TEAL_50,
+            border=_border_all(1, ft.Colors.TEAL_200),
+            content=ft.Column(controls=controls, spacing=8),
+        )
 
     def _build_selected_buyer_panel(self) -> ft.Control:
         if self.comprador_seleccionado is None:
@@ -1116,10 +1441,24 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Comprador seleccionado", size=18, weight=ft.FontWeight.W_700),
                     ft.Text(str(self.comprador_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
-                    _badge(
-                        f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}",
-                        ft.Colors.BLUE_GREY_50,
-                        ft.Colors.BLUE_GREY_200,
+                    ft.Row(
+                        controls=[
+                            _badge(
+                                f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}",
+                                ft.Colors.BLUE_GREY_50,
+                                ft.Colors.BLUE_GREY_200,
+                            ),
+                            _badge(
+                                self._record_source_label(
+                                    str(self.comprador_seleccionado.get("source") or "demo"),
+                                    bool(self.comprador_seleccionado.get("persisted", False)),
+                                ),
+                                ft.Colors.GREEN_50 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_50,
+                                ft.Colors.GREEN_200 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_200,
+                            ),
+                        ],
+                        spacing=8,
+                        wrap=True,
                     ),
                     self.porcentaje_comprador_field,
                     ft.Text(
@@ -2327,8 +2666,9 @@ class VentaCompletaWizardV3Prototype:
                     self._build_review_buyers_section(),
                     self._build_review_payment_section(),
                     self._build_review_validation_panel(errors),
+                    self._build_confirm_status_panel(),
                     ft.Text(
-                        "No se confirma la venta ni se persiste borrador. El único POST de esta pantalla es el preview read-like sin id_venta cuando el usuario simula el plan.",
+                        "La venta directa real se crea recién al presionar Confirmar venta. El preview previo sigue siendo PREVIEW_READLIKE sin id_venta y no persiste la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2380,6 +2720,7 @@ class VentaCompletaWizardV3Prototype:
                             _info_row("tipo_objeto", objeto.tipo_objeto),
                             _info_row(id_label, technical_id),
                             _info_row("precio_asignado", self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal("0"))),
+                            _info_row("Origen dato", self._record_source_label(objeto.source, objeto.persisted)),
                         ],
                         spacing=5,
                     ),
@@ -2418,6 +2759,7 @@ class VentaCompletaWizardV3Prototype:
                                 _info_row("id_persona", comprador.id_persona),
                                 _info_row("id_rol_participacion", comprador.id_rol_participacion),
                                 _info_row("porcentaje_responsabilidad", comprador.porcentaje_responsabilidad or "100.00"),
+                                _info_row("Origen dato", self._record_source_label(comprador.source, comprador.persisted)),
                             ],
                             spacing=5,
                         ),
@@ -2799,8 +3141,179 @@ class VentaCompletaWizardV3Prototype:
             "observaciones": self.state.observaciones_comerciales.strip() or None,
         }
 
+    def _build_confirm_sale_payload(self) -> dict[str, Any]:
+        total_decimal = self._objects_total()
+        total = _format_decimal(total_decimal)
+        plan_pago_v2 = self._build_plan_payment_preview_payload()
+        condiciones = self._build_confirm_sale_commercial_conditions(total_decimal)
+        return {
+            "generar_venta": {
+                "codigo_venta": self.state.codigo_venta.strip(),
+                "fecha_venta": f"{self.state.fecha_venta_iso}T00:00:00",
+                "monto_total": total,
+                "observaciones": self.state.observaciones_comerciales.strip() or None,
+            },
+            "objetos": [
+                {
+                    "id_inmueble": objeto.id_inmueble,
+                    "id_unidad_funcional": objeto.id_unidad_funcional,
+                    "precio_asignado": objeto.precio_asignado,
+                    "observaciones": objeto.texto_visual,
+                }
+                for objeto in self.state.objetos
+            ],
+            "compradores": [
+                {
+                    "id_persona": comprador.id_persona,
+                    "id_rol_participacion": int(comprador.id_rol_participacion),
+                    "porcentaje_responsabilidad": comprador.porcentaje_responsabilidad.strip() or "100.00",
+                    "fecha_desde": self.state.fecha_venta_iso,
+                    "fecha_hasta": None,
+                    "observaciones": comprador.texto_visual,
+                }
+                for comprador in self.state.compradores
+            ],
+            "condiciones_comerciales": condiciones,
+            "plan_pago_v2": plan_pago_v2,
+            "confirmacion": {
+                "observaciones": self.state.observaciones_comerciales.strip() or None,
+            },
+        }
+
+    def _confirm_payload_signature(self, payload: dict[str, Any]) -> str:
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    def _ensure_confirm_op_id_for_payload(self, payload: dict[str, Any]) -> str:
+        signature = self._confirm_payload_signature(payload)
+        if self.state.confirm_op_id is None or self.state.confirm_payload_signature != signature:
+            self.state.confirm_op_id = str(uuid4())
+            self.state.confirm_payload_signature = signature
+        return self.state.confirm_op_id
+
+    def _build_confirm_sale_commercial_conditions(self, total_decimal: Decimal) -> dict[str, Any]:
+        total = _format_decimal(total_decimal)
+        if self.state.forma_pago == "CONTADO":
+            return {
+                "monto_total": total,
+                "tipo_plan_financiero": "CONTADO",
+                "moneda": self._currency_label(),
+                "importe_anticipo": None,
+                "fecha_vencimiento_anticipo": None,
+                "importe_saldo": None,
+                "fecha_vencimiento_saldo": None,
+                "cuotas": [],
+            }
+
+        return {
+            "monto_total": total,
+            "tipo_plan_financiero": "CUOTAS_FIJAS",
+            "moneda": self._currency_label(),
+            "importe_anticipo": None,
+            "fecha_vencimiento_anticipo": None,
+            "importe_saldo": None,
+            "fecha_vencimiento_saldo": None,
+            "cuotas": self._build_legacy_fixed_installments_for_conditions(),
+        }
+
+    def _build_legacy_fixed_installments_for_conditions(self) -> list[dict[str, Any]]:
+        cuotas: list[dict[str, Any]] = []
+        next_number = 1
+        advance = self._valid_advance_amount_or_zero()
+        if self.state.tiene_anticipo and advance > Decimal("0"):
+            cuotas.append(
+                {
+                    "numero_cuota": next_number,
+                    "importe_cuota": _format_decimal(advance),
+                    "fecha_vencimiento": self.state.fecha_anticipo_iso,
+                    "moneda": self._currency_label(),
+                    "observaciones": "Compatibilidad legacy de condiciones comerciales: anticipo reflejado como cuota fija; Plan Pago V2 define el cronograma real.",
+                }
+            )
+            next_number += 1
+        for tramo in self.state.tramos_cuotas:
+            block_total = Decimal(str(tramo.importe_total_bloque))
+            base_amount = (block_total / Decimal(tramo.cantidad_cuotas)).quantize(MONEY_DECIMAL_QUANTUM)
+            accumulated = Decimal("0")
+            first_due_date = _date_from_iso(tramo.fecha_primer_vencimiento_iso)
+            for index in range(tramo.cantidad_cuotas):
+                if index == tramo.cantidad_cuotas - 1:
+                    amount = (block_total - accumulated).quantize(MONEY_DECIMAL_QUANTUM)
+                else:
+                    amount = base_amount
+                    accumulated += amount
+                due_date = _add_months(first_due_date, index).isoformat() if first_due_date is not None else tramo.fecha_primer_vencimiento_iso
+                cuotas.append(
+                    {
+                        "numero_cuota": next_number,
+                        "importe_cuota": _format_decimal(amount),
+                        "fecha_vencimiento": due_date,
+                        "moneda": self._currency_label(),
+                        "observaciones": "Compatibilidad legacy de condiciones comerciales; Plan Pago V2 define el cronograma real.",
+                    }
+                )
+                next_number += 1
+        return cuotas
+
+    def _confirm_sale(self, _: ft.ControlEvent | None = None) -> None:
+        if not self._can_confirm_sale():
+            persisted_errors = self._non_persisted_confirmation_errors()
+            if persisted_errors:
+                self.state.confirm_error = "La confirmación real requiere objetos y compradores persistidos en backend. Los datos demo solo sirven para probar el flujo visual."
+            else:
+                self.state.confirm_error = "No se puede confirmar: resolvé validaciones y recalculá el preview si está desactualizado."
+            self._render()
+            return
+
+        payload = self._build_confirm_sale_payload()
+        confirm_op_id = self._ensure_confirm_op_id_for_payload(payload)
+        self.state.confirm_loading = True
+        self.state.confirm_data = None
+        self.state.confirm_error = None
+        self.state.confirm_status_code = None
+        self._render()
+        result = self.api.confirmar_venta_directa_completa(payload, op_id=confirm_op_id)
+        self.state.confirm_loading = False
+        self.state.confirm_status_code = result.status_code
+        if result.success and isinstance(result.data, dict):
+            self.state.confirm_data = result.data
+            self.state.confirm_error = None
+            self.state.pantalla_actual = "VENTA_CONFIRMADA"
+            self._render()
+            return
+        self.state.confirm_error = self._confirm_error_message(result)
+        self._render()
+
+    def _confirm_error_message(self, result: ApiResult) -> str:
+        if result.status_code == 400:
+            prefix = "El backend rechazó la confirmación por validación."
+        elif result.status_code == 409:
+            prefix = "El backend informó un conflicto de concurrencia o estado."
+        elif result.status_code == 500:
+            prefix = "El backend devolvió un error interno al confirmar."
+        elif result.status_code is None:
+            prefix = "No se pudo conectar con el backend para confirmar la venta."
+        else:
+            prefix = "No se pudo confirmar la venta."
+        parts = [prefix]
+        if result.status_code is not None:
+            parts.append(f"HTTP {result.status_code}.")
+        if result.error_code:
+            parts.append(f"{result.error_code}.")
+        if result.error_message:
+            parts.append(result.error_message)
+        return " ".join(parts)
+
+    def _reset_confirm_attempt(self, *, clear_error: bool = True) -> None:
+        self.state.confirm_op_id = None
+        self.state.confirm_payload_signature = None
+        self.state.confirm_data = None
+        self.state.confirm_status_code = None
+        if clear_error:
+            self.state.confirm_error = None
+
     def _mark_plan_preview_stale(self, clear_error: bool = True) -> None:
         self.state.preview_stale = True
+        self._reset_confirm_attempt(clear_error=clear_error)
         if clear_error:
             self.state.preview_error = None
 
@@ -2809,7 +3322,7 @@ class VentaCompletaWizardV3Prototype:
         if valid:
             controls: list[ft.Control] = [
                 ft.Text("6. Validación general", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-                ft.Text("La venta está lista para confirmar.", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                ft.Text("La venta directa está lista para confirmar contra el backend.", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
             ]
             bgcolor = ft.Colors.GREEN_50
             border_color = ft.Colors.GREEN_300
@@ -2829,6 +3342,45 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(controls=controls, spacing=8),
         )
 
+    def _build_confirm_status_panel(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("7. Confirmación real", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Confirmar venta es COMMAND_WRITE_NEGOCIO: envía la venta directa completa al backend y genera venta, plan y obligaciones en la misma operación.",
+                color=ft.Colors.BLUE_GREY_800,
+            ),
+            ft.Text(
+                "Headers CORE-EF de prototipo: ApiClient envía X-Op-Id autogenerado y placeholders visibles X-Usuario-Id=1, X-Sucursal-Id=1, X-Instalacion-Id=1 hasta integrar contexto real de sesión/sucursal/instalación.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+        ]
+        if self.state.confirm_loading:
+            controls.append(
+                ft.Row(
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Confirmando venta directa en backend...")],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+        persisted_errors = self._non_persisted_confirmation_errors()
+        if persisted_errors:
+            controls.append(
+                self._build_help_card(
+                    "La confirmación real requiere objetos y compradores persistidos en backend. Los datos demo solo sirven para probar el flujo visual.",
+                    ft.Colors.AMBER_50,
+                    ft.Colors.AMBER_200,
+                )
+            )
+            controls.append(ft.Column(controls=[ft.Text(f"• {error}", color=ft.Colors.AMBER_900) for error in persisted_errors], spacing=4))
+        if self.state.confirm_error is not None:
+            controls.append(self._build_help_card(self.state.confirm_error, ft.Colors.RED_50, ft.Colors.RED_200))
+        elif self._can_confirm_sale():
+            controls.append(self._build_help_card("Preview vigente y revisión completa. Podés presionar Confirmar venta.", ft.Colors.GREEN_50, ft.Colors.GREEN_200))
+        else:
+            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener preview vigente, datos persistidos en backend y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
+        return self._build_review_section_container(controls)
+
     def _build_review_section_container(self, controls: list[ft.Control]) -> ft.Control:
         return ft.Container(
             padding=14,
@@ -2838,16 +3390,41 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(controls=controls, spacing=8),
         )
 
+    def _non_persisted_confirmation_errors(self) -> list[str]:
+        errors: list[str] = []
+        if self.state.origen != "DIRECTA":
+            return errors
+        demo_objects = [objeto.texto_visual for objeto in self.state.objetos if not objeto.persisted]
+        if demo_objects:
+            errors.append("Objetos no persistidos/demo: " + ", ".join(demo_objects))
+        demo_buyers = [comprador.texto_visual for comprador in self.state.compradores if not comprador.persisted]
+        if demo_buyers:
+            errors.append("Compradores no persistidos/demo: " + ", ".join(demo_buyers))
+        return errors
+
+    def _has_only_persisted_confirmation_records(self) -> bool:
+        return not self._non_persisted_confirmation_errors()
+
+    @staticmethod
+    def _record_source_label(source: str, persisted: bool) -> str:
+        if persisted:
+            return f"backend/persistido ({source or 'backend'})"
+        return f"demo/no persistido ({source or 'demo'})"
+
     def _general_review_errors(self) -> list[str]:
         errors: list[str] = []
         if self.state.origen not in {"DIRECTA", "RESERVA"}:
             errors.append("Seleccioná un origen válido.")
+        if self.state.origen == "RESERVA":
+            errors.append("La confirmación desde reserva queda pendiente en este PR; solo se confirma venta directa.")
         if self.state.origen == "RESERVA" and (self.state.id_reserva_venta is None or self.state.version_registro is None):
             errors.append("Seleccioná una reserva con id_reserva_venta y version_registro.")
         if not self._has_valid_currency():
             errors.append("Seleccioná una moneda válida.")
         if not self.state.fecha_venta_iso or self.fecha_venta_error is not None:
             errors.append("Cargá una fecha_venta válida.")
+        if not self.state.codigo_venta.strip():
+            errors.append("Cargá codigo_venta: el contrato backend actual lo requiere para confirmar venta directa.")
         if not self.state.objetos:
             errors.append("Cargá al menos un objeto de venta.")
         invalid_objects = [objeto for objeto in self.state.objetos if _parse_money_decimal(objeto.precio_asignado) is None]
@@ -2859,50 +3436,74 @@ class VentaCompletaWizardV3Prototype:
             buyer_error = self._buyers_validation_error()
             if buyer_error is not None:
                 errors.append(buyer_error)
+            errors.extend(self._non_persisted_confirmation_errors())
         if self.state.forma_pago not in {"CONTADO", "FINANCIADO"}:
             errors.append("Elegí una forma de pago.")
         if self.state.forma_pago == "CONTADO" and (not self.state.fecha_pago_contado_iso or self.state.fecha_pago_contado_error is not None):
             errors.append("Cargá una fecha de pago contado válida.")
         if self.state.forma_pago == "FINANCIADO" and self._financed_plan_difference() != Decimal("0"):
             errors.append("El plan financiado debe estar completo con diferencia 0.")
+        if self.state.preview_data is None:
+            errors.append("Calculá el preview backend del Plan Pago V2 antes de confirmar.")
+        if self.state.preview_stale:
+            errors.append("El preview está desactualizado; recalculalo antes de confirmar.")
         return errors
 
     def _general_review_is_valid(self) -> bool:
         return not self._general_review_errors()
 
-    def _build_step_6_placeholder(self) -> ft.Control:
-        title = "Confirmación pendiente"
-        description = "Placeholder futuro: acá se confirmará la venta. Este prototipo todavía no hace POST ni genera payload final completo."
+    def _can_confirm_sale(self) -> bool:
+        return (
+            self.state.pantalla_actual == "REVISION_GENERAL"
+            and not self.state.confirm_loading
+            and self._general_review_is_valid()
+            and self.state.preview_data is not None
+            and not self.state.preview_stale
+            and self.state.origen == "DIRECTA"
+            and self._has_only_persisted_confirmation_records()
+        )
+
+    def _build_confirmed_sale_step(self) -> ft.Control:
+        data = self.state.confirm_data or {}
+        venta = data.get("venta") if isinstance(data.get("venta"), dict) else {}
+        plan = data.get("plan_pago_v2") if isinstance(data.get("plan_pago_v2"), dict) else {}
+        obligaciones = data.get("obligaciones") if isinstance(data.get("obligaciones"), dict) else {}
+        controls: list[ft.Control] = [
+            ft.Text("Venta confirmada", size=24, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+            ft.Text(
+                "La venta directa ya fue persistida por el backend. El plan de pago y las obligaciones fueron generados por backend; el wizard no creó venta ni obligaciones antes de esta confirmación.",
+                color=ft.Colors.BLUE_GREY_800,
+            ),
+            self._build_review_section_container(
+                [
+                    ft.Text("Resultado backend", size=18, weight=ft.FontWeight.W_700),
+                    _info_row("Status HTTP", self.state.confirm_status_code or "-"),
+                    _info_row("id_venta", venta.get("id_venta") or "-"),
+                    _info_row("estado_venta", venta.get("estado_venta") or "-"),
+                    _info_row("version_registro", venta.get("version_registro") or "-"),
+                    _info_row("id_plan_pago_venta", plan.get("id_plan_pago_venta") or "-"),
+                    _info_row("estado_plan_pago", plan.get("estado_plan_pago") or "-"),
+                    _info_row("Obligaciones generadas", obligaciones.get("cantidad") or 0),
+                ]
+            ),
+            self._build_review_section_container(
+                [
+                    ft.Text("Resumen comercial", size=18, weight=ft.FontWeight.W_700),
+                    _info_row("Origen", self._origin_label()),
+                    _info_row("Objetos", len(self.state.objetos)),
+                    _info_row("Compradores", self._buyers_flow_status()),
+                    _info_row("Forma de pago", self._payment_method_status()),
+                    _info_row("Total", self._format_money_with_currency(self._objects_total())),
+                ]
+            ),
+        ]
         return ft.Container(
             padding=24,
             border_radius=14,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=self._build_step_6_placeholder_rows(title, description),
-                spacing=8,
-            ),
+            content=ft.Column(controls=controls, spacing=14),
         )
-
-    def _build_step_6_placeholder_rows(self, title: str, description: str) -> list[ft.Control]:
-        controls: list[ft.Control] = [
-            ft.Text(title, size=24, weight=ft.FontWeight.W_700),
-            ft.Text(description, color=ft.Colors.BLUE_GREY_700),
-            _info_row("Forma de pago", self._payment_method_status()),
-            _info_row("Moneda definida", self._currency_label()),
-            _info_row("Total derivado desde objetos", self._format_money_with_currency(self._objects_total())),
-        ]
-        if self.state.forma_pago == "FINANCIADO":
-            controls.extend(
-                [
-                    _info_row("Anticipo", self._advance_status()),
-                    _info_row("Capital pendiente después de anticipo", self._format_money_with_currency(self._capital_pending_after_advance())),
-                    _info_row("Tramos", len(self.state.tramos_cuotas)),
-                    _info_row("Capital asignado", self._format_money_with_currency(self._capital_assigned_to_installments())),
-                    _info_row("Capital restante", self._format_money_with_currency(self._capital_remaining_for_installments())),
-                ]
-            )
-        return controls
 
     def _build_flow_state_panel(self) -> ft.Control:
         controls: list[ft.Control] = [
@@ -2944,18 +3545,26 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_navigation(self) -> ft.Control:
-        self.next_button = ft.Button(
-            "Siguiente",
-            icon=ft.Icons.ARROW_FORWARD,
-            disabled=self.state.preview_loading or not self._can_advance(),
-            on_click=self._next_step,
-        )
+        if self.state.pantalla_actual == "REVISION_GENERAL":
+            self.next_button = ft.Button(
+                "Confirmar venta",
+                icon=ft.Icons.CHECK_CIRCLE,
+                disabled=self.state.confirm_loading or self.state.preview_loading or not self._can_confirm_sale(),
+                on_click=self._confirm_sale,
+            )
+        else:
+            self.next_button = ft.Button(
+                "Siguiente",
+                icon=ft.Icons.ARROW_FORWARD,
+                disabled=self.state.confirm_loading or self.state.preview_loading or not self._can_advance(),
+                on_click=self._next_step,
+            )
         return ft.Row(
             controls=[
                 ft.OutlinedButton(
                     "Anterior",
                     icon=ft.Icons.ARROW_BACK,
-                    disabled=self.state.pantalla_actual == "ORIGEN",
+                    disabled=self.state.pantalla_actual in {"ORIGEN", "VENTA_CONFIRMADA"} or self.state.confirm_loading,
                     on_click=self._previous_step,
                 ),
                 ft.Container(expand=True),
@@ -3035,6 +3644,7 @@ class VentaCompletaWizardV3Prototype:
                 self.fecha_venta_display_value = _format_date_ar(parsed_date)
                 event.control.value = self.fecha_venta_display_value
                 self.fecha_venta_error = None
+        self._mark_plan_preview_stale()
         self._sync_fecha_venta_feedback()
         self._refresh_navigation_controls()
         self.page.update()
@@ -3076,15 +3686,18 @@ class VentaCompletaWizardV3Prototype:
             self.fecha_venta_display_value = _format_date_ar(self.state.fecha_venta_iso)
             self.fecha_venta_field.value = self.fecha_venta_display_value
             self.fecha_venta_error = None
+            self._mark_plan_preview_stale()
             self._sync_fecha_venta_feedback()
             self._refresh_navigation_controls()
             self.page.update()
 
     def _on_codigo_venta_change(self, event: ft.ControlEvent) -> None:
         self.state.codigo_venta = str(event.control.value or "")
+        self._reset_confirm_attempt()
 
     def _on_observaciones_change(self, event: ft.ControlEvent) -> None:
         self.state.observaciones_comerciales = str(event.control.value or "")
+        self._mark_plan_preview_stale()
 
     def _on_reserva_selected(self, selected: dict[str, Any] | None) -> None:
         if selected is None:
@@ -3140,8 +3753,6 @@ class VentaCompletaWizardV3Prototype:
                 self._render()
                 return
             self.state.pantalla_actual = "REVISION_GENERAL"
-        elif self.state.pantalla_actual == "REVISION_GENERAL":
-            self.state.pantalla_actual = "PASO_6_PLACEHOLDER"
         self._render()
 
     def _previous_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -3160,8 +3771,8 @@ class VentaCompletaWizardV3Prototype:
             self.state.pantalla_actual = "PLAN_RESUMEN"
         elif self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
             self.state.pantalla_actual = "FORMA_PAGO"
-        elif self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
-            self.state.pantalla_actual = "REVISION_GENERAL"
+        elif self.state.pantalla_actual == "VENTA_CONFIRMADA":
+            return
         elif self.state.pantalla_actual == "REVISION_GENERAL":
             self.state.pantalla_actual = "PREVIEW_PLAN_PAGO"
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
@@ -3228,7 +3839,10 @@ class VentaCompletaWizardV3Prototype:
 
     def _refresh_navigation_controls(self) -> None:
         if self.next_button is not None:
-            self.next_button.disabled = self.state.preview_loading or not self._can_advance()
+            if self.state.pantalla_actual == "REVISION_GENERAL":
+                self.next_button.disabled = self.state.confirm_loading or self.state.preview_loading or not self._can_confirm_sale()
+            else:
+                self.next_button.disabled = self.state.confirm_loading or self.state.preview_loading or not self._can_advance()
 
     def _select_payment_method(self, payment_method: FormaPagoWizard) -> None:
         if payment_method not in {"CONTADO", "FINANCIADO"}:
@@ -4284,6 +4898,80 @@ class VentaCompletaWizardV3Prototype:
     def _format_money_with_currency(self, value: Decimal) -> str:
         return f"{self._currency_label()} {_format_money(value)}"
 
+    def _select_manual_object_type(self, tipo_objeto: Literal["INMUEBLE", "UNIDAD_FUNCIONAL"]) -> None:
+        self.manual_object_type_value = tipo_objeto
+        self.manual_object_error = None
+        self._render()
+
+    def _on_manual_object_id_change(self, event: ft.ControlEvent) -> None:
+        self.manual_object_id_value = str(event.control.value or "")
+
+    def _on_manual_object_text_change(self, event: ft.ControlEvent) -> None:
+        self.manual_object_text_value = str(event.control.value or "")
+
+    def _on_manual_object_price_change(self, event: ft.ControlEvent) -> None:
+        self.manual_object_price_value = str(event.control.value or "")
+
+    def _manual_object_payload(self) -> dict[str, Any] | None:
+        object_id = self.manual_object_id_value.strip()
+        if not object_id.isdigit() or int(object_id) <= 0:
+            return None
+        payload: dict[str, Any] = {
+            "tipo_objeto": self.manual_object_type_value,
+            "texto_visual": self.manual_object_text_value.strip(),
+        }
+        if self.manual_object_type_value == "UNIDAD_FUNCIONAL":
+            payload["id_unidad_funcional"] = int(object_id)
+            payload["id_inmueble"] = None
+        else:
+            payload["id_inmueble"] = int(object_id)
+            payload["id_unidad_funcional"] = None
+        return payload
+
+    def _manual_object_validation_message(self) -> str | None:
+        payload = self._manual_object_payload()
+        if payload is None:
+            return "Ingresá un ID técnico persistido mayor que 0."
+        if not self.manual_object_text_value.strip():
+            return "Ingresá un texto visual para reconocer el objeto persistido."
+        price = _parse_money_decimal(self.manual_object_price_value)
+        if price is None:
+            return "precio_asignado debe ser un decimal finito mayor que cero y con hasta 2 decimales."
+        if any(_same_object_payload(objeto, payload) for objeto in self.state.objetos):
+            return "Ese objeto persistido ya fue agregado a la venta."
+        return None
+
+    def _add_manual_persisted_object(self, _: ft.ControlEvent | None = None) -> None:
+        self.manual_object_id_value = str(self.manual_object_id_field.value or self.manual_object_id_value or "")
+        self.manual_object_text_value = str(self.manual_object_text_field.value or self.manual_object_text_value or "")
+        self.manual_object_price_value = str(self.manual_object_price_field.value or self.manual_object_price_value or "")
+        self.manual_object_error = self._manual_object_validation_message()
+        payload = self._manual_object_payload()
+        price = _parse_money_decimal(self.manual_object_price_value)
+        if self.manual_object_error is not None or payload is None or price is None:
+            self._render()
+            return
+        self._mark_plan_preview_stale()
+        self.state.objetos.append(
+            ObjetoVentaWizardDraft(
+                tipo_objeto=self.manual_object_type_value,
+                id_inmueble=payload.get("id_inmueble"),
+                id_unidad_funcional=payload.get("id_unidad_funcional"),
+                texto_visual=self.manual_object_text_value.strip(),
+                precio_asignado=_format_decimal(price),
+                source="manual",
+                persisted=True,
+            )
+        )
+        self.manual_object_id_value = ""
+        self.manual_object_text_value = ""
+        self.manual_object_price_value = ""
+        self.manual_object_id_field.value = ""
+        self.manual_object_text_field.value = ""
+        self.manual_object_price_field.value = ""
+        self.manual_object_error = None
+        self._render()
+
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
         self.objeto_seleccionado = selected
         self.precio_objeto_value = ""
@@ -4357,6 +5045,8 @@ class VentaCompletaWizardV3Prototype:
                 id_unidad_funcional=id_unidad_funcional,
                 texto_visual=str(self.objeto_seleccionado.get("texto_visual") or "-"),
                 precio_asignado=_format_decimal(precio),
+                source=str(self.objeto_seleccionado.get("source") or "demo"),
+                persisted=bool(self.objeto_seleccionado.get("persisted", False)),
             )
         )
         self.objeto_seleccionado = None
@@ -4370,6 +5060,67 @@ class VentaCompletaWizardV3Prototype:
         if 0 <= index < len(self.state.objetos):
             self.state.objetos.pop(index)
             self._mark_plan_preview_stale()
+        self._render()
+
+    def _on_manual_buyer_id_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_id_value = str(event.control.value or "")
+
+    def _on_manual_buyer_text_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_text_value = str(event.control.value or "")
+
+    def _on_manual_buyer_role_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_role_value = str(event.control.value or "")
+
+    def _on_manual_buyer_percentage_change(self, event: ft.ControlEvent) -> None:
+        self.manual_buyer_percentage_value = str(event.control.value or "")
+
+    def _manual_buyer_validation_message(self) -> str | None:
+        person_id = self.manual_buyer_id_value.strip()
+        if not person_id.isdigit() or int(person_id) <= 0:
+            return "Ingresá un id_persona persistido mayor que 0."
+        if any(comprador.id_persona == int(person_id) for comprador in self.state.compradores):
+            return "Ese id_persona ya fue agregado como comprador."
+        if not self.manual_buyer_text_value.strip():
+            return "Ingresá un texto visual para reconocer el comprador persistido."
+        role_id = self.manual_buyer_role_value.strip()
+        if not role_id.isdigit() or int(role_id) <= 0:
+            return "Ingresá un id_rol_participacion persistido mayor que 0."
+        percentage = self.manual_buyer_percentage_value.strip()
+        if percentage and _parse_percentage(percentage) is None:
+            return "porcentaje_responsabilidad debe ser mayor que 0 y menor o igual que 100."
+        return None
+
+    def _add_manual_persisted_buyer(self, _: ft.ControlEvent | None = None) -> None:
+        self.manual_buyer_id_value = str(self.manual_buyer_id_field.value or self.manual_buyer_id_value or "")
+        self.manual_buyer_text_value = str(self.manual_buyer_text_field.value or self.manual_buyer_text_value or "")
+        self.manual_buyer_role_value = str(self.manual_buyer_role_field.value or self.manual_buyer_role_value or "")
+        self.manual_buyer_percentage_value = str(self.manual_buyer_percentage_field.value or self.manual_buyer_percentage_value or "")
+        self.manual_buyer_error = self._manual_buyer_validation_message()
+        if self.manual_buyer_error is not None:
+            self._render()
+            return
+        percentage = self.manual_buyer_percentage_value.strip()
+        parsed_percentage = _parse_percentage(percentage) if percentage else None
+        self.state.compradores.append(
+            CompradorWizardDraft(
+                id_persona=int(self.manual_buyer_id_value.strip()),
+                texto_visual=self.manual_buyer_text_value.strip(),
+                porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
+                id_rol_participacion=self.manual_buyer_role_value.strip(),
+                source="manual",
+                persisted=True,
+            )
+        )
+        self._mark_plan_preview_stale()
+        self.manual_buyer_id_value = ""
+        self.manual_buyer_text_value = ""
+        self.manual_buyer_role_value = ""
+        self.manual_buyer_percentage_value = ""
+        self.manual_buyer_id_field.value = ""
+        self.manual_buyer_text_field.value = ""
+        self.manual_buyer_role_field.value = ""
+        self.manual_buyer_percentage_field.value = ""
+        self.manual_buyer_error = None
         self._render()
 
     def _on_comprador_selected(self, selected: dict[str, Any] | None) -> None:
@@ -4439,8 +5190,11 @@ class VentaCompletaWizardV3Prototype:
                 texto_visual=str(self.comprador_seleccionado.get("texto_visual") or "-"),
                 porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
                 id_rol_participacion=self.rol_comprador_value.strip(),
+                source=str(self.comprador_seleccionado.get("source") or "demo"),
+                persisted=bool(self.comprador_seleccionado.get("persisted", False)),
             )
         )
+        self._mark_plan_preview_stale()
         self.comprador_seleccionado = None
         self.comprador_selector = None
         self.porcentaje_comprador_value = ""
@@ -4453,6 +5207,7 @@ class VentaCompletaWizardV3Prototype:
     def _remove_buyer(self, index: int) -> None:
         if 0 <= index < len(self.state.compradores):
             self.state.compradores.pop(index)
+            self._mark_plan_preview_stale()
         self._render()
 
     def _distribute_buyers_equally(self, _: ft.ControlEvent | None = None) -> None:
@@ -4467,6 +5222,7 @@ class VentaCompletaWizardV3Prototype:
                 percentage = base.quantize(Decimal("0.01"))
                 accumulated += percentage
             comprador.porcentaje_responsabilidad = _format_decimal(percentage)
+        self._mark_plan_preview_stale()
         self._render()
 
     def _objects_total(self) -> Decimal:
@@ -4570,7 +5326,9 @@ class VentaCompletaWizardV3Prototype:
         return "pendiente"
 
     def _review_flow_status(self) -> str:
-        if self.state.pantalla_actual in {"REVISION_GENERAL", "PASO_6_PLACEHOLDER"} and self._general_review_is_valid():
+        if self.state.pantalla_actual == "VENTA_CONFIRMADA":
+            return "venta confirmada"
+        if self.state.pantalla_actual == "REVISION_GENERAL" and self._general_review_is_valid():
             return "lista para confirmar"
         if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO" and self.state.preview_data is not None and not self.state.preview_stale:
             return "preview calculado"
@@ -4602,9 +5360,9 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
             return "revisión general de venta" if self._can_advance() else "recalcular preview del plan"
         if self.state.pantalla_actual == "REVISION_GENERAL":
-            return "confirmar venta" if self._can_advance() else "resolver pendientes de revisión"
-        if self.state.pantalla_actual == "PASO_6_PLACEHOLDER":
-            return "pendiente"
+            return "confirmar venta" if self._can_confirm_sale() else "resolver pendientes de revisión"
+        if self.state.pantalla_actual == "VENTA_CONFIRMADA":
+            return "venta persistida"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return "cargar datos iniciales"
         if self.state.origen is None:
@@ -4663,6 +5421,19 @@ def _date_from_iso(iso_date: str | None) -> date | None:
         return datetime.strptime(text, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    days_by_month = [31, 29 if _is_leap_year(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    day = min(value.day, days_by_month[month - 1])
+    return date(year, month, day)
+
+
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
 def _parse_decimal(value: Any) -> Decimal | None:
