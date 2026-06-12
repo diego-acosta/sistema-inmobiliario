@@ -1003,9 +1003,13 @@ Notas:
 - `condiciones_comerciales.tipo_plan_financiero` usa el catalogo comercial
   legacy aceptado por backend: `CONTADO`, `ANTICIPO_Y_SALDO` o `CUOTAS_FIJAS`.
   No debe enviarse `FINANCIADO` en ese campo.
+- En el Wizard V3, una venta `FINANCIADO` con tramos/cuotas se adapta en
+  `condiciones_comerciales` como `CUOTAS_FIJAS`; si existe anticipo, se refleja
+  como una cuota fija legacy para que la suma de cuotas coincida con el total.
 - `plan_pago_v2.tipo_pago` usa el catalogo de Plan Pago V2 (`CONTADO` o
   `FINANCIADO`) y no debe confundirse con el catalogo legacy de
-  `condiciones_comerciales`.
+  `condiciones_comerciales`. El cronograma financiero real sigue estando en
+  `plan_pago_v2`.
 
 ## 10. Payload `plan_pago_v2` comun
 

@@ -3204,21 +3204,6 @@ class VentaCompletaWizardV3Prototype:
                 "cuotas": [],
             }
 
-        advance = self._valid_advance_amount_or_zero()
-        has_advance = self.state.tiene_anticipo and advance > Decimal("0")
-        first_installment_date = self.state.tramos_cuotas[0].fecha_primer_vencimiento_iso if self.state.tramos_cuotas else None
-        if has_advance:
-            return {
-                "monto_total": total,
-                "tipo_plan_financiero": "ANTICIPO_Y_SALDO",
-                "moneda": self._currency_label(),
-                "importe_anticipo": _format_decimal(advance),
-                "fecha_vencimiento_anticipo": self.state.fecha_anticipo_iso,
-                "importe_saldo": _format_decimal(total_decimal - advance),
-                "fecha_vencimiento_saldo": first_installment_date,
-                "cuotas": [],
-            }
-
         return {
             "monto_total": total,
             "tipo_plan_financiero": "CUOTAS_FIJAS",
@@ -3233,6 +3218,18 @@ class VentaCompletaWizardV3Prototype:
     def _build_legacy_fixed_installments_for_conditions(self) -> list[dict[str, Any]]:
         cuotas: list[dict[str, Any]] = []
         next_number = 1
+        advance = self._valid_advance_amount_or_zero()
+        if self.state.tiene_anticipo and advance > Decimal("0"):
+            cuotas.append(
+                {
+                    "numero_cuota": next_number,
+                    "importe_cuota": _format_decimal(advance),
+                    "fecha_vencimiento": self.state.fecha_anticipo_iso,
+                    "moneda": self._currency_label(),
+                    "observaciones": "Compatibilidad legacy de condiciones comerciales: anticipo reflejado como cuota fija; Plan Pago V2 define el cronograma real.",
+                }
+            )
+            next_number += 1
         for tramo in self.state.tramos_cuotas:
             block_total = Decimal(str(tramo.importe_total_bloque))
             base_amount = (block_total / Decimal(tramo.cantidad_cuotas)).quantize(MONEY_DECIMAL_QUANTUM)
