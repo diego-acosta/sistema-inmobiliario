@@ -3296,7 +3296,7 @@ class VentaCompletaWizardV3Prototype:
         venta = data.get("venta") if isinstance(data.get("venta"), dict) else {}
         id_venta = venta.get("id_venta")
         if not id_venta:
-            self.state.detalle_venta_error = "No hay id_venta confirmado para consultar el detalle completo."
+            self.state.detalle_venta_error = "No hay id_venta confirmado para consultar el detalle integral."
             self._render()
             return
 
@@ -3304,7 +3304,7 @@ class VentaCompletaWizardV3Prototype:
         self.state.detalle_venta_error = None
         self.state.detalle_venta_status_code = None
         self._render()
-        result = self.api.get_venta_detalle_completo(int(id_venta))
+        result = self.api.get_venta_detalle_integral(int(id_venta))
         self.state.detalle_venta_loading = False
         self.state.detalle_venta_status_code = result.status_code
         if result.success and isinstance(result.data, dict):
@@ -3313,7 +3313,7 @@ class VentaCompletaWizardV3Prototype:
             self._render()
             return
         self.state.detalle_venta_data = None
-        parts = ["No se pudo cargar el detalle completo de venta."]
+        parts = ["No se pudo cargar el detalle integral de venta."]
         if result.status_code is not None:
             parts.append(f"HTTP {result.status_code}.")
         if result.error_code:
@@ -3325,12 +3325,12 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
         if self.state.detalle_venta_loading:
-            return [ft.Row(controls=[ft.ProgressRing(width=18, height=18), ft.Text("Cargando detalle completo de venta...")], spacing=10)]
+            return [ft.Row(controls=[ft.ProgressRing(width=18, height=18), ft.Text("Cargando detalle integral de venta...")], spacing=10)]
         if self.state.detalle_venta_error:
             return [ft.Text(self.state.detalle_venta_error, color=ft.Colors.RED_700)]
         detalle = self.state.detalle_venta_data
         if not detalle:
-            return [ft.Text("El detalle completo todavía no fue consultado.", color=ft.Colors.BLUE_GREY_700)]
+            return [ft.Text("El detalle integral todavía no fue consultado.", color=ft.Colors.BLUE_GREY_700)]
 
         venta = detalle.get("venta") if isinstance(detalle.get("venta"), dict) else detalle
         objetos = detalle.get("objetos_vendidos") or detalle.get("objetos") or []
@@ -3620,7 +3620,7 @@ class VentaCompletaWizardV3Prototype:
                 ]
             ),
             ft.Button(
-                "Ver detalle completo de venta",
+                "Ver detalle integral de venta",
                 icon=ft.Icons.RECEIPT_LONG,
                 disabled=not venta.get("id_venta") or self.state.detalle_venta_loading,
                 on_click=self._load_confirmed_sale_detail,

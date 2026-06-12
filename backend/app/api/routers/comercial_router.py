@@ -2058,14 +2058,6 @@ def get_venta(
 
 
 @router.get(
-    "/api/v1/ventas/{id_venta}/detalle-completo",
-    response_model=VentaDetalleIntegralResponse,
-    responses={
-        404: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    },
-)
-@router.get(
     "/api/v1/ventas/{id_venta}/detalle-integral",
     response_model=VentaDetalleIntegralResponse,
     responses={
