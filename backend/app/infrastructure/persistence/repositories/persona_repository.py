@@ -379,7 +379,7 @@ class PersonaRepository(BaseRepository[Any]):
     def list_roles_participacion(
         self, codigo: str | None = None
     ) -> list[dict[str, Any]]:
-        filters = ["deleted_at IS NULL"]
+        filters = ["deleted_at IS NULL", "UPPER(estado_rol) = 'ACTIVO'"]
         params: dict[str, Any] = {}
         if codigo is not None and codigo.strip():
             filters.append("UPPER(codigo_rol) = :codigo")

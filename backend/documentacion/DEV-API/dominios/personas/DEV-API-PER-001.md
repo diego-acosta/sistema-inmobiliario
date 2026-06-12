@@ -213,7 +213,7 @@ Separacion contractual del bloque:
   - `codigo_rol`
   - `nombre_rol`
   - `deleted_at`
-- regla: filtra `deleted_at IS NULL`
+- regla: filtra `deleted_at IS NULL` y `estado_rol = ACTIVO`
 - CORE-EF: no requiere headers write porque es read-like; no genera outbox, locks ni idempotencia
 - aclaracion semantica: este endpoint no define semantica comercial, locativa ni financiera; solo expone el catalogo tecnico de soporte `rol_participacion`
 - advertencia de compatibilidad: `POST`, `PUT` y `PATCH` bajo `/api/v1/roles-participacion` siguen siendo aliases legacy de `relacion_persona_rol` y no deben confundirse con este catalogo read-only
