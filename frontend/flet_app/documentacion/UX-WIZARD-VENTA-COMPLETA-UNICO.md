@@ -543,22 +543,33 @@ Reglas:
 
 Cuando el tramo usa `Interes directo`, mostrar:
 
-- tasa periodica;
-- cantidad de periodos;
+- tasa periodica como porcentaje visible con label `Tasa periódica (%)`;
+- ayuda/hint: `Ej: 6 para 6%`;
+- cantidad de periodos derivada de la cantidad de cuotas del tramo;
 - ayuda: `Interes simple sobre capital inicial del tramo.`
 
 Construccion interna adicional completa:
 
 ```text
 metodo_liquidacion = INTERES_DIRECTO
-tasa_interes_directo_periodica = tasa periodica ingresada
-cantidad_periodos = cantidad de periodos ingresada
+tasa_interes_directo_periodica = tasa decimal enviada al backend, derivada del porcentaje ingresado
+cantidad_periodos = cantidad de cuotas del tramo
 base_calculo_interes = CAPITAL_INICIAL_BLOQUE
 ```
 
-`tasa_interes_directo_periodica` y `cantidad_periodos` vienen de inputs
-visibles de la UI comercial del tramo. `base_calculo_interes` se completa
-internamente con el valor fijo `CAPITAL_INICIAL_BLOQUE`.
+La UI comercial pide la tasa como porcentaje para evitar ambiguedad: si el
+usuario ingresa `6`, se interpreta como `6%` y el payload envia
+`tasa_interes_directo_periodica = "0.06"`, que es la tasa decimal esperada por
+el backend. `cantidad_periodos` se mantiene igual a la cantidad de cuotas del
+tramo. `base_calculo_interes` se completa internamente con el valor fijo
+`CAPITAL_INICIAL_BLOQUE`.
+
+Ejemplo de validacion esperado para interes directo: con precio total
+`10.000.000`, anticipo `5.000.000`, saldo financiado `5.000.000`, `12` cuotas
+y tasa directa visible `6%`, la UI debe enviar `tasa_interes_directo_periodica =
+"0.06"` y `cantidad_periodos = 12`. El preview backend debe calcular
+`total_calculado = 10.000.000`, `total_con_interes = 13.600.000` y una cuota
+base aproximada de `716.666,67`, salvo ajustes por refuerzos o redondeo.
 
 Reglas:
 
@@ -1026,7 +1037,7 @@ Ejemplo minimo de bloque `TRAMO_CUOTAS` con interes directo:
   "fecha_primer_vencimiento": "2026-07-10",
   "periodicidad": "MENSUAL",
   "metodo_liquidacion": "INTERES_DIRECTO",
-  "tasa_interes_directo_periodica": "2.50",
+  "tasa_interes_directo_periodica": "0.06",
   "cantidad_periodos": 6,
   "base_calculo_interes": "CAPITAL_INICIAL_BLOQUE"
 }

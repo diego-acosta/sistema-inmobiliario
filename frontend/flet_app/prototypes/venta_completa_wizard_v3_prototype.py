@@ -494,12 +494,13 @@ class VentaCompletaWizardV3Prototype:
             color=ft.Colors.BLUE_GREY_600,
         )
         self.tramo_tasa_interes_field = ft.TextField(
-            label="Tasa periódica",
+            label="Tasa periódica (%)",
+            hint_text="Ej: 6 para 6%",
             keyboard_type=ft.KeyboardType.NUMBER,
             on_change=self._on_tramo_tasa_interes_change,
         )
         self.tramo_tasa_interes_feedback = ft.Text(
-            "Ingresá una tasa numérica mayor que 0.",
+            "Ingresá un porcentaje mayor que 0. Ej: 6 para 6%.",
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
@@ -2083,14 +2084,14 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     self._build_help_card(
-                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. El prototipo solo muestra cuota base sin interés; total y cuota con interés se delegan al preview backend.",
+                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. Cargá la tasa como porcentaje visible; el cálculo final se delega al preview backend.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_100,
                     ),
                     self.tramo_tasa_interes_field,
                     self.tramo_tasa_interes_feedback,
                     ft.Text(
-                        "La tasa se aplicará por cada período/cuota del tramo.",
+                        "Ej: ingresá 6 para 6%. La tasa se aplicará por cada período/cuota del tramo.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_700,
                     ),
@@ -2593,7 +2594,7 @@ class VentaCompletaWizardV3Prototype:
         if tramo.metodo_liquidacion == "INTERES_DIRECTO":
             controls.extend(
                 [
-                    _info_row("Tasa periódica", tramo.tasa_interes_directo_periodica or "-"),
+                    _info_row("Tasa periódica (%)", self._format_rate_decimal_as_percentage(tramo.tasa_interes_directo_periodica)),
                     _info_row("Períodos derivados", tramo.cantidad_periodos or tramo.cantidad_cuotas),
                 ]
             )
@@ -4614,17 +4615,20 @@ class VentaCompletaWizardV3Prototype:
         rate = _parse_decimal(raw_rate) if raw_rate else None
 
         if not raw_rate:
-            self.state.tramo_tasa_interes_error = "La tasa periódica es requerida."
+            self.state.tramo_tasa_interes_error = "La tasa periódica (%) es requerida."
         elif rate is None:
-            self.state.tramo_tasa_interes_error = "La tasa periódica debe ser un número finito mayor que 0."
+            self.state.tramo_tasa_interes_error = "La tasa periódica (%) debe ser un porcentaje mayor que 0."
         else:
             self.state.tramo_tasa_interes_error = None
 
-        if self.state.tramo_tasa_interes_error is not None or quantity is None:
+        if self.state.tramo_tasa_interes_error is not None or quantity is None or rate is None:
             return None
+        tasa_decimal = rate / Decimal("100")
         self._clear_installment_index_errors()
         return {
-            "tasa_interes_directo_periodica": raw_rate,
+            "tasa_interes_directo_periodica": _format_rate_decimal_for_backend(
+                tasa_decimal
+            ),
             "cantidad_periodos": str(quantity),
         }
 
@@ -4927,7 +4931,7 @@ class VentaCompletaWizardV3Prototype:
             self.tramo_tasa_interes_feedback.value = self.state.tramo_tasa_interes_error
             self.tramo_tasa_interes_feedback.color = ft.Colors.RED_700
             return
-        self.tramo_tasa_interes_feedback.value = "Ingresá una tasa numérica mayor que 0."
+        self.tramo_tasa_interes_feedback.value = "Ingresá un porcentaje mayor que 0. Ej: 6 para 6%."
         self.tramo_tasa_interes_feedback.color = ft.Colors.BLUE_GREY_600
 
     def _sync_tramo_id_indice_financiero_feedback(self) -> None:
@@ -4963,10 +4967,21 @@ class VentaCompletaWizardV3Prototype:
         }
         return labels[method]
 
+
+    @staticmethod
+    def _format_rate_decimal_as_percentage(value: str | None) -> str:
+        parsed = _parse_decimal(value) if value else None
+        if parsed is None:
+            return "-"
+        return f"{_format_decimal(parsed * Decimal('100'))}%"
+
     @staticmethod
     def _installment_liquidation_secondary_text(tramo: TramoCuotasWizardDraft) -> str:
         if tramo.metodo_liquidacion == "INTERES_DIRECTO":
-            return f"Tasa: {tramo.tasa_interes_directo_periodica or '-'} — Períodos: {tramo.cantidad_periodos or tramo.cantidad_cuotas}"
+            tasa = VentaCompletaWizardV3Prototype._format_rate_decimal_as_percentage(
+                tramo.tasa_interes_directo_periodica
+            )
+            return f"Tasa: {tasa} — Períodos: {tramo.cantidad_periodos or tramo.cantidad_cuotas}"
         if tramo.metodo_liquidacion == "INDEXACION":
             index_label = tramo.codigo_indice_visual or f"ID {tramo.id_indice_financiero or '-'}"
             return f"Índice: {index_label} · fecha base: {tramo.fecha_base_indice_display or '-'}"
@@ -5659,6 +5674,13 @@ def _parse_percentage(value: Any) -> Decimal | None:
 
 def _format_decimal(value: Decimal) -> str:
     return format(value.quantize(MONEY_DECIMAL_QUANTUM), "f")
+
+
+def _format_rate_decimal_for_backend(value: Decimal) -> str:
+    two_decimal_value = value.quantize(Decimal("0.01"))
+    if value == two_decimal_value:
+        return format(two_decimal_value, "f")
+    return format(value.normalize(), "f")
 
 
 def _parse_money_display_decimal(value: Any) -> Decimal | None:
