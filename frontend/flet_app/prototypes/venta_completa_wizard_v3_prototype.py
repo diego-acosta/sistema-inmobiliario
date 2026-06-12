@@ -308,6 +308,10 @@ class WizardVentaCompletaV3State:
     confirm_status_code: int | None = None
     confirm_op_id: str | None = None
     confirm_payload_signature: str | None = None
+    detalle_venta_loading: bool = False
+    detalle_venta_data: dict[str, Any] | None = None
+    detalle_venta_error: str | None = None
+    detalle_venta_status_code: int | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -3277,11 +3281,130 @@ class VentaCompletaWizardV3Prototype:
         if result.success and isinstance(result.data, dict):
             self.state.confirm_data = result.data
             self.state.confirm_error = None
+            self.state.detalle_venta_data = None
+            self.state.detalle_venta_error = None
+            self.state.detalle_venta_status_code = None
             self.state.pantalla_actual = "VENTA_CONFIRMADA"
             self._render()
             return
         self.state.confirm_error = self._confirm_error_message(result)
         self._render()
+
+
+    def _load_confirmed_sale_detail(self, _: Any) -> None:
+        data = self.state.confirm_data or {}
+        venta = data.get("venta") if isinstance(data.get("venta"), dict) else {}
+        id_venta = venta.get("id_venta")
+        if not id_venta:
+            self.state.detalle_venta_error = "No hay id_venta confirmado para consultar el detalle completo."
+            self._render()
+            return
+
+        self.state.detalle_venta_loading = True
+        self.state.detalle_venta_error = None
+        self.state.detalle_venta_status_code = None
+        self._render()
+        result = self.api.get_venta_detalle_completo(int(id_venta))
+        self.state.detalle_venta_loading = False
+        self.state.detalle_venta_status_code = result.status_code
+        if result.success and isinstance(result.data, dict):
+            self.state.detalle_venta_data = result.data
+            self.state.detalle_venta_error = None
+            self._render()
+            return
+        self.state.detalle_venta_data = None
+        parts = ["No se pudo cargar el detalle completo de venta."]
+        if result.status_code is not None:
+            parts.append(f"HTTP {result.status_code}.")
+        if result.error_code:
+            parts.append(f"{result.error_code}.")
+        if result.error_message:
+            parts.append(result.error_message)
+        self.state.detalle_venta_error = " ".join(parts)
+        self._render()
+
+    def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
+        if self.state.detalle_venta_loading:
+            return [ft.Row(controls=[ft.ProgressRing(width=18, height=18), ft.Text("Cargando detalle completo de venta...")], spacing=10)]
+        if self.state.detalle_venta_error:
+            return [ft.Text(self.state.detalle_venta_error, color=ft.Colors.RED_700)]
+        detalle = self.state.detalle_venta_data
+        if not detalle:
+            return [ft.Text("El detalle completo todavía no fue consultado.", color=ft.Colors.BLUE_GREY_700)]
+
+        venta = detalle.get("venta") if isinstance(detalle.get("venta"), dict) else detalle
+        objetos = detalle.get("objetos_vendidos") or detalle.get("objetos") or []
+        compradores = detalle.get("compradores") or []
+        plan = detalle.get("plan_pago_v2") if isinstance(detalle.get("plan_pago_v2"), dict) else {}
+        bloques = plan.get("bloques") if isinstance(plan.get("bloques"), list) else []
+        obligaciones_plan = [ob for bloque in bloques for ob in (bloque.get("obligaciones") or [])]
+        obligaciones = detalle.get("obligaciones_financieras") or obligaciones_plan
+        resumen = detalle.get("resumen_financiero") or {}
+
+        return [
+            self._build_review_section_container([
+                ft.Text("Resumen de venta", size=18, weight=ft.FontWeight.W_700),
+                _info_row("Código", venta.get("codigo_venta") or "-"),
+                _info_row("Estado", venta.get("estado_venta") or "-"),
+                _info_row("Moneda", venta.get("moneda") or "-"),
+                _info_row("Monto total", venta.get("monto_total") or "-"),
+            ]),
+            self._build_review_section_container([
+                ft.Text("Objetos vendidos", size=18, weight=ft.FontWeight.W_700),
+                *(
+                    [
+                        _info_row(
+                            f"Objeto {idx}",
+                            f"inmueble={obj.get('id_inmueble') or '-'} / uf={obj.get('id_unidad_funcional') or '-'} / precio={obj.get('precio_asignado') or '-'}",
+                        )
+                        for idx, obj in enumerate(objetos, start=1)
+                    ]
+                    or [ft.Text("Sin objetos informados.")]
+                ),
+            ]),
+            self._build_review_section_container([
+                ft.Text("Compradores", size=18, weight=ft.FontWeight.W_700),
+                *(
+                    [
+                        _info_row(
+                            f"Comprador {idx}",
+                            self._confirmed_buyer_label(comprador),
+                        )
+                        for idx, comprador in enumerate(compradores, start=1)
+                    ]
+                    or [ft.Text("Sin compradores informados.")]
+                ),
+            ]),
+            self._build_review_section_container([
+                ft.Text("Plan y obligaciones", size=18, weight=ft.FontWeight.W_700),
+                _info_row("id_plan_pago_venta", plan.get("id_plan_pago_venta") or "-"),
+                _info_row("Estado plan", plan.get("estado_plan_pago") or "-"),
+                _info_row("Bloques", len(bloques)),
+                _info_row("Obligaciones", len(obligaciones)),
+                *[
+                    _info_row(
+                        f"Obligación {ob.get('numero_obligacion') or idx}",
+                        f"{ob.get('tipo_item_cronograma') or '-'} / vence {ob.get('fecha_vencimiento') or '-'} / importe {ob.get('importe_total') or '-'}",
+                    )
+                    for idx, ob in enumerate(obligaciones, start=1)
+                ],
+            ]),
+            self._build_review_section_container([
+                ft.Text("Totales", size=18, weight=ft.FontWeight.W_700),
+                _info_row("Cantidad obligaciones", resumen.get("cantidad_obligaciones") or len(obligaciones)),
+                _info_row("Saldo total", resumen.get("saldo_total") or "-"),
+                _info_row("Saldo pendiente", resumen.get("saldo_pendiente") or "-"),
+                _info_row("Importe cancelado", resumen.get("importe_cancelado") or "-"),
+            ]),
+        ]
+
+    def _confirmed_buyer_label(self, comprador: dict[str, Any]) -> str:
+        persona = comprador.get("persona") if isinstance(comprador.get("persona"), dict) else {}
+        rol = comprador.get("rol_participacion") if isinstance(comprador.get("rol_participacion"), dict) else {}
+        nombre = persona.get("razon_social") or " ".join(
+            part for part in [persona.get("nombre"), persona.get("apellido")] if part
+        )
+        return f"{nombre or persona.get('id_persona') or '-'} / {rol.get('codigo_rol') or '-'} / {comprador.get('porcentaje_responsabilidad') or '-'}%"
 
     def _confirm_error_message(self, result: ApiResult) -> str:
         if result.status_code == 400:
@@ -3496,6 +3619,13 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Total", self._format_money_with_currency(self._objects_total())),
                 ]
             ),
+            ft.Button(
+                "Ver detalle completo de venta",
+                icon=ft.Icons.RECEIPT_LONG,
+                disabled=not venta.get("id_venta") or self.state.detalle_venta_loading,
+                on_click=self._load_confirmed_sale_detail,
+            ),
+            *self._build_confirmed_sale_detail_controls(),
         ]
         return ft.Container(
             padding=24,
