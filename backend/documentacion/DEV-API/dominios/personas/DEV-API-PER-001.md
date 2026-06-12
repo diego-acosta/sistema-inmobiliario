@@ -197,10 +197,26 @@ Separacion contractual del bloque:
 #### Catalogo `rol_participacion`
 
 - clasificacion: soporte transversal
-- estado API: sin endpoint propio vigente en el router actual
-- uso actual: validacion de FK, estado y lectura interna desde servicios de `relacion_persona_rol`
-- criterio actual: mantenerlo como soporte interno mientras no exista una necesidad confirmada de exposicion externa
-- nota de evolucion: si mas adelante requiere API, el primer paso consistente con el estado actual seria una API read-only separada del recurso de relacion; no hay base implementada hoy para asumir CRUD completo
+- estado API: vigente como catálogo read-only
+- uso actual: validacion de FK, estado, lectura interna desde servicios de `relacion_persona_rol` y exposicion read-only para UI/selectores
+- criterio actual: exponer un catalogo read-only sin asumir CRUD ni semantica funcional de otros dominios
+
+#### `GET /api/v1/roles-participacion`
+
+- estado: vigente
+- clasificacion: soporte transversal / `QUERY_READLIKE`
+- objetivo: listar roles de participacion activos para UI/selectores
+- filtro opcional: `codigo`
+- respuesta: `ok=true`, `data[]`
+- campos de `data[]`:
+  - `id_rol_participacion`
+  - `codigo_rol`
+  - `nombre_rol`
+  - `deleted_at`
+- regla: filtra `deleted_at IS NULL` y `estado_rol = ACTIVO`
+- CORE-EF: no requiere headers write porque es read-like; no genera outbox, locks ni idempotencia
+- aclaracion semantica: este endpoint no define semantica comercial, locativa ni financiera; solo expone el catalogo tecnico de soporte `rol_participacion`
+- advertencia de compatibilidad: `POST`, `PUT` y `PATCH` bajo `/api/v1/roles-participacion` siguen siendo aliases legacy de `relacion_persona_rol` y no deben confundirse con este catalogo read-only
 
 #### Recurso `relacion_persona_rol`
 
@@ -210,19 +226,19 @@ Separacion contractual del bloque:
 - observacion: la implementacion usa `tipo_relacion` + `id_relacion` y valida referencias a contextos como `venta`, `contrato_alquiler`, `cesion`, `escrituracion`, `reserva_venta` y `reserva_locativa`
 - dependencia explicita: la validacion del contexto consulta tablas materializadas de otros dominios porque la asociacion es polimorfica en SQL actual
 - aclaracion contractual: actualmente este endpoint no esta anidado bajo `/personas/{id_persona}`; esto responde a la implementacion actual. Conceptualmente sigue perteneciendo al dominio `personas` y actua como punto de asociacion transversal.
-- compatibilidad heredada: tambien acepta `POST /api/v1/roles-participacion`, pero ese path queda como alias legado porque induce confusion con el catalogo `rol_participacion`
+- compatibilidad heredada: tambien acepta `POST /api/v1/roles-participacion`, pero ese path queda como alias legado de `relacion_persona_rol` y no debe confundirse con el catalogo read-only `GET /api/v1/roles-participacion`
 
 #### `PUT /api/v1/relaciones-persona-rol/{id_relacion_persona_rol}`
 - estado: vigente
 - objetivo: modificacion de `relacion_persona_rol`
 - aclaracion contractual: actualmente este endpoint no esta anidado bajo `/personas/{id_persona}`; esto responde a la implementacion actual. Conceptualmente sigue perteneciendo al dominio `personas` y actua como punto de asociacion transversal.
-- compatibilidad heredada: tambien acepta `PUT /api/v1/roles-participacion/{id_relacion_persona_rol}`
+- compatibilidad heredada: tambien acepta `PUT /api/v1/roles-participacion/{id_relacion_persona_rol}`, alias legacy de `relacion_persona_rol` y no del catalogo read-only
 
 #### `PATCH /api/v1/relaciones-persona-rol/{id_relacion_persona_rol}/baja`
 - estado: vigente
 - objetivo: baja logica de `relacion_persona_rol`
 - aclaracion contractual: actualmente este endpoint no esta anidado bajo `/personas/{id_persona}`; esto responde a la implementacion actual. Conceptualmente sigue perteneciendo al dominio `personas` y actua como punto de asociacion transversal.
-- compatibilidad heredada: tambien acepta `PATCH /api/v1/roles-participacion/{id_relacion_persona_rol}/baja`
+- compatibilidad heredada: tambien acepta `PATCH /api/v1/roles-participacion/{id_relacion_persona_rol}/baja`, alias legacy de `relacion_persona_rol` y no del catalogo read-only
 
 #### `GET /api/v1/personas/{id_persona}/participaciones`
 - estado: vigente
@@ -334,9 +350,9 @@ Por eso, el bloque se conserva en este documento como contrato vigente, pero mar
 
 Aclaracion contractual vigente:
 
-- el catalogo `rol_participacion` no tiene hoy API propia confirmada
+- el catalogo `rol_participacion` tiene API propia confirmada solo como read-only mediante `GET /api/v1/roles-participacion`
 - el recurso write vigente del bloque es `relacion_persona_rol`
-- `/api/v1/roles-participacion` queda como compatibilidad heredada y no como naming recomendado del recurso
+- `POST`, `PUT` y `PATCH` bajo `/api/v1/roles-participacion` quedan como compatibilidad heredada de `relacion_persona_rol` y no como naming recomendado del recurso write
 
 ### 6.4 Compatibilidad con `SYS-MAP-002`
 

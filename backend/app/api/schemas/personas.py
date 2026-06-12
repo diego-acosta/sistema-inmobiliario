@@ -104,6 +104,18 @@ class PersonaParticipacionListResponse(BaseModel):
     data: list[PersonaParticipacionListItem]
 
 
+class RolParticipacionCatalogItem(BaseModel):
+    id_rol_participacion: int
+    codigo_rol: str
+    nombre_rol: str
+    deleted_at: datetime | None = None
+
+
+class RolParticipacionCatalogResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[RolParticipacionCatalogItem]
+
+
 class PersonaUpdateRequest(BaseModel):
     tipo_persona: str
     nombre: str | None

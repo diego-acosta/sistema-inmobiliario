@@ -242,6 +242,10 @@ class VentaCompletaWizardV3Prototype:
         self.backend_buyer_records: list[dict[str, Any]] = []
         self.backend_buyer_error: str | None = None
         self.backend_buyers_loaded = False
+        self.rol_comprador_catalog_loaded = False
+        self.rol_comprador_catalog_error: str | None = None
+        self.rol_comprador_manual_fallback_enabled = False
+        self.rol_comprador_data: dict[str, Any] | None = None
         self.precio_objeto_value = ""
         self.moneda_selector_width = 220
         self.fecha_venta_display_value = ""
@@ -286,7 +290,7 @@ class VentaCompletaWizardV3Prototype:
         )
         self.rol_comprador_value = ""
         self.rol_comprador_field = ft.TextField(
-            label="ID rol comprador backend",
+            label="ID rol comprador backend (fallback técnico/dev)",
             keyboard_type=ft.KeyboardType.NUMBER,
             on_change=self._on_rol_comprador_change,
         )
@@ -758,6 +762,39 @@ class VentaCompletaWizardV3Prototype:
         else:
             self.backend_object_error = None
 
+    def _load_rol_comprador_if_needed(self) -> None:
+        if self.rol_comprador_catalog_loaded:
+            return
+        self.rol_comprador_catalog_loaded = True
+        result = self.api.listar_roles_participacion(codigo="COMPRADOR")
+        if not result.success:
+            self.rol_comprador_data = None
+            self.rol_comprador_manual_fallback_enabled = True
+            self.rol_comprador_catalog_error = self._backend_selector_error(
+                "rol COMPRADOR", result
+            )
+            return
+
+        roles = self._api_items(result.data)
+        if not roles:
+            self.rol_comprador_data = None
+            self.rol_comprador_manual_fallback_enabled = False
+            self.rol_comprador_catalog_error = "No se encontró rol COMPRADOR en backend."
+            return
+
+        self.rol_comprador_data = roles[0]
+        self.rol_comprador_value = str(roles[0].get("id_rol_participacion") or "")
+        self.rol_comprador_field.value = self.rol_comprador_value
+        self.rol_comprador_catalog_error = None
+        self.rol_comprador_manual_fallback_enabled = False
+
+    def _rol_comprador_id_resuelto(self) -> str:
+        if self.rol_comprador_data is not None:
+            return str(self.rol_comprador_data.get("id_rol_participacion") or "")
+        if self.rol_comprador_manual_fallback_enabled:
+            return self.rol_comprador_value.strip()
+        return ""
+
     def _load_backend_buyer_records_if_needed(self) -> None:
         if self.backend_buyers_loaded:
             return
@@ -1183,6 +1220,8 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA":
             return self._build_reserva_buyers_info_step()
 
+        self._load_rol_comprador_if_needed()
+
         if self.comprador_selector is None:
             self.comprador_selector = create_search_selector_demo(
                 title="Buscador de persona real",
@@ -1210,6 +1249,7 @@ class VentaCompletaWizardV3Prototype:
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
+                    self._build_rol_comprador_status_card(),
                     *(
                         [self._build_help_card(self.backend_buyer_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)]
                         if self.backend_buyer_error is not None
@@ -1314,14 +1354,39 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = []
         if self.comprador_seleccionado is not None:
             controls.append(self._build_selected_buyer_panel())
-        controls.extend([self._build_manual_buyer_persisted_panel(), self._build_added_buyers_list(), self._build_buyers_summary()])
+        if self.rol_comprador_manual_fallback_enabled:
+            controls.append(self._build_manual_buyer_persisted_panel())
+        controls.extend([self._build_added_buyers_list(), self._build_buyers_summary()])
         return ft.Column(controls=controls, spacing=12)
+
+    def _build_rol_comprador_status_card(self) -> ft.Control:
+        if self.rol_comprador_data is not None:
+            return self._build_help_card(
+                f"Rol COMPRADOR resuelto automáticamente: id_rol_participacion={self._rol_comprador_id_resuelto()}.",
+                ft.Colors.GREEN_50,
+                ft.Colors.GREEN_200,
+            )
+        if self.rol_comprador_catalog_error is not None:
+            return self._build_help_card(
+                self.rol_comprador_catalog_error,
+                ft.Colors.RED_50
+                if not self.rol_comprador_manual_fallback_enabled
+                else ft.Colors.AMBER_50,
+                ft.Colors.RED_200
+                if not self.rol_comprador_manual_fallback_enabled
+                else ft.Colors.AMBER_200,
+            )
+        return self._build_help_card(
+            "Resolviendo rol COMPRADOR desde backend.",
+            ft.Colors.BLUE_50,
+            ft.Colors.BLUE_200,
+        )
 
     def _build_manual_buyer_persisted_panel(self) -> ft.Control:
         controls: list[ft.Control] = [
             ft.Text("Modo técnico/dev: comprador persistido", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Usá esta carga solo para probar confirmación real end-to-end con persona y rol ya persistidos en backend.",
+                "Fallback explícito: usá esta carga solo si falló la carga del catálogo de roles desde backend.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -1391,14 +1456,14 @@ class VentaCompletaWizardV3Prototype:
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
-                    self.rol_comprador_field,
-                    ft.Text("Debe corresponder al rol COMPRADOR.", size=12, color=ft.Colors.BLUE_GREY_600),
+                    _info_row("Rol asignado automáticamente", "COMPRADOR"),
+                    _info_row("id_rol_participacion", self._rol_comprador_id_resuelto() or "pendiente"),
                     ft.Row(
                         controls=[
                             ft.Button(
                                 "Agregar comprador",
                                 icon=ft.Icons.PERSON_ADD_ALT_1,
-                                disabled=duplicate,
+                                disabled=duplicate or not self._rol_comprador_id_resuelto(),
                                 on_click=self._add_selected_buyer,
                             ),
                             ft.OutlinedButton(
@@ -5192,8 +5257,9 @@ class VentaCompletaWizardV3Prototype:
         self.comprador_seleccionado = selected
         self.porcentaje_comprador_value = ""
         self.porcentaje_comprador_field.value = ""
-        self.rol_comprador_value = ""
-        self.rol_comprador_field.value = ""
+        if self.rol_comprador_data is None:
+            self.rol_comprador_value = ""
+            self.rol_comprador_field.value = ""
         self.comprador_error = None
         if self.comprador_selector is not None:
             self.comprador_selector.selected_panel.visible = False
@@ -5204,8 +5270,9 @@ class VentaCompletaWizardV3Prototype:
         self.comprador_selector = None
         self.porcentaje_comprador_value = ""
         self.porcentaje_comprador_field.value = ""
-        self.rol_comprador_value = ""
-        self.rol_comprador_field.value = ""
+        if self.rol_comprador_data is None:
+            self.rol_comprador_value = ""
+            self.rol_comprador_field.value = ""
         self.comprador_error = None
         self._render()
 
@@ -5223,10 +5290,11 @@ class VentaCompletaWizardV3Prototype:
         porcentaje_raw = self.porcentaje_comprador_value.strip()
         if porcentaje_raw and _parse_percentage(porcentaje_raw) is None:
             return "porcentaje_responsabilidad debe ser mayor que 0 y menor o igual que 100."
-        if not self.rol_comprador_value.strip():
-            return "id_rol_participacion es obligatorio y debe corresponder al rol COMPRADOR."
-        if not self.rol_comprador_value.strip().isdigit():
-            return "id_rol_participacion debe ser un ID numerico de backend."
+        role_id = self._rol_comprador_id_resuelto()
+        if not role_id:
+            return self.rol_comprador_catalog_error or "No se encontró rol COMPRADOR en backend."
+        if not role_id.isdigit():
+            return "id_rol_participacion del rol COMPRADOR debe ser un ID numerico de backend."
         return None
 
     def _is_duplicate_selected_buyer(self) -> bool:
@@ -5241,7 +5309,6 @@ class VentaCompletaWizardV3Prototype:
         self.porcentaje_comprador_value = str(
             self.porcentaje_comprador_field.value or self.porcentaje_comprador_value or ""
         )
-        self.rol_comprador_value = str(self.rol_comprador_field.value or self.rol_comprador_value or "")
         self.comprador_error = self._selected_buyer_validation_message()
         if self.comprador_error is not None:
             self._render()
@@ -5254,7 +5321,7 @@ class VentaCompletaWizardV3Prototype:
                 id_persona=int(self.comprador_seleccionado.get("id_persona")),
                 texto_visual=str(self.comprador_seleccionado.get("texto_visual") or "-"),
                 porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
-                id_rol_participacion=self.rol_comprador_value.strip(),
+                id_rol_participacion=self._rol_comprador_id_resuelto(),
                 source=str(self.comprador_seleccionado.get("source") or "backend"),
                 persisted=bool(self.comprador_seleccionado.get("persisted", False)),
             )
@@ -5264,8 +5331,9 @@ class VentaCompletaWizardV3Prototype:
         self.comprador_selector = None
         self.porcentaje_comprador_value = ""
         self.porcentaje_comprador_field.value = ""
-        self.rol_comprador_value = ""
-        self.rol_comprador_field.value = ""
+        if self.rol_comprador_data is None:
+            self.rol_comprador_value = ""
+            self.rol_comprador_field.value = ""
         self.comprador_error = None
         self._render()
 

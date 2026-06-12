@@ -34,6 +34,8 @@ from app.api.schemas.personas import (
     RelacionPersonaRolUpdateResponse,
     PersonaParticipacionListItem,
     PersonaParticipacionListResponse,
+    RolParticipacionCatalogItem,
+    RolParticipacionCatalogResponse,
     PersonaUpdateData,
     PersonaUpdateRequest,
     PersonaUpdateResponse,
@@ -811,6 +813,36 @@ def create_representacion_poder(
 
     return RepresentacionPoderCreateResponse(
         data=RepresentacionPoderCreateData(**result.data)
+    )
+
+
+@router.get(
+    "/api/v1/roles-participacion",
+    response_model=RolParticipacionCatalogResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_roles_participacion(
+    codigo: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> RolParticipacionCatalogResponse | JSONResponse:
+    # QUERY_READLIKE: catalogo de soporte transversal; no persiste cambios
+    # ni requiere headers CORE-EF de command write.
+    repository = PersonaRepository(db)
+
+    try:
+        roles = repository.list_roles_participacion(codigo=codigo)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    return RolParticipacionCatalogResponse(
+        data=[RolParticipacionCatalogItem(**rol) for rol in roles]
     )
 
 
