@@ -37,9 +37,7 @@ def _crear_rol(
     )
 
 
-def test_list_roles_participacion_filtra_comprador_y_soft_delete(
-    client, db_session
-) -> None:
+def _crear_roles_catalogo(db_session) -> None:
     _crear_rol(
         db_session,
         id_rol_participacion=9101,
@@ -55,10 +53,16 @@ def test_list_roles_participacion_filtra_comprador_y_soft_delete(
     _crear_rol(
         db_session,
         id_rol_participacion=9103,
-        codigo_rol="COMPRADOR",
-        nombre_rol="Comprador eliminado",
+        codigo_rol="GARANTE_ELIMINADO",
+        nombre_rol="Garante eliminado",
         deleted=True,
     )
+
+
+def test_list_roles_participacion_filtra_por_codigo_comprador(
+    client, db_session
+) -> None:
+    _crear_roles_catalogo(db_session)
 
     response = client.get("/api/v1/roles-participacion?codigo=COMPRADOR")
 
@@ -73,3 +77,20 @@ def test_list_roles_participacion_filtra_comprador_y_soft_delete(
             "deleted_at": None,
         }
     ]
+
+
+def test_list_roles_participacion_excluye_soft_deleted_sin_filtro(
+    client, db_session
+) -> None:
+    _crear_roles_catalogo(db_session)
+
+    response = client.get("/api/v1/roles-participacion")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+
+    codigos = {item["codigo_rol"] for item in payload["data"]}
+    assert "COMPRADOR" in codigos
+    assert "VENDEDOR" in codigos
+    assert "GARANTE_ELIMINADO" not in codigos
