@@ -543,22 +543,33 @@ Reglas:
 
 Cuando el tramo usa `Interes directo`, mostrar:
 
-- tasa periodica;
-- cantidad de periodos;
+- tasa periodica como porcentaje visible con label `Tasa periódica (%)`;
+- ayuda/hint: `Ej: 6 para 6%`;
+- cantidad de periodos derivada de la cantidad de cuotas del tramo;
 - ayuda: `Interes simple sobre capital inicial del tramo.`
 
 Construccion interna adicional completa:
 
 ```text
 metodo_liquidacion = INTERES_DIRECTO
-tasa_interes_directo_periodica = tasa periodica ingresada
-cantidad_periodos = cantidad de periodos ingresada
+tasa_interes_directo_periodica = tasa decimal enviada al backend, derivada del porcentaje ingresado
+cantidad_periodos = cantidad de cuotas del tramo
 base_calculo_interes = CAPITAL_INICIAL_BLOQUE
 ```
 
-`tasa_interes_directo_periodica` y `cantidad_periodos` vienen de inputs
-visibles de la UI comercial del tramo. `base_calculo_interes` se completa
-internamente con el valor fijo `CAPITAL_INICIAL_BLOQUE`.
+La UI comercial pide la tasa como porcentaje para evitar ambiguedad: si el
+usuario ingresa `6`, se interpreta como `6%` y el payload envia
+`tasa_interes_directo_periodica = "0.06"`, que es la tasa decimal esperada por
+el backend. `cantidad_periodos` se mantiene igual a la cantidad de cuotas del
+tramo. `base_calculo_interes` se completa internamente con el valor fijo
+`CAPITAL_INICIAL_BLOQUE`.
+
+Ejemplo de validacion esperado para interes directo: con precio total
+`10.000.000`, anticipo `5.000.000`, saldo financiado `5.000.000`, `12` cuotas
+y tasa directa visible `6%`, la UI debe enviar `tasa_interes_directo_periodica =
+"0.06"` y `cantidad_periodos = 12`. El preview backend debe calcular
+`total_calculado = 10.000.000`, `total_con_interes = 13.600.000` y una cuota
+base aproximada de `716.666,67`, salvo ajustes por refuerzos o redondeo.
 
 Reglas:
 
@@ -816,9 +827,9 @@ Reglas comunes:
   borrador de venta ni usa `id_venta` ficticio durante la carga o el preview.
 - La accion final se ejecuta desde `REVISION_GENERAL`; no avanza a placeholders
   posteriores cuando el submit esta conectado.
-- Bloquear la confirmacion real si algun objeto o comprador proviene de datos
-  demo/no persistidos. En ese caso, el preview puede seguir usandose como flujo
-  visual, pero no debe ejecutarse el POST de confirmacion.
+- Bloquear la confirmacion real si algun objeto o comprador no esta persistido.
+  El flujo principal usa datos reales del backend; el modo tecnico/dev manual es
+  solo fallback para pruebas con IDs reales persistidos.
 - El flujo principal debe usar selectores backend para objeto y comprador reales;
   el usuario no debe escribir manualmente `id_inmueble`, `id_unidad_funcional` ni
   `id_persona` en el camino principal de confirmacion.
@@ -1026,7 +1037,7 @@ Ejemplo minimo de bloque `TRAMO_CUOTAS` con interes directo:
   "fecha_primer_vencimiento": "2026-07-10",
   "periodicidad": "MENSUAL",
   "metodo_liquidacion": "INTERES_DIRECTO",
-  "tasa_interes_directo_periodica": "2.50",
+  "tasa_interes_directo_periodica": "0.06",
   "cantidad_periodos": 6,
   "base_calculo_interes": "CAPITAL_INICIAL_BLOQUE"
 }
@@ -1172,10 +1183,11 @@ confirmacion de venta directa real se ejecuta desde `REVISION_GENERAL` con el
 boton `Confirmar venta` contra
 `POST /api/v1/ventas/directa/confirmar-venta-completa`, siempre que el preview
 este vigente y los objetos/compradores seleccionados esten marcados como
-persistidos/backend. Los registros demo del prototipo quedan marcados como
-`persisted = false` y solo sirven para probar el flujo visual/preview; bloquean
-la confirmacion real. El modo tecnico/dev manual queda como fallback avanzado, no como camino
-principal. Como no hay API propia confirmada para listar el catalogo
+persistidos/backend. El Wizard V3 ya no carga datos demo hardcodeados de
+objetos ni compradores; si backend no devuelve registros, el usuario debe crear
+o cargar datos reales primero. El modo tecnico/dev manual queda como fallback
+avanzado para pruebas con IDs reales persistidos, no como camino principal. Como
+no hay API propia confirmada para listar el catalogo
 `rol_participacion`, el prototipo conserva la carga manual de
 `id_rol_participacion` con advertencia tecnica hasta integrar un selector real
 de roles. La confirmacion desde reserva queda pendiente y separada.

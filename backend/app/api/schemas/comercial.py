@@ -959,6 +959,49 @@ class VentaParteData(BaseModel):
     id_rol_participacion: int
     codigo_rol: str
     nombre_rol: str
+    porcentaje_responsabilidad: Decimal | None
+    fecha_desde: datetime
+    fecha_hasta: datetime | None
+    observaciones: str | None
+
+
+class VentaPrincipalCompletaData(BaseModel):
+    id_venta: int
+    uid_global: str
+    version_registro: int
+    id_reserva_venta: int | None
+    codigo_venta: str
+    fecha_venta: datetime
+    estado_venta: str
+    monto_total: Decimal | None
+    tipo_plan_financiero: str
+    moneda: str
+    observaciones: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class VentaCompradorPersonaData(BaseModel):
+    id_persona: int
+    tipo_persona: str
+    codigo_persona: str | None
+    nombre: str | None
+    apellido: str | None
+    razon_social: str | None
+    estado_persona: str
+
+
+class VentaCompradorRolParticipacionData(BaseModel):
+    id_rol_participacion: int
+    codigo_rol: str
+    nombre_rol: str
+
+
+class VentaCompradorData(BaseModel):
+    id_relacion_persona_rol: int
+    persona: VentaCompradorPersonaData
+    rol_participacion: VentaCompradorRolParticipacionData
+    porcentaje_responsabilidad: Decimal | None
     fecha_desde: datetime
     fecha_hasta: datetime | None
     observaciones: str | None
@@ -1042,6 +1085,7 @@ class VentaPlanPagoV2ObligacionData(BaseModel):
     saldo_pendiente: Decimal
     estado_obligacion: str
     composiciones: list[VentaObligacionComposicionData]
+    obligados: list[VentaObligacionObligadoData] = []
 
 
 class VentaPlanPagoV2BloqueData(BaseModel):
@@ -1060,15 +1104,6 @@ class VentaPlanPagoV2BloqueData(BaseModel):
     obligaciones: list[VentaPlanPagoV2ObligacionData]
 
 
-class VentaPlanPagoV2Data(BaseModel):
-    id_plan_pago_venta: int
-    metodo_plan_pago: str
-    estado_plan_pago: str
-    monto_total_plan: Decimal
-    moneda: str
-    bloques: list[VentaPlanPagoV2BloqueData]
-
-
 class VentaResumenFinancieroData(BaseModel):
     cantidad_obligaciones: int
     saldo_total: Decimal
@@ -1079,7 +1114,43 @@ class VentaResumenFinancieroData(BaseModel):
     cantidad_anuladas: int
 
 
+class VentaPlanPagoV2CabeceraData(BaseModel):
+    id_plan_pago_venta: int
+    metodo_plan_pago: str
+    estado_plan_pago: str
+    monto_total_plan: Decimal
+    moneda: str
+
+
+class VentaPlanPagoV2Data(BaseModel):
+    id_plan_pago_venta: int
+    metodo_plan_pago: str
+    estado_plan_pago: str
+    monto_total_plan: Decimal
+    moneda: str
+    cabecera: VentaPlanPagoV2CabeceraData | None = None
+    bloques: list[VentaPlanPagoV2BloqueData]
+    resumen_financiero: VentaResumenFinancieroData | None = None
+
+
+class VentaImpactoActivoObjetoData(BaseModel):
+    id_inmueble: int | None
+    id_unidad_funcional: int | None
+    disponibilidad_actual: str | None
+    ocupacion_actual: str | None
+
+
+class VentaImpactoActivoData(BaseModel):
+    objetos: list[VentaImpactoActivoObjetoData]
+    resumen: VentaResumenData
+    integracion_inmobiliaria: IntegracionInmobiliariaData
+
+
 class VentaDetalleIntegralData(VentaDetailData):
+    venta: VentaPrincipalCompletaData | None = None
+    objetos_vendidos: list[VentaObjetoDetalleData] = []
+    compradores: list[VentaCompradorData] = []
+    impacto_activo: VentaImpactoActivoData | None = None
     uid_global: str
     id_reserva_venta: int | None
     observaciones: str | None

@@ -549,9 +549,19 @@ class ComercialRepository:
                 relacion["id_relacion_generadora"]
             )
         plan_pago_v2 = self._get_plan_pago_v2_for_venta(id_venta)
+        resumen_financiero = self._build_resumen_financiero(obligaciones)
+        if plan_pago_v2 is not None:
+            plan_pago_v2["resumen_financiero"] = resumen_financiero
+
+        compradores = self._build_compradores_detalle(partes)
+        impacto_activo = self._build_impacto_activo(detalle)
 
         return {
             **detalle,
+            "venta": self._build_venta_principal(venta),
+            "objetos_vendidos": detalle["objetos"],
+            "compradores": compradores,
+            "impacto_activo": impacto_activo,
             "uid_global": venta["uid_global"],
             "id_reserva_venta": venta["id_reserva_venta"],
             "observaciones": venta["observaciones"],
@@ -583,7 +593,73 @@ class ComercialRepository:
             "relacion_financiera": relacion,
             "obligaciones_financieras": obligaciones,
             "plan_pago_v2": plan_pago_v2,
-            "resumen_financiero": self._build_resumen_financiero(obligaciones),
+            "resumen_financiero": resumen_financiero,
+        }
+
+    def _build_venta_principal(self, venta: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id_venta": venta["id_venta"],
+            "uid_global": venta["uid_global"],
+            "version_registro": venta["version_registro"],
+            "id_reserva_venta": venta["id_reserva_venta"],
+            "codigo_venta": venta["codigo_venta"],
+            "fecha_venta": venta["fecha_venta"],
+            "estado_venta": venta["estado_venta"],
+            "monto_total": venta["monto_total"],
+            "tipo_plan_financiero": venta["tipo_plan_financiero"],
+            "moneda": venta["moneda"],
+            "observaciones": venta["observaciones"],
+            "created_at": venta["created_at"],
+            "updated_at": venta["updated_at"],
+        }
+
+    def _build_compradores_detalle(
+        self, partes: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        compradores = []
+        for parte in partes:
+            if (parte["codigo_rol"] or "").strip().upper() != "COMPRADOR":
+                continue
+            compradores.append(
+                {
+                    "id_relacion_persona_rol": parte["id_relacion_persona_rol"],
+                    "persona": {
+                        "id_persona": parte["id_persona"],
+                        "tipo_persona": parte["tipo_persona"],
+                        "codigo_persona": parte["codigo_persona"],
+                        "nombre": parte["nombre"],
+                        "apellido": parte["apellido"],
+                        "razon_social": parte["razon_social"],
+                        "estado_persona": parte["estado_persona"],
+                    },
+                    "rol_participacion": {
+                        "id_rol_participacion": parte["id_rol_participacion"],
+                        "codigo_rol": parte["codigo_rol"],
+                        "nombre_rol": parte["nombre_rol"],
+                    },
+                    "porcentaje_responsabilidad": parte[
+                        "porcentaje_responsabilidad"
+                    ],
+                    "fecha_desde": parte["fecha_desde"],
+                    "fecha_hasta": parte["fecha_hasta"],
+                    "observaciones": parte["observaciones"],
+                }
+            )
+        return compradores
+
+    def _build_impacto_activo(self, detalle: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "objetos": [
+                {
+                    "id_inmueble": objeto["id_inmueble"],
+                    "id_unidad_funcional": objeto["id_unidad_funcional"],
+                    "disponibilidad_actual": objeto["disponibilidad_actual"],
+                    "ocupacion_actual": objeto["ocupacion_actual"],
+                }
+                for objeto in detalle["objetos"]
+            ],
+            "resumen": detalle["resumen"],
+            "integracion_inmobiliaria": detalle["integracion_inmobiliaria"],
         }
 
     def _get_partes_for_venta(self, id_venta: int) -> list[dict[str, Any]]:
@@ -600,6 +676,7 @@ class ComercialRepository:
                 rpr.id_rol_participacion,
                 rp.codigo_rol,
                 rp.nombre_rol,
+                rpr.porcentaje_responsabilidad,
                 rpr.fecha_desde,
                 rpr.fecha_hasta,
                 rpr.observaciones
@@ -828,6 +905,9 @@ class ComercialRepository:
             composiciones_by_obligacion: dict[int, list[dict[str, Any]]] = {
                 id_obligacion: [] for id_obligacion in obligacion_ids
             }
+            obligados_by_obligacion: dict[int, list[dict[str, Any]]] = {
+                id_obligacion: [] for id_obligacion in obligacion_ids
+            }
 
             if obligacion_ids:
                 composiciones_stmt = text("""
@@ -867,10 +947,37 @@ class ComercialRepository:
                     id_obligacion = item.pop("id_obligacion_financiera")
                     composiciones_by_obligacion[id_obligacion].append(item)
 
+                obligados_stmt = text("""
+                    SELECT
+                        id_obligacion_financiera,
+                        id_obligacion_obligado,
+                        id_persona,
+                        rol_obligado,
+                        porcentaje_responsabilidad
+                    FROM obligacion_obligado
+                    WHERE id_obligacion_financiera IN :obligacion_ids
+                      AND deleted_at IS NULL
+                    ORDER BY id_obligacion_financiera ASC, id_obligacion_obligado ASC
+                    """).bindparams(bindparam("obligacion_ids", expanding=True))
+                for row in (
+                    self.db.execute(
+                        obligados_stmt,
+                        {"obligacion_ids": tuple(obligacion_ids)},
+                    )
+                    .mappings()
+                    .all()
+                ):
+                    item = dict(row)
+                    id_obligacion = item.pop("id_obligacion_financiera")
+                    obligados_by_obligacion[id_obligacion].append(item)
+
             for row in obligacion_rows:
                 obligacion = dict(row)
                 id_bloque = obligacion.pop("id_plan_pago_venta_bloque")
                 obligacion["composiciones"] = composiciones_by_obligacion[
+                    obligacion["id_obligacion_financiera"]
+                ]
+                obligacion["obligados"] = obligados_by_obligacion[
                     obligacion["id_obligacion_financiera"]
                 ]
                 obligaciones_by_bloque[id_bloque].append(obligacion)
@@ -882,6 +989,7 @@ class ComercialRepository:
 
         return {
             **plan,
+            "cabecera": dict(plan),
             "bloques": bloques,
         }
 

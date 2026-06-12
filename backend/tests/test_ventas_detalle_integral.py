@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy import text
 
 from app.application.financiero.services.handle_venta_confirmada_event_service import (
@@ -13,6 +15,15 @@ from tests.test_instrumentos_compraventa_create import _payload_instrumento
 from tests.test_ventas_confirm import (
     _crear_venta_desde_reserva_publica,
     _payload_confirmar_venta,
+)
+from tests.test_reservas_venta_confirmar_venta_completa import (
+    _usar_plan_refuerzo_interno,
+)
+from tests.test_ventas_directa_confirmar_venta_completa import (
+    _crear_base_directa,
+    _obligaciones_items_by_venta,
+    _payload,
+    _venta_by_codigo,
 )
 
 
@@ -500,3 +511,96 @@ def test_detalle_integral_404_si_venta_dada_de_baja(client, db_session) -> None:
 
     assert response.status_code == 404
     assert response.json()["error_code"] == "NOT_FOUND"
+
+
+def test_detalle_integral_venta_directa_confirmada_incluye_contrato_enriquecido(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="DET-INT")
+    payload = _payload(codigo_venta="VD-DET-INT", **base)
+
+    confirm = client.post(
+        "/api/v1/ventas/directa/confirmar-venta-completa",
+        headers=HEADERS,
+        json=payload,
+    )
+
+    assert confirm.status_code == 200, confirm.text
+    id_venta = confirm.json()["data"]["venta"]["id_venta"]
+
+    response = _detalle(client, id_venta)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["venta"]["id_venta"] == id_venta
+    assert data["venta"]["estado_venta"] == "confirmada"
+    assert data["objetos_vendidos"][0]["id_inmueble"] == base["id_inmueble"]
+    assert data["objetos_vendidos"][0]["precio_asignado"] == "150000.00"
+    assert data["compradores"][0]["persona"]["id_persona"] == base["id_persona"]
+    assert data["compradores"][0]["rol_participacion"]["codigo_rol"] == "COMPRADOR"
+    assert data["compradores"][0]["porcentaje_responsabilidad"] == "100.00"
+    assert data["impacto_activo"]["objetos"][0]["id_inmueble"] == base["id_inmueble"]
+
+    plan = data["plan_pago_v2"]
+    assert plan["cabecera"]["id_plan_pago_venta"] == plan["id_plan_pago_venta"]
+    obligaciones_plan = [
+        obligacion
+        for bloque in plan["bloques"]
+        for obligacion in bloque["obligaciones"]
+    ]
+    assert len(obligaciones_plan) == confirm.json()["data"]["obligaciones"]["cantidad"]
+    assert len(data["obligaciones_financieras"]) == len(obligaciones_plan)
+    assert sum(Decimal(ob["importe_total"]) for ob in obligaciones_plan) == Decimal(
+        plan["monto_total_plan"]
+    )
+    assert sum(
+        Decimal(ob["importe_total"]) for ob in data["obligaciones_financieras"]
+    ) == Decimal(data["resumen_financiero"]["saldo_total"])
+    assert plan["resumen_financiero"]["cantidad_obligaciones"] == len(
+        obligaciones_plan
+    )
+    assert all(ob["composiciones"] for ob in obligaciones_plan)
+    assert all(ob["obligados"] for ob in obligaciones_plan)
+
+
+def test_detalle_integral_refuerzos_integrados_son_cuotas_de_mayor_importe(
+    client, db_session
+) -> None:
+    base = _crear_base_directa(client, db_session, codigo="DET-REF")
+    payload = _payload(codigo_venta="VD-DET-REF", **base)
+    _usar_plan_refuerzo_interno(payload)
+
+    confirm = client.post(
+        "/api/v1/ventas/directa/confirmar-venta-completa",
+        headers=HEADERS,
+        json=payload,
+    )
+
+    assert confirm.status_code == 200, confirm.text
+    id_venta = _venta_by_codigo(db_session, "VD-DET-REF")["id_venta"]
+    persisted = _obligaciones_items_by_venta(db_session, id_venta)
+    assert [ob["importe_total"] for ob in persisted] == [
+        Decimal("37500.00"),
+        Decimal("75000.00"),
+        Decimal("37500.00"),
+    ]
+
+    response = _detalle(client, id_venta)
+
+    assert response.status_code == 200, response.text
+    plan = response.json()["data"]["plan_pago_v2"]
+    obligaciones = [
+        obligacion
+        for bloque in plan["bloques"]
+        for obligacion in bloque["obligaciones"]
+    ]
+    assert len(obligaciones) == 3
+    assert {ob["tipo_item_cronograma"] for ob in obligaciones} == {"CUOTA"}
+    assert [Decimal(ob["importe_total"]) for ob in obligaciones] == [
+        Decimal("37500.00"),
+        Decimal("75000.00"),
+        Decimal("37500.00"),
+    ]
+    assert sum(Decimal(ob["importe_total"]) for ob in obligaciones) == Decimal(
+        "150000.00"
+    )

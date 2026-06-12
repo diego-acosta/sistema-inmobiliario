@@ -1,8 +1,9 @@
-"""Buscador visual reutilizable con datos demo para futuros wizards Flet.
+"""Buscador visual reutilizable para wizards Flet.
 
 Alcance:
-  - Componente/prototipo UI aislado, sin llamadas a backend ni persistencia.
-  - Sirve para validar UX de busqueda y seleccion antes de rehacer wizards.
+  - Componente/prototipo UI aislado; recibe registros ya normalizados por la
+    pantalla que lo usa y no llama al backend por si mismo.
+  - Sirve para validar UX de busqueda y seleccion con datos provistos por la UI.
   - No define ownership de dominios ni reemplaza contratos reales de API.
 """
 
@@ -20,7 +21,7 @@ SelectionCallback = Callable[[dict[str, Any] | None], None]
 
 @dataclass(frozen=True)
 class SearchSelectorRecord:
-    """Registro normalizado para pintar y devolver una seleccion demo."""
+    """Registro normalizado para pintar y devolver una seleccion."""
 
     data: dict[str, Any]
     primary_text: str
@@ -78,7 +79,7 @@ def reserva_record(data: dict[str, Any]) -> SearchSelectorRecord:
 
 
 def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
-    """Adapta un inmueble o unidad funcional demo al contrato visual del buscador."""
+    """Adapta un inmueble o unidad funcional al contrato visual del buscador."""
 
     tipo_objeto = _clean(data.get("tipo_objeto"))
     codigo = _clean(data.get("codigo"))
@@ -102,7 +103,7 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
         "tipo": "OBJETO_INMOBILIARIO",
         "tipo_objeto": tipo_objeto,
         "texto_visual": primary,
-        "source": data.get("source") or "demo",
+        "source": data.get("source") or "backend",
         "persisted": bool(data.get("persisted", False)),
     }
     if tipo_objeto == "UNIDAD_FUNCIONAL":
@@ -128,7 +129,7 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
 
 
 def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
-    """Adapta una persona/comprador demo al contrato visual del buscador."""
+    """Adapta una persona/comprador al contrato visual del buscador."""
 
     nombre = _join_visible([data.get("nombre"), data.get("apellido")], " ") or _clean(data.get("razon_social"))
     documento = _clean(data.get("documento"))
@@ -151,7 +152,7 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
             "tipo": "PERSONA",
             "id_persona": data.get("id_persona"),
             "texto_visual": primary,
-            "source": data.get("source") or "demo",
+            "source": data.get("source") or "backend",
             "persisted": bool(data.get("persisted", False)),
         },
     )
@@ -165,11 +166,11 @@ _RECORD_FACTORY: dict[SelectorKind, Callable[[dict[str, Any]], SearchSelectorRec
 
 
 class SearchSelectorDemo:
-    """Buscador demo configurable para seleccion de reservas, objetos y personas.
+    """Buscador configurable para seleccion de reservas, objetos y personas.
 
     El callback ``on_selection_change`` recibe el payload simple del registro seleccionado
-    o ``None`` al limpiar la seleccion. El componente conserva datos demo en memoria y no
-    depende de endpoints reales.
+    o ``None`` al limpiar la seleccion. El componente conserva los registros recibidos en
+    memoria y no consulta endpoints por si mismo.
     """
 
     def __init__(
@@ -273,7 +274,7 @@ class SearchSelectorDemo:
                     padding=12,
                     bgcolor=ft.Colors.BLUE_GREY_50,
                     border_radius=8,
-                    content=ft.Text("Sin resultados para la busqueda actual.", color=ft.Colors.BLUE_GREY_700),
+                    content=ft.Text("No se encontraron registros reales en backend.", color=ft.Colors.BLUE_GREY_700),
                 )
             ]
             return
@@ -337,7 +338,7 @@ def create_search_selector_demo(
     selector_kind: SelectorKind,
     on_selection_change: SelectionCallback | None = None,
 ) -> SearchSelectorDemo:
-    """Factory explicita para crear buscadores demo desde pantallas prototipo."""
+    """Factory explicita para crear buscadores desde pantallas prototipo."""
 
     return SearchSelectorDemo(
         title=title,
