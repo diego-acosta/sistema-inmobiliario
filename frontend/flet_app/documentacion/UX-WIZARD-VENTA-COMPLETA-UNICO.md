@@ -245,8 +245,11 @@ Reglas:
 - Mientras no se elija origen, `Siguiente` queda deshabilitado y no se muestran
   validaciones rojas.
 - Si `RESERVA`: `Siguiente` avanza a una pantalla intermedia `Pantalla 1B --
-  Seleccionar reserva`; el buscador de reserva no se despliega en Pantalla 1.
-- Si `DIRECTA`: `Siguiente` avanza directamente al placeholder de Paso 2.
+  Seleccionar reserva`; el buscador de reserva no se despliega en Pantalla 1 y
+  el avance posterior queda bloqueado mientras no exista integración real de
+  reservas persistidas en backend.
+- Si `DIRECTA`: `Siguiente` avanza directamente al flujo de datos iniciales y
+  objetos con backend real.
 - No pedir `id_venta` manual.
 - No mostrar buscador de reserva, campos tecnicos, forma de pago, total
   derivado, cronograma local, validaciones de pasos futuros ni errores tecnicos
@@ -257,34 +260,27 @@ Reglas:
 
 ### Pantalla 1B - Seleccionar reserva
 
-Objetivo: resolver la seleccion de reserva en una pantalla separada antes de
-cargar objetos de venta.
+Objetivo: dejar explicito que el origen `RESERVA` queda pendiente hasta contar
+con integracion real de reservas desde backend, sin mezclar datos ficticios con
+la venta directa real.
 
 Reglas:
 
 - Mostrar titulo `Seleccionar reserva`.
-- Usar el buscador visual de reservas vigentes.
-- Al seleccionar reserva, guardar `id_reserva_venta`, `version_registro` y el
-  texto visual de la reserva seleccionada.
-- Mantener el estado visual de seleccion propio del buscador; no duplicar debajo
-  una card adicional de `Reserva seleccionada`.
-- Mostrar la reserva seleccionada de forma resumida en el panel lateral
-  `Estado del flujo`.
-- Mostrar la ayuda `En la UI productiva este buscador se conectará al listado
-  real de reservas vigentes.`.
-- `Siguiente` queda habilitado solo si hay reserva seleccionada y avanza al
-  placeholder de Paso 2.
+- No mostrar reservas ficticias ni listas hardcodeadas.
+- Mostrar el mensaje operativo: `La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.`.
+- No generar `id_reserva_venta` desde el frontend.
+- No cargar comprador ni objeto desde una reserva no persistida.
+- `Siguiente` queda deshabilitado mientras no exista una reserva real persistida
+  seleccionada desde backend.
 - `Anterior` vuelve a Pantalla 1 -- Origen.
-- El panel lateral muestra: origen `Desde reserva`, reserva pendiente o
-  seleccionada y proximo paso `cargar objetos de venta`.
-- La lista del buscador debe tener alto maximo razonable y scroll interno o
-  quedar contenida dentro del area central scrolleable para no empujar el footer
-  de navegacion.
+- El panel lateral muestra: origen `Desde reserva`, reserva `pendiente de
+  integración real` y próximo paso `seleccionar reserva`.
 - No pedir manualmente `id_reserva_venta` ni `If-Match-Version` como campos
   principales.
 
-El Paso 2 de V3 queda por ahora como placeholder simple:
-`Paso 2 -- Objetos de venta pendiente`. No implementa objetos todavia.
+El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
+registros persistidos de backend real.
 
 ### Paso 2 - Datos de venta
 
@@ -1165,14 +1161,16 @@ frontend/flet_app/prototypes/venta_completa_wizard_v3_prototype.py
 
 El V3 inicia con Pantalla 1 -- Origen. Esta pantalla solo define el contexto
 inicial (`RESERVA` o `DIRECTA`): si el usuario elige reserva, avanza a Pantalla
-1B -- Seleccionar reserva; si elige venta directa, avanza al placeholder
-`Paso 2 -- Objetos de venta pendiente`.
+1B -- Seleccionar reserva y queda bloqueado mientras no exista una reserva real
+persistida seleccionada o precargada; si elige venta directa, avanza al flujo
+con datos persistidos de backend real.
 
-Pantalla 1B reutiliza el buscador visual de reservas para seleccionar una
-reserva vigente sin pedir IDs tecnicos como campos principales. El layout V3
-mantiene header superior, area central scrolleable con panel lateral y footer
-inferior fijo para que `Anterior` y `Siguiente` no salgan del viewport cuando el
-buscador tenga muchos resultados.
+Pantalla 1B ya no muestra reservas hardcodeadas: informa que la integración de
+reservas reales está pendiente, no genera `id_reserva_venta` ficticio y bloquea
+el avance por `RESERVA` mientras no haya datos persistidos de backend en el
+estado (`id_reserva_venta` y `version_registro`). El layout
+V3 mantiene header superior, area central scrolleable con panel lateral y footer
+inferior fijo para que `Anterior` y `Siguiente` permanezcan dentro del viewport.
 
 El prototipo V3 no pide `id_venta`, no calcula cronograma local y no persiste
 venta durante la carga. Al presionar `Siguiente` desde la edicion del plan,
@@ -1183,14 +1181,15 @@ confirmacion de venta directa real se ejecuta desde `REVISION_GENERAL` con el
 boton `Confirmar venta` contra
 `POST /api/v1/ventas/directa/confirmar-venta-completa`, siempre que el preview
 este vigente y los objetos/compradores seleccionados esten marcados como
-persistidos/backend. El Wizard V3 ya no carga datos demo hardcodeados de
-objetos ni compradores; si backend no devuelve registros, el usuario debe crear
-o cargar datos reales primero. El modo tecnico/dev manual queda como fallback
-avanzado para pruebas con IDs reales persistidos, no como camino principal. Como
-no hay API propia confirmada para listar el catalogo
-`rol_participacion`, el prototipo conserva la carga manual de
-`id_rol_participacion` con advertencia tecnica hasta integrar un selector real
-de roles. La confirmacion desde reserva queda pendiente y separada.
+persistidos/backend real. El Wizard V3 ya no carga datos hardcodeados de
+reservas, objetos ni compradores; si backend no devuelve registros, el usuario
+debe crear o cargar datos reales primero. El modo tecnico/dev manual queda como
+fallback avanzado para pruebas con IDs reales persistidos, no como camino
+principal. El rol `COMPRADOR` se resuelve desde `GET /api/v1/roles-participacion`
+y la carga manual de `id_rol_participacion` queda solo como modo tecnico/dev si
+el catalogo real no está disponible. La confirmacion desde reserva queda
+pendiente y separada hasta integrar reservas reales; no se usan reservas demo
+para confirmar ventas.
 
 El prototipo `frontend/flet_app/prototypes/venta_completa_wizard_v2_prototype.py`
 queda descartado como base principal porque su flujo no representa la UX
