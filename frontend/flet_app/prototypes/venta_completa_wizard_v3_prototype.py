@@ -3210,10 +3210,9 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_sale_integral_detail_step(self) -> ft.Control:
         controls: list[ft.Control] = [
+            ft.Text("Detalle integral de venta", size=24, weight=ft.FontWeight.W_700),
             ft.Row(
                 controls=[
-                    ft.Text("Detalle integral de venta", size=24, weight=ft.FontWeight.W_700),
-                    ft.Container(expand=True),
                     ft.OutlinedButton("Volver a venta confirmada", icon=ft.Icons.ARROW_BACK, on_click=self._back_to_confirmed_sale),
                     ft.Button("Refrescar detalle", icon=ft.Icons.REFRESH, disabled=self.state.detalle_venta_loading, on_click=self._load_confirmed_sale_detail),
                     ft.OutlinedButton("Volver al inicio", icon=ft.Icons.HOME_OUTLINED, on_click=self._restart_wizard),
@@ -3230,7 +3229,7 @@ class VentaCompletaWizardV3Prototype:
             border_radius=14,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(controls=controls, spacing=14, scroll=ft.ScrollMode.AUTO),
+            content=ft.Column(controls=controls, spacing=14),
         )
 
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
