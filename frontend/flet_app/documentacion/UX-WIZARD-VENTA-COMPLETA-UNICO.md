@@ -824,14 +824,18 @@ Reglas comunes:
 - La accion final se ejecuta desde `REVISION_GENERAL`; no avanza a placeholders
   posteriores cuando el submit esta conectado.
 - Bloquear la confirmacion real si algun objeto o comprador no esta persistido.
-  El flujo principal usa datos reales del backend; el modo tecnico/dev manual es
-  solo fallback para pruebas con IDs reales persistidos.
+- Los objetos de venta se seleccionan exclusivamente desde backend real mediante
+  el selector; cada objeto agregado debe quedar con `source = "backend"` y
+  `persisted = true`.
+- Ya no existe carga manual tecnico/dev de objetos por ID: el usuario no debe
+  escribir manualmente `id_inmueble` ni `id_unidad_funcional` para agregar
+  objetos a la venta.
 - El flujo principal debe usar selectores backend para objeto y comprador reales;
-  el usuario no debe escribir manualmente `id_inmueble`, `id_unidad_funcional` ni
-  `id_persona` en el camino principal de confirmacion.
-- Mientras no exista selector productivo conectado a backend para todos los datos,
+  el usuario no debe escribir manualmente `id_persona` en el camino principal de
+  confirmacion.
+- Mientras no exista selector productivo conectado a backend para compradores,
   el prototipo puede ofrecer un modo tecnico/dev visible para cargar IDs reales
-  persistidos; esos registros deben marcarse `source = "manual"` y
+  persistidos de personas; esos registros deben marcarse `source = "manual"` y
   `persisted = true`.
 
 Reglas por origen:
@@ -1181,10 +1185,12 @@ confirmacion de venta directa real se ejecuta desde `REVISION_GENERAL` con el
 boton `Confirmar venta` contra
 `POST /api/v1/ventas/directa/confirmar-venta-completa`, siempre que el preview
 este vigente y los objetos/compradores seleccionados esten marcados como
-persistidos/backend real. El Wizard V3 ya no carga datos hardcodeados de
-reservas, objetos ni compradores; si backend no devuelve registros, el usuario
-debe crear o cargar datos reales primero. El modo tecnico/dev manual queda como
-fallback avanzado para pruebas con IDs reales persistidos, no como camino
+persistidos/backend real. Los objetos se seleccionan exclusivamente desde
+backend real mediante el selector y ya no existe carga manual tecnico/dev de
+objetos por ID. El Wizard V3 ya no carga datos hardcodeados de reservas, objetos
+ni compradores; si backend no devuelve registros, el usuario debe crear o cargar
+datos reales primero. El modo tecnico/dev manual queda limitado a compradores
+como fallback avanzado para pruebas con IDs reales persistidos, no como camino
 principal. El rol `COMPRADOR` se resuelve desde `GET /api/v1/roles-participacion`
 y la carga manual de `id_rol_participacion` queda solo como modo tecnico/dev si
 el catalogo real no está disponible. La confirmacion desde reserva queda
