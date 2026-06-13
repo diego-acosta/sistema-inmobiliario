@@ -1161,12 +1161,14 @@ frontend/flet_app/prototypes/venta_completa_wizard_v3_prototype.py
 
 El V3 inicia con Pantalla 1 -- Origen. Esta pantalla solo define el contexto
 inicial (`RESERVA` o `DIRECTA`): si el usuario elige reserva, avanza a Pantalla
-1B -- Seleccionar reserva y queda bloqueado hasta integrar reservas reales; si
-elige venta directa, avanza al flujo con datos persistidos de backend real.
+1B -- Seleccionar reserva y queda bloqueado mientras no exista una reserva real
+persistida seleccionada o precargada; si elige venta directa, avanza al flujo
+con datos persistidos de backend real.
 
 Pantalla 1B ya no muestra reservas hardcodeadas: informa que la integración de
 reservas reales está pendiente, no genera `id_reserva_venta` ficticio y bloquea
-el avance por `RESERVA` hasta contar con datos persistidos de backend. El layout
+el avance por `RESERVA` mientras no haya datos persistidos de backend en el
+estado (`id_reserva_venta` y `version_registro`). El layout
 V3 mantiene header superior, area central scrolleable con panel lateral y footer
 inferior fijo para que `Anterior` y `Siguiente` permanezcan dentro del viewport.
 

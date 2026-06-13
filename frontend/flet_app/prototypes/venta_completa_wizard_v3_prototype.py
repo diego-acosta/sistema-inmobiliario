@@ -3850,7 +3850,10 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "ORIGEN":
             return self.state.origen is not None
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
-            return False
+            return (
+                self.state.id_reserva_venta is not None
+                and self.state.version_registro is not None
+            )
         if self.state.pantalla_actual == "DATOS_INICIALES":
             return self._has_valid_currency() and self.fecha_venta_error is None
         if self.state.pantalla_actual == "OBJETOS":
