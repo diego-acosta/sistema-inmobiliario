@@ -1284,3 +1284,73 @@ Tests requeridos para este PR de frontend:
   `INTERES_DIRECTO` e `INDEXACION`; este PR no los modifica.
 - Cualquier implementacion futura de UI debe volver a validar nombres de campos,
   headers y respuestas contra router/schema/tests vigentes antes de codificar.
+
+## 16. Detalle integral de venta
+
+La pantalla **Venta confirmada** incluye automáticamente la ficha **Detalle
+integral de venta** para ventas directas ya confirmadas desde Wizard Venta
+Completa V3. Es una vista **read-only**: no confirma nuevamente, no cambia
+estado de venta, no recalcula Plan Pago V2, no modifica obligaciones y no
+actualiza activos.
+
+Endpoint consumido:
+
+- `GET /api/v1/ventas/{id_venta}/detalle-integral`.
+
+Acceso y acciones visibles:
+
+- Se carga automáticamente al entrar en **Venta confirmada** luego de persistir
+  una venta directa real.
+- Ya no existe botón **Ver detalle integral de venta**.
+- Permite **Refrescar detalle** para repetir el `GET` del detalle integral.
+- Permite **Volver al inicio** del wizard si el operador quiere cerrar la ficha
+  y comenzar otro flujo.
+- No muestra **Volver a venta confirmada** porque el detalle vive dentro de esa
+  misma pantalla.
+- No agrega acciones que modifiquen estado ni dispara endpoints write.
+
+Secciones esperadas en la ficha:
+
+1. **Encabezado**: titulo, `id_venta`, codigo de venta si existe, estado,
+   fecha, moneda y badge visual de estado.
+2. **Resumen comercial**: precio total, moneda, cantidad de objetos, cantidad de
+   compradores, estado general y observaciones si el payload las informa.
+3. **Objetos vendidos**: cards compactas con tipo de objeto, `id_inmueble` o
+   `id_unidad_funcional`, descripcion/codigo si existe, `precio_asignado` y
+   estado de impacto activo si viene en la respuesta.
+4. **Compradores**: persona/nombre visual, `id_persona`, rol/codigo de rol,
+   `porcentaje_responsabilidad` y marca de comprador principal si el payload lo
+   informa. Si no hay compradores, muestra un aviso claro.
+5. **Plan de pago**: cabecera del plan, estado, tipo/forma de pago, totales
+   calculados y bloques agrupados visualmente con orden, metodo de liquidacion,
+   importe total, cantidad de cuotas, periodicidad y tasa/indice si aplica.
+6. **Obligaciones**: vista compacta con tipo, numero de cuota, vencimiento,
+   importe, moneda y estado; incluye totalizador de cantidad e importe total y
+   scroll interno para listas extensas.
+7. **Impacto del activo**: estado anterior/nuevo, disponibilidad y ocupacion si
+   esos datos existen; si no vienen en el payload, informa **Sin impacto
+   informado en el payload**.
+
+Manejo de estados UX:
+
+- Al confirmar correctamente, el frontend solicita automáticamente el detalle
+  para el `id_venta` confirmado y evita repetir el `GET` en cada render.
+- Si no hay `id_venta`, muestra **No hay id_venta confirmado para consultar
+  detalle.**
+- Si falla el `GET`, muestra un error legible con HTTP, `error_code` y
+  `error_message` cuando el cliente API los entrega.
+- Si esta cargando o refrescando, muestra aviso de carga/refresco.
+- La pantalla **Venta confirmada** se mantiene estable y muestra resultado
+  backend, resumen comercial confirmado y detalle integral read-only en la misma
+  vista.
+
+Decision CORE-EF para esta pantalla:
+
+- Clasificacion: `QUERY_READLIKE` para el detalle automático y para la accion
+  **Refrescar detalle**.
+- Headers write: NO APLICA; consume solo `GET` read-only existente.
+- Idempotencia: NO APLICA; no ejecuta command sincronizable.
+- Outbox: NO APLICA; no genera eventos.
+- Lock logico: NO APLICA; no bloquea entidades.
+- Versionado: NO APLICA; no modifica entidad versionada.
+- Rollback/transaccion: NO APLICA; no abre frontera transaccional de negocio.
