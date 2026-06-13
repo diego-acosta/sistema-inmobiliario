@@ -3316,15 +3316,20 @@ class VentaCompletaWizardV3Prototype:
         return self._build_review_section_container([ft.Text("Compradores", size=18, weight=ft.FontWeight.W_700), *(cards or [self._build_help_card("Sin compradores informados en el payload.", ft.Colors.AMBER_50, ft.Colors.AMBER_200)])])
 
     def _build_detail_payment_plan_section(self, plan: dict[str, Any], bloques: list[Any]) -> ft.Control:
+        resumen = plan.get("resumen_financiero") if isinstance(plan.get("resumen_financiero"), dict) else {}
+        moneda = plan.get("moneda")
         controls = [
             ft.Text("Plan de pago", size=18, weight=ft.FontWeight.W_700),
             _info_row("id_plan_pago_venta", plan.get("id_plan_pago_venta")),
             _info_row("Estado del plan", plan.get("estado_plan_pago") or plan.get("estado")),
-            _info_row("Tipo / forma de pago", plan.get("tipo_plan") or plan.get("forma_pago")),
-            _info_row("total_calculado", self._detail_money(plan.get("total_calculado"), plan.get("moneda"))),
-            _info_row("total_con_interes", self._detail_money(plan.get("total_con_interes"), plan.get("moneda"))),
-            _info_row("total_con_indexacion", self._detail_money(plan.get("total_con_indexacion"), plan.get("moneda"))),
-            _info_row("total_ajuste_indexacion", self._detail_money(plan.get("total_ajuste_indexacion"), plan.get("moneda"))),
+            _info_row("Tipo / forma de pago", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
+            _info_row("Total del plan", self._detail_money(self._first_present(plan.get("monto_total_plan"), plan.get("total_calculado")), moneda)),
+            _info_row("total_con_interes", self._detail_money(self._first_present(resumen.get("total_con_interes"), plan.get("total_con_interes")), moneda)),
+            _info_row("total_con_indexacion", self._detail_money(self._first_present(resumen.get("total_con_indexacion"), plan.get("total_con_indexacion")), moneda)),
+            _info_row("total_ajuste_indexacion", self._detail_money(self._first_present(resumen.get("total_ajuste_indexacion"), plan.get("total_ajuste_indexacion")), moneda)),
+            _info_row("saldo_total", self._detail_money(self._first_present(resumen.get("saldo_total"), plan.get("saldo_total")), moneda)),
+            _info_row("saldo_pendiente", self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda)),
+            _info_row("importe_cancelado", self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda)),
         ]
         for idx, raw in enumerate(bloques, start=1):
             bloque = raw if isinstance(raw, dict) else {}
@@ -3365,20 +3370,40 @@ class VentaCompletaWizardV3Prototype:
         ])
 
     def _build_detail_asset_impact_section(self, impacto: Any) -> ft.Control:
-        impactos = self._as_list(impacto) if isinstance(impacto, list) else ([impacto] if isinstance(impacto, dict) else [])
+        impactos = self._normalize_asset_impact_items(impacto)
         controls = [ft.Text("Impacto del activo", size=18, weight=ft.FontWeight.W_700)]
-        if not impactos:
+        cards: list[ft.Control] = []
+        for idx, item in enumerate(impactos, start=1):
+            rows: list[ft.Control] = [ft.Text(f"Impacto {idx}", weight=ft.FontWeight.W_700)]
+            for label, value in [
+                ("id_inmueble", item.get("id_inmueble")),
+                ("id_unidad_funcional", item.get("id_unidad_funcional")),
+                ("Estado anterior", self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior"))),
+                ("Estado nuevo", self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo"))),
+                ("Disponibilidad actual", item.get("disponibilidad_actual")),
+                ("Disponibilidad", self._first_present(item.get("disponibilidad"), item.get("disponibilidad_nueva"))),
+                ("Ocupación actual", item.get("ocupacion_actual")),
+                ("Ocupación", self._first_present(item.get("ocupacion"), item.get("ocupacion_nueva"))),
+            ]:
+                if value not in (None, "", "-"):
+                    rows.append(_info_row(label, value))
+            if len(rows) > 1:
+                cards.append(self._compact_card(rows))
+        if cards:
+            controls.extend(cards)
+        else:
             controls.append(ft.Text("Sin impacto informado en el payload.", color=ft.Colors.BLUE_GREY_700))
-        for idx, raw in enumerate(impactos, start=1):
-            item = raw if isinstance(raw, dict) else {}
-            controls.append(self._compact_card([
-                ft.Text(f"Impacto {idx}", weight=ft.FontWeight.W_700),
-                _info_row("Estado anterior", item.get("estado_anterior") or item.get("estado_activo_anterior")),
-                _info_row("Estado nuevo", item.get("estado_nuevo") or item.get("estado_activo_nuevo")),
-                _info_row("Disponibilidad", item.get("disponibilidad") or item.get("disponibilidad_nueva")),
-                _info_row("Ocupación", item.get("ocupacion") or item.get("ocupacion_nueva")),
-            ]))
         return self._build_review_section_container(controls)
+
+    def _normalize_asset_impact_items(self, impacto: Any) -> list[dict[str, Any]]:
+        if isinstance(impacto, dict):
+            objetos = impacto.get("objetos")
+            if isinstance(objetos, list):
+                return [item for item in objetos if isinstance(item, dict)]
+            return []
+        if isinstance(impacto, list):
+            return [item for item in impacto if isinstance(item, dict)]
+        return []
 
     def _compact_card(self, controls: list[ft.Control]) -> ft.Control:
         return ft.Container(padding=12, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_50, border=_border_all(1, ft.Colors.BLUE_GREY_100), content=ft.Column(controls=controls, spacing=6))
@@ -3391,6 +3416,12 @@ class VentaCompletaWizardV3Prototype:
             return "-"
         amount = _format_money(value)
         return f"{amount} {moneda}" if moneda not in (None, "") and amount != "-" else amount
+
+    def _first_present(self, *values: Any) -> Any:
+        for value in values:
+            if value not in (None, ""):
+                return value
+        return None
 
     def _confirmed_buyer_name(self, comprador: dict[str, Any]) -> str:
         persona = comprador.get("persona") if isinstance(comprador.get("persona"), dict) else {}
