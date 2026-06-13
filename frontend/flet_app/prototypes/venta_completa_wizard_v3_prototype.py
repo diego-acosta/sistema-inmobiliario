@@ -70,7 +70,6 @@ PantallaWizard = Literal[
     "PREVIEW_PLAN_PAGO",
     "REVISION_GENERAL",
     "VENTA_CONFIRMADA",
-    "DETALLE_INTEGRAL_VENTA",
 ]
 
 
@@ -193,6 +192,7 @@ class WizardVentaCompletaV3State:
     detalle_venta_data: dict[str, Any] | None = None
     detalle_venta_error: str | None = None
     detalle_venta_status_code: int | None = None
+    detalle_venta_requested_id: int | None = None
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -525,8 +525,6 @@ class VentaCompletaWizardV3Prototype:
             return self._build_general_review_step()
         if self.state.pantalla_actual == "VENTA_CONFIRMADA":
             return self._build_confirmed_sale_step()
-        if self.state.pantalla_actual == "DETALLE_INTEGRAL_VENTA":
-            return self._build_sale_integral_detail_step()
         return self._build_origin_step()
 
     def _build_origin_step(self) -> ft.Control:
@@ -3152,28 +3150,40 @@ class VentaCompletaWizardV3Prototype:
             self.state.detalle_venta_data = None
             self.state.detalle_venta_error = None
             self.state.detalle_venta_status_code = None
+            self.state.detalle_venta_requested_id = None
             self.state.pantalla_actual = "VENTA_CONFIRMADA"
-            self._render()
+            self._load_confirmed_sale_detail(force=True)
             return
         self.state.confirm_error = self._confirm_error_message(result)
         self._render()
 
 
-    def _load_confirmed_sale_detail(self, _: Any = None) -> None:
+    def _confirmed_sale_id(self) -> int | None:
         data = self.state.confirm_data or {}
         venta = data.get("venta") if isinstance(data.get("venta"), dict) else {}
         id_venta = venta.get("id_venta")
-        self.state.pantalla_actual = "DETALLE_INTEGRAL_VENTA"
-        if not id_venta:
-            self.state.detalle_venta_error = "No hay id_venta confirmado para consultar el detalle integral."
+        try:
+            return int(id_venta)
+        except (TypeError, ValueError):
+            return None
+
+    def _load_confirmed_sale_detail(self, _: Any = None, *, force: bool = True) -> None:
+        id_venta = self._confirmed_sale_id()
+        if id_venta is None:
+            self.state.detalle_venta_data = None
+            self.state.detalle_venta_error = "No hay id_venta confirmado para consultar detalle."
+            self.state.detalle_venta_requested_id = None
             self._render()
             return
+        if not force and self.state.detalle_venta_requested_id == id_venta:
+            return
 
+        self.state.detalle_venta_requested_id = id_venta
         self.state.detalle_venta_loading = True
         self.state.detalle_venta_error = None
         self.state.detalle_venta_status_code = None
         self._render()
-        result = self.api.get_venta_detalle_integral(int(id_venta))
+        result = self.api.get_venta_detalle_integral(id_venta)
         self.state.detalle_venta_loading = False
         self.state.detalle_venta_status_code = result.status_code
         if result.success and isinstance(result.data, dict):
@@ -3192,10 +3202,6 @@ class VentaCompletaWizardV3Prototype:
         self.state.detalle_venta_error = " ".join(parts)
         self._render()
 
-    def _back_to_confirmed_sale(self, _: Any = None) -> None:
-        self.state.pantalla_actual = "VENTA_CONFIRMADA"
-        self._render()
-
     def _restart_wizard(self, _: Any = None) -> None:
         self.state = WizardVentaCompletaV3State()
         self.reserva_selector = None
@@ -3208,33 +3214,9 @@ class VentaCompletaWizardV3Prototype:
         self.fecha_venta_error = None
         self._render()
 
-    def _build_sale_integral_detail_step(self) -> ft.Control:
-        controls: list[ft.Control] = [
-            ft.Text("Detalle integral de venta", size=24, weight=ft.FontWeight.W_700),
-            ft.Row(
-                controls=[
-                    ft.OutlinedButton("Volver a venta confirmada", icon=ft.Icons.ARROW_BACK, on_click=self._back_to_confirmed_sale),
-                    ft.Button("Refrescar detalle", icon=ft.Icons.REFRESH, disabled=self.state.detalle_venta_loading, on_click=self._load_confirmed_sale_detail),
-                    ft.OutlinedButton("Volver al inicio", icon=ft.Icons.HOME_OUTLINED, on_click=self._restart_wizard),
-                ],
-                spacing=10,
-                wrap=True,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            ft.Text("Consulta operativa read-only desde GET /api/v1/ventas/{id_venta}/detalle-integral; no modifica venta, plan, obligaciones ni activos.", color=ft.Colors.BLUE_GREY_700),
-            *self._build_confirmed_sale_detail_controls(),
-        ]
-        return ft.Container(
-            padding=24,
-            border_radius=14,
-            bgcolor=ft.Colors.WHITE,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(controls=controls, spacing=14),
-        )
-
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
         if self.state.detalle_venta_loading:
-            return [self._build_help_card("Cargando/refrescando detalle integral de venta...", ft.Colors.BLUE_50, ft.Colors.BLUE_100)]
+            return [self._build_help_card("Cargando detalle integral...", ft.Colors.BLUE_50, ft.Colors.BLUE_100)]
         if self.state.detalle_venta_error:
             return [self._build_help_card(self.state.detalle_venta_error, ft.Colors.RED_50, ft.Colors.RED_200)]
         detalle = self.state.detalle_venta_data
@@ -3646,11 +3628,27 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Total", self._format_money_with_currency(self._objects_total())),
                 ]
             ),
-            ft.Button(
-                "Ver detalle integral de venta",
-                icon=ft.Icons.RECEIPT_LONG,
-                disabled=not venta.get("id_venta") or self.state.detalle_venta_loading,
-                on_click=self._load_confirmed_sale_detail,
+            self._build_review_section_container(
+                [
+                    ft.Text("Detalle integral de venta", size=18, weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        "Ficha operativa read-only cargada automáticamente desde GET /api/v1/ventas/{id_venta}/detalle-integral.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.Button(
+                                "Refrescar detalle",
+                                icon=ft.Icons.REFRESH,
+                                disabled=not venta.get("id_venta") or self.state.detalle_venta_loading,
+                                on_click=self._load_confirmed_sale_detail,
+                            ),
+                            ft.OutlinedButton("Volver al inicio", icon=ft.Icons.HOME_OUTLINED, on_click=self._restart_wizard),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                ]
             ),
             *self._build_confirmed_sale_detail_controls(),
         ]
@@ -3721,7 +3719,7 @@ class VentaCompletaWizardV3Prototype:
                 ft.OutlinedButton(
                     "Anterior",
                     icon=ft.Icons.ARROW_BACK,
-                    disabled=self.state.pantalla_actual in {"ORIGEN", "VENTA_CONFIRMADA", "DETALLE_INTEGRAL_VENTA"} or self.state.confirm_loading,
+                    disabled=self.state.pantalla_actual in {"ORIGEN", "VENTA_CONFIRMADA"} or self.state.confirm_loading,
                     on_click=self._previous_step,
                 ),
                 ft.Container(expand=True),
@@ -3918,8 +3916,6 @@ class VentaCompletaWizardV3Prototype:
             self.state.pantalla_actual = "FORMA_PAGO"
         elif self.state.pantalla_actual == "VENTA_CONFIRMADA":
             return
-        elif self.state.pantalla_actual == "DETALLE_INTEGRAL_VENTA":
-            self.state.pantalla_actual = "VENTA_CONFIRMADA"
         elif self.state.pantalla_actual == "REVISION_GENERAL":
             self.state.pantalla_actual = "PREVIEW_PLAN_PAGO"
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
@@ -3972,8 +3968,6 @@ class VentaCompletaWizardV3Prototype:
             return self.state.preview_data is not None and not self.state.preview_stale
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return self._general_review_is_valid()
-        if self.state.pantalla_actual == "DETALLE_INTEGRAL_VENTA":
-            return False
         return False
 
     def _date_display_value(self) -> str:
@@ -5460,9 +5454,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return "confirmar venta" if self._can_confirm_sale() else "resolver pendientes de revisión"
         if self.state.pantalla_actual == "VENTA_CONFIRMADA":
-            return "venta persistida"
-        if self.state.pantalla_actual == "DETALLE_INTEGRAL_VENTA":
-            return "consulta operativa read-only"
+            return "venta persistida con detalle integral read-only"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return "cargar datos iniciales"
         if self.state.origen is None:

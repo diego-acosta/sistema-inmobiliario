@@ -1287,10 +1287,11 @@ Tests requeridos para este PR de frontend:
 
 ## 16. Detalle integral de venta
 
-La pantalla **Detalle integral de venta** es una ficha operativa de consulta para
-ventas directas ya confirmadas desde Wizard Venta Completa V3. Es una vista
-**read-only**: no confirma nuevamente, no cambia estado de venta, no recalcula
-Plan Pago V2, no modifica obligaciones y no actualiza activos.
+La pantalla **Venta confirmada** incluye automáticamente la ficha **Detalle
+integral de venta** para ventas directas ya confirmadas desde Wizard Venta
+Completa V3. Es una vista **read-only**: no confirma nuevamente, no cambia
+estado de venta, no recalcula Plan Pago V2, no modifica obligaciones y no
+actualiza activos.
 
 Endpoint consumido:
 
@@ -1298,12 +1299,14 @@ Endpoint consumido:
 
 Acceso y acciones visibles:
 
-- Se abre desde **Venta confirmada** mediante la accion **Ver detalle integral de
-  venta**.
-- Permite **Volver a venta confirmada**.
+- Se carga automáticamente al entrar en **Venta confirmada** luego de persistir
+  una venta directa real.
+- Ya no existe botón **Ver detalle integral de venta**.
 - Permite **Refrescar detalle** para repetir el `GET` del detalle integral.
 - Permite **Volver al inicio** del wizard si el operador quiere cerrar la ficha
   y comenzar otro flujo.
+- No muestra **Volver a venta confirmada** porque el detalle vive dentro de esa
+  misma pantalla.
 - No agrega acciones que modifiquen estado ni dispara endpoints write.
 
 Secciones esperadas en la ficha:
@@ -1330,17 +1333,21 @@ Secciones esperadas en la ficha:
 
 Manejo de estados UX:
 
-- Si no hay detalle cargado, muestra un mensaje de carga pendiente.
+- Al confirmar correctamente, el frontend solicita automáticamente el detalle
+  para el `id_venta` confirmado y evita repetir el `GET` en cada render.
+- Si no hay `id_venta`, muestra **No hay id_venta confirmado para consultar
+  detalle.**
 - Si falla el `GET`, muestra un error legible con HTTP, `error_code` y
   `error_message` cuando el cliente API los entrega.
 - Si esta cargando o refrescando, muestra aviso de carga/refresco.
-- La pantalla **Venta confirmada** se mantiene estable; el detalle se muestra en
-  una pantalla read-only separada y se puede volver sin perder el resultado de
-  confirmacion.
+- La pantalla **Venta confirmada** se mantiene estable y muestra resultado
+  backend, resumen comercial confirmado y detalle integral read-only en la misma
+  vista.
 
 Decision CORE-EF para esta pantalla:
 
-- Clasificacion: `QUERY_READLIKE`.
+- Clasificacion: `QUERY_READLIKE` para el detalle automático y para la accion
+  **Refrescar detalle**.
 - Headers write: NO APLICA; consume solo `GET` read-only existente.
 - Idempotencia: NO APLICA; no ejecuta command sincronizable.
 - Outbox: NO APLICA; no genera eventos.
