@@ -3227,7 +3227,7 @@ class VentaCompletaWizardV3Prototype:
                     content=ft.Row(
                         controls=[
                             ft.Text(self.state.detalle_venta_error, color=ft.Colors.RED_800, expand=True),
-                            ft.TextButton("Reintentar", icon=ft.Icons.REFRESH, on_click=self._load_confirmed_sale_detail),
+                            ft.TextButton("Reintentar carga", icon=ft.Icons.REFRESH, on_click=self._load_confirmed_sale_detail),
                         ],
                         spacing=10,
                         wrap=True,
@@ -3504,9 +3504,6 @@ class VentaCompletaWizardV3Prototype:
         if normalized in {"GENERADO", "PROYECTADA"}:
             return _badge(normalized, ft.Colors.BLUE_50, ft.Colors.BLUE_200)
         return _badge(normalized, ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200)
-
-    def _compact_card(self, controls: list[ft.Control]) -> ft.Control:
-        return ft.Container(padding=12, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_50, border=_border_all(1, ft.Colors.BLUE_GREY_100), content=ft.Column(controls=controls, spacing=6))
 
     def _as_list(self, value: Any) -> list[Any]:
         return value if isinstance(value, list) else []

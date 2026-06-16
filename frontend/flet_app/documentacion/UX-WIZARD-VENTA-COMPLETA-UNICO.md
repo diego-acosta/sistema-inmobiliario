@@ -1303,7 +1303,7 @@ Acceso y acciones visibles:
   una venta directa real.
 - Ya no existe botón **Ver detalle integral de venta**.
 - No muestra **Refrescar detalle** como botón principal permanente; si falla la
-  carga, puede mostrar una acción secundaria **Reintentar** para repetir el
+  carga, puede mostrar una acción secundaria **Reintentar carga** para repetir el
   `GET`.
 - La salida final se concentra en un único botón al final: **Finalizar / Nueva
   venta**.
@@ -1352,7 +1352,7 @@ Manejo de estados UX:
 Decision CORE-EF para esta pantalla:
 
 - Clasificacion: `QUERY_READLIKE` para el detalle automático y para la acción
-  secundaria **Reintentar** en caso de error.
+  secundaria **Reintentar carga** en caso de error.
 - Headers write: NO APLICA; consume solo `GET` read-only existente.
 - Idempotencia: NO APLICA; no ejecuta command sincronizable.
 - Outbox: NO APLICA; no genera eventos.
