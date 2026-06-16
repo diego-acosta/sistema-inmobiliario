@@ -3413,18 +3413,27 @@ class VentaCompletaWizardV3Prototype:
         plan: dict[str, Any],
         moneda: Any,
     ) -> ft.Control:
-        rows = [
-            ["Precio de venta", self._detail_money(precio_venta, moneda)],
-            ["Anticipo", self._detail_money(anticipo, moneda)],
-            ["Saldo financiado", self._detail_money(saldo_financiado, moneda)],
-            ["Interés total", self._detail_money(interes_total, moneda)],
-            ["Total a cobrar", self._detail_money(total_obligaciones, moneda)],
-            ["Saldo pendiente", self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda)],
-            ["Importe cancelado", self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda)],
+        headers = [
+            "Precio de venta",
+            "Anticipo",
+            "Saldo financiado",
+            "Interés total",
+            "Total a cobrar",
+            "Saldo pendiente",
+            "Importe cancelado",
         ]
+        rows = [[
+            self._detail_money(precio_venta, moneda),
+            self._detail_money(anticipo, moneda),
+            self._detail_money(saldo_financiado, moneda),
+            self._detail_money(interes_total, moneda),
+            self._detail_money(total_obligaciones, moneda),
+            self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda),
+            self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda),
+        ]]
         return self._compact_section(
             "Resumen financiero",
-            self._compact_table(["Concepto", "Importe"], rows, empty_text="Sin resumen financiero informado en el payload."),
+            self._compact_table(headers, rows, empty_text="Sin resumen financiero informado en el payload."),
         )
 
     def _build_advance_table(self, anticipo: dict[str, Any] | None, moneda_default: Any) -> ft.Control:
