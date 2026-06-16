@@ -1315,25 +1315,27 @@ Diseño esperado: una sola ficha/dashboard compacta dentro de **VENTA_CONFIRMADA
 
 Secciones internas esperadas en este orden:
 
-1. **Resumen ejecutivo**: grilla breve de KPIs con `id_venta`/código, estado,
-   fecha, moneda, monto total, forma/método, cantidad de objetos, compradores,
-   obligaciones y saldo/total del plan.
+1. **Resumen ejecutivo**: una sola card compacta con venta/código visible,
+   estado, fecha, moneda, total venta, forma/método, objetos, compradores,
+   estado del plan y obligaciones generadas. Los IDs internos quedan solo como
+   referencia secundaria.
 2. **Objetos y compradores**: una misma fila visual de dos columnas. Objetos usa
-   tabla `#`, objeto, tipo y precio. Compradores usa tabla `#`, comprador, rol y
-   `%`.
-3. **Plan de pago**: grilla breve con `id_plan_pago_venta`,
-   `estado_plan_pago`, `metodo_plan_pago`, `monto_total_plan`, `saldo_total`,
-   `saldo_pendiente` y cantidad de bloques. Mantiene fallback a nombres legacy
-   solo si existen.
-4. **Bloques del plan**: tabla compacta de método, importe, cuotas,
-   periodicidad y tasa/índice si aplica.
-5. **Obligaciones**: tabla compacta con columnas `#`, vencimiento, concepto,
-   importe y estado; incluye totalizador y scroll interno con padding inferior
-   para evitar que el footer tape filas.
-6. **Impacto del activo**: tabla compacta desde `impacto_activo.objetos[]` con
-   objeto, disponibilidad actual, ocupación actual y observaciones. Solo agrega
-   estado anterior/nuevo si vienen datos reales. Si no hay datos útiles, informa
-   **Sin impacto informado en el payload**.
+   tabla objeto, tipo y precio. Compradores usa tabla comprador, rol y
+   participación.
+3. **Resumen financiero**: tabla `Concepto / Importe` con precio de venta,
+   anticipo, saldo financiado, interés total, total a cobrar, saldo pendiente e
+   importe cancelado. Los cálculos locales son solo presentación visual del
+   detalle recibido cuando el payload no trae el valor explícito.
+4. **Anticipo**: tabla separada con concepto, vencimiento, importe y estado; no
+   se mezcla con las cuotas.
+5. **Plan financiado**: resumen `Concepto / Importe o valor` y tabla de cuotas
+   separada del anticipo.
+6. **Bloques del plan**: detalle secundario compacto; se oculta si no aporta
+   información útil.
+7. **Impacto del activo**: tabla compacta desde `impacto_activo.objetos[]` con
+   objeto, disponibilidad informada, ocupación informada y observaciones. Solo
+   agrega estado anterior/nuevo si vienen datos reales. Si no hay datos útiles,
+   informa **Sin impacto informado en el payload**.
 
 Manejo de estados UX:
 

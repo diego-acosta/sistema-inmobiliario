@@ -3250,13 +3250,20 @@ class VentaCompletaWizardV3Prototype:
         impacto = detalle.get("impacto_activo") or detalle.get("impactos_activo") or detalle.get("impactos_activos")
         estado_venta = venta.get("estado_venta") or venta.get("estado")
         estado_plan = plan.get("estado_plan_pago") or plan.get("estado")
+        precio_venta = self._first_present(venta.get("monto_total"), venta.get("precio_total"), detalle.get("precio_total"))
+        anticipo_obligacion, cuotas_obligaciones = self._split_advance_and_installment_obligations(obligaciones)
+        anticipo_importe = self._obligation_amount(anticipo_obligacion) if anticipo_obligacion is not None else None
+        total_obligaciones = self._first_present(resumen_plan.get("saldo_total"), plan.get("saldo_total"), self._sum_obligations_amount(obligaciones))
+        total_cuotas_obligaciones = self._sum_obligations_amount(cuotas_obligaciones)
+        saldo_financiado = self._subtract_money_values(precio_venta, anticipo_importe)
+        interes_total = self._subtract_money_values(total_obligaciones, precio_venta)
 
         sale_summary_items = [
-            ("Código de venta", venta.get("codigo_venta") or venta.get("codigo")),
+            ("Venta", venta.get("codigo_venta") or venta.get("codigo") or f"Venta {venta.get('id_venta') or '-'}"),
             ("Estado", self._status_badge(str(estado_venta or "-"))),
             ("Fecha de venta", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
             ("Moneda", moneda),
-            ("Monto total", self._detail_money(self._first_present(venta.get("precio_total"), venta.get("monto_total"), detalle.get("precio_total")), moneda)),
+            ("Total venta", self._detail_money(precio_venta, moneda)),
             ("Forma / método", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
             ("Objetos vendidos", len(objetos)),
             ("Compradores", len(compradores)),
@@ -3278,8 +3285,13 @@ class VentaCompletaWizardV3Prototype:
                     controls=[
                         ft.Text("Detalle integral de venta", size=20, weight=ft.FontWeight.W_700),
                         ft.Text(
-                            "Ficha operativa read-only cargada automáticamente desde GET /api/v1/ventas/{id_venta}/detalle-integral.",
+                            "Ficha operativa read-only cargada automáticamente.",
                             color=ft.Colors.BLUE_GREY_700,
+                        ),
+                        ft.Text(
+                            f"Referencia interna: venta {venta.get('id_venta') or '-'} · plan {plan.get('id_plan_pago_venta') or '-'}",
+                            size=11,
+                            color=ft.Colors.BLUE_GREY_500,
                         ),
                         self._build_executive_summary_card(sale_summary_items, plan_summary_items),
                         ft.Row(
@@ -3290,9 +3302,10 @@ class VentaCompletaWizardV3Prototype:
                             spacing=12,
                             vertical_alignment=ft.CrossAxisAlignment.START,
                         ),
-                        self._build_detail_plan_summary(plan, resumen_plan, bloques, moneda),
+                        self._build_financial_summary_table(precio_venta, anticipo_importe, saldo_financiado, interes_total, total_obligaciones, resumen_plan, plan, moneda),
+                        self._build_advance_table(anticipo_obligacion, moneda),
+                        self._build_financed_plan_section(cuotas_obligaciones, bloques, saldo_financiado, interes_total, total_cuotas_obligaciones, moneda, plan),
                         self._build_detail_blocks_table(bloques, moneda),
-                        self._build_detail_obligations_table(obligaciones, moneda),
                         self._build_detail_asset_impact_table(impacto),
                         ft.Row(
                             controls=[
@@ -3350,31 +3363,6 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
-    def _build_dashboard_grid(self, items: list[tuple[str, Any]]) -> ft.Control:
-        return ft.Row(
-            controls=[self._dashboard_tile(label, value) for label, value in items],
-            spacing=8,
-            run_spacing=8,
-            wrap=True,
-        )
-
-    def _dashboard_tile(self, label: str, value: Any) -> ft.Control:
-        value_control = value if isinstance(value, ft.Control) else ft.Text(str(value if value not in (None, "") else "-"), weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_900, no_wrap=True)
-        return ft.Container(
-            width=170,
-            padding=10,
-            border_radius=10,
-            bgcolor=ft.Colors.BLUE_GREY_50,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=[
-                    ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_600, no_wrap=True),
-                    value_control,
-                ],
-                spacing=4,
-            ),
-        )
-
     def _compact_section(self, title: str, content: ft.Control) -> ft.Control:
         return ft.Container(
             padding=12,
@@ -3389,14 +3377,13 @@ class VentaCompletaWizardV3Prototype:
         for idx, raw in enumerate(objetos, start=1):
             obj = raw if isinstance(raw, dict) else {}
             rows.append([
-                idx,
                 self._object_identifier(obj),
                 obj.get("tipo_objeto"),
                 self._detail_money(obj.get("precio_asignado"), obj.get("moneda") or moneda_default),
             ])
         return self._compact_section(
             "Objetos vendidos",
-            self._compact_table(["#", "Objeto", "Tipo", "Precio"], rows, empty_text="Sin objetos informados en el payload."),
+            self._compact_table(["Objeto", "Tipo", "Precio"], rows, empty_text="Sin objetos informados en el payload."),
         )
 
     def _build_detail_buyers_table(self, compradores: list[Any]) -> ft.Control:
@@ -3406,84 +3393,176 @@ class VentaCompletaWizardV3Prototype:
             persona = comprador.get("persona") if isinstance(comprador.get("persona"), dict) else {}
             rol = comprador.get("rol_participacion") if isinstance(comprador.get("rol_participacion"), dict) else {}
             rows.append([
-                idx,
-                self._confirmed_buyer_name(comprador) or persona.get("id_persona") or comprador.get("id_persona"),
+                self._confirmed_buyer_name(comprador) or "Comprador",
                 self._first_present(comprador.get("codigo_rol"), rol.get("codigo_rol"), comprador.get("rol")),
                 comprador.get("porcentaje_responsabilidad"),
             ])
         return self._compact_section(
             "Compradores",
-            self._compact_table(["#", "Comprador", "Rol", "%"], rows, empty_text="Sin compradores informados en el payload."),
+            self._compact_table(["Comprador", "Rol", "Participación"], rows, empty_text="Sin compradores informados en el payload."),
         )
 
-    def _build_detail_plan_summary(self, plan: dict[str, Any], resumen: dict[str, Any], bloques: list[Any], moneda: Any) -> ft.Control:
-        items = [
-            ("id_plan_pago_venta", plan.get("id_plan_pago_venta")),
-            ("estado_plan_pago", self._status_badge(str(self._first_present(plan.get("estado_plan_pago"), plan.get("estado"), "-")))),
-            ("metodo_plan_pago", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
-            ("monto_total_plan", self._detail_money(self._first_present(plan.get("monto_total_plan"), plan.get("total_calculado")), moneda)),
-            ("saldo_total", self._detail_money(self._first_present(resumen.get("saldo_total"), plan.get("saldo_total")), moneda)),
-            ("saldo_pendiente", self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda)),
-            ("bloques", len(bloques)),
+    def _build_financial_summary_table(
+        self,
+        precio_venta: Any,
+        anticipo: Any,
+        saldo_financiado: Any,
+        interes_total: Any,
+        total_obligaciones: Any,
+        resumen: dict[str, Any],
+        plan: dict[str, Any],
+        moneda: Any,
+    ) -> ft.Control:
+        rows = [
+            ["Precio de venta", self._detail_money(precio_venta, moneda)],
+            ["Anticipo", self._detail_money(anticipo, moneda)],
+            ["Saldo financiado", self._detail_money(saldo_financiado, moneda)],
+            ["Interés total", self._detail_money(interes_total, moneda)],
+            ["Total a cobrar", self._detail_money(total_obligaciones, moneda)],
+            ["Saldo pendiente", self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda)],
+            ["Importe cancelado", self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda)],
         ]
-        return self._compact_section("Plan de pago", self._build_dashboard_grid(items))
+        return self._compact_section(
+            "Resumen financiero",
+            self._compact_table(["Concepto", "Importe"], rows, empty_text="Sin resumen financiero informado en el payload."),
+        )
+
+    def _build_advance_table(self, anticipo: dict[str, Any] | None, moneda_default: Any) -> ft.Control:
+        rows: list[list[Any]] = []
+        if anticipo is not None:
+            rows.append([
+                self._obligation_concept(anticipo, 1, default="Anticipo"),
+                self._obligation_due_date(anticipo),
+                self._detail_money(self._obligation_amount(anticipo), anticipo.get("moneda") or moneda_default),
+                self._obligation_status(anticipo),
+            ])
+        return self._compact_section(
+            "Anticipo",
+            self._compact_table(["Concepto", "Vencimiento", "Importe", "Estado"], rows, empty_text="Sin anticipo informado en el payload."),
+        )
+
+    def _build_financed_plan_section(
+        self,
+        cuotas: list[dict[str, Any]],
+        bloques: list[Any],
+        capital_financiado: Any,
+        interes_total: Any,
+        total_financiado: Any,
+        moneda: Any,
+        plan: dict[str, Any],
+    ) -> ft.Control:
+        periodicidad = self._first_present(*[bloque.get("periodicidad") for bloque in bloques if isinstance(bloque, dict)])
+        metodo = self._first_present(plan.get("metodo_plan_pago"), *[bloque.get("metodo_liquidacion") for bloque in bloques if isinstance(bloque, dict)])
+        summary_rows = [
+            ["Capital financiado", self._detail_money(capital_financiado, moneda)],
+            ["Interés", self._detail_money(interes_total, moneda)],
+            ["Total financiado", self._detail_money(total_financiado, moneda)],
+            ["Cantidad de cuotas", len(cuotas)],
+            ["Periodicidad", periodicidad],
+            ["Método", metodo],
+        ]
+        cuotas_rows = [
+            [
+                f"Cuota {idx}",
+                self._obligation_due_date(cuota),
+                self._detail_money(self._obligation_amount(cuota), cuota.get("moneda") or moneda),
+                self._obligation_status(cuota),
+            ]
+            for idx, cuota in enumerate(cuotas, start=1)
+        ]
+        return self._compact_section(
+            "Plan financiado",
+            ft.Column(
+                controls=[
+                    self._compact_table(["Concepto", "Importe / valor"], summary_rows, empty_text="Sin resumen de plan financiado."),
+                    ft.Container(
+                        height=260,
+                        padding=ft.Padding(left=0, top=0, right=0, bottom=24),
+                        content=self._compact_table(["Cuota", "Vencimiento", "Importe", "Estado"], cuotas_rows, empty_text="Sin cuotas financiadas informadas en el payload."),
+                    ),
+                ],
+                spacing=10,
+            ),
+        )
 
     def _build_detail_blocks_table(self, bloques: list[Any], moneda: Any) -> ft.Control:
         rows: list[list[Any]] = []
         for idx, raw in enumerate(bloques, start=1):
             bloque = raw if isinstance(raw, dict) else {}
-            rows.append([
+            row = [
                 bloque.get("numero_bloque") or bloque.get("orden") or idx,
                 bloque.get("metodo_liquidacion"),
                 self._detail_money(bloque.get("importe_total_bloque"), moneda),
                 bloque.get("cantidad_cuotas"),
                 bloque.get("periodicidad"),
                 self._first_present(bloque.get("tasa_interes_directo_periodica"), bloque.get("codigo_indice"), bloque.get("id_indice_financiero")),
-            ])
+            ]
+            if any(value not in (None, "", "-") for value in row[1:]):
+                rows.append(row)
+        if not rows:
+            return ft.Container()
         return self._compact_section(
             "Bloques del plan",
-            self._compact_table(["#", "Método", "Importe", "Cuotas", "Periodicidad", "Tasa / índice"], rows, empty_text="Sin bloques informados en el payload."),
+            self._compact_table(["#", "Método", "Importe", "Cuotas", "Periodicidad", "Tasa / índice"], rows, empty_text=""),
         )
 
-    def _build_detail_obligations_table(self, obligaciones: list[Any], moneda_default: Any) -> ft.Control:
+    def _split_advance_and_installment_obligations(self, obligaciones: list[Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        normalized = [ob for ob in obligaciones if isinstance(ob, dict)]
+        advance_index: int | None = None
+        for idx, ob in enumerate(normalized):
+            if self._is_advance_obligation(ob):
+                advance_index = idx
+                break
+        if advance_index is None and normalized and (self.state.tiene_anticipo or self.state.importe_anticipo):
+            advance_index = 0
+        if advance_index is None and len(normalized) > 1:
+            first_amount = _parse_money_display_decimal(self._obligation_amount(normalized[0]))
+            other_amounts = [_parse_money_display_decimal(self._obligation_amount(ob)) for ob in normalized[1:]]
+            comparable_amounts = [amount for amount in other_amounts if amount is not None]
+            if first_amount is not None and comparable_amounts and first_amount > max(comparable_amounts):
+                advance_index = 0
+        if advance_index is None:
+            return None, normalized
+        advance = normalized[advance_index]
+        installments = [ob for idx, ob in enumerate(normalized) if idx != advance_index]
+        return advance, installments
+
+    def _is_advance_obligation(self, ob: dict[str, Any]) -> bool:
+        candidates = [ob.get("tipo_obligacion"), ob.get("concepto"), ob.get("tipo_item_cronograma")]
+        return any("ANTICIPO" in str(value or "").upper() for value in candidates)
+
+    def _obligation_concept(self, ob: dict[str, Any], index: int, *, default: str) -> str:
+        return str(self._first_present(ob.get("tipo_obligacion"), ob.get("tipo_item_cronograma"), ob.get("concepto"), ob.get("descripcion"), default))
+
+    def _obligation_amount(self, ob: dict[str, Any] | None) -> Any:
+        if ob is None:
+            return None
+        return self._first_present(ob.get("importe"), ob.get("importe_total"), ob.get("saldo_total"))
+
+    def _obligation_due_date(self, ob: dict[str, Any]) -> Any:
+        value = self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento"))
+        return _format_date_ar(value) or value
+
+    def _obligation_status(self, ob: dict[str, Any]) -> Any:
+        return self._first_present(ob.get("estado"), ob.get("estado_obligacion"))
+
+    def _sum_obligations_amount(self, obligaciones: list[Any]) -> Decimal | None:
         total = Decimal("0")
-        rows: list[list[Any]] = []
-        for idx, raw in enumerate(obligaciones, start=1):
+        found = False
+        for raw in obligaciones:
             ob = raw if isinstance(raw, dict) else {}
-            importe = self._first_present(ob.get("importe"), ob.get("importe_total"), ob.get("saldo_total"))
-            amount = _parse_money_display_decimal(importe)
+            amount = _parse_money_display_decimal(self._obligation_amount(ob))
             if amount is not None:
                 total += amount
-            concepto = self._first_present(ob.get("tipo_obligacion"), ob.get("tipo_item_cronograma"), ob.get("concepto"), ob.get("descripcion"))
-            rows.append([
-                idx,
-                _format_date_ar(self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento"))) or self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento")),
-                concepto or ("Anticipo" if idx == 1 else "Cuota"),
-                self._detail_money(importe, ob.get("moneda") or moneda_default),
-                self._first_present(ob.get("estado"), ob.get("estado_obligacion")),
-            ])
-        table = self._compact_table(
-            ["#", "Vencimiento", "Concepto", "Importe", "Estado"],
-            rows,
-            empty_text="Sin obligaciones informadas en el payload.",
-        )
-        return self._compact_section(
-            "Obligaciones",
-            ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            _badge(f"Cantidad: {len(obligaciones)}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
-                            _badge(f"Importe total: {self._detail_money(total, moneda_default)}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
-                        ],
-                        spacing=8,
-                        wrap=True,
-                    ),
-                    ft.Container(height=260, padding=ft.Padding(left=0, top=0, right=0, bottom=24), content=table),
-                ],
-                spacing=8,
-            ),
-        )
+                found = True
+        return total if found else None
+
+    def _subtract_money_values(self, left: Any, right: Any) -> Decimal | None:
+        left_value = _parse_money_display_decimal(left)
+        right_value = _parse_money_display_decimal(right)
+        if left_value is None or right_value is None:
+            return None
+        return left_value - right_value
 
     def _build_detail_asset_impact_table(self, impacto: Any) -> ft.Control:
         items = self._normalize_asset_impact_items(impacto)
@@ -3492,9 +3571,9 @@ class VentaCompletaWizardV3Prototype:
             not in (None, "", "-")
             for item in items
         )
-        headers = ["Objeto", "Disponibilidad actual", "Ocupación actual", "Observaciones"]
+        headers = ["Objeto", "Disponibilidad informada", "Ocupación informada", "Observaciones"]
         if include_state_columns:
-            headers = ["Objeto", "Estado anterior", "Estado nuevo", "Disponibilidad actual", "Ocupación actual", "Observaciones"]
+            headers = ["Objeto", "Estado anterior", "Estado nuevo", "Disponibilidad informada", "Ocupación informada", "Observaciones"]
 
         rows: list[list[Any]] = []
         for item in items:
@@ -3552,11 +3631,14 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _object_identifier(self, obj: dict[str, Any]) -> str:
-        visual = self._first_present(obj.get("codigo"), obj.get("descripcion"), obj.get("texto_visual"))
-        technical_id = self._first_present(obj.get("id_inmueble"), obj.get("id_unidad_funcional"))
-        if visual and technical_id:
-            return f"{visual} · ID {technical_id}"
-        return str(self._first_present(visual, technical_id, "-"))
+        visual = self._first_present(obj.get("descripcion"), obj.get("codigo"), obj.get("texto_visual"))
+        if visual:
+            return str(visual)
+        if obj.get("id_inmueble") not in (None, ""):
+            return f"Inmueble {obj.get('id_inmueble')}"
+        if obj.get("id_unidad_funcional") not in (None, ""):
+            return f"Unidad funcional {obj.get('id_unidad_funcional')}"
+        return "-"
 
     def _impact_object_label(self, item: dict[str, Any]) -> Any:
         return self._first_present(item.get("codigo"), item.get("descripcion"), item.get("id_inmueble"), item.get("id_unidad_funcional"))
