@@ -1328,8 +1328,9 @@ Secciones internas esperadas en este orden:
    detalle recibido cuando el payload no trae el valor explícito.
 4. **Anticipo**: tabla separada con concepto, vencimiento, importe y estado; no
    se mezcla con las cuotas.
-5. **Plan financiado**: resumen `Concepto / Importe o valor` y tabla de cuotas
-   separada del anticipo.
+5. **Plan financiado**: tabla de cuotas financiadas, separada del anticipo,
+   con vencimiento, importe y estado. No muestra resumen financiero interno del
+   bloque.
 6. **Bloques del plan**: detalle secundario compacto; se oculta si no aporta
    información útil.
 7. **Impacto del activo**: tabla compacta desde `impacto_activo.objetos[]` con

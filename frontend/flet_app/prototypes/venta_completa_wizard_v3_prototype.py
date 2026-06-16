@@ -3460,16 +3460,6 @@ class VentaCompletaWizardV3Prototype:
         moneda: Any,
         plan: dict[str, Any],
     ) -> ft.Control:
-        periodicidad = self._first_present(*[bloque.get("periodicidad") for bloque in bloques if isinstance(bloque, dict)])
-        metodo = self._first_present(plan.get("metodo_plan_pago"), *[bloque.get("metodo_liquidacion") for bloque in bloques if isinstance(bloque, dict)])
-        summary_rows = [
-            ["Capital financiado", self._detail_money(capital_financiado, moneda)],
-            ["Interés", self._detail_money(interes_total, moneda)],
-            ["Total financiado", self._detail_money(total_financiado, moneda)],
-            ["Cantidad de cuotas", len(cuotas)],
-            ["Periodicidad", periodicidad],
-            ["Método", metodo],
-        ]
         cuotas_rows = [
             [
                 f"Cuota {idx}",
@@ -3481,16 +3471,10 @@ class VentaCompletaWizardV3Prototype:
         ]
         return self._compact_section(
             "Plan financiado",
-            ft.Column(
-                controls=[
-                    self._compact_table(["Concepto", "Importe / valor"], summary_rows, empty_text="Sin resumen de plan financiado."),
-                    ft.Container(
-                        height=260,
-                        padding=ft.Padding(left=0, top=0, right=0, bottom=24),
-                        content=self._compact_table(["Cuota", "Vencimiento", "Importe", "Estado"], cuotas_rows, empty_text="Sin cuotas financiadas informadas en el payload."),
-                    ),
-                ],
-                spacing=10,
+            ft.Container(
+                height=260,
+                padding=ft.Padding(left=0, top=0, right=0, bottom=24),
+                content=self._compact_table(["Cuota", "Vencimiento", "Importe", "Estado"], cuotas_rows, empty_text="Sin cuotas financiadas informadas en el payload."),
             ),
         )
 
