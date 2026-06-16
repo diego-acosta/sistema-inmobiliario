@@ -3497,6 +3497,27 @@ class VentaCompletaWizardV3Prototype:
     def _impact_object_label(self, item: dict[str, Any]) -> Any:
         return self._first_present(item.get("codigo"), item.get("descripcion"), item.get("id_inmueble"), item.get("id_unidad_funcional"))
 
+    def _normalize_asset_impact_items(self, impacto: Any) -> list[dict[str, Any]]:
+        if isinstance(impacto, dict):
+            objetos = impacto.get("objetos")
+            if isinstance(objetos, list):
+                return [item for item in objetos if isinstance(item, dict) and self._has_useful_asset_impact_data(item)]
+            return [impacto] if self._has_useful_asset_impact_data(impacto) else []
+        if isinstance(impacto, list):
+            return [item for item in impacto if isinstance(item, dict) and self._has_useful_asset_impact_data(item)]
+        return []
+
+    def _has_useful_asset_impact_data(self, item: dict[str, Any]) -> bool:
+        values = [
+            self._impact_object_label(item),
+            self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior")),
+            self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo")),
+            item.get("disponibilidad_actual"),
+            item.get("ocupacion_actual"),
+            item.get("observaciones"),
+        ]
+        return any(value not in (None, "", "-") for value in values)
+
     def _status_badge(self, status: str) -> ft.Control:
         normalized = str(status or "-").upper()
         if normalized == "CONFIRMADA":
