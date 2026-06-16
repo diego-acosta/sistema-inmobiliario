@@ -3216,176 +3216,294 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
         if self.state.detalle_venta_loading:
-            return [self._build_help_card("Cargando detalle integral...", ft.Colors.BLUE_50, ft.Colors.BLUE_100)]
+            return [ft.Text("Cargando detalle integral...", color=ft.Colors.BLUE_GREY_700)]
         if self.state.detalle_venta_error:
-            return [self._build_help_card(self.state.detalle_venta_error, ft.Colors.RED_50, ft.Colors.RED_200)]
+            return [
+                ft.Container(
+                    padding=12,
+                    border_radius=10,
+                    bgcolor=ft.Colors.RED_50,
+                    border=_border_all(1, ft.Colors.RED_200),
+                    content=ft.Row(
+                        controls=[
+                            ft.Text(self.state.detalle_venta_error, color=ft.Colors.RED_800, expand=True),
+                            ft.TextButton("Reintentar", icon=ft.Icons.REFRESH, on_click=self._load_confirmed_sale_detail),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                )
+            ]
         detalle = self.state.detalle_venta_data
         if not detalle:
-            return [self._build_help_card("El detalle integral todavía no fue consultado. Usá Refrescar detalle para cargar la ficha.", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_100)]
+            return [ft.Text("Detalle integral pendiente de carga automática.", color=ft.Colors.BLUE_GREY_700)]
 
         venta = detalle.get("venta") if isinstance(detalle.get("venta"), dict) else detalle
         objetos = self._as_list(detalle.get("objetos_vendidos") or detalle.get("objetos"))
         compradores = self._as_list(detalle.get("compradores"))
         plan = detalle.get("plan_pago_v2") if isinstance(detalle.get("plan_pago_v2"), dict) else {}
+        resumen_plan = plan.get("resumen_financiero") if isinstance(plan.get("resumen_financiero"), dict) else {}
         bloques = self._as_list(plan.get("bloques"))
         obligaciones_plan = [ob for bloque in bloques if isinstance(bloque, dict) for ob in self._as_list(bloque.get("obligaciones"))]
         obligaciones = self._as_list(detalle.get("obligaciones_financieras") or detalle.get("obligaciones") or obligaciones_plan)
+        moneda = venta.get("moneda") or plan.get("moneda") or detalle.get("moneda")
         impacto = detalle.get("impacto_activo") or detalle.get("impactos_activo") or detalle.get("impactos_activos")
+        estado_venta = venta.get("estado_venta") or venta.get("estado")
+        estado_plan = plan.get("estado_plan_pago") or plan.get("estado")
 
-        return [
-            self._build_detail_header_section(venta),
-            self._build_detail_commercial_summary_section(venta, detalle, objetos, compradores),
-            self._build_detail_objects_section(objetos),
-            self._build_detail_buyers_section(compradores),
-            self._build_detail_payment_plan_section(plan, bloques),
-            self._build_detail_obligations_section(obligaciones, venta.get("moneda") or plan.get("moneda")),
-            self._build_detail_asset_impact_section(impacto),
+        dashboard_items = [
+            ("Código de venta", venta.get("codigo_venta") or venta.get("codigo")),
+            ("id_venta", venta.get("id_venta")),
+            ("Estado", self._status_badge(str(estado_venta or "-"))),
+            ("Fecha de venta", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
+            ("Moneda", moneda),
+            ("Monto total", self._detail_money(self._first_present(venta.get("precio_total"), venta.get("monto_total"), detalle.get("precio_total")), moneda)),
+            ("Forma / método", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
+            ("Objetos vendidos", len(objetos)),
+            ("Compradores", len(compradores)),
+            ("id_plan_pago_venta", plan.get("id_plan_pago_venta")),
+            ("Estado del plan", self._status_badge(str(estado_plan or "-"))),
+            ("Bloques del plan", len(bloques)),
+            ("Obligaciones generadas", len(obligaciones)),
         ]
 
-    def _build_detail_header_section(self, venta: dict[str, Any]) -> ft.Control:
-        estado = venta.get("estado_venta") or venta.get("estado") or "-"
-        return self._build_review_section_container([
-            ft.Row(controls=[ft.Text("Encabezado", size=18, weight=ft.FontWeight.W_700), _badge(str(estado), ft.Colors.GREEN_50 if str(estado).upper() in {"CONFIRMADA", "ACTIVA"} else ft.Colors.BLUE_GREY_50, ft.Colors.GREEN_200 if str(estado).upper() in {"CONFIRMADA", "ACTIVA"} else ft.Colors.BLUE_GREY_200)], spacing=10, wrap=True),
-            _info_row("id_venta", venta.get("id_venta")),
-            _info_row("Código de venta", venta.get("codigo_venta") or venta.get("codigo")),
-            _info_row("Estado de venta", estado),
-            _info_row("Fecha de venta", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
-            _info_row("Moneda", venta.get("moneda")),
-        ])
+        return [
+            ft.Container(
+                padding=16,
+                border_radius=14,
+                bgcolor=ft.Colors.WHITE,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(
+                    controls=[
+                        ft.Text("Detalle integral de venta", size=20, weight=ft.FontWeight.W_700),
+                        ft.Text(
+                            "Ficha operativa read-only cargada automáticamente desde GET /api/v1/ventas/{id_venta}/detalle-integral.",
+                            color=ft.Colors.BLUE_GREY_700,
+                        ),
+                        self._build_dashboard_grid(dashboard_items),
+                        self._build_detail_objects_table(objetos, moneda),
+                        self._build_detail_buyers_table(compradores),
+                        self._build_detail_plan_summary(plan, resumen_plan, bloques, moneda),
+                        self._build_detail_blocks_table(bloques, moneda),
+                        self._build_detail_obligations_table(obligaciones, moneda),
+                        self._build_detail_asset_impact_table(impacto),
+                    ],
+                    spacing=14,
+                ),
+            )
+        ]
 
-    def _build_detail_commercial_summary_section(self, venta: dict[str, Any], detalle: dict[str, Any], objetos: list[Any], compradores: list[Any]) -> ft.Control:
-        return self._build_review_section_container([
-            ft.Text("Resumen comercial", size=18, weight=ft.FontWeight.W_700),
-            _info_row("Precio total", self._detail_money(venta.get("precio_total") or venta.get("monto_total") or detalle.get("precio_total"), venta.get("moneda"))),
-            _info_row("Moneda", venta.get("moneda") or detalle.get("moneda")),
-            _info_row("Cantidad de objetos", len(objetos)),
-            _info_row("Cantidad de compradores", len(compradores)),
-            _info_row("Estado general", venta.get("estado_venta") or venta.get("estado")),
-            *([_info_row("Observaciones", venta.get("observaciones") or detalle.get("observaciones"))] if (venta.get("observaciones") or detalle.get("observaciones")) else []),
-        ])
+    def _build_dashboard_grid(self, items: list[tuple[str, Any]]) -> ft.Control:
+        return ft.Row(
+            controls=[self._dashboard_tile(label, value) for label, value in items],
+            spacing=8,
+            run_spacing=8,
+            wrap=True,
+        )
 
-    def _build_detail_objects_section(self, objetos: list[Any]) -> ft.Control:
-        cards = []
+    def _dashboard_tile(self, label: str, value: Any) -> ft.Control:
+        value_control = value if isinstance(value, ft.Control) else ft.Text(str(value if value not in (None, "") else "-"), weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_900, no_wrap=True)
+        return ft.Container(
+            width=170,
+            padding=10,
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_600, no_wrap=True),
+                    value_control,
+                ],
+                spacing=4,
+            ),
+        )
+
+    def _compact_section(self, title: str, content: ft.Control) -> ft.Control:
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=[ft.Text(title, size=16, weight=ft.FontWeight.W_700), content], spacing=8),
+        )
+
+    def _build_detail_objects_table(self, objetos: list[Any], moneda_default: Any) -> ft.Control:
+        rows: list[list[Any]] = []
         for idx, raw in enumerate(objetos, start=1):
             obj = raw if isinstance(raw, dict) else {}
-            rows = [ft.Text(f"Objeto {idx}", weight=ft.FontWeight.W_700)]
-            for label, value in [
-                ("Tipo objeto", obj.get("tipo_objeto")),
-                ("id_inmueble", obj.get("id_inmueble")),
-                ("id_unidad_funcional", obj.get("id_unidad_funcional")),
-                ("Descripción / código", obj.get("descripcion") or obj.get("codigo") or obj.get("texto_visual")),
-                ("precio_asignado", self._detail_money(obj.get("precio_asignado"), obj.get("moneda"))),
-                ("Estado impacto activo", obj.get("estado_impacto_activo") or obj.get("estado_impacto")),
-            ]:
-                if value not in (None, "", "-"):
-                    rows.append(_info_row(label, value))
-            cards.append(self._compact_card(rows))
-        return self._build_review_section_container([ft.Text("Objetos vendidos", size=18, weight=ft.FontWeight.W_700), *(cards or [ft.Text("Sin objetos informados en el payload.", color=ft.Colors.BLUE_GREY_700)])])
+            rows.append([
+                idx,
+                obj.get("tipo_objeto"),
+                self._object_identifier(obj),
+                self._detail_money(obj.get("precio_asignado"), obj.get("moneda") or moneda_default),
+            ])
+        return self._compact_section(
+            "Objetos vendidos",
+            self._compact_table(["#", "Tipo de objeto", "Identificador / descripción", "Precio asignado"], rows, empty_text="Sin objetos informados en el payload."),
+        )
 
-    def _build_detail_buyers_section(self, compradores: list[Any]) -> ft.Control:
-        cards = []
+    def _build_detail_buyers_table(self, compradores: list[Any]) -> ft.Control:
+        rows: list[list[Any]] = []
         for idx, raw in enumerate(compradores, start=1):
             comprador = raw if isinstance(raw, dict) else {}
             persona = comprador.get("persona") if isinstance(comprador.get("persona"), dict) else {}
             rol = comprador.get("rol_participacion") if isinstance(comprador.get("rol_participacion"), dict) else {}
-            principal = comprador.get("comprador_principal") or comprador.get("es_principal")
-            cards.append(self._compact_card([
-                ft.Row(controls=[ft.Text(self._confirmed_buyer_name(comprador) or f"Comprador {idx}", weight=ft.FontWeight.W_700), *([_badge("Principal", ft.Colors.GREEN_50, ft.Colors.GREEN_200)] if principal else [])], spacing=8, wrap=True),
-                _info_row("id_persona", comprador.get("id_persona") or persona.get("id_persona")),
-                _info_row("Rol / código", comprador.get("codigo_rol") or rol.get("codigo_rol") or comprador.get("rol")),
-                _info_row("porcentaje_responsabilidad", comprador.get("porcentaje_responsabilidad")),
-            ]))
-        return self._build_review_section_container([ft.Text("Compradores", size=18, weight=ft.FontWeight.W_700), *(cards or [self._build_help_card("Sin compradores informados en el payload.", ft.Colors.AMBER_50, ft.Colors.AMBER_200)])])
+            rows.append([
+                idx,
+                self._confirmed_buyer_name(comprador) or persona.get("id_persona") or comprador.get("id_persona"),
+                self._first_present(comprador.get("codigo_rol"), rol.get("codigo_rol"), comprador.get("rol")),
+                comprador.get("porcentaje_responsabilidad"),
+            ])
+        return self._compact_section(
+            "Compradores",
+            self._compact_table(["#", "Nombre / razón social", "Rol", "% responsabilidad"], rows, empty_text="Sin compradores informados en el payload."),
+        )
 
-    def _build_detail_payment_plan_section(self, plan: dict[str, Any], bloques: list[Any]) -> ft.Control:
-        resumen = plan.get("resumen_financiero") if isinstance(plan.get("resumen_financiero"), dict) else {}
-        moneda = plan.get("moneda")
-        controls = [
-            ft.Text("Plan de pago", size=18, weight=ft.FontWeight.W_700),
-            _info_row("id_plan_pago_venta", plan.get("id_plan_pago_venta")),
-            _info_row("Estado del plan", plan.get("estado_plan_pago") or plan.get("estado")),
-            _info_row("Tipo / forma de pago", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
-            _info_row("Total del plan", self._detail_money(self._first_present(plan.get("monto_total_plan"), plan.get("total_calculado")), moneda)),
-            _info_row("total_con_interes", self._detail_money(self._first_present(resumen.get("total_con_interes"), plan.get("total_con_interes")), moneda)),
-            _info_row("total_con_indexacion", self._detail_money(self._first_present(resumen.get("total_con_indexacion"), plan.get("total_con_indexacion")), moneda)),
-            _info_row("total_ajuste_indexacion", self._detail_money(self._first_present(resumen.get("total_ajuste_indexacion"), plan.get("total_ajuste_indexacion")), moneda)),
-            _info_row("saldo_total", self._detail_money(self._first_present(resumen.get("saldo_total"), plan.get("saldo_total")), moneda)),
-            _info_row("saldo_pendiente", self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda)),
-            _info_row("importe_cancelado", self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda)),
+    def _build_detail_plan_summary(self, plan: dict[str, Any], resumen: dict[str, Any], bloques: list[Any], moneda: Any) -> ft.Control:
+        items = [
+            ("id_plan_pago_venta", plan.get("id_plan_pago_venta")),
+            ("estado_plan_pago", self._status_badge(str(self._first_present(plan.get("estado_plan_pago"), plan.get("estado"), "-")))),
+            ("metodo_plan_pago", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
+            ("monto_total_plan", self._detail_money(self._first_present(plan.get("monto_total_plan"), plan.get("total_calculado")), moneda)),
+            ("anticipo", self._detail_money(self._first_present(plan.get("anticipo"), plan.get("monto_anticipo"), plan.get("importe_anticipo")), moneda)),
+            ("total_con_interes", self._detail_money(self._first_present(resumen.get("total_con_interes"), plan.get("total_con_interes")), moneda)),
+            ("total_con_indexacion", self._detail_money(self._first_present(resumen.get("total_con_indexacion"), plan.get("total_con_indexacion")), moneda)),
+            ("total_ajuste_indexacion", self._detail_money(self._first_present(resumen.get("total_ajuste_indexacion"), plan.get("total_ajuste_indexacion")), moneda)),
+            ("saldo_total", self._detail_money(self._first_present(resumen.get("saldo_total"), plan.get("saldo_total")), moneda)),
+            ("saldo_pendiente", self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda)),
+            ("importe_cancelado", self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda)),
+            ("cantidad de bloques", len(bloques)),
         ]
+        return self._compact_section("Plan de pago", self._build_dashboard_grid(items))
+
+    def _build_detail_blocks_table(self, bloques: list[Any], moneda: Any) -> ft.Control:
+        rows: list[list[Any]] = []
         for idx, raw in enumerate(bloques, start=1):
             bloque = raw if isinstance(raw, dict) else {}
-            controls.append(self._compact_card([
-                ft.Text(f"Bloque {bloque.get('numero_bloque') or bloque.get('orden') or idx}", weight=ft.FontWeight.W_700),
-                _info_row("Método de liquidación", bloque.get("metodo_liquidacion")),
-                _info_row("importe_total_bloque", self._detail_money(bloque.get("importe_total_bloque"), plan.get("moneda"))),
-                _info_row("cantidad_cuotas", bloque.get("cantidad_cuotas")),
-                _info_row("periodicidad", bloque.get("periodicidad")),
-                _info_row("Tasa / índice", bloque.get("tasa_interes_directo_periodica") or bloque.get("codigo_indice") or bloque.get("id_indice_financiero")),
-            ]))
-        if not bloques:
-            controls.append(ft.Text("Sin bloques informados en el payload.", color=ft.Colors.BLUE_GREY_700))
-        return self._build_review_section_container(controls)
+            rows.append([
+                bloque.get("numero_bloque") or bloque.get("orden") or idx,
+                bloque.get("metodo_liquidacion"),
+                self._detail_money(bloque.get("importe_total_bloque"), moneda),
+                bloque.get("cantidad_cuotas"),
+                bloque.get("periodicidad"),
+                self._first_present(bloque.get("tasa_interes_directo_periodica"), bloque.get("codigo_indice"), bloque.get("id_indice_financiero")),
+            ])
+        return self._compact_section(
+            "Bloques del plan",
+            self._compact_table(["#", "Método", "Importe", "Cuotas", "Periodicidad", "Tasa / índice"], rows, empty_text="Sin bloques informados en el payload."),
+        )
 
-    def _build_detail_obligations_section(self, obligaciones: list[Any], moneda_default: Any) -> ft.Control:
+    def _build_detail_obligations_table(self, obligaciones: list[Any], moneda_default: Any) -> ft.Control:
         total = Decimal("0")
-        cards = []
+        rows: list[list[Any]] = []
         for idx, raw in enumerate(obligaciones, start=1):
             ob = raw if isinstance(raw, dict) else {}
-            amount = _parse_money_display_decimal(ob.get("importe") or ob.get("importe_total") or ob.get("saldo_total"))
+            importe = self._first_present(ob.get("importe"), ob.get("importe_total"), ob.get("saldo_total"))
+            amount = _parse_money_display_decimal(importe)
             if amount is not None:
                 total += amount
-            cards.append(self._compact_card([
-                ft.Text(f"Obligación {ob.get('numero_obligacion') or ob.get('numero_cuota') or idx}", weight=ft.FontWeight.W_700),
-                _info_row("tipo_obligacion", ob.get("tipo_obligacion") or ob.get("tipo_item_cronograma")),
-                _info_row("Número de cuota", ob.get("numero_cuota")),
-                _info_row("Vencimiento", _format_date_ar(ob.get("fecha_vencimiento")) or ob.get("fecha_vencimiento")),
-                _info_row("Importe", self._detail_money(ob.get("importe") or ob.get("importe_total") or ob.get("saldo_total"), ob.get("moneda") or moneda_default)),
-                _info_row("Moneda", ob.get("moneda") or moneda_default),
-                _info_row("Estado", ob.get("estado") or ob.get("estado_obligacion")),
-            ]))
-        return self._build_review_section_container([
-            ft.Text("Obligaciones", size=18, weight=ft.FontWeight.W_700),
-            _info_row("Cantidad", len(obligaciones)),
-            _info_row("Importe total", self._detail_money(total, moneda_default)),
-            ft.Container(height=360, content=ft.Column(controls=cards or [ft.Text("Sin obligaciones informadas en el payload.", color=ft.Colors.BLUE_GREY_700)], spacing=8, scroll=ft.ScrollMode.AUTO)),
-        ])
+            rows.append([
+                idx,
+                _format_date_ar(self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento"))) or self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento")),
+                self._first_present(ob.get("tipo_obligacion"), ob.get("tipo_item_cronograma"), ob.get("concepto"), ob.get("descripcion")),
+                self._first_present(ob.get("numero_cuota"), ob.get("numero_obligacion"), ob.get("nro_cuota")),
+                ob.get("etiqueta"),
+                self._detail_money(importe, ob.get("moneda") or moneda_default),
+                ob.get("moneda") or moneda_default,
+                self._first_present(ob.get("estado"), ob.get("estado_obligacion")),
+            ])
+        table = self._compact_table(
+            ["#", "Vencimiento", "Tipo / concepto", "Cuota / nro", "Etiqueta", "Importe", "Moneda", "Estado"],
+            rows,
+            empty_text="Sin obligaciones informadas en el payload.",
+        )
+        return self._compact_section(
+            "Obligaciones",
+            ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            _badge(f"Cantidad: {len(obligaciones)}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
+                            _badge(f"Importe total: {self._detail_money(total, moneda_default)}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
+                        ],
+                        spacing=8,
+                        wrap=True,
+                    ),
+                    ft.Container(height=300, content=table) if len(obligaciones) > 8 else table,
+                ],
+                spacing=8,
+            ),
+        )
 
-    def _build_detail_asset_impact_section(self, impacto: Any) -> ft.Control:
-        impactos = self._normalize_asset_impact_items(impacto)
-        controls = [ft.Text("Impacto del activo", size=18, weight=ft.FontWeight.W_700)]
-        cards: list[ft.Control] = []
-        for idx, item in enumerate(impactos, start=1):
-            rows: list[ft.Control] = [ft.Text(f"Impacto {idx}", weight=ft.FontWeight.W_700)]
-            for label, value in [
-                ("id_inmueble", item.get("id_inmueble")),
-                ("id_unidad_funcional", item.get("id_unidad_funcional")),
-                ("Estado anterior", self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior"))),
-                ("Estado nuevo", self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo"))),
-                ("Disponibilidad actual", item.get("disponibilidad_actual")),
-                ("Disponibilidad", self._first_present(item.get("disponibilidad"), item.get("disponibilidad_nueva"))),
-                ("Ocupación actual", item.get("ocupacion_actual")),
-                ("Ocupación", self._first_present(item.get("ocupacion"), item.get("ocupacion_nueva"))),
-            ]:
-                if value not in (None, "", "-"):
-                    rows.append(_info_row(label, value))
-            if len(rows) > 1:
-                cards.append(self._compact_card(rows))
-        if cards:
-            controls.extend(cards)
+    def _build_detail_asset_impact_table(self, impacto: Any) -> ft.Control:
+        rows: list[list[Any]] = []
+        for item in self._normalize_asset_impact_items(impacto):
+            row = [
+                self._impact_object_label(item),
+                self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior")),
+                self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo")),
+                item.get("disponibilidad_actual"),
+                item.get("ocupacion_actual"),
+                item.get("observaciones"),
+            ]
+            if any(value not in (None, "", "-") for value in row):
+                rows.append(row)
+        return self._compact_section(
+            "Impacto del activo",
+            self._compact_table(
+                ["Objeto", "Estado anterior", "Estado nuevo", "Disponibilidad actual", "Ocupación actual", "Observaciones"],
+                rows,
+                empty_text="Sin impacto informado en el payload.",
+            ),
+        )
+
+    def _compact_table(self, headers: list[str], rows: list[list[Any]], *, empty_text: str) -> ft.Control:
+        if not rows:
+            return ft.Text(empty_text, color=ft.Colors.BLUE_GREY_700)
+        header = ft.Row(
+            controls=[self._table_cell(text, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700) for text in headers],
+            spacing=0,
+        )
+        body_rows = [
+            ft.Row(
+                controls=[self._table_cell(value) for value in row],
+                spacing=0,
+            )
+            for row in rows
+        ]
+        return ft.Column(
+            controls=[header, ft.Divider(height=1), *body_rows],
+            spacing=4,
+        )
+
+    def _table_cell(self, value: Any, *, weight: ft.FontWeight | None = None, color: ft.ColorValue | None = None) -> ft.Control:
+        if isinstance(value, ft.Control):
+            content = value
         else:
-            controls.append(ft.Text("Sin impacto informado en el payload.", color=ft.Colors.BLUE_GREY_700))
-        return self._build_review_section_container(controls)
+            content = ft.Text(str(value if value not in (None, "") else "-"), size=12, color=color or ft.Colors.BLUE_GREY_900)
+        return ft.Container(
+            expand=True,
+            padding=ft.Padding(left=6, top=4, right=6, bottom=4),
+            content=content if isinstance(value, ft.Control) else ft.Text(str(value if value not in (None, "") else "-"), size=12, color=color or ft.Colors.BLUE_GREY_900, weight=weight),
+        )
 
-    def _normalize_asset_impact_items(self, impacto: Any) -> list[dict[str, Any]]:
-        if isinstance(impacto, dict):
-            objetos = impacto.get("objetos")
-            if isinstance(objetos, list):
-                return [item for item in objetos if isinstance(item, dict)]
-            return []
-        if isinstance(impacto, list):
-            return [item for item in impacto if isinstance(item, dict)]
-        return []
+    def _object_identifier(self, obj: dict[str, Any]) -> str:
+        visual = self._first_present(obj.get("codigo"), obj.get("descripcion"), obj.get("texto_visual"))
+        technical_id = self._first_present(obj.get("id_inmueble"), obj.get("id_unidad_funcional"))
+        if visual and technical_id:
+            return f"{visual} · ID {technical_id}"
+        return str(self._first_present(visual, technical_id, "-"))
+
+    def _impact_object_label(self, item: dict[str, Any]) -> Any:
+        return self._first_present(item.get("codigo"), item.get("descripcion"), item.get("id_inmueble"), item.get("id_unidad_funcional"))
+
+    def _status_badge(self, status: str) -> ft.Control:
+        normalized = str(status or "-").upper()
+        if normalized == "CONFIRMADA":
+            return _badge(normalized, ft.Colors.GREEN_50, ft.Colors.GREEN_200)
+        if normalized in {"GENERADO", "PROYECTADA"}:
+            return _badge(normalized, ft.Colors.BLUE_50, ft.Colors.BLUE_200)
+        return _badge(normalized, ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200)
 
     def _compact_card(self, controls: list[ft.Control]) -> ft.Control:
         return ft.Container(padding=12, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_50, border=_border_all(1, ft.Colors.BLUE_GREY_100), content=ft.Column(controls=controls, spacing=6))
@@ -3596,61 +3714,17 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_confirmed_sale_step(self) -> ft.Control:
-        data = self.state.confirm_data or {}
-        venta = data.get("venta") if isinstance(data.get("venta"), dict) else {}
-        plan = data.get("plan_pago_v2") if isinstance(data.get("plan_pago_v2"), dict) else {}
-        obligaciones = data.get("obligaciones") if isinstance(data.get("obligaciones"), dict) else {}
         controls: list[ft.Control] = [
             ft.Text("Venta confirmada", size=24, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-            ft.Text(
-                "La venta directa ya fue persistida por el backend. El plan de pago y las obligaciones fueron generados por backend; el wizard no creó venta ni obligaciones antes de esta confirmación.",
-                color=ft.Colors.BLUE_GREY_800,
-            ),
-            self._build_review_section_container(
-                [
-                    ft.Text("Resultado backend", size=18, weight=ft.FontWeight.W_700),
-                    _info_row("Status HTTP", self.state.confirm_status_code or "-"),
-                    _info_row("id_venta", venta.get("id_venta") or "-"),
-                    _info_row("estado_venta", venta.get("estado_venta") or "-"),
-                    _info_row("version_registro", venta.get("version_registro") or "-"),
-                    _info_row("id_plan_pago_venta", plan.get("id_plan_pago_venta") or "-"),
-                    _info_row("estado_plan_pago", plan.get("estado_plan_pago") or "-"),
-                    _info_row("Obligaciones generadas", obligaciones.get("cantidad") or 0),
-                ]
-            ),
-            self._build_review_section_container(
-                [
-                    ft.Text("Resumen comercial", size=18, weight=ft.FontWeight.W_700),
-                    _info_row("Origen", self._origin_label()),
-                    _info_row("Objetos", len(self.state.objetos)),
-                    _info_row("Compradores", self._buyers_flow_status()),
-                    _info_row("Forma de pago", self._payment_method_status()),
-                    _info_row("Total", self._format_money_with_currency(self._objects_total())),
-                ]
-            ),
-            self._build_review_section_container(
-                [
-                    ft.Text("Detalle integral de venta", size=18, weight=ft.FontWeight.W_700),
-                    ft.Text(
-                        "Ficha operativa read-only cargada automáticamente desde GET /api/v1/ventas/{id_venta}/detalle-integral.",
-                        color=ft.Colors.BLUE_GREY_700,
-                    ),
-                    ft.Row(
-                        controls=[
-                            ft.Button(
-                                "Refrescar detalle",
-                                icon=ft.Icons.REFRESH,
-                                disabled=not venta.get("id_venta") or self.state.detalle_venta_loading,
-                                on_click=self._load_confirmed_sale_detail,
-                            ),
-                            ft.OutlinedButton("Volver al inicio", icon=ft.Icons.HOME_OUTLINED, on_click=self._restart_wizard),
-                        ],
-                        spacing=10,
-                        wrap=True,
-                    ),
-                ]
-            ),
+            self._build_help_card("La venta se confirmó correctamente.", ft.Colors.GREEN_50, ft.Colors.GREEN_200),
             *self._build_confirmed_sale_detail_controls(),
+            ft.Row(
+                controls=[
+                    ft.Container(expand=True),
+                    ft.Button("Finalizar / Nueva venta", icon=ft.Icons.ADD_HOME_OUTLINED, on_click=self._restart_wizard),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
         ]
         return ft.Container(
             padding=24,

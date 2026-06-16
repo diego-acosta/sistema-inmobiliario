@@ -1302,12 +1302,16 @@ Acceso y acciones visibles:
 - Se carga automáticamente al entrar en **Venta confirmada** luego de persistir
   una venta directa real.
 - Ya no existe botón **Ver detalle integral de venta**.
-- Permite **Refrescar detalle** para repetir el `GET` del detalle integral.
-- Permite **Volver al inicio** del wizard si el operador quiere cerrar la ficha
-  y comenzar otro flujo.
+- No muestra **Refrescar detalle** como botón principal permanente; si falla la
+  carga, puede mostrar una acción secundaria **Reintentar** para repetir el
+  `GET`.
+- La salida final se concentra en un único botón al final: **Finalizar / Nueva
+  venta**.
 - No muestra **Volver a venta confirmada** porque el detalle vive dentro de esa
   misma pantalla.
 - No agrega acciones que modifiquen estado ni dispara endpoints write.
+
+Diseño esperado: ficha/dashboard compacto dentro de una card principal blanca, sin cards enormes apiladas, sin rectángulos grises vacíos y con tablas compactas para listas.
 
 Secciones esperadas en la ficha:
 
@@ -1315,21 +1319,22 @@ Secciones esperadas en la ficha:
    fecha, moneda y badge visual de estado.
 2. **Resumen comercial**: precio total, moneda, cantidad de objetos, cantidad de
    compradores, estado general y observaciones si el payload las informa.
-3. **Objetos vendidos**: cards compactas con tipo de objeto, `id_inmueble` o
-   `id_unidad_funcional`, descripcion/codigo si existe, `precio_asignado` y
-   estado de impacto activo si viene en la respuesta.
-4. **Compradores**: persona/nombre visual, `id_persona`, rol/codigo de rol,
-   `porcentaje_responsabilidad` y marca de comprador principal si el payload lo
-   informa. Si no hay compradores, muestra un aviso claro.
-5. **Plan de pago**: cabecera del plan, estado, tipo/forma de pago, totales
-   calculados y bloques agrupados visualmente con orden, metodo de liquidacion,
-   importe total, cantidad de cuotas, periodicidad y tasa/indice si aplica.
-6. **Obligaciones**: vista compacta con tipo, numero de cuota, vencimiento,
-   importe, moneda y estado; incluye totalizador de cantidad e importe total y
-   scroll interno para listas extensas.
-7. **Impacto del activo**: estado anterior/nuevo, disponibilidad y ocupacion si
-   esos datos existen; si no vienen en el payload, informa **Sin impacto
-   informado en el payload**.
+3. **Objetos vendidos**: tabla compacta con tipo de objeto, `id_inmueble` o
+   `id_unidad_funcional`, descripcion/codigo si existe y `precio_asignado`.
+4. **Compradores**: tabla compacta con persona/nombre visual, rol/codigo de rol
+   y `porcentaje_responsabilidad`. Si no hay compradores, muestra un aviso
+   claro.
+5. **Plan de pago**: resumen compacto con `metodo_plan_pago`,
+   `monto_total_plan`, `resumen_financiero`, saldo y cantidad de bloques;
+   mantiene fallback a nombres legacy solo si existen.
+6. **Bloques del plan**: tabla compacta con método de liquidación, importe,
+   cuotas, periodicidad y tasa/índice si aplica.
+7. **Obligaciones**: tabla compacta con totalizador de cantidad e importe total;
+   usa scroll interno solo para la tabla cuando la lista es extensa.
+8. **Impacto del activo**: tabla compacta desde `impacto_activo.objetos[]` con
+   objeto, estado anterior/nuevo, disponibilidad actual, ocupación actual y
+   observaciones. Si no hay datos útiles, informa **Sin impacto informado en el
+   payload**.
 
 Manejo de estados UX:
 
@@ -1339,15 +1344,15 @@ Manejo de estados UX:
   detalle.**
 - Si falla el `GET`, muestra un error legible con HTTP, `error_code` y
   `error_message` cuando el cliente API los entrega.
-- Si esta cargando o refrescando, muestra aviso de carga/refresco.
+- Si esta cargando, muestra una línea discreta **Cargando detalle integral...**.
 - La pantalla **Venta confirmada** se mantiene estable y muestra resultado
   backend, resumen comercial confirmado y detalle integral read-only en la misma
   vista.
 
 Decision CORE-EF para esta pantalla:
 
-- Clasificacion: `QUERY_READLIKE` para el detalle automático y para la accion
-  **Refrescar detalle**.
+- Clasificacion: `QUERY_READLIKE` para el detalle automático y para la acción
+  secundaria **Reintentar** en caso de error.
 - Headers write: NO APLICA; consume solo `GET` read-only existente.
 - Idempotencia: NO APLICA; no ejecuta command sincronizable.
 - Outbox: NO APLICA; no genera eventos.
