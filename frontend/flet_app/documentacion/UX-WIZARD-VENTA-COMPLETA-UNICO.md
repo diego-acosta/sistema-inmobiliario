@@ -1311,30 +1311,29 @@ Acceso y acciones visibles:
   misma pantalla.
 - No agrega acciones que modifiquen estado ni dispara endpoints write.
 
-Diseño esperado: ficha/dashboard compacto dentro de una card principal blanca, sin cards enormes apiladas, sin rectángulos grises vacíos y con tablas compactas para listas.
+Diseño esperado: una sola ficha/dashboard compacta dentro de **VENTA_CONFIRMADA**, sin pantalla separada, sin cards enormes apiladas, sin rectángulos grises vacíos y con tablas compactas para listas.
 
-Secciones esperadas en la ficha:
+Secciones internas esperadas en este orden:
 
-1. **Encabezado**: titulo, `id_venta`, codigo de venta si existe, estado,
-   fecha, moneda y badge visual de estado.
-2. **Resumen comercial**: precio total, moneda, cantidad de objetos, cantidad de
-   compradores, estado general y observaciones si el payload las informa.
-3. **Objetos vendidos**: tabla compacta con tipo de objeto, `id_inmueble` o
-   `id_unidad_funcional`, descripcion/codigo si existe y `precio_asignado`.
-4. **Compradores**: tabla compacta con persona/nombre visual, rol/codigo de rol
-   y `porcentaje_responsabilidad`. Si no hay compradores, muestra un aviso
-   claro.
-5. **Plan de pago**: resumen compacto con `metodo_plan_pago`,
-   `monto_total_plan`, `resumen_financiero`, saldo y cantidad de bloques;
-   mantiene fallback a nombres legacy solo si existen.
-6. **Bloques del plan**: tabla compacta con método de liquidación, importe,
-   cuotas, periodicidad y tasa/índice si aplica.
-7. **Obligaciones**: tabla compacta con totalizador de cantidad e importe total;
-   usa scroll interno solo para la tabla cuando la lista es extensa.
-8. **Impacto del activo**: tabla compacta desde `impacto_activo.objetos[]` con
-   objeto, estado anterior/nuevo, disponibilidad actual, ocupación actual y
-   observaciones. Si no hay datos útiles, informa **Sin impacto informado en el
-   payload**.
+1. **Resumen ejecutivo**: grilla breve de KPIs con `id_venta`/código, estado,
+   fecha, moneda, monto total, forma/método, cantidad de objetos, compradores,
+   obligaciones y saldo/total del plan.
+2. **Objetos y compradores**: una misma fila visual de dos columnas. Objetos usa
+   tabla `#`, objeto, tipo y precio. Compradores usa tabla `#`, comprador, rol y
+   `%`.
+3. **Plan de pago**: grilla breve con `id_plan_pago_venta`,
+   `estado_plan_pago`, `metodo_plan_pago`, `monto_total_plan`, `saldo_total`,
+   `saldo_pendiente` y cantidad de bloques. Mantiene fallback a nombres legacy
+   solo si existen.
+4. **Bloques del plan**: tabla compacta de método, importe, cuotas,
+   periodicidad y tasa/índice si aplica.
+5. **Obligaciones**: tabla compacta con columnas `#`, vencimiento, concepto,
+   importe y estado; incluye totalizador y scroll interno con padding inferior
+   para evitar que el footer tape filas.
+6. **Impacto del activo**: tabla compacta desde `impacto_activo.objetos[]` con
+   objeto, disponibilidad actual, ocupación actual y observaciones. Solo agrega
+   estado anterior/nuevo si vienen datos reales. Si no hay datos útiles, informa
+   **Sin impacto informado en el payload**.
 
 Manejo de estados UX:
 

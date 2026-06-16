@@ -3251,20 +3251,23 @@ class VentaCompletaWizardV3Prototype:
         estado_venta = venta.get("estado_venta") or venta.get("estado")
         estado_plan = plan.get("estado_plan_pago") or plan.get("estado")
 
+        total_plan_o_saldo = self._first_present(
+            resumen_plan.get("saldo_total"),
+            plan.get("saldo_total"),
+            plan.get("monto_total_plan"),
+            plan.get("total_calculado"),
+        )
         dashboard_items = [
-            ("Código de venta", venta.get("codigo_venta") or venta.get("codigo")),
-            ("id_venta", venta.get("id_venta")),
+            ("Venta", f"{venta.get('id_venta') or '-'} / {venta.get('codigo_venta') or venta.get('codigo') or '-'}"),
             ("Estado", self._status_badge(str(estado_venta or "-"))),
-            ("Fecha de venta", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
+            ("Fecha", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
             ("Moneda", moneda),
             ("Monto total", self._detail_money(self._first_present(venta.get("precio_total"), venta.get("monto_total"), detalle.get("precio_total")), moneda)),
             ("Forma / método", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
-            ("Objetos vendidos", len(objetos)),
+            ("Objetos", len(objetos)),
             ("Compradores", len(compradores)),
-            ("id_plan_pago_venta", plan.get("id_plan_pago_venta")),
-            ("Estado del plan", self._status_badge(str(estado_plan or "-"))),
-            ("Bloques del plan", len(bloques)),
-            ("Obligaciones generadas", len(obligaciones)),
+            ("Obligaciones", len(obligaciones)),
+            ("Saldo / total plan", self._detail_money(total_plan_o_saldo, moneda)),
         ]
 
         return [
@@ -3280,13 +3283,26 @@ class VentaCompletaWizardV3Prototype:
                             "Ficha operativa read-only cargada automáticamente desde GET /api/v1/ventas/{id_venta}/detalle-integral.",
                             color=ft.Colors.BLUE_GREY_700,
                         ),
-                        self._build_dashboard_grid(dashboard_items),
-                        self._build_detail_objects_table(objetos, moneda),
-                        self._build_detail_buyers_table(compradores),
+                        self._compact_section("Resumen ejecutivo", self._build_dashboard_grid(dashboard_items)),
+                        ft.Row(
+                            controls=[
+                                ft.Container(expand=True, content=self._build_detail_objects_table(objetos, moneda)),
+                                ft.Container(expand=True, content=self._build_detail_buyers_table(compradores)),
+                            ],
+                            spacing=12,
+                            vertical_alignment=ft.CrossAxisAlignment.START,
+                        ),
                         self._build_detail_plan_summary(plan, resumen_plan, bloques, moneda),
                         self._build_detail_blocks_table(bloques, moneda),
                         self._build_detail_obligations_table(obligaciones, moneda),
                         self._build_detail_asset_impact_table(impacto),
+                        ft.Row(
+                            controls=[
+                                ft.Container(expand=True),
+                                ft.Button("Finalizar / Nueva venta", icon=ft.Icons.ADD_HOME_OUTLINED, on_click=self._restart_wizard),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
                     ],
                     spacing=14,
                 ),
@@ -3333,13 +3349,13 @@ class VentaCompletaWizardV3Prototype:
             obj = raw if isinstance(raw, dict) else {}
             rows.append([
                 idx,
-                obj.get("tipo_objeto"),
                 self._object_identifier(obj),
+                obj.get("tipo_objeto"),
                 self._detail_money(obj.get("precio_asignado"), obj.get("moneda") or moneda_default),
             ])
         return self._compact_section(
             "Objetos vendidos",
-            self._compact_table(["#", "Tipo de objeto", "Identificador / descripción", "Precio asignado"], rows, empty_text="Sin objetos informados en el payload."),
+            self._compact_table(["#", "Objeto", "Tipo", "Precio"], rows, empty_text="Sin objetos informados en el payload."),
         )
 
     def _build_detail_buyers_table(self, compradores: list[Any]) -> ft.Control:
@@ -3356,7 +3372,7 @@ class VentaCompletaWizardV3Prototype:
             ])
         return self._compact_section(
             "Compradores",
-            self._compact_table(["#", "Nombre / razón social", "Rol", "% responsabilidad"], rows, empty_text="Sin compradores informados en el payload."),
+            self._compact_table(["#", "Comprador", "Rol", "%"], rows, empty_text="Sin compradores informados en el payload."),
         )
 
     def _build_detail_plan_summary(self, plan: dict[str, Any], resumen: dict[str, Any], bloques: list[Any], moneda: Any) -> ft.Control:
@@ -3365,14 +3381,9 @@ class VentaCompletaWizardV3Prototype:
             ("estado_plan_pago", self._status_badge(str(self._first_present(plan.get("estado_plan_pago"), plan.get("estado"), "-")))),
             ("metodo_plan_pago", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
             ("monto_total_plan", self._detail_money(self._first_present(plan.get("monto_total_plan"), plan.get("total_calculado")), moneda)),
-            ("anticipo", self._detail_money(self._first_present(plan.get("anticipo"), plan.get("monto_anticipo"), plan.get("importe_anticipo")), moneda)),
-            ("total_con_interes", self._detail_money(self._first_present(resumen.get("total_con_interes"), plan.get("total_con_interes")), moneda)),
-            ("total_con_indexacion", self._detail_money(self._first_present(resumen.get("total_con_indexacion"), plan.get("total_con_indexacion")), moneda)),
-            ("total_ajuste_indexacion", self._detail_money(self._first_present(resumen.get("total_ajuste_indexacion"), plan.get("total_ajuste_indexacion")), moneda)),
             ("saldo_total", self._detail_money(self._first_present(resumen.get("saldo_total"), plan.get("saldo_total")), moneda)),
             ("saldo_pendiente", self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda)),
-            ("importe_cancelado", self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda)),
-            ("cantidad de bloques", len(bloques)),
+            ("bloques", len(bloques)),
         ]
         return self._compact_section("Plan de pago", self._build_dashboard_grid(items))
 
@@ -3402,18 +3413,16 @@ class VentaCompletaWizardV3Prototype:
             amount = _parse_money_display_decimal(importe)
             if amount is not None:
                 total += amount
+            concepto = self._first_present(ob.get("tipo_obligacion"), ob.get("tipo_item_cronograma"), ob.get("concepto"), ob.get("descripcion"))
             rows.append([
                 idx,
                 _format_date_ar(self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento"))) or self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento")),
-                self._first_present(ob.get("tipo_obligacion"), ob.get("tipo_item_cronograma"), ob.get("concepto"), ob.get("descripcion")),
-                self._first_present(ob.get("numero_cuota"), ob.get("numero_obligacion"), ob.get("nro_cuota")),
-                ob.get("etiqueta"),
+                concepto or ("Anticipo" if idx == 1 else "Cuota"),
                 self._detail_money(importe, ob.get("moneda") or moneda_default),
-                ob.get("moneda") or moneda_default,
                 self._first_present(ob.get("estado"), ob.get("estado_obligacion")),
             ])
         table = self._compact_table(
-            ["#", "Vencimiento", "Tipo / concepto", "Cuota / nro", "Etiqueta", "Importe", "Moneda", "Estado"],
+            ["#", "Vencimiento", "Concepto", "Importe", "Estado"],
             rows,
             empty_text="Sin obligaciones informadas en el payload.",
         )
@@ -3429,32 +3438,46 @@ class VentaCompletaWizardV3Prototype:
                         spacing=8,
                         wrap=True,
                     ),
-                    ft.Container(height=300, content=table) if len(obligaciones) > 8 else table,
+                    ft.Container(height=260, padding=ft.Padding(left=0, top=0, right=0, bottom=24), content=table),
                 ],
                 spacing=8,
             ),
         )
 
     def _build_detail_asset_impact_table(self, impacto: Any) -> ft.Control:
+        items = self._normalize_asset_impact_items(impacto)
+        include_state_columns = any(
+            self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior"), item.get("estado_nuevo"), item.get("estado_activo_nuevo"))
+            not in (None, "", "-")
+            for item in items
+        )
+        headers = ["Objeto", "Disponibilidad actual", "Ocupación actual", "Observaciones"]
+        if include_state_columns:
+            headers = ["Objeto", "Estado anterior", "Estado nuevo", "Disponibilidad actual", "Ocupación actual", "Observaciones"]
+
         rows: list[list[Any]] = []
-        for item in self._normalize_asset_impact_items(impacto):
-            row = [
+        for item in items:
+            base_row = [
                 self._impact_object_label(item),
-                self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior")),
-                self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo")),
                 item.get("disponibilidad_actual"),
-                item.get("ocupacion_actual"),
+                item.get("ocupacion_actual") or "Sin ocupación",
                 item.get("observaciones"),
             ]
+            row = base_row
+            if include_state_columns:
+                row = [
+                    self._impact_object_label(item),
+                    self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior")),
+                    self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo")),
+                    item.get("disponibilidad_actual"),
+                    item.get("ocupacion_actual") or "Sin ocupación",
+                    item.get("observaciones"),
+                ]
             if any(value not in (None, "", "-") for value in row):
                 rows.append(row)
         return self._compact_section(
             "Impacto del activo",
-            self._compact_table(
-                ["Objeto", "Estado anterior", "Estado nuevo", "Disponibilidad actual", "Ocupación actual", "Observaciones"],
-                rows,
-                empty_text="Sin impacto informado en el payload.",
-            ),
+            self._compact_table(headers, rows, empty_text="Sin impacto informado en el payload."),
         )
 
     def _compact_table(self, headers: list[str], rows: list[list[Any]], *, empty_text: str) -> ft.Control:
@@ -3736,16 +3759,9 @@ class VentaCompletaWizardV3Prototype:
             ft.Text("Venta confirmada", size=24, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
             self._build_help_card("La venta se confirmó correctamente.", ft.Colors.GREEN_50, ft.Colors.GREEN_200),
             *self._build_confirmed_sale_detail_controls(),
-            ft.Row(
-                controls=[
-                    ft.Container(expand=True),
-                    ft.Button("Finalizar / Nueva venta", icon=ft.Icons.ADD_HOME_OUTLINED, on_click=self._restart_wizard),
-                ],
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
         ]
         return ft.Container(
-            padding=24,
+            padding=ft.Padding(left=24, top=24, right=24, bottom=40),
             border_radius=14,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
@@ -3753,6 +3769,26 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_flow_state_panel(self) -> ft.Control:
+        if self.state.pantalla_actual == "VENTA_CONFIRMADA":
+            controls: list[ft.Control] = [
+                ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
+                _flow_info_row("Origen", self._origin_label()),
+                _flow_info_row("Moneda", self._currency_label()),
+                _flow_info_row("Objetos", len(self.state.objetos)),
+                _flow_info_row("Total", self._format_money_with_currency(self._objects_total())),
+                _flow_info_row("Compradores", self._buyers_flow_status()),
+                _flow_info_row("Forma de pago", self._payment_method_status()),
+                _flow_info_row("Estado", "venta confirmada"),
+                _flow_info_row("Próximo paso", "finalizar"),
+            ]
+            return ft.Container(
+                padding=16,
+                border_radius=14,
+                bgcolor=ft.Colors.BLUE_GREY_50,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(controls=controls, spacing=10),
+            )
+
         controls: list[ft.Control] = [
             ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
             _flow_info_row("Origen", self._origin_label()),
