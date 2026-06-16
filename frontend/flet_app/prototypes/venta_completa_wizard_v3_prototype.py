@@ -3251,23 +3251,21 @@ class VentaCompletaWizardV3Prototype:
         estado_venta = venta.get("estado_venta") or venta.get("estado")
         estado_plan = plan.get("estado_plan_pago") or plan.get("estado")
 
-        total_plan_o_saldo = self._first_present(
-            resumen_plan.get("saldo_total"),
-            plan.get("saldo_total"),
-            plan.get("monto_total_plan"),
-            plan.get("total_calculado"),
-        )
-        dashboard_items = [
-            ("Venta", f"{venta.get('id_venta') or '-'} / {venta.get('codigo_venta') or venta.get('codigo') or '-'}"),
+        sale_summary_items = [
+            ("Código de venta", venta.get("codigo_venta") or venta.get("codigo")),
             ("Estado", self._status_badge(str(estado_venta or "-"))),
-            ("Fecha", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
+            ("Fecha de venta", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
             ("Moneda", moneda),
             ("Monto total", self._detail_money(self._first_present(venta.get("precio_total"), venta.get("monto_total"), detalle.get("precio_total")), moneda)),
             ("Forma / método", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
-            ("Objetos", len(objetos)),
+            ("Objetos vendidos", len(objetos)),
             ("Compradores", len(compradores)),
-            ("Obligaciones", len(obligaciones)),
-            ("Saldo / total plan", self._detail_money(total_plan_o_saldo, moneda)),
+        ]
+        plan_summary_items = [
+            ("ID plan de pago", plan.get("id_plan_pago_venta")),
+            ("Estado del plan", self._status_badge(str(estado_plan or "-"))),
+            ("Bloques del plan", len(bloques)),
+            ("Obligaciones generadas", len(obligaciones)),
         ]
 
         return [
@@ -3283,7 +3281,7 @@ class VentaCompletaWizardV3Prototype:
                             "Ficha operativa read-only cargada automáticamente desde GET /api/v1/ventas/{id_venta}/detalle-integral.",
                             color=ft.Colors.BLUE_GREY_700,
                         ),
-                        self._compact_section("Resumen ejecutivo", self._build_dashboard_grid(dashboard_items)),
+                        self._build_executive_summary_card(sale_summary_items, plan_summary_items),
                         ft.Row(
                             controls=[
                                 ft.Container(expand=True, content=self._build_detail_objects_table(objetos, moneda)),
@@ -3308,6 +3306,49 @@ class VentaCompletaWizardV3Prototype:
                 ),
             )
         ]
+
+    def _build_executive_summary_card(self, sale_items: list[tuple[str, Any]], plan_items: list[tuple[str, Any]]) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resumen de venta", size=16, weight=ft.FontWeight.W_700),
+                    self._summary_fields_row(sale_items),
+                    ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100),
+                    self._summary_fields_row(plan_items),
+                ],
+                spacing=10,
+            ),
+        )
+
+    def _summary_fields_row(self, items: list[tuple[str, Any]]) -> ft.Control:
+        return ft.Row(
+            controls=[self._summary_field(label, value) for label, value in items],
+            spacing=16,
+            run_spacing=10,
+            wrap=True,
+        )
+
+    def _summary_field(self, label: str, value: Any) -> ft.Control:
+        value_control = value if isinstance(value, ft.Control) else ft.Text(
+            str(value if value not in (None, "") else "-"),
+            weight=ft.FontWeight.W_700,
+            color=ft.Colors.BLUE_GREY_900,
+            no_wrap=True,
+        )
+        return ft.Container(
+            width=150,
+            content=ft.Column(
+                controls=[
+                    ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_600, no_wrap=True),
+                    value_control,
+                ],
+                spacing=3,
+            ),
+        )
 
     def _build_dashboard_grid(self, items: list[tuple[str, Any]]) -> ft.Control:
         return ft.Row(
