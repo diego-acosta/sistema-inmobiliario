@@ -560,7 +560,7 @@ class VentaCompletaWizardV3Prototype:
                             width=28,
                             height=28,
                             border_radius=14,
-                            alignment=ft.alignment.center,
+                            alignment=ft.Alignment(0, 0),
                             bgcolor=circle_bgcolor,
                             border=_border_all(1.5, circle_border),
                             content=ft.Text(
