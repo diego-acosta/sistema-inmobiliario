@@ -208,6 +208,7 @@ class WizardVentaCompletaV3State:
     detalle_venta_requested_id: int | None = None
     detalle_cuotas_page: int = 1
     detalle_cuotas_page_size: int = 10
+    mostrar_datos_tecnicos: bool = False
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -499,6 +500,38 @@ class VentaCompletaWizardV3Prototype:
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
 
+    def _on_toggle_technical_data(self, event: ft.ControlEvent) -> None:
+        self.state.mostrar_datos_tecnicos = bool(event.control.value)
+        self._render()
+
+    def _technical_text(self, value: str) -> ft.Control | None:
+        if not self.state.mostrar_datos_tecnicos:
+            return None
+        return ft.Text(value, size=12, color=ft.Colors.BLUE_GREY_600, selectable=True)
+
+    def _technical_chip(self, value: str, *, persisted: bool | None = None) -> ft.Control | None:
+        if not self.state.mostrar_datos_tecnicos:
+            return None
+        bgcolor = ft.Colors.BLUE_GREY_50
+        border_color = ft.Colors.BLUE_GREY_200
+        if persisted is not None:
+            bgcolor = ft.Colors.GREEN_50 if persisted else ft.Colors.AMBER_50
+            border_color = ft.Colors.GREEN_200 if persisted else ft.Colors.AMBER_200
+        return _badge(value, bgcolor, border_color)
+
+    def _technical_controls(self, controls: list[ft.Control | None]) -> list[ft.Control]:
+        if not self.state.mostrar_datos_tecnicos:
+            return []
+        return [control for control in controls if control is not None]
+
+    @staticmethod
+    def _object_type_label(tipo_objeto: str) -> str:
+        labels = {
+            "INMUEBLE": "Inmueble",
+            "UNIDAD_FUNCIONAL": "Unidad funcional",
+        }
+        return labels.get(str(tipo_objeto or "").upper(), str(tipo_objeto or "-"))
+
     def _build_footer(self) -> ft.Control:
         return ft.Container(
             padding=12,
@@ -669,7 +702,7 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("¿Cómo querés iniciar la venta?", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Elegí una alternativa para definir el contexto inicial. DIRECTA usa backend real; RESERVA queda pendiente de integración.",
+                        "Elegí una alternativa para definir el contexto inicial. Venta directa permite crear una venta nueva; desde reserva queda pendiente de integración.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Row(
@@ -761,7 +794,7 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Datos iniciales de venta", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Definí la moneda antes de cargar objetos para que cada precio_asignado tenga contexto comercial.",
+                        "Definí la moneda antes de cargar objetos para que todos los valores de esta venta queden en la misma moneda.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Row(
@@ -798,10 +831,17 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.observaciones_field,
                     self._build_help_card(
-                        "La moneda se conservará para el payload futuro de generar_venta, condiciones_comerciales y plan_pago_v2. La fecha se muestra como DD/MM/AAAA y se conserva internamente como YYYY-MM-DD. No se implementan forma de pago, plan ni cronograma local en este prototipo.",
-                        ft.Colors.AMBER_50,
-                        ft.Colors.AMBER_200,
+                        "La moneda se aplicará a todos los valores cargados en esta venta.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_200,
                     ),
+                    *self._technical_controls([
+                        self._build_help_card(
+                            "Detalle técnico: la moneda se conserva para generar_venta, condiciones_comerciales y plan_pago_v2. La fecha se muestra como DD/MM/AAAA y se conserva internamente como YYYY-MM-DD.",
+                            ft.Colors.AMBER_50,
+                            ft.Colors.AMBER_200,
+                        )
+                    ]),
                 ],
                 spacing=14,
             ),
@@ -830,7 +870,7 @@ class VentaCompletaWizardV3Prototype:
         if errors:
             self.backend_object_error = " ".join(errors)
         elif not records:
-            self.backend_object_error = "No se encontraron objetos reales en backend. Cargá inmuebles o unidades funcionales reales antes de continuar."
+            self.backend_object_error = "No se encontraron objetos disponibles. Cargá inmuebles o unidades funcionales antes de continuar."
         else:
             self.backend_object_error = None
 
@@ -851,7 +891,7 @@ class VentaCompletaWizardV3Prototype:
         if not roles:
             self.rol_comprador_data = None
             self.rol_comprador_manual_fallback_enabled = False
-            self.rol_comprador_catalog_error = "No se encontró rol COMPRADOR en backend."
+            self.rol_comprador_catalog_error = "No se encontró el rol comprador en el sistema."
             return
 
         self.rol_comprador_data = roles[0]
@@ -877,7 +917,7 @@ class VentaCompletaWizardV3Prototype:
             self.backend_buyer_error = (
                 None
                 if self.backend_buyer_records
-                else "No se encontraron registros reales en backend."
+                else "No se encontraron personas disponibles."
             )
             return
         self.backend_buyer_records = []
@@ -910,7 +950,7 @@ class VentaCompletaWizardV3Prototype:
 
     @staticmethod
     def _backend_selector_error(label: str, result: ApiResult) -> str:
-        parts = [f"No se pudieron cargar {label} reales desde backend."]
+        parts = [f"No se pudieron cargar {label} disponibles desde el sistema."]
         if result.status_code is not None:
             parts.append(f"HTTP {result.status_code}.")
         if result.error_code:
@@ -932,22 +972,22 @@ class VentaCompletaWizardV3Prototype:
 
     def _backend_inmueble_record(self, item: dict[str, Any]) -> dict[str, Any]:
         codigo = str(item.get("codigo_inmueble") or item.get("codigo") or item.get("id_inmueble") or "").strip()
-        descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble backend").strip()
+        descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble").strip()
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
         return {
             "tipo_objeto": "INMUEBLE",
             "id_inmueble": item.get("id_inmueble"),
             "codigo": codigo,
             "descripcion": descripcion,
-            "estado": disponibilidad or item.get("estado_administrativo") or "backend",
-            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble persistido en backend."),
+            "estado": disponibilidad or item.get("estado_administrativo") or "disponible",
+            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble disponible."),
             "source": "backend",
             "persisted": True,
         }
 
     def _backend_unidad_funcional_record(self, item: dict[str, Any]) -> dict[str, Any]:
         codigo = str(item.get("codigo_unidad_funcional") or item.get("codigo_unidad") or item.get("id_unidad_funcional") or "").strip()
-        descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional backend").strip()
+        descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional").strip()
         inmueble = item.get("inmueble") if isinstance(item.get("inmueble"), dict) else {}
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
         return {
@@ -956,8 +996,8 @@ class VentaCompletaWizardV3Prototype:
             "codigo": codigo,
             "descripcion": descripcion,
             "inmueble_padre": inmueble.get("codigo_inmueble") or inmueble.get("nombre_inmueble") or item.get("id_inmueble"),
-            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "backend",
-            "resumen": str(item.get("observaciones") or "Unidad funcional persistida en backend."),
+            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "disponible",
+            "resumen": str(item.get("observaciones") or "Unidad funcional disponible."),
             "source": "backend",
             "persisted": True,
         }
@@ -977,7 +1017,8 @@ class VentaCompletaWizardV3Prototype:
             "apellido": None if item.get("display_name") else item.get("apellido"),
             "razon_social": item.get("razon_social"),
             "documento": document_label or item.get("cuit_cuil") or "",
-            "resumen": f"Persona persistida en backend · estado: {item.get('estado_persona') or '-'}",
+            "estado": item.get("estado_persona") or "activa",
+            "resumen": f"Persona {(item.get('estado_persona') or 'activa').lower()}",
             "source": "backend",
             "persisted": True,
         }
@@ -1003,12 +1044,14 @@ class VentaCompletaWizardV3Prototype:
         if self.objeto_selector is None:
             self.objeto_selector = create_search_selector_demo(
                 title="Buscador de objeto inmobiliario real",
-                placeholder="Código, descripción, tipo o ID técnico del objeto",
+                placeholder="Código, descripción o tipo del objeto",
                 selector_kind="objeto",
                 records=self._backend_object_selector_records(),
                 on_selection_change=self._on_objeto_selected,
+                show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_objeto_selector_scroll()
+        self.objeto_selector.set_show_technical_details(self.state.mostrar_datos_tecnicos)
 
         controls: list[ft.Control] = [
             ft.Text("Objetos de venta", size=24, weight=ft.FontWeight.W_700),
@@ -1017,7 +1060,7 @@ class VentaCompletaWizardV3Prototype:
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._build_help_card(
-                "El buscador usa exclusivamente objetos reales del backend (source=backend, persisted=True). Si no aparecen resultados, cargá inmuebles o unidades funcionales reales antes de continuar.",
+                "El buscador muestra inmuebles y unidades funcionales disponibles para operar. Si no aparecen resultados, cargá esos datos antes de continuar.",
                 ft.Colors.BLUE_50,
                 ft.Colors.BLUE_200,
             ),
@@ -1057,7 +1100,7 @@ class VentaCompletaWizardV3Prototype:
                 [
                     self._build_selected_object_panel(),
                     self._build_help_card(
-                        "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
+                        "La validación final de solapamiento entre inmueble completo y unidades funcionales se realiza al confirmar.",
                         ft.Colors.AMBER_50,
                         ft.Colors.AMBER_200,
                     ),
@@ -1081,20 +1124,17 @@ class VentaCompletaWizardV3Prototype:
                 ft.Text(str(self.objeto_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
                 ft.Row(
                     controls=[
-                        _badge(f"tipo_objeto: {tipo_objeto}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
-                        _badge(
-                            f"ID técnico secundario ({id_label}): {id_value}",
-                            ft.Colors.BLUE_GREY_50,
-                            ft.Colors.BLUE_GREY_200,
-                        ),
-                        _badge(
-                            self._record_source_label(
-                                str(self.objeto_seleccionado.get("source") or "backend"),
-                                bool(self.objeto_seleccionado.get("persisted", False)),
+                        _badge(f"Tipo: {self._object_type_label(tipo_objeto)}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
+                        *self._technical_controls([
+                            self._technical_chip(f"ID técnico secundario ({id_label}): {id_value}"),
+                            self._technical_chip(
+                                self._record_source_label(
+                                    str(self.objeto_seleccionado.get("source") or "backend"),
+                                    bool(self.objeto_seleccionado.get("persisted", False)),
+                                ),
+                                persisted=bool(self.objeto_seleccionado.get("persisted", False)),
                             ),
-                            ft.Colors.GREEN_50 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_50,
-                            ft.Colors.GREEN_200 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_200,
-                        ),
+                        ]),
                     ],
                     wrap=True,
                     spacing=8,
@@ -1186,15 +1226,19 @@ class VentaCompletaWizardV3Prototype:
                         controls=[
                             ft.Text(objeto.texto_visual, weight=ft.FontWeight.W_700),
                             ft.Text(
-                                f"Tipo: {objeto.tipo_objeto} — ID técnico secundario ({id_label}): {id_value}",
+                                f"Tipo: {self._object_type_label(objeto.tipo_objeto)}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
                             ft.Text(
-                                f"precio_asignado: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
+                                f"Precio asignado: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
+                            *self._technical_controls([
+                                self._technical_text(f"ID técnico secundario ({id_label}): {id_value}"),
+                                self._technical_text(f"Origen dato: {self._record_source_label(objeto.source, objeto.persisted)}"),
+                            ]),
                         ],
                         spacing=3,
                         expand=True,
@@ -1226,7 +1270,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.GREEN_900,
                     ),
                     _info_row("Cantidad de objetos", len(self.state.objetos)),
-                    _info_row("Suma precio_asignado", self._format_money_with_currency(total)),
+                    _info_row("Suma de precios asignados", self._format_money_with_currency(total)),
                     _info_row("Total derivado", self._format_money_with_currency(total)),
                 ],
                 spacing=8,
@@ -1246,8 +1290,10 @@ class VentaCompletaWizardV3Prototype:
                 selector_kind="persona",
                 records=self._backend_buyer_selector_records(),
                 on_selection_change=self._on_comprador_selected,
+                show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_comprador_selector_scroll()
+        self.comprador_selector.set_show_technical_details(self.state.mostrar_datos_tecnicos)
 
         return ft.Container(
             padding=18,
@@ -1258,11 +1304,11 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Compradores", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Seleccioná personas reales del backend y definí la responsabilidad pactada de cada comprador.",
+                        "Seleccioná personas disponibles y definí la responsabilidad pactada de cada comprador.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     self._build_help_card(
-                        "El buscador usa solo personas reales del backend (source=backend, persisted=True). Si no aparecen resultados, cargá personas reales primero o usá el modo técnico/dev con IDs persistidos.",
+                        "El buscador muestra personas disponibles para operar. Si no aparecen resultados, cargá las personas antes de continuar.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -1292,7 +1338,7 @@ class VentaCompletaWizardV3Prototype:
             self._build_reserva_selected_card(),
             self._build_inherited_buyers_pending_card(),
             self._build_help_card(
-                "No se cargarán compradores manuales, no se pedirá id_rol_participacion y no se enviarán compradores en el payload futuro para ventas desde reserva.",
+                "Los compradores se tomarán de la reserva cuando esa integración esté disponible; no hace falta cargarlos manualmente en este flujo.",
                 ft.Colors.AMBER_50,
                 ft.Colors.AMBER_200,
             ),
@@ -1345,7 +1391,7 @@ class VentaCompletaWizardV3Prototype:
                 ),
             ),
             ft.Text(
-                "Cuando exista integración con backend real, se mostrarán aquí los compradores precargados de la reserva y se validarán antes de confirmar.",
+                "Cuando exista la integración de reservas, se mostrarán aquí los compradores precargados y se validarán antes de confirmar.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -1376,7 +1422,7 @@ class VentaCompletaWizardV3Prototype:
     def _build_rol_comprador_status_card(self) -> ft.Control:
         if self.rol_comprador_data is not None:
             return self._build_help_card(
-                f"Rol COMPRADOR resuelto automáticamente: id_rol_participacion={self._rol_comprador_id_resuelto()}.",
+                "Rol comprador asignado automáticamente." + (f" id_rol_participacion={self._rol_comprador_id_resuelto()}." if self.state.mostrar_datos_tecnicos else ""),
                 ft.Colors.GREEN_50,
                 ft.Colors.GREEN_200,
             )
@@ -1391,7 +1437,7 @@ class VentaCompletaWizardV3Prototype:
                 else ft.Colors.AMBER_200,
             )
         return self._build_help_card(
-            "Resolviendo rol COMPRADOR desde backend.",
+            "Resolviendo rol comprador desde el sistema.",
             ft.Colors.BLUE_50,
             ft.Colors.BLUE_200,
         )
@@ -1400,7 +1446,7 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Modo técnico/dev: comprador persistido", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Fallback explícito: usá esta carga solo si falló la carga del catálogo de roles desde backend.",
+                "Fallback explícito: usá esta carga solo si falló la carga del catálogo de roles.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -1446,21 +1492,16 @@ class VentaCompletaWizardV3Prototype:
                     ft.Text("Comprador seleccionado", size=18, weight=ft.FontWeight.W_700),
                     ft.Text(str(self.comprador_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
                     ft.Row(
-                        controls=[
-                            _badge(
-                                f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}",
-                                ft.Colors.BLUE_GREY_50,
-                                ft.Colors.BLUE_GREY_200,
-                            ),
-                            _badge(
+                        controls=self._technical_controls([
+                            self._technical_chip(f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}"),
+                            self._technical_chip(
                                 self._record_source_label(
                                     str(self.comprador_seleccionado.get("source") or "backend"),
                                     bool(self.comprador_seleccionado.get("persisted", False)),
                                 ),
-                                ft.Colors.GREEN_50 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_50,
-                                ft.Colors.GREEN_200 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_200,
+                                persisted=bool(self.comprador_seleccionado.get("persisted", False)),
                             ),
-                        ],
+                        ]),
                         spacing=8,
                         wrap=True,
                     ),
@@ -1471,7 +1512,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_600,
                     ),
                     _info_row("Rol asignado automáticamente", "COMPRADOR"),
-                    _info_row("id_rol_participacion", self._rol_comprador_id_resuelto() or "pendiente"),
+                    *self._technical_controls([_info_row("id_rol_participacion", self._rol_comprador_id_resuelto() or "pendiente")]),
                     ft.Row(
                         controls=[
                             ft.Button(
@@ -1528,7 +1569,7 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_added_buyer_row(self, index: int, comprador: CompradorWizardDraft) -> ft.Control:
-        porcentaje = comprador.porcentaje_responsabilidad or "vacío (se asumirá 100% si es único comprador)"
+        porcentaje = comprador.porcentaje_responsabilidad or "se asumirá 100% por ser único comprador"
         return ft.Container(
             padding=12,
             border_radius=10,
@@ -1539,17 +1580,15 @@ class VentaCompletaWizardV3Prototype:
                     ft.Column(
                         controls=[
                             ft.Text(comprador.texto_visual, weight=ft.FontWeight.W_700),
-                            ft.Text(f"id_persona: {comprador.id_persona}", size=12, color=ft.Colors.BLUE_GREY_700),
                             ft.Text(
-                                f"id_rol_participacion: {comprador.id_rol_participacion}",
+                                f"Responsabilidad: {porcentaje}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
-                            ft.Text(
-                                f"porcentaje_responsabilidad: {porcentaje}",
-                                size=12,
-                                color=ft.Colors.BLUE_GREY_700,
-                            ),
+                            *self._technical_controls([
+                                self._technical_text(f"id_persona: {comprador.id_persona}"),
+                                self._technical_text(f"id_rol_participacion: {comprador.id_rol_participacion}"),
+                            ]),
                         ],
                         spacing=3,
                         expand=True,
@@ -1838,7 +1877,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.fecha_anticipo_feedback,
                     ft.Text(
-                        "El anticipo se incluirá como bloque ANTICIPO del Plan Pago V2.",
+                        "El anticipo se incluirá en el plan de pago de la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_700,
                     ),
@@ -1869,7 +1908,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Text(
-                        "No se calcula cronograma local; la pantalla solo prepara datos para Plan Pago V2.",
+                        "El plan se cargará en el siguiente paso. Los datos serán validados al confirmar la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2036,7 +2075,7 @@ class VentaCompletaWizardV3Prototype:
                     ft.Text("Estimación visual de cuota", weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_900),
                     self.tramo_cuota_estimada_feedback,
                     ft.Text(
-                        "Estimación visual. El cálculo definitivo se validará con backend en la simulación/confirmación.",
+                        "Estimación visual. El cálculo definitivo se validará al confirmar la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_700,
                     ),
@@ -2050,7 +2089,7 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Método de financiación", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Elegí cómo se liquidará este tramo. El prototipo conserva los datos; interés, indexación y cronograma se mostrarán desde el preview backend en la versión productiva.",
+                "Elegí cómo se liquidará este tramo. El cálculo definitivo se validará al confirmar la venta.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -2065,7 +2104,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_liquidation_method_card(
                         method="INTERES_DIRECTO",
                         title="Interés directo",
-                        description="Captura la tasa para la futura simulación backend del Plan Pago V2.",
+                        description="Captura la tasa para calcular las cuotas más adelante.",
                         icon=ft.Icons.PERCENT,
                     ),
                     self._build_liquidation_method_card(
@@ -2083,7 +2122,7 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     self._build_help_card(
-                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. Cargá la tasa como porcentaje visible; el cálculo final se delega al preview backend.",
+                        "Cargá la tasa como porcentaje visible. El cálculo final se validará al confirmar la venta.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_100,
                     ),
@@ -2512,7 +2551,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_financed_plan_validation_panel(difference),
                     self._build_plan_preview_status_section(),
                     ft.Text(
-                        "Al presionar Siguiente se calculará el preview backend obligatorio. Este prototipo no calcula cronograma definitivo, indexaciones, obligaciones, divisiones por comprador ni divisiones por objeto; muestra el preview devuelto por backend cuando se calcula.",
+                        "Al presionar Siguiente se calculará una vista previa obligatoria. El cálculo definitivo se validará al confirmar la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2672,7 +2711,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_review_validation_panel(errors),
                     self._build_confirm_status_panel(),
                     ft.Text(
-                        "La venta directa real se crea recién al presionar Confirmar venta. El preview previo sigue siendo PREVIEW_READLIKE sin id_venta y no persiste la venta.",
+                        "La venta se crea recién al presionar Confirmar venta. La vista previa anterior no confirma la operación.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2690,8 +2729,10 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     _info_row("Reserva seleccionada", self.state.texto_visual_reserva or "Reserva pendiente"),
-                    _info_row("id_reserva_venta", self.state.id_reserva_venta),
-                    _info_row("version_registro", self.state.version_registro),
+                    *self._technical_controls([
+                        _info_row("id_reserva_venta", self.state.id_reserva_venta),
+                        _info_row("version_registro", self.state.version_registro),
+                    ]),
                 ]
             )
         return self._build_review_section_container(controls)
@@ -2721,10 +2762,12 @@ class VentaCompletaWizardV3Prototype:
                     content=ft.Column(
                         controls=[
                             ft.Text(f"Objeto {index + 1}: {objeto.texto_visual}", weight=ft.FontWeight.W_700),
-                            _info_row("tipo_objeto", objeto.tipo_objeto),
-                            _info_row(id_label, technical_id),
-                            _info_row("precio_asignado", self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal("0"))),
-                            _info_row("Origen dato", self._record_source_label(objeto.source, objeto.persisted)),
+                            _info_row("Tipo", self._object_type_label(objeto.tipo_objeto)),
+                            _info_row("Precio asignado", self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal("0"))),
+                            *self._technical_controls([
+                                _info_row(id_label, technical_id),
+                                _info_row("Origen dato", self._record_source_label(objeto.source, objeto.persisted)),
+                            ]),
                         ],
                         spacing=5,
                     ),
@@ -2758,10 +2801,12 @@ class VentaCompletaWizardV3Prototype:
                         content=ft.Column(
                             controls=[
                                 ft.Text(f"Comprador {index + 1}: {comprador.texto_visual}", weight=ft.FontWeight.W_700),
-                                _info_row("id_persona", comprador.id_persona),
-                                _info_row("id_rol_participacion", comprador.id_rol_participacion),
-                                _info_row("porcentaje_responsabilidad", comprador.porcentaje_responsabilidad or "100.00"),
-                                _info_row("Origen dato", self._record_source_label(comprador.source, comprador.persisted)),
+                                _info_row("Responsabilidad", (comprador.porcentaje_responsabilidad + "%") if comprador.porcentaje_responsabilidad else "100%"),
+                                *self._technical_controls([
+                                    _info_row("id_persona", comprador.id_persona),
+                                    _info_row("id_rol_participacion", comprador.id_rol_participacion),
+                                    _info_row("Origen dato", self._record_source_label(comprador.source, comprador.persisted)),
+                                ]),
                             ],
                             spacing=5,
                         ),
@@ -2783,7 +2828,7 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Total a pagar", self._format_money_with_currency(self._objects_total())),
                     _info_row("Fecha de pago / vencimiento", self.state.fecha_pago_contado_display or _format_date_ar(self.state.fecha_pago_contado_iso)),
                     self._build_help_card(
-                        "Preview Plan Pago V2 calculado previamente sin id_venta; la venta aún no fue persistida.",
+                        "El plan de pago fue calculado previamente. La venta todavía no fue confirmada.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -2803,7 +2848,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_financed_plan_installments_summary_cards(),
                     self._build_financed_plan_validation_panel(difference),
                     self._build_help_card(
-                        "Preview Plan Pago V2 calculado previamente sin id_venta; la venta aún no fue persistida.",
+                        "El plan de pago fue calculado previamente. La venta todavía no fue confirmada.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -2816,9 +2861,9 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_plan_preview_status_section(self) -> ft.Control:
         controls: list[ft.Control] = [
-            ft.Text("Preview Plan Pago V2", size=18, weight=ft.FontWeight.W_700),
+            ft.Text("Vista previa del plan de pago", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Al presionar Siguiente se ejecuta automáticamente el preview backend sin id_venta. No crea venta ni obligaciones reales.",
+                "Al presionar Siguiente se calcula una vista previa. No confirma la venta ni genera obligaciones reales.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -2826,7 +2871,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.preview_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Consultando preview del backend...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Calculando vista previa del plan...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -2854,14 +2899,14 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Preview del plan de pago", size=24, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Resultado backend del preview Plan Pago V2 sin venta persistida. Este paso es obligatorio antes de la revisión general.",
+                "Resultado de la vista previa del plan de pago. Este paso es obligatorio antes de la revisión general.",
                 color=ft.Colors.BLUE_GREY_700,
             ),
         ]
         if self.state.preview_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Consultando preview del backend...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Calculando vista previa del plan...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -2881,7 +2926,7 @@ class VentaCompletaWizardV3Prototype:
         else:
             controls.append(
                 ft.Text(
-                    "Todavía no hay preview backend cargado. Volvé a la edición del plan y avanzá con Siguiente para calcularlo.",
+                    "Todavía no hay vista previa calculada. Volvé a la edición del plan y avanzá con Siguiente para calcularla.",
                     color=ft.Colors.BLUE_GREY_700,
                 )
             )
@@ -2902,13 +2947,18 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.GREEN_200),
             content=ft.Column(
                 controls=[
-                    ft.Text("Resultado del preview", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-                    _info_row("Status HTTP", self.state.preview_status_code or "-"),
-                    _info_row("total_calculado", data.get("total_calculado") or "-"),
-                    _info_row("total_con_interes", data.get("total_con_interes") or "-"),
-                    _info_row("total_ajuste_indexacion", data.get("total_ajuste_indexacion") or "0.00"),
-                    _info_row("total_con_indexacion", data.get("total_con_indexacion") or "-"),
+                    ft.Text("Resultado de la vista previa", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    _info_row("Total calculado", data.get("total_calculado") or "-"),
+                    _info_row("Total con interés", data.get("total_con_interes") or "-"),
+                    _info_row("Total con indexación", data.get("total_con_indexacion") or "-"),
                     _info_row("Obligaciones simuladas", len(obligaciones)),
+                    *self._technical_controls([
+                        _info_row("Status HTTP", self.state.preview_status_code or "-"),
+                        _info_row("total_calculado", data.get("total_calculado") or "-"),
+                        _info_row("total_con_interes", data.get("total_con_interes") or "-"),
+                        _info_row("total_ajuste_indexacion", data.get("total_ajuste_indexacion") or "0.00"),
+                        _info_row("total_con_indexacion", data.get("total_con_indexacion") or "-"),
+                    ]),
                 ],
                 spacing=6,
             ),
@@ -3260,7 +3310,7 @@ class VentaCompletaWizardV3Prototype:
         if not self._can_confirm_sale():
             persisted_errors = self._non_persisted_confirmation_errors()
             if persisted_errors:
-                self.state.confirm_error = "La confirmación real requiere objetos seleccionados desde backend y compradores persistidos en backend o cargados en modo técnico/dev con IDs reales."
+                self.state.confirm_error = "La confirmación requiere objetos y compradores válidos. Activá datos técnicos para ver el detalle de persistencia."
             else:
                 self.state.confirm_error = "No se puede confirmar: resolvé validaciones y recalculá el preview si está desactualizado."
             self._render()
@@ -3841,13 +3891,13 @@ class VentaCompletaWizardV3Prototype:
 
     def _confirm_error_message(self, result: ApiResult) -> str:
         if result.status_code == 400:
-            prefix = "El backend rechazó la confirmación por validación."
+            prefix = "El sistema rechazó la confirmación por validación."
         elif result.status_code == 409:
-            prefix = "El backend informó un conflicto de concurrencia o estado."
+            prefix = "El sistema informó un conflicto de concurrencia o estado."
         elif result.status_code == 500:
-            prefix = "El backend devolvió un error interno al confirmar."
+            prefix = "El sistema devolvió un error interno al confirmar."
         elif result.status_code is None:
-            prefix = "No se pudo conectar con el backend para confirmar la venta."
+            prefix = "No se pudo conectar con el sistema para confirmar la venta."
         else:
             prefix = "No se pudo confirmar la venta."
         parts = [prefix]
@@ -3878,7 +3928,7 @@ class VentaCompletaWizardV3Prototype:
         if valid:
             controls: list[ft.Control] = [
                 ft.Text("6. Validación general", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-                ft.Text("La venta directa está lista para confirmar contra el backend.", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                ft.Text("La venta directa está lista para confirmar.", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
             ]
             bgcolor = ft.Colors.GREEN_50
             border_color = ft.Colors.GREEN_300
@@ -3902,19 +3952,26 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("7. Confirmación real", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Confirmar venta es COMMAND_WRITE_NEGOCIO: envía la venta directa completa al backend y genera venta, plan y obligaciones en la misma operación.",
+                "Al confirmar, se registrará la venta y se generarán el plan y las obligaciones correspondientes.",
                 color=ft.Colors.BLUE_GREY_800,
             ),
-            ft.Text(
-                "Headers CORE-EF de prototipo: ApiClient envía X-Op-Id autogenerado y placeholders visibles X-Usuario-Id=1, X-Sucursal-Id=1, X-Instalacion-Id=1 hasta integrar contexto real de sesión/sucursal/instalación.",
-                size=12,
-                color=ft.Colors.BLUE_GREY_700,
-            ),
+            *self._technical_controls([
+                ft.Text(
+                    "Confirmar venta es COMMAND_WRITE_NEGOCIO: envía la venta directa completa al backend y genera venta, plan y obligaciones en la misma operación.",
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
+                ft.Text(
+                    "Headers CORE-EF de prototipo: ApiClient envía X-Op-Id autogenerado y placeholders visibles X-Usuario-Id=1, X-Sucursal-Id=1, X-Instalacion-Id=1 hasta integrar contexto real de sesión/sucursal/instalación.",
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
+            ]),
         ]
         if self.state.confirm_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Confirmando venta directa en backend...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Confirmando venta directa...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -3923,7 +3980,7 @@ class VentaCompletaWizardV3Prototype:
         if persisted_errors:
             controls.append(
                 self._build_help_card(
-                    "La confirmación real requiere objetos seleccionados desde backend y compradores persistidos en backend o cargados en modo técnico/dev con IDs reales.",
+                    "La confirmación requiere objetos y compradores válidos. Activá datos técnicos para ver el detalle de persistencia.",
                     ft.Colors.AMBER_50,
                     ft.Colors.AMBER_200,
                 )
@@ -3934,7 +3991,7 @@ class VentaCompletaWizardV3Prototype:
         elif self._can_confirm_sale():
             controls.append(self._build_help_card("Preview vigente y revisión completa. Podés presionar Confirmar venta.", ft.Colors.GREEN_50, ft.Colors.GREEN_200))
         else:
-            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener preview vigente, datos persistidos en backend y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
+            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener la vista previa vigente y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
         return self._build_review_section_container(controls)
 
     def _build_review_section_container(self, controls: list[ft.Control]) -> ft.Control:
@@ -3964,8 +4021,8 @@ class VentaCompletaWizardV3Prototype:
     @staticmethod
     def _record_source_label(source: str, persisted: bool) -> str:
         if persisted:
-            return f"backend real/persistido ({source or 'backend'})"
-        return f"no persistido ({source or 'manual'})"
+            return f"dato confirmado ({source or 'backend'})"
+        return f"dato pendiente ({source or 'manual'})"
 
     def _general_review_errors(self) -> list[str]:
         errors: list[str] = []
@@ -3974,13 +4031,13 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA":
             errors.append("La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.")
         if self.state.origen == "RESERVA" and (self.state.id_reserva_venta is None or self.state.version_registro is None):
-            errors.append("No hay una reserva real persistida seleccionada desde backend.")
+            errors.append("No hay una reserva real seleccionada desde el sistema.")
         if not self._has_valid_currency():
             errors.append("Seleccioná una moneda válida.")
         if not self.state.fecha_venta_iso or self.fecha_venta_error is not None:
             errors.append("Cargá una fecha_venta válida.")
         if not self.state.codigo_venta.strip():
-            errors.append("Cargá codigo_venta: el contrato backend actual lo requiere para confirmar venta directa.")
+            errors.append("Cargá el código de venta: es requerido para confirmar venta directa.")
         if not self.state.objetos:
             errors.append("Cargá al menos un objeto de venta.")
         invalid_objects = [objeto for objeto in self.state.objetos if _parse_money_decimal(objeto.precio_asignado) is None]
@@ -4000,7 +4057,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.forma_pago == "FINANCIADO" and self._financed_plan_difference() != Decimal("0"):
             errors.append("El plan financiado debe estar completo con diferencia 0.")
         if self.state.preview_data is None:
-            errors.append("Calculá el preview backend del Plan Pago V2 antes de confirmar.")
+            errors.append("Calculá la vista previa del plan de pago antes de confirmar.")
         if self.state.preview_stale:
             errors.append("El preview está desactualizado; recalculalo antes de confirmar.")
         return errors
@@ -4045,6 +4102,8 @@ class VentaCompletaWizardV3Prototype:
                 _flow_info_row("Forma de pago", self._payment_method_status()),
                 _flow_info_row("Estado", "venta confirmada"),
                 _flow_info_row("Próximo paso", "finalizar"),
+                ft.Divider(height=10),
+                self._build_technical_mode_switch(),
             ]
             return ft.Container(
                 padding=16,
@@ -4080,6 +4139,7 @@ class VentaCompletaWizardV3Prototype:
                 ]
             )
         controls.append(_flow_info_row("Próximo paso", self._next_step_label(), value_no_wrap=False))
+        controls.extend([ft.Divider(height=10), self._build_technical_mode_switch()])
 
         return ft.Container(
             padding=16,
@@ -4090,6 +4150,13 @@ class VentaCompletaWizardV3Prototype:
                 controls=controls,
                 spacing=10,
             ),
+        )
+
+    def _build_technical_mode_switch(self) -> ft.Control:
+        return ft.Switch(
+            label="Mostrar datos técnicos",
+            value=self.state.mostrar_datos_tecnicos,
+            on_change=self._on_toggle_technical_data,
         )
 
     def _build_navigation(self) -> ft.Control:
@@ -5301,12 +5368,12 @@ class VentaCompletaWizardV3Prototype:
         if self.state.tramo_metodo_liquidacion == "INDEXACION":
             return [
                 f"Cuota base estimada antes de actualización: {self._format_money_with_currency(cuota_base)}",
-                "No se calcula indexación localmente.",
+                "Estimación visual. El cálculo definitivo se validará al confirmar la venta.",
             ]
         if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
             return [
                 f"Cuota base sin interés: {self._format_money_with_currency(cuota_base)}",
-                "En la versión final, la cuota con interés se mostrará desde la simulación backend del Plan Pago V2.",
+                "Estimación visual. El cálculo definitivo se validará al confirmar la venta.",
             ]
         return [f"Cuota base estimada: {self._format_money_with_currency(cuota_base)}"]
 
@@ -5493,7 +5560,7 @@ class VentaCompletaWizardV3Prototype:
             return validation_error
         if self.objeto_seleccionado is not None:
             if self.objeto_seleccionado.get("source") != "backend" or not self.objeto_seleccionado.get("persisted", False):
-                return "El objeto debe provenir de backend real y estar persistido."
+                return "El objeto debe estar disponible y confirmado en el sistema."
         return None
 
     def _parse_selected_price(self) -> Decimal | None:
@@ -5644,9 +5711,9 @@ class VentaCompletaWizardV3Prototype:
             return "porcentaje_responsabilidad debe ser mayor que 0 y menor o igual que 100."
         role_id = self._rol_comprador_id_resuelto()
         if not role_id:
-            return self.rol_comprador_catalog_error or "No se encontró rol COMPRADOR en backend."
+            return self.rol_comprador_catalog_error or "No se encontró el rol comprador en el sistema."
         if not role_id.isdigit():
-            return "id_rol_participacion del rol COMPRADOR debe ser un ID numerico de backend."
+            return "El rol comprador debe estar resuelto con un ID técnico válido."
         return None
 
     def _is_duplicate_selected_buyer(self) -> bool:
