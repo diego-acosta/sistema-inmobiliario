@@ -554,38 +554,39 @@ class VentaCompletaWizardV3Prototype:
             circle_text = "✓" if is_completed else str(index + 1)
 
             step_controls.append(
-                ft.Column(
-                    controls=[
-                        ft.Container(
-                            width=28,
-                            height=28,
-                            border_radius=14,
-                            alignment=ft.Alignment(0, 0),
-                            bgcolor=circle_bgcolor,
-                            border=_border_all(1.5, circle_border),
-                            content=ft.Text(
-                                circle_text,
-                                size=13,
-                                weight=ft.FontWeight.W_700,
-                                color=circle_color,
+                ft.Container(
+                    width=88,
+                    content=ft.Column(
+                        controls=[
+                            ft.Container(
+                                width=28,
+                                height=28,
+                                border_radius=14,
+                                alignment=ft.Alignment(0, 0),
+                                bgcolor=circle_bgcolor,
+                                border=_border_all(1.5, circle_border),
+                                content=ft.Text(
+                                    circle_text,
+                                    size=13,
+                                    weight=ft.FontWeight.W_700,
+                                    color=circle_color,
+                                ),
                             ),
-                        ),
-                        ft.Text(
-                            label,
-                            size=11,
-                            weight=ft.FontWeight.W_700
-                            if is_current
-                            else ft.FontWeight.W_500,
-                            color=ft.Colors.BLUE_800
-                            if is_current
-                            else ft.Colors.BLUE_GREY_700,
-                            text_align=ft.TextAlign.CENTER,
-                            no_wrap=True,
-                        ),
-                    ],
-                    spacing=4,
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    expand=True,
+                            ft.Text(
+                                label,
+                                size=11,
+                                weight=ft.FontWeight.W_700
+                                if is_current
+                                else ft.FontWeight.W_500,
+                                color=ft.Colors.BLUE_800
+                                if is_current
+                                else ft.Colors.BLUE_GREY_700,
+                                text_align=ft.TextAlign.CENTER,
+                            ),
+                        ],
+                        spacing=4,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
                 )
             )
 
@@ -597,7 +598,7 @@ class VentaCompletaWizardV3Prototype:
                 )
                 step_controls.append(
                     ft.Container(
-                        expand=True,
+                        width=20,
                         padding=ft.Padding(left=0, top=13, right=0, bottom=0),
                         content=ft.Container(
                             height=2,
@@ -622,7 +623,8 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     ft.Row(
                         controls=step_controls,
-                        spacing=6,
+                        spacing=4,
+                        scroll=ft.ScrollMode.AUTO,
                         vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
                 ],
