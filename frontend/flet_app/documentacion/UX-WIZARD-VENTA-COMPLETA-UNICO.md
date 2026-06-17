@@ -821,8 +821,8 @@ usuario son:
 La tabla de obligaciones simuladas mantiene columnas `#`, `Fecha vencimiento`,
 `Tipo`, `Cuota` e `Importe`; las fechas se muestran como `DD/MM/AAAA` y los
 importes como moneda argentina segun la moneda seleccionada. Si hay muchas
-obligaciones, la UI puede paginarlas localmente en bloques de 10, indicando el
-rango visible, por ejemplo `Obligaciones 1 a 10 de 13`, junto con controles
+obligaciones, la UI puede paginarlas localmente en bloques de 8, indicando el
+rango visible, por ejemplo `Obligaciones 1 a 8 de 13`, junto con controles
 `Anterior`, `Pagina X de Y` y `Siguiente`. Esta paginacion/visualizacion es
 frontend read-only: no dispara endpoints, no recalcula y no modifica el payload
 recibido.

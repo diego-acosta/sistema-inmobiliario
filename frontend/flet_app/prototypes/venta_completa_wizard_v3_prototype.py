@@ -196,7 +196,7 @@ class WizardVentaCompletaV3State:
     preview_status_code: int | None = None
     preview_stale: bool = True
     preview_obligaciones_page: int = 1
-    preview_obligaciones_page_size: int = 10
+    preview_obligaciones_page_size: int = 8
     confirm_loading: bool = False
     confirm_data: dict[str, Any] | None = None
     confirm_error: str | None = None
