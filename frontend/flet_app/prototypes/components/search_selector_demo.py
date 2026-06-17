@@ -26,6 +26,7 @@ class SearchSelectorRecord:
     data: dict[str, Any]
     primary_text: str
     secondary_text: str
+    technical_secondary_text: str
     summary_text: str
     search_text: str
     selection_payload: dict[str, Any]
@@ -65,6 +66,7 @@ def reserva_record(data: dict[str, Any]) -> SearchSelectorRecord:
         data=data,
         primary_text=primary,
         secondary_text=secondary,
+        technical_secondary_text=secondary,
         summary_text=summary,
         search_text=_search_blob(codigo, comprador, objeto, estado, summary, data.get("id_reserva_venta")),
         selection_payload={
@@ -91,7 +93,9 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
         primary_parts.insert(2, inmueble_padre)
     primary = _join_visible(primary_parts)
     id_correspondiente = data.get("id_unidad_funcional") if tipo_objeto == "UNIDAD_FUNCIONAL" else data.get("id_inmueble")
-    secondary = _join_visible(
+    tipo_label = {"INMUEBLE": "Inmueble", "UNIDAD_FUNCIONAL": "Unidad funcional"}.get(tipo_objeto, tipo_objeto)
+    secondary = f"Tipo: {tipo_label}" if tipo_label else ""
+    technical_secondary = _join_visible(
         [
             f"Tipo: {tipo_objeto}" if tipo_objeto else "",
             f"id_inmueble: {data.get('id_inmueble')}" if data.get("id_inmueble") is not None else "",
@@ -114,6 +118,7 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
         data=data,
         primary_text=primary,
         secondary_text=secondary,
+        technical_secondary_text=technical_secondary,
         summary_text=summary,
         search_text=_search_blob(
             codigo,
@@ -135,7 +140,9 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
     documento = _clean(data.get("documento"))
     codigo = _clean(data.get("codigo_persona"))
     primary = _join_visible([nombre, documento])
-    secondary = _join_visible(
+    estado = _clean(data.get("estado")) or "activa"
+    secondary = f"Persona {estado.lower()}"
+    technical_secondary = _join_visible(
         [
             f"Codigo: {codigo}" if codigo else "",
             f"id_persona: {data.get('id_persona')}" if data.get("id_persona") is not None else "",
@@ -146,6 +153,7 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
         data=data,
         primary_text=primary,
         secondary_text=secondary,
+        technical_secondary_text=technical_secondary,
         summary_text=summary,
         search_text=_search_blob(codigo, nombre, documento, summary, data.get("id_persona")),
         selection_payload={
@@ -181,11 +189,13 @@ class SearchSelectorDemo:
         records: list[dict[str, Any]],
         selector_kind: SelectorKind,
         on_selection_change: SelectionCallback | None = None,
+        show_technical_details: bool = True,
     ) -> None:
         self.title = title
         self.placeholder = placeholder
         self.selector_kind = selector_kind
         self.on_selection_change = on_selection_change
+        self.show_technical_details = show_technical_details
         self._records = [_RECORD_FACTORY[selector_kind](record) for record in records]
         self._selected: SearchSelectorRecord | None = None
 
@@ -239,6 +249,11 @@ class SearchSelectorDemo:
     def view(self) -> ft.Control:
         return self.root
 
+    def set_show_technical_details(self, show: bool) -> None:
+        self.show_technical_details = show
+        self._refresh_selection_panel()
+        self._refresh_results()
+
     def _on_search_change(self, _: ft.ControlEvent) -> None:
         self._refresh_results()
         self.root.update()
@@ -274,7 +289,7 @@ class SearchSelectorDemo:
                     padding=12,
                     bgcolor=ft.Colors.BLUE_GREY_50,
                     border_radius=8,
-                    content=ft.Text("No se encontraron registros reales en backend.", color=ft.Colors.BLUE_GREY_700),
+                    content=ft.Text("No se encontraron registros disponibles.", color=ft.Colors.BLUE_GREY_700),
                 )
             ]
             return
@@ -295,7 +310,11 @@ class SearchSelectorDemo:
             controls=[
                 ft.Text("Seleccionado", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_800),
                 ft.Text(self._selected.primary_text, weight=ft.FontWeight.W_600),
-                ft.Text(self._selected.secondary_text, size=12, color=ft.Colors.BLUE_GREY_700),
+                ft.Text(
+                    self._selected.technical_secondary_text if self.show_technical_details else self._selected.secondary_text,
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
             ],
             spacing=3,
         )
@@ -313,7 +332,11 @@ class SearchSelectorDemo:
                         controls=[
                             ft.Text(record.primary_text, weight=ft.FontWeight.W_700),
                             ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700),
-                            ft.Text(record.secondary_text, size=11, color=ft.Colors.BLUE_GREY_500),
+                            ft.Text(
+                                record.technical_secondary_text if self.show_technical_details else record.secondary_text,
+                                size=11,
+                                color=ft.Colors.BLUE_GREY_500,
+                            ),
                         ],
                         spacing=3,
                         expand=True,
@@ -337,6 +360,7 @@ def create_search_selector_demo(
     records: list[dict[str, Any]],
     selector_kind: SelectorKind,
     on_selection_change: SelectionCallback | None = None,
+    show_technical_details: bool = True,
 ) -> SearchSelectorDemo:
     """Factory explicita para crear buscadores desde pantallas prototipo."""
 
@@ -346,4 +370,5 @@ def create_search_selector_demo(
         records=records,
         selector_kind=selector_kind,
         on_selection_change=on_selection_change,
+        show_technical_details=show_technical_details,
     )

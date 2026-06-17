@@ -63,9 +63,11 @@ Pantalla 1 -- Origen y no copia el flujo completo de V2.
 ## 3.1 Modo tecnico/debug visible
 
 El Wizard Venta Completa V3 oculta por defecto identificadores tecnicos, nombres
-internos de payload y marcas de integracion. Para pruebas puede activarse
-**Mostrar datos tecnicos**, que expone IDs internos y datos auxiliares sin
-modificar el flujo, los endpoints ni los payloads enviados.
+internos de payload, nombres internos de respuesta del preview, headers CORE-EF,
+marcas de integracion e identificadores internos en buscadores. Para pruebas
+puede activarse **Mostrar datos tecnicos**, que expone IDs internos, nombres
+snake_case y datos auxiliares sin modificar el flujo, los endpoints ni los
+payloads enviados.
 
 Este modo solo afecta la visibilidad en frontend: no cambia validaciones,
 selecciones, adaptadores, llamadas al backend, reglas de negocio ni contratos de

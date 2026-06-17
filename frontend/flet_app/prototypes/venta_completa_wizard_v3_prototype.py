@@ -870,7 +870,7 @@ class VentaCompletaWizardV3Prototype:
         if errors:
             self.backend_object_error = " ".join(errors)
         elif not records:
-            self.backend_object_error = "No se encontraron objetos reales en backend. Cargá inmuebles o unidades funcionales reales antes de continuar."
+            self.backend_object_error = "No se encontraron objetos disponibles. Cargá inmuebles o unidades funcionales antes de continuar."
         else:
             self.backend_object_error = None
 
@@ -891,7 +891,7 @@ class VentaCompletaWizardV3Prototype:
         if not roles:
             self.rol_comprador_data = None
             self.rol_comprador_manual_fallback_enabled = False
-            self.rol_comprador_catalog_error = "No se encontró rol COMPRADOR en backend."
+            self.rol_comprador_catalog_error = "No se encontró el rol comprador en el sistema."
             return
 
         self.rol_comprador_data = roles[0]
@@ -917,7 +917,7 @@ class VentaCompletaWizardV3Prototype:
             self.backend_buyer_error = (
                 None
                 if self.backend_buyer_records
-                else "No se encontraron registros reales en backend."
+                else "No se encontraron personas disponibles."
             )
             return
         self.backend_buyer_records = []
@@ -950,7 +950,7 @@ class VentaCompletaWizardV3Prototype:
 
     @staticmethod
     def _backend_selector_error(label: str, result: ApiResult) -> str:
-        parts = [f"No se pudieron cargar {label} reales desde backend."]
+        parts = [f"No se pudieron cargar {label} disponibles desde el sistema."]
         if result.status_code is not None:
             parts.append(f"HTTP {result.status_code}.")
         if result.error_code:
@@ -972,22 +972,22 @@ class VentaCompletaWizardV3Prototype:
 
     def _backend_inmueble_record(self, item: dict[str, Any]) -> dict[str, Any]:
         codigo = str(item.get("codigo_inmueble") or item.get("codigo") or item.get("id_inmueble") or "").strip()
-        descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble backend").strip()
+        descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble").strip()
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
         return {
             "tipo_objeto": "INMUEBLE",
             "id_inmueble": item.get("id_inmueble"),
             "codigo": codigo,
             "descripcion": descripcion,
-            "estado": disponibilidad or item.get("estado_administrativo") or "backend",
-            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble persistido en backend."),
+            "estado": disponibilidad or item.get("estado_administrativo") or "disponible",
+            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble disponible."),
             "source": "backend",
             "persisted": True,
         }
 
     def _backend_unidad_funcional_record(self, item: dict[str, Any]) -> dict[str, Any]:
         codigo = str(item.get("codigo_unidad_funcional") or item.get("codigo_unidad") or item.get("id_unidad_funcional") or "").strip()
-        descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional backend").strip()
+        descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional").strip()
         inmueble = item.get("inmueble") if isinstance(item.get("inmueble"), dict) else {}
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
         return {
@@ -996,8 +996,8 @@ class VentaCompletaWizardV3Prototype:
             "codigo": codigo,
             "descripcion": descripcion,
             "inmueble_padre": inmueble.get("codigo_inmueble") or inmueble.get("nombre_inmueble") or item.get("id_inmueble"),
-            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "backend",
-            "resumen": str(item.get("observaciones") or "Unidad funcional persistida en backend."),
+            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "disponible",
+            "resumen": str(item.get("observaciones") or "Unidad funcional disponible."),
             "source": "backend",
             "persisted": True,
         }
@@ -1017,7 +1017,8 @@ class VentaCompletaWizardV3Prototype:
             "apellido": None if item.get("display_name") else item.get("apellido"),
             "razon_social": item.get("razon_social"),
             "documento": document_label or item.get("cuit_cuil") or "",
-            "resumen": f"Persona persistida en backend · estado: {item.get('estado_persona') or '-'}",
+            "estado": item.get("estado_persona") or "activa",
+            "resumen": f"Persona {(item.get('estado_persona') or 'activa').lower()}",
             "source": "backend",
             "persisted": True,
         }
@@ -1043,12 +1044,14 @@ class VentaCompletaWizardV3Prototype:
         if self.objeto_selector is None:
             self.objeto_selector = create_search_selector_demo(
                 title="Buscador de objeto inmobiliario real",
-                placeholder="Código, descripción, tipo o ID técnico del objeto",
+                placeholder="Código, descripción o tipo del objeto",
                 selector_kind="objeto",
                 records=self._backend_object_selector_records(),
                 on_selection_change=self._on_objeto_selected,
+                show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_objeto_selector_scroll()
+        self.objeto_selector.set_show_technical_details(self.state.mostrar_datos_tecnicos)
 
         controls: list[ft.Control] = [
             ft.Text("Objetos de venta", size=24, weight=ft.FontWeight.W_700),
@@ -1097,7 +1100,7 @@ class VentaCompletaWizardV3Prototype:
                 [
                     self._build_selected_object_panel(),
                     self._build_help_card(
-                        "La validación final de solapamiento entre inmueble completo y unidades funcionales la realiza el backend.",
+                        "La validación final de solapamiento entre inmueble completo y unidades funcionales se realiza al confirmar.",
                         ft.Colors.AMBER_50,
                         ft.Colors.AMBER_200,
                     ),
@@ -1287,8 +1290,10 @@ class VentaCompletaWizardV3Prototype:
                 selector_kind="persona",
                 records=self._backend_buyer_selector_records(),
                 on_selection_change=self._on_comprador_selected,
+                show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_comprador_selector_scroll()
+        self.comprador_selector.set_show_technical_details(self.state.mostrar_datos_tecnicos)
 
         return ft.Container(
             padding=18,
@@ -1299,7 +1304,7 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Compradores", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Seleccioná personas reales del backend y definí la responsabilidad pactada de cada comprador.",
+                        "Seleccioná personas disponibles y definí la responsabilidad pactada de cada comprador.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     self._build_help_card(
@@ -1432,7 +1437,7 @@ class VentaCompletaWizardV3Prototype:
                 else ft.Colors.AMBER_200,
             )
         return self._build_help_card(
-            "Resolviendo rol COMPRADOR desde backend.",
+            "Resolviendo rol comprador desde el sistema.",
             ft.Colors.BLUE_50,
             ft.Colors.BLUE_200,
         )
@@ -1441,7 +1446,7 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Modo técnico/dev: comprador persistido", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Fallback explícito: usá esta carga solo si falló la carga del catálogo de roles desde backend.",
+                "Fallback explícito: usá esta carga solo si falló la carga del catálogo de roles.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -2070,7 +2075,7 @@ class VentaCompletaWizardV3Prototype:
                     ft.Text("Estimación visual de cuota", weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_900),
                     self.tramo_cuota_estimada_feedback,
                     ft.Text(
-                        "Estimación visual. El cálculo definitivo se validará con backend en la simulación/confirmación.",
+                        "Estimación visual. El cálculo definitivo se validará al confirmar la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_700,
                     ),
@@ -2942,13 +2947,18 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.GREEN_200),
             content=ft.Column(
                 controls=[
-                    ft.Text("Resultado del preview", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-                    _info_row("Status HTTP", self.state.preview_status_code or "-"),
-                    _info_row("total_calculado", data.get("total_calculado") or "-"),
-                    _info_row("total_con_interes", data.get("total_con_interes") or "-"),
-                    _info_row("total_ajuste_indexacion", data.get("total_ajuste_indexacion") or "0.00"),
-                    _info_row("total_con_indexacion", data.get("total_con_indexacion") or "-"),
+                    ft.Text("Resultado de la vista previa", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    _info_row("Total calculado", data.get("total_calculado") or "-"),
+                    _info_row("Total con interés", data.get("total_con_interes") or "-"),
+                    _info_row("Total con indexación", data.get("total_con_indexacion") or "-"),
                     _info_row("Obligaciones simuladas", len(obligaciones)),
+                    *self._technical_controls([
+                        _info_row("Status HTTP", self.state.preview_status_code or "-"),
+                        _info_row("total_calculado", data.get("total_calculado") or "-"),
+                        _info_row("total_con_interes", data.get("total_con_interes") or "-"),
+                        _info_row("total_ajuste_indexacion", data.get("total_ajuste_indexacion") or "0.00"),
+                        _info_row("total_con_indexacion", data.get("total_con_indexacion") or "-"),
+                    ]),
                 ],
                 spacing=6,
             ),
@@ -3300,7 +3310,7 @@ class VentaCompletaWizardV3Prototype:
         if not self._can_confirm_sale():
             persisted_errors = self._non_persisted_confirmation_errors()
             if persisted_errors:
-                self.state.confirm_error = "La confirmación real requiere objetos seleccionados desde backend y compradores persistidos en backend o cargados en modo técnico/dev con IDs reales."
+                self.state.confirm_error = "La confirmación requiere objetos y compradores válidos. Activá datos técnicos para ver el detalle de persistencia."
             else:
                 self.state.confirm_error = "No se puede confirmar: resolvé validaciones y recalculá el preview si está desactualizado."
             self._render()
@@ -3881,13 +3891,13 @@ class VentaCompletaWizardV3Prototype:
 
     def _confirm_error_message(self, result: ApiResult) -> str:
         if result.status_code == 400:
-            prefix = "El backend rechazó la confirmación por validación."
+            prefix = "El sistema rechazó la confirmación por validación."
         elif result.status_code == 409:
-            prefix = "El backend informó un conflicto de concurrencia o estado."
+            prefix = "El sistema informó un conflicto de concurrencia o estado."
         elif result.status_code == 500:
-            prefix = "El backend devolvió un error interno al confirmar."
+            prefix = "El sistema devolvió un error interno al confirmar."
         elif result.status_code is None:
-            prefix = "No se pudo conectar con el backend para confirmar la venta."
+            prefix = "No se pudo conectar con el sistema para confirmar la venta."
         else:
             prefix = "No se pudo confirmar la venta."
         parts = [prefix]
@@ -3918,7 +3928,7 @@ class VentaCompletaWizardV3Prototype:
         if valid:
             controls: list[ft.Control] = [
                 ft.Text("6. Validación general", size=18, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-                ft.Text("La venta directa está lista para confirmar contra el backend.", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                ft.Text("La venta directa está lista para confirmar.", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
             ]
             bgcolor = ft.Colors.GREEN_50
             border_color = ft.Colors.GREEN_300
@@ -3942,19 +3952,26 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("7. Confirmación real", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Confirmar venta es COMMAND_WRITE_NEGOCIO: envía la venta directa completa al backend y genera venta, plan y obligaciones en la misma operación.",
+                "Al confirmar, se registrará la venta y se generarán el plan y las obligaciones correspondientes.",
                 color=ft.Colors.BLUE_GREY_800,
             ),
-            ft.Text(
-                "Headers CORE-EF de prototipo: ApiClient envía X-Op-Id autogenerado y placeholders visibles X-Usuario-Id=1, X-Sucursal-Id=1, X-Instalacion-Id=1 hasta integrar contexto real de sesión/sucursal/instalación.",
-                size=12,
-                color=ft.Colors.BLUE_GREY_700,
-            ),
+            *self._technical_controls([
+                ft.Text(
+                    "Confirmar venta es COMMAND_WRITE_NEGOCIO: envía la venta directa completa al backend y genera venta, plan y obligaciones en la misma operación.",
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
+                ft.Text(
+                    "Headers CORE-EF de prototipo: ApiClient envía X-Op-Id autogenerado y placeholders visibles X-Usuario-Id=1, X-Sucursal-Id=1, X-Instalacion-Id=1 hasta integrar contexto real de sesión/sucursal/instalación.",
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_700,
+                ),
+            ]),
         ]
         if self.state.confirm_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Confirmando venta directa en backend...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Confirmando venta directa...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -3963,7 +3980,7 @@ class VentaCompletaWizardV3Prototype:
         if persisted_errors:
             controls.append(
                 self._build_help_card(
-                    "La confirmación real requiere objetos seleccionados desde backend y compradores persistidos en backend o cargados en modo técnico/dev con IDs reales.",
+                    "La confirmación requiere objetos y compradores válidos. Activá datos técnicos para ver el detalle de persistencia.",
                     ft.Colors.AMBER_50,
                     ft.Colors.AMBER_200,
                 )
@@ -3974,7 +3991,7 @@ class VentaCompletaWizardV3Prototype:
         elif self._can_confirm_sale():
             controls.append(self._build_help_card("Preview vigente y revisión completa. Podés presionar Confirmar venta.", ft.Colors.GREEN_50, ft.Colors.GREEN_200))
         else:
-            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener preview vigente, datos persistidos en backend y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
+            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener la vista previa vigente y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
         return self._build_review_section_container(controls)
 
     def _build_review_section_container(self, controls: list[ft.Control]) -> ft.Control:
@@ -4014,13 +4031,13 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA":
             errors.append("La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.")
         if self.state.origen == "RESERVA" and (self.state.id_reserva_venta is None or self.state.version_registro is None):
-            errors.append("No hay una reserva real persistida seleccionada desde backend.")
+            errors.append("No hay una reserva real seleccionada desde el sistema.")
         if not self._has_valid_currency():
             errors.append("Seleccioná una moneda válida.")
         if not self.state.fecha_venta_iso or self.fecha_venta_error is not None:
             errors.append("Cargá una fecha_venta válida.")
         if not self.state.codigo_venta.strip():
-            errors.append("Cargá codigo_venta: el contrato backend actual lo requiere para confirmar venta directa.")
+            errors.append("Cargá el código de venta: es requerido para confirmar venta directa.")
         if not self.state.objetos:
             errors.append("Cargá al menos un objeto de venta.")
         invalid_objects = [objeto for objeto in self.state.objetos if _parse_money_decimal(objeto.precio_asignado) is None]
@@ -5543,7 +5560,7 @@ class VentaCompletaWizardV3Prototype:
             return validation_error
         if self.objeto_seleccionado is not None:
             if self.objeto_seleccionado.get("source") != "backend" or not self.objeto_seleccionado.get("persisted", False):
-                return "El objeto debe provenir de backend real y estar persistido."
+                return "El objeto debe estar disponible y confirmado en el sistema."
         return None
 
     def _parse_selected_price(self) -> Decimal | None:
@@ -5694,9 +5711,9 @@ class VentaCompletaWizardV3Prototype:
             return "porcentaje_responsabilidad debe ser mayor que 0 y menor o igual que 100."
         role_id = self._rol_comprador_id_resuelto()
         if not role_id:
-            return self.rol_comprador_catalog_error or "No se encontró rol COMPRADOR en backend."
+            return self.rol_comprador_catalog_error or "No se encontró el rol comprador en el sistema."
         if not role_id.isdigit():
-            return "id_rol_participacion del rol COMPRADOR debe ser un ID numerico de backend."
+            return "El rol comprador debe estar resuelto con un ID técnico válido."
         return None
 
     def _is_duplicate_selected_buyer(self) -> bool:
