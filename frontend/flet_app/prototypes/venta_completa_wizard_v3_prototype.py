@@ -489,6 +489,7 @@ class VentaCompletaWizardV3Prototype:
                         spacing=12,
                         scroll=ft.ScrollMode.AUTO,
                         expand=True,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                     ),
                 ),
                 ft.Container(width=300, content=self._build_flow_state_panel()),
@@ -598,7 +599,7 @@ class VentaCompletaWizardV3Prototype:
                 )
                 step_controls.append(
                     ft.Container(
-                        width=20,
+                        expand=True,
                         padding=ft.Padding(left=0, top=13, right=0, bottom=0),
                         content=ft.Container(
                             height=2,
@@ -624,7 +625,6 @@ class VentaCompletaWizardV3Prototype:
                     ft.Row(
                         controls=step_controls,
                         spacing=4,
-                        scroll=ft.ScrollMode.AUTO,
                         vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
                 ],
