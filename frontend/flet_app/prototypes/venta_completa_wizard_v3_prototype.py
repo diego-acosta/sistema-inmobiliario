@@ -3262,20 +3262,14 @@ class VentaCompletaWizardV3Prototype:
         interes_total = self._subtract_money_values(total_obligaciones, precio_venta)
 
         sale_summary_items = [
-            ("Venta", venta.get("codigo_venta") or venta.get("codigo") or f"Venta {venta.get('id_venta') or '-'}"),
+            ("Código de venta", venta.get("codigo_venta") or venta.get("codigo") or f"Venta {venta.get('id_venta') or '-'}"),
             ("Estado", self._status_badge(str(estado_venta or "-"))),
-            ("Fecha de venta", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
+            ("Fecha", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
             ("Moneda", moneda),
             ("Total venta", self._detail_money(precio_venta, moneda)),
-            ("Forma / método", self._first_present(plan.get("metodo_plan_pago"), plan.get("tipo_plan"), plan.get("forma_pago"))),
-            ("Objetos vendidos", len(objetos)),
-            ("Compradores", len(compradores)),
+            ("Forma de pago", self._sale_payment_form_label(venta, plan, detalle, cuotas_obligaciones)),
         ]
-        plan_summary_items = [
-            ("ID plan de pago", plan.get("id_plan_pago_venta")),
-            ("Estado del plan", self._status_badge(str(estado_plan or "-"))),
-            ("Obligaciones generadas", len(obligaciones)),
-        ]
+        plan_summary_items: list[tuple[str, Any]] = []
 
         return [
             ft.Container(
@@ -3331,8 +3325,7 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Resumen de venta", size=16, weight=ft.FontWeight.W_700),
                     self._summary_fields_row(sale_items),
-                    ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100),
-                    self._summary_fields_row(plan_items),
+                    *([ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100), self._summary_fields_row(plan_items)] if plan_items else []),
                 ],
                 spacing=10,
             ),
@@ -3402,6 +3395,22 @@ class VentaCompletaWizardV3Prototype:
             "Compradores",
             self._compact_table(["Comprador", "Rol", "Participación"], rows, empty_text="Sin compradores informados en el payload."),
         )
+
+    def _sale_payment_form_label(self, venta: dict[str, Any], plan: dict[str, Any], detalle: dict[str, Any], cuotas: list[dict[str, Any]]) -> str:
+        candidates = [
+            venta.get("forma_pago"),
+            venta.get("metodo_pago"),
+            detalle.get("forma_pago"),
+            plan.get("metodo_plan_pago"),
+            plan.get("tipo_plan"),
+            plan.get("forma_pago"),
+        ]
+        normalized_values = [str(value or "").upper() for value in candidates if value not in (None, "")]
+        if any(value in {"CONTADO", "PAGO_CONTADO"} or "CONTADO" in value for value in normalized_values):
+            return "CONTADO"
+        if cuotas or any(value in {"PLAN_POR_BLOQUES", "FINANCIADO", "FINANCIADA"} or "CUOTA" in value or "FINANC" in value for value in normalized_values):
+            return "FINANCIADO"
+        return "-"
 
     def _build_financial_summary_table(
         self,
@@ -5731,12 +5740,17 @@ class VentaCompletaWizardV3Prototype:
         )
 
 
-def _format_date_ar(iso_date: str | None) -> str:
+def _format_date_ar(iso_date: Any) -> str:
+    if isinstance(iso_date, datetime):
+        return iso_date.strftime("%d/%m/%Y")
+    if isinstance(iso_date, date):
+        return iso_date.strftime("%d/%m/%Y")
     text = str(iso_date or "").strip()
     if not text:
         return ""
+    normalized = text.split("T", 1)[0]
     try:
-        return datetime.strptime(text, "%Y-%m-%d").strftime("%d/%m/%Y")
+        return datetime.strptime(normalized, "%Y-%m-%d").strftime("%d/%m/%Y")
     except ValueError:
         return text
 

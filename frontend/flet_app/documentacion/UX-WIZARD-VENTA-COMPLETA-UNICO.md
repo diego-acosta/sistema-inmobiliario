@@ -1315,10 +1315,10 @@ Diseño esperado: una sola ficha/dashboard compacta dentro de **VENTA_CONFIRMADA
 
 Secciones internas esperadas en este orden:
 
-1. **Resumen ejecutivo**: una sola card compacta con venta/código visible,
-   estado, fecha, moneda, total venta, forma/método, objetos, compradores,
-   estado del plan y obligaciones generadas. Los IDs internos quedan solo como
-   referencia secundaria.
+1. **Resumen ejecutivo**: una sola card compacta con código de venta, estado,
+   fecha en formato argentino, moneda, total venta y forma de pago normalizada
+   (`CONTADO` o `FINANCIADO`). No incluye objetos, compradores, estado del plan
+   ni obligaciones generadas; esos datos viven en sus secciones propias.
 2. **Objetos y compradores**: una misma fila visual de dos columnas. Objetos usa
    tabla objeto, tipo y precio. Compradores usa tabla comprador, rol y
    participación.
