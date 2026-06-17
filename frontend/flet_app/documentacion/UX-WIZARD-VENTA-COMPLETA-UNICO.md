@@ -1284,3 +1284,80 @@ Tests requeridos para este PR de frontend:
   `INTERES_DIRECTO` e `INDEXACION`; este PR no los modifica.
 - Cualquier implementacion futura de UI debe volver a validar nombres de campos,
   headers y respuestas contra router/schema/tests vigentes antes de codificar.
+
+## 16. Detalle integral de venta
+
+La pantalla **Venta confirmada** incluye automáticamente la ficha **Detalle
+integral de venta** para ventas directas ya confirmadas desde Wizard Venta
+Completa V3. Es una vista **read-only**: no confirma nuevamente, no cambia
+estado de venta, no recalcula Plan Pago V2, no modifica obligaciones y no
+actualiza activos.
+
+Endpoint consumido:
+
+- `GET /api/v1/ventas/{id_venta}/detalle-integral`.
+
+Acceso y acciones visibles:
+
+- Se carga automáticamente al entrar en **Venta confirmada** luego de persistir
+  una venta directa real.
+- Ya no existe botón **Ver detalle integral de venta**.
+- No muestra **Refrescar detalle** como botón principal permanente; si falla la
+  carga, puede mostrar una acción secundaria **Reintentar carga** para repetir el
+  `GET`.
+- La salida final se concentra en un único botón al final: **Finalizar / Nueva
+  venta**.
+- No muestra **Volver a venta confirmada** porque el detalle vive dentro de esa
+  misma pantalla.
+- No agrega acciones que modifiquen estado ni dispara endpoints write.
+
+Diseño esperado: una sola ficha/dashboard compacta dentro de **VENTA_CONFIRMADA**, sin pantalla separada, sin cards enormes apiladas, sin rectángulos grises vacíos y con tablas compactas para listas.
+
+Secciones internas esperadas en este orden:
+
+1. **Resumen de venta**: una sola card blanca, compacta y de altura natural,
+   con código de venta, estado, fecha en formato argentino, moneda, total venta
+   y forma de pago normalizada (`CONTADO` o `FINANCIADO`). No incluye objetos,
+   compradores, datos técnicos del plan ni obligaciones generadas; esos datos
+   viven en sus secciones propias.
+2. **Objetos y compradores**: una misma fila visual de dos columnas. Objetos usa
+   tabla objeto, tipo y precio. Compradores usa tabla comprador, rol y
+   participación.
+3. **Resumen financiero**: tabla `Concepto / Importe` con precio de venta,
+   anticipo, saldo financiado, interés total, total a cobrar, saldo pendiente e
+   importe cancelado. Los cálculos locales son solo presentación visual del
+   detalle recibido cuando el payload no trae el valor explícito.
+4. **Anticipo**: tabla separada con concepto, vencimiento, importe y estado; no
+   se mezcla con las cuotas.
+5. **Plan financiado**: tabla paginada de cuotas financiadas, separada del
+   anticipo, con vencimiento, importe y estado. La paginación es local/read-only
+   y no dispara nuevos endpoints ni modifica obligaciones. No muestra resumen
+   financiero interno del bloque.
+6. **Impacto del activo**: tabla compacta desde `impacto_activo.objetos[]` con
+   objeto, disponibilidad informada, ocupación informada y observaciones. Solo
+   agrega estado anterior/nuevo si vienen datos reales. Si no hay datos útiles,
+   informa **Sin impacto informado en el payload**.
+
+Manejo de estados UX:
+
+- Al confirmar correctamente, el frontend solicita automáticamente el detalle
+  para el `id_venta` confirmado y evita repetir el `GET` en cada render.
+- Si no hay `id_venta`, muestra **No hay id_venta confirmado para consultar
+  detalle.**
+- Si falla el `GET`, muestra un error legible con HTTP, `error_code` y
+  `error_message` cuando el cliente API los entrega.
+- Si esta cargando, muestra una línea discreta **Cargando detalle integral...**.
+- La pantalla **Venta confirmada** se mantiene estable y muestra resultado
+  backend, resumen comercial confirmado y detalle integral read-only en la misma
+  vista.
+
+Decision CORE-EF para esta pantalla:
+
+- Clasificacion: `QUERY_READLIKE` para el detalle automático y para la acción
+  secundaria **Reintentar carga** en caso de error.
+- Headers write: NO APLICA; consume solo `GET` read-only existente.
+- Idempotencia: NO APLICA; no ejecuta command sincronizable.
+- Outbox: NO APLICA; no genera eventos.
+- Lock logico: NO APLICA; no bloquea entidades.
+- Versionado: NO APLICA; no modifica entidad versionada.
+- Rollback/transaccion: NO APLICA; no abre frontera transaccional de negocio.

@@ -192,6 +192,9 @@ class WizardVentaCompletaV3State:
     detalle_venta_data: dict[str, Any] | None = None
     detalle_venta_error: str | None = None
     detalle_venta_status_code: int | None = None
+    detalle_venta_requested_id: int | None = None
+    detalle_cuotas_page: int = 1
+    detalle_cuotas_page_size: int = 10
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -3149,27 +3152,41 @@ class VentaCompletaWizardV3Prototype:
             self.state.detalle_venta_data = None
             self.state.detalle_venta_error = None
             self.state.detalle_venta_status_code = None
+            self.state.detalle_venta_requested_id = None
             self.state.pantalla_actual = "VENTA_CONFIRMADA"
-            self._render()
+            self._load_confirmed_sale_detail(force=True)
             return
         self.state.confirm_error = self._confirm_error_message(result)
         self._render()
 
 
-    def _load_confirmed_sale_detail(self, _: Any) -> None:
+    def _confirmed_sale_id(self) -> int | None:
         data = self.state.confirm_data or {}
         venta = data.get("venta") if isinstance(data.get("venta"), dict) else {}
         id_venta = venta.get("id_venta")
-        if not id_venta:
-            self.state.detalle_venta_error = "No hay id_venta confirmado para consultar el detalle integral."
+        try:
+            return int(id_venta)
+        except (TypeError, ValueError):
+            return None
+
+    def _load_confirmed_sale_detail(self, _: Any = None, *, force: bool = True) -> None:
+        id_venta = self._confirmed_sale_id()
+        if id_venta is None:
+            self.state.detalle_venta_data = None
+            self.state.detalle_venta_error = "No hay id_venta confirmado para consultar detalle."
+            self.state.detalle_venta_requested_id = None
             self._render()
             return
+        if not force and self.state.detalle_venta_requested_id == id_venta:
+            return
 
+        self.state.detalle_venta_requested_id = id_venta
+        self.state.detalle_cuotas_page = 1
         self.state.detalle_venta_loading = True
         self.state.detalle_venta_error = None
         self.state.detalle_venta_status_code = None
         self._render()
-        result = self.api.get_venta_detalle_integral(int(id_venta))
+        result = self.api.get_venta_detalle_integral(id_venta)
         self.state.detalle_venta_loading = False
         self.state.detalle_venta_status_code = result.status_code
         if result.success and isinstance(result.data, dict):
@@ -3182,94 +3199,515 @@ class VentaCompletaWizardV3Prototype:
         if result.status_code is not None:
             parts.append(f"HTTP {result.status_code}.")
         if result.error_code:
-            parts.append(f"{result.error_code}.")
+            parts.append(f"error_code={result.error_code}.")
         if result.error_message:
-            parts.append(result.error_message)
+            parts.append(f"error_message={result.error_message}")
         self.state.detalle_venta_error = " ".join(parts)
+        self._render()
+
+    def _restart_wizard(self, _: Any = None) -> None:
+        self.state = WizardVentaCompletaV3State()
+        self.reserva_selector = None
+        self.objeto_selector = None
+        self.comprador_selector = None
+        self.objeto_seleccionado = None
+        self.comprador_seleccionado = None
+        self.precio_objeto_value = ""
+        self.fecha_venta_display_value = ""
+        self.fecha_venta_error = None
         self._render()
 
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
         if self.state.detalle_venta_loading:
-            return [ft.Row(controls=[ft.ProgressRing(width=18, height=18), ft.Text("Cargando detalle integral de venta...")], spacing=10)]
+            return [ft.Text("Cargando detalle integral...", color=ft.Colors.BLUE_GREY_700)]
         if self.state.detalle_venta_error:
-            return [ft.Text(self.state.detalle_venta_error, color=ft.Colors.RED_700)]
+            return [
+                ft.Container(
+                    padding=12,
+                    border_radius=10,
+                    bgcolor=ft.Colors.RED_50,
+                    border=_border_all(1, ft.Colors.RED_200),
+                    content=ft.Row(
+                        controls=[
+                            ft.Text(self.state.detalle_venta_error, color=ft.Colors.RED_800, expand=True),
+                            ft.TextButton("Reintentar carga", icon=ft.Icons.REFRESH, on_click=self._load_confirmed_sale_detail),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                )
+            ]
         detalle = self.state.detalle_venta_data
         if not detalle:
-            return [ft.Text("El detalle integral todavía no fue consultado.", color=ft.Colors.BLUE_GREY_700)]
+            return [ft.Text("Detalle integral pendiente de carga automática.", color=ft.Colors.BLUE_GREY_700)]
 
         venta = detalle.get("venta") if isinstance(detalle.get("venta"), dict) else detalle
-        objetos = detalle.get("objetos_vendidos") or detalle.get("objetos") or []
-        compradores = detalle.get("compradores") or []
+        objetos = self._as_list(detalle.get("objetos_vendidos") or detalle.get("objetos"))
+        compradores = self._as_list(detalle.get("compradores"))
         plan = detalle.get("plan_pago_v2") if isinstance(detalle.get("plan_pago_v2"), dict) else {}
-        bloques = plan.get("bloques") if isinstance(plan.get("bloques"), list) else []
-        obligaciones_plan = [ob for bloque in bloques for ob in (bloque.get("obligaciones") or [])]
-        obligaciones = detalle.get("obligaciones_financieras") or obligaciones_plan
-        resumen = detalle.get("resumen_financiero") or {}
+        resumen_plan = plan.get("resumen_financiero") if isinstance(plan.get("resumen_financiero"), dict) else {}
+        bloques = self._as_list(plan.get("bloques"))
+        obligaciones_plan = [ob for bloque in bloques if isinstance(bloque, dict) for ob in self._as_list(bloque.get("obligaciones"))]
+        obligaciones = self._as_list(detalle.get("obligaciones_financieras") or detalle.get("obligaciones") or obligaciones_plan)
+        moneda = venta.get("moneda") or plan.get("moneda") or detalle.get("moneda")
+        impacto = detalle.get("impacto_activo") or detalle.get("impactos_activo") or detalle.get("impactos_activos")
+        estado_venta = venta.get("estado_venta") or venta.get("estado")
+        estado_plan = plan.get("estado_plan_pago") or plan.get("estado")
+        precio_venta = self._first_present(venta.get("monto_total"), venta.get("precio_total"), detalle.get("precio_total"))
+        anticipo_obligacion, cuotas_obligaciones = self._split_advance_and_installment_obligations(obligaciones)
+        anticipo_importe = self._obligation_amount(anticipo_obligacion) if anticipo_obligacion is not None else None
+        total_obligaciones = self._first_present(resumen_plan.get("saldo_total"), plan.get("saldo_total"), self._sum_obligations_amount(obligaciones))
+        total_cuotas_obligaciones = self._sum_obligations_amount(cuotas_obligaciones)
+        saldo_financiado = self._subtract_money_values(precio_venta, anticipo_importe)
+        interes_total = self._subtract_money_values(total_obligaciones, precio_venta)
+
+        sale_summary_items = [
+            ("Código de venta", venta.get("codigo_venta") or venta.get("codigo") or f"Venta {venta.get('id_venta') or '-'}"),
+            ("Estado", self._status_badge(str(estado_venta or "-"))),
+            ("Fecha", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
+            ("Moneda", moneda),
+            ("Total venta", self._detail_money(precio_venta, moneda)),
+            ("Forma de pago", self._sale_payment_form_label(venta, plan, detalle, cuotas_obligaciones)),
+        ]
+        plan_summary_items: list[tuple[str, Any]] = []
 
         return [
-            self._build_review_section_container([
-                ft.Text("Resumen de venta", size=18, weight=ft.FontWeight.W_700),
-                _info_row("Código", venta.get("codigo_venta") or "-"),
-                _info_row("Estado", venta.get("estado_venta") or "-"),
-                _info_row("Moneda", venta.get("moneda") or "-"),
-                _info_row("Monto total", venta.get("monto_total") or "-"),
-            ]),
-            self._build_review_section_container([
-                ft.Text("Objetos vendidos", size=18, weight=ft.FontWeight.W_700),
-                *(
-                    [
-                        _info_row(
-                            f"Objeto {idx}",
-                            f"inmueble={obj.get('id_inmueble') or '-'} / uf={obj.get('id_unidad_funcional') or '-'} / precio={obj.get('precio_asignado') or '-'}",
-                        )
-                        for idx, obj in enumerate(objetos, start=1)
-                    ]
-                    or [ft.Text("Sin objetos informados.")]
+            ft.Container(
+                padding=16,
+                border_radius=14,
+                bgcolor=ft.Colors.WHITE,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(
+                    controls=[
+                        ft.Text("Detalle integral de venta", size=20, weight=ft.FontWeight.W_700),
+                        ft.Text(
+                            "Ficha operativa read-only cargada automáticamente.",
+                            color=ft.Colors.BLUE_GREY_700,
+                        ),
+                        ft.Text(
+                            f"Referencia interna: venta {venta.get('id_venta') or '-'} · plan {plan.get('id_plan_pago_venta') or '-'}",
+                            size=11,
+                            color=ft.Colors.BLUE_GREY_500,
+                        ),
+                        self._build_executive_summary_card(sale_summary_items, plan_summary_items),
+                        ft.Row(
+                            controls=[
+                                ft.Container(expand=True, content=self._build_detail_objects_table(objetos, moneda)),
+                                ft.Container(expand=True, content=self._build_detail_buyers_table(compradores)),
+                            ],
+                            spacing=12,
+                            vertical_alignment=ft.CrossAxisAlignment.START,
+                        ),
+                        self._build_financial_summary_table(precio_venta, anticipo_importe, saldo_financiado, interes_total, total_obligaciones, resumen_plan, plan, moneda),
+                        self._build_advance_table(anticipo_obligacion, moneda),
+                        self._build_financed_plan_section(cuotas_obligaciones, bloques, saldo_financiado, interes_total, total_cuotas_obligaciones, moneda, plan),
+                        self._build_detail_asset_impact_table(impacto),
+                        ft.Row(
+                            controls=[
+                                ft.Container(expand=True),
+                                ft.Button("Finalizar / Nueva venta", icon=ft.Icons.ADD_HOME_OUTLINED, on_click=self._restart_wizard),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    ],
+                    spacing=14,
                 ),
-            ]),
-            self._build_review_section_container([
-                ft.Text("Compradores", size=18, weight=ft.FontWeight.W_700),
-                *(
-                    [
-                        _info_row(
-                            f"Comprador {idx}",
-                            self._confirmed_buyer_label(comprador),
-                        )
-                        for idx, comprador in enumerate(compradores, start=1)
-                    ]
-                    or [ft.Text("Sin compradores informados.")]
-                ),
-            ]),
-            self._build_review_section_container([
-                ft.Text("Plan y obligaciones", size=18, weight=ft.FontWeight.W_700),
-                _info_row("id_plan_pago_venta", plan.get("id_plan_pago_venta") or "-"),
-                _info_row("Estado plan", plan.get("estado_plan_pago") or "-"),
-                _info_row("Bloques", len(bloques)),
-                _info_row("Obligaciones", len(obligaciones)),
-                *[
-                    _info_row(
-                        f"Obligación {ob.get('numero_obligacion') or idx}",
-                        f"{ob.get('tipo_item_cronograma') or '-'} / vence {ob.get('fecha_vencimiento') or '-'} / importe {ob.get('importe_total') or '-'}",
-                    )
-                    for idx, ob in enumerate(obligaciones, start=1)
-                ],
-            ]),
-            self._build_review_section_container([
-                ft.Text("Totales", size=18, weight=ft.FontWeight.W_700),
-                _info_row("Cantidad obligaciones", resumen.get("cantidad_obligaciones") or len(obligaciones)),
-                _info_row("Saldo total", resumen.get("saldo_total") or "-"),
-                _info_row("Saldo pendiente", resumen.get("saldo_pendiente") or "-"),
-                _info_row("Importe cancelado", resumen.get("importe_cancelado") or "-"),
-            ]),
+            )
         ]
+
+    def _build_executive_summary_card(self, sale_items: list[tuple[str, Any]], plan_items: list[tuple[str, Any]]) -> ft.Control:
+        summary_controls: list[ft.Control] = [self._summary_fields_row(sale_items)]
+        if plan_items:
+            summary_controls.extend([
+                ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100),
+                self._summary_fields_row(plan_items),
+            ])
+        return self._compact_section(
+            "Resumen de venta",
+            ft.Column(controls=summary_controls, spacing=10),
+        )
+
+    def _summary_fields_row(self, items: list[tuple[str, Any]]) -> ft.Control:
+        return ft.ResponsiveRow(
+            columns=12,
+            controls=[self._summary_field(label, value) for label, value in items],
+            spacing=16,
+            run_spacing=10,
+        )
+
+    def _summary_field(self, label: str, value: Any) -> ft.Control:
+        value_control = value if isinstance(value, ft.Control) else ft.Text(
+            str(value if value not in (None, "") else "-"),
+            weight=ft.FontWeight.W_700,
+            color=ft.Colors.BLUE_GREY_900,
+            no_wrap=True,
+        )
+        return ft.Container(
+            col={"xs": 12, "sm": 6, "md": 4, "lg": 2},
+            content=ft.Column(
+                controls=[
+                    ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_600, no_wrap=True),
+                    value_control,
+                ],
+                spacing=3,
+            ),
+        )
+
+    def _compact_section(self, title: str, content: ft.Control) -> ft.Control:
+        return ft.Container(
+            padding=12,
+            border_radius=12,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=[ft.Text(title, size=16, weight=ft.FontWeight.W_700), content], spacing=8),
+        )
+
+    def _build_detail_objects_table(self, objetos: list[Any], moneda_default: Any) -> ft.Control:
+        rows: list[list[Any]] = []
+        for idx, raw in enumerate(objetos, start=1):
+            obj = raw if isinstance(raw, dict) else {}
+            rows.append([
+                self._object_identifier(obj),
+                obj.get("tipo_objeto"),
+                self._detail_money(obj.get("precio_asignado"), obj.get("moneda") or moneda_default),
+            ])
+        return self._compact_section(
+            "Objetos vendidos",
+            self._compact_table(["Objeto", "Tipo", "Precio"], rows, empty_text="Sin objetos informados en el payload."),
+        )
+
+    def _build_detail_buyers_table(self, compradores: list[Any]) -> ft.Control:
+        rows: list[list[Any]] = []
+        for idx, raw in enumerate(compradores, start=1):
+            comprador = raw if isinstance(raw, dict) else {}
+            persona = comprador.get("persona") if isinstance(comprador.get("persona"), dict) else {}
+            rol = comprador.get("rol_participacion") if isinstance(comprador.get("rol_participacion"), dict) else {}
+            rows.append([
+                self._confirmed_buyer_name(comprador) or "Comprador",
+                self._first_present(comprador.get("codigo_rol"), rol.get("codigo_rol"), comprador.get("rol")),
+                comprador.get("porcentaje_responsabilidad"),
+            ])
+        return self._compact_section(
+            "Compradores",
+            self._compact_table(["Comprador", "Rol", "Participación"], rows, empty_text="Sin compradores informados en el payload."),
+        )
+
+    def _sale_payment_form_label(self, venta: dict[str, Any], plan: dict[str, Any], detalle: dict[str, Any], cuotas: list[dict[str, Any]]) -> str:
+        candidates = [
+            venta.get("forma_pago"),
+            venta.get("metodo_pago"),
+            detalle.get("forma_pago"),
+            plan.get("metodo_plan_pago"),
+            plan.get("tipo_plan"),
+            plan.get("forma_pago"),
+        ]
+        normalized_values = [str(value or "").upper() for value in candidates if value not in (None, "")]
+        if any(value in {"CONTADO", "PAGO_CONTADO"} or "CONTADO" in value for value in normalized_values):
+            return "CONTADO"
+        if cuotas or any(value in {"PLAN_POR_BLOQUES", "FINANCIADO", "FINANCIADA"} or "CUOTA" in value or "FINANC" in value for value in normalized_values):
+            return "FINANCIADO"
+        return "-"
+
+    def _build_financial_summary_table(
+        self,
+        precio_venta: Any,
+        anticipo: Any,
+        saldo_financiado: Any,
+        interes_total: Any,
+        total_obligaciones: Any,
+        resumen: dict[str, Any],
+        plan: dict[str, Any],
+        moneda: Any,
+    ) -> ft.Control:
+        headers = [
+            "Precio de venta",
+            "Anticipo",
+            "Saldo financiado",
+            "Interés total",
+            "Total a cobrar",
+            "Saldo pendiente",
+            "Importe cancelado",
+        ]
+        rows = [[
+            self._detail_money(precio_venta, moneda),
+            self._detail_money(anticipo, moneda),
+            self._detail_money(saldo_financiado, moneda),
+            self._detail_money(interes_total, moneda),
+            self._detail_money(total_obligaciones, moneda),
+            self._detail_money(self._first_present(resumen.get("saldo_pendiente"), plan.get("saldo_pendiente")), moneda),
+            self._detail_money(self._first_present(resumen.get("importe_cancelado"), plan.get("importe_cancelado")), moneda),
+        ]]
+        return self._compact_section(
+            "Resumen financiero",
+            self._compact_table(headers, rows, empty_text="Sin resumen financiero informado en el payload."),
+        )
+
+    def _build_advance_table(self, anticipo: dict[str, Any] | None, moneda_default: Any) -> ft.Control:
+        rows: list[list[Any]] = []
+        if anticipo is not None:
+            rows.append([
+                self._obligation_concept(anticipo, 1, default="Anticipo"),
+                self._obligation_due_date(anticipo),
+                self._detail_money(self._obligation_amount(anticipo), anticipo.get("moneda") or moneda_default),
+                self._obligation_status(anticipo),
+            ])
+        return self._compact_section(
+            "Anticipo",
+            self._compact_table(["Concepto", "Vencimiento", "Importe", "Estado"], rows, empty_text="Sin anticipo informado en el payload."),
+        )
+
+    def _build_financed_plan_section(
+        self,
+        cuotas: list[dict[str, Any]],
+        bloques: list[Any],
+        capital_financiado: Any,
+        interes_total: Any,
+        total_financiado: Any,
+        moneda: Any,
+        plan: dict[str, Any],
+    ) -> ft.Control:
+        page_size = max(1, self.state.detalle_cuotas_page_size)
+        total_cuotas = len(cuotas)
+        total_pages = max(1, (total_cuotas + page_size - 1) // page_size)
+        page = min(max(1, self.state.detalle_cuotas_page), total_pages)
+        start_index = (page - 1) * page_size
+        end_index = min(start_index + page_size, total_cuotas)
+        cuotas_visibles = cuotas[start_index:end_index]
+        cuotas_rows = [
+            [
+                f"Cuota {start_index + idx}",
+                self._obligation_due_date(cuota),
+                self._detail_money(self._obligation_amount(cuota), cuota.get("moneda") or moneda),
+                self._obligation_status(cuota),
+            ]
+            for idx, cuota in enumerate(cuotas_visibles, start=1)
+        ]
+
+        controls: list[ft.Control] = []
+        if total_cuotas > page_size:
+            controls.append(ft.Text(f"Cuotas {start_index + 1} a {end_index} de {total_cuotas}", size=12, color=ft.Colors.BLUE_GREY_700))
+        controls.append(
+            self._compact_table(
+                ["Cuota", "Vencimiento", "Importe", "Estado"],
+                cuotas_rows,
+                empty_text="Sin cuotas financiadas informadas en el payload.",
+            )
+        )
+        if total_pages > 1:
+            controls.append(
+                ft.Row(
+                    controls=[
+                        ft.OutlinedButton("Anterior", disabled=page <= 1, on_click=self._previous_detail_installments_page),
+                        ft.Text(f"Página {page} de {total_pages}", color=ft.Colors.BLUE_GREY_700),
+                        ft.OutlinedButton("Siguiente", disabled=page >= total_pages, on_click=self._next_detail_installments_page),
+                    ],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+        return self._compact_section(
+            "Plan financiado",
+            ft.Column(controls=controls, spacing=8),
+        )
+
+    def _previous_detail_installments_page(self, _: Any = None) -> None:
+        self.state.detalle_cuotas_page = max(1, self.state.detalle_cuotas_page - 1)
+        self._render()
+
+    def _next_detail_installments_page(self, _: Any = None) -> None:
+        self.state.detalle_cuotas_page += 1
+        self._render()
+
+    def _split_advance_and_installment_obligations(self, obligaciones: list[Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        normalized = [ob for ob in obligaciones if isinstance(ob, dict)]
+        advance_index: int | None = None
+        for idx, ob in enumerate(normalized):
+            if self._is_advance_obligation(ob):
+                advance_index = idx
+                break
+        if advance_index is None and normalized and (self.state.tiene_anticipo or self.state.importe_anticipo):
+            advance_index = 0
+        if advance_index is None and len(normalized) > 1:
+            first_amount = _parse_money_display_decimal(self._obligation_amount(normalized[0]))
+            other_amounts = [_parse_money_display_decimal(self._obligation_amount(ob)) for ob in normalized[1:]]
+            comparable_amounts = [amount for amount in other_amounts if amount is not None]
+            if first_amount is not None and comparable_amounts and first_amount > max(comparable_amounts):
+                advance_index = 0
+        if advance_index is None:
+            return None, normalized
+        advance = normalized[advance_index]
+        installments = [ob for idx, ob in enumerate(normalized) if idx != advance_index]
+        return advance, installments
+
+    def _is_advance_obligation(self, ob: dict[str, Any]) -> bool:
+        candidates = [ob.get("tipo_obligacion"), ob.get("concepto"), ob.get("tipo_item_cronograma")]
+        return any("ANTICIPO" in str(value or "").upper() for value in candidates)
+
+    def _obligation_concept(self, ob: dict[str, Any], index: int, *, default: str) -> str:
+        return str(self._first_present(ob.get("tipo_obligacion"), ob.get("tipo_item_cronograma"), ob.get("concepto"), ob.get("descripcion"), default))
+
+    def _obligation_amount(self, ob: dict[str, Any] | None) -> Any:
+        if ob is None:
+            return None
+        return self._first_present(ob.get("importe"), ob.get("importe_total"), ob.get("saldo_total"))
+
+    def _obligation_due_date(self, ob: dict[str, Any]) -> Any:
+        value = self._first_present(ob.get("fecha_vencimiento"), ob.get("vencimiento"))
+        return _format_date_ar(value) or value
+
+    def _obligation_status(self, ob: dict[str, Any]) -> Any:
+        return self._first_present(ob.get("estado"), ob.get("estado_obligacion"))
+
+    def _sum_obligations_amount(self, obligaciones: list[Any]) -> Decimal | None:
+        total = Decimal("0")
+        found = False
+        for raw in obligaciones:
+            ob = raw if isinstance(raw, dict) else {}
+            amount = _parse_money_display_decimal(self._obligation_amount(ob))
+            if amount is not None:
+                total += amount
+                found = True
+        return total if found else None
+
+    def _subtract_money_values(self, left: Any, right: Any) -> Decimal | None:
+        left_value = _parse_money_display_decimal(left)
+        right_value = _parse_money_display_decimal(right)
+        if left_value is None or right_value is None:
+            return None
+        return left_value - right_value
+
+    def _build_detail_asset_impact_table(self, impacto: Any) -> ft.Control:
+        items = self._normalize_asset_impact_items(impacto)
+        include_state_columns = any(
+            self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior"), item.get("estado_nuevo"), item.get("estado_activo_nuevo"))
+            not in (None, "", "-")
+            for item in items
+        )
+        headers = ["Objeto", "Disponibilidad informada", "Ocupación informada", "Observaciones"]
+        if include_state_columns:
+            headers = ["Objeto", "Estado anterior", "Estado nuevo", "Disponibilidad informada", "Ocupación informada", "Observaciones"]
+
+        rows: list[list[Any]] = []
+        for item in items:
+            base_row = [
+                self._impact_object_label(item),
+                item.get("disponibilidad_actual"),
+                item.get("ocupacion_actual") or "Sin ocupación",
+                item.get("observaciones"),
+            ]
+            row = base_row
+            if include_state_columns:
+                row = [
+                    self._impact_object_label(item),
+                    self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior")),
+                    self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo")),
+                    item.get("disponibilidad_actual"),
+                    item.get("ocupacion_actual") or "Sin ocupación",
+                    item.get("observaciones"),
+                ]
+            if any(value not in (None, "", "-") for value in row):
+                rows.append(row)
+        return self._compact_section(
+            "Impacto del activo",
+            self._compact_table(headers, rows, empty_text="Sin impacto informado en el payload."),
+        )
+
+    def _compact_table(self, headers: list[str], rows: list[list[Any]], *, empty_text: str) -> ft.Control:
+        if not rows:
+            return ft.Text(empty_text, color=ft.Colors.BLUE_GREY_700)
+        header = ft.Row(
+            controls=[self._table_cell(text, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700) for text in headers],
+            spacing=0,
+        )
+        body_rows = [
+            ft.Row(
+                controls=[self._table_cell(value) for value in row],
+                spacing=0,
+            )
+            for row in rows
+        ]
+        return ft.Column(
+            controls=[header, ft.Divider(height=1), *body_rows],
+            spacing=4,
+        )
+
+    def _table_cell(self, value: Any, *, weight: ft.FontWeight | None = None, color: ft.ColorValue | None = None) -> ft.Control:
+        if isinstance(value, ft.Control):
+            content = value
+        else:
+            content = ft.Text(str(value if value not in (None, "") else "-"), size=12, color=color or ft.Colors.BLUE_GREY_900)
+        return ft.Container(
+            expand=True,
+            padding=ft.Padding(left=6, top=4, right=6, bottom=4),
+            content=content if isinstance(value, ft.Control) else ft.Text(str(value if value not in (None, "") else "-"), size=12, color=color or ft.Colors.BLUE_GREY_900, weight=weight),
+        )
+
+    def _object_identifier(self, obj: dict[str, Any]) -> str:
+        visual = self._first_present(obj.get("descripcion"), obj.get("codigo"), obj.get("texto_visual"))
+        if visual:
+            return str(visual)
+        if obj.get("id_inmueble") not in (None, ""):
+            return f"Inmueble {obj.get('id_inmueble')}"
+        if obj.get("id_unidad_funcional") not in (None, ""):
+            return f"Unidad funcional {obj.get('id_unidad_funcional')}"
+        return "-"
+
+    def _impact_object_label(self, item: dict[str, Any]) -> Any:
+        return self._first_present(item.get("codigo"), item.get("descripcion"), item.get("id_inmueble"), item.get("id_unidad_funcional"))
+
+    def _normalize_asset_impact_items(self, impacto: Any) -> list[dict[str, Any]]:
+        if isinstance(impacto, dict):
+            objetos = impacto.get("objetos")
+            if isinstance(objetos, list):
+                return [item for item in objetos if isinstance(item, dict) and self._has_useful_asset_impact_data(item)]
+            return [impacto] if self._has_useful_asset_impact_data(impacto) else []
+        if isinstance(impacto, list):
+            return [item for item in impacto if isinstance(item, dict) and self._has_useful_asset_impact_data(item)]
+        return []
+
+    def _has_useful_asset_impact_data(self, item: dict[str, Any]) -> bool:
+        values = [
+            self._impact_object_label(item),
+            self._first_present(item.get("estado_anterior"), item.get("estado_activo_anterior")),
+            self._first_present(item.get("estado_nuevo"), item.get("estado_activo_nuevo")),
+            item.get("disponibilidad_actual"),
+            item.get("ocupacion_actual"),
+            item.get("observaciones"),
+        ]
+        return any(value not in (None, "", "-") for value in values)
+
+    def _status_badge(self, status: str) -> ft.Control:
+        normalized = str(status or "-").upper()
+        if normalized == "CONFIRMADA":
+            return _badge(normalized, ft.Colors.GREEN_50, ft.Colors.GREEN_200)
+        if normalized in {"GENERADO", "PROYECTADA"}:
+            return _badge(normalized, ft.Colors.BLUE_50, ft.Colors.BLUE_200)
+        return _badge(normalized, ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200)
+
+    def _as_list(self, value: Any) -> list[Any]:
+        return value if isinstance(value, list) else []
+
+    def _detail_money(self, value: Any, moneda: Any = None) -> str:
+        if value in (None, ""):
+            return "-"
+        amount = _format_money(value)
+        return f"{amount} {moneda}" if moneda not in (None, "") and amount != "-" else amount
+
+    def _first_present(self, *values: Any) -> Any:
+        for value in values:
+            if value not in (None, ""):
+                return value
+        return None
+
+    def _confirmed_buyer_name(self, comprador: dict[str, Any]) -> str:
+        persona = comprador.get("persona") if isinstance(comprador.get("persona"), dict) else {}
+        return persona.get("razon_social") or " ".join(part for part in [persona.get("nombre"), persona.get("apellido")] if part) or comprador.get("nombre") or ""
 
     def _confirmed_buyer_label(self, comprador: dict[str, Any]) -> str:
         persona = comprador.get("persona") if isinstance(comprador.get("persona"), dict) else {}
         rol = comprador.get("rol_participacion") if isinstance(comprador.get("rol_participacion"), dict) else {}
-        nombre = persona.get("razon_social") or " ".join(
-            part for part in [persona.get("nombre"), persona.get("apellido")] if part
-        )
-        return f"{nombre or persona.get('id_persona') or '-'} / {rol.get('codigo_rol') or '-'} / {comprador.get('porcentaje_responsabilidad') or '-'}%"
+        nombre = self._confirmed_buyer_name(comprador)
+        return f"{nombre or persona.get('id_persona') or comprador.get('id_persona') or '-'} / {rol.get('codigo_rol') or comprador.get('codigo_rol') or '-'} / {comprador.get('porcentaje_responsabilidad') or '-'}%"
 
     def _confirm_error_message(self, result: ApiResult) -> str:
         if result.status_code == 400:
@@ -3452,48 +3890,13 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_confirmed_sale_step(self) -> ft.Control:
-        data = self.state.confirm_data or {}
-        venta = data.get("venta") if isinstance(data.get("venta"), dict) else {}
-        plan = data.get("plan_pago_v2") if isinstance(data.get("plan_pago_v2"), dict) else {}
-        obligaciones = data.get("obligaciones") if isinstance(data.get("obligaciones"), dict) else {}
         controls: list[ft.Control] = [
             ft.Text("Venta confirmada", size=24, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-            ft.Text(
-                "La venta directa ya fue persistida por el backend. El plan de pago y las obligaciones fueron generados por backend; el wizard no creó venta ni obligaciones antes de esta confirmación.",
-                color=ft.Colors.BLUE_GREY_800,
-            ),
-            self._build_review_section_container(
-                [
-                    ft.Text("Resultado backend", size=18, weight=ft.FontWeight.W_700),
-                    _info_row("Status HTTP", self.state.confirm_status_code or "-"),
-                    _info_row("id_venta", venta.get("id_venta") or "-"),
-                    _info_row("estado_venta", venta.get("estado_venta") or "-"),
-                    _info_row("version_registro", venta.get("version_registro") or "-"),
-                    _info_row("id_plan_pago_venta", plan.get("id_plan_pago_venta") or "-"),
-                    _info_row("estado_plan_pago", plan.get("estado_plan_pago") or "-"),
-                    _info_row("Obligaciones generadas", obligaciones.get("cantidad") or 0),
-                ]
-            ),
-            self._build_review_section_container(
-                [
-                    ft.Text("Resumen comercial", size=18, weight=ft.FontWeight.W_700),
-                    _info_row("Origen", self._origin_label()),
-                    _info_row("Objetos", len(self.state.objetos)),
-                    _info_row("Compradores", self._buyers_flow_status()),
-                    _info_row("Forma de pago", self._payment_method_status()),
-                    _info_row("Total", self._format_money_with_currency(self._objects_total())),
-                ]
-            ),
-            ft.Button(
-                "Ver detalle integral de venta",
-                icon=ft.Icons.RECEIPT_LONG,
-                disabled=not venta.get("id_venta") or self.state.detalle_venta_loading,
-                on_click=self._load_confirmed_sale_detail,
-            ),
+            self._build_help_card("La venta se confirmó correctamente.", ft.Colors.GREEN_50, ft.Colors.GREEN_200),
             *self._build_confirmed_sale_detail_controls(),
         ]
         return ft.Container(
-            padding=24,
+            padding=ft.Padding(left=24, top=24, right=24, bottom=40),
             border_radius=14,
             bgcolor=ft.Colors.WHITE,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
@@ -3501,6 +3904,26 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_flow_state_panel(self) -> ft.Control:
+        if self.state.pantalla_actual == "VENTA_CONFIRMADA":
+            controls: list[ft.Control] = [
+                ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
+                _flow_info_row("Origen", self._origin_label()),
+                _flow_info_row("Moneda", self._currency_label()),
+                _flow_info_row("Objetos", len(self.state.objetos)),
+                _flow_info_row("Total", self._format_money_with_currency(self._objects_total())),
+                _flow_info_row("Compradores", self._buyers_flow_status()),
+                _flow_info_row("Forma de pago", self._payment_method_status()),
+                _flow_info_row("Estado", "venta confirmada"),
+                _flow_info_row("Próximo paso", "finalizar"),
+            ]
+            return ft.Container(
+                padding=16,
+                border_radius=14,
+                bgcolor=ft.Colors.BLUE_GREY_50,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(controls=controls, spacing=10),
+            )
+
         controls: list[ft.Control] = [
             ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
             _flow_info_row("Origen", self._origin_label()),
@@ -5252,9 +5675,9 @@ class VentaCompletaWizardV3Prototype:
 
     def _payment_method_status(self) -> str:
         if self.state.forma_pago == "CONTADO":
-            return "contado"
+            return "CONTADO"
         if self.state.forma_pago == "FINANCIADO":
-            return "financiado"
+            return "FINANCIADO"
         return "pendiente"
 
     def _review_flow_status(self) -> str:
@@ -5294,7 +5717,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return "confirmar venta" if self._can_confirm_sale() else "resolver pendientes de revisión"
         if self.state.pantalla_actual == "VENTA_CONFIRMADA":
-            return "venta persistida"
+            return "venta persistida con detalle integral read-only"
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             return "cargar datos iniciales"
         if self.state.origen is None:
@@ -5313,12 +5736,17 @@ class VentaCompletaWizardV3Prototype:
         )
 
 
-def _format_date_ar(iso_date: str | None) -> str:
+def _format_date_ar(iso_date: Any) -> str:
+    if isinstance(iso_date, datetime):
+        return iso_date.strftime("%d/%m/%Y")
+    if isinstance(iso_date, date):
+        return iso_date.strftime("%d/%m/%Y")
     text = str(iso_date or "").strip()
     if not text:
         return ""
+    normalized = text.split("T", 1)[0]
     try:
-        return datetime.strptime(text, "%Y-%m-%d").strftime("%d/%m/%Y")
+        return datetime.strptime(normalized, "%Y-%m-%d").strftime("%d/%m/%Y")
     except ValueError:
         return text
 
