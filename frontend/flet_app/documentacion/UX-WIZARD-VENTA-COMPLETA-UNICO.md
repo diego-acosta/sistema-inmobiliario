@@ -802,15 +802,30 @@ como paso posterior y no se dispara desde el preview.
 ### Paso 6B - PREVIEW_PLAN_PAGO
 
 Pantalla obligatoria previa a la revision general. Muestra el resultado backend
-del preview sin venta persistida:
+del preview sin venta persistida con etiquetas de usuario y valores monetarios
+en formato argentino con moneda, por ejemplo `ARS 1.000.000,00`. Con el modo
+**Mostrar datos tecnicos** apagado no debe mostrar nombres internos
+`snake_case`; esos nombres pueden aparecer solo como dato secundario al activar
+el modo tecnico.
 
-- `total_calculado`;
-- `total_con_interes`;
-- `total_ajuste_indexacion`;
-- `total_con_indexacion`;
-- cantidad de obligaciones simuladas;
-- cronograma simulado en tabla compacta y scrolleable con columnas `#`,
-  `Fecha vencimiento`, `Tipo`, `Cuota` e `Importe`.
+El bloque **Resultado de la vista previa** se presenta como resumen compacto
+horizontal de una sola fila, no como lista vertical alta. Sus columnas de
+usuario son:
+
+- Total calculado;
+- Total con interes;
+- Total con indexacion;
+- Ajuste por indexacion, cuando el response lo informe;
+- Obligaciones simuladas.
+
+La tabla de obligaciones simuladas mantiene columnas `#`, `Fecha vencimiento`,
+`Tipo`, `Cuota` e `Importe`; las fechas se muestran como `DD/MM/AAAA` y los
+importes como moneda argentina segun la moneda seleccionada. Si hay muchas
+obligaciones, la UI puede paginarlas localmente en bloques de 8, indicando el
+rango visible, por ejemplo `Obligaciones 1 a 8 de 13`, junto con controles
+`Anterior`, `Pagina X de Y` y `Siguiente`. Esta paginacion/visualizacion es
+frontend read-only: no dispara endpoints, no recalcula y no modifica el payload
+recibido.
 
 Luego de #166, los refuerzos internos no se esperan como obligaciones
 `REFUERZO` separadas para este preview: se acumulan en la obligacion `CUOTA`
