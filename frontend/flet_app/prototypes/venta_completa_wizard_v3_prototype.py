@@ -3052,7 +3052,7 @@ class VentaCompletaWizardV3Prototype:
                             self._preview_obligation_table_cell(
                                 self._format_preview_obligation_amount(obligacion.get("importe_total")),
                                 width=220,
-                                alignment=ft.alignment.center_right,
+                                alignment=ft.Alignment(1, 0),
                             )
                         ),
                     ],
@@ -3082,7 +3082,7 @@ class VentaCompletaWizardV3Prototype:
                                             self._preview_obligation_table_header(
                                                 "Importe",
                                                 width=220,
-                                                alignment=ft.alignment.center_right,
+                                                alignment=ft.Alignment(1, 0),
                                             )
                                         ),
                                     ],
@@ -3114,7 +3114,7 @@ class VentaCompletaWizardV3Prototype:
         label: str,
         *,
         width: int,
-        alignment: ft.Alignment = ft.alignment.center_left,
+        alignment: ft.Alignment = ft.Alignment(-1, 0),
     ) -> ft.Control:
         return ft.Container(
             width=width,
@@ -3127,7 +3127,7 @@ class VentaCompletaWizardV3Prototype:
         content: str | ft.Control,
         *,
         width: int,
-        alignment: ft.Alignment = ft.alignment.center_left,
+        alignment: ft.Alignment = ft.Alignment(-1, 0),
     ) -> ft.Control:
         if isinstance(content, str):
             inner: ft.Control = ft.Text(content, selectable=True)
