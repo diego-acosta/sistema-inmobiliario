@@ -3316,27 +3316,23 @@ class VentaCompletaWizardV3Prototype:
         ]
 
     def _build_executive_summary_card(self, sale_items: list[tuple[str, Any]], plan_items: list[tuple[str, Any]]) -> ft.Control:
-        return ft.Container(
-            padding=14,
-            border_radius=12,
-            bgcolor=ft.Colors.WHITE,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=[
-                    ft.Text("Resumen de venta", size=16, weight=ft.FontWeight.W_700),
-                    self._summary_fields_row(sale_items),
-                    *([ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100), self._summary_fields_row(plan_items)] if plan_items else []),
-                ],
-                spacing=10,
-            ),
+        summary_controls: list[ft.Control] = [self._summary_fields_row(sale_items)]
+        if plan_items:
+            summary_controls.extend([
+                ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100),
+                self._summary_fields_row(plan_items),
+            ])
+        return self._compact_section(
+            "Resumen de venta",
+            ft.Column(controls=summary_controls, spacing=10),
         )
 
     def _summary_fields_row(self, items: list[tuple[str, Any]]) -> ft.Control:
-        return ft.Row(
+        return ft.ResponsiveRow(
+            columns=12,
             controls=[self._summary_field(label, value) for label, value in items],
             spacing=16,
             run_spacing=10,
-            wrap=True,
         )
 
     def _summary_field(self, label: str, value: Any) -> ft.Control:
@@ -3347,7 +3343,7 @@ class VentaCompletaWizardV3Prototype:
             no_wrap=True,
         )
         return ft.Container(
-            width=170,
+            col={"xs": 12, "sm": 6, "md": 4, "lg": 2},
             content=ft.Column(
                 controls=[
                     ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_600, no_wrap=True),
@@ -5679,9 +5675,9 @@ class VentaCompletaWizardV3Prototype:
 
     def _payment_method_status(self) -> str:
         if self.state.forma_pago == "CONTADO":
-            return "contado"
+            return "CONTADO"
         if self.state.forma_pago == "FINANCIADO":
-            return "financiado"
+            return "FINANCIADO"
         return "pendiente"
 
     def _review_flow_status(self) -> str:
