@@ -2900,10 +2900,6 @@ class VentaCompletaWizardV3Prototype:
     def _build_plan_payment_preview_step(self) -> ft.Control:
         controls: list[ft.Control] = [
             ft.Text("Preview del plan de pago", size=24, weight=ft.FontWeight.W_700),
-            ft.Text(
-                "Resultado de la vista previa del plan de pago. Este paso es obligatorio antes de la revisión general.",
-                color=ft.Colors.BLUE_GREY_700,
-            ),
         ]
         if self.state.preview_loading:
             controls.append(
