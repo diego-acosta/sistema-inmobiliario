@@ -208,6 +208,7 @@ class WizardVentaCompletaV3State:
     detalle_venta_requested_id: int | None = None
     detalle_cuotas_page: int = 1
     detalle_cuotas_page_size: int = 10
+    mostrar_datos_tecnicos: bool = False
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -499,6 +500,38 @@ class VentaCompletaWizardV3Prototype:
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
 
+    def _on_toggle_technical_data(self, event: ft.ControlEvent) -> None:
+        self.state.mostrar_datos_tecnicos = bool(event.control.value)
+        self._render()
+
+    def _technical_text(self, value: str) -> ft.Control | None:
+        if not self.state.mostrar_datos_tecnicos:
+            return None
+        return ft.Text(value, size=12, color=ft.Colors.BLUE_GREY_600, selectable=True)
+
+    def _technical_chip(self, value: str, *, persisted: bool | None = None) -> ft.Control | None:
+        if not self.state.mostrar_datos_tecnicos:
+            return None
+        bgcolor = ft.Colors.BLUE_GREY_50
+        border_color = ft.Colors.BLUE_GREY_200
+        if persisted is not None:
+            bgcolor = ft.Colors.GREEN_50 if persisted else ft.Colors.AMBER_50
+            border_color = ft.Colors.GREEN_200 if persisted else ft.Colors.AMBER_200
+        return _badge(value, bgcolor, border_color)
+
+    def _technical_controls(self, controls: list[ft.Control | None]) -> list[ft.Control]:
+        if not self.state.mostrar_datos_tecnicos:
+            return []
+        return [control for control in controls if control is not None]
+
+    @staticmethod
+    def _object_type_label(tipo_objeto: str) -> str:
+        labels = {
+            "INMUEBLE": "Inmueble",
+            "UNIDAD_FUNCIONAL": "Unidad funcional",
+        }
+        return labels.get(str(tipo_objeto or "").upper(), str(tipo_objeto or "-"))
+
     def _build_footer(self) -> ft.Control:
         return ft.Container(
             padding=12,
@@ -669,7 +702,7 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("¿Cómo querés iniciar la venta?", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Elegí una alternativa para definir el contexto inicial. DIRECTA usa backend real; RESERVA queda pendiente de integración.",
+                        "Elegí una alternativa para definir el contexto inicial. Venta directa permite crear una venta nueva; desde reserva queda pendiente de integración.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Row(
@@ -761,7 +794,7 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("Datos iniciales de venta", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Definí la moneda antes de cargar objetos para que cada precio_asignado tenga contexto comercial.",
+                        "Definí la moneda antes de cargar objetos para que todos los valores de esta venta queden en la misma moneda.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Row(
@@ -798,10 +831,17 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.observaciones_field,
                     self._build_help_card(
-                        "La moneda se conservará para el payload futuro de generar_venta, condiciones_comerciales y plan_pago_v2. La fecha se muestra como DD/MM/AAAA y se conserva internamente como YYYY-MM-DD. No se implementan forma de pago, plan ni cronograma local en este prototipo.",
-                        ft.Colors.AMBER_50,
-                        ft.Colors.AMBER_200,
+                        "La moneda se aplicará a todos los valores cargados en esta venta.",
+                        ft.Colors.BLUE_50,
+                        ft.Colors.BLUE_200,
                     ),
+                    *self._technical_controls([
+                        self._build_help_card(
+                            "Detalle técnico: la moneda se conserva para generar_venta, condiciones_comerciales y plan_pago_v2. La fecha se muestra como DD/MM/AAAA y se conserva internamente como YYYY-MM-DD.",
+                            ft.Colors.AMBER_50,
+                            ft.Colors.AMBER_200,
+                        )
+                    ]),
                 ],
                 spacing=14,
             ),
@@ -1017,7 +1057,7 @@ class VentaCompletaWizardV3Prototype:
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._build_help_card(
-                "El buscador usa exclusivamente objetos reales del backend (source=backend, persisted=True). Si no aparecen resultados, cargá inmuebles o unidades funcionales reales antes de continuar.",
+                "El buscador muestra inmuebles y unidades funcionales disponibles para operar. Si no aparecen resultados, cargá esos datos antes de continuar.",
                 ft.Colors.BLUE_50,
                 ft.Colors.BLUE_200,
             ),
@@ -1081,20 +1121,17 @@ class VentaCompletaWizardV3Prototype:
                 ft.Text(str(self.objeto_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
                 ft.Row(
                     controls=[
-                        _badge(f"tipo_objeto: {tipo_objeto}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
-                        _badge(
-                            f"ID técnico secundario ({id_label}): {id_value}",
-                            ft.Colors.BLUE_GREY_50,
-                            ft.Colors.BLUE_GREY_200,
-                        ),
-                        _badge(
-                            self._record_source_label(
-                                str(self.objeto_seleccionado.get("source") or "backend"),
-                                bool(self.objeto_seleccionado.get("persisted", False)),
+                        _badge(f"Tipo: {self._object_type_label(tipo_objeto)}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
+                        *self._technical_controls([
+                            self._technical_chip(f"ID técnico secundario ({id_label}): {id_value}"),
+                            self._technical_chip(
+                                self._record_source_label(
+                                    str(self.objeto_seleccionado.get("source") or "backend"),
+                                    bool(self.objeto_seleccionado.get("persisted", False)),
+                                ),
+                                persisted=bool(self.objeto_seleccionado.get("persisted", False)),
                             ),
-                            ft.Colors.GREEN_50 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_50,
-                            ft.Colors.GREEN_200 if self.objeto_seleccionado.get("persisted") else ft.Colors.AMBER_200,
-                        ),
+                        ]),
                     ],
                     wrap=True,
                     spacing=8,
@@ -1186,15 +1223,19 @@ class VentaCompletaWizardV3Prototype:
                         controls=[
                             ft.Text(objeto.texto_visual, weight=ft.FontWeight.W_700),
                             ft.Text(
-                                f"Tipo: {objeto.tipo_objeto} — ID técnico secundario ({id_label}): {id_value}",
+                                f"Tipo: {self._object_type_label(objeto.tipo_objeto)}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
                             ft.Text(
-                                f"precio_asignado: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
+                                f"Precio asignado: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
+                            *self._technical_controls([
+                                self._technical_text(f"ID técnico secundario ({id_label}): {id_value}"),
+                                self._technical_text(f"Origen dato: {self._record_source_label(objeto.source, objeto.persisted)}"),
+                            ]),
                         ],
                         spacing=3,
                         expand=True,
@@ -1226,7 +1267,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.GREEN_900,
                     ),
                     _info_row("Cantidad de objetos", len(self.state.objetos)),
-                    _info_row("Suma precio_asignado", self._format_money_with_currency(total)),
+                    _info_row("Suma de precios asignados", self._format_money_with_currency(total)),
                     _info_row("Total derivado", self._format_money_with_currency(total)),
                 ],
                 spacing=8,
@@ -1262,7 +1303,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     self._build_help_card(
-                        "El buscador usa solo personas reales del backend (source=backend, persisted=True). Si no aparecen resultados, cargá personas reales primero o usá el modo técnico/dev con IDs persistidos.",
+                        "El buscador muestra personas disponibles para operar. Si no aparecen resultados, cargá las personas antes de continuar.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -1292,7 +1333,7 @@ class VentaCompletaWizardV3Prototype:
             self._build_reserva_selected_card(),
             self._build_inherited_buyers_pending_card(),
             self._build_help_card(
-                "No se cargarán compradores manuales, no se pedirá id_rol_participacion y no se enviarán compradores en el payload futuro para ventas desde reserva.",
+                "Los compradores se tomarán de la reserva cuando esa integración esté disponible; no hace falta cargarlos manualmente en este flujo.",
                 ft.Colors.AMBER_50,
                 ft.Colors.AMBER_200,
             ),
@@ -1345,7 +1386,7 @@ class VentaCompletaWizardV3Prototype:
                 ),
             ),
             ft.Text(
-                "Cuando exista integración con backend real, se mostrarán aquí los compradores precargados de la reserva y se validarán antes de confirmar.",
+                "Cuando exista la integración de reservas, se mostrarán aquí los compradores precargados y se validarán antes de confirmar.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -1376,7 +1417,7 @@ class VentaCompletaWizardV3Prototype:
     def _build_rol_comprador_status_card(self) -> ft.Control:
         if self.rol_comprador_data is not None:
             return self._build_help_card(
-                f"Rol COMPRADOR resuelto automáticamente: id_rol_participacion={self._rol_comprador_id_resuelto()}.",
+                "Rol comprador asignado automáticamente." + (f" id_rol_participacion={self._rol_comprador_id_resuelto()}." if self.state.mostrar_datos_tecnicos else ""),
                 ft.Colors.GREEN_50,
                 ft.Colors.GREEN_200,
             )
@@ -1446,21 +1487,16 @@ class VentaCompletaWizardV3Prototype:
                     ft.Text("Comprador seleccionado", size=18, weight=ft.FontWeight.W_700),
                     ft.Text(str(self.comprador_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
                     ft.Row(
-                        controls=[
-                            _badge(
-                                f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}",
-                                ft.Colors.BLUE_GREY_50,
-                                ft.Colors.BLUE_GREY_200,
-                            ),
-                            _badge(
+                        controls=self._technical_controls([
+                            self._technical_chip(f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}"),
+                            self._technical_chip(
                                 self._record_source_label(
                                     str(self.comprador_seleccionado.get("source") or "backend"),
                                     bool(self.comprador_seleccionado.get("persisted", False)),
                                 ),
-                                ft.Colors.GREEN_50 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_50,
-                                ft.Colors.GREEN_200 if self.comprador_seleccionado.get("persisted") else ft.Colors.AMBER_200,
+                                persisted=bool(self.comprador_seleccionado.get("persisted", False)),
                             ),
-                        ],
+                        ]),
                         spacing=8,
                         wrap=True,
                     ),
@@ -1471,7 +1507,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_600,
                     ),
                     _info_row("Rol asignado automáticamente", "COMPRADOR"),
-                    _info_row("id_rol_participacion", self._rol_comprador_id_resuelto() or "pendiente"),
+                    *self._technical_controls([_info_row("id_rol_participacion", self._rol_comprador_id_resuelto() or "pendiente")]),
                     ft.Row(
                         controls=[
                             ft.Button(
@@ -1528,7 +1564,7 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_added_buyer_row(self, index: int, comprador: CompradorWizardDraft) -> ft.Control:
-        porcentaje = comprador.porcentaje_responsabilidad or "vacío (se asumirá 100% si es único comprador)"
+        porcentaje = comprador.porcentaje_responsabilidad or "se asumirá 100% por ser único comprador"
         return ft.Container(
             padding=12,
             border_radius=10,
@@ -1539,17 +1575,15 @@ class VentaCompletaWizardV3Prototype:
                     ft.Column(
                         controls=[
                             ft.Text(comprador.texto_visual, weight=ft.FontWeight.W_700),
-                            ft.Text(f"id_persona: {comprador.id_persona}", size=12, color=ft.Colors.BLUE_GREY_700),
                             ft.Text(
-                                f"id_rol_participacion: {comprador.id_rol_participacion}",
+                                f"Responsabilidad: {porcentaje}",
                                 size=12,
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
-                            ft.Text(
-                                f"porcentaje_responsabilidad: {porcentaje}",
-                                size=12,
-                                color=ft.Colors.BLUE_GREY_700,
-                            ),
+                            *self._technical_controls([
+                                self._technical_text(f"id_persona: {comprador.id_persona}"),
+                                self._technical_text(f"id_rol_participacion: {comprador.id_rol_participacion}"),
+                            ]),
                         ],
                         spacing=3,
                         expand=True,
@@ -1838,7 +1872,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     self.fecha_anticipo_feedback,
                     ft.Text(
-                        "El anticipo se incluirá como bloque ANTICIPO del Plan Pago V2.",
+                        "El anticipo se incluirá en el plan de pago de la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_700,
                     ),
@@ -1869,7 +1903,7 @@ class VentaCompletaWizardV3Prototype:
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Text(
-                        "No se calcula cronograma local; la pantalla solo prepara datos para Plan Pago V2.",
+                        "El plan se cargará en el siguiente paso. Los datos serán validados al confirmar la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2050,7 +2084,7 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Método de financiación", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Elegí cómo se liquidará este tramo. El prototipo conserva los datos; interés, indexación y cronograma se mostrarán desde el preview backend en la versión productiva.",
+                "Elegí cómo se liquidará este tramo. El cálculo definitivo se validará al confirmar la venta.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -2065,7 +2099,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_liquidation_method_card(
                         method="INTERES_DIRECTO",
                         title="Interés directo",
-                        description="Captura la tasa para la futura simulación backend del Plan Pago V2.",
+                        description="Captura la tasa para calcular las cuotas más adelante.",
                         icon=ft.Icons.PERCENT,
                     ),
                     self._build_liquidation_method_card(
@@ -2083,7 +2117,7 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     self._build_help_card(
-                        "Base de cálculo futura: CAPITAL_INICIAL_BLOQUE. Cargá la tasa como porcentaje visible; el cálculo final se delega al preview backend.",
+                        "Cargá la tasa como porcentaje visible. El cálculo final se validará al confirmar la venta.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_100,
                     ),
@@ -2512,7 +2546,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_financed_plan_validation_panel(difference),
                     self._build_plan_preview_status_section(),
                     ft.Text(
-                        "Al presionar Siguiente se calculará el preview backend obligatorio. Este prototipo no calcula cronograma definitivo, indexaciones, obligaciones, divisiones por comprador ni divisiones por objeto; muestra el preview devuelto por backend cuando se calcula.",
+                        "Al presionar Siguiente se calculará una vista previa obligatoria. El cálculo definitivo se validará al confirmar la venta.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2672,7 +2706,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_review_validation_panel(errors),
                     self._build_confirm_status_panel(),
                     ft.Text(
-                        "La venta directa real se crea recién al presionar Confirmar venta. El preview previo sigue siendo PREVIEW_READLIKE sin id_venta y no persiste la venta.",
+                        "La venta se crea recién al presionar Confirmar venta. La vista previa anterior no confirma la operación.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
@@ -2690,8 +2724,10 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     _info_row("Reserva seleccionada", self.state.texto_visual_reserva or "Reserva pendiente"),
-                    _info_row("id_reserva_venta", self.state.id_reserva_venta),
-                    _info_row("version_registro", self.state.version_registro),
+                    *self._technical_controls([
+                        _info_row("id_reserva_venta", self.state.id_reserva_venta),
+                        _info_row("version_registro", self.state.version_registro),
+                    ]),
                 ]
             )
         return self._build_review_section_container(controls)
@@ -2721,10 +2757,12 @@ class VentaCompletaWizardV3Prototype:
                     content=ft.Column(
                         controls=[
                             ft.Text(f"Objeto {index + 1}: {objeto.texto_visual}", weight=ft.FontWeight.W_700),
-                            _info_row("tipo_objeto", objeto.tipo_objeto),
-                            _info_row(id_label, technical_id),
-                            _info_row("precio_asignado", self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal("0"))),
-                            _info_row("Origen dato", self._record_source_label(objeto.source, objeto.persisted)),
+                            _info_row("Tipo", self._object_type_label(objeto.tipo_objeto)),
+                            _info_row("Precio asignado", self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal("0"))),
+                            *self._technical_controls([
+                                _info_row(id_label, technical_id),
+                                _info_row("Origen dato", self._record_source_label(objeto.source, objeto.persisted)),
+                            ]),
                         ],
                         spacing=5,
                     ),
@@ -2758,10 +2796,12 @@ class VentaCompletaWizardV3Prototype:
                         content=ft.Column(
                             controls=[
                                 ft.Text(f"Comprador {index + 1}: {comprador.texto_visual}", weight=ft.FontWeight.W_700),
-                                _info_row("id_persona", comprador.id_persona),
-                                _info_row("id_rol_participacion", comprador.id_rol_participacion),
-                                _info_row("porcentaje_responsabilidad", comprador.porcentaje_responsabilidad or "100.00"),
-                                _info_row("Origen dato", self._record_source_label(comprador.source, comprador.persisted)),
+                                _info_row("Responsabilidad", (comprador.porcentaje_responsabilidad + "%") if comprador.porcentaje_responsabilidad else "100%"),
+                                *self._technical_controls([
+                                    _info_row("id_persona", comprador.id_persona),
+                                    _info_row("id_rol_participacion", comprador.id_rol_participacion),
+                                    _info_row("Origen dato", self._record_source_label(comprador.source, comprador.persisted)),
+                                ]),
                             ],
                             spacing=5,
                         ),
@@ -2783,7 +2823,7 @@ class VentaCompletaWizardV3Prototype:
                     _info_row("Total a pagar", self._format_money_with_currency(self._objects_total())),
                     _info_row("Fecha de pago / vencimiento", self.state.fecha_pago_contado_display or _format_date_ar(self.state.fecha_pago_contado_iso)),
                     self._build_help_card(
-                        "Preview Plan Pago V2 calculado previamente sin id_venta; la venta aún no fue persistida.",
+                        "El plan de pago fue calculado previamente. La venta todavía no fue confirmada.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -2803,7 +2843,7 @@ class VentaCompletaWizardV3Prototype:
                     self._build_financed_plan_installments_summary_cards(),
                     self._build_financed_plan_validation_panel(difference),
                     self._build_help_card(
-                        "Preview Plan Pago V2 calculado previamente sin id_venta; la venta aún no fue persistida.",
+                        "El plan de pago fue calculado previamente. La venta todavía no fue confirmada.",
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_200,
                     ),
@@ -2816,9 +2856,9 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_plan_preview_status_section(self) -> ft.Control:
         controls: list[ft.Control] = [
-            ft.Text("Preview Plan Pago V2", size=18, weight=ft.FontWeight.W_700),
+            ft.Text("Vista previa del plan de pago", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Al presionar Siguiente se ejecuta automáticamente el preview backend sin id_venta. No crea venta ni obligaciones reales.",
+                "Al presionar Siguiente se calcula una vista previa. No confirma la venta ni genera obligaciones reales.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
@@ -2826,7 +2866,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.preview_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Consultando preview del backend...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Calculando vista previa del plan...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -2854,14 +2894,14 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Preview del plan de pago", size=24, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Resultado backend del preview Plan Pago V2 sin venta persistida. Este paso es obligatorio antes de la revisión general.",
+                "Resultado de la vista previa del plan de pago. Este paso es obligatorio antes de la revisión general.",
                 color=ft.Colors.BLUE_GREY_700,
             ),
         ]
         if self.state.preview_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Consultando preview del backend...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Calculando vista previa del plan...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -2881,7 +2921,7 @@ class VentaCompletaWizardV3Prototype:
         else:
             controls.append(
                 ft.Text(
-                    "Todavía no hay preview backend cargado. Volvé a la edición del plan y avanzá con Siguiente para calcularlo.",
+                    "Todavía no hay vista previa calculada. Volvé a la edición del plan y avanzá con Siguiente para calcularla.",
                     color=ft.Colors.BLUE_GREY_700,
                 )
             )
@@ -3964,8 +4004,8 @@ class VentaCompletaWizardV3Prototype:
     @staticmethod
     def _record_source_label(source: str, persisted: bool) -> str:
         if persisted:
-            return f"backend real/persistido ({source or 'backend'})"
-        return f"no persistido ({source or 'manual'})"
+            return f"dato confirmado ({source or 'backend'})"
+        return f"dato pendiente ({source or 'manual'})"
 
     def _general_review_errors(self) -> list[str]:
         errors: list[str] = []
@@ -4000,7 +4040,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.forma_pago == "FINANCIADO" and self._financed_plan_difference() != Decimal("0"):
             errors.append("El plan financiado debe estar completo con diferencia 0.")
         if self.state.preview_data is None:
-            errors.append("Calculá el preview backend del Plan Pago V2 antes de confirmar.")
+            errors.append("Calculá la vista previa del plan de pago antes de confirmar.")
         if self.state.preview_stale:
             errors.append("El preview está desactualizado; recalculalo antes de confirmar.")
         return errors
@@ -4045,6 +4085,8 @@ class VentaCompletaWizardV3Prototype:
                 _flow_info_row("Forma de pago", self._payment_method_status()),
                 _flow_info_row("Estado", "venta confirmada"),
                 _flow_info_row("Próximo paso", "finalizar"),
+                ft.Divider(height=10),
+                self._build_technical_mode_switch(),
             ]
             return ft.Container(
                 padding=16,
@@ -4080,6 +4122,7 @@ class VentaCompletaWizardV3Prototype:
                 ]
             )
         controls.append(_flow_info_row("Próximo paso", self._next_step_label(), value_no_wrap=False))
+        controls.extend([ft.Divider(height=10), self._build_technical_mode_switch()])
 
         return ft.Container(
             padding=16,
@@ -4090,6 +4133,13 @@ class VentaCompletaWizardV3Prototype:
                 controls=controls,
                 spacing=10,
             ),
+        )
+
+    def _build_technical_mode_switch(self) -> ft.Control:
+        return ft.Switch(
+            label="Mostrar datos técnicos",
+            value=self.state.mostrar_datos_tecnicos,
+            on_change=self._on_toggle_technical_data,
         )
 
     def _build_navigation(self) -> ft.Control:
@@ -5301,12 +5351,12 @@ class VentaCompletaWizardV3Prototype:
         if self.state.tramo_metodo_liquidacion == "INDEXACION":
             return [
                 f"Cuota base estimada antes de actualización: {self._format_money_with_currency(cuota_base)}",
-                "No se calcula indexación localmente.",
+                "Estimación visual. El cálculo definitivo se validará al confirmar la venta.",
             ]
         if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
             return [
                 f"Cuota base sin interés: {self._format_money_with_currency(cuota_base)}",
-                "En la versión final, la cuota con interés se mostrará desde la simulación backend del Plan Pago V2.",
+                "Estimación visual. El cálculo definitivo se validará al confirmar la venta.",
             ]
         return [f"Cuota base estimada: {self._format_money_with_currency(cuota_base)}"]
 

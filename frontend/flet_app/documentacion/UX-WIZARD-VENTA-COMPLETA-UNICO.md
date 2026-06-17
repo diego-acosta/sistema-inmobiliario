@@ -60,6 +60,17 @@ Pantalla 1 -- Origen y no copia el flujo completo de V2.
 - Preview Plan Pago V2 previo a confirmacion es `PREVIEW_READLIKE`: no crea
   venta, no genera obligaciones reales y no cambia estados comerciales.
 
+## 3.1 Modo tecnico/debug visible
+
+El Wizard Venta Completa V3 oculta por defecto identificadores tecnicos, nombres
+internos de payload y marcas de integracion. Para pruebas puede activarse
+**Mostrar datos tecnicos**, que expone IDs internos y datos auxiliares sin
+modificar el flujo, los endpoints ni los payloads enviados.
+
+Este modo solo afecta la visibilidad en frontend: no cambia validaciones,
+selecciones, adaptadores, llamadas al backend, reglas de negocio ni contratos de
+confirmacion.
+
 ## 4. Contratos backend existentes que guian el diseno
 
 El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:
