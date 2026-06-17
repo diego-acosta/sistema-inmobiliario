@@ -3038,11 +3038,27 @@ class VentaCompletaWizardV3Prototype:
                 ft.DataRow(
                     color=ft.Colors.AMBER_50 if is_reinforcement else None,
                     cells=[
-                        ft.DataCell(ft.Text(str(absolute_index + 1))),
-                        ft.DataCell(ft.Text(_format_date_ar(str(obligacion.get("fecha_vencimiento") or "")) or "-")),
-                        ft.DataCell(type_cell),
-                        ft.DataCell(ft.Text(str(obligacion.get("numero_cuota_asociada") or "-"))),
-                        ft.DataCell(ft.Text(self._format_preview_obligation_amount(obligacion.get("importe_total")))),
+                        ft.DataCell(self._preview_obligation_table_cell(str(absolute_index + 1), width=56)),
+                        ft.DataCell(
+                            self._preview_obligation_table_cell(
+                                _format_date_ar(str(obligacion.get("fecha_vencimiento") or "")) or "-",
+                                width=170,
+                            )
+                        ),
+                        ft.DataCell(self._preview_obligation_table_cell(type_cell, width=260)),
+                        ft.DataCell(
+                            self._preview_obligation_table_cell(
+                                str(obligacion.get("numero_cuota_asociada") or "-"),
+                                width=110,
+                            )
+                        ),
+                        ft.DataCell(
+                            self._preview_obligation_table_cell(
+                                self._format_preview_obligation_amount(obligacion.get("importe_total")),
+                                width=220,
+                                alignment=ft.alignment.center_right,
+                            )
+                        ),
                     ],
                 )
             )
@@ -3054,15 +3070,31 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(
                 controls=[
                     ft.Text(f"Obligaciones {start_index + 1} a {end_index} de {total}", size=12, color=ft.Colors.BLUE_GREY_700),
-                    ft.DataTable(
-                        columns=[
-                            ft.DataColumn(ft.Text("#")),
-                            ft.DataColumn(ft.Text("Fecha vencimiento")),
-                            ft.DataColumn(ft.Text("Tipo")),
-                            ft.DataColumn(ft.Text("Cuota")),
-                            ft.DataColumn(ft.Text("Importe")),
+                    ft.Row(
+                        controls=[
+                            ft.Container(
+                                expand=True,
+                                content=ft.DataTable(
+                                    column_spacing=18,
+                                    horizontal_margin=12,
+                                    columns=[
+                                        ft.DataColumn(self._preview_obligation_table_header("#", width=56)),
+                                        ft.DataColumn(self._preview_obligation_table_header("Fecha vencimiento", width=170)),
+                                        ft.DataColumn(self._preview_obligation_table_header("Tipo", width=260)),
+                                        ft.DataColumn(self._preview_obligation_table_header("Cuota", width=110)),
+                                        ft.DataColumn(
+                                            self._preview_obligation_table_header(
+                                                "Importe",
+                                                width=220,
+                                                alignment=ft.alignment.center_right,
+                                            )
+                                        ),
+                                    ],
+                                    rows=rows,
+                                ),
+                            )
                         ],
-                        rows=rows,
+                        expand=True,
                     ),
                     ft.Row(
                         controls=[
@@ -3079,6 +3111,33 @@ class VentaCompletaWizardV3Prototype:
                 scroll=ft.ScrollMode.AUTO,
             ),
         )
+
+
+    @staticmethod
+    def _preview_obligation_table_header(
+        label: str,
+        *,
+        width: int,
+        alignment: ft.Alignment = ft.alignment.center_left,
+    ) -> ft.Control:
+        return ft.Container(
+            width=width,
+            alignment=alignment,
+            content=ft.Text(label, weight=ft.FontWeight.W_700),
+        )
+
+    @staticmethod
+    def _preview_obligation_table_cell(
+        content: str | ft.Control,
+        *,
+        width: int,
+        alignment: ft.Alignment = ft.alignment.center_left,
+    ) -> ft.Control:
+        if isinstance(content, str):
+            inner: ft.Control = ft.Text(content, selectable=True)
+        else:
+            inner = content
+        return ft.Container(width=width, alignment=alignment, content=inner)
 
     def _on_preview_obligations_previous_page(self, _: ft.ControlEvent | None = None) -> None:
         self.state.preview_obligaciones_page = max(1, self.state.preview_obligaciones_page - 1)
