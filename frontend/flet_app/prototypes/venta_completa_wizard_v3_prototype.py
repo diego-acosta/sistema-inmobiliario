@@ -3316,19 +3316,24 @@ class VentaCompletaWizardV3Prototype:
         ]
 
     def _build_executive_summary_card(self, sale_items: list[tuple[str, Any]], plan_items: list[tuple[str, Any]]) -> ft.Control:
-        return ft.Container(
-            padding=14,
-            border_radius=12,
-            bgcolor=ft.Colors.WHITE,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=[
-                    ft.Text("Resumen de venta", size=16, weight=ft.FontWeight.W_700),
-                    self._summary_fields_row(sale_items),
-                    *([ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100), self._summary_fields_row(plan_items)] if plan_items else []),
-                ],
-                spacing=10,
-            ),
+        return ft.Row(
+            controls=[
+                ft.Container(
+                    expand=True,
+                    padding=14,
+                    border_radius=12,
+                    bgcolor=ft.Colors.WHITE,
+                    border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                    content=ft.Column(
+                        controls=[
+                            ft.Text("Resumen de venta", size=16, weight=ft.FontWeight.W_700),
+                            self._summary_fields_row(sale_items),
+                            *([ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100), self._summary_fields_row(plan_items)] if plan_items else []),
+                        ],
+                        spacing=10,
+                    ),
+                )
+            ]
         )
 
     def _summary_fields_row(self, items: list[tuple[str, Any]]) -> ft.Control:
@@ -3347,7 +3352,7 @@ class VentaCompletaWizardV3Prototype:
             no_wrap=True,
         )
         return ft.Container(
-            width=150,
+            expand=True,
             content=ft.Column(
                 controls=[
                     ft.Text(label, size=11, color=ft.Colors.BLUE_GREY_600, no_wrap=True),
