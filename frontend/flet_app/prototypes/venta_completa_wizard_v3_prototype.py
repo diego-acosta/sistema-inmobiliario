@@ -193,6 +193,8 @@ class WizardVentaCompletaV3State:
     detalle_venta_error: str | None = None
     detalle_venta_status_code: int | None = None
     detalle_venta_requested_id: int | None = None
+    detalle_cuotas_page: int = 1
+    detalle_cuotas_page_size: int = 10
     pantalla_actual: PantallaWizard = "ORIGEN"
 
 
@@ -3179,6 +3181,7 @@ class VentaCompletaWizardV3Prototype:
             return
 
         self.state.detalle_venta_requested_id = id_venta
+        self.state.detalle_cuotas_page = 1
         self.state.detalle_venta_loading = True
         self.state.detalle_venta_error = None
         self.state.detalle_venta_status_code = None
@@ -3271,7 +3274,6 @@ class VentaCompletaWizardV3Prototype:
         plan_summary_items = [
             ("ID plan de pago", plan.get("id_plan_pago_venta")),
             ("Estado del plan", self._status_badge(str(estado_plan or "-"))),
-            ("Bloques del plan", len(bloques)),
             ("Obligaciones generadas", len(obligaciones)),
         ]
 
@@ -3305,7 +3307,6 @@ class VentaCompletaWizardV3Prototype:
                         self._build_financial_summary_table(precio_venta, anticipo_importe, saldo_financiado, interes_total, total_obligaciones, resumen_plan, plan, moneda),
                         self._build_advance_table(anticipo_obligacion, moneda),
                         self._build_financed_plan_section(cuotas_obligaciones, bloques, saldo_financiado, interes_total, total_cuotas_obligaciones, moneda, plan),
-                        self._build_detail_blocks_table(bloques, moneda),
                         self._build_detail_asset_impact_table(impacto),
                         ft.Row(
                             controls=[
@@ -3460,44 +3461,57 @@ class VentaCompletaWizardV3Prototype:
         moneda: Any,
         plan: dict[str, Any],
     ) -> ft.Control:
+        page_size = max(1, self.state.detalle_cuotas_page_size)
+        total_cuotas = len(cuotas)
+        total_pages = max(1, (total_cuotas + page_size - 1) // page_size)
+        page = min(max(1, self.state.detalle_cuotas_page), total_pages)
+        start_index = (page - 1) * page_size
+        end_index = min(start_index + page_size, total_cuotas)
+        cuotas_visibles = cuotas[start_index:end_index]
         cuotas_rows = [
             [
-                f"Cuota {idx}",
+                f"Cuota {start_index + idx}",
                 self._obligation_due_date(cuota),
                 self._detail_money(self._obligation_amount(cuota), cuota.get("moneda") or moneda),
                 self._obligation_status(cuota),
             ]
-            for idx, cuota in enumerate(cuotas, start=1)
+            for idx, cuota in enumerate(cuotas_visibles, start=1)
         ]
+
+        controls: list[ft.Control] = []
+        if total_cuotas > page_size:
+            controls.append(ft.Text(f"Cuotas {start_index + 1} a {end_index} de {total_cuotas}", size=12, color=ft.Colors.BLUE_GREY_700))
+        controls.append(
+            self._compact_table(
+                ["Cuota", "Vencimiento", "Importe", "Estado"],
+                cuotas_rows,
+                empty_text="Sin cuotas financiadas informadas en el payload.",
+            )
+        )
+        if total_pages > 1:
+            controls.append(
+                ft.Row(
+                    controls=[
+                        ft.OutlinedButton("Anterior", disabled=page <= 1, on_click=self._previous_detail_installments_page),
+                        ft.Text(f"Página {page} de {total_pages}", color=ft.Colors.BLUE_GREY_700),
+                        ft.OutlinedButton("Siguiente", disabled=page >= total_pages, on_click=self._next_detail_installments_page),
+                    ],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
         return self._compact_section(
             "Plan financiado",
-            ft.Container(
-                height=260,
-                padding=ft.Padding(left=0, top=0, right=0, bottom=24),
-                content=self._compact_table(["Cuota", "Vencimiento", "Importe", "Estado"], cuotas_rows, empty_text="Sin cuotas financiadas informadas en el payload."),
-            ),
+            ft.Column(controls=controls, spacing=8),
         )
 
-    def _build_detail_blocks_table(self, bloques: list[Any], moneda: Any) -> ft.Control:
-        rows: list[list[Any]] = []
-        for idx, raw in enumerate(bloques, start=1):
-            bloque = raw if isinstance(raw, dict) else {}
-            row = [
-                bloque.get("numero_bloque") or bloque.get("orden") or idx,
-                bloque.get("metodo_liquidacion"),
-                self._detail_money(bloque.get("importe_total_bloque"), moneda),
-                bloque.get("cantidad_cuotas"),
-                bloque.get("periodicidad"),
-                self._first_present(bloque.get("tasa_interes_directo_periodica"), bloque.get("codigo_indice"), bloque.get("id_indice_financiero")),
-            ]
-            if any(value not in (None, "", "-") for value in row[1:]):
-                rows.append(row)
-        if not rows:
-            return ft.Container()
-        return self._compact_section(
-            "Bloques del plan",
-            self._compact_table(["#", "Método", "Importe", "Cuotas", "Periodicidad", "Tasa / índice"], rows, empty_text=""),
-        )
+    def _previous_detail_installments_page(self, _: Any = None) -> None:
+        self.state.detalle_cuotas_page = max(1, self.state.detalle_cuotas_page - 1)
+        self._render()
+
+    def _next_detail_installments_page(self, _: Any = None) -> None:
+        self.state.detalle_cuotas_page += 1
+        self._render()
 
     def _split_advance_and_installment_obligations(self, obligaciones: list[Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
         normalized = [ob for ob in obligaciones if isinstance(ob, dict)]
