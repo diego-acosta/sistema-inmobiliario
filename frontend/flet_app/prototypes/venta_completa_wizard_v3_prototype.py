@@ -534,6 +534,21 @@ class VentaCompletaWizardV3Prototype:
         }
         return labels.get(str(tipo_objeto or "").upper(), str(tipo_objeto or "-"))
 
+    @staticmethod
+    def _friendly_status_label(value: Any) -> str:
+        return str(value or "").strip().replace("_", " ").upper() or "-"
+
+    def _status_badge(self, value: Any) -> ft.Control | None:
+        label = self._friendly_status_label(value)
+        if label == "-":
+            return None
+        is_ok = label in {"DISPONIBLE", "DISPONIBLE PARA VENTA", "ACTIVA", "ACTIVO"}
+        return _badge(
+            label,
+            ft.Colors.GREEN_50 if is_ok else ft.Colors.AMBER_50,
+            ft.Colors.GREEN_200 if is_ok else ft.Colors.AMBER_200,
+        )
+
     def _build_footer(self) -> ft.Control:
         return ft.Container(
             padding=12,
@@ -1120,6 +1135,7 @@ class VentaCompletaWizardV3Prototype:
         duplicate = self._is_duplicate_selected_object()
         price_error = self.precio_objeto_error
         self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
+        status_badge = self._status_badge(self.objeto_seleccionado.get("estado"))
         panel_content = ft.Column(
             controls=[
                 ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
@@ -1127,6 +1143,7 @@ class VentaCompletaWizardV3Prototype:
                 ft.Row(
                     controls=[
                         _badge(f"Tipo: {self._object_type_label(tipo_objeto)}", ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_200),
+                        *([status_badge] if status_badge is not None else []),
                         *self._technical_controls([
                             self._technical_chip(f"ID técnico secundario ({id_label}): {id_value}"),
                             self._technical_chip(
@@ -1140,6 +1157,19 @@ class VentaCompletaWizardV3Prototype:
                     ],
                     wrap=True,
                     spacing=8,
+                ),
+                *(
+                    [
+                        ft.Text(
+                            "El estado no figura disponible; verificá la operación antes de agregarlo.",
+                            size=12,
+                            color=ft.Colors.AMBER_900,
+                        )
+                    ]
+                    if status_badge is not None
+                    and self._friendly_status_label(self.objeto_seleccionado.get("estado"))
+                    not in {"DISPONIBLE", "DISPONIBLE PARA VENTA", "ACTIVA", "ACTIVO"}
+                    else []
                 ),
                 self.precio_objeto_field,
                 ft.Text(
@@ -1227,15 +1257,21 @@ class VentaCompletaWizardV3Prototype:
                     ft.Column(
                         controls=[
                             ft.Text(objeto.texto_visual, weight=ft.FontWeight.W_700),
-                            ft.Text(
-                                f"Tipo: {self._object_type_label(objeto.tipo_objeto)}",
-                                size=12,
-                                color=ft.Colors.BLUE_GREY_700,
-                            ),
-                            ft.Text(
-                                f"Precio asignado: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
-                                size=12,
-                                color=ft.Colors.BLUE_GREY_700,
+                            ft.Row(
+                                controls=[
+                                    _badge(
+                                        f"Tipo: {self._object_type_label(objeto.tipo_objeto)}",
+                                        ft.Colors.BLUE_GREY_50,
+                                        ft.Colors.BLUE_GREY_200,
+                                    ),
+                                    _badge(
+                                        f"Precio: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
+                                        ft.Colors.GREEN_50,
+                                        ft.Colors.GREEN_200,
+                                    ),
+                                ],
+                                spacing=8,
+                                wrap=True,
                             ),
                             *self._technical_controls([
                                 self._technical_text(f"ID técnico secundario ({id_label}): {id_value}"),
@@ -1251,7 +1287,7 @@ class VentaCompletaWizardV3Prototype:
                         on_click=lambda _, item_index=index: self._remove_object(item_index),
                     ),
                 ],
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.START,
             ),
         )
 
@@ -1494,26 +1530,28 @@ class VentaCompletaWizardV3Prototype:
                     ft.Text("Comprador seleccionado", size=18, weight=ft.FontWeight.W_700),
                     ft.Text(str(self.comprador_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
                     ft.Row(
-                        controls=self._technical_controls([
-                            self._technical_chip(f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}"),
-                            self._technical_chip(
-                                self._record_source_label(
-                                    str(self.comprador_seleccionado.get("source") or "backend"),
-                                    bool(self.comprador_seleccionado.get("persisted", False)),
+                        controls=[
+                            _badge("Rol: COMPRADOR", ft.Colors.GREEN_50, ft.Colors.GREEN_200),
+                            *self._technical_controls([
+                                self._technical_chip(f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}"),
+                                self._technical_chip(
+                                    self._record_source_label(
+                                        str(self.comprador_seleccionado.get("source") or "backend"),
+                                        bool(self.comprador_seleccionado.get("persisted", False)),
+                                    ),
+                                    persisted=bool(self.comprador_seleccionado.get("persisted", False)),
                                 ),
-                                persisted=bool(self.comprador_seleccionado.get("persisted", False)),
-                            ),
-                        ]),
+                            ]),
+                        ],
                         spacing=8,
                         wrap=True,
                     ),
                     self.porcentaje_comprador_field,
                     ft.Text(
-                        "Si es el único comprador, este campo puede quedar vacío y se asumirá 100%.",
+                        "Si es el único comprador, se asumirá 100%.",
                         size=12,
                         color=ft.Colors.BLUE_GREY_600,
                     ),
-                    _info_row("Rol asignado automáticamente", "COMPRADOR"),
                     *self._technical_controls([_info_row("id_rol_participacion", self._rol_comprador_id_resuelto() or "pendiente")]),
                     ft.Row(
                         controls=[
@@ -1571,7 +1609,11 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_added_buyer_row(self, index: int, comprador: CompradorWizardDraft) -> ft.Control:
-        porcentaje = comprador.porcentaje_responsabilidad or "se asumirá 100% por ser único comprador"
+        porcentaje = (
+            f"Responsabilidad: {comprador.porcentaje_responsabilidad}%"
+            if comprador.porcentaje_responsabilidad
+            else "Se asumirá 100% por ser único comprador"
+        )
         return ft.Container(
             padding=12,
             border_radius=10,
@@ -1582,10 +1624,17 @@ class VentaCompletaWizardV3Prototype:
                     ft.Column(
                         controls=[
                             ft.Text(comprador.texto_visual, weight=ft.FontWeight.W_700),
-                            ft.Text(
-                                f"Responsabilidad: {porcentaje}",
-                                size=12,
-                                color=ft.Colors.BLUE_GREY_700,
+                            ft.Row(
+                                controls=[
+                                    _badge("Rol: COMPRADOR", ft.Colors.GREEN_50, ft.Colors.GREEN_200),
+                                    ft.Text(
+                                        porcentaje,
+                                        size=12,
+                                        color=ft.Colors.BLUE_GREY_700,
+                                    ),
+                                ],
+                                spacing=8,
+                                wrap=True,
                             ),
                             *self._technical_controls([
                                 self._technical_text(f"id_persona: {comprador.id_persona}"),
@@ -5939,7 +5988,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA":
             return None
         if self.state.origen != "DIRECTA" or not self.state.compradores:
-            return "Agregá al menos un comprador para continuar con una venta directa."
+            return "Agregá al menos un comprador para continuar."
 
         seen_ids: set[int] = set()
         for comprador in self.state.compradores:
@@ -5967,9 +6016,9 @@ class VentaCompletaWizardV3Prototype:
 
         total = self._buyers_responsibility_total() if total is None else total
         if total is None:
-            return "La suma de responsabilidad no se puede calcular por porcentajes inválidos."
+            return "La responsabilidad total debe sumar 100%."
         if _format_decimal(total) != "100.00":
-            return f"La suma de responsabilidad debe ser exactamente 100.00%; actual: {_format_decimal(total)}%."
+            return "La responsabilidad total debe sumar 100%."
         return None
 
     def _buyers_are_valid(self) -> bool:
