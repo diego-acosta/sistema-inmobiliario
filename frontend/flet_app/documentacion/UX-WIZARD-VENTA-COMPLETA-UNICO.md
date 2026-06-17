@@ -118,6 +118,19 @@ La variacion permitida es esta:
 El origen es contexto de entrada y estrategia de confirmacion; no es un fork de
 UX ni de logica de negocio.
 
+
+## 5.1 Barra superior de progreso V3
+
+El wizard muestra una barra superior de progreso con 8 pasos visibles: Origen,
+Datos, Objetos, Compradores, Pago, Plan, Revisión y Confirmación. La barra es
+informativa/read-only: no permite navegación directa, no dispara endpoints y no
+modifica datos de negocio.
+
+La barra agrupa pantallas internas del prototipo V3 para evitar exponer todos
+los estados técnicos del flujo. Los pasos anteriores al estado actual se muestran
+como completados, el paso actual queda resaltado y los pasos posteriores quedan
+pendientes.
+
 ## 6. Entradas posibles al mismo wizard
 
 ### 6.1 Desde listado de reservas

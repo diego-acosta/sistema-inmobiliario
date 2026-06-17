@@ -76,6 +76,19 @@ PantallaWizard = Literal[
 MONEDAS_PERMITIDAS = ["ARS", "USD", "EUR"]
 MONEY_DECIMAL_QUANTUM = Decimal("0.01")
 MONEY_PRECISION_ERROR = "El importe debe tener como máximo 2 decimales."
+WIZARD_VISIBLE_STEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Origen", ("ORIGEN", "SELECCIONAR_RESERVA")),
+    ("Datos", ("DATOS_INICIALES",)),
+    ("Objetos", ("OBJETOS",)),
+    ("Compradores", ("COMPRADORES",)),
+    ("Pago", ("FORMA_PAGO",)),
+    (
+        "Plan",
+        ("PLAN_ANTICIPO", "PLAN_TRAMOS", "PLAN_TRAMO_FORM", "PLAN_RESUMEN"),
+    ),
+    ("Revisión", ("PREVIEW_PLAN_PAGO", "REVISION_GENERAL")),
+    ("Confirmación", ("VENTA_CONFIRMADA",)),
+)
 
 
 @dataclass
@@ -469,7 +482,11 @@ class VentaCompletaWizardV3Prototype:
                 ft.Container(
                     expand=True,
                     content=ft.Column(
-                        controls=[self._build_main_content()],
+                        controls=[
+                            self._build_stepper_bar(),
+                            self._build_main_content(),
+                        ],
+                        spacing=12,
                         scroll=ft.ScrollMode.AUTO,
                         expand=True,
                     ),
@@ -500,6 +517,117 @@ class VentaCompletaWizardV3Prototype:
                 ),
             ],
             spacing=4,
+        )
+
+    def _wizard_step_items(self) -> list[str]:
+        return [label for label, _ in WIZARD_VISIBLE_STEPS]
+
+    def _wizard_step_index(self) -> int:
+        for index, (_, internal_screens) in enumerate(WIZARD_VISIBLE_STEPS):
+            if self.state.pantalla_actual in internal_screens:
+                return index
+        return 0
+
+    def _build_stepper_bar(self) -> ft.Control:
+        current_index = self._wizard_step_index()
+        step_controls: list[ft.Control] = []
+        step_labels = self._wizard_step_items()
+
+        for index, label in enumerate(step_labels):
+            is_completed = index < current_index
+            is_current = index == current_index
+            circle_bgcolor = (
+                ft.Colors.GREEN_100
+                if is_completed
+                else ft.Colors.BLUE_100 if is_current else ft.Colors.WHITE
+            )
+            circle_border = (
+                ft.Colors.GREEN_400
+                if is_completed
+                else ft.Colors.BLUE_500 if is_current else ft.Colors.BLUE_GREY_200
+            )
+            circle_color = (
+                ft.Colors.GREEN_800
+                if is_completed
+                else ft.Colors.BLUE_800 if is_current else ft.Colors.BLUE_GREY_500
+            )
+            circle_text = "✓" if is_completed else str(index + 1)
+
+            step_controls.append(
+                ft.Column(
+                    controls=[
+                        ft.Container(
+                            width=28,
+                            height=28,
+                            border_radius=14,
+                            alignment=ft.alignment.center,
+                            bgcolor=circle_bgcolor,
+                            border=_border_all(1.5, circle_border),
+                            content=ft.Text(
+                                circle_text,
+                                size=13,
+                                weight=ft.FontWeight.W_700,
+                                color=circle_color,
+                            ),
+                        ),
+                        ft.Text(
+                            label,
+                            size=11,
+                            weight=ft.FontWeight.W_700
+                            if is_current
+                            else ft.FontWeight.W_500,
+                            color=ft.Colors.BLUE_800
+                            if is_current
+                            else ft.Colors.BLUE_GREY_700,
+                            text_align=ft.TextAlign.CENTER,
+                            no_wrap=True,
+                        ),
+                    ],
+                    spacing=4,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    expand=True,
+                )
+            )
+
+            if index < len(step_labels) - 1:
+                line_color = (
+                    ft.Colors.BLUE_300
+                    if index < current_index
+                    else ft.Colors.BLUE_GREY_200
+                )
+                step_controls.append(
+                    ft.Container(
+                        expand=True,
+                        padding=ft.Padding(left=0, top=13, right=0, bottom=0),
+                        content=ft.Container(
+                            height=2,
+                            bgcolor=line_color,
+                            border_radius=2,
+                        ),
+                    )
+                )
+
+        return ft.Container(
+            padding=ft.Padding(left=14, top=10, right=14, bottom=10),
+            border_radius=14,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        "Progreso de la venta",
+                        size=12,
+                        weight=ft.FontWeight.W_700,
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    ft.Row(
+                        controls=step_controls,
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                ],
+                spacing=8,
+            ),
         )
 
     def _build_main_content(self) -> ft.Control:
