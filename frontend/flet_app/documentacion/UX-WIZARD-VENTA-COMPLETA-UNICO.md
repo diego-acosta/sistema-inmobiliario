@@ -73,6 +73,23 @@ Este modo solo afecta la visibilidad en frontend: no cambia validaciones,
 selecciones, adaptadores, llamadas al backend, reglas de negocio ni contratos de
 confirmacion.
 
+### 3.2 UX operativa de Objetos y Compradores
+
+En la pantalla **Objetos de venta**, la UI debe priorizar informacion operativa
+para el usuario: codigo/nombre del objeto, descripcion, tipo amigable, estado
+visible cuando exista y precio asignado con moneda. Los identificadores
+internos (`id_inmueble`, `id_unidad_funcional`) y marcas de origen/integracion
+solo se muestran con **Mostrar datos tecnicos** activo.
+
+En la pantalla **Compradores**, la UI debe hablar en lenguaje de usuario:
+persona, documento o dato visible, rol **COMPRADOR** y responsabilidad pactada.
+Si hay un unico comprador sin porcentaje informado, se presenta como valido
+porque se asumira 100%. Los identificadores `id_persona` e
+`id_rol_participacion` solo se exponen en modo tecnico.
+
+El modo tecnico no cambia payloads, llamadas API, validaciones ni logica de
+confirmacion: solo agrega datos secundarios visibles para diagnostico.
+
 ## 4. Contratos backend existentes que guian el diseno
 
 El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:

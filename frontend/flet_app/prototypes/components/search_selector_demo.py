@@ -88,13 +88,13 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
     descripcion = _clean(data.get("descripcion"))
     disponibilidad = _clean(data.get("estado")) or _clean(data.get("disponibilidad"))
     inmueble_padre = _clean(data.get("inmueble_padre"))
-    primary_parts = [codigo, descripcion, disponibilidad]
+    primary_parts = [codigo]
     if tipo_objeto == "UNIDAD_FUNCIONAL" and inmueble_padre:
-        primary_parts.insert(2, inmueble_padre)
+        primary_parts.append(inmueble_padre)
     primary = _join_visible(primary_parts)
     id_correspondiente = data.get("id_unidad_funcional") if tipo_objeto == "UNIDAD_FUNCIONAL" else data.get("id_inmueble")
     tipo_label = {"INMUEBLE": "Inmueble", "UNIDAD_FUNCIONAL": "Unidad funcional"}.get(tipo_objeto, tipo_objeto)
-    secondary = f"Tipo: {tipo_label}" if tipo_label else ""
+    secondary = _join_visible([descripcion, f"Tipo: {tipo_label}" if tipo_label else ""])
     technical_secondary = _join_visible(
         [
             f"Tipo: {tipo_objeto}" if tipo_objeto else "",
@@ -114,6 +114,7 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
         payload["id_unidad_funcional"] = id_correspondiente
     else:
         payload["id_inmueble"] = id_correspondiente
+    payload["estado"] = disponibilidad
     return SearchSelectorRecord(
         data=data,
         primary_text=primary,
@@ -139,7 +140,7 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
     nombre = _join_visible([data.get("nombre"), data.get("apellido")], " ") or _clean(data.get("razon_social"))
     documento = _clean(data.get("documento"))
     codigo = _clean(data.get("codigo_persona"))
-    primary = _join_visible([nombre, documento])
+    primary = nombre or documento or codigo
     estado = _clean(data.get("estado")) or "activa"
     secondary = f"Persona {estado.lower()}"
     technical_secondary = _join_visible(
@@ -148,7 +149,7 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
             f"id_persona: {data.get('id_persona')}" if data.get("id_persona") is not None else "",
         ]
     )
-    summary = _clean(data.get("resumen")) or primary
+    summary = documento or _clean(data.get("resumen")) or primary
     return SearchSelectorRecord(
         data=data,
         primary_text=primary,
@@ -321,6 +322,10 @@ class SearchSelectorDemo:
 
     def _build_result_row(self, record: SearchSelectorRecord) -> ft.Control:
         is_selected = self._selected == record
+        if self.selector_kind == "objeto":
+            return self._build_object_result_row(record, is_selected)
+        if self.selector_kind == "persona":
+            return self._build_person_result_row(record, is_selected)
         return ft.Container(
             padding=12,
             border_radius=10,
@@ -339,6 +344,112 @@ class SearchSelectorDemo:
                             ),
                         ],
                         spacing=3,
+                        expand=True,
+                    ),
+                    ft.Button(
+                        "Seleccionar" if not is_selected else "Seleccionado",
+                        icon=ft.Icons.CHECK if is_selected else ft.Icons.CHECK_CIRCLE_OUTLINE,
+                        disabled=is_selected,
+                        on_click=lambda _, selected_record=record: self._select_record(selected_record),
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+
+    def _build_object_result_row(self, record: SearchSelectorRecord, is_selected: bool) -> ft.Control:
+        estado = _clean(record.data.get("estado")) or _clean(record.data.get("disponibilidad"))
+        estado_upper = estado.upper()
+        is_warning = bool(estado) and estado_upper not in {"DISPONIBLE", "DISPONIBLE_PARA_VENTA", "ACTIVA", "ACTIVO"}
+        return ft.Container(
+            padding=12,
+            border_radius=10,
+            border=_border_all(1, ft.Colors.GREEN_300 if is_selected else ft.Colors.AMBER_200 if is_warning else ft.Colors.BLUE_GREY_100),
+            bgcolor=ft.Colors.GREEN_50 if is_selected else ft.Colors.AMBER_50 if is_warning else ft.Colors.WHITE,
+            content=ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text(record.primary_text, weight=ft.FontWeight.W_700),
+                            ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700),
+                            ft.Row(
+                                controls=[
+                                    ft.Text(
+                                        record.technical_secondary_text if self.show_technical_details else record.secondary_text,
+                                        size=11,
+                                        color=ft.Colors.BLUE_GREY_500,
+                                    ),
+                                    *(
+                                        [
+                                            ft.Container(
+                                                padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                                                border_radius=999,
+                                                bgcolor=ft.Colors.AMBER_100 if is_warning else ft.Colors.GREEN_100,
+                                                border=_border_all(1, ft.Colors.AMBER_300 if is_warning else ft.Colors.GREEN_300),
+                                                content=ft.Text(estado_upper, size=10, weight=ft.FontWeight.W_700),
+                                            )
+                                        ]
+                                        if estado
+                                        else []
+                                    ),
+                                ],
+                                spacing=8,
+                                wrap=True,
+                            ),
+                            *(
+                                [
+                                    ft.Text(
+                                        "Revisá disponibilidad antes de continuar.",
+                                        size=11,
+                                        color=ft.Colors.AMBER_900,
+                                    )
+                                ]
+                                if is_warning
+                                else []
+                            ),
+                        ],
+                        spacing=4,
+                        expand=True,
+                    ),
+                    ft.Button(
+                        "Seleccionar" if not is_selected else "Seleccionado",
+                        icon=ft.Icons.CHECK if is_selected else ft.Icons.CHECK_CIRCLE_OUTLINE,
+                        disabled=is_selected,
+                        on_click=lambda _, selected_record=record: self._select_record(selected_record),
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+
+    def _build_person_result_row(self, record: SearchSelectorRecord, is_selected: bool) -> ft.Control:
+        return ft.Container(
+            padding=12,
+            border_radius=10,
+            border=_border_all(1, ft.Colors.GREEN_300 if is_selected else ft.Colors.BLUE_GREY_100),
+            bgcolor=ft.Colors.GREEN_50 if is_selected else ft.Colors.WHITE,
+            content=ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text(record.primary_text, weight=ft.FontWeight.W_700),
+                            ft.Row(
+                                controls=[
+                                    ft.Text(record.secondary_text, size=12, color=ft.Colors.BLUE_GREY_700),
+                                    *([ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700)] if record.summary_text != record.secondary_text else []),
+                                ],
+                                spacing=8,
+                                wrap=True,
+                            ),
+                            *(
+                                [
+                                    ft.Text(record.technical_secondary_text, size=11, color=ft.Colors.BLUE_GREY_500)
+                                ]
+                                if self.show_technical_details
+                                else []
+                            ),
+                        ],
+                        spacing=4,
                         expand=True,
                     ),
                     ft.Button(
