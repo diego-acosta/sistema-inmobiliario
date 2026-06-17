@@ -195,6 +195,8 @@ class WizardVentaCompletaV3State:
     preview_error: str | None = None
     preview_status_code: int | None = None
     preview_stale: bool = True
+    preview_obligaciones_page: int = 1
+    preview_obligaciones_page_size: int = 10
     confirm_loading: bool = False
     confirm_data: dict[str, Any] | None = None
     confirm_error: str | None = None
@@ -2940,29 +2942,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _build_plan_preview_result_controls(self, data: dict[str, Any]) -> list[ft.Control]:
         obligaciones = data.get("obligaciones") if isinstance(data.get("obligaciones"), list) else []
-        summary = ft.Container(
-            padding=12,
-            border_radius=10,
-            bgcolor=ft.Colors.GREEN_50,
-            border=_border_all(1, ft.Colors.GREEN_200),
-            content=ft.Column(
-                controls=[
-                    ft.Text("Resultado de la vista previa", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-                    _info_row("Total calculado", data.get("total_calculado") or "-"),
-                    _info_row("Total con interés", data.get("total_con_interes") or "-"),
-                    _info_row("Total con indexación", data.get("total_con_indexacion") or "-"),
-                    _info_row("Obligaciones simuladas", len(obligaciones)),
-                    *self._technical_controls([
-                        _info_row("Status HTTP", self.state.preview_status_code or "-"),
-                        _info_row("total_calculado", data.get("total_calculado") or "-"),
-                        _info_row("total_con_interes", data.get("total_con_interes") or "-"),
-                        _info_row("total_ajuste_indexacion", data.get("total_ajuste_indexacion") or "0.00"),
-                        _info_row("total_con_indexacion", data.get("total_con_indexacion") or "-"),
-                    ]),
-                ],
-                spacing=6,
-            ),
-        )
+        summary = self._build_plan_preview_compact_summary(data, len(obligaciones))
         obligations_control = self._build_plan_preview_obligations_table(obligaciones)
         return [
             summary,
@@ -2975,11 +2955,76 @@ class VentaCompletaWizardV3Prototype:
             ),
         ]
 
+
+    def _build_plan_preview_compact_summary(self, data: dict[str, Any], obligations_count: int) -> ft.Control:
+        columns = [
+            ("Total calculado", self._format_preview_financial_total(data.get("total_calculado"))),
+            ("Total con interés", self._format_preview_financial_total(data.get("total_con_interes"))),
+            ("Total con indexación", self._format_preview_financial_total(data.get("total_con_indexacion"))),
+            ("Obligaciones simuladas", str(obligations_count)),
+        ]
+        adjustment = data.get("total_ajuste_indexacion")
+        if adjustment not in (None, ""):
+            columns.insert(3, ("Ajuste por indexación", self._format_preview_financial_total(adjustment)))
+        return ft.Container(
+            padding=12,
+            border_radius=10,
+            bgcolor=ft.Colors.GREEN_50,
+            border=_border_all(1, ft.Colors.GREEN_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Resultado de la vista previa", weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
+                    ft.DataTable(
+                        heading_row_height=34,
+                        data_row_min_height=38,
+                        data_row_max_height=44,
+                        column_spacing=18,
+                        columns=[ft.DataColumn(ft.Text(label, weight=ft.FontWeight.W_700)) for label, _ in columns],
+                        rows=[
+                            ft.DataRow(
+                                cells=[
+                                    ft.DataCell(ft.Text(value, selectable=True, color=ft.Colors.GREEN_900))
+                                    for _, value in columns
+                                ]
+                            )
+                        ],
+                    ),
+                    *self._technical_controls([
+                        ft.Text("Datos técnicos del payload", size=12, color=ft.Colors.BLUE_GREY_700),
+                        _info_row("Status HTTP", self.state.preview_status_code or "-"),
+                        _info_row("total_calculado", data.get("total_calculado") or "-"),
+                        _info_row("total_con_interes", data.get("total_con_interes") or "-"),
+                        _info_row("total_ajuste_indexacion", data.get("total_ajuste_indexacion") or "0.00"),
+                        _info_row("total_con_indexacion", data.get("total_con_indexacion") or "-"),
+                    ]),
+                ],
+                spacing=8,
+                tight=True,
+            ),
+        )
+
+    def _format_preview_financial_total(self, value: Any) -> str:
+        if value in (None, ""):
+            return "-"
+        parsed = _parse_money_decimal(str(value))
+        if parsed is None:
+            return str(value or "-")
+        return self._format_money_with_currency(parsed)
+
     def _build_plan_preview_obligations_table(self, obligaciones: list[Any]) -> ft.Control:
+        valid_obligations = [obligacion for obligacion in obligaciones if isinstance(obligacion, dict)]
+        if not valid_obligations:
+            return ft.Text("El preview no devolvió obligaciones simuladas.", color=ft.Colors.BLUE_GREY_700)
+
+        page_size = self.state.preview_obligaciones_page_size
+        total = len(valid_obligations)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        self.state.preview_obligaciones_page = min(max(1, self.state.preview_obligaciones_page), total_pages)
+        current_page = self.state.preview_obligaciones_page
+        start_index = (current_page - 1) * page_size
+        end_index = min(start_index + page_size, total)
         rows: list[ft.DataRow] = []
-        for index, obligacion in enumerate(obligaciones):
-            if not isinstance(obligacion, dict):
-                continue
+        for absolute_index, obligacion in enumerate(valid_obligations[start_index:end_index], start=start_index):
             item_type = str(obligacion.get("tipo_item_cronograma") or "-")
             obligation_label = str(obligacion.get("etiqueta_obligacion") or "").strip()
             has_accumulated_reinforcement = self._preview_obligation_has_accumulated_reinforcement(obligation_label)
@@ -2993,7 +3038,7 @@ class VentaCompletaWizardV3Prototype:
                 ft.DataRow(
                     color=ft.Colors.AMBER_50 if is_reinforcement else None,
                     cells=[
-                        ft.DataCell(ft.Text(str(index + 1))),
+                        ft.DataCell(ft.Text(str(absolute_index + 1))),
                         ft.DataCell(ft.Text(_format_date_ar(str(obligacion.get("fecha_vencimiento") or "")) or "-")),
                         ft.DataCell(type_cell),
                         ft.DataCell(ft.Text(str(obligacion.get("numero_cuota_asociada") or "-"))),
@@ -3001,14 +3046,14 @@ class VentaCompletaWizardV3Prototype:
                     ],
                 )
             )
-        if not rows:
-            return ft.Text("El preview no devolvió obligaciones simuladas.", color=ft.Colors.BLUE_GREY_700)
+
         return ft.Container(
-            height=400,
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             border_radius=8,
+            padding=8,
             content=ft.Column(
                 controls=[
+                    ft.Text(f"Obligaciones {start_index + 1} a {end_index} de {total}", size=12, color=ft.Colors.BLUE_GREY_700),
                     ft.DataTable(
                         columns=[
                             ft.DataColumn(ft.Text("#")),
@@ -3018,11 +3063,30 @@ class VentaCompletaWizardV3Prototype:
                             ft.DataColumn(ft.Text("Importe")),
                         ],
                         rows=rows,
-                    )
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.OutlinedButton("Anterior", on_click=self._on_preview_obligations_previous_page, disabled=current_page <= 1),
+                            ft.Text(f"Página {current_page} de {total_pages}", color=ft.Colors.BLUE_GREY_800),
+                            ft.OutlinedButton("Siguiente", on_click=self._on_preview_obligations_next_page, disabled=current_page >= total_pages),
+                        ],
+                        alignment=ft.MainAxisAlignment.END,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=10,
+                    ),
                 ],
+                spacing=8,
                 scroll=ft.ScrollMode.AUTO,
             ),
         )
+
+    def _on_preview_obligations_previous_page(self, _: ft.ControlEvent | None = None) -> None:
+        self.state.preview_obligaciones_page = max(1, self.state.preview_obligaciones_page - 1)
+        self._render()
+
+    def _on_preview_obligations_next_page(self, _: ft.ControlEvent | None = None) -> None:
+        self.state.preview_obligaciones_page += 1
+        self._render()
 
     def _build_preview_obligation_type_cell(
         self,
@@ -3919,6 +3983,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _mark_plan_preview_stale(self, clear_error: bool = True) -> None:
         self.state.preview_stale = True
+        self.state.preview_obligaciones_page = 1
         self._reset_confirm_attempt(clear_error=clear_error)
         if clear_error:
             self.state.preview_error = None
