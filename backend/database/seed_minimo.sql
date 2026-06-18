@@ -15,12 +15,12 @@ DECLARE
     v_id_unidad_base bigint;
     v_id_inmueble_confirm bigint;
     v_id_inmueble_escrituracion bigint;
-    v_id_inmueble_reserva_vigente bigint;
+    v_id_inmueble_reserva_convertible bigint;
     v_id_persona bigint;
     v_id_rol bigint;
     v_id_reserva_confirm bigint;
     v_id_reserva_escrituracion bigint;
-    v_id_reserva_vigente bigint;
+    v_id_reserva_convertible bigint;
     v_id_venta_confirm bigint;
     v_id_venta_escrituracion bigint;
 BEGIN
@@ -457,23 +457,23 @@ BEGIN
         v_op_id,
         v_id_desarrollo,
         'INM-SEED-RES-001',
-        'Inmueble seed reserva vigente',
+        'Inmueble seed reserva convertible',
         70.00,
         'ACTIVO',
         'REGULAR',
-        'Activo reservado para pruebas de venta desde reserva'
+        'Activo reservado para pruebas de conversion de venta desde reserva'
     )
     ON CONFLICT (codigo_inmueble) DO NOTHING;
 
     SELECT id_inmueble
-    INTO v_id_inmueble_reserva_vigente
+    INTO v_id_inmueble_reserva_convertible
     FROM public.inmueble
     WHERE codigo_inmueble = 'INM-SEED-RES-001';
 
     IF NOT EXISTS (
         SELECT 1
         FROM public.disponibilidad
-        WHERE id_inmueble = v_id_inmueble_reserva_vigente
+        WHERE id_inmueble = v_id_inmueble_reserva_convertible
           AND deleted_at IS NULL
     ) THEN
         INSERT INTO public.disponibilidad (
@@ -494,13 +494,13 @@ BEGIN
             1,
             v_op_id,
             v_op_id,
-            v_id_inmueble_reserva_vigente,
+            v_id_inmueble_reserva_convertible,
             NULL,
             'DISPONIBLE',
             TIMESTAMP '2026-04-01 09:00:00',
             TIMESTAMP '2026-04-23 10:00:00',
             'seed_minimo',
-            'Historial previo de inmueble seed para reserva vigente'
+            'Historial previo de inmueble seed para reserva convertible'
         );
 
         INSERT INTO public.disponibilidad (
@@ -521,17 +521,17 @@ BEGIN
             1,
             v_op_id,
             v_op_id,
-            v_id_inmueble_reserva_vigente,
+            v_id_inmueble_reserva_convertible,
             NULL,
             'RESERVADA',
             TIMESTAMP '2026-04-23 10:00:00',
             NULL,
             'seed_minimo',
-            'Estado vigente reservado para pruebas de venta desde reserva'
+            'Estado reservado vigente para pruebas de venta desde reserva'
         );
     END IF;
 
-    -- RV-SEED-003 existe para pruebas frontend de seleccion/precarga desde reserva y no tiene venta asociada.
+    -- RV-SEED-003 existe para pruebas frontend de seleccion/precarga/conversion desde reserva y no tiene venta asociada.
     INSERT INTO public.reserva_venta (
         id_instalacion_origen,
         id_instalacion_ultima_modificacion,
@@ -550,22 +550,28 @@ BEGIN
         v_op_id,
         'RV-SEED-003',
         TIMESTAMP '2026-04-23 10:00:00',
-        'vigente',
+        'confirmada',
         TIMESTAMP '2026-05-23 10:00:00',
-        'Reserva seed vigente para pruebas de venta desde reserva'
+        'Reserva seed confirmada convertible para pruebas de venta desde reserva'
     )
-    ON CONFLICT (codigo_reserva) DO NOTHING;
+    ON CONFLICT (codigo_reserva) DO UPDATE SET
+        estado_reserva = EXCLUDED.estado_reserva,
+        fecha_reserva = EXCLUDED.fecha_reserva,
+        fecha_vencimiento = EXCLUDED.fecha_vencimiento,
+        observaciones = EXCLUDED.observaciones,
+        id_instalacion_ultima_modificacion = EXCLUDED.id_instalacion_ultima_modificacion,
+        op_id_ultima_modificacion = EXCLUDED.op_id_ultima_modificacion;
 
     SELECT id_reserva_venta
-    INTO v_id_reserva_vigente
+    INTO v_id_reserva_convertible
     FROM public.reserva_venta
     WHERE codigo_reserva = 'RV-SEED-003';
 
     IF NOT EXISTS (
         SELECT 1
         FROM public.reserva_venta_objeto_inmobiliario
-        WHERE id_reserva_venta = v_id_reserva_vigente
-          AND id_inmueble = v_id_inmueble_reserva_vigente
+        WHERE id_reserva_venta = v_id_reserva_convertible
+          AND id_inmueble = v_id_inmueble_reserva_convertible
           AND deleted_at IS NULL
     ) THEN
         INSERT INTO public.reserva_venta_objeto_inmobiliario (
@@ -583,10 +589,10 @@ BEGIN
             1,
             v_op_id,
             v_op_id,
-            v_id_reserva_vigente,
-            v_id_inmueble_reserva_vigente,
+            v_id_reserva_convertible,
+            v_id_inmueble_reserva_convertible,
             NULL,
-            'Objeto seed reserva vigente'
+            'Objeto seed reserva confirmada convertible'
         );
     END IF;
 
@@ -596,7 +602,7 @@ BEGIN
         WHERE id_persona = v_id_persona
           AND id_rol_participacion = v_id_rol
           AND tipo_relacion = 'reserva_venta'
-          AND id_relacion = v_id_reserva_vigente
+          AND id_relacion = v_id_reserva_convertible
           AND deleted_at IS NULL
     ) THEN
         INSERT INTO public.relacion_persona_rol (
@@ -620,10 +626,10 @@ BEGIN
             v_id_persona,
             v_id_rol,
             'reserva_venta',
-            v_id_reserva_vigente,
+            v_id_reserva_convertible,
             TIMESTAMP '2026-04-23 10:00:00',
             NULL,
-            'Participacion seed en reserva vigente'
+            'Participacion seed en reserva confirmada convertible'
         );
     END IF;
 
