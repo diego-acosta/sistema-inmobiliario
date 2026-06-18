@@ -363,8 +363,8 @@ Reglas:
   validaciones rojas.
 - Si `RESERVA`: `Siguiente` avanza a una pantalla intermedia `Pantalla 1B --
   Seleccionar reserva`; el buscador de reserva no se despliega en Pantalla 1 y
-  el avance posterior queda bloqueado mientras no exista integración real de
-  reservas persistidas en backend.
+  el avance posterior queda bloqueado hasta seleccionar una reserva real
+  persistida desde backend.
 - Si `DIRECTA`: `Siguiente` avanza directamente al flujo de datos iniciales y
   objetos con backend real.
 - No pedir `id_venta` manual.
@@ -377,24 +377,43 @@ Reglas:
 
 ### Pantalla 1B - Seleccionar reserva
 
-Objetivo: dejar explicito que el origen `RESERVA` queda pendiente hasta contar
-con integracion real de reservas desde backend, sin mezclar datos ficticios con
-la venta directa real.
+Objetivo: iniciar el flujo `Desde reserva existente` con selección real de
+reserva desde backend, sin mezclar datos ficticios con la venta directa real. La
+búsqueda y selección es exclusivamente read-only.
 
 Reglas:
 
 - Mostrar titulo `Seleccionar reserva`.
+- Listar/buscar reservas reales con `GET /api/v1/reservas-venta`.
 - No mostrar reservas ficticias ni listas hardcodeadas.
-- Mostrar el mensaje operativo: `La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.`.
 - No generar `id_reserva_venta` desde el frontend.
-- No cargar comprador ni objeto desde una reserva no persistida.
+- No pedir carga manual de `id_reserva_venta`.
+- No confirmar venta, no confirmar reserva y no disparar endpoints write.
+- La reserva seleccionada aporta contexto para etapas siguientes: código, estado,
+  fecha, objeto/s, comprador/es, moneda e importe/precio si vienen en el payload.
+  Si un dato no viene, la UI muestra `No informado`.
+- Conservar `version_registro` si viene en el payload para una confirmación futura,
+  pero no modificar nada en esta etapa.
 - `Siguiente` queda deshabilitado mientras no exista una reserva real persistida
   seleccionada desde backend.
+- Si la reserva tiene un estado claramente no válido, mostrar advertencia y
+  deshabilitar `Siguiente`. Si el estado no viene o no hay convención clara,
+  advertir y permitir continuar; backend validará en una confirmación futura.
 - `Anterior` vuelve a Pantalla 1 -- Origen.
-- El panel lateral muestra: origen `Desde reserva`, reserva `pendiente de
-  integración real` y próximo paso `seleccionar reserva`.
-- No pedir manualmente `id_reserva_venta` ni `If-Match-Version` como campos
-  principales.
+- El panel lateral muestra: origen `Desde reserva`, reserva con código/texto
+  visual, estado `pendiente` o `reserva seleccionada`, y próximo paso `cargar
+  datos iniciales`.
+- No mostrar datos técnicos salvo en modo técnico.
+
+Decisión CORE-EF de esta etapa:
+
+- Clasificación: `QUERY_READLIKE`.
+- Headers write: `NO APLICA`, porque no hay endpoints write.
+- `X-Op-Id`: `NO APLICA`.
+- Outbox: `NO APLICA`.
+- Versionado: se conserva `version_registro` si viene en payload para futura
+  confirmación, pero no se modifica nada.
+- Confirmación desde reserva: queda para un PR posterior.
 
 El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
 registros persistidos de backend real.
@@ -1301,10 +1320,10 @@ inicial (`RESERVA` o `DIRECTA`): si el usuario elige reserva, avanza a Pantalla
 persistida seleccionada o precargada; si elige venta directa, avanza al flujo
 con datos persistidos de backend real.
 
-Pantalla 1B ya no muestra reservas hardcodeadas: informa que la integración de
-reservas reales está pendiente, no genera `id_reserva_venta` ficticio y bloquea
-el avance por `RESERVA` mientras no haya datos persistidos de backend en el
-estado (`id_reserva_venta` y `version_registro`). El layout
+Pantalla 1B ya no muestra reservas hardcodeadas: usa `GET /api/v1/reservas-venta`
+para selección read-only de reservas persistidas, no genera `id_reserva_venta`
+ficticio y bloquea el avance por `RESERVA` mientras no haya una reserva real en
+el estado (`id_reserva_venta`; `version_registro` se conserva si viene). El layout
 V3 mantiene header superior, area central scrolleable con panel lateral y footer
 inferior fijo para que `Anterior` y `Siguiente` permanezcan dentro del viewport.
 

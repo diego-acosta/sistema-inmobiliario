@@ -153,6 +153,7 @@ class WizardVentaCompletaV3State:
     id_reserva_venta: int | None = None
     version_registro: int | None = None
     texto_visual_reserva: str | None = None
+    reserva_visible_data: dict[str, Any] = field(default_factory=dict)
     moneda: str = "ARS"
     fecha_venta_iso: str = ""
     codigo_venta: str = ""
@@ -229,6 +230,9 @@ class VentaCompletaWizardV3Prototype:
         self.comprador_selector: SearchSelectorDemo | None = None
         self.objeto_seleccionado: dict[str, Any] | None = None
         self.comprador_seleccionado: dict[str, Any] | None = None
+        self.backend_reservation_records: list[dict[str, Any]] = []
+        self.backend_reservation_error: str | None = None
+        self.backend_reservations_loaded = False
         self.backend_object_records: list[dict[str, Any]] = []
         self.backend_object_error: str | None = None
         self.backend_objects_loaded = False
@@ -724,7 +728,7 @@ class VentaCompletaWizardV3Prototype:
                 controls=[
                     ft.Text("¿Cómo querés iniciar la venta?", size=24, weight=ft.FontWeight.W_700),
                     ft.Text(
-                        "Elegí una alternativa para definir el contexto inicial. Venta directa permite crear una venta nueva; desde reserva queda pendiente de integración.",
+                        "Elegí una alternativa para definir el contexto inicial. Venta directa permite crear una venta nueva; desde reserva permite seleccionar una reserva real read-only.",
                         color=ft.Colors.BLUE_GREY_700,
                     ),
                     ft.Row(
@@ -732,7 +736,7 @@ class VentaCompletaWizardV3Prototype:
                             self._build_origin_card(
                                 origin="RESERVA",
                                 title="Desde reserva existente",
-                                description="Pendiente de integración real de reservas; no permite avanzar con datos ficticios.",
+                                description="Buscar y seleccionar una reserva real del backend antes de continuar.",
                                 icon=ft.Icons.BOOKMARK_OUTLINED,
                             ),
                             self._build_origin_card(
@@ -769,18 +773,30 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_reserva_selection_step(self) -> ft.Control:
+        if self.reserva_selector is None:
+            self.reserva_selector = create_search_selector_demo(
+                title="Reservas reales",
+                placeholder="Buscar por código, estado, objeto o comprador",
+                records=self._backend_reservation_selector_records(),
+                selector_kind="reserva",
+                on_selection_change=self._on_reserva_selected,
+                show_technical_details=self.state.mostrar_datos_tecnicos,
+            )
+            self._configure_reserva_selector_scroll()
+        else:
+            self.reserva_selector.set_show_technical_details(self.state.mostrar_datos_tecnicos)
+
         controls: list[ft.Control] = [
             ft.Text("Seleccionar reserva", size=24, weight=ft.FontWeight.W_700),
             ft.Text(
-                "La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.",
+                "Buscá y seleccioná una reserva real del backend. Esta etapa es read-only: no confirma venta ni modifica la reserva.",
                 color=ft.Colors.BLUE_GREY_700,
                 weight=ft.FontWeight.W_600,
             ),
-            self._build_help_card(
-                "No se muestran reservas ficticias ni se genera id_reserva_venta desde el frontend. Cuando exista un listado real de reservas persistidas en backend, este paso podrá habilitar la selección y el avance.",
-                ft.Colors.AMBER_50,
-                ft.Colors.AMBER_200,
-            ),
+            *([self._build_help_card(self.backend_reservation_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)] if self.backend_reservation_error else []),
+            self.reserva_selector.view(),
+            self._build_reserva_selected_card(),
+            *([self._build_help_card(self._reservation_state_warning() or "", ft.Colors.AMBER_50, ft.Colors.AMBER_200)] if self._reservation_state_warning() else []),
         ]
         return ft.Container(
             padding=18,
@@ -869,6 +885,18 @@ class VentaCompletaWizardV3Prototype:
             ),
         )
 
+    def _load_backend_reservation_records_if_needed(self) -> None:
+        if self.backend_reservations_loaded:
+            return
+        self.backend_reservations_loaded = True
+        result = self.api.get_reservas_venta(limit=50)
+        if result.success:
+            self.backend_reservation_records = [self._backend_reserva_record(item) for item in self._api_items(result.data)]
+            self.backend_reservation_error = None if self.backend_reservation_records else "No se encontraron reservas disponibles."
+            return
+        self.backend_reservation_records = []
+        self.backend_reservation_error = self._backend_selector_error("reservas de venta", result)
+
     def _load_backend_object_records_if_needed(self) -> None:
         if self.backend_objects_loaded:
             return
@@ -945,6 +973,10 @@ class VentaCompletaWizardV3Prototype:
         self.backend_buyer_records = []
         self.backend_buyer_error = self._backend_selector_error("personas", result)
 
+    def _backend_reservation_selector_records(self) -> list[dict[str, Any]]:
+        self._load_backend_reservation_records_if_needed()
+        return list(self.backend_reservation_records)
+
     def _backend_object_selector_records(self) -> list[dict[str, Any]]:
         self._load_backend_object_records_if_needed()
         return list(self.backend_object_records)
@@ -969,6 +1001,53 @@ class VentaCompletaWizardV3Prototype:
                 if isinstance(nested_items, list):
                     return [item for item in nested_items if isinstance(item, dict)]
         return []
+
+
+    @staticmethod
+    def _first_present(item: dict[str, Any], keys: tuple[str, ...]) -> Any:
+        for key in keys:
+            value = item.get(key)
+            if value not in (None, "", []):
+                return value
+        return None
+
+    @staticmethod
+    def _visible_join(value: Any) -> str:
+        if isinstance(value, list):
+            parts: list[str] = []
+            for entry in value:
+                if isinstance(entry, dict):
+                    parts.append(str(entry.get("texto_visual") or entry.get("display_name") or entry.get("nombre") or entry.get("codigo") or entry.get("descripcion") or entry.get("id") or "").strip())
+                else:
+                    parts.append(str(entry or "").strip())
+            return ", ".join(part for part in parts if part)
+        if isinstance(value, dict):
+            return str(value.get("texto_visual") or value.get("display_name") or value.get("nombre") or value.get("codigo") or value.get("descripcion") or value.get("id") or "").strip()
+        return str(value or "").strip()
+
+    def _backend_reserva_record(self, item: dict[str, Any]) -> dict[str, Any]:
+        codigo = self._first_present(item, ("codigo_reserva", "codigo", "numero_reserva"))
+        estado = self._first_present(item, ("estado", "estado_reserva"))
+        fecha = self._first_present(item, ("fecha", "fecha_reserva", "fecha_alta", "created_at"))
+        objetos = self._visible_join(self._first_present(item, ("objetos", "objeto", "inmuebles", "unidades_funcionales")))
+        compradores = self._visible_join(self._first_present(item, ("compradores", "comprador", "reservantes", "reservante", "cliente")))
+        moneda = self._first_present(item, ("moneda", "codigo_moneda"))
+        importe = self._first_present(item, ("importe", "precio_reservado", "importe_reserva", "precio_total", "monto"))
+        return {
+            "id_reserva_venta": self._first_present(item, ("id_reserva_venta", "id_reserva", "id")),
+            "version_registro": item.get("version_registro"),
+            "codigo_reserva": codigo,
+            "estado": estado,
+            "fecha": fecha,
+            "objeto": objetos,
+            "comprador": compradores,
+            "moneda": moneda,
+            "importe": importe,
+            "resumen": " — ".join(str(v) for v in (compradores, objetos) if v),
+            "source": "backend",
+            "persisted": True,
+            "raw": item,
+        }
 
     @staticmethod
     def _backend_selector_error(label: str, result: ApiResult) -> str:
@@ -1416,20 +1495,32 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_reserva_selected_card(self) -> ft.Control:
+        data = self.state.reserva_visible_data
+        controls: list[ft.Control] = [
+            ft.Text("Reserva seleccionada", size=18, weight=ft.FontWeight.W_700),
+        ]
+        if not self.state.id_reserva_venta:
+            controls.append(ft.Text("Seleccioná una reserva real para continuar.", color=ft.Colors.BLUE_GREY_700))
+        else:
+            controls.extend([
+                _info_row("Código", data.get("codigo") or "No informado"),
+                _info_row("Estado", data.get("estado") or "No informado"),
+                _info_row("Fecha", data.get("fecha") or "No informado"),
+                _info_row("Objeto/s", data.get("objetos") or "No informado"),
+                _info_row("Comprador/es", data.get("compradores") or "No informado"),
+                _info_row("Moneda", data.get("moneda") or "No informado"),
+                _info_row("Importe / precio", data.get("importe") or "No informado"),
+                *self._technical_controls([
+                    _info_row("id_reserva_venta", self.state.id_reserva_venta),
+                    _info_row("version_registro", self.state.version_registro if self.state.version_registro is not None else "No informado"),
+                ]),
+            ])
         return ft.Container(
             padding=14,
             border_radius=12,
-            bgcolor=ft.Colors.WHITE,
-            border=_border_all(1, ft.Colors.BLUE_GREY_100),
-            content=ft.Column(
-                controls=[
-                    ft.Text("Reserva seleccionada", size=18, weight=ft.FontWeight.W_700),
-                    ft.Text(self.state.texto_visual_reserva or "Reserva pendiente", weight=ft.FontWeight.W_600),
-                    _info_row("id_reserva_venta", self.state.id_reserva_venta),
-                    _info_row("version_registro", self.state.version_registro),
-                ],
-                spacing=6,
-            ),
+            bgcolor=ft.Colors.GREEN_50 if self.state.id_reserva_venta else ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.GREEN_200 if self.state.id_reserva_venta else ft.Colors.BLUE_GREY_100),
+            content=ft.Column(controls=controls, spacing=6),
         )
 
     def _build_inherited_buyers_pending_card(self) -> ft.Control:
@@ -1446,7 +1537,7 @@ class VentaCompletaWizardV3Prototype:
                             weight=ft.FontWeight.W_600,
                         ),
                         ft.Text(
-                            "La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.",
+                            "La selección real de reserva es read-only; la confirmación desde reserva queda para un PR posterior.",
                             size=12,
                             color=ft.Colors.BLUE_GREY_700,
                         ),
@@ -2863,7 +2954,7 @@ class VentaCompletaWizardV3Prototype:
     def _build_review_buyers_section(self) -> ft.Control:
         controls: list[ft.Control] = [ft.Text("4. Compradores", size=18, weight=ft.FontWeight.W_700)]
         if self.state.origen == "RESERVA":
-            controls.append(ft.Text("La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.", color=ft.Colors.BLUE_GREY_800))
+            controls.append(ft.Text("La selección real de reserva es read-only; la confirmación desde reserva queda para un PR posterior.", color=ft.Colors.BLUE_GREY_800))
             if self.state.texto_visual_reserva:
                 controls.append(_info_row("Reserva", self.state.texto_visual_reserva))
         else:
@@ -4224,8 +4315,8 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen not in {"DIRECTA", "RESERVA"}:
             errors.append("Seleccioná un origen válido.")
         if self.state.origen == "RESERVA":
-            errors.append("La integración de reservas reales está pendiente. Usá venta directa para confirmar ventas reales.")
-        if self.state.origen == "RESERVA" and (self.state.id_reserva_venta is None or self.state.version_registro is None):
+            errors.append("La selección real de reserva es read-only; la confirmación desde reserva queda para un PR posterior.")
+        if self.state.origen == "RESERVA" and self.state.id_reserva_venta is None:
             errors.append("No hay una reserva real seleccionada desde el sistema.")
         if not self._has_valid_currency():
             errors.append("Seleccioná una moneda válida.")
@@ -4334,6 +4425,7 @@ class VentaCompletaWizardV3Prototype:
         operation_rows: list[ft.Control] = [_flow_info_row("Origen", self._origin_label())]
         if self.state.origen == "RESERVA" or self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             operation_rows.append(_flow_info_row("Reserva", self._reservation_status()))
+            operation_rows.append(_flow_info_row("Estado", self._flow_status_badge("reserva seleccionada" if self.state.id_reserva_venta is not None else "pendiente")))
         operation_rows.extend(
             [
                 _flow_info_row("Moneda", self._currency_label()),
@@ -4602,6 +4694,25 @@ class VentaCompletaWizardV3Prototype:
         self.state.id_reserva_venta = None
         self.state.version_registro = None
         self.state.texto_visual_reserva = None
+        self.state.reserva_visible_data = {}
+        if selected is not None:
+            self.state.origen = "RESERVA"
+            self.state.id_reserva_venta = _safe_int(selected.get("id_reserva_venta"))
+            self.state.version_registro = _safe_int(selected.get("version_registro"))
+            codigo = self._display_or_none(selected.get("codigo_reserva"))
+            estado = self._display_or_none(selected.get("estado")) or self._display_or_none(selected.get("estado_reserva"))
+            objetos = self._display_or_none(selected.get("objeto")) or self._display_or_none(selected.get("objetos"))
+            compradores = self._display_or_none(selected.get("comprador")) or self._display_or_none(selected.get("compradores"))
+            self.state.texto_visual_reserva = selected.get("texto_visual") or " — ".join(part for part in [codigo, estado, objetos, compradores] if part) or "Reserva seleccionada"
+            self.state.reserva_visible_data = {
+                "codigo": codigo,
+                "estado": estado,
+                "fecha": self._display_or_none(selected.get("fecha")) or self._display_or_none(selected.get("fecha_reserva")),
+                "objetos": objetos,
+                "compradores": compradores,
+                "moneda": self._display_or_none(selected.get("moneda")),
+                "importe": self._display_or_none(selected.get("importe")) or self._display_or_none(selected.get("precio_reservado")),
+            }
         self._render()
 
     def _next_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -4681,10 +4792,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.pantalla_actual == "ORIGEN":
             return self.state.origen is not None
         if self.state.pantalla_actual == "SELECCIONAR_RESERVA":
-            return (
-                self.state.id_reserva_venta is not None
-                and self.state.version_registro is not None
-            )
+            return self.state.id_reserva_venta is not None and not self._reservation_state_blocks_next()
         if self.state.pantalla_actual == "DATOS_INICIALES":
             return self._has_valid_currency() and self.fecha_venta_error is None
         if self.state.pantalla_actual == "OBJETOS":
@@ -4695,7 +4803,7 @@ class VentaCompletaWizardV3Prototype:
             )
         if self.state.pantalla_actual == "COMPRADORES":
             if self.state.origen == "RESERVA":
-                return self.state.id_reserva_venta is not None and self.state.version_registro is not None
+                return self.state.id_reserva_venta is not None
             return self._buyers_are_valid()
         if self.state.pantalla_actual == "FORMA_PAGO":
             if self.state.forma_pago == "FINANCIADO":
@@ -6172,11 +6280,40 @@ class VentaCompletaWizardV3Prototype:
         return "No seleccionado"
 
     def _reservation_status(self) -> str:
-        return self.state.texto_visual_reserva or "pendiente de integración real"
+        return self.state.texto_visual_reserva or "pendiente"
+
+    @staticmethod
+    def _display_or_none(value: Any) -> str | None:
+        if isinstance(value, list):
+            text = ", ".join(str(item) for item in value if item not in (None, ""))
+        else:
+            text = str(value or "").strip()
+        return text or None
+
+    def _reservation_state_blocks_next(self) -> bool:
+        estado = str(self.state.reserva_visible_data.get("estado") or "").strip().upper()
+        if not estado:
+            return False
+        valid_states = {"VIGENTE", "ACTIVA", "CONFIRMADA", "RESERVADA"}
+        invalid_markers = {"ANULADA", "CANCELADA", "VENCIDA", "RECHAZADA", "CONVERTIDA", "FINALIZADA"}
+        return estado in invalid_markers and estado not in valid_states
+
+    def _reservation_state_warning(self) -> str | None:
+        if self.state.id_reserva_venta is None:
+            return None
+        estado = str(self.state.reserva_visible_data.get("estado") or "").strip().upper()
+        if not estado:
+            return "La reserva no informa estado; se permite continuar y el backend validará en una confirmación futura."
+        if self._reservation_state_blocks_next():
+            return f"La reserva tiene estado {estado}; no se puede avanzar desde este estado."
+        valid_states = {"VIGENTE", "ACTIVA", "CONFIRMADA", "RESERVADA"}
+        if estado not in valid_states:
+            return f"Estado {estado} no reconocido como válido por la UI; se permite continuar y el backend validará en una confirmación futura."
+        return None
 
     def _buyers_flow_status(self) -> str:
         if self.state.origen == "RESERVA":
-            return "pendiente de integración real de reserva"
+            return "reserva seleccionada" if self.state.id_reserva_venta is not None else "pendiente"
         return str(len(self.state.compradores))
 
     def _payment_method_status(self) -> str:
@@ -6444,6 +6581,15 @@ def _object_id_label_value(payload: dict[str, Any]) -> tuple[str, Any]:
     if payload.get("tipo_objeto") == "UNIDAD_FUNCIONAL":
         return "id_unidad_funcional", payload.get("id_unidad_funcional")
     return "id_inmueble", payload.get("id_inmueble")
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        if value in (None, ""):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _same_object_payload(objeto: ObjetoVentaWizardDraft, payload: dict[str, Any]) -> bool:

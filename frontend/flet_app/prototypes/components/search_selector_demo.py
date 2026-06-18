@@ -115,33 +115,39 @@ def _search_blob(*values: Any) -> str:
 
 
 def reserva_record(data: dict[str, Any]) -> SearchSelectorRecord:
-    """Adapta una reserva de venta demo al contrato visual del buscador."""
+    """Adapta una reserva de venta real al contrato visual del buscador."""
 
     codigo = _clean(data.get("codigo_reserva"))
-    comprador = _clean(data.get("comprador")) or _clean(data.get("reservante"))
-    objeto = _clean(data.get("objeto"))
-    estado = _clean(data.get("estado"))
+    comprador = _clean(data.get("comprador")) or _clean(data.get("reservante")) or _clean(data.get("compradores"))
+    objeto = _clean(data.get("objeto")) or _clean(data.get("objetos"))
+    estado = _clean(data.get("estado")) or _clean(data.get("estado_reserva"))
+    fecha = _clean(data.get("fecha")) or _clean(data.get("fecha_reserva"))
+    moneda = _clean(data.get("moneda"))
+    importe = _clean(data.get("importe")) or _clean(data.get("precio_reservado"))
     version = data.get("version_registro")
-    primary = _join_visible([codigo, comprador, objeto])
-    secondary = _join_visible(
-        [f"Estado: {estado}" if estado else "", f"version_registro: {version}" if version is not None else ""]
+    primary = _join_visible([codigo or "Reserva sin código", estado])
+    secondary = _join_visible([fecha, objeto, comprador, moneda, importe])
+    technical_secondary = _join_visible(
+        [secondary, f"id_reserva_venta: {data.get('id_reserva_venta')}" if data.get("id_reserva_venta") is not None else "", f"version_registro: {version}" if version is not None else ""]
     )
-    summary = _clean(data.get("resumen")) or _join_visible([comprador, objeto, estado])
+    summary = _clean(data.get("resumen")) or _join_visible([comprador, objeto, estado, moneda, importe])
+    payload = dict(data)
+    payload.update({
+        "tipo": "RESERVA",
+        "id_reserva_venta": data.get("id_reserva_venta"),
+        "version_registro": version,
+        "texto_visual": primary,
+        "source": data.get("source") or "backend",
+        "persisted": bool(data.get("persisted", True)),
+    })
     return SearchSelectorRecord(
         data=data,
         primary_text=primary,
         secondary_text=secondary,
-        technical_secondary_text=secondary,
+        technical_secondary_text=technical_secondary,
         summary_text=summary,
-        search_text=_search_blob(codigo, comprador, objeto, estado, summary, data.get("id_reserva_venta")),
-        selection_payload={
-            "tipo": "RESERVA",
-            "id_reserva_venta": data.get("id_reserva_venta"),
-            "version_registro": version,
-            "texto_visual": primary,
-            "source": data.get("source") or "demo",
-            "persisted": bool(data.get("persisted", False)),
-        },
+        search_text=_search_blob(codigo, comprador, objeto, estado, fecha, moneda, importe, summary, data.get("id_reserva_venta")),
+        selection_payload=payload,
     )
 
 
