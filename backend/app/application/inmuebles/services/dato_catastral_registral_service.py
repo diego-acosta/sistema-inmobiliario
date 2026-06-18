@@ -144,6 +144,8 @@ class DatoCatastralRegistralService:
         if command.if_match_version != current["version_registro"]:
             return AppResult.fail("CONCURRENCY_ERROR")
         values = _explicit_command_values(command)
+        if not values:
+            return AppResult.fail("NO_FIELDS_TO_UPDATE")
         final_values = {**_command_values(command), **current, **values}
         errors = _validate_values(final_values)
         if errors:

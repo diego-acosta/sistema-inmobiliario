@@ -421,6 +421,7 @@ def _dato_catastral_error_response(result, *, action: str) -> JSONResponse:
         "INVALID_DATE_RANGE",
         "INVALID_SUPERFICIE",
         "INVALID_ESTADO_DATO",
+        "NO_FIELDS_TO_UPDATE",
     }
     code = (
         result.errors[0]

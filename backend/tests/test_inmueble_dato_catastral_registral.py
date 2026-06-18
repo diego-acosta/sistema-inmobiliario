@@ -210,6 +210,29 @@ def test_actualizacion_parcial_permite_borrar_observaciones_con_null(client):
     assert data["version_registro"] == original["version_registro"] + 1
 
 
+def test_actualizacion_parcial_rechaza_body_vacio(client):
+    id_inmueble = _crear_inmueble(client, "INM-DCR-EMPTY")
+    create = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=_payload(),
+    )
+    assert create.status_code == 201
+    original = create.json()["data"]
+
+    response = client.put(
+        (
+            f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/"
+            f"{original['id_dato_catastral_registral']}"
+        ),
+        headers=_headers(**{"If-Match-Version": str(original["version_registro"])}),
+        json={},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "NO_FIELDS_TO_UPDATE"
+
+
 def test_no_incluye_linderos_en_request_response(client):
     id_inmueble = _crear_inmueble(client, "INM-DCR-LIN")
     response = client.post(
