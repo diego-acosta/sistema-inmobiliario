@@ -90,6 +90,13 @@ porque se asumira 100%. Los identificadores `id_persona` e
 El modo tecnico no cambia payloads, llamadas API, validaciones ni logica de
 confirmacion: solo agrega datos secundarios visibles para diagnostico.
 
+Las etiquetas seleccionadas que conserva el draft visual del wizard mantienen
+datos suficientes para identificar lo elegido sin activar modo tecnico: los
+objetos conservan codigo y descripcion visible, y las unidades funcionales
+mantienen tambien la referencia amigable al inmueble padre cuando exista; los
+compradores conservan nombre y documento visible. Esto diferencia registros con
+codigos o nombres repetidos sin cambiar payloads externos ni logica de negocio.
+
 ## 4. Contratos backend existentes que guian el diseno
 
 El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:
