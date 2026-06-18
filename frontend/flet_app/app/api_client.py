@@ -301,6 +301,9 @@ class ApiClient:
             },
         )
 
+    def get_reserva_venta(self, id_reserva_venta: int) -> ApiResult:
+        return self._get(f"/api/v1/reservas-venta/{id_reserva_venta}")
+
     def get_reservas_venta(
         self,
         *,

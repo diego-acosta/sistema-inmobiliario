@@ -1575,7 +1575,7 @@ class VentaCompletaWizardV3Prototype:
                 ft.Colors.AMBER_50,
                 ft.Colors.AMBER_200,
             ),
-            *([] if self.state.compradores else [self._build_help_card("La reserva seleccionada no informa compradores/reservantes. No se inventan datos y el avance queda sujeto a las validaciones existentes.", ft.Colors.RED_50, ft.Colors.RED_200)]),
+            *([] if self.state.compradores else [self._build_help_card("La reserva seleccionada no informa compradores/reservantes luego de consultar el detalle. No se inventan datos y el avance queda sujeto a las validaciones existentes.", ft.Colors.RED_50, ft.Colors.RED_200)]),
             self._build_added_buyers_list(),
             self._build_buyers_summary(),
         ]
@@ -1596,6 +1596,7 @@ class VentaCompletaWizardV3Prototype:
             controls.append(ft.Text("Seleccioná una reserva real para continuar.", color=ft.Colors.BLUE_GREY_700))
         else:
             controls.extend([
+                *([self._build_help_card(str(data.get("detalle_warning")), ft.Colors.AMBER_50, ft.Colors.AMBER_200)] if data.get("detalle_warning") else []),
                 _info_row("Código", data.get("codigo") or "No informado"),
                 _info_row("Estado", data.get("estado") or "No informado"),
                 _info_row("Fecha", data.get("fecha") or "No informado"),
@@ -1607,6 +1608,7 @@ class VentaCompletaWizardV3Prototype:
                 *self._technical_controls([
                     _info_row("id_reserva_venta", self.state.id_reserva_venta),
                     _info_row("version_registro", self.state.version_registro if self.state.version_registro is not None else "No informado"),
+                    _info_row("precarga", data.get("precarga_source") or "listado"),
                 ]),
             ])
         return ft.Container(
@@ -4803,7 +4805,44 @@ class VentaCompletaWizardV3Prototype:
 
     def _reservation_payloads(self, selected: dict[str, Any]) -> list[dict[str, Any]]:
         raw = selected.get("raw") if isinstance(selected.get("raw"), dict) else {}
-        return [payload for payload in (selected, raw) if isinstance(payload, dict)]
+        payloads = [selected]
+        if isinstance(raw, dict):
+            for key in ("detalle", "listado"):
+                nested = raw.get(key)
+                if isinstance(nested, dict):
+                    payloads.append(nested)
+            payloads.append(raw)
+        return [payload for payload in payloads if isinstance(payload, dict)]
+
+    @staticmethod
+    def _reservation_detail_payload(data: Any) -> dict[str, Any]:
+        if isinstance(data, dict):
+            nested = data.get("data")
+            if isinstance(nested, dict):
+                return nested
+            return data
+        return {}
+
+    def _enriched_reservation_payload(self, selected: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+        id_reserva = _safe_int(selected.get("id_reserva_venta"))
+        if id_reserva is None:
+            return dict(selected), None
+        result = self.api.get_reserva_venta(id_reserva)
+        if not result.success:
+            warning = "No se pudo cargar el detalle de la reserva; se usará la información parcial del listado."
+            return {**selected, "raw": {"listado": selected.get("raw") if isinstance(selected.get("raw"), dict) else selected}, "precarga_source": "listado parcial"}, warning
+        detail = self._reservation_detail_payload(result.data)
+        enriched = dict(selected)
+        enriched.update(detail)
+        for key in ("objetos", "objeto", "inmuebles", "unidades_funcionales", "participaciones"):
+            if key in detail:
+                enriched[key] = detail[key]
+        enriched["raw"] = {
+            "listado": selected.get("raw") if isinstance(selected.get("raw"), dict) else selected,
+            "detalle": detail,
+        }
+        enriched["precarga_source"] = "detalle"
+        return enriched, None
 
     def _reservation_first_present(self, selected: dict[str, Any], keys: tuple[str, ...]) -> Any:
         for payload in self._reservation_payloads(selected):
@@ -4823,10 +4862,12 @@ class VentaCompletaWizardV3Prototype:
                     if not isinstance(item, dict):
                         continue
                     persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
+                    primary_id = item.get("id_inmueble") or item.get("id_persona") or persona.get("id_persona")
+                    secondary_id = item.get("id_unidad_funcional")
                     marker = (
-                        item.get("id_inmueble") or item.get("id_persona") or persona.get("id_persona"),
-                        item.get("id_unidad_funcional"),
-                        self._visible_join(item),
+                        primary_id,
+                        secondary_id,
+                        "" if primary_id is not None or secondary_id is not None else self._visible_join(item),
                     )
                     if marker in seen:
                         continue
@@ -4952,17 +4993,28 @@ class VentaCompletaWizardV3Prototype:
             objetos = self._display_or_none(selected.get("objeto")) or self._display_or_none(selected.get("objetos"))
             compradores = self._display_or_none(selected.get("comprador")) or self._display_or_none(selected.get("compradores"))
             self.state.texto_visual_reserva = selected.get("texto_visual") or " — ".join(part for part in [codigo, estado, objetos, compradores] if part) or "Reserva seleccionada"
+            enriched_selected, detail_warning = self._enriched_reservation_payload(selected)
+            self.state.version_registro = _safe_int(enriched_selected.get("version_registro")) or self.state.version_registro
+            objetos = self._display_or_none(enriched_selected.get("objeto")) or self._display_or_none(enriched_selected.get("objetos")) or objetos
+            compradores = (
+                self._display_or_none(enriched_selected.get("comprador"))
+                or self._display_or_none(enriched_selected.get("compradores"))
+                or self._display_or_none(enriched_selected.get("participaciones"))
+                or compradores
+            )
             self.state.reserva_visible_data = {
-                "codigo": codigo,
-                "estado": estado,
-                "fecha": self._display_or_none(selected.get("fecha")) or self._display_or_none(selected.get("fecha_reserva")),
-                "vencimiento": self._display_or_none(selected.get("vencimiento")) or self._display_or_none(selected.get("fecha_vencimiento")),
+                "codigo": codigo or self._display_or_none(enriched_selected.get("codigo_reserva")),
+                "estado": estado or self._display_or_none(enriched_selected.get("estado")) or self._display_or_none(enriched_selected.get("estado_reserva")),
+                "fecha": self._display_or_none(enriched_selected.get("fecha")) or self._display_or_none(enriched_selected.get("fecha_reserva")),
+                "vencimiento": self._display_or_none(enriched_selected.get("vencimiento")) or self._display_or_none(enriched_selected.get("fecha_vencimiento")),
                 "objetos": objetos,
                 "compradores": compradores,
-                "moneda": self._display_or_none(self._reservation_first_present(selected, ("moneda", "codigo_moneda"))),
-                "importe": self._display_or_none(self._reservation_first_present(selected, ("importe", "precio_reservado", "importe_reserva", "precio_total", "monto"))),
+                "moneda": self._display_or_none(self._reservation_first_present(enriched_selected, ("moneda", "codigo_moneda"))),
+                "importe": self._display_or_none(self._reservation_first_present(enriched_selected, ("importe", "precio_reservado", "importe_reserva", "precio_total", "monto"))),
+                "detalle_warning": detail_warning,
+                "precarga_source": enriched_selected.get("precarga_source") or "listado",
             }
-            self._preload_reservation_context(selected)
+            self._preload_reservation_context(enriched_selected)
         else:
             self.state.objetos.clear()
             self.state.compradores.clear()
@@ -6283,15 +6335,18 @@ class VentaCompletaWizardV3Prototype:
         if 0 <= index < len(self.state.objetos):
             self.state.objetos[index].precio_asignado = str(event.control.value or "")
             self._mark_plan_preview_stale()
-        self._render()
+            self._refresh_navigation_controls()
 
     def _on_reservation_object_price_blur(self, index: int, event: ft.ControlEvent) -> None:
         if 0 <= index < len(self.state.objetos):
             raw_value = str(event.control.value or self.state.objetos[index].precio_asignado or "")
             parsed = _parse_money_decimal(raw_value)
-            self.state.objetos[index].precio_asignado = _format_decimal(parsed) if parsed is not None else raw_value
+            formatted_value = _format_decimal(parsed) if parsed is not None else raw_value
+            self.state.objetos[index].precio_asignado = formatted_value
+            event.control.value = formatted_value
             self._mark_plan_preview_stale()
-        self._render()
+        self._refresh_navigation_controls()
+        self.page.update()
 
     def _on_manual_buyer_id_change(self, event: ft.ControlEvent) -> None:
         self.manual_buyer_id_value = str(event.control.value or "")

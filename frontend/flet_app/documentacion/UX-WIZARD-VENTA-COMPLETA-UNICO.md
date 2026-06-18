@@ -417,9 +417,17 @@ Decisión CORE-EF de esta etapa:
 
 Precarga preventiva desde reserva:
 
+- El listado `GET /api/v1/reservas-venta` aporta los datos iniciales visibles
+  de la reserva seleccionada. Luego el wizard consulta el detalle read-only
+  `GET /api/v1/reservas-venta/{id_reserva_venta}` para precargar objetos y
+  `participaciones` reales antes de avanzar.
+- Si el detalle falla, la UI muestra la advertencia correspondiente, conserva la
+  reserva seleccionada y usa la información parcial del listado sin romper el
+  flujo.
 - Después de seleccionar una reserva real confirmada, el wizard lee datos
-  normalizados y `raw` disponibles de objetos, inmuebles, unidades funcionales,
-  compradores, reservantes, cliente, moneda e importes/precios.
+  normalizados, detalle y `raw` disponibles de objetos, inmuebles, unidades
+  funcionales, compradores, reservantes, cliente, participaciones, moneda e
+  importes/precios.
 - Los objetos heredados se cargan en `state.objetos` con origen `reserva`,
   persistencia real cuando traen ID, texto visual operativo y marca interna de
   dato heredado. No se inventan IDs ni se muestran diccionarios/listas crudas.
@@ -445,7 +453,9 @@ Precarga preventiva desde reserva:
   no inventa datos y el avance queda sujeto a las validaciones existentes.
 - Esta precarga no confirma venta, no genera venta, plan ni obligaciones, no
   modifica la reserva, no ejecuta endpoints write y conserva la confirmación
-  desde reserva bloqueada para un PR posterior.
+  desde reserva bloqueada para un PR posterior. CORE-EF se mantiene como
+  `QUERY_READLIKE`: no usa `X-Op-Id`, `If-Match-Version` ni headers write para
+  la consulta de detalle.
 
 El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
 registros persistidos de backend real.
