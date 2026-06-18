@@ -39,9 +39,30 @@ def object_availability_warning(value: Any) -> str | None:
         return "Disponibilidad no informada; el backend validará la operación."
     if status == SELECTABLE_OBJECT_STATUS:
         return None
-    if status == "RESERVADA":
-        return "Objeto reservado; no puede seleccionarse para una venta directa."
-    return "No disponible para esta venta."
+    return "Objeto reservado/no disponible; no puede seleccionarse para una venta directa."
+
+
+def object_occupancy_status(value: Any) -> str:
+    """Normaliza la ocupación actual informada por backend para la UX preventiva."""
+
+    return object_availability_status(value)
+
+
+def has_current_object_occupancy(value: Any) -> bool:
+    """Bloquea cualquier ocupación vigente; permite solo ausencia o sin ocupación explícita."""
+
+    status = object_occupancy_status(value)
+    return bool(status and status not in {"SIN_OCUPACION", "SIN OCUPACION", "SIN OCUPACIÓN"})
+
+
+def is_object_selectable(disponibilidad: Any, ocupacion: Any = None) -> bool:
+    return is_object_selectable_status(disponibilidad) and not has_current_object_occupancy(ocupacion)
+
+
+def object_selection_warning(disponibilidad: Any, ocupacion: Any = None) -> str | None:
+    if has_current_object_occupancy(ocupacion):
+        return "Objeto con ocupación vigente; no puede seleccionarse para una venta directa."
+    return object_availability_warning(disponibilidad)
 
 
 @dataclass(frozen=True)
@@ -112,6 +133,8 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
     codigo = _clean(data.get("codigo"))
     descripcion = _clean(data.get("descripcion"))
     disponibilidad = _clean(data.get("estado")) or _clean(data.get("disponibilidad"))
+    ocupacion = data.get("ocupacion_actual")
+    estado_administrativo = _clean(data.get("estado_administrativo"))
     inmueble_padre = _clean(data.get("inmueble_padre"))
     primary_parts = [codigo, descripcion]
     if tipo_objeto == "UNIDAD_FUNCIONAL" and inmueble_padre:
@@ -125,6 +148,8 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
             f"Tipo: {tipo_objeto}" if tipo_objeto else "",
             f"id_inmueble: {data.get('id_inmueble')}" if data.get("id_inmueble") is not None else "",
             f"id_unidad_funcional: {data.get('id_unidad_funcional')}" if data.get("id_unidad_funcional") is not None else "",
+            f"estado_administrativo: {estado_administrativo}" if estado_administrativo else "",
+            f"ocupacion_actual: {_clean(ocupacion)}" if _clean(ocupacion) else "",
         ]
     )
     summary = _clean(data.get("resumen")) or primary
@@ -140,6 +165,9 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
     else:
         payload["id_inmueble"] = id_correspondiente
     payload["estado"] = disponibilidad
+    payload["ocupacion_actual"] = ocupacion
+    if estado_administrativo:
+        payload["estado_administrativo"] = estado_administrativo
     return SearchSelectorRecord(
         data=data,
         primary_text=primary,
@@ -285,7 +313,7 @@ class SearchSelectorDemo:
         self.root.update()
 
     def _select_record(self, record: SearchSelectorRecord) -> None:
-        if self.selector_kind == "objeto" and not is_object_selectable_status(record.selection_payload.get("estado")):
+        if self.selector_kind == "objeto" and not is_object_selectable(record.selection_payload.get("estado"), record.selection_payload.get("ocupacion_actual")):
             return
         self._selected = record
         self._refresh_selection_panel()
@@ -390,9 +418,10 @@ class SearchSelectorDemo:
 
     def _build_object_result_row(self, record: SearchSelectorRecord, is_selected: bool) -> ft.Control:
         estado = _clean(record.data.get("estado")) or _clean(record.data.get("disponibilidad"))
+        ocupacion = record.data.get("ocupacion_actual")
         estado_upper = object_availability_status(estado)
-        is_selectable = is_object_selectable_status(estado)
-        warning_text = object_availability_warning(estado)
+        is_selectable = is_object_selectable(estado, ocupacion)
+        warning_text = object_selection_warning(estado, ocupacion)
         is_warning = warning_text is not None
         return ft.Container(
             padding=12,
