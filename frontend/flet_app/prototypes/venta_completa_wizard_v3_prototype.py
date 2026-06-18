@@ -1176,9 +1176,9 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA":
             controls: list[ft.Control] = [
                 ft.Text("Objetos de venta", size=24, weight=ft.FontWeight.W_700),
-                ft.Text("Los objetos provienen de la reserva seleccionada. La edición queda bloqueada en esta etapa.", color=ft.Colors.BLUE_GREY_700),
+                ft.Text("Los objetos provienen de la reserva seleccionada. No se puede cambiar el objeto, pero sí completar el valor comercial si falta.", color=ft.Colors.BLUE_GREY_700),
                 self._build_help_card(
-                    "Los objetos provienen de la reserva seleccionada. La edición queda bloqueada en esta etapa.",
+                    "Los objetos provienen de la reserva seleccionada. No se puede cambiar el objeto, pero sí completar el valor comercial si falta.",
                     ft.Colors.AMBER_50,
                     ft.Colors.AMBER_200,
                 ),
@@ -1432,15 +1432,18 @@ class VentaCompletaWizardV3Prototype:
                                         ft.Colors.BLUE_GREY_50,
                                         ft.Colors.BLUE_GREY_200,
                                     ),
-                                    _badge(
-                                        f"Precio: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
-                                        ft.Colors.GREEN_50,
-                                        ft.Colors.GREEN_200,
-                                    ),
+                                    *([] if objeto.heredado_reserva else [
+                                        _badge(
+                                            f"Precio: {self._format_money_with_currency(_parse_money_decimal(objeto.precio_asignado) or Decimal('0'))}",
+                                            ft.Colors.GREEN_50,
+                                            ft.Colors.GREEN_200,
+                                        )
+                                    ]),
                                 ],
                                 spacing=8,
                                 wrap=True,
                             ),
+                            *([self._build_reservation_object_price_field(index, objeto)] if objeto.heredado_reserva else []),
                             *self._technical_controls([
                                 self._technical_text(f"ID técnico secundario ({id_label}): {id_value}"),
                                 self._technical_text(f"Origen dato: {self._record_source_label(objeto.source, objeto.persisted)}"),
@@ -1459,6 +1462,29 @@ class VentaCompletaWizardV3Prototype:
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.START,
             ),
+        )
+
+    def _build_reservation_object_price_field(self, index: int, objeto: ObjetoVentaWizardDraft) -> ft.Control:
+        parsed = _parse_money_decimal(objeto.precio_asignado)
+        has_error = parsed is None
+        return ft.Column(
+            controls=[
+                ft.TextField(
+                    label=f"Valor comercial asignado ({self._currency_label()})",
+                    value=objeto.precio_asignado,
+                    dense=True,
+                    keyboard_type=ft.KeyboardType.NUMBER,
+                    on_change=lambda event, item_index=index: self._on_reservation_object_price_change(item_index, event),
+                    on_blur=lambda event, item_index=index: self._on_reservation_object_price_blur(item_index, event),
+                ),
+                ft.Text(
+                    "Completá un precio válido para avanzar." if has_error else "Precio editable; el objeto heredado no se puede cambiar ni quitar.",
+                    size=12,
+                    color=ft.Colors.RED_700 if has_error else ft.Colors.BLUE_GREY_600,
+                ),
+            ],
+            spacing=4,
+            tight=True,
         )
 
     def _build_objects_total_summary(self) -> ft.Control:
@@ -4796,7 +4822,12 @@ class VentaCompletaWizardV3Prototype:
                 for item in candidates:
                     if not isinstance(item, dict):
                         continue
-                    marker = (item.get("id_inmueble") or item.get("id_persona"), item.get("id_unidad_funcional"), self._visible_join(item))
+                    persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
+                    marker = (
+                        item.get("id_inmueble") or item.get("id_persona") or persona.get("id_persona"),
+                        item.get("id_unidad_funcional"),
+                        self._visible_join(item),
+                    )
                     if marker in seen:
                         continue
                     seen.add(marker)
@@ -4829,11 +4860,15 @@ class VentaCompletaWizardV3Prototype:
         return drafts
 
     def _reservation_buyer_drafts(self, selected: dict[str, Any]) -> list[CompradorWizardDraft]:
-        buyer_items = self._reservation_collection(selected, ("compradores", "comprador", "reservantes", "reservante", "cliente"))
+        buyer_items = self._reservation_collection(selected, ("participaciones", "compradores", "comprador", "reservantes", "reservante", "cliente"))
         role_id = self._rol_comprador_id_resuelto() or ""
         drafts: list[CompradorWizardDraft] = []
         for item in buyer_items:
-            id_persona = _safe_int(self._first_present_field(item, ("id_persona", "persona_id", "id_cliente", "id_reservante")))
+            persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
+            id_persona = _safe_int(
+                self._first_present_field(item, ("id_persona", "persona_id", "id_cliente", "id_reservante"))
+                or persona.get("id_persona")
+            )
             if id_persona is None:
                 continue
             porcentaje_text = ""
@@ -4841,12 +4876,13 @@ class VentaCompletaWizardV3Prototype:
             parsed_percentage = _parse_percentage(str(raw_percentage)) if raw_percentage not in (None, "") else None
             if parsed_percentage is not None:
                 porcentaje_text = _format_decimal(parsed_percentage)
+            item_role_id = _safe_int(self._first_present_field(item, ("id_rol_participacion", "rol_participacion_id")))
             drafts.append(
                 CompradorWizardDraft(
                     id_persona=id_persona,
-                    texto_visual=self._reservation_visible_text(item, fallback="Comprador heredado de reserva"),
+                    texto_visual=self._reservation_participant_visible_text(item),
                     porcentaje_responsabilidad=porcentaje_text,
-                    id_rol_participacion=role_id,
+                    id_rol_participacion=str(item_role_id) if item_role_id is not None else role_id,
                     source="reserva",
                     persisted=True,
                     heredado_reserva=True,
@@ -4876,6 +4912,27 @@ class VentaCompletaWizardV3Prototype:
     def _reservation_visible_text(self, value: Any, *, fallback: str) -> str:
         text = self._visible_join(value)
         return text if text else fallback
+
+    def _reservation_participant_visible_text(self, item: dict[str, Any]) -> str:
+        persona = item.get("persona") if isinstance(item.get("persona"), dict) else item
+        for key in ("texto_visual", "display_name", "nombre_completo", "razon_social"):
+            text = self._visible_join(persona.get(key))
+            if text:
+                return text
+        apellido_nombre = " ".join(
+            part for part in [self._visible_join(persona.get("apellido")), self._visible_join(persona.get("nombre"))] if part
+        )
+        if apellido_nombre:
+            return apellido_nombre
+        nombre_apellido = " ".join(
+            part for part in [self._visible_join(persona.get("nombre")), self._visible_join(persona.get("apellido"))] if part
+        )
+        if nombre_apellido:
+            return nombre_apellido
+        documento = self._visible_join(
+            persona.get("documento") or persona.get("documento_principal") or persona.get("cuit_cuil")
+        )
+        return documento or "Comprador heredado de reserva"
 
     def _reservation_has_allowed_currency(self) -> bool:
         moneda = self.state.reserva_visible_data.get("moneda")
@@ -6222,6 +6279,20 @@ class VentaCompletaWizardV3Prototype:
             self._mark_plan_preview_stale()
         self._render()
 
+    def _on_reservation_object_price_change(self, index: int, event: ft.ControlEvent) -> None:
+        if 0 <= index < len(self.state.objetos):
+            self.state.objetos[index].precio_asignado = str(event.control.value or "")
+            self._mark_plan_preview_stale()
+        self._render()
+
+    def _on_reservation_object_price_blur(self, index: int, event: ft.ControlEvent) -> None:
+        if 0 <= index < len(self.state.objetos):
+            raw_value = str(event.control.value or self.state.objetos[index].precio_asignado or "")
+            parsed = _parse_money_decimal(raw_value)
+            self.state.objetos[index].precio_asignado = _format_decimal(parsed) if parsed is not None else raw_value
+            self._mark_plan_preview_stale()
+        self._render()
+
     def _on_manual_buyer_id_change(self, event: ft.ControlEvent) -> None:
         self.manual_buyer_id_value = str(event.control.value or "")
 
@@ -6439,7 +6510,7 @@ class VentaCompletaWizardV3Prototype:
             if comprador.id_persona in seen_ids:
                 return "No se puede duplicar id_persona entre compradores."
             seen_ids.add(comprador.id_persona)
-            if self.state.origen == "DIRECTA" and not comprador.id_rol_participacion.strip():
+            if self.state.origen in {"DIRECTA", "RESERVA"} and not comprador.id_rol_participacion.strip():
                 return "Todos los compradores deben tener id_rol_participacion del rol COMPRADOR."
             percentage_raw = comprador.porcentaje_responsabilidad.strip()
             if len(self.state.compradores) > 1 and not percentage_raw:
