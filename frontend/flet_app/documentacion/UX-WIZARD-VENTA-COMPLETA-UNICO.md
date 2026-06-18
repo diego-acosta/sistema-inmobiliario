@@ -415,6 +415,57 @@ Decisión CORE-EF de esta etapa:
   confirmación, pero no se modifica nada.
 - Confirmación desde reserva: queda para un PR posterior.
 
+Precarga preventiva desde reserva:
+
+- El listado `GET /api/v1/reservas-venta` aporta los datos iniciales visibles
+  de la reserva seleccionada. Luego el wizard consulta el detalle read-only
+  `GET /api/v1/reservas-venta/{id_reserva_venta}` para precargar objetos y
+  `participaciones` reales antes de avanzar; el contrato de detalle read-only
+  expone esas participaciones aunque el listado pueda seguir sin incluirlas.
+- Si el detalle falla, la UI muestra: `No se pudo cargar el detalle de la
+  reserva; se usará la información parcial del listado.`, conserva la reserva
+  seleccionada y usa la información parcial del listado sin romper el flujo.
+- Si el detalle carga pero no trae `participaciones`, la UI distingue ese caso
+  de un error frontend y muestra: `El detalle de la reserva no informa
+  participaciones.`. Si trae participaciones pero no se convierten a
+  compradores válidos, muestra el diagnóstico correspondiente.
+- Después de seleccionar una reserva real confirmada, el wizard lee datos
+  normalizados, detalle y `raw` disponibles de objetos, inmuebles, unidades
+  funcionales, compradores, reservantes, cliente, participaciones, moneda e
+  importes/precios.
+- Los objetos heredados se cargan en `state.objetos` con origen `reserva`,
+  persistencia real cuando traen ID, texto visual operativo y marca interna de
+  dato heredado. No se inventan IDs ni se muestran diccionarios/listas crudas.
+  El objeto heredado no puede cambiarse ni quitarse, pero el precio comercial
+  `precio_asignado` sí puede completarse o corregirse si la reserva no lo trae
+  o lo trae inválido.
+- Los compradores/reservantes heredados se cargan en `state.compradores` con
+  origen `reserva`, `id_persona` cuando viene, texto visual operativo y marca
+  interna de dato heredado. También pueden provenir de la clave backend
+  `participaciones`, conservando `id_persona`, `id_rol_participacion` y
+  `porcentaje_responsabilidad` si vienen en el payload, incluso con `persona`
+  anidada para el texto visible. Si existe un único comprador y no trae
+  porcentaje, se asume responsabilidad `100.00`; con múltiples compradores no
+  se distribuyen porcentajes automáticamente.
+- Si la reserva informa moneda y está dentro de `MONEDAS_PERMITIDAS`, la moneda
+  del wizard queda heredada. Si informa un importe total y existe un único
+  objeto, se usa como `precio_asignado`; si existen múltiples objetos sin precio
+  por objeto, queda pendiente y no se distribuye automáticamente.
+- En pantallas Objetos y Compradores, los datos heredados son read-only/preventivos:
+  no se permite agregar o quitar registros manualmente en esta etapa; la única
+  edición habilitada en Objetos es completar/corregir el valor comercial.
+- Con **Mostrar datos tecnicos** activo, la card de reserva muestra diagnóstico
+  del detalle: si cargó, fuente de precarga, cantidad de objetos, cantidad de
+  participaciones y error de detalle si existió. Con datos técnicos apagados no
+  se muestran raw, IDs técnicos ni metadatos internos.
+- Si la reserva no trae objetos o compradores, la UI muestra advertencia clara,
+  no inventa datos y el avance queda sujeto a las validaciones existentes.
+- Esta precarga no confirma venta, no genera venta, plan ni obligaciones, no
+  modifica la reserva, no ejecuta endpoints write y conserva la confirmación
+  desde reserva bloqueada para un PR posterior. CORE-EF se mantiene como
+  `QUERY_READLIKE`: no usa `X-Op-Id`, `If-Match-Version` ni headers write para
+  la consulta de detalle.
+
 El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
 registros persistidos de backend real.
 

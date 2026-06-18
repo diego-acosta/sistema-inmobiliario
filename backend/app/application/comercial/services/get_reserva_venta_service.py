@@ -28,5 +28,6 @@ class GetReservaVentaService:
                 "fecha_vencimiento": reserva["fecha_vencimiento"],
                 "observaciones": reserva["observaciones"],
                 "objetos": reserva["objetos"],
+                "participaciones": reserva.get("participaciones", []),
             }
         )

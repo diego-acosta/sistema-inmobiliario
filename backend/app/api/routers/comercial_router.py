@@ -66,6 +66,7 @@ from app.api.schemas.comercial import (
     ReservaVentaConfirmResponse,
     ReservaVentaCreateData,
     ReservaVentaObjetoCreateData,
+    ReservaVentaParticipacionData,
     ReservaVentaCreateRequest,
     ReservaVentaCreateResponse,
     ReservaVentaDetailData,
@@ -830,6 +831,10 @@ def get_reserva_venta(
         "objetos": [
             ReservaVentaObjetoCreateData(**objeto).model_dump()
             for objeto in result.data["objetos"]
+        ],
+        "participaciones": [
+            ReservaVentaParticipacionData(**participacion).model_dump()
+            for participacion in result.data.get("participaciones", [])
         ],
     }
     return ReservaVentaDetailResponse(data=ReservaVentaDetailData(**data))

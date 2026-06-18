@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReservaVentaParticipacionCreateRequest(BaseModel):
@@ -80,8 +80,18 @@ class ReservaVentaBajaResponse(BaseModel):
     data: ReservaVentaBajaData
 
 
+class ReservaVentaParticipacionData(BaseModel):
+    id_relacion_persona_rol: int
+    id_persona: int
+    id_rol_participacion: int
+    porcentaje_responsabilidad: Decimal | None = None
+    fecha_desde: datetime | date | None = None
+    fecha_hasta: datetime | date | None = None
+    observaciones: str | None = None
+
+
 class ReservaVentaDetailData(ReservaVentaCreateData):
-    pass
+    participaciones: list[ReservaVentaParticipacionData] = Field(default_factory=list)
 
 
 class ReservaVentaDetailResponse(BaseModel):
