@@ -1020,3 +1020,14 @@ La evidencia vigente confirma:
 | `GET` | `/api/v1/inmobiliario/inventario` | pendiente | Reporte no implementado en backend |
 | `GET` | `/api/v1/inmobiliario/trazabilidad` | pendiente | Reporte no implementado en backend |
 | `GET` | `/api/v1/inmobiliario/reportes` | pendiente | Reporte no implementado en backend |
+
+## Datos catastrales/registrales de inmueble
+
+| Metodo | Endpoint | Estado | Descripcion |
+|---|---|---|---|
+| `GET` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales` | vigente | Lista registros no borrados del inmueble (`QUERY_READLIKE`) |
+| `POST` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales` | vigente | Crea dato catastral/registral (`COMMAND_WRITE_NEGOCIO`) |
+| `PUT` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}` | vigente | Actualiza dato con `If-Match-Version` (`COMMAND_WRITE_NEGOCIO`) |
+| `PATCH` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}/baja` | vigente | Baja logica por `deleted_at` con `If-Match-Version` (`COMMAND_WRITE_NEGOCIO`) |
+
+Notas: ya existe soporte SQL y API inicial; frontend queda pendiente; no se modifico `POST /api/v1/inmuebles`; no existe campo `linderos`.

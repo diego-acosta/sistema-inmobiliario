@@ -47,3 +47,23 @@
 ## Referencias
 - [[00-INDICE-INMOBILIARIO]]
 - [[RN-INM]]
+
+## Avance backend API inicial
+
+- Ya existe soporte SQL y API backend inicial para `public.inmueble_dato_catastral_registral`.
+- La API permite listar, crear, actualizar y dar de baja logica registros no borrados asociados a un `inmueble` existente.
+- No se modifico el contrato vigente de `POST /api/v1/inmuebles`.
+- Frontend queda pendiente.
+- No existe campo `linderos` en SQL, request ni response.
+
+## Decision CORE-EF
+
+- `GET /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales`: `QUERY_READLIKE`; NO APLICA headers write porque no modifica estado.
+- `POST /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales`: `COMMAND_WRITE_NEGOCIO`; requiere `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; NO APLICA `If-Match-Version` por ser alta.
+- `PUT /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}`: `COMMAND_WRITE_NEGOCIO`; requiere headers CORE-EF e `If-Match-Version`; valida `version_registro`.
+- `PATCH /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}/baja`: `COMMAND_WRITE_NEGOCIO`; requiere headers CORE-EF e `If-Match-Version`; valida `version_registro` y marca `deleted_at`.
+- Idempotencia: NO APLICA persistencia especifica de idempotencia en esta primera API; `op_id` queda trazado en campos CORE-EF.
+- Outbox: NO APLICA; no se declara evento de dominio para esta primera API.
+- Lock logico: NO APLICA; no hay operaciones incompatibles adicionales definidas.
+- Versionado: aplica `version_registro` en update y baja.
+- Transaccion/rollback: frontera por metodo repository, con commit de la escritura y rollback ante error o mismatch concurrente.

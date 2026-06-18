@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class InmuebleCreateRequest(BaseModel):
@@ -142,6 +142,96 @@ class InmuebleDesasociarDesarrolloData(BaseModel):
 class InmuebleDesasociarDesarrolloResponse(BaseModel):
     ok: Literal[True] = True
     data: InmuebleDesasociarDesarrolloData
+
+
+class InmuebleDatoCatastralRegistralBase(BaseModel):
+    nomenclatura_catastral: str | None = None
+    partida_inmobiliaria: str | None = None
+    matricula: str | None = None
+    folio_real: str | None = None
+    circunscripcion: str | None = None
+    seccion: str | None = None
+    chacra: str | None = None
+    quinta: str | None = None
+    fraccion: str | None = None
+    manzana: str | None = None
+    lote: str | None = None
+    parcela: str | None = None
+    subparcela: str | None = None
+    superficie_titulo: Decimal | None = None
+    superficie_mensura: Decimal | None = None
+    medidas: str | None = None
+    situacion_posesoria: str | None = None
+    situacion_dominial: str | None = None
+    organismo_origen: str | None = None
+    fecha_desde: datetime | None = None
+    fecha_hasta: datetime | None = None
+    estado_dato: str = "ACTIVO"
+    observaciones: str | None = None
+
+    @field_validator("estado_dato")
+    @classmethod
+    def validate_estado_dato(cls, value: str) -> str:
+        if value not in {"ACTIVO", "INACTIVO", "HISTORICO"}:
+            raise ValueError("INVALID_ESTADO_DATO")
+        return value
+
+    @field_validator("superficie_titulo", "superficie_mensura")
+    @classmethod
+    def validate_superficie(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and value <= 0:
+            raise ValueError("INVALID_SUPERFICIE")
+        return value
+
+    @model_validator(mode="after")
+    def validate_fecha_rango(self) -> "InmuebleDatoCatastralRegistralBase":
+        if self.fecha_desde is not None and self.fecha_hasta is not None and self.fecha_hasta < self.fecha_desde:
+            raise ValueError("INVALID_DATE_RANGE")
+        return self
+
+
+class InmuebleDatoCatastralRegistralCreateRequest(InmuebleDatoCatastralRegistralBase):
+    pass
+
+
+class InmuebleDatoCatastralRegistralUpdateRequest(InmuebleDatoCatastralRegistralBase):
+    pass
+
+
+class InmuebleDatoCatastralRegistralData(InmuebleDatoCatastralRegistralBase):
+    id_dato_catastral_registral: int
+    id_inmueble: int
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class InmuebleDatoCatastralRegistralListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[InmuebleDatoCatastralRegistralData]
+
+
+class InmuebleDatoCatastralRegistralCreateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: InmuebleDatoCatastralRegistralData
+
+
+class InmuebleDatoCatastralRegistralUpdateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: InmuebleDatoCatastralRegistralData
+
+
+class InmuebleDatoCatastralRegistralBajaData(BaseModel):
+    id_dato_catastral_registral: int
+    id_inmueble: int
+    version_registro: int
+    deleted: Literal[True] = True
+
+
+class InmuebleDatoCatastralRegistralBajaResponse(BaseModel):
+    ok: Literal[True] = True
+    data: InmuebleDatoCatastralRegistralBajaData
 
 
 class UnidadFuncionalCreateRequest(BaseModel):

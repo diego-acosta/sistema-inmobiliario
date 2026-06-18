@@ -47,6 +47,14 @@ from app.api.schemas.inmuebles import (
     InmuebleAsociarDesarrolloResponse,
     InmuebleBajaData,
     InmuebleBajaResponse,
+    InmuebleDatoCatastralRegistralBajaData,
+    InmuebleDatoCatastralRegistralBajaResponse,
+    InmuebleDatoCatastralRegistralCreateRequest,
+    InmuebleDatoCatastralRegistralCreateResponse,
+    InmuebleDatoCatastralRegistralData,
+    InmuebleDatoCatastralRegistralListResponse,
+    InmuebleDatoCatastralRegistralUpdateRequest,
+    InmuebleDatoCatastralRegistralUpdateResponse,
     InmuebleCreateData,
     InmuebleCreateRequest,
     InmuebleCreateResponse,
@@ -113,6 +121,11 @@ from app.application.inmuebles.commands.associate_inmueble_desarrollo import (
     AssociateInmuebleDesarrolloCommand,
 )
 from app.application.inmuebles.commands.create_inmueble import CreateInmuebleCommand
+from app.application.inmuebles.commands.manage_dato_catastral_registral import (
+    BajaDatoCatastralRegistralCommand,
+    CreateDatoCatastralRegistralCommand,
+    UpdateDatoCatastralRegistralCommand,
+)
 from app.application.inmuebles.commands.create_inmueble_servicio import (
     CreateInmuebleServicioCommand,
 )
@@ -168,6 +181,9 @@ from app.application.inmuebles.services.associate_inmueble_desarrollo_service im
 )
 from app.application.inmuebles.services.create_inmueble_service import (
     CreateInmuebleService,
+)
+from app.application.inmuebles.services.dato_catastral_registral_service import (
+    DatoCatastralRegistralService,
 )
 from app.application.inmuebles.services.create_inmueble_servicio_service import (
     CreateInmuebleServicioService,
@@ -373,6 +389,56 @@ def _build_inmueble_command_context(
     )
 
 
+def _dato_catastral_error_response(result, *, action: str) -> JSONResponse:
+    if "NOT_FOUND_INMUEBLE" in result.errors:
+        error = ErrorResponse(
+            error_code="NOT_FOUND_INMUEBLE",
+            error_message="El inmueble indicado no existe.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    if "NOT_FOUND_DATO_CATASTRAL_REGISTRAL" in result.errors:
+        error = ErrorResponse(
+            error_code="NOT_FOUND_DATO_CATASTRAL_REGISTRAL",
+            error_message="El dato catastral/registral indicado no existe.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=404, content=error.model_dump())
+
+    if "CONCURRENCY_ERROR" in result.errors:
+        error = ErrorResponse(
+            error_code="CONCURRENCY_ERROR",
+            error_message=(
+                "If-Match-Version es requerido y debe coincidir "
+                "con version_registro."
+            ),
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=409, content=error.model_dump())
+
+    validation_errors = {
+        "INVALID_DATE_RANGE",
+        "INVALID_SUPERFICIE",
+        "INVALID_ESTADO_DATO",
+    }
+    code = (
+        result.errors[0]
+        if result.errors and result.errors[0] in validation_errors
+        else "APPLICATION_ERROR"
+    )
+    error = ErrorResponse(
+        error_code=code,
+        error_message=f"No se pudo {action} el dato catastral/registral.",
+        details={"errors": result.errors},
+    )
+    return JSONResponse(status_code=400, content=error.model_dump())
+
+
+def _dato_command_kwargs(request) -> dict:
+    return request.model_dump()
+
+
 @router.post(
     "/api/v1/inmuebles",
     status_code=201,
@@ -434,6 +500,208 @@ def create_inmueble(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return InmuebleCreateResponse(data=InmuebleCreateData(**result.data))
+
+
+@router.get(
+    "/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+    response_model=InmuebleDatoCatastralRegistralListResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def list_datos_catastrales_registrales(
+    id_inmueble: int,
+    db: Session = Depends(get_db),
+) -> InmuebleDatoCatastralRegistralListResponse | JSONResponse:
+    service = DatoCatastralRegistralService(repository=InmuebleRepository(db))
+    try:
+        result = service.list(id_inmueble)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        return _dato_catastral_error_response(result, action="listar")
+
+    return InmuebleDatoCatastralRegistralListResponse(
+        data=[InmuebleDatoCatastralRegistralData(**item) for item in result.data]
+    )
+
+
+@router.post(
+    "/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+    status_code=201,
+    response_model=InmuebleDatoCatastralRegistralCreateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_dato_catastral_registral(
+    id_inmueble: int,
+    request: InmuebleDatoCatastralRegistralCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> InmuebleDatoCatastralRegistralCreateResponse | JSONResponse:
+    core = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+
+    command = CreateDatoCatastralRegistralCommand(
+        context=_build_inmueble_command_context(core),
+        id_inmueble=id_inmueble,
+        **_dato_command_kwargs(request),
+    )
+
+    try:
+        result = DatoCatastralRegistralService(
+            repository=InmuebleRepository(db)
+        ).create(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        return _dato_catastral_error_response(result, action="crear")
+
+    return InmuebleDatoCatastralRegistralCreateResponse(
+        data=InmuebleDatoCatastralRegistralData(**result.data)
+    )
+
+
+@router.put(
+    "/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}",
+    response_model=InmuebleDatoCatastralRegistralUpdateResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def update_dato_catastral_registral(
+    id_inmueble: int,
+    id_dato_catastral_registral: int,
+    request: InmuebleDatoCatastralRegistralUpdateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> InmuebleDatoCatastralRegistralUpdateResponse | JSONResponse:
+    core = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+
+    command = UpdateDatoCatastralRegistralCommand(
+        context=_build_inmueble_command_context(core),
+        id_inmueble=id_inmueble,
+        id_dato_catastral_registral=id_dato_catastral_registral,
+        if_match_version=core.if_match_version,
+        **_dato_command_kwargs(request),
+    )
+
+    try:
+        result = DatoCatastralRegistralService(
+            repository=InmuebleRepository(db)
+        ).update(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        return _dato_catastral_error_response(result, action="actualizar")
+
+    return InmuebleDatoCatastralRegistralUpdateResponse(
+        data=InmuebleDatoCatastralRegistralData(**result.data)
+    )
+
+
+@router.patch(
+    (
+        "/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/"
+        "{id_dato_catastral_registral}/baja"
+    ),
+    response_model=InmuebleDatoCatastralRegistralBajaResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_WITH_IF_MATCH_VERSION_OPENAPI,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def baja_dato_catastral_registral(
+    id_inmueble: int,
+    id_dato_catastral_registral: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> InmuebleDatoCatastralRegistralBajaResponse | JSONResponse:
+    core = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+
+    command = BajaDatoCatastralRegistralCommand(
+        context=_build_inmueble_command_context(core),
+        id_inmueble=id_inmueble,
+        id_dato_catastral_registral=id_dato_catastral_registral,
+        if_match_version=core.if_match_version,
+    )
+
+    try:
+        result = DatoCatastralRegistralService(
+            repository=InmuebleRepository(db)
+        ).baja(command)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        return _dato_catastral_error_response(result, action="dar de baja")
+
+    return InmuebleDatoCatastralRegistralBajaResponse(
+        data=InmuebleDatoCatastralRegistralBajaData(**result.data, deleted=True)
+    )
 
 
 @router.post(

@@ -334,3 +334,10 @@ Este PR documental no crea endpoints write; por lo tanto no requiere tests CORE-
 - Tests de rollback si el caso de uso orquesta multiples escrituras.
 - Tests de outbox si se declara evento.
 
+
+## Nota de avance backend
+
+- Ya existe soporte SQL y API backend inicial para datos catastrales/registrales de inmueble.
+- Frontend queda pendiente y no se modifica en este avance.
+- No se modifico `POST /api/v1/inmuebles`.
+- No existe campo `linderos` en el contrato backend inicial.
