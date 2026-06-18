@@ -16,6 +16,14 @@ Clasificacion preliminar del concepto auditado:
 - **Soporte transversal:** campos CORE-EF, versionado, vigencia, trazabilidad y baja logica.
 - **Compatibilidad heredada:** aliases/documentacion historica como `terreno`, `inmueble_base`, `idSector`, `idManzana`, `idParcela` o naming camelCase del DER previo. No deben convertirse automaticamente en contrato vigente sin migracion/documentacion tecnica.
 
+## 1.1 Implementacion SQL inicial aplicada
+
+Se incorpora una primera estructura SQL separada llamada `inmueble_dato_catastral_registral`, vinculada a `inmueble`, para preparar la persistencia futura de datos catastrales, registrales y fisicos avanzados sin modificar el contrato vigente de alta de inmueble.
+
+Esta implementacion inicial cubre nomenclatura catastral, partida inmobiliaria, matricula, folio real, circunscripcion, seccion, chacra, quinta, fraccion, manzana, lote, parcela, subparcela, superficies segun titulo/mensura, medidas, situacion posesoria/dominial, organismo de origen, vigencia e historial basico.
+
+No incluye `linderos`, excluido deliberadamente de esta primera version. Tampoco implementa endpoints, schemas Pydantic, services, repositories especificos, tests funcionales de API ni cambios de frontend.
+
 ## 2. Evidencia documental
 
 ### 2.1 DER / documentacion historica

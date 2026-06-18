@@ -1,27 +1,48 @@
 # SRV-INM-009 - Gestion de identificacion catastral
 
 ## Estado del servicio
-- clasificacion: `NO IMPLEMENTADO`
-- SQL actual: no hay tablas ni campos catastrales especificos en el nucleo inmobiliario vigente
-- backend actual: no hay routers, services ni tests
+- clasificacion: `IMPLEMENTACION SQL INICIAL`
+- SQL actual: existe soporte estructural inicial en `inmueble_dato_catastral_registral`, vinculado a `inmueble`
+- backend actual: no hay routers, schemas Pydantic, services, repositorios especificos ni tests funcionales de API para esta capacidad
 
 ## Modelo implementado
-- no existe implementacion tecnica actual
+- tabla separada `inmueble_dato_catastral_registral`
+- vinculacion obligatoria con `inmueble` mediante `id_inmueble`
+- campos catastrales/registrales/fisicos avanzados: nomenclatura catastral, partida inmobiliaria, matricula, folio real, circunscripcion, seccion, chacra, quinta, fraccion, manzana, lote, parcela, subparcela, superficies de titulo/mensura, medidas, situacion posesoria/dominial y organismo de origen
+- vigencia/historial mediante `fecha_desde`, `fecha_hasta` y `estado_dato`
+- trazabilidad tecnica CORE-EF transversal: `uid_global`, `version_registro`, timestamps, instalacion y `op_id`
+
+## Decisiones de alcance de esta implementacion
+- este cambio es solo soporte SQL inicial
+- no modifica el contrato vigente de alta, edicion, baja, listado ni detalle de `inmueble`
+- no implementa endpoints, schemas Pydantic, services, repositories ni frontend
+- no incluye `linderos` en esta primera version
+- permite multiples registros por inmueble para habilitar historial; no impone unicidad global sobre nomenclatura, partida o matricula porque puede depender de jurisdiccion, organismo y vigencia
+- no agrega restricciones complejas de no solapamiento temporal; queda pendiente definir esa regla funcional antes de implementar comandos de escritura
 
 ## Funcionalidad disponible
-- ninguna en el sistema vigente
+- estructura SQL para persistir datos catastrales, registrales y fisicos avanzados asociados a inmuebles
+- constraints SQL minimas para vigencia, superficies positivas y estados `ACTIVO`, `INACTIVO`, `HISTORICO`
+- indices activos por inmueble, nomenclatura catastral, partida inmobiliaria, matricula y estado del dato
 
 ## Funcionalidad pendiente
-- definicion de datos catastrales
-- reglas de vigencia y unicidad
-- endpoints y cobertura de tests
+- contrato API de lectura/escritura
+- schemas Pydantic
+- services y repositories especificos
+- comandos CORE-EF write e idempotencia si se incorporan endpoints sincronizables
+- tests funcionales de backend/API
+- definicion de reglas de unicidad/vigencia/no solapamiento por jurisdiccion u organismo
+- UI/frontend de carga y consulta
 
 ## Modelo conceptual futuro
-- la identificacion catastral sigue siendo valida como expansion del dominio
-- cuando se implemente debe usar naming canonico nuevo y no reutilizar aliases obsoletos
+- la identificacion catastral sigue siendo una expansion del dominio inmobiliario vinculada al activo `inmueble`
+- cuando se implemente en backend debe usar naming canonico nuevo y no reutilizar aliases obsoletos
+- cualquier endpoint write futuro debera nacer con decision CORE-EF explicita, headers comunes, versionado, transaccion, idempotencia/outbox/lock si aplican y cobertura de tests minima
 
 ## Fuera de alcance
 - interpretaciones geograficas o registrales que pertenezcan a otro dominio o integracion externa
+- contratos API o schemas de frontend
+- `linderos`, excluido deliberadamente de esta version SQL inicial
 
 ## Referencias
 - [[00-INDICE-INMOBILIARIO]]

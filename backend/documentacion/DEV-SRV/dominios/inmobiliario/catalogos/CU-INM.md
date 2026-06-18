@@ -55,7 +55,7 @@ Catalogar los casos de uso del dominio con estado explicito respecto de SQL, bac
 ## Modelo conceptual futuro
 | ID | Caso de uso | Estado | Nota |
 | --- | --- | --- | --- |
-| CU-INM-040 | Gestion de identificacion catastral | NO IMPLEMENTADO | Sin soporte actual en SQL ni backend |
+| CU-INM-040 | Gestion de identificacion catastral | IMPLEMENTACION SQL INICIAL | Existe tabla `inmueble_dato_catastral_registral`; sin backend/API funcional todavia |
 | CU-INM-041 | Gestion de atributos y documentacion inmobiliaria | NO IMPLEMENTADO | Sin soporte actual en SQL ni backend |
 | CU-INM-042 | Gestion de mejoras | CONCEPTUAL | No existe `inmueble_mejora` en la implementacion real |
 | CU-INM-043 | Relacion inmobiliaria vigente | CONCEPTUAL | No existe `relacion_inmobiliaria` hoy en SQL ni backend |
