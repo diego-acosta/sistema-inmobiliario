@@ -10,6 +10,7 @@ Alcance:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Callable, Literal
 
 import flet as ft
@@ -111,7 +112,7 @@ def _safe_visible_text(value: Any) -> str:
 
     if value in (None, "", []):
         return ""
-    if isinstance(value, (str, int, float)):
+    if isinstance(value, (str, int, float, bool, Decimal)):
         return str(value).strip()
     if isinstance(value, list):
         return ", ".join(part for part in (_safe_visible_text(item) for item in value) if part)
@@ -119,31 +120,27 @@ def _safe_visible_text(value: Any) -> str:
         nombre = _safe_visible_text(value.get("nombre"))
         apellido = _safe_visible_text(value.get("apellido"))
         nombre_apellido = " ".join(part for part in [nombre, apellido] if part)
-        codigo_objeto = (
-            _safe_visible_text(value.get("codigo_inmueble"))
-            or _safe_visible_text(value.get("codigo_unidad_funcional"))
-            or _safe_visible_text(value.get("codigo"))
-        )
+        codigo_objeto = _safe_visible_text(value.get("codigo_inmueble")) or _safe_visible_text(value.get("codigo_unidad_funcional"))
         descripcion_objeto = _safe_visible_text(value.get("descripcion")) or _safe_visible_text(value.get("observaciones"))
         if codigo_objeto and descripcion_objeto:
             return _join_visible([codigo_objeto, descripcion_objeto])
-        for key in (
-            "texto_visual",
-            "display_name",
-            "nombre_completo",
-            "razon_social",
-            "observaciones",
-            "descripcion",
-            "codigo_reserva",
-            "codigo_inmueble",
-            "codigo_unidad_funcional",
-            "codigo",
-        ):
+        for key in ("texto_visual", "display_name", "nombre_completo", "razon_social"):
             text = _safe_visible_text(value.get(key))
             if text:
                 return text
         if nombre_apellido:
             return nombre_apellido
+        for key in (
+            "codigo_reserva",
+            "codigo_inmueble",
+            "codigo_unidad_funcional",
+            "codigo",
+            "descripcion",
+            "observaciones",
+        ):
+            text = _safe_visible_text(value.get(key))
+            if text:
+                return text
         return ""
     return ""
 
@@ -190,18 +187,18 @@ def reserva_record(data: dict[str, Any]) -> SearchSelectorRecord:
     importe = _safe_visible_text(data.get("importe")) or _safe_visible_text(data.get("precio_reservado"))
     version = data.get("version_registro")
     primary = _join_visible([codigo or "Reserva sin código", estado])
-    secondary = " · ".join(
-        part
-        for part in [
-            fecha,
-            f"vence {vencimiento}" if vencimiento else "",
-            objeto,
-            comprador,
-            moneda,
-            importe,
-        ]
-        if part
-    )
+    secondary_parts: list[str] = []
+    for part in [
+        fecha,
+        f"vence {vencimiento}" if vencimiento else "",
+        objeto,
+        comprador,
+        moneda,
+        importe,
+    ]:
+        if part and part not in secondary_parts and part not in {codigo, estado}:
+            secondary_parts.append(part)
+    secondary = " · ".join(secondary_parts)
     technical_secondary = _join_visible(
         [
             secondary,
