@@ -132,6 +132,21 @@ class ApiClient:
             },
         )
 
+    def crear_inmueble(
+        self, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        x_op_id = self._valid_or_new_uuid(op_id)
+        return self._post(
+            "/api/v1/inmuebles",
+            headers={
+                "X-Op-Id": x_op_id,
+                "X-Usuario-Id": "1",
+                "X-Sucursal-Id": "1",
+                "X-Instalacion-Id": "1",
+            },
+            json=payload,
+        )
+
     def get_inmuebles(
         self,
         *,
