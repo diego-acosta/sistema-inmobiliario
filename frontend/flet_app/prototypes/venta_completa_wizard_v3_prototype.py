@@ -1013,32 +1013,74 @@ class VentaCompletaWizardV3Prototype:
 
     @staticmethod
     def _visible_join(value: Any) -> str:
+        if value in (None, "", []):
+            return ""
+        if isinstance(value, (str, int, float)):
+            return str(value).strip()
         if isinstance(value, list):
-            parts: list[str] = []
-            for entry in value:
-                if isinstance(entry, dict):
-                    parts.append(str(entry.get("texto_visual") or entry.get("display_name") or entry.get("nombre") or entry.get("codigo") or entry.get("descripcion") or entry.get("id") or "").strip())
-                else:
-                    parts.append(str(entry or "").strip())
-            return ", ".join(part for part in parts if part)
+            return ", ".join(part for part in (VentaCompletaWizardV3Prototype._visible_join(entry) for entry in value) if part)
         if isinstance(value, dict):
-            return str(value.get("texto_visual") or value.get("display_name") or value.get("nombre") or value.get("codigo") or value.get("descripcion") or value.get("id") or "").strip()
-        return str(value or "").strip()
+            nombre = VentaCompletaWizardV3Prototype._visible_join(value.get("nombre"))
+            apellido = VentaCompletaWizardV3Prototype._visible_join(value.get("apellido"))
+            nombre_apellido = " ".join(part for part in [nombre, apellido] if part)
+            codigo_objeto = (
+                VentaCompletaWizardV3Prototype._visible_join(value.get("codigo_inmueble"))
+                or VentaCompletaWizardV3Prototype._visible_join(value.get("codigo_unidad_funcional"))
+                or VentaCompletaWizardV3Prototype._visible_join(value.get("codigo"))
+            )
+            descripcion_objeto = (
+                VentaCompletaWizardV3Prototype._visible_join(value.get("descripcion"))
+                or VentaCompletaWizardV3Prototype._visible_join(value.get("observaciones"))
+            )
+            if codigo_objeto and descripcion_objeto:
+                return " — ".join([codigo_objeto, descripcion_objeto])
+            for key in (
+                "texto_visual",
+                "display_name",
+                "nombre_completo",
+                "razon_social",
+                "observaciones",
+                "descripcion",
+                "codigo_reserva",
+                "codigo_inmueble",
+                "codigo_unidad_funcional",
+                "codigo",
+            ):
+                text = VentaCompletaWizardV3Prototype._visible_join(value.get(key))
+                if text:
+                    return text
+            if nombre_apellido:
+                return nombre_apellido
+            return ""
+        return ""
+
+    @staticmethod
+    def _visible_date(value: Any) -> str:
+        text = VentaCompletaWizardV3Prototype._visible_join(value)
+        if not text:
+            return ""
+        date_part = text[:10]
+        if len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-":
+            year, month, day = date_part.split("-")
+            return f"{day}/{month}/{year}"
+        return text
 
     def _backend_reserva_record(self, item: dict[str, Any]) -> dict[str, Any]:
-        codigo = self._first_present(item, ("codigo_reserva", "codigo", "numero_reserva"))
-        estado = self._first_present(item, ("estado", "estado_reserva"))
-        fecha = self._first_present(item, ("fecha", "fecha_reserva", "fecha_alta", "created_at"))
+        codigo = self._visible_join(self._first_present(item, ("codigo_reserva", "codigo", "numero_reserva")))
+        estado = self._visible_join(self._first_present(item, ("estado", "estado_reserva")))
+        fecha = self._visible_date(self._first_present(item, ("fecha", "fecha_reserva", "fecha_alta", "created_at")))
+        vencimiento = self._visible_date(self._first_present(item, ("vencimiento", "fecha_vencimiento", "fecha_vencimiento_reserva", "fecha_hasta")))
         objetos = self._visible_join(self._first_present(item, ("objetos", "objeto", "inmuebles", "unidades_funcionales")))
         compradores = self._visible_join(self._first_present(item, ("compradores", "comprador", "reservantes", "reservante", "cliente")))
-        moneda = self._first_present(item, ("moneda", "codigo_moneda"))
-        importe = self._first_present(item, ("importe", "precio_reservado", "importe_reserva", "precio_total", "monto"))
+        moneda = self._visible_join(self._first_present(item, ("moneda", "codigo_moneda")))
+        importe = self._visible_join(self._first_present(item, ("importe", "precio_reservado", "importe_reserva", "precio_total", "monto")))
         return {
             "id_reserva_venta": self._first_present(item, ("id_reserva_venta", "id_reserva", "id")),
             "version_registro": item.get("version_registro"),
             "codigo_reserva": codigo,
             "estado": estado,
             "fecha": fecha,
+            "vencimiento": vencimiento,
             "objeto": objetos,
             "comprador": compradores,
             "moneda": moneda,
@@ -1506,6 +1548,7 @@ class VentaCompletaWizardV3Prototype:
                 _info_row("Código", data.get("codigo") or "No informado"),
                 _info_row("Estado", data.get("estado") or "No informado"),
                 _info_row("Fecha", data.get("fecha") or "No informado"),
+                _info_row("Vencimiento", data.get("vencimiento") or "No informado"),
                 _info_row("Objeto/s", data.get("objetos") or "No informado"),
                 _info_row("Comprador/es", data.get("compradores") or "No informado"),
                 _info_row("Moneda", data.get("moneda") or "No informado"),
@@ -4708,6 +4751,7 @@ class VentaCompletaWizardV3Prototype:
                 "codigo": codigo,
                 "estado": estado,
                 "fecha": self._display_or_none(selected.get("fecha")) or self._display_or_none(selected.get("fecha_reserva")),
+                "vencimiento": self._display_or_none(selected.get("vencimiento")) or self._display_or_none(selected.get("fecha_vencimiento")),
                 "objetos": objetos,
                 "compradores": compradores,
                 "moneda": self._display_or_none(selected.get("moneda")),
@@ -6284,10 +6328,7 @@ class VentaCompletaWizardV3Prototype:
 
     @staticmethod
     def _display_or_none(value: Any) -> str | None:
-        if isinstance(value, list):
-            text = ", ".join(str(item) for item in value if item not in (None, ""))
-        else:
-            text = str(value or "").strip()
+        text = VentaCompletaWizardV3Prototype._visible_join(value)
         return text or None
 
     def _reservation_state_blocks_next(self) -> bool:
