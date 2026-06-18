@@ -19,11 +19,11 @@
 - No se encontro pantalla/formulario Flet de alta de inmueble.
 - Falta definir UX de captura de headers CORE-EF o estrategia tecnica para proveerlos desde el prototipo.
 - Falta manejo frontend especifico de errores `ErrorResponse` para el alta.
-- Falta documentar en UX que los valores validos de `estado_administrativo` y `estado_juridico` no estan formalizados como enum en Pydantic ni como `CHECK` SQL en las fuentes revisadas.
+- Falta documentar en UX que los valores recomendados para `estado_administrativo` y `estado_juridico` deben salir del catalogo DEV-SRV, aunque Pydantic no use enum y SQL no tenga `CHECK` detectado.
 
 ### Riesgos detectados
 
-- Los estados administrativos/juridicos son `str` en Pydantic y `varchar(30)` en SQL. No hay enum formal detectado para el alta; los seeds usan ejemplos como `ACTIVO`, `REGULAR` y `EN_TRAMITE` pero eso no equivale a lista cerrada confirmada.
+- Los estados administrativos/juridicos son `str` en Pydantic y `varchar(30)` en SQL. El catalogo DEV-SRV lista valores implementados para UI/documentacion (`ACTIVO`, `INACTIVO`, `REGULAR`, `OBSERVADO`), pero no se detecto enum Pydantic ni `CHECK` SQL que bloquee tecnicamente otros strings en el alta.
 - El alta requiere headers CORE-EF obligatorios (`X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`). Si el prototipo no los envia, el backend responde error de validacion.
 - `If-Match-Version` no aplica al alta porque el endpoint usa `_CORE_EF_REQUIRED_HEADERS_OPENAPI`, no la variante con `If-Match-Version`.
 - El alta no genera disponibilidad u ocupacion inicial en el flujo revisado; solo inserta `inmueble`.
@@ -159,11 +159,43 @@ Segun `InmuebleCreateRequest`, los campos sin default son obligatorios:
 
 ### Valores permitidos
 
-- No se detecto enum Pydantic para `estado_administrativo` ni `estado_juridico` en `InmuebleCreateRequest`.
-- No se detecto `CHECK` SQL junto a la definicion de la tabla `inmueble` para esos estados.
-- Valores observados en seeds, no confirmados como lista cerrada:
-  - `estado_administrativo`: `ACTIVO`.
-  - `estado_juridico`: `REGULAR`, `EN_TRAMITE`.
+#### 1. Fuente contractual/documental DEV-SRV
+
+El catalogo `backend/documentacion/DEV-SRV/dominios/inmobiliario/catalogos/EST-INM.md` lista como valores implementados para `inmueble`:
+
+- `estado_administrativo`: `ACTIVO`, `INACTIVO`.
+- `estado_juridico`: `REGULAR`, `OBSERVADO`.
+
+Para el proximo PR frontend, estas opciones DEV-SRV deben ser la fuente principal para dropdowns/opciones sugeridas.
+
+#### 2. Fuente tecnica revisada
+
+- Pydantic usa `str` para `estado_administrativo` y `estado_juridico`; no se detecto enum en `InmuebleCreateRequest`.
+- SQL usa `varchar(30)` para ambos campos; no se detecto `CHECK` junto a la definicion de la tabla `inmueble`.
+- Por lo anterior, el backend podria no impedir tecnicamente otros strings si no existe validacion adicional fuera de las fuentes revisadas. Esto no convierte esos strings en valores contractuales recomendados para UI.
+
+#### 3. Seeds observados
+
+Valores observados en seeds, solo como evidencia de datos cargados y no como lista cerrada ni guia principal de dropdown/validacion:
+
+- `ACTIVO`.
+- `REGULAR`.
+- `EN_TRAMITE`, observado en seed de demo UI.
+
+#### 4. Inconsistencia detectada
+
+- `EN_TRAMITE` aparece en seeds pero no figura en el catalogo DEV-SRV revisado para `inmueble.estado_juridico`.
+- `OBSERVADO` figura en DEV-SRV para `inmueble.estado_juridico`, aunque puede no aparecer en los seeds revisados.
+- El proximo PR frontend debe priorizar DEV-SRV para opciones sugeridas y no considerar seeds como lista cerrada.
+
+#### 5. Recomendacion para frontend
+
+Dropdown inicial recomendado:
+
+- `estado_administrativo`: `ACTIVO`, `INACTIVO`.
+- `estado_juridico`: `REGULAR`, `OBSERVADO`.
+
+Hasta que backend formalice enum/CHECK u otra validacion verificable, el frontend solo debe presentar estas opciones como recomendadas por DEV-SRV; no debe afirmar que son la unica validacion contractual aplicada por backend. Si se decide permitir texto libre temporalmente, debe quedar documentado explicitamente como decision UX provisional y no como regla del dominio.
 
 ### Ejemplo realista de request
 
@@ -267,7 +299,7 @@ En un PR posterior habria que agregar exactamente:
    - `estado_juridico` no vacio.
    - `id_desarrollo`, si se informa, debe ser entero.
    - `superficie`, si se informa, debe ser decimal valido; puede omitirse.
-   - No hardcodear enums como definitivos; si se usan opciones iniciales, documentarlas como valores observados/no confirmados.
+   - Para opciones iniciales, priorizar DEV-SRV: `estado_administrativo` con `ACTIVO`/`INACTIVO` y `estado_juridico` con `REGULAR`/`OBSERVADO`; no usar seeds como lista principal de dropdown/validacion.
 4. Manejo de errores:
    - Mostrar `error_code`, `error_message` y `details` de `ErrorResponse`.
    - Tratar especialmente `VALIDATION_ERROR` por headers CORE-EF.
@@ -354,7 +386,7 @@ No enviar `If-Match-Version` para alta.
 - Requerir `estado_juridico`.
 - Validar `id_desarrollo` entero positivo si se informa.
 - Validar `superficie` decimal positiva si se informa. Pendiente de confirmacion si el backend permite cero/negativo; no se detecto regla explicita en Pydantic/servicio.
-- No afirmar lista cerrada de estados hasta que exista enum/documentacion contractual confirmada.
+- Las opciones sugeridas deben salir de DEV-SRV (`ACTIVO`/`INACTIVO`, `REGULAR`/`OBSERVADO`) y la inconsistencia seed/catalogo (`EN_TRAMITE` en seeds, no en DEV-SRV) debe permanecer documentada.
 
 ### Comandos de test
 
@@ -366,6 +398,7 @@ git diff --check
 ## Fuentes revisadas
 
 - `backend/documentacion/DEV-API/dominios/inmobiliario/DEV-API-INM-001.md`.
+- `backend/documentacion/DEV-SRV/dominios/inmobiliario/catalogos/EST-INM.md`.
 - `backend/app/api/routers/inmuebles_router.py`.
 - `backend/app/api/schemas/inmuebles.py`.
 - `backend/app/application/inmuebles/commands/create_inmueble.py`.
