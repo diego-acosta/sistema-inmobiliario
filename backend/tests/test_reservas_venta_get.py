@@ -89,7 +89,11 @@ def test_get_reserva_venta_devuelve_detalle_con_shape_contractual(
     assert body["data"]["objetos"][0]["id_inmueble"] == id_inmueble
     assert body["data"]["objetos"][0]["id_unidad_funcional"] is None
     assert "deleted_at" not in body["data"]
-    assert "participaciones" not in body["data"]
+    assert len(body["data"]["participaciones"]) == 1
+    participacion = body["data"]["participaciones"][0]
+    assert participacion["id_persona"] == id_persona
+    assert participacion["id_rol_participacion"] == 9401
+    assert participacion["porcentaje_responsabilidad"] == "100.00"
 
 
 def test_get_reserva_venta_multiobjeto_devuelve_objetos_en_orden_persistido(

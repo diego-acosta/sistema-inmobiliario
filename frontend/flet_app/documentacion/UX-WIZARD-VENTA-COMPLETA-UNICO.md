@@ -420,7 +420,8 @@ Precarga preventiva desde reserva:
 - El listado `GET /api/v1/reservas-venta` aporta los datos iniciales visibles
   de la reserva seleccionada. Luego el wizard consulta el detalle read-only
   `GET /api/v1/reservas-venta/{id_reserva_venta}` para precargar objetos y
-  `participaciones` reales antes de avanzar.
+  `participaciones` reales antes de avanzar; el contrato de detalle read-only
+  expone esas participaciones aunque el listado pueda seguir sin incluirlas.
 - Si el detalle falla, la UI muestra: `No se pudo cargar el detalle de la
   reserva; se usará la información parcial del listado.`, conserva la reserva
   seleccionada y usa la información parcial del listado sin romper el flujo.
