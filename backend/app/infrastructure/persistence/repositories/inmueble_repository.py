@@ -45,6 +45,132 @@ class InmuebleRepository(BaseRepository[Any]):
         ).scalar_one_or_none()
         return result is not None
 
+
+    _DCR_COLUMNS = """
+                id_dato_catastral_registral,
+                id_inmueble,
+                uid_global::text AS uid_global,
+                version_registro,
+                created_at,
+                updated_at,
+                nomenclatura_catastral,
+                partida_inmobiliaria,
+                matricula,
+                folio_real,
+                circunscripcion,
+                seccion,
+                chacra,
+                quinta,
+                fraccion,
+                manzana,
+                lote,
+                parcela,
+                subparcela,
+                superficie_titulo,
+                superficie_mensura,
+                medidas,
+                situacion_posesoria,
+                situacion_dominial,
+                organismo_origen,
+                fecha_desde,
+                fecha_hasta,
+                estado_dato,
+                observaciones
+    """
+
+    @staticmethod
+    def _map_dcr_row(row: Any) -> dict[str, Any]:
+        return dict(row)
+
+    def list_datos_catastrales_registrales(self, id_inmueble: int) -> list[dict[str, Any]]:
+        statement = text(
+            f"""
+            SELECT {self._DCR_COLUMNS}
+            FROM inmueble_dato_catastral_registral
+            WHERE id_inmueble = :id_inmueble
+              AND deleted_at IS NULL
+            ORDER BY id_dato_catastral_registral
+            """
+        )
+        return [self._map_dcr_row(row) for row in self.db.execute(statement, {"id_inmueble": id_inmueble}).mappings().all()]
+
+    def get_dato_catastral_registral(self, id_inmueble: int, id_dato: int) -> dict[str, Any] | None:
+        statement = text(
+            f"""
+            SELECT {self._DCR_COLUMNS}
+            FROM inmueble_dato_catastral_registral
+            WHERE id_inmueble = :id_inmueble
+              AND id_dato_catastral_registral = :id_dato
+              AND deleted_at IS NULL
+            """
+        )
+        row = self.db.execute(statement, {"id_inmueble": id_inmueble, "id_dato": id_dato}).mappings().one_or_none()
+        return self._map_dcr_row(row) if row is not None else None
+
+    def create_dato_catastral_registral(self, payload: Any) -> dict[str, Any]:
+        values = {**payload.values, "id_inmueble": payload.id_inmueble, "version_registro": payload.version_registro_nueva, "now": payload.now, "id_instalacion": payload.id_instalacion, "op_id": payload.op_id}
+        cols = ", ".join(["id_inmueble", *payload.values.keys(), "version_registro", "created_at", "updated_at", "id_instalacion_origen", "id_instalacion_ultima_modificacion", "op_id_alta", "op_id_ultima_modificacion"])
+        vals = ", ".join([":id_inmueble", *[f":{k}" for k in payload.values.keys()], ":version_registro", ":now", ":now", ":id_instalacion", ":id_instalacion", ":op_id", ":op_id"])
+        statement = text(f"""
+            INSERT INTO inmueble_dato_catastral_registral ({cols})
+            VALUES ({vals})
+            RETURNING {self._DCR_COLUMNS}
+        """)
+        try:
+            row = self.db.execute(statement, values).mappings().one()
+            self.db.commit()
+            return self._map_dcr_row(row)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def update_dato_catastral_registral(self, payload: Any) -> dict[str, Any] | None:
+        set_fields = ",\n                ".join([f"{k} = :{k}" for k in payload.values.keys()])
+        values = {**payload.values, "id_inmueble": payload.id_inmueble, "id_dato": payload.id_dato_catastral_registral, "version_actual": payload.version_registro_actual, "version_nueva": payload.version_registro_nueva, "now": payload.now, "id_instalacion": payload.id_instalacion, "op_id": payload.op_id}
+        statement = text(f"""
+            UPDATE inmueble_dato_catastral_registral
+            SET {set_fields},
+                version_registro = :version_nueva,
+                updated_at = :now,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_inmueble = :id_inmueble
+              AND id_dato_catastral_registral = :id_dato
+              AND version_registro = :version_actual
+              AND deleted_at IS NULL
+            RETURNING {self._DCR_COLUMNS}
+        """)
+        try:
+            row = self.db.execute(statement, values).mappings().one_or_none()
+            if row is None:
+                self.db.rollback(); return None
+            self.db.commit(); return self._map_dcr_row(row)
+        except Exception:
+            self.db.rollback(); raise
+
+    def baja_dato_catastral_registral(self, payload: Any) -> dict[str, Any] | None:
+        statement = text("""
+            UPDATE inmueble_dato_catastral_registral
+            SET deleted_at = :now,
+                version_registro = :version_nueva,
+                updated_at = :now,
+                id_instalacion_ultima_modificacion = :id_instalacion,
+                op_id_ultima_modificacion = :op_id
+            WHERE id_inmueble = :id_inmueble
+              AND id_dato_catastral_registral = :id_dato
+              AND version_registro = :version_actual
+              AND deleted_at IS NULL
+            RETURNING id_dato_catastral_registral, id_inmueble, version_registro
+        """)
+        values = {"id_inmueble": payload.id_inmueble, "id_dato": payload.id_dato_catastral_registral, "version_actual": payload.version_registro_actual, "version_nueva": payload.version_registro_nueva, "now": payload.now, "id_instalacion": payload.id_instalacion, "op_id": payload.op_id}
+        try:
+            row = self.db.execute(statement, values).mappings().one_or_none()
+            if row is None:
+                self.db.rollback(); return None
+            self.db.commit(); return self._map_dcr_row(row)
+        except Exception:
+            self.db.rollback(); raise
+
     def get_unidades_funcionales(self, id_inmueble: int) -> list[dict[str, Any]]:
         statement = text(
             """
