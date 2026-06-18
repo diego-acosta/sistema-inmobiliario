@@ -88,13 +88,13 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
     descripcion = _clean(data.get("descripcion"))
     disponibilidad = _clean(data.get("estado")) or _clean(data.get("disponibilidad"))
     inmueble_padre = _clean(data.get("inmueble_padre"))
-    primary_parts = [codigo]
+    primary_parts = [codigo, descripcion]
     if tipo_objeto == "UNIDAD_FUNCIONAL" and inmueble_padre:
         primary_parts.append(inmueble_padre)
     primary = _join_visible(primary_parts)
     id_correspondiente = data.get("id_unidad_funcional") if tipo_objeto == "UNIDAD_FUNCIONAL" else data.get("id_inmueble")
     tipo_label = {"INMUEBLE": "Inmueble", "UNIDAD_FUNCIONAL": "Unidad funcional"}.get(tipo_objeto, tipo_objeto)
-    secondary = _join_visible([descripcion, f"Tipo: {tipo_label}" if tipo_label else ""])
+    secondary = _join_visible([f"Tipo: {tipo_label}" if tipo_label else ""])
     technical_secondary = _join_visible(
         [
             f"Tipo: {tipo_objeto}" if tipo_objeto else "",
@@ -140,7 +140,7 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
     nombre = _join_visible([data.get("nombre"), data.get("apellido")], " ") or _clean(data.get("razon_social"))
     documento = _clean(data.get("documento"))
     codigo = _clean(data.get("codigo_persona"))
-    primary = nombre or documento or codigo
+    primary = _join_visible([nombre, documento]) or codigo
     estado = _clean(data.get("estado")) or "activa"
     secondary = f"Persona {estado.lower()}"
     technical_secondary = _join_visible(
@@ -149,7 +149,7 @@ def persona_record(data: dict[str, Any]) -> SearchSelectorRecord:
             f"id_persona: {data.get('id_persona')}" if data.get("id_persona") is not None else "",
         ]
     )
-    summary = documento or _clean(data.get("resumen")) or primary
+    summary = _clean(data.get("resumen")) or codigo or primary
     return SearchSelectorRecord(
         data=data,
         primary_text=primary,
@@ -336,7 +336,11 @@ class SearchSelectorDemo:
                     ft.Column(
                         controls=[
                             ft.Text(record.primary_text, weight=ft.FontWeight.W_700),
-                            ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700),
+                            *(
+                                [ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700)]
+                                if record.summary_text and record.summary_text != record.primary_text
+                                else []
+                            ),
                             ft.Text(
                                 record.technical_secondary_text if self.show_technical_details else record.secondary_text,
                                 size=11,
@@ -371,7 +375,11 @@ class SearchSelectorDemo:
                     ft.Column(
                         controls=[
                             ft.Text(record.primary_text, weight=ft.FontWeight.W_700),
-                            ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700),
+                            *(
+                                [ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700)]
+                                if record.summary_text and record.summary_text != record.primary_text
+                                else []
+                            ),
                             ft.Row(
                                 controls=[
                                     ft.Text(
@@ -436,7 +444,12 @@ class SearchSelectorDemo:
                             ft.Row(
                                 controls=[
                                     ft.Text(record.secondary_text, size=12, color=ft.Colors.BLUE_GREY_700),
-                                    *([ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700)] if record.summary_text != record.secondary_text else []),
+                                    *(
+                                        [ft.Text(record.summary_text, size=12, color=ft.Colors.BLUE_GREY_700)]
+                                        if record.summary_text
+                                        and record.summary_text not in {record.primary_text, record.secondary_text}
+                                        else []
+                                    ),
                                 ],
                                 spacing=8,
                                 wrap=True,
