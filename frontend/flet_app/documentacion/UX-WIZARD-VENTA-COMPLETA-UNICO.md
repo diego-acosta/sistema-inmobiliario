@@ -421,9 +421,13 @@ Precarga preventiva desde reserva:
   de la reserva seleccionada. Luego el wizard consulta el detalle read-only
   `GET /api/v1/reservas-venta/{id_reserva_venta}` para precargar objetos y
   `participaciones` reales antes de avanzar.
-- Si el detalle falla, la UI muestra la advertencia correspondiente, conserva la
-  reserva seleccionada y usa la información parcial del listado sin romper el
-  flujo.
+- Si el detalle falla, la UI muestra: `No se pudo cargar el detalle de la
+  reserva; se usará la información parcial del listado.`, conserva la reserva
+  seleccionada y usa la información parcial del listado sin romper el flujo.
+- Si el detalle carga pero no trae `participaciones`, la UI distingue ese caso
+  de un error frontend y muestra: `El detalle de la reserva no informa
+  participaciones.`. Si trae participaciones pero no se convierten a
+  compradores válidos, muestra el diagnóstico correspondiente.
 - Después de seleccionar una reserva real confirmada, el wizard lee datos
   normalizados, detalle y `raw` disponibles de objetos, inmuebles, unidades
   funcionales, compradores, reservantes, cliente, participaciones, moneda e
@@ -449,6 +453,10 @@ Precarga preventiva desde reserva:
 - En pantallas Objetos y Compradores, los datos heredados son read-only/preventivos:
   no se permite agregar o quitar registros manualmente en esta etapa; la única
   edición habilitada en Objetos es completar/corregir el valor comercial.
+- Con **Mostrar datos tecnicos** activo, la card de reserva muestra diagnóstico
+  del detalle: si cargó, fuente de precarga, cantidad de objetos, cantidad de
+  participaciones y error de detalle si existió. Con datos técnicos apagados no
+  se muestran raw, IDs técnicos ni metadatos internos.
 - Si la reserva no trae objetos o compradores, la UI muestra advertencia clara,
   no inventa datos y el avance queda sujeto a las validaciones existentes.
 - Esta precarga no confirma venta, no genera venta, plan ni obligaciones, no

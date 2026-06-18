@@ -156,6 +156,12 @@ class WizardVentaCompletaV3State:
     version_registro: int | None = None
     texto_visual_reserva: str | None = None
     reserva_visible_data: dict[str, Any] = field(default_factory=dict)
+    reserva_detalle_error: str | None = None
+    reserva_detalle_loaded: bool = False
+    reserva_detalle_source: str = "listado_parcial"
+    reserva_detalle_participaciones_count: int = 0
+    reserva_detalle_objetos_count: int = 0
+    reserva_detalle_conversion_warning: str | None = None
     moneda: str = "ARS"
     fecha_venta_iso: str = ""
     codigo_venta: str = ""
@@ -1575,7 +1581,7 @@ class VentaCompletaWizardV3Prototype:
                 ft.Colors.AMBER_50,
                 ft.Colors.AMBER_200,
             ),
-            *([] if self.state.compradores else [self._build_help_card("La reserva seleccionada no informa compradores/reservantes luego de consultar el detalle. No se inventan datos y el avance queda sujeto a las validaciones existentes.", ft.Colors.RED_50, ft.Colors.RED_200)]),
+            *([] if self.state.compradores else [self._build_help_card(self._reservation_buyers_missing_message(), ft.Colors.RED_50, ft.Colors.RED_200)]),
             self._build_added_buyers_list(),
             self._build_buyers_summary(),
         ]
@@ -1597,6 +1603,7 @@ class VentaCompletaWizardV3Prototype:
         else:
             controls.extend([
                 *([self._build_help_card(str(data.get("detalle_warning")), ft.Colors.AMBER_50, ft.Colors.AMBER_200)] if data.get("detalle_warning") else []),
+                *([self._build_help_card(str(data.get("compradores_warning")), ft.Colors.AMBER_50, ft.Colors.AMBER_200)] if data.get("compradores_warning") else []),
                 _info_row("Código", data.get("codigo") or "No informado"),
                 _info_row("Estado", data.get("estado") or "No informado"),
                 _info_row("Fecha", data.get("fecha") or "No informado"),
@@ -1608,7 +1615,11 @@ class VentaCompletaWizardV3Prototype:
                 *self._technical_controls([
                     _info_row("id_reserva_venta", self.state.id_reserva_venta),
                     _info_row("version_registro", self.state.version_registro if self.state.version_registro is not None else "No informado"),
-                    _info_row("precarga", data.get("precarga_source") or "listado"),
+                    _info_row("detalle reserva cargado", "sí" if self.state.reserva_detalle_loaded else "no"),
+                    _info_row("fuente precarga", self.state.reserva_detalle_source),
+                    _info_row("cantidad objetos detalle", self.state.reserva_detalle_objetos_count),
+                    _info_row("cantidad participaciones detalle", self.state.reserva_detalle_participaciones_count),
+                    _info_row("error detalle", self.state.reserva_detalle_error or "sin error"),
                 ]),
             ])
         return ft.Container(
@@ -4816,24 +4827,50 @@ class VentaCompletaWizardV3Prototype:
 
     @staticmethod
     def _reservation_detail_payload(data: Any) -> dict[str, Any]:
-        if isinstance(data, dict):
-            nested = data.get("data")
+        if not isinstance(data, dict):
+            return {}
+        current = data
+        for key in ("data", "item", "reserva"):
+            nested = current.get(key)
             if isinstance(nested, dict):
-                return nested
-            return data
-        return {}
+                current = nested
+        return current if isinstance(current, dict) else {}
+
+    @staticmethod
+    def _reservation_detail_list_count(detail: dict[str, Any], keys: tuple[str, ...]) -> int:
+        for key in keys:
+            value = detail.get(key)
+            if isinstance(value, list):
+                return len([item for item in value if isinstance(item, dict)])
+            if isinstance(value, dict):
+                return 1
+        return 0
+
+    def _reset_reservation_detail_diagnostics(self) -> None:
+        self.state.reserva_detalle_error = None
+        self.state.reserva_detalle_loaded = False
+        self.state.reserva_detalle_source = "listado_parcial"
+        self.state.reserva_detalle_participaciones_count = 0
+        self.state.reserva_detalle_objetos_count = 0
+        self.state.reserva_detalle_conversion_warning = None
 
     def _enriched_reservation_payload(self, selected: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+        self._reset_reservation_detail_diagnostics()
         id_reserva = _safe_int(selected.get("id_reserva_venta"))
         if id_reserva is None:
             return dict(selected), None
         result = self.api.get_reserva_venta(id_reserva)
         if not result.success:
             warning = "No se pudo cargar el detalle de la reserva; se usará la información parcial del listado."
-            return {**selected, "raw": {"listado": selected.get("raw") if isinstance(selected.get("raw"), dict) else selected}, "precarga_source": "listado parcial"}, warning
+            self.state.reserva_detalle_error = warning
+            return {**selected, "raw": {"listado": selected.get("raw") if isinstance(selected.get("raw"), dict) else selected}, "precarga_source": "listado_parcial"}, warning
         detail = self._reservation_detail_payload(result.data)
+        self.state.reserva_detalle_loaded = True
+        self.state.reserva_detalle_source = "detalle"
+        self.state.reserva_detalle_participaciones_count = self._reservation_detail_list_count(detail, ("participaciones",))
+        self.state.reserva_detalle_objetos_count = self._reservation_detail_list_count(detail, ("objetos", "objeto", "inmuebles", "unidades_funcionales"))
         enriched = dict(selected)
-        enriched.update(detail)
+        enriched.update({key: value for key, value in detail.items() if value not in (None, "", [])})
         for key in ("objetos", "objeto", "inmuebles", "unidades_funcionales", "participaciones"):
             if key in detail:
                 enriched[key] = detail[key]
@@ -4902,6 +4939,8 @@ class VentaCompletaWizardV3Prototype:
 
     def _reservation_buyer_drafts(self, selected: dict[str, Any]) -> list[CompradorWizardDraft]:
         buyer_items = self._reservation_collection(selected, ("participaciones", "compradores", "comprador", "reservantes", "reservante", "cliente"))
+        if any(self._first_present_field(item, ("id_rol_participacion", "rol_participacion_id")) in (None, "") for item in buyer_items):
+            self._load_rol_comprador_if_needed()
         role_id = self._rol_comprador_id_resuelto() or ""
         drafts: list[CompradorWizardDraft] = []
         for item in buyer_items:
@@ -4979,11 +5018,27 @@ class VentaCompletaWizardV3Prototype:
         moneda = self.state.reserva_visible_data.get("moneda")
         return str(moneda or "").strip().upper() in MONEDAS_PERMITIDAS
 
+    def _reservation_buyers_preload_warning(self) -> str | None:
+        if self.state.compradores:
+            return None
+        if self.state.reserva_detalle_error:
+            return self.state.reserva_detalle_error
+        if self.state.reserva_detalle_loaded and self.state.reserva_detalle_participaciones_count == 0:
+            return "El detalle de la reserva no informa participaciones."
+        if self.state.reserva_detalle_loaded and self.state.reserva_detalle_participaciones_count > 0:
+            self.state.reserva_detalle_conversion_warning = "El detalle informa participaciones, pero no se pudieron convertir a compradores válidos."
+            return self.state.reserva_detalle_conversion_warning
+        return "La reserva seleccionada no informa compradores/reservantes luego de consultar el detalle."
+
+    def _reservation_buyers_missing_message(self) -> str:
+        return self.state.reserva_visible_data.get("compradores_warning") or self._reservation_buyers_preload_warning() or "La reserva seleccionada no informa compradores/reservantes luego de consultar el detalle."
+
     def _on_reserva_selected(self, selected: dict[str, Any] | None) -> None:
         self.state.id_reserva_venta = None
         self.state.version_registro = None
         self.state.texto_visual_reserva = None
         self.state.reserva_visible_data = {}
+        self._reset_reservation_detail_diagnostics()
         if selected is not None:
             self.state.origen = "RESERVA"
             self.state.id_reserva_venta = _safe_int(selected.get("id_reserva_venta"))
@@ -5002,6 +5057,8 @@ class VentaCompletaWizardV3Prototype:
                 or self._display_or_none(enriched_selected.get("participaciones"))
                 or compradores
             )
+            self._preload_reservation_context(enriched_selected)
+            compradores_warning = self._reservation_buyers_preload_warning()
             self.state.reserva_visible_data = {
                 "codigo": codigo or self._display_or_none(enriched_selected.get("codigo_reserva")),
                 "estado": estado or self._display_or_none(enriched_selected.get("estado")) or self._display_or_none(enriched_selected.get("estado_reserva")),
@@ -5012,12 +5069,14 @@ class VentaCompletaWizardV3Prototype:
                 "moneda": self._display_or_none(self._reservation_first_present(enriched_selected, ("moneda", "codigo_moneda"))),
                 "importe": self._display_or_none(self._reservation_first_present(enriched_selected, ("importe", "precio_reservado", "importe_reserva", "precio_total", "monto"))),
                 "detalle_warning": detail_warning,
-                "precarga_source": enriched_selected.get("precarga_source") or "listado",
+                "compradores_warning": compradores_warning,
+                "precarga_source": enriched_selected.get("precarga_source") or "listado_parcial",
             }
-            self._preload_reservation_context(enriched_selected)
+            self.state.reserva_visible_data["compradores_warning"] = self._reservation_buyers_preload_warning()
         else:
             self.state.objetos.clear()
             self.state.compradores.clear()
+            self._reset_reservation_detail_diagnostics()
         self._render()
 
     def _next_step(self, _: ft.ControlEvent | None = None) -> None:
