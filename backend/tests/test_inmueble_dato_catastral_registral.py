@@ -146,6 +146,70 @@ def test_no_permite_fecha_hasta_menor_a_fecha_desde(client):
     assert "INVALID_DATE_RANGE" in response.text
 
 
+def test_actualizacion_parcial_conserva_campos_omitidos(client):
+    id_inmueble = _crear_inmueble(client, "INM-DCR-PARC")
+    create = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=_payload(
+            nomenclatura_catastral="NC-PARCIAL-001",
+            partida_inmobiliaria="PI-PARCIAL-001",
+            matricula="MAT-PARCIAL-001",
+            estado_dato="HISTORICO",
+            superficie_titulo="123.45",
+            observaciones="observacion parcial",
+        ),
+    )
+    assert create.status_code == 201
+    original = create.json()["data"]
+
+    updated = client.put(
+        (
+            f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/"
+            f"{original['id_dato_catastral_registral']}"
+        ),
+        headers=_headers(**{"If-Match-Version": str(original["version_registro"])}),
+        json={"matricula": "MAT-PARCIAL-002"},
+    )
+
+    assert updated.status_code == 200
+    data = updated.json()["data"]
+    assert data["matricula"] == "MAT-PARCIAL-002"
+    assert data["nomenclatura_catastral"] == original["nomenclatura_catastral"]
+    assert data["partida_inmobiliaria"] == original["partida_inmobiliaria"]
+    assert data["superficie_titulo"] == original["superficie_titulo"]
+    assert data["observaciones"] == original["observaciones"]
+    assert data["estado_dato"] == "HISTORICO"
+    assert data["version_registro"] == original["version_registro"] + 1
+
+
+def test_actualizacion_parcial_permite_borrar_observaciones_con_null(client):
+    id_inmueble = _crear_inmueble(client, "INM-DCR-OBS")
+    create = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=_payload(observaciones="observacion a borrar"),
+    )
+    assert create.status_code == 201
+    original = create.json()["data"]
+
+    updated = client.put(
+        (
+            f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/"
+            f"{original['id_dato_catastral_registral']}"
+        ),
+        headers=_headers(**{"If-Match-Version": str(original["version_registro"])}),
+        json={"observaciones": None},
+    )
+
+    assert updated.status_code == 200
+    data = updated.json()["data"]
+    assert data["observaciones"] is None
+    assert data["matricula"] == original["matricula"]
+    assert data["estado_dato"] == original["estado_dato"]
+    assert data["version_registro"] == original["version_registro"] + 1
+
+
 def test_no_incluye_linderos_en_request_response(client):
     id_inmueble = _crear_inmueble(client, "INM-DCR-LIN")
     response = client.post(

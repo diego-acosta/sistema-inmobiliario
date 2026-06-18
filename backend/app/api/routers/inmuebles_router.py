@@ -439,6 +439,13 @@ def _dato_command_kwargs(request) -> dict:
     return request.model_dump()
 
 
+def _dato_update_command_kwargs(request) -> dict:
+    values = request.model_dump()
+    explicit_values = request.model_dump(exclude_unset=True)
+    values["provided_fields"] = frozenset(explicit_values.keys())
+    return values
+
+
 @router.post(
     "/api/v1/inmuebles",
     status_code=201,
@@ -621,7 +628,7 @@ def update_dato_catastral_registral(
         id_inmueble=id_inmueble,
         id_dato_catastral_registral=id_dato_catastral_registral,
         if_match_version=core.if_match_version,
-        **_dato_command_kwargs(request),
+        **_dato_update_command_kwargs(request),
     )
 
     try:
