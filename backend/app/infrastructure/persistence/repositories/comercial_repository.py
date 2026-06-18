@@ -266,7 +266,7 @@ class ComercialRepository:
                 fecha_hasta,
                 observaciones
             FROM relacion_persona_rol
-            WHERE tipo_relacion = 'reserva_venta'
+            WHERE LOWER(TRIM(tipo_relacion)) = 'reserva_venta'
               AND id_relacion = :id_reserva_venta
               AND deleted_at IS NULL
             ORDER BY id_relacion_persona_rol

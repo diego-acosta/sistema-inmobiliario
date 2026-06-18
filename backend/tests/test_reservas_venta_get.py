@@ -53,7 +53,7 @@ def test_get_reserva_venta_devuelve_detalle_con_shape_contractual(
         id_inmueble=id_inmueble,
         estado_disponibilidad="DISPONIBLE",
     )
-    _crear_rol_participacion_activo(db_session, id_rol_participacion=9401)
+    _crear_rol_participacion_activo(db_session, id_rol_participacion=9401, codigo_rol="COMPRADOR")
 
     create_response = client.post(
         "/api/v1/reservas-venta",
@@ -69,10 +69,35 @@ def test_get_reserva_venta_devuelve_detalle_con_shape_contractual(
             ],
             id_persona=id_persona,
             id_rol=9401,
-        ),
+        ) | {
+            "participaciones": [
+                {
+                    "id_persona": id_persona,
+                    "id_rol_participacion": 9401,
+                    "porcentaje_responsabilidad": "100.00",
+                    "fecha_desde": "2026-04-21",
+                    "fecha_hasta": None,
+                    "observaciones": "Participacion principal",
+                }
+            ]
+        },
     )
     assert create_response.status_code == 201
     reserva = create_response.json()["data"]
+    participacion_insertada = db_session.execute(
+        text(
+            """
+            SELECT id_persona, id_rol_participacion, porcentaje_responsabilidad, tipo_relacion
+            FROM relacion_persona_rol
+            WHERE id_relacion = :id_reserva_venta
+              AND LOWER(TRIM(tipo_relacion)) = 'reserva_venta'
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id_reserva_venta": reserva["id_reserva_venta"]},
+    ).mappings().one_or_none()
+    assert participacion_insertada is not None
+    assert participacion_insertada["tipo_relacion"] == "reserva_venta"
 
     response = client.get(f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}")
 
@@ -142,6 +167,20 @@ def test_get_reserva_venta_multiobjeto_devuelve_objetos_en_orden_persistido(
     )
     assert create_response.status_code == 201
     reserva = create_response.json()["data"]
+    participacion_insertada = db_session.execute(
+        text(
+            """
+            SELECT id_persona, id_rol_participacion, porcentaje_responsabilidad, tipo_relacion
+            FROM relacion_persona_rol
+            WHERE id_relacion = :id_reserva_venta
+              AND LOWER(TRIM(tipo_relacion)) = 'reserva_venta'
+              AND deleted_at IS NULL
+            """
+        ),
+        {"id_reserva_venta": reserva["id_reserva_venta"]},
+    ).mappings().one_or_none()
+    assert participacion_insertada is not None
+    assert participacion_insertada["tipo_relacion"] == "reserva_venta"
 
     response = client.get(f"/api/v1/reservas-venta/{reserva['id_reserva_venta']}")
 
