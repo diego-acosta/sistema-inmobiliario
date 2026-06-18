@@ -10,6 +10,7 @@ Alcance:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Callable, Literal
 
 import flet as ft
@@ -106,42 +107,123 @@ def _clean(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _safe_visible_text(value: Any) -> str:
+    """Normaliza valores visuales sin exponer dict/list crudos del backend."""
+
+    if value in (None, "", []):
+        return ""
+    if isinstance(value, (str, int, float, bool, Decimal)):
+        return str(value).strip()
+    if isinstance(value, list):
+        return ", ".join(part for part in (_safe_visible_text(item) for item in value) if part)
+    if isinstance(value, dict):
+        nombre = _safe_visible_text(value.get("nombre"))
+        apellido = _safe_visible_text(value.get("apellido"))
+        nombre_apellido = " ".join(part for part in [nombre, apellido] if part)
+        codigo_objeto = _safe_visible_text(value.get("codigo_inmueble")) or _safe_visible_text(value.get("codigo_unidad_funcional"))
+        descripcion_objeto = _safe_visible_text(value.get("descripcion")) or _safe_visible_text(value.get("observaciones"))
+        if codigo_objeto and descripcion_objeto:
+            return _join_visible([codigo_objeto, descripcion_objeto])
+        for key in ("texto_visual", "display_name", "nombre_completo", "razon_social"):
+            text = _safe_visible_text(value.get(key))
+            if text:
+                return text
+        if nombre_apellido:
+            return nombre_apellido
+        for key in (
+            "codigo_reserva",
+            "codigo_inmueble",
+            "codigo_unidad_funcional",
+            "codigo",
+            "descripcion",
+            "observaciones",
+        ):
+            text = _safe_visible_text(value.get(key))
+            if text:
+                return text
+        return ""
+    return ""
+
+
+def _format_date_visible(value: Any) -> str:
+    text = _safe_visible_text(value)
+    if not text:
+        return ""
+    date_part = text[:10]
+    if len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-":
+        year, month, day = date_part.split("-")
+        return f"{day}/{month}/{year}"
+    return text
+
+
 def _join_visible(parts: list[Any], separator: str = " — ") -> str:
-    return separator.join(part for part in (_clean(value) for value in parts) if part)
+    return separator.join(part for part in (_safe_visible_text(value) for value in parts) if part)
 
 
 def _search_blob(*values: Any) -> str:
-    return " ".join(_clean(value).lower() for value in values if _clean(value))
+    return " ".join(_safe_visible_text(value).lower() for value in values if _safe_visible_text(value))
 
 
 def reserva_record(data: dict[str, Any]) -> SearchSelectorRecord:
-    """Adapta una reserva de venta demo al contrato visual del buscador."""
+    """Adapta una reserva de venta real al contrato visual del buscador."""
 
-    codigo = _clean(data.get("codigo_reserva"))
-    comprador = _clean(data.get("comprador")) or _clean(data.get("reservante"))
-    objeto = _clean(data.get("objeto"))
-    estado = _clean(data.get("estado"))
-    version = data.get("version_registro")
-    primary = _join_visible([codigo, comprador, objeto])
-    secondary = _join_visible(
-        [f"Estado: {estado}" if estado else "", f"version_registro: {version}" if version is not None else ""]
+    codigo = _safe_visible_text(data.get("codigo_reserva"))
+    comprador = (
+        _safe_visible_text(data.get("comprador"))
+        or _safe_visible_text(data.get("reservante"))
+        or _safe_visible_text(data.get("compradores"))
+        or _safe_visible_text(data.get("reservantes"))
     )
-    summary = _clean(data.get("resumen")) or _join_visible([comprador, objeto, estado])
+    objeto = (
+        _safe_visible_text(data.get("objeto"))
+        or _safe_visible_text(data.get("objetos"))
+        or _safe_visible_text(data.get("inmuebles"))
+        or _safe_visible_text(data.get("unidades_funcionales"))
+    )
+    estado = _safe_visible_text(data.get("estado")) or _safe_visible_text(data.get("estado_reserva"))
+    fecha = _format_date_visible(data.get("fecha") or data.get("fecha_reserva"))
+    vencimiento = _format_date_visible(data.get("vencimiento") or data.get("fecha_vencimiento"))
+    moneda = _safe_visible_text(data.get("moneda"))
+    importe = _safe_visible_text(data.get("importe")) or _safe_visible_text(data.get("precio_reservado"))
+    version = data.get("version_registro")
+    primary = _join_visible([codigo or "Reserva sin código", estado])
+    secondary_parts: list[str] = []
+    for part in [
+        fecha,
+        f"vence {vencimiento}" if vencimiento else "",
+        objeto,
+        comprador,
+        moneda,
+        importe,
+    ]:
+        if part and part not in secondary_parts and part not in {codigo, estado}:
+            secondary_parts.append(part)
+    secondary = " · ".join(secondary_parts)
+    technical_secondary = _join_visible(
+        [
+            secondary,
+            f"id_reserva_venta: {data.get('id_reserva_venta')}" if data.get("id_reserva_venta") is not None else "",
+            f"version_registro: {version}" if version is not None else "",
+        ]
+    )
+    summary = _safe_visible_text(data.get("resumen")) or _join_visible([comprador, objeto, estado, moneda, importe])
+    payload = dict(data)
+    payload.update({
+        "tipo": "RESERVA",
+        "id_reserva_venta": data.get("id_reserva_venta"),
+        "version_registro": version,
+        "texto_visual": primary,
+        "source": data.get("source") or "backend",
+        "persisted": bool(data.get("persisted", True)),
+    })
     return SearchSelectorRecord(
         data=data,
         primary_text=primary,
         secondary_text=secondary,
-        technical_secondary_text=secondary,
+        technical_secondary_text=technical_secondary,
         summary_text=summary,
-        search_text=_search_blob(codigo, comprador, objeto, estado, summary, data.get("id_reserva_venta")),
-        selection_payload={
-            "tipo": "RESERVA",
-            "id_reserva_venta": data.get("id_reserva_venta"),
-            "version_registro": version,
-            "texto_visual": primary,
-            "source": data.get("source") or "demo",
-            "persisted": bool(data.get("persisted", False)),
-        },
+        search_text=_search_blob(codigo, comprador, objeto, estado, fecha, vencimiento, moneda, importe, summary),
+        selection_payload=payload,
     )
 
 
