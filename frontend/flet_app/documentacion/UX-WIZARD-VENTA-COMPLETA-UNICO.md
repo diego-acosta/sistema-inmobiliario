@@ -168,6 +168,36 @@ los estados técnicos del flujo. Los pasos anteriores al estado actual se muestr
 como completados, el paso actual queda resaltado y los pasos posteriores quedan
 pendientes.
 
+## 5.2 Panel lateral Estado del flujo V3
+
+El panel lateral **Estado del flujo** del prototipo V3 se organiza en bloques
+compactos para lectura operativa: **Operación**, **Participantes**,
+**Importes / Plan**, **Revisión / Estado** y un bloque destacado de
+**Próximo paso**. El panel no es navegable, no dispara endpoints y no altera la
+barra superior de progreso.
+
+La UI oculta campos que todavía no aplican según etapa y forma de pago. Antes
+de elegir forma de pago no muestra importes financieros avanzados como anticipo,
+tramos, total asignado o diferencia. En forma de pago `CONTADO` no muestra
+tramos. En forma de pago `FINANCIADO` muestra anticipo, tramos, total asignado
+y diferencia cuando son datos relevantes para completar el plan; si un dato
+relevante sigue pendiente, lo indica con estilo visual suave.
+
+Los estados principales se muestran como badges discretos (`pendiente`,
+`incompleto`, `listo`, `preview calculado`, `lista para confirmar`,
+`venta confirmada`) para reforzar jerarquía sin convertir el panel en una lista
+larga de campos planos. El próximo paso conserva la lógica del helper de avance
+del wizard y se presenta como una card separada.
+
+Cuando la pantalla es `VENTA_CONFIRMADA`, el panel muestra un resumen final
+compacto: estado **Venta confirmada**, total de venta, forma de pago, objetos,
+compradores y próximo paso **Finalizar / Nueva venta**. No muestra campos
+irrelevantes ni datos técnicos salvo que **Mostrar datos tecnicos** esté activo.
+
+El switch **Mostrar datos tecnicos** permanece separado al final del panel. Su
+alcance sigue siendo solo visual: no modifica payloads, endpoints, validaciones,
+preview financiero, lógica de confirmación ni reglas de negocio.
+
 ## 6. Entradas posibles al mismo wizard
 
 ### 6.1 Desde listado de reservas

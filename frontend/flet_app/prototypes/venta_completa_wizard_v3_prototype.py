@@ -4260,54 +4260,8 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_flow_state_panel(self) -> ft.Control:
-        if self.state.pantalla_actual == "VENTA_CONFIRMADA":
-            controls: list[ft.Control] = [
-                ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
-                _flow_info_row("Origen", self._origin_label()),
-                _flow_info_row("Moneda", self._currency_label()),
-                _flow_info_row("Objetos", len(self.state.objetos)),
-                _flow_info_row("Total", self._format_money_with_currency(self._objects_total())),
-                _flow_info_row("Compradores", self._buyers_flow_status()),
-                _flow_info_row("Forma de pago", self._payment_method_status()),
-                _flow_info_row("Estado", "venta confirmada"),
-                _flow_info_row("Próximo paso", "finalizar"),
-                ft.Divider(height=10),
-                self._build_technical_mode_switch(),
-            ]
-            return ft.Container(
-                padding=16,
-                border_radius=14,
-                bgcolor=ft.Colors.BLUE_GREY_50,
-                border=_border_all(1, ft.Colors.BLUE_GREY_100),
-                content=ft.Column(controls=controls, spacing=10),
-            )
-
-        controls: list[ft.Control] = [
-            ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700),
-            _flow_info_row("Origen", self._origin_label()),
-        ]
-        if self.state.origen == "RESERVA" or self.state.pantalla_actual == "SELECCIONAR_RESERVA":
-            controls.append(_flow_info_row("Reserva", self._reservation_status()))
-        controls.extend(
-            [
-                _flow_info_row("Moneda", self._currency_label()),
-                _flow_info_row("Objetos", len(self.state.objetos)),
-                _flow_info_row("Total", self._format_money_with_currency(self._objects_total())),
-                _flow_info_row("Compradores", self._buyers_flow_status()),
-                _flow_info_row("Forma de pago", self._payment_method_status()),
-                _flow_info_row("Estado de revisión", self._review_flow_status(), value_no_wrap=False),
-            ]
-        )
-        if self.state.forma_pago == "FINANCIADO":
-            controls.extend(
-                [
-                    _flow_info_row("Anticipo", self._advance_status()),
-                    _flow_info_row("Tramos", len(self.state.tramos_cuotas)),
-                    _flow_info_row("Total asignado", self._format_money_with_currency(self._financed_plan_total_assigned())),
-                    _flow_info_row("Diferencia", self._format_money_with_currency(self._financed_plan_difference())),
-                ]
-            )
-        controls.append(_flow_info_row("Próximo paso", self._next_step_label(), value_no_wrap=False))
+        controls: list[ft.Control] = [ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700)]
+        controls.extend(self._build_flow_state_sections())
         controls.extend([ft.Divider(height=10), self._build_technical_mode_switch()])
 
         return ft.Container(
@@ -4319,6 +4273,142 @@ class VentaCompletaWizardV3Prototype:
                 controls=controls,
                 spacing=10,
             ),
+        )
+
+    def _build_flow_state_sections(self) -> list[ft.Control]:
+        if self.state.pantalla_actual == "VENTA_CONFIRMADA":
+            return [
+                self._build_flow_state_section(
+                    "Operación",
+                    [
+                        _flow_info_row("Forma de pago", self._payment_method_status()),
+                    ],
+                ),
+                self._build_flow_state_section(
+                    "Participantes",
+                    [
+                        _flow_info_row("Objetos", len(self.state.objetos)),
+                        _flow_info_row("Compradores", self._buyers_flow_status()),
+                    ],
+                ),
+                self._build_flow_state_section(
+                    "Importes / Plan",
+                    [
+                        _flow_info_row("Total venta", self._format_money_with_currency(self._objects_total())),
+                    ],
+                ),
+                self._build_flow_state_section(
+                    "Revisión / Estado",
+                    [_flow_info_row("Estado", self._flow_status_badge("venta confirmada"))],
+                ),
+                self._build_next_step_card("Finalizar / Nueva venta"),
+            ]
+
+        sections: list[ft.Control] = []
+        operation_rows: list[ft.Control] = [_flow_info_row("Origen", self._origin_label())]
+        if self.state.origen == "RESERVA" or self.state.pantalla_actual == "SELECCIONAR_RESERVA":
+            operation_rows.append(_flow_info_row("Reserva", self._reservation_status()))
+        operation_rows.extend(
+            [
+                _flow_info_row("Moneda", self._currency_label()),
+                _flow_info_row("Forma de pago", self._flow_status_badge(self._payment_method_status())),
+            ]
+        )
+        sections.append(self._build_flow_state_section("Operación", operation_rows))
+        sections.append(
+            self._build_flow_state_section(
+                "Participantes",
+                [
+                    _flow_info_row("Objetos", self._object_count_status()),
+                    _flow_info_row("Compradores", self._flow_status_badge(self._buyers_flow_status())),
+                ],
+            )
+        )
+
+        financial_rows = self._financial_flow_rows()
+        if financial_rows:
+            sections.append(self._build_flow_state_section("Importes / Plan", financial_rows))
+        sections.append(
+            self._build_flow_state_section(
+                "Revisión / Estado",
+                [_flow_info_row("Estado", self._flow_status_badge(self._review_flow_status()), value_no_wrap=False)],
+            )
+        )
+        sections.append(self._build_next_step_card(self._next_step_label()))
+        return sections
+
+    def _build_flow_state_section(self, title: str, rows: list[ft.Control]) -> ft.Control:
+        return ft.Container(
+            padding=ft.Padding(left=10, top=8, right=10, bottom=8),
+            border_radius=10,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=ft.Column(
+                controls=[
+                    ft.Text(title, size=12, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700),
+                    *rows,
+                ],
+                spacing=6,
+            ),
+        )
+
+    def _build_next_step_card(self, label: str) -> ft.Control:
+        return ft.Container(
+            padding=ft.Padding(left=12, top=10, right=12, bottom=10),
+            border_radius=12,
+            bgcolor=ft.Colors.BLUE_50,
+            border=_border_all(1, ft.Colors.BLUE_200),
+            content=ft.Column(
+                controls=[
+                    ft.Text("Próximo paso", size=11, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700),
+                    ft.Text(label, size=14, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_900, no_wrap=False),
+                ],
+                spacing=4,
+            ),
+        )
+
+    def _financial_flow_rows(self) -> list[ft.Control]:
+        if self.state.forma_pago not in {"CONTADO", "FINANCIADO"}:
+            return []
+        rows: list[ft.Control] = [_flow_info_row("Total venta", self._format_money_with_currency(self._objects_total()))]
+        if self.state.forma_pago == "FINANCIADO":
+            rows.extend(
+                [
+                    _flow_info_row("Anticipo", self._advance_status()),
+                    _flow_info_row("Tramos", self._installments_status()),
+                    _flow_info_row("Total asignado", self._format_money_with_currency(self._financed_plan_total_assigned())),
+                    _flow_info_row("Diferencia", self._format_money_with_currency(self._financed_plan_difference())),
+                ]
+            )
+        return rows
+
+    def _object_count_status(self) -> ft.Control:
+        if self.state.objetos:
+            return self._flow_status_badge(f"{len(self.state.objetos)} listo")
+        return self._flow_status_badge("pendiente")
+
+    def _installments_status(self) -> ft.Control:
+        if self.state.tramos_cuotas:
+            return self._flow_status_badge(f"{len(self.state.tramos_cuotas)} listo")
+        return self._flow_status_badge("pendiente")
+
+    def _flow_status_badge(self, value: Any) -> ft.Control:
+        label = str(value if value not in (None, "") else "sin datos")
+        normalized = label.lower()
+        if "venta confirmada" in normalized or "lista para confirmar" in normalized or "listo" in normalized:
+            bgcolor, border_color, text_color = ft.Colors.GREEN_50, ft.Colors.GREEN_200, ft.Colors.GREEN_900
+        elif "preview calculado" in normalized or "en progreso" in normalized:
+            bgcolor, border_color, text_color = ft.Colors.BLUE_50, ft.Colors.BLUE_200, ft.Colors.BLUE_900
+        elif "pendiente" in normalized or "incompleto" in normalized or "desactualizado" in normalized:
+            bgcolor, border_color, text_color = ft.Colors.AMBER_50, ft.Colors.AMBER_200, ft.Colors.AMBER_900
+        else:
+            bgcolor, border_color, text_color = ft.Colors.BLUE_GREY_50, ft.Colors.BLUE_GREY_100, ft.Colors.BLUE_GREY_800
+        return ft.Container(
+            padding=ft.Padding(left=8, top=3, right=8, bottom=3),
+            border_radius=999,
+            bgcolor=bgcolor,
+            border=_border_all(1, border_color),
+            content=ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=text_color, no_wrap=True),
         )
 
     def _build_technical_mode_switch(self) -> ft.Control:
@@ -6337,11 +6427,21 @@ def _info_row(label: str, value: Any) -> ft.Control:
 
 
 def _flow_info_row(label: str, value: Any, *, value_no_wrap: bool = True) -> ft.Control:
-    display_value = str(value if value not in (None, "") else "-")
+    value_control: ft.Control
+    if isinstance(value, ft.Control):
+        value_control = value
+    else:
+        display_value = str(value if value not in (None, "") else "-")
+        value_control = ft.Text(
+            display_value,
+            color=ft.Colors.BLUE_GREY_900,
+            expand=True,
+            no_wrap=value_no_wrap,
+        )
     return ft.Row(
         controls=[
             ft.Container(
-                width=132,
+                width=104,
                 content=ft.Text(
                     f"{label}:",
                     weight=ft.FontWeight.W_700,
@@ -6349,12 +6449,7 @@ def _flow_info_row(label: str, value: Any, *, value_no_wrap: bool = True) -> ft.
                     no_wrap=True,
                 ),
             ),
-            ft.Text(
-                display_value,
-                color=ft.Colors.BLUE_GREY_900,
-                expand=True,
-                no_wrap=value_no_wrap,
-            ),
+            value_control,
         ],
         spacing=6,
         vertical_alignment=ft.CrossAxisAlignment.START,
