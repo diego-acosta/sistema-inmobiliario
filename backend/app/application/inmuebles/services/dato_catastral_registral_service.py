@@ -61,8 +61,15 @@ def _command_values(command: Any) -> dict[str, Any]:
         "id_inmueble",
         "id_dato_catastral_registral",
         "if_match_version",
+        "provided_fields",
     }
     return {k: v for k, v in asdict(command).items() if k not in excluded}
+
+
+def _explicit_command_values(command: Any) -> dict[str, Any]:
+    values = _command_values(command)
+    provided_fields = getattr(command, "provided_fields", frozenset(values.keys()))
+    return {field: values[field] for field in provided_fields if field in values}
 
 
 def _validate_values(values: dict[str, Any]) -> list[str]:
@@ -136,8 +143,11 @@ class DatoCatastralRegistralService:
             return AppResult.fail("NOT_FOUND_DATO_CATASTRAL_REGISTRAL")
         if command.if_match_version != current["version_registro"]:
             return AppResult.fail("CONCURRENCY_ERROR")
-        values = _command_values(command)
-        errors = _validate_values(values)
+        values = _explicit_command_values(command)
+        if not values:
+            return AppResult.fail("NO_FIELDS_TO_UPDATE")
+        final_values = {**_command_values(command), **current, **values}
+        errors = _validate_values(final_values)
         if errors:
             return AppResult.fail(*errors)
         id_instalacion, op_id = _context_values(command)

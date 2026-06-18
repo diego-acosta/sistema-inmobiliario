@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
@@ -44,6 +44,7 @@ class UpdateDatoCatastralRegistralCommand(DatoCatastralRegistralFields):
     id_inmueble: int
     id_dato_catastral_registral: int
     if_match_version: int | None
+    provided_fields: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(slots=True)
