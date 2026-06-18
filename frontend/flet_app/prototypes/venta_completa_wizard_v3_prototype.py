@@ -53,8 +53,8 @@ from app.api_client import ApiClient, ApiResult
 from components.search_selector_demo import (
     SearchSelectorDemo,
     create_search_selector_demo,
-    is_object_selectable_status,
-    object_availability_warning,
+    is_object_selectable,
+    object_selection_warning,
 )
 
 
@@ -1001,7 +1001,9 @@ class VentaCompletaWizardV3Prototype:
             "id_inmueble": item.get("id_inmueble"),
             "codigo": codigo,
             "descripcion": descripcion,
-            "estado": disponibilidad or item.get("estado_administrativo") or "",
+            "estado": disponibilidad,
+            "estado_administrativo": item.get("estado_administrativo") or "",
+            "ocupacion_actual": item.get("ocupacion_actual"),
             "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble."),
             "source": "backend",
             "persisted": True,
@@ -1018,7 +1020,10 @@ class VentaCompletaWizardV3Prototype:
             "codigo": codigo,
             "descripcion": descripcion,
             "inmueble_padre": inmueble.get("codigo_inmueble") or inmueble.get("nombre_inmueble") or item.get("id_inmueble"),
-            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "",
+            "estado": disponibilidad,
+            "estado_operativo": item.get("estado_operativo") or "",
+            "estado_administrativo": item.get("estado_administrativo") or "",
+            "ocupacion_actual": item.get("ocupacion_actual"),
             "resumen": str(item.get("observaciones") or "Unidad funcional."),
             "source": "backend",
             "persisted": True,
@@ -1141,8 +1146,14 @@ class VentaCompletaWizardV3Prototype:
         price_error = self.precio_objeto_error
         self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
         status_badge = self._status_badge(self.objeto_seleccionado.get("estado"))
-        is_selectable = is_object_selectable_status(self.objeto_seleccionado.get("estado"))
-        availability_warning = object_availability_warning(self.objeto_seleccionado.get("estado"))
+        is_selectable = is_object_selectable(
+            self.objeto_seleccionado.get("estado"),
+            self.objeto_seleccionado.get("ocupacion_actual"),
+        )
+        availability_warning = object_selection_warning(
+            self.objeto_seleccionado.get("estado"),
+            self.objeto_seleccionado.get("ocupacion_actual"),
+        )
         panel_content = ft.Column(
             controls=[
                 ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
@@ -1159,6 +1170,16 @@ class VentaCompletaWizardV3Prototype:
                                     bool(self.objeto_seleccionado.get("persisted", False)),
                                 ),
                                 persisted=bool(self.objeto_seleccionado.get("persisted", False)),
+                            ),
+                            *(
+                                [self._technical_chip(f"estado_administrativo: {self.objeto_seleccionado.get('estado_administrativo')}")]
+                                if self.objeto_seleccionado.get("estado_administrativo")
+                                else []
+                            ),
+                            *(
+                                [self._technical_chip(f"ocupacion_actual: {self.objeto_seleccionado.get('ocupacion_actual')}")]
+                                if self.objeto_seleccionado.get("ocupacion_actual")
+                                else []
                             ),
                         ]),
                     ],
@@ -5783,7 +5804,7 @@ class VentaCompletaWizardV3Prototype:
         return f"{self._currency_label()} {_format_money(value)}"
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
-        if selected is not None and not is_object_selectable_status(selected.get("estado")):
+        if selected is not None and not is_object_selectable(selected.get("estado"), selected.get("ocupacion_actual")):
             self.objeto_seleccionado = None
             if self.objeto_selector is not None:
                 self.objeto_selector.selected_panel.visible = False
@@ -5829,8 +5850,14 @@ class VentaCompletaWizardV3Prototype:
         if validation_error is not None:
             return validation_error
         if self.objeto_seleccionado is not None:
-            if not is_object_selectable_status(self.objeto_seleccionado.get("estado")):
-                return "El objeto no está disponible para esta venta."
+            if not is_object_selectable(
+                self.objeto_seleccionado.get("estado"),
+                self.objeto_seleccionado.get("ocupacion_actual"),
+            ):
+                return object_selection_warning(
+                    self.objeto_seleccionado.get("estado"),
+                    self.objeto_seleccionado.get("ocupacion_actual"),
+                ) or "El objeto no está disponible para esta venta."
             if self.objeto_seleccionado.get("source") != "backend" or not self.objeto_seleccionado.get("persisted", False):
                 return "El objeto debe estar disponible y confirmado en el sistema."
         return None
@@ -5846,8 +5873,14 @@ class VentaCompletaWizardV3Prototype:
     def _add_selected_object(self, _: ft.ControlEvent | None = None) -> None:
         if self.objeto_seleccionado is None:
             return
-        if not is_object_selectable_status(self.objeto_seleccionado.get("estado")):
-            self.precio_objeto_error = "El objeto no está disponible para esta venta."
+        if not is_object_selectable(
+            self.objeto_seleccionado.get("estado"),
+            self.objeto_seleccionado.get("ocupacion_actual"),
+        ):
+            self.precio_objeto_error = object_selection_warning(
+                self.objeto_seleccionado.get("estado"),
+                self.objeto_seleccionado.get("ocupacion_actual"),
+            ) or "El objeto no está disponible para esta venta."
             self._render()
             return
         self.precio_objeto_value = str(self.precio_objeto_field.value or self.precio_objeto_value or "")

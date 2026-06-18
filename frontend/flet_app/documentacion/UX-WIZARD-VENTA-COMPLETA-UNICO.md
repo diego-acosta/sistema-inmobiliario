@@ -106,17 +106,33 @@ UI. No se eliminan del listado los objetos reservados, vendidos, ocupados o con
 otro estado operativo, porque el usuario debe ver el motivo por el cual no puede
 usarlos en una venta directa.
 
-La seleccion desde frontend es preventiva: solo los objetos con estado operativo
-`DISPONIBLE` pueden seleccionarse en la UI. Los objetos `RESERVADA`, `VENDIDA`,
-`NO_DISPONIBLE`, `OCUPADA` o cualquier estado distinto de `DISPONIBLE` se
-visualizan con badge de estado, advertencia clara y boton deshabilitado/no
-disponible.
+La seleccion desde frontend es preventiva: la disponibilidad comercial se
+evalua solo con campos de disponibilidad informados por backend
+(`disponibilidad_actual`, `estado_disponibilidad`, `disponibilidad` o
+equivalentes), nunca con `estado_administrativo`. El estado administrativo puede
+mostrarse como dato secundario en modo tecnico, pero no se mezcla con la
+disponibilidad seleccionable.
 
-Si el backend no informa disponibilidad, la UI conserva la seleccion para no
-romper compatibilidad visual, pero muestra la advertencia suave
-"Disponibilidad no informada; el backend validará la operación.". En todos los
-casos, esta restriccion no cambia payloads ni endpoints: el backend sigue siendo
-la fuente definitiva y valida la disponibilidad al confirmar la venta.
+Los objetos con disponibilidad comercial `DISPONIBLE` pueden seleccionarse
+siempre que no tengan ocupacion vigente. Los objetos `RESERVADA`, `VENDIDA`,
+`NO_DISPONIBLE` o cualquier disponibilidad distinta de `DISPONIBLE` se visualizan
+con badge de estado, advertencia clara y boton deshabilitado/no disponible.
+
+Si el backend no informa disponibilidad comercial, la UI conserva la seleccion
+para no romper compatibilidad visual, pero muestra la advertencia suave
+"Disponibilidad no informada; el backend validará la operación.". Un objeto con
+`disponibilidad_actual` ausente y `estado_administrativo` `ACTIVO` sigue siendo
+tratado como disponibilidad no informada, no como disponibilidad bloqueante.
+
+Si el backend informa `ocupacion_actual` con un valor vigente, la UI bloquea la
+seleccion preventivamente y muestra una advertencia operativa como "Objeto con
+ocupación vigente; no puede seleccionarse para una venta directa.". Solo se
+consideran sin ocupacion los valores ausentes/vacios o equivalentes explicitos a
+`SIN_OCUPACION`, `SIN OCUPACION` o `SIN OCUPACIÓN`.
+
+En todos los casos, esta restriccion es solo preventiva de frontend y no cambia
+payloads ni endpoints: el backend sigue siendo la fuente definitiva y valida la
+disponibilidad y la ocupacion al confirmar la venta.
 
 ## 4. Contratos backend existentes que guian el diseno
 
