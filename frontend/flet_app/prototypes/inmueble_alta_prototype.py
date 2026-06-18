@@ -224,6 +224,7 @@ class InmuebleAltaPrototype:
         errors = validate_form(values)
         if errors:
             self._show_message("\n".join(errors), success=False)
+            self.page.update()
             return
 
         self.save_button.disabled = True
