@@ -415,6 +415,31 @@ Decisión CORE-EF de esta etapa:
   confirmación, pero no se modifica nada.
 - Confirmación desde reserva: queda para un PR posterior.
 
+Precarga preventiva desde reserva:
+
+- Después de seleccionar una reserva real confirmada, el wizard lee datos
+  normalizados y `raw` disponibles de objetos, inmuebles, unidades funcionales,
+  compradores, reservantes, cliente, moneda e importes/precios.
+- Los objetos heredados se cargan en `state.objetos` con origen `reserva`,
+  persistencia real cuando traen ID, texto visual operativo y marca interna de
+  dato heredado. No se inventan IDs ni se muestran diccionarios/listas crudas.
+- Los compradores/reservantes heredados se cargan en `state.compradores` con
+  origen `reserva`, `id_persona` cuando viene, texto visual operativo y marca
+  interna de dato heredado. Si existe un único comprador y no trae porcentaje,
+  se asume responsabilidad `100.00`; con múltiples compradores no se distribuyen
+  porcentajes automáticamente.
+- Si la reserva informa moneda y está dentro de `MONEDAS_PERMITIDAS`, la moneda
+  del wizard queda heredada. Si informa un importe total y existe un único
+  objeto, se usa como `precio_asignado`; si existen múltiples objetos sin precio
+  por objeto, queda pendiente y no se distribuye automáticamente.
+- En pantallas Objetos y Compradores, los datos heredados son read-only/preventivos:
+  no se permite agregar o quitar registros manualmente en esta etapa.
+- Si la reserva no trae objetos o compradores, la UI muestra advertencia clara,
+  no inventa datos y el avance queda sujeto a las validaciones existentes.
+- Esta precarga no confirma venta, no genera venta, plan ni obligaciones, no
+  modifica la reserva, no ejecuta endpoints write y conserva la confirmación
+  desde reserva bloqueada para un PR posterior.
+
 El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
 registros persistidos de backend real.
 

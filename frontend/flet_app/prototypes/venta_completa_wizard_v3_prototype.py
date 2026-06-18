@@ -105,6 +105,7 @@ class ObjetoVentaWizardDraft:
     precio_asignado: str
     source: str = "manual"
     persisted: bool = False
+    heredado_reserva: bool = False
 
 
 @dataclass
@@ -115,6 +116,7 @@ class CompradorWizardDraft:
     id_rol_participacion: str
     source: str = "manual"
     persisted: bool = False
+    heredado_reserva: bool = False
 
 
 @dataclass
@@ -1171,6 +1173,26 @@ class VentaCompletaWizardV3Prototype:
         }
 
     def _build_objects_step(self) -> ft.Control:
+        if self.state.origen == "RESERVA":
+            controls: list[ft.Control] = [
+                ft.Text("Objetos de venta", size=24, weight=ft.FontWeight.W_700),
+                ft.Text("Los objetos provienen de la reserva seleccionada. La edición queda bloqueada en esta etapa.", color=ft.Colors.BLUE_GREY_700),
+                self._build_help_card(
+                    "Los objetos provienen de la reserva seleccionada. La edición queda bloqueada en esta etapa.",
+                    ft.Colors.AMBER_50,
+                    ft.Colors.AMBER_200,
+                ),
+                *([] if self.state.objetos else [self._build_help_card("La reserva seleccionada no informa objetos. No se inventan datos y el avance queda sujeto a las validaciones existentes.", ft.Colors.RED_50, ft.Colors.RED_200)]),
+                self._build_added_objects_list(),
+                self._build_objects_total_summary(),
+            ]
+            return ft.Container(
+                padding=18,
+                border_radius=14,
+                bgcolor=ft.Colors.WHITE,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(controls=controls, spacing=14),
+            )
         if not self._has_valid_currency():
             return ft.Container(
                 padding=18,
@@ -1422,6 +1444,7 @@ class VentaCompletaWizardV3Prototype:
                             *self._technical_controls([
                                 self._technical_text(f"ID técnico secundario ({id_label}): {id_value}"),
                                 self._technical_text(f"Origen dato: {self._record_source_label(objeto.source, objeto.persisted)}"),
+                                self._technical_text(f"heredado_reserva: {objeto.heredado_reserva}"),
                             ]),
                         ],
                         spacing=3,
@@ -1430,6 +1453,7 @@ class VentaCompletaWizardV3Prototype:
                     ft.OutlinedButton(
                         "Quitar",
                         icon=ft.Icons.DELETE_OUTLINE,
+                        disabled=objeto.heredado_reserva,
                         on_click=lambda _, item_index=index: self._remove_object(item_index),
                     ),
                 ],
@@ -1518,14 +1542,16 @@ class VentaCompletaWizardV3Prototype:
     def _build_reserva_buyers_info_step(self) -> ft.Control:
         controls: list[ft.Control] = [
             ft.Text("Compradores de la reserva", size=24, weight=ft.FontWeight.W_700),
-            ft.Text("Los compradores se heredan de la reserva seleccionada.", color=ft.Colors.BLUE_GREY_700),
+            ft.Text("Los compradores provienen de la reserva seleccionada. La edición queda bloqueada en esta etapa.", color=ft.Colors.BLUE_GREY_700),
             self._build_reserva_selected_card(),
-            self._build_inherited_buyers_pending_card(),
             self._build_help_card(
-                "Los compradores se tomarán de la reserva cuando esa integración esté disponible; no hace falta cargarlos manualmente en este flujo.",
+                "Los compradores provienen de la reserva seleccionada. La edición queda bloqueada en esta etapa.",
                 ft.Colors.AMBER_50,
                 ft.Colors.AMBER_200,
             ),
+            *([] if self.state.compradores else [self._build_help_card("La reserva seleccionada no informa compradores/reservantes. No se inventan datos y el avance queda sujeto a las validaciones existentes.", ft.Colors.RED_50, ft.Colors.RED_200)]),
+            self._build_added_buyers_list(),
+            self._build_buyers_summary(),
         ]
         return ft.Container(
             padding=18,
@@ -1798,6 +1824,8 @@ class VentaCompletaWizardV3Prototype:
                             *self._technical_controls([
                                 self._technical_text(f"id_persona: {comprador.id_persona}"),
                                 self._technical_text(f"id_rol_participacion: {comprador.id_rol_participacion}"),
+                                self._technical_text(f"Origen dato: {self._record_source_label(comprador.source, comprador.persisted)}"),
+                                self._technical_text(f"heredado_reserva: {comprador.heredado_reserva}"),
                             ]),
                         ],
                         spacing=3,
@@ -1806,6 +1834,7 @@ class VentaCompletaWizardV3Prototype:
                     ft.OutlinedButton(
                         "Quitar",
                         icon=ft.Icons.DELETE_OUTLINE,
+                        disabled=comprador.heredado_reserva,
                         on_click=lambda _, item_index=index: self._remove_buyer(item_index),
                     ),
                 ],
@@ -4468,6 +4497,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA" or self.state.pantalla_actual == "SELECCIONAR_RESERVA":
             operation_rows.append(_flow_info_row("Reserva", self._reservation_status()))
             operation_rows.append(_flow_info_row("Estado", self._flow_status_badge("reserva seleccionada" if self.state.id_reserva_venta is not None else "pendiente")))
+            operation_rows.append(_flow_info_row("Moneda heredada", "sí" if self._reservation_has_allowed_currency() else "no"))
         operation_rows.extend(
             [
                 _flow_info_row("Moneda", self._currency_label()),
@@ -4544,7 +4574,10 @@ class VentaCompletaWizardV3Prototype:
 
     def _object_count_status(self) -> ft.Control:
         if self.state.objetos:
-            return self._flow_status_badge(f"{len(self.state.objetos)} listo")
+            suffix = " heredados de reserva" if self.state.origen == "RESERVA" and any(obj.heredado_reserva for obj in self.state.objetos) else " listo"
+            return self._flow_status_badge(f"{len(self.state.objetos)}{suffix}")
+        if self.state.origen == "RESERVA" and self.state.id_reserva_venta is not None:
+            return self._flow_status_badge("sin objetos heredados")
         return self._flow_status_badge("pendiente")
 
     def _installments_status(self) -> ft.Control:
@@ -4733,6 +4766,121 @@ class VentaCompletaWizardV3Prototype:
         self.state.observaciones_comerciales = str(event.control.value or "")
         self._mark_plan_preview_stale()
 
+
+    def _preload_reservation_context(self, selected: dict[str, Any]) -> None:
+        self.state.objetos = self._reservation_object_drafts(selected)
+        self.state.compradores = self._reservation_buyer_drafts(selected)
+        moneda = self._display_or_none(self._reservation_first_present(selected, ("moneda", "codigo_moneda")))
+        if moneda and moneda.strip().upper() in MONEDAS_PERMITIDAS:
+            self.state.moneda = moneda.strip().upper()
+        self._mark_plan_preview_stale()
+
+    def _reservation_payloads(self, selected: dict[str, Any]) -> list[dict[str, Any]]:
+        raw = selected.get("raw") if isinstance(selected.get("raw"), dict) else {}
+        return [payload for payload in (selected, raw) if isinstance(payload, dict)]
+
+    def _reservation_first_present(self, selected: dict[str, Any], keys: tuple[str, ...]) -> Any:
+        for payload in self._reservation_payloads(selected):
+            value = self._first_present_field(payload, keys)
+            if value not in (None, "", []):
+                return value
+        return None
+
+    def _reservation_collection(self, selected: dict[str, Any], keys: tuple[str, ...]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        seen: set[tuple[Any, Any, str]] = set()
+        for payload in self._reservation_payloads(selected):
+            for key in keys:
+                value = payload.get(key)
+                candidates = value if isinstance(value, list) else [value] if isinstance(value, dict) else []
+                for item in candidates:
+                    if not isinstance(item, dict):
+                        continue
+                    marker = (item.get("id_inmueble") or item.get("id_persona"), item.get("id_unidad_funcional"), self._visible_join(item))
+                    if marker in seen:
+                        continue
+                    seen.add(marker)
+                    items.append(item)
+        return items
+
+    def _reservation_object_drafts(self, selected: dict[str, Any]) -> list[ObjetoVentaWizardDraft]:
+        object_items = self._reservation_collection(selected, ("objetos", "objeto", "inmuebles", "unidades_funcionales"))
+        total_amount = self._reservation_money_value(selected, None)
+        drafts: list[ObjetoVentaWizardDraft] = []
+        for item in object_items:
+            id_unidad = _safe_int(self._first_present_field(item, ("id_unidad_funcional", "id_unidad", "unidad_funcional_id")))
+            id_inmueble = _safe_int(self._first_present_field(item, ("id_inmueble", "inmueble_id")))
+            tipo = "UNIDAD_FUNCIONAL" if id_unidad is not None or "unidad" in str(item.get("tipo_objeto") or "").lower() else "INMUEBLE"
+            amount = self._reservation_item_money_value(item)
+            if amount is None and len(object_items) == 1:
+                amount = total_amount
+            drafts.append(
+                ObjetoVentaWizardDraft(
+                    tipo_objeto=tipo,
+                    id_inmueble=id_inmueble if tipo == "INMUEBLE" else None,
+                    id_unidad_funcional=id_unidad if tipo == "UNIDAD_FUNCIONAL" else None,
+                    texto_visual=self._reservation_visible_text(item, fallback="Objeto heredado de reserva"),
+                    precio_asignado=_format_decimal(amount) if amount is not None else "",
+                    source="reserva",
+                    persisted=(id_unidad is not None if tipo == "UNIDAD_FUNCIONAL" else id_inmueble is not None),
+                    heredado_reserva=True,
+                )
+            )
+        return drafts
+
+    def _reservation_buyer_drafts(self, selected: dict[str, Any]) -> list[CompradorWizardDraft]:
+        buyer_items = self._reservation_collection(selected, ("compradores", "comprador", "reservantes", "reservante", "cliente"))
+        role_id = self._rol_comprador_id_resuelto() or ""
+        drafts: list[CompradorWizardDraft] = []
+        for item in buyer_items:
+            id_persona = _safe_int(self._first_present_field(item, ("id_persona", "persona_id", "id_cliente", "id_reservante")))
+            if id_persona is None:
+                continue
+            porcentaje_text = ""
+            raw_percentage = self._first_present_field(item, ("porcentaje_responsabilidad", "porcentaje", "responsabilidad"))
+            parsed_percentage = _parse_percentage(str(raw_percentage)) if raw_percentage not in (None, "") else None
+            if parsed_percentage is not None:
+                porcentaje_text = _format_decimal(parsed_percentage)
+            drafts.append(
+                CompradorWizardDraft(
+                    id_persona=id_persona,
+                    texto_visual=self._reservation_visible_text(item, fallback="Comprador heredado de reserva"),
+                    porcentaje_responsabilidad=porcentaje_text,
+                    id_rol_participacion=role_id,
+                    source="reserva",
+                    persisted=True,
+                    heredado_reserva=True,
+                )
+            )
+        if len(drafts) == 1 and not drafts[0].porcentaje_responsabilidad.strip():
+            drafts[0].porcentaje_responsabilidad = "100.00"
+        return drafts
+
+    def _reservation_item_money_value(self, item: dict[str, Any]) -> Decimal | None:
+        raw = self._first_present_field(item, ("precio_asignado", "precio_reservado", "importe", "precio_total", "monto"))
+        return _parse_money_decimal(str(raw)) if raw not in (None, "") else None
+
+    def _reservation_money_value(self, selected: dict[str, Any], item: dict[str, Any] | None) -> Decimal | None:
+        if item is not None:
+            parsed_item = self._reservation_item_money_value(item)
+            if parsed_item is not None:
+                return parsed_item
+        keys = ("precio_reservado", "importe_reserva", "precio_total", "importe", "monto")
+        for source in self._reservation_payloads(selected):
+            raw = self._first_present_field(source, keys)
+            parsed = _parse_money_decimal(str(raw)) if raw not in (None, "") else None
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _reservation_visible_text(self, value: Any, *, fallback: str) -> str:
+        text = self._visible_join(value)
+        return text if text else fallback
+
+    def _reservation_has_allowed_currency(self) -> bool:
+        moneda = self.state.reserva_visible_data.get("moneda")
+        return str(moneda or "").strip().upper() in MONEDAS_PERMITIDAS
+
     def _on_reserva_selected(self, selected: dict[str, Any] | None) -> None:
         self.state.id_reserva_venta = None
         self.state.version_registro = None
@@ -4754,9 +4902,13 @@ class VentaCompletaWizardV3Prototype:
                 "vencimiento": self._display_or_none(selected.get("vencimiento")) or self._display_or_none(selected.get("fecha_vencimiento")),
                 "objetos": objetos,
                 "compradores": compradores,
-                "moneda": self._display_or_none(selected.get("moneda")),
-                "importe": self._display_or_none(selected.get("importe")) or self._display_or_none(selected.get("precio_reservado")),
+                "moneda": self._display_or_none(self._reservation_first_present(selected, ("moneda", "codigo_moneda"))),
+                "importe": self._display_or_none(self._reservation_first_present(selected, ("importe", "precio_reservado", "importe_reserva", "precio_total", "monto"))),
             }
+            self._preload_reservation_context(selected)
+        else:
+            self.state.objetos.clear()
+            self.state.compradores.clear()
         self._render()
 
     def _next_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -4846,8 +4998,6 @@ class VentaCompletaWizardV3Prototype:
                 _parse_money_decimal(objeto.precio_asignado) is not None for objeto in self.state.objetos
             )
         if self.state.pantalla_actual == "COMPRADORES":
-            if self.state.origen == "RESERVA":
-                return self.state.id_reserva_venta is not None
             return self._buyers_are_valid()
         if self.state.pantalla_actual == "FORMA_PAGO":
             if self.state.forma_pago == "FINANCIADO":
@@ -6277,9 +6427,11 @@ class VentaCompletaWizardV3Prototype:
         return "Compradores requeridos para venta directa."
 
     def _buyers_validation_error(self, total: Decimal | None = None) -> str | None:
-        if self.state.origen == "RESERVA":
-            return None
-        if self.state.origen != "DIRECTA" or not self.state.compradores:
+        if self.state.origen == "RESERVA" and not self.state.compradores:
+            return "La reserva seleccionada no aporta compradores/reservantes; no se inventan datos."
+        if self.state.origen != "DIRECTA" and self.state.origen != "RESERVA":
+            return "Agregá al menos un comprador para continuar."
+        if not self.state.compradores:
             return "Agregá al menos un comprador para continuar."
 
         seen_ids: set[int] = set()
@@ -6287,7 +6439,7 @@ class VentaCompletaWizardV3Prototype:
             if comprador.id_persona in seen_ids:
                 return "No se puede duplicar id_persona entre compradores."
             seen_ids.add(comprador.id_persona)
-            if not comprador.id_rol_participacion.strip():
+            if self.state.origen == "DIRECTA" and not comprador.id_rol_participacion.strip():
                 return "Todos los compradores deben tener id_rol_participacion del rol COMPRADOR."
             percentage_raw = comprador.porcentaje_responsabilidad.strip()
             if len(self.state.compradores) > 1 and not percentage_raw:
@@ -6354,7 +6506,9 @@ class VentaCompletaWizardV3Prototype:
 
     def _buyers_flow_status(self) -> str:
         if self.state.origen == "RESERVA":
-            return "reserva seleccionada" if self.state.id_reserva_venta is not None else "pendiente"
+            if self.state.compradores:
+                return f"{len(self.state.compradores)} heredados de reserva"
+            return "pendiente" if self.state.id_reserva_venta is None else "sin compradores heredados"
         return str(len(self.state.compradores))
 
     def _payment_method_status(self) -> str:
