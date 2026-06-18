@@ -3012,6 +3012,71 @@ ALTER SEQUENCE public.inmueble_id_inmueble_seq OWNED BY public.inmueble.id_inmue
 
 
 --
+-- Name: inmueble_dato_catastral_registral; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inmueble_dato_catastral_registral (
+    id_dato_catastral_registral bigint NOT NULL,
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
+    id_inmueble bigint NOT NULL,
+    nomenclatura_catastral character varying(120),
+    partida_inmobiliaria character varying(80),
+    matricula character varying(80),
+    folio_real character varying(80),
+    circunscripcion character varying(50),
+    seccion character varying(50),
+    chacra character varying(50),
+    quinta character varying(50),
+    fraccion character varying(50),
+    manzana character varying(50),
+    lote character varying(50),
+    parcela character varying(50),
+    subparcela character varying(50),
+    superficie_titulo numeric(14,2),
+    superficie_mensura numeric(14,2),
+    medidas text,
+    situacion_posesoria character varying(80),
+    situacion_dominial character varying(80),
+    organismo_origen character varying(120),
+    fecha_desde timestamp without time zone,
+    fecha_hasta timestamp without time zone,
+    estado_dato character varying(30) DEFAULT 'ACTIVO'::character varying NOT NULL,
+    observaciones text,
+    CONSTRAINT chk_inmueble_dcr_estado CHECK (((estado_dato)::text = ANY ((ARRAY['ACTIVO'::character varying, 'INACTIVO'::character varying, 'HISTORICO'::character varying])::text[]))),
+    CONSTRAINT chk_inmueble_dcr_superficie_mensura CHECK (((superficie_mensura IS NULL) OR (superficie_mensura > (0)::numeric))),
+    CONSTRAINT chk_inmueble_dcr_superficie_titulo CHECK (((superficie_titulo IS NULL) OR (superficie_titulo > (0)::numeric))),
+    CONSTRAINT chk_inmueble_dcr_vigencia CHECK (((fecha_hasta IS NULL) OR (fecha_desde IS NULL) OR (fecha_hasta >= fecha_desde)))
+);
+
+
+--
+-- Name: inmueble_dato_catastral_registral_id_dato_catastral_reg_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.inmueble_dato_catastral_registral_id_dato_catastral_reg_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: inmueble_dato_catastral_registral_id_dato_catastral_reg_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.inmueble_dato_catastral_registral_id_dato_catastral_reg_seq OWNED BY public.inmueble_dato_catastral_registral.id_dato_catastral_registral;
+
+
+--
 -- Name: inmueble_servicio; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5894,6 +5959,13 @@ ALTER TABLE ONLY public.inmueble ALTER COLUMN id_inmueble SET DEFAULT nextval('p
 
 
 --
+-- Name: inmueble_dato_catastral_registral id_dato_catastral_registral; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inmueble_dato_catastral_registral ALTER COLUMN id_dato_catastral_registral SET DEFAULT nextval('public.inmueble_dato_catastral_registral_id_dato_catastral_reg_seq'::regclass);
+
+
+--
 -- Name: inmueble_servicio id_inmueble_servicio; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6633,6 +6705,14 @@ ALTER TABLE ONLY public.historial_parametro
 
 ALTER TABLE ONLY public.inmueble
     ADD CONSTRAINT inmueble_pkey PRIMARY KEY (id_inmueble);
+
+
+--
+-- Name: inmueble_dato_catastral_registral inmueble_dato_catastral_registral_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inmueble_dato_catastral_registral
+    ADD CONSTRAINT inmueble_dato_catastral_registral_pkey PRIMARY KEY (id_dato_catastral_registral);
 
 
 --
@@ -7377,6 +7457,14 @@ ALTER TABLE ONLY public.inmueble_sucursal
 
 ALTER TABLE ONLY public.inmueble
     ADD CONSTRAINT uq_inmueble_uid_global UNIQUE (uid_global);
+
+
+--
+-- Name: inmueble_dato_catastral_registral uq_inmueble_dcr_uid_global; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inmueble_dato_catastral_registral
+    ADD CONSTRAINT uq_inmueble_dcr_uid_global UNIQUE (uid_global);
 
 
 --
@@ -8682,6 +8770,48 @@ CREATE INDEX idx_ic_venta ON public.instrumento_compraventa USING btree (id_vent
 --
 
 CREATE INDEX idx_inmueble_desarrollo ON public.inmueble USING btree (id_desarrollo);
+
+
+--
+-- Name: idx_inmueble_dcr_estado_activo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inmueble_dcr_estado_activo ON public.inmueble_dato_catastral_registral USING btree (estado_dato) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_inmueble_dcr_id_inmueble_activo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inmueble_dcr_id_inmueble_activo ON public.inmueble_dato_catastral_registral USING btree (id_inmueble) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_inmueble_dcr_matricula_activa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inmueble_dcr_matricula_activa ON public.inmueble_dato_catastral_registral USING btree (matricula) WHERE ((deleted_at IS NULL) AND (matricula IS NOT NULL));
+
+
+--
+-- Name: idx_inmueble_dcr_nomenclatura_activa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inmueble_dcr_nomenclatura_activa ON public.inmueble_dato_catastral_registral USING btree (nomenclatura_catastral) WHERE ((deleted_at IS NULL) AND (nomenclatura_catastral IS NOT NULL));
+
+
+--
+-- Name: idx_inmueble_dcr_partida_activa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inmueble_dcr_partida_activa ON public.inmueble_dato_catastral_registral USING btree (partida_inmobiliaria) WHERE ((deleted_at IS NULL) AND (partida_inmobiliaria IS NOT NULL));
+
+
+--
+-- Name: idx_inmueble_dcr_uid_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inmueble_dcr_uid_global ON public.inmueble_dato_catastral_registral USING btree (uid_global);
 
 
 --
@@ -10148,6 +10278,13 @@ CREATE TRIGGER trg_bi_inmueble_core_ef BEFORE INSERT ON public.inmueble FOR EACH
 
 
 --
+-- Name: inmueble_dato_catastral_registral trg_bi_inmueble_dcr_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_inmueble_dcr_core_ef BEFORE INSERT ON public.inmueble_dato_catastral_registral FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
+
+--
 -- Name: inmueble_sucursal trg_bi_inmueble_sucursal_core_ef; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -10557,6 +10694,13 @@ CREATE TRIGGER trg_bu_comprobante_impuesto_core_ef BEFORE UPDATE ON public.compr
 --
 
 CREATE TRIGGER trg_bu_inmueble_core_ef BEFORE UPDATE ON public.inmueble FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
+
+--
+-- Name: inmueble_dato_catastral_registral trg_bu_inmueble_dcr_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_inmueble_dcr_core_ef BEFORE UPDATE ON public.inmueble_dato_catastral_registral FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
 
 
 --
@@ -11359,6 +11503,14 @@ ALTER TABLE ONLY public.instrumento_compraventa
 
 ALTER TABLE ONLY public.inmueble
     ADD CONSTRAINT fk_inmueble_desarrollo FOREIGN KEY (id_desarrollo) REFERENCES public.desarrollo(id_desarrollo) ON DELETE RESTRICT;
+
+
+--
+-- Name: inmueble_dato_catastral_registral fk_inmueble_dcr_inmueble; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inmueble_dato_catastral_registral
+    ADD CONSTRAINT fk_inmueble_dcr_inmueble FOREIGN KEY (id_inmueble) REFERENCES public.inmueble(id_inmueble) ON DELETE RESTRICT;
 
 
 --

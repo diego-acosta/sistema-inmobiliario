@@ -833,12 +833,14 @@ Clasificacion:
 
 Estado actual:
 
-- no hay tablas especificas del nucleo inmobiliario vigente para este bloque
-- no hay router, schema, service ni tests
+- existe soporte SQL inicial en la tabla `inmueble_dato_catastral_registral`, vinculada a `inmueble`
+- no hay contrato API todavia para este bloque
+- no hay router, schema Pydantic, service, repository especifico ni tests funcionales de API
+- el contrato vigente de alta/listado/detalle de `inmueble` no cambia en esta etapa
 
 Clasificacion:
 
-- estado: no implementado
+- estado: soporte SQL inicial / API no implementada
 
 ### 8.5 Atributos y documentacion inmobiliaria
 

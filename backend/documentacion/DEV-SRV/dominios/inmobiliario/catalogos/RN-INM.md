@@ -30,7 +30,7 @@ Conservar las reglas reales del dominio, diferenciando lo ya enforced por SQL/ba
 | --- | --- | --- |
 | relacion temporal con propietario u otras partes | CONCEPTUAL | no existe `relacion_inmobiliaria` en implementacion real |
 | atributos especializados del activo | NO IMPLEMENTADO | sin tablas ni backend |
-| identificacion catastral | NO IMPLEMENTADO | sin tablas ni backend |
+| identificacion catastral | IMPLEMENTACION SQL INICIAL | existe tabla `inmueble_dato_catastral_registral`; sin backend/API funcional todavia |
 | mejoras como entidad separada | NO IMPLEMENTADO | sin soporte actual |
 | integracion de `factura_servicio` con financiero | IMPLEMENTADO V1 | la obligacion derivada pertenece a `financiero`; cada factura usa `relacion_generadora.tipo_origen = FACTURA_SERVICIO` e `id_origen = id_factura_servicio`, con obligacion `SERVICIO_TRASLADADO`; existe endpoint explicito de materializacion financiera, no evento/consumer automatico; si falta periodo completo, financiero devuelve `PERIODO_FACTURA_REQUERIDO` sin crear filas financieras |
 | importe de `factura_servicio` | CONCEPTUAL | el sistema no calcula importes de servicios; el importe proviene del proveedor externo y se registra como dato recibido |

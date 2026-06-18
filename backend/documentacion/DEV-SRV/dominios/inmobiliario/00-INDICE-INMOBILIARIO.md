@@ -45,7 +45,7 @@ Alinear la documentacion del dominio inmobiliario con la implementacion real de 
 - [[SRV-INM-006-gestion-de-agrupaciones-y-relaciones-estructurales]]: `PARCIAL`
 - [[SRV-INM-007-gestion-de-estado-disponibilidad-y-ocupacion]]: `IMPLEMENTADO`
 - [[SRV-INM-008-gestion-de-identificacion-operativa]]: `PARCIAL`
-- [[SRV-INM-009-gestion-de-identificacion-catastral]]: `NO IMPLEMENTADO`
+- [[SRV-INM-009-gestion-de-identificacion-catastral]]: `IMPLEMENTACION SQL INICIAL`
 - [[SRV-INM-010-gestion-de-atributos-y-documentacion-inmobiliaria]]: `NO IMPLEMENTADO`
 - [[SRV-INM-011-consulta-y-reporte-inmobiliario]]: `PARCIAL`
 
