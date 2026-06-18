@@ -42,9 +42,28 @@ def object_availability_warning(value: Any) -> str | None:
     return "Objeto reservado/no disponible; no puede seleccionarse para una venta directa."
 
 
+NO_OCCUPANCY_STATUSES = {
+    "",
+    "SIN_OCUPACION",
+    "SIN OCUPACION",
+    "SIN OCUPACIÓN",
+    "SIN OCUPACION ACTUAL",
+    "SIN OCUPACIÓN ACTUAL",
+}
+
+
 def object_occupancy_status(value: Any) -> str:
     """Normaliza la ocupación actual informada por backend para la UX preventiva."""
 
+    if isinstance(value, dict):
+        value = (
+            value.get("tipo_ocupacion")
+            or value.get("estado_ocupacion")
+            or value.get("ocupacion_actual")
+            or value.get("estado")
+            or value.get("descripcion")
+            or ""
+        )
     return object_availability_status(value)
 
 
@@ -52,7 +71,7 @@ def has_current_object_occupancy(value: Any) -> bool:
     """Bloquea cualquier ocupación vigente; permite solo ausencia o sin ocupación explícita."""
 
     status = object_occupancy_status(value)
-    return bool(status and status not in {"SIN_OCUPACION", "SIN OCUPACION", "SIN OCUPACIÓN"})
+    return status not in NO_OCCUPANCY_STATUSES
 
 
 def is_object_selectable(disponibilidad: Any, ocupacion: Any = None) -> bool:
