@@ -97,6 +97,27 @@ mantienen tambien la referencia amigable al inmueble padre cuando exista; los
 compradores conservan nombre y documento visible. Esto diferencia registros con
 codigos o nombres repetidos sin cambiar payloads externos ni logica de negocio.
 
+
+### 3.3 Disponibilidad preventiva en Objetos de venta
+
+El buscador de **Objetos de venta** muestra tanto objetos disponibles como objetos
+no disponibles cuando el backend los informa en los listados consumidos por la
+UI. No se eliminan del listado los objetos reservados, vendidos, ocupados o con
+otro estado operativo, porque el usuario debe ver el motivo por el cual no puede
+usarlos en una venta directa.
+
+La seleccion desde frontend es preventiva: solo los objetos con estado operativo
+`DISPONIBLE` pueden seleccionarse en la UI. Los objetos `RESERVADA`, `VENDIDA`,
+`NO_DISPONIBLE`, `OCUPADA` o cualquier estado distinto de `DISPONIBLE` se
+visualizan con badge de estado, advertencia clara y boton deshabilitado/no
+disponible.
+
+Si el backend no informa disponibilidad, la UI conserva la seleccion para no
+romper compatibilidad visual, pero muestra la advertencia suave
+"Disponibilidad no informada; el backend validará la operación.". En todos los
+casos, esta restriccion no cambia payloads ni endpoints: el backend sigue siendo
+la fuente definitiva y valida la disponibilidad al confirmar la venta.
+
 ## 4. Contratos backend existentes que guian el diseno
 
 El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:

@@ -50,7 +50,12 @@ for import_path in (str(FLET_APP_ROOT), str(PROTOTYPES_DIR)):
         sys.path.insert(0, import_path)
 
 from app.api_client import ApiClient, ApiResult
-from components.search_selector_demo import SearchSelectorDemo, create_search_selector_demo
+from components.search_selector_demo import (
+    SearchSelectorDemo,
+    create_search_selector_demo,
+    is_object_selectable_status,
+    object_availability_warning,
+)
 
 
 OrigenVenta = Literal["RESERVA", "DIRECTA"]
@@ -996,8 +1001,8 @@ class VentaCompletaWizardV3Prototype:
             "id_inmueble": item.get("id_inmueble"),
             "codigo": codigo,
             "descripcion": descripcion,
-            "estado": disponibilidad or item.get("estado_administrativo") or "disponible",
-            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble disponible."),
+            "estado": disponibilidad or item.get("estado_administrativo") or "",
+            "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble."),
             "source": "backend",
             "persisted": True,
         }
@@ -1013,8 +1018,8 @@ class VentaCompletaWizardV3Prototype:
             "codigo": codigo,
             "descripcion": descripcion,
             "inmueble_padre": inmueble.get("codigo_inmueble") or inmueble.get("nombre_inmueble") or item.get("id_inmueble"),
-            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "disponible",
-            "resumen": str(item.get("observaciones") or "Unidad funcional disponible."),
+            "estado": disponibilidad or item.get("estado_operativo") or item.get("estado_administrativo") or "",
+            "resumen": str(item.get("observaciones") or "Unidad funcional."),
             "source": "backend",
             "persisted": True,
         }
@@ -1077,7 +1082,7 @@ class VentaCompletaWizardV3Prototype:
                 color=ft.Colors.BLUE_GREY_700,
             ),
             self._build_help_card(
-                "El buscador muestra inmuebles y unidades funcionales disponibles para operar. Si no aparecen resultados, cargá esos datos antes de continuar.",
+                "El buscador muestra inmuebles y unidades funcionales disponibles y no disponibles. Solo los objetos DISPONIBLES pueden seleccionarse; si la disponibilidad no está informada, la UI permite continuar y el backend validará al confirmar.",
                 ft.Colors.BLUE_50,
                 ft.Colors.BLUE_200,
             ),
@@ -1136,6 +1141,8 @@ class VentaCompletaWizardV3Prototype:
         price_error = self.precio_objeto_error
         self.precio_objeto_field.label = f"Valor asignado al objeto ({self._currency_label()})"
         status_badge = self._status_badge(self.objeto_seleccionado.get("estado"))
+        is_selectable = is_object_selectable_status(self.objeto_seleccionado.get("estado"))
+        availability_warning = object_availability_warning(self.objeto_seleccionado.get("estado"))
         panel_content = ft.Column(
             controls=[
                 ft.Text("Objeto seleccionado", size=18, weight=ft.FontWeight.W_700),
@@ -1161,14 +1168,12 @@ class VentaCompletaWizardV3Prototype:
                 *(
                     [
                         ft.Text(
-                            "El estado no figura disponible; verificá la operación antes de agregarlo.",
+                            availability_warning or "",
                             size=12,
-                            color=ft.Colors.AMBER_900,
+                            color=ft.Colors.AMBER_900 if is_selectable else ft.Colors.RED_700,
                         )
                     ]
-                    if status_badge is not None
-                    and self._friendly_status_label(self.objeto_seleccionado.get("estado"))
-                    not in {"DISPONIBLE", "DISPONIBLE PARA VENTA", "ACTIVA", "ACTIVO"}
+                    if availability_warning is not None
                     else []
                 ),
                 self.precio_objeto_field,
@@ -1182,7 +1187,7 @@ class VentaCompletaWizardV3Prototype:
                         ft.Button(
                             "Agregar a la venta",
                             icon=ft.Icons.ADD,
-                            disabled=duplicate,
+                            disabled=duplicate or not is_selectable,
                             on_click=self._add_selected_object,
                         ),
                         ft.OutlinedButton(
@@ -1195,7 +1200,7 @@ class VentaCompletaWizardV3Prototype:
                     spacing=8,
                 ),
                 ft.Text(
-                    "Este objeto ya fue agregado a la venta." if duplicate else "",
+                    "Este objeto ya fue agregado a la venta." if duplicate else "El objeto no está disponible para esta venta." if not is_selectable else "",
                     size=12,
                     color=ft.Colors.RED_700,
                 ),
@@ -5778,6 +5783,12 @@ class VentaCompletaWizardV3Prototype:
         return f"{self._currency_label()} {_format_money(value)}"
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
+        if selected is not None and not is_object_selectable_status(selected.get("estado")):
+            self.objeto_seleccionado = None
+            if self.objeto_selector is not None:
+                self.objeto_selector.selected_panel.visible = False
+            self._render()
+            return
         self.objeto_seleccionado = selected
         self.precio_objeto_value = ""
         self.precio_objeto_field.value = ""
@@ -5818,6 +5829,8 @@ class VentaCompletaWizardV3Prototype:
         if validation_error is not None:
             return validation_error
         if self.objeto_seleccionado is not None:
+            if not is_object_selectable_status(self.objeto_seleccionado.get("estado")):
+                return "El objeto no está disponible para esta venta."
             if self.objeto_seleccionado.get("source") != "backend" or not self.objeto_seleccionado.get("persisted", False):
                 return "El objeto debe estar disponible y confirmado en el sistema."
         return None
@@ -5832,6 +5845,10 @@ class VentaCompletaWizardV3Prototype:
 
     def _add_selected_object(self, _: ft.ControlEvent | None = None) -> None:
         if self.objeto_seleccionado is None:
+            return
+        if not is_object_selectable_status(self.objeto_seleccionado.get("estado")):
+            self.precio_objeto_error = "El objeto no está disponible para esta venta."
+            self._render()
             return
         self.precio_objeto_value = str(self.precio_objeto_field.value or self.precio_objeto_value or "")
         self.precio_objeto_error = self._selected_price_validation_message(show_required=True)

@@ -17,6 +17,31 @@ import flet as ft
 
 SelectorKind = Literal["reserva", "objeto", "persona"]
 SelectionCallback = Callable[[dict[str, Any] | None], None]
+SELECTABLE_OBJECT_STATUS = "DISPONIBLE"
+
+
+def object_availability_status(value: Any) -> str:
+    """Normaliza el estado operativo usado solo por la UX preventiva."""
+
+    return _clean(value).upper()
+
+
+def is_object_selectable_status(value: Any) -> bool:
+    """Solo DISPONIBLE bloquea/desbloquea seleccion; sin estado conserva seleccion."""
+
+    status = object_availability_status(value)
+    return not status or status == SELECTABLE_OBJECT_STATUS
+
+
+def object_availability_warning(value: Any) -> str | None:
+    status = object_availability_status(value)
+    if not status:
+        return "Disponibilidad no informada; el backend validará la operación."
+    if status == SELECTABLE_OBJECT_STATUS:
+        return None
+    if status == "RESERVADA":
+        return "Objeto reservado; no puede seleccionarse para una venta directa."
+    return "No disponible para esta venta."
 
 
 @dataclass(frozen=True)
@@ -260,6 +285,8 @@ class SearchSelectorDemo:
         self.root.update()
 
     def _select_record(self, record: SearchSelectorRecord) -> None:
+        if self.selector_kind == "objeto" and not is_object_selectable_status(record.selection_payload.get("estado")):
+            return
         self._selected = record
         self._refresh_selection_panel()
         self._refresh_results()
@@ -363,8 +390,10 @@ class SearchSelectorDemo:
 
     def _build_object_result_row(self, record: SearchSelectorRecord, is_selected: bool) -> ft.Control:
         estado = _clean(record.data.get("estado")) or _clean(record.data.get("disponibilidad"))
-        estado_upper = estado.upper()
-        is_warning = bool(estado) and estado_upper not in {"DISPONIBLE", "DISPONIBLE_PARA_VENTA", "ACTIVA", "ACTIVO"}
+        estado_upper = object_availability_status(estado)
+        is_selectable = is_object_selectable_status(estado)
+        warning_text = object_availability_warning(estado)
+        is_warning = warning_text is not None
         return ft.Container(
             padding=12,
             border_radius=10,
@@ -397,7 +426,7 @@ class SearchSelectorDemo:
                                                 content=ft.Text(estado_upper, size=10, weight=ft.FontWeight.W_700),
                                             )
                                         ]
-                                        if estado
+                                        if estado_upper
                                         else []
                                     ),
                                 ],
@@ -407,7 +436,7 @@ class SearchSelectorDemo:
                             *(
                                 [
                                     ft.Text(
-                                        "Revisá disponibilidad antes de continuar.",
+                                        warning_text or "",
                                         size=11,
                                         color=ft.Colors.AMBER_900,
                                     )
@@ -420,9 +449,9 @@ class SearchSelectorDemo:
                         expand=True,
                     ),
                     ft.Button(
-                        "Seleccionar" if not is_selected else "Seleccionado",
-                        icon=ft.Icons.CHECK if is_selected else ft.Icons.CHECK_CIRCLE_OUTLINE,
-                        disabled=is_selected,
+                        "Seleccionar" if (is_selectable and not is_selected) else "Seleccionado" if is_selected else "No disponible",
+                        icon=ft.Icons.CHECK if is_selected else ft.Icons.BLOCK if not is_selectable else ft.Icons.CHECK_CIRCLE_OUTLINE,
+                        disabled=is_selected or not is_selectable,
                         on_click=lambda _, selected_record=record: self._select_record(selected_record),
                     ),
                 ],
