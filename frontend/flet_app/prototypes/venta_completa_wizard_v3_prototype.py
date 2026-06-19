@@ -4433,6 +4433,7 @@ class VentaCompletaWizardV3Prototype:
             "YA FUE CONVERTIDA",
             "YA CONVERTIDA",
             "RESERVA_CONVERTIDA",
+            "RESERVA_ALREADY_CONVERTED",
             "RESERVA_YA_CONVERTIDA",
             "CONFIRMADA_VENTA",
             "VENTA_CONFIRMADA",
@@ -7376,6 +7377,16 @@ def _run_self_test() -> None:
         )
     )
     assert friendly == "La reserva seleccionada ya fue convertida en venta."
+
+    friendly_from_details = wizard._confirm_error_message(
+        ApiResult(
+            success=False,
+            status_code=409,
+            error_code="APPLICATION_ERROR",
+            error_details={"errors": ["RESERVA_ALREADY_CONVERTED"]},
+        )
+    )
+    assert friendly_from_details == "La reserva seleccionada ya fue convertida en venta."
     print("self-test ok")
 
 
