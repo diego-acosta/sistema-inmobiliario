@@ -522,6 +522,11 @@ class InmuebleCreateForm:
         ) or "Sin errores backend."
         technical_text = format_technical_output(
             [
+                (
+                    "nota técnica",
+                    "Manzana/lote no van en payload inmueble; "
+                    "sí van en payload catastral asociado.",
+                ),
                 ("payload inmueble enviado", inmueble_payload),
                 ("response inmueble", inmueble_data),
                 ("payload catastral enviado", dato_payload),
