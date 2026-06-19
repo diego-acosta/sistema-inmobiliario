@@ -144,12 +144,19 @@ bloqueantes para esta advertencia preventiva.
 
 Cuando el listado de objetos ya incluye una marca de venta vigente, el wizard la
 reutiliza. Si no viene en el objeto, el prototipo consulta lecturas existentes de
-ventas por `id_inmueble` o `id_unidad_funcional` para marcar el conflicto sin
-crear endpoints write ni modificar contratos de confirmacion. El objeto
-conflictivo permanece visible como bloqueado, no seleccionable, con el motivo
-`Ya participa en una venta vigente`. En modo tecnico se exponen
-`estado_disponibilidad`, `ocupacion_actual`, `venta_vigente` /
-`venta_conflictiva` y `motivo_bloqueo` para diagnostico.
+ventas vigentes por estado en una estrategia batch/paginada razonable y arma
+indices locales por `id_inmueble` e `id_unidad_funcional`; no debe hacer una
+consulta por cada objeto listado. Esta estrategia usa `GET /api/v1/ventas`
+porque no existe un filtro batch real para muchos objetos en el prototipo.
+
+El objeto conflictivo directo permanece visible como bloqueado, no seleccionable,
+con el motivo `Ya participa en una venta vigente`. Si el conflicto es
+jerarquico, el motivo es `Tiene una venta vigente relacionada`: una venta sobre
+el inmueble padre bloquea sus unidades funcionales cargadas, y una venta sobre
+una UF hija bloquea el inmueble padre cuando esa relacion esta disponible en los
+records cargados. En modo tecnico se exponen `estado_disponibilidad`,
+`ocupacion_actual`, `venta_vigente` / `venta_conflictiva`,
+`venta_conflictiva_jerarquica` y `motivo_bloqueo` para diagnostico.
 
 El selector tambien bloquea preventivamente los objetos que ya fueron agregados
 al draft de la venta actual (`state.objetos`). Este bloqueo no depende de una
