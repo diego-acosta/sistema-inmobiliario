@@ -1644,7 +1644,7 @@ class VentaCompletaWizardV3Prototype:
                             weight=ft.FontWeight.W_600,
                         ),
                         ft.Text(
-                            "La selección real de reserva es read-only; la confirmación desde reserva queda para un PR posterior.",
+                            "La reserva, los objetos y los compradores heredados se mantienen read-only; la confirmación usa el backend real.",
                             size=12,
                             color=ft.Colors.BLUE_GREY_700,
                         ),
@@ -3064,12 +3064,11 @@ class VentaCompletaWizardV3Prototype:
     def _build_review_buyers_section(self) -> ft.Control:
         controls: list[ft.Control] = [ft.Text("4. Compradores", size=18, weight=ft.FontWeight.W_700)]
         if self.state.origen == "RESERVA":
-            controls.append(ft.Text("La selección real de reserva es read-only; la confirmación desde reserva queda para un PR posterior.", color=ft.Colors.BLUE_GREY_800))
+            controls.append(ft.Text("Los compradores heredados de la reserva se muestran read-only y se usan como fuente de negocio del backend.", color=ft.Colors.BLUE_GREY_800))
             if self.state.texto_visual_reserva:
                 controls.append(_info_row("Reserva", self.state.texto_visual_reserva))
-        else:
-            buyer_controls: list[ft.Control] = []
-            for index, comprador in enumerate(self.state.compradores):
+        buyer_controls: list[ft.Control] = []
+        for index, comprador in enumerate(self.state.compradores):
                 buyer_controls.append(
                     ft.Container(
                         padding=12,
@@ -3090,10 +3089,13 @@ class VentaCompletaWizardV3Prototype:
                         ),
                     )
                 )
-            if buyer_controls:
-                controls.append(ft.Column(controls=buyer_controls, spacing=8))
-            else:
-                controls.append(ft.Text("No hay compradores manuales cargados.", color=ft.Colors.RED_700))
+        if buyer_controls:
+            controls.append(ft.Column(controls=buyer_controls, spacing=8))
+        elif self.state.origen == "RESERVA":
+            controls.append(ft.Text("La reserva seleccionada no devolvió compradores heredados.", color=ft.Colors.RED_700))
+        else:
+            controls.append(ft.Text("No hay compradores manuales cargados.", color=ft.Colors.RED_700))
+        if self.state.origen == "DIRECTA":
             controls.append(_info_row("Suma de responsabilidad", self._buyers_responsibility_total_label(self._buyers_responsibility_total())))
         return self._build_review_section_container(controls)
 
@@ -3589,6 +3591,37 @@ class VentaCompletaWizardV3Prototype:
         }
 
     def _build_confirm_sale_payload(self) -> dict[str, Any]:
+        if self.state.origen == "RESERVA":
+            return self._build_confirm_sale_from_reservation_payload()
+        return self._build_confirm_sale_direct_payload()
+
+    def _build_confirm_sale_from_reservation_payload(self) -> dict[str, Any]:
+        total_decimal = self._objects_total()
+        total = _format_decimal(total_decimal)
+        condiciones = self._build_confirm_sale_commercial_conditions(total_decimal)
+        condiciones["objetos"] = [
+            {
+                "id_inmueble": objeto.id_inmueble,
+                "id_unidad_funcional": objeto.id_unidad_funcional,
+                "precio_asignado": objeto.precio_asignado,
+            }
+            for objeto in self.state.objetos
+        ]
+        return {
+            "generar_venta": {
+                "codigo_venta": self.state.codigo_venta.strip(),
+                "fecha_venta": f"{self.state.fecha_venta_iso}T00:00:00",
+                "monto_total": total,
+                "observaciones": self.state.observaciones_comerciales.strip() or None,
+            },
+            "condiciones_comerciales": condiciones,
+            "plan_pago_v2": self._build_plan_payment_preview_payload(),
+            "confirmacion": {
+                "observaciones": self.state.observaciones_comerciales.strip() or None,
+            },
+        }
+
+    def _build_confirm_sale_direct_payload(self) -> dict[str, Any]:
         total_decimal = self._objects_total()
         total = _format_decimal(total_decimal)
         plan_pago_v2 = self._build_plan_payment_preview_payload()
@@ -3718,7 +3751,15 @@ class VentaCompletaWizardV3Prototype:
         self.state.confirm_error = None
         self.state.confirm_status_code = None
         self._render()
-        result = self.api.confirmar_venta_directa_completa(payload, op_id=confirm_op_id)
+        if self.state.origen == "RESERVA":
+            result = self.api.confirmar_venta_completa_desde_reserva(
+                int(self.state.id_reserva_venta or 0),
+                int(self.state.version_registro or 0),
+                payload,
+                op_id=confirm_op_id,
+            )
+        else:
+            result = self.api.confirmar_venta_directa_completa(payload, op_id=confirm_op_id)
         self.state.confirm_loading = False
         self.state.confirm_status_code = result.status_code
         if result.success and isinstance(result.data, dict):
@@ -4353,7 +4394,7 @@ class VentaCompletaWizardV3Prototype:
             ),
             *self._technical_controls([
                 ft.Text(
-                    "Confirmar venta es COMMAND_WRITE_NEGOCIO: envía la venta directa completa al backend y genera venta, plan y obligaciones en la misma operación.",
+                    f"Confirmar venta es COMMAND_WRITE_NEGOCIO: usa {'POST /api/v1/reservas-venta/' + str(self.state.id_reserva_venta) + '/confirmar-venta-completa' if self.state.origen == 'RESERVA' else 'POST /api/v1/ventas/directa/confirmar-venta-completa'} y genera venta, plan y obligaciones en la misma operación.",
                     size=12,
                     color=ft.Colors.BLUE_GREY_700,
                 ),
@@ -4367,7 +4408,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.confirm_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Confirmando venta directa...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Generando venta desde reserva..." if self.state.origen == "RESERVA" else "Confirmando venta directa...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -4387,7 +4428,7 @@ class VentaCompletaWizardV3Prototype:
         elif self._can_confirm_sale():
             controls.append(self._build_help_card("Preview vigente y revisión completa. Podés presionar Confirmar venta.", ft.Colors.GREEN_50, ft.Colors.GREEN_200))
         else:
-            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones, tener la vista previa vigente y estar en origen Venta directa.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
+            controls.append(self._build_help_card("No se habilita la confirmación hasta resolver validaciones reales y tener la vista previa vigente.", ft.Colors.AMBER_50, ft.Colors.AMBER_200))
         return self._build_review_section_container(controls)
 
     def _build_review_section_container(self, controls: list[ft.Control]) -> ft.Control:
@@ -4424,8 +4465,6 @@ class VentaCompletaWizardV3Prototype:
         errors: list[str] = []
         if self.state.origen not in {"DIRECTA", "RESERVA"}:
             errors.append("Seleccioná un origen válido.")
-        if self.state.origen == "RESERVA":
-            errors.append("La selección real de reserva es read-only; la confirmación desde reserva queda para un PR posterior.")
         if self.state.origen == "RESERVA" and self.state.id_reserva_venta is None:
             errors.append("No hay una reserva real seleccionada desde el sistema.")
         if not self._has_valid_currency():
@@ -4433,7 +4472,7 @@ class VentaCompletaWizardV3Prototype:
         if not self.state.fecha_venta_iso or self.fecha_venta_error is not None:
             errors.append("Cargá una fecha_venta válida.")
         if not self.state.codigo_venta.strip():
-            errors.append("Cargá el código de venta: es requerido para confirmar venta directa.")
+            errors.append("Cargá el código de venta: es requerido para confirmar la venta.")
         if not self.state.objetos:
             errors.append("Cargá al menos un objeto de venta.")
         invalid_objects = [objeto for objeto in self.state.objetos if _parse_money_decimal(objeto.precio_asignado) is None]
@@ -4446,6 +4485,13 @@ class VentaCompletaWizardV3Prototype:
             if buyer_error is not None:
                 errors.append(buyer_error)
             errors.extend(self._non_persisted_confirmation_errors())
+        if self.state.origen == "RESERVA":
+            if self.state.version_registro is None:
+                errors.append("La reserva seleccionada no informa version_registro para confirmar con control de versión.")
+            if not self.state.objetos:
+                errors.append("La reserva seleccionada no tiene objetos heredados para generar la venta.")
+            if not self.state.compradores:
+                errors.append("La reserva seleccionada no tiene compradores heredados para generar la venta.")
         if self.state.forma_pago not in {"CONTADO", "FINANCIADO"}:
             errors.append("Elegí una forma de pago.")
         if self.state.forma_pago == "CONTADO" and (not self.state.fecha_pago_contado_iso or self.state.fecha_pago_contado_error is not None):
@@ -4468,7 +4514,7 @@ class VentaCompletaWizardV3Prototype:
             and self._general_review_is_valid()
             and self.state.preview_data is not None
             and not self.state.preview_stale
-            and self.state.origen == "DIRECTA"
+            and self.state.origen in {"DIRECTA", "RESERVA"}
             and self._has_only_persisted_confirmation_records()
         )
 

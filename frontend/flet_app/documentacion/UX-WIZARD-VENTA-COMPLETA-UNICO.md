@@ -388,17 +388,17 @@ Reglas:
 - No mostrar reservas ficticias ni listas hardcodeadas.
 - No generar `id_reserva_venta` desde el frontend.
 - No pedir carga manual de `id_reserva_venta`.
-- No confirmar venta, no confirmar reserva y no disparar endpoints write.
+- No confirmar venta, no confirmar reserva y no disparar endpoints write en esta pantalla.
 - La reserva seleccionada aporta contexto para etapas siguientes: código, estado,
   fecha, objeto/s, comprador/es, moneda e importe/precio si vienen en el payload.
   Si un dato no viene, la UI muestra `No informado`.
-- Conservar `version_registro` si viene en el payload para una confirmación futura,
+- Conservar `version_registro` si viene en el payload para la confirmación real posterior,
   pero no modificar nada en esta etapa.
 - `Siguiente` queda deshabilitado mientras no exista una reserva real persistida
   seleccionada desde backend.
 - Si la reserva tiene un estado claramente no válido, mostrar advertencia y
   deshabilitar `Siguiente`. Si el estado no viene o no hay convención clara,
-  advertir y permitir continuar; backend validará en una confirmación futura.
+  advertir y permitir continuar; backend validará al confirmar la venta desde reserva.
 - `Anterior` vuelve a Pantalla 1 -- Origen.
 - El panel lateral muestra: origen `Desde reserva`, reserva con código/texto
   visual, estado `pendiente` o `reserva seleccionada`, y próximo paso `cargar
@@ -411,9 +411,50 @@ Decisión CORE-EF de esta etapa:
 - Headers write: `NO APLICA`, porque no hay endpoints write.
 - `X-Op-Id`: `NO APLICA`.
 - Outbox: `NO APLICA`.
-- Versionado: se conserva `version_registro` si viene en payload para futura
-  confirmación, pero no se modifica nada.
-- Confirmación desde reserva: queda para un PR posterior.
+- Versionado: se conserva `version_registro` si viene en payload para la
+  confirmación real posterior, pero no se modifica nada en esta pantalla.
+- Confirmación desde reserva: habilitada desde Revisión mediante
+  `POST /api/v1/reservas-venta/{id_reserva_venta}/confirmar-venta-completa`,
+  con `If-Match-Version` tomado de `reserva_venta.version_registro`.
+
+
+### Confirmación desde reserva existente
+
+En `origen = RESERVA`, la revisión general ya puede confirmar/generar una venta
+real desde la reserva seleccionada, siempre que existan datos mínimos completos:
+
+- `id_reserva_venta` persistido y `version_registro` disponible;
+- objetos heredados de la reserva precargados y read-only en UI;
+- compradores/participaciones heredados de la reserva precargados y read-only en UI;
+- código, fecha, moneda, monto/precios y condiciones comerciales mínimas;
+- preview de `plan_pago_v2` vigente.
+
+El payload de confirmación desde reserva no permite cambiar/quitar objetos ni
+compradores heredados desde la UI. El backend deriva los participantes desde la
+reserva; el frontend solo envía el body compuesto aceptado por el contrato
+existente: `generar_venta`, `condiciones_comerciales` con precios por objeto,
+`plan_pago_v2` y `confirmacion`.
+
+En modo técnico deben verse `id_reserva_venta`, `version_registro`, endpoint
+usado, payload mínimo enviado y la respuesta/error del backend. Los errores de
+reserva no convertible, conflicto de versión, venta ya generada, datos
+incompletos o disponibilidad se presentan como rechazo funcional del backend sin
+romper el wizard.
+
+Decisión CORE-EF del write final desde reserva:
+
+- Clasificación: `COMMAND_WRITE_NEGOCIO`.
+- Headers: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`,
+  `X-Instalacion-Id` e `If-Match-Version` requeridos por el contrato existente.
+- Idempotencia: `NO CONFIRMADO` en profundidad para el endpoint compuesto; la UI
+  reutiliza el mismo `X-Op-Id` mientras el payload no cambie.
+- Outbox: `NO CONFIRMADO` en este PR de frontend; no se modifica backend/SQL.
+- Lock lógico: `NO CONFIRMADO` en este PR de frontend; el backend conserva la
+  validación de estado/versionado existente.
+- Versionado: aplica sobre `reserva_venta.version_registro` vía
+  `If-Match-Version`.
+- Transacción/rollback: frontera definida por el endpoint backend compuesto
+  existente; este PR solo habilita su consumo desde el wizard.
 
 Precarga preventiva desde reserva:
 
@@ -461,10 +502,10 @@ Precarga preventiva desde reserva:
 - Si la reserva no trae objetos o compradores, la UI muestra advertencia clara,
   no inventa datos y el avance queda sujeto a las validaciones existentes.
 - Esta precarga no confirma venta, no genera venta, plan ni obligaciones, no
-  modifica la reserva, no ejecuta endpoints write y conserva la confirmación
-  desde reserva bloqueada para un PR posterior. CORE-EF se mantiene como
-  `QUERY_READLIKE`: no usa `X-Op-Id`, `If-Match-Version` ni headers write para
-  la consulta de detalle.
+  modifica la reserva y no ejecuta endpoints write. CORE-EF de la precarga se
+  mantiene como `QUERY_READLIKE`: no usa `X-Op-Id`, `If-Match-Version` ni
+  headers write para la consulta de detalle. La confirmación real ocurre recién
+  en Revisión con el endpoint write compuesto.
 
 El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
 registros persistidos de backend real.
