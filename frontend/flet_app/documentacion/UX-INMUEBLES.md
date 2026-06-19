@@ -2,7 +2,7 @@
 
 ## Prototipo aislado de alta de inmueble
 
-Se agrega un prototipo Flet independiente en `frontend/flet_app/prototypes/inmueble_alta_prototype.py` para validar el alta real de inmuebles contra el backend existente.
+El prototipo Flet independiente `frontend/flet_app/prototypes/inmueble_alta_prototype.py` valida el alta real de inmuebles contra el backend existente y permite, opcionalmente, cargar un dato catastral/registral inicial inmediatamente después de crear el inmueble.
 
 Ejecución prevista:
 
@@ -13,13 +13,31 @@ python prototypes/inmueble_alta_prototype.py
 
 El prototipo no se integra todavía al listado real de inmuebles ni al flujo productivo de la aplicación Flet. La integración al listado queda pendiente para un PR posterior.
 
-## Endpoint usado
+## Endpoints usados
+
+### Alta básica de inmueble
 
 - Método: `POST`.
 - Path: `/api/v1/inmuebles`.
 - Cliente Flet: `ApiClient.crear_inmueble(...)`.
 
-## Payload mínimo confirmado
+### Alta opcional de dato catastral/registral
+
+- Método: `POST`.
+- Path: `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales`.
+- Cliente Flet: `ApiClient.crear_dato_catastral_registral_inmueble(...)`.
+
+El backend de datos catastrales/registrales ya existe como subrecurso de inmueble. La UI del prototipo lo consume solo para crear un dato inicial; edición, baja, listado e historial visual quedan pendientes.
+
+## Flujo UX
+
+1. El usuario carga los **Datos básicos del inmueble**.
+2. Si deja desactivada la opción `Cargar datos catastrales/registrales ahora`, el prototipo crea solo el inmueble.
+3. Si activa la opción, el prototipo crea primero el inmueble y toma el `id_inmueble` devuelto por el backend.
+4. Con ese `id_inmueble`, el prototipo invoca el alta del dato catastral/registral asociado.
+5. En modo técnico se muestran payloads, responses y errores backend.
+
+## Payload mínimo confirmado de inmueble
 
 ```json
 {
@@ -29,7 +47,7 @@ El prototipo no se integra todavía al listado real de inmuebles ni al flujo pro
 }
 ```
 
-## Payload completo posible
+## Payload completo posible de inmueble
 
 ```json
 {
@@ -45,33 +63,64 @@ El prototipo no se integra todavía al listado real de inmuebles ni al flujo pro
 
 El prototipo construye un payload limpio: no envía campos vacíos, recorta textos, convierte `id_desarrollo` a entero positivo cuando se informa y mantiene `superficie` como decimal compatible con el backend.
 
-## Headers CORE-EF para alta
+## Payload opcional de dato catastral/registral
 
-El alta es un endpoint write sincronizable clasificado como `COMMAND_WRITE_NEGOCIO` para la UI del prototipo.
+Campos soportados por el formulario del prototipo:
 
-Headers enviados por `ApiClient.crear_inmueble(...)`:
+- `nomenclatura_catastral`.
+- `partida_inmobiliaria`.
+- `matricula`.
+- `folio_real`.
+- `circunscripcion`.
+- `seccion`.
+- `manzana`.
+- `lote`.
+- `parcela`.
+- `superficie_titulo`.
+- `superficie_mensura`.
+- `medidas`.
+- `situacion_posesoria`.
+- `situacion_dominial`.
+- `estado_dato` con default `ACTIVO` y opciones `ACTIVO`, `INACTIVO`, `HISTORICO`.
+- `observaciones`.
+
+No se agregan `linderos` en este PR.
+
+Ejemplo:
+
+```json
+{
+  "estado_dato": "ACTIVO",
+  "nomenclatura_catastral": "NC-001",
+  "partida_inmobiliaria": "PI-001",
+  "matricula": "MAT-001",
+  "folio_real": "FR-001",
+  "circunscripcion": "C1",
+  "seccion": "S1",
+  "manzana": "M1",
+  "lote": "L1",
+  "parcela": "P1",
+  "superficie_titulo": "120.50",
+  "superficie_mensura": "118.75",
+  "medidas": "10 x 12",
+  "situacion_posesoria": "Sin observaciones",
+  "situacion_dominial": "Regular",
+  "observaciones": "Carga inicial desde prototipo"
+}
+```
+
+## Headers CORE-EF para altas
+
+Las dos altas usadas por el prototipo son endpoints write sincronizables clasificados como `COMMAND_WRITE_NEGOCIO` para esta UI.
+
+Headers enviados por `ApiClient.crear_inmueble(...)` y `ApiClient.crear_dato_catastral_registral_inmueble(...)`:
 
 - `X-Op-Id`: UUID válido generado por el cliente cuando no se provee uno válido.
 - `X-Usuario-Id`: `"1"`.
 - `X-Sucursal-Id`: `"1"`.
 - `X-Instalacion-Id`: `"1"`.
 
-No se envía `If-Match-Version` porque el alta crea una entidad nueva y no modifica una entidad existente/versionada.
-
-## Campos del formulario
-
-### Obligatorios
-
-- `codigo_inmueble`: código de inmueble.
-- `estado_administrativo`: estado administrativo.
-- `estado_juridico`: estado jurídico.
-
-### Opcionales
-
-- `nombre_inmueble`.
-- `superficie`.
-- `id_desarrollo`.
-- `observaciones`.
+No se envía `If-Match-Version` porque ambas operaciones del prototipo son altas y no modifican una entidad existente/versionada.
 
 ## Validaciones frontend mínimas
 
@@ -82,48 +131,69 @@ El backend sigue siendo la fuente de verdad. El prototipo solo bloquea errores b
 - `estado_juridico` requerido.
 - `superficie` debe ser decimal positivo si se informa.
 - `id_desarrollo` debe ser entero positivo si se informa.
+- `superficie_titulo` debe ser decimal positivo si se informa.
+- `superficie_mensura` debe ser decimal positivo si se informa.
 
-No se agregan validaciones de dominio no confirmadas.
+No se exige `nomenclatura_catastral`, `partida_inmobiliaria` ni `matricula`. No se agregan validaciones de dominio no confirmadas.
 
 ## Opciones DEV-SRV usadas para estados
 
-Aunque Pydantic usa `str` y no se detectó `CHECK` SQL para estos campos, la UI usa las opciones recomendadas por DEV-SRV:
+Aunque Pydantic usa `str` y no se detectó `CHECK` SQL para los estados básicos del inmueble, la UI usa las opciones recomendadas por DEV-SRV:
 
 - `estado_administrativo`: `ACTIVO`, `INACTIVO`.
 - `estado_juridico`: `REGULAR`, `OBSERVADO`.
 
-No se usa `EN_TRAMITE` como opción recomendada.
+Para el dato catastral/registral se usan las opciones confirmadas por el schema backend:
+
+- `estado_dato`: `ACTIVO`, `INACTIVO`, `HISTORICO`.
+
+## Mensajes esperados
+
+En éxito de alta básica:
+
+- `Inmueble creado correctamente`.
+
+En éxito de alta básica más dato catastral/registral:
+
+- `Inmueble creado correctamente`.
+- `Datos catastrales/registrales creados correctamente`.
+
+Si falla la segunda llamada:
+
+- `El inmueble fue creado, pero no se pudieron guardar los datos catastrales/registrales`.
+- Detalle técnico del error backend.
+
+El prototipo no oculta el `id_inmueble` en modo técnico.
+
+## Modo técnico
+
+El panel técnico muestra:
+
+- payload de inmueble enviado.
+- response de inmueble.
+- payload catastral enviado.
+- response catastral.
+- errores backend.
 
 ## Alcance funcional
 
-- Alta inicial únicamente.
-- Crea solo el inmueble.
+- Alta inicial de inmueble.
+- Alta opcional de un dato catastral/registral inicial.
 - No genera disponibilidad inicial.
 - No genera ocupación inicial.
 - No integra todavía al listado de inmuebles.
+- No implementa edición, baja, listado ni historial visual de datos catastrales/registrales.
 - No toca backend, SQL, endpoints, Wizard Venta Completa V3, ventas, reservas ni financiero.
-
-## Resultado visual esperado
-
-En éxito, el prototipo muestra un mensaje verde y los datos devueltos por el backend cuando estén presentes:
-
-- `id_inmueble`.
-- `codigo_inmueble`.
-- `estado_administrativo`.
-- `estado_juridico`.
-- `version_registro`.
-- `uid_global` en una sección técnica secundaria.
-
-En error, el prototipo muestra un mensaje legible con `status_code`, `error_code`, `error_message` y `error_details` cuando estén disponibles. Esto permite diagnosticar `VALIDATION_ERROR` por headers/campos y errores de aplicación como `APPLICATION_ERROR` o `NOT_FOUND_DESARROLLO` cuando se informa un `id_desarrollo` inexistente.
+- No agrega linderos.
 
 ## Decisión CORE-EF
 
-- Naturaleza del endpoint: `COMMAND_WRITE_NEGOCIO`.
+- Naturaleza de los endpoints write usados: `COMMAND_WRITE_NEGOCIO`.
 - Headers: aplica; se envían `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` desde el cliente Flet.
-- `If-Match-Version`: NO APLICA; creación de entidad nueva sin versión previa a comparar.
+- `If-Match-Version`: NO APLICA; las operaciones del prototipo son creación de registros nuevos sin versión previa a comparar.
 - Idempotencia: aplica por `X-Op-Id` a nivel de contrato CORE-EF del endpoint; el prototipo genera/reutiliza un UUID válido, pero no implementa persistencia local de reintentos.
 - Outbox: NO CONFIRMADO en frontend; no se declara cumplimiento profundo sin evidencia de router/service/repository/SQL en este PR.
 - Lock lógico: NO APLICA en frontend; no se bloquea una entidad existente desde el prototipo de alta.
-- Versionado: la respuesta puede incluir `version_registro`; el alta no envía versión de entrada.
-- Rollback/transacción: frontera backend del caso de uso; el prototipo solo invoca el endpoint.
-- Tests del PR: compileall, diff check y prueba inline de payload/headers sin backend vivo.
+- Versionado: la respuesta puede incluir `version_registro`; las altas no envían versión de entrada.
+- Rollback/transacción: cada llamada mantiene su frontera backend. Si falla la segunda llamada, el inmueble queda creado y la UI informa el fallo parcial.
+- Tests del PR: compileall, diff check, prueba inline de payload/headers sin backend vivo y, si el entorno lo permite, test backend específico del subrecurso.

@@ -61,9 +61,7 @@ class ApiClient:
             offset=offset,
         )
 
-    def listar_roles_participacion(
-        self, *, codigo: str | None = None
-    ) -> ApiResult:
+    def listar_roles_participacion(self, *, codigo: str | None = None) -> ApiResult:
         return self._get(
             "/api/v1/roles-participacion",
             params={"codigo": codigo or None},
@@ -135,15 +133,21 @@ class ApiClient:
     def crear_inmueble(
         self, payload: dict[str, Any], op_id: str | None = None
     ) -> ApiResult:
-        x_op_id = self._valid_or_new_uuid(op_id)
         return self._post(
             "/api/v1/inmuebles",
-            headers={
-                "X-Op-Id": x_op_id,
-                "X-Usuario-Id": "1",
-                "X-Sucursal-Id": "1",
-                "X-Instalacion-Id": "1",
-            },
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
+    def crear_dato_catastral_registral_inmueble(
+        self,
+        id_inmueble: int,
+        payload: dict[str, Any],
+        op_id: str | None = None,
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+            headers=self._core_ef_write_headers(op_id),
             json=payload,
         )
 
@@ -581,6 +585,14 @@ class ApiClient:
             key: value
             for key, value in params.items()
             if value is not None and value != ""
+        }
+
+    def _core_ef_write_headers(self, op_id: str | None = None) -> dict[str, str]:
+        return {
+            "X-Op-Id": self._valid_or_new_uuid(op_id),
+            "X-Usuario-Id": "1",
+            "X-Sucursal-Id": "1",
+            "X-Instalacion-Id": "1",
         }
 
     def _valid_or_new_uuid(self, value: str | None) -> str:
