@@ -9,7 +9,7 @@ from app.pages.home_page import HomePage
 from app.pages.inmuebles_page import InmueblesPage
 from app.pages.parte_detail_page import ParteDetailPage
 from app.pages.partes_list_page import PartesListPage
-from app.pages.venta_create_wizard_page import VentaCreateWizardPage
+from app.pages.venta_completa_wizard_v3_page import VentaCompletaWizardV3Page
 from app.pages.ventas_page import VentasPage
 
 
@@ -202,8 +202,8 @@ class AppShell:
                 detail_id=id_venta,
             ).build()
         if route.name == "venta_create_wizard":
-            return VentaCreateWizardPage(
-                api=self.api, on_navigate=self.navigate
+            return VentaCompletaWizardV3Page(
+                page=self.page, api=self.api, on_navigate=self.navigate
             ).build()
         if route.name == "finanzas":
             return FinanzasPage().build()
