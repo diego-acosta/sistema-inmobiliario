@@ -31,11 +31,14 @@ El backend de datos catastrales/registrales ya existe como subrecurso de inmuebl
 
 ## Flujo UX
 
-1. El usuario carga los **Datos básicos del inmueble**.
-2. Si deja desactivada la opción `Cargar datos catastrales/registrales ahora`, el prototipo crea solo el inmueble.
-3. Si activa la opción, el prototipo crea primero el inmueble y toma el `id_inmueble` devuelto por el backend.
-4. Con ese `id_inmueble`, el prototipo invoca el alta del dato catastral/registral asociado.
-5. En modo técnico se muestran payloads, responses y errores backend.
+1. El usuario carga los **Datos básicos del inmueble**. En esta sección se muestran también `manzana` y `lote` por ser datos de uso cotidiano.
+2. `manzana` y `lote` no se envían en el payload de `POST /api/v1/inmuebles`; se guardan como parte del dato catastral/registral asociado.
+3. El control `Mostrar datos catastrales/registrales avanzados` solo muestra u oculta campos avanzados; no significa por sí mismo que el dato catastral deba guardarse.
+4. Si la sección avanzada está oculta y no informa `manzana` ni `lote`, el prototipo crea solo el inmueble.
+5. Si la sección avanzada está oculta pero informa `manzana` o `lote`, el prototipo crea el inmueble y luego crea automáticamente un dato catastral/registral con `estado_dato: ACTIVO` más esos campos. Los valores residuales que hubiera en campos avanzados no se envían mientras la sección esté oculta.
+6. Si la sección avanzada está visible, el prototipo valida superficies positivas si fueron informadas y envía `manzana`/`lote` más los campos avanzados cargados.
+7. Con el `id_inmueble` devuelto por el backend, el prototipo invoca el alta del dato catastral/registral asociado cuando corresponde.
+8. En modo técnico se muestran payloads, responses y errores backend, destacando que `manzana`/`lote` no pertenecen al payload de inmueble.
 
 ## Payload mínimo confirmado de inmueble
 
@@ -61,7 +64,7 @@ El backend de datos catastrales/registrales ya existe como subrecurso de inmuebl
 }
 ```
 
-El prototipo construye un payload limpio: no envía campos vacíos, recorta textos, convierte `id_desarrollo` a entero positivo cuando se informa y mantiene `superficie` como decimal compatible con el backend.
+El prototipo construye un payload limpio: no envía campos vacíos, recorta textos, convierte `id_desarrollo` a entero positivo cuando se informa y mantiene `superficie` como decimal compatible con el backend. Aunque se muestran visualmente en datos básicos, `manzana` y `lote` no se agregan a este payload.
 
 ## Payload opcional de dato catastral/registral
 
@@ -84,7 +87,7 @@ Campos soportados por el formulario del prototipo:
 - `estado_dato` con default `ACTIVO` y opciones `ACTIVO`, `INACTIVO`, `HISTORICO`.
 - `observaciones`.
 
-No se agregan `linderos` en este PR.
+No se agregan `linderos` en este PR. Visualmente, `manzana` y `lote` se capturan en **Datos básicos del inmueble**, pero técnicamente se incluyen solo en este payload catastral/registral. Los campos avanzados se envían únicamente cuando la sección avanzada está visible; ocultarla conserva lo escrito en pantalla, pero evita enviar esos campos.
 
 Ejemplo:
 
@@ -158,6 +161,15 @@ En éxito de alta básica más dato catastral/registral:
 - `Inmueble creado correctamente`.
 - `Datos catastrales/registrales creados correctamente`.
 
+En éxito de alta básica más dato automático solo por manzana/lote:
+
+- `Inmueble creado correctamente`.
+- `Datos de manzana/lote guardados correctamente`.
+
+Si se muestra la sección avanzada sin informar ningún dato útil, incluyendo manzana/lote:
+
+- `Cargá al menos un dato catastral/registral o ocultá la sección avanzada`.
+
 Si falla la segunda llamada:
 
 - `El inmueble fue creado, pero no se pudieron guardar los datos catastrales/registrales`.
@@ -169,9 +181,9 @@ El prototipo no oculta el `id_inmueble` en modo técnico.
 
 El panel técnico muestra:
 
-- payload de inmueble enviado.
+- payload de inmueble enviado, sin `manzana` ni `lote`.
 - response de inmueble.
-- payload catastral enviado.
+- payload catastral enviado, con `manzana` y/o `lote` cuando fueron informados.
 - response catastral.
 - errores backend.
 
