@@ -3836,11 +3836,16 @@ class VentaCompletaWizardV3Prototype:
         self.reserva_selector = None
         self.objeto_selector = None
         self.comprador_selector = None
-        self.objeto_seleccionado = None
-        self.comprador_seleccionado = None
-        self.precio_objeto_value = ""
+        self._clear_object_selection_state()
+        self._clear_buyer_selection_state()
         self.fecha_venta_display_value = ""
         self.fecha_venta_error = None
+        self.fecha_venta_field.value = ""
+        self.codigo_venta_field.value = ""
+        self.observaciones_field.value = ""
+        self.fecha_pago_contado_field.value = ""
+        self.importe_anticipo_field.value = ""
+        self.fecha_anticipo_field.value = ""
         self.backend_reservation_records = []
         self.backend_reservation_error = None
         self.backend_reservations_loaded = False
@@ -3855,6 +3860,33 @@ class VentaCompletaWizardV3Prototype:
         self.rol_comprador_catalog_error = None
         self.rol_comprador_manual_fallback_enabled = False
         self._render()
+
+    def _clear_object_selection_state(self) -> None:
+        self.objeto_seleccionado = None
+        self.precio_objeto_value = ""
+        self.precio_objeto_error = None
+        self.precio_objeto_field.value = ""
+        if self.objeto_selector is not None:
+            self.objeto_selector.selected_panel.visible = False
+
+    def _clear_buyer_selection_state(self) -> None:
+        self.comprador_seleccionado = None
+        self.porcentaje_comprador_value = ""
+        self.porcentaje_comprador_field.value = ""
+        self.rol_comprador_value = ""
+        self.rol_comprador_field.value = ""
+        self.comprador_error = None
+        self.manual_buyer_id_value = ""
+        self.manual_buyer_text_value = ""
+        self.manual_buyer_role_value = ""
+        self.manual_buyer_percentage_value = ""
+        self.manual_buyer_error = None
+        self.manual_buyer_id_field.value = ""
+        self.manual_buyer_text_field.value = ""
+        self.manual_buyer_role_field.value = ""
+        self.manual_buyer_percentage_field.value = ""
+        if self.comprador_selector is not None:
+            self.comprador_selector.selected_panel.visible = False
 
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
         if self.state.detalle_venta_loading:
@@ -3899,6 +3931,7 @@ class VentaCompletaWizardV3Prototype:
         total_cuotas_obligaciones = self._sum_obligations_amount(cuotas_obligaciones)
         saldo_financiado = self._subtract_money_values(precio_venta, anticipo_importe)
         interes_total = self._subtract_money_values(total_obligaciones, precio_venta)
+        confirmed_payment_method = self._confirmed_payment_method_label(venta, plan, detalle, cuotas_obligaciones)
 
         sale_summary_items = [
             ("Código de venta", venta.get("codigo_venta") or venta.get("codigo") or f"Venta {venta.get('id_venta') or '-'}"),
@@ -3906,7 +3939,7 @@ class VentaCompletaWizardV3Prototype:
             ("Fecha", _format_date_ar(venta.get("fecha_venta")) or venta.get("fecha_venta")),
             ("Moneda", moneda),
             ("Total venta", self._detail_money(precio_venta, moneda)),
-            ("Forma de pago", self._sale_payment_form_label(venta, plan, detalle, cuotas_obligaciones)),
+            ("Forma de pago", confirmed_payment_method),
         ]
         plan_summary_items: list[tuple[str, Any]] = []
 
@@ -3937,9 +3970,15 @@ class VentaCompletaWizardV3Prototype:
                             spacing=12,
                             vertical_alignment=ft.CrossAxisAlignment.START,
                         ),
-                        self._build_financial_summary_table(precio_venta, anticipo_importe, saldo_financiado, interes_total, total_obligaciones, resumen_plan, plan, moneda),
-                        self._build_advance_table(anticipo_obligacion, moneda),
-                        self._build_financed_plan_section(cuotas_obligaciones, bloques, saldo_financiado, interes_total, total_cuotas_obligaciones, moneda, plan),
+                        *(
+                            [
+                                self._build_financial_summary_table(precio_venta, anticipo_importe, saldo_financiado, interes_total, total_obligaciones, resumen_plan, plan, moneda),
+                                self._build_advance_table(anticipo_obligacion, moneda),
+                                self._build_financed_plan_section(cuotas_obligaciones, bloques, saldo_financiado, interes_total, total_cuotas_obligaciones, moneda, plan),
+                            ]
+                            if confirmed_payment_method == "FINANCIADO"
+                            else []
+                        ),
                         self._build_detail_asset_impact_table(impacto),
                         ft.Row(
                             controls=[
@@ -4030,6 +4069,11 @@ class VentaCompletaWizardV3Prototype:
             "Compradores",
             self._compact_table(["Comprador", "Rol", "Participación"], rows, empty_text="Sin compradores informados en el payload."),
         )
+
+    def _confirmed_payment_method_label(self, venta: dict[str, Any], plan: dict[str, Any], detalle: dict[str, Any], cuotas: list[dict[str, Any]]) -> str:
+        if self.state.pantalla_actual == "VENTA_CONFIRMADA" and self.state.forma_pago in {"CONTADO", "FINANCIADO"}:
+            return self.state.forma_pago
+        return self._sale_payment_form_label(venta, plan, detalle, cuotas)
 
     def _sale_payment_form_label(self, venta: dict[str, Any], plan: dict[str, Any], detalle: dict[str, Any], cuotas: list[dict[str, Any]]) -> str:
         candidates = [
@@ -4757,8 +4801,8 @@ class VentaCompletaWizardV3Prototype:
             suffix = " heredados de reserva" if self.state.origen == "RESERVA" and any(obj.heredado_reserva for obj in self.state.objetos) else " listo"
             return self._flow_status_badge(f"{len(self.state.objetos)}{suffix}")
         if self.state.origen == "RESERVA" and self.state.id_reserva_venta is not None:
-            return self._flow_status_badge("sin objetos heredados")
-        return self._flow_status_badge("pendiente")
+            return self._flow_status_badge("0 heredados de reserva")
+        return self._flow_status_badge("0")
 
     def _installments_status(self) -> ft.Control:
         if self.state.tramos_cuotas:
@@ -7184,6 +7228,34 @@ def _info_row_control(label: str, value_control: ft.Control) -> ft.Control:
     )
 
 
+def _control_texts(control: Any) -> list[str]:
+    texts: list[str] = []
+    if isinstance(control, list):
+        for child in control:
+            texts.extend(_control_texts(child))
+        return texts
+    for attr in ("value", "text"):
+        value = getattr(control, attr, None)
+        if isinstance(value, str):
+            texts.append(value)
+    content = getattr(control, "content", None)
+    if content is not None:
+        texts.extend(_control_texts(content))
+    controls = getattr(control, "controls", None)
+    if isinstance(controls, list):
+        for child in controls:
+            texts.extend(_control_texts(child))
+    rows = getattr(control, "rows", None)
+    if isinstance(rows, list):
+        for row in rows:
+            texts.extend(_control_texts(row))
+    cells = getattr(control, "cells", None)
+    if isinstance(cells, list):
+        for cell in cells:
+            texts.extend(_control_texts(cell))
+    return texts
+
+
 def _run_self_test() -> None:
     class TestWizard(VentaCompletaWizardV3Prototype):
         def _render(self) -> None:  # type: ignore[override]
@@ -7232,6 +7304,12 @@ def _run_self_test() -> None:
     wizard.state.detalle_venta_status_code = 200
     wizard.state.detalle_venta_requested_id = 555
     wizard.state.mostrar_datos_tecnicos = True
+    wizard.objeto_seleccionado = {"tipo_objeto": "INMUEBLE", "id_inmueble": 10, "texto_visual": "Inmueble seleccionado"}
+    wizard.precio_objeto_value = "1000.00"
+    wizard.precio_objeto_field.value = "1000.00"
+    wizard.precio_objeto_error = "error anterior"
+    wizard.backend_object_records = [{"tipo_objeto": "INMUEBLE", "id_inmueble": 10}]
+    wizard.backend_objects_loaded = True
 
     wizard._restart_wizard()
 
@@ -7252,11 +7330,42 @@ def _run_self_test() -> None:
     assert wizard.state.detalle_venta_data is None
     assert wizard.state.detalle_venta_requested_id is None
     assert wizard.state.mostrar_datos_tecnicos is False
+    assert wizard.objeto_seleccionado is None
+    assert wizard.precio_objeto_value == ""
+    assert wizard.precio_objeto_field.value == ""
+    assert wizard.precio_objeto_error is None
+    assert wizard.backend_object_records == []
+    assert wizard.backend_objects_loaded is False
+    assert wizard._currency_locked_by_objects() is False
+    assert "0" in _control_texts(wizard._object_count_status())
 
     direct_payload = {"codigo_venta": "VD-1", "objetos": [], "compradores": []}
     wizard.state.origen = "DIRECTA"
     assert wizard._ensure_confirm_op_id_for_payload(direct_payload) == wizard.state.confirm_op_id
     assert wizard.state.confirm_payload_signature == wizard._confirm_payload_signature(direct_payload)
+
+    wizard.state.pantalla_actual = "VENTA_CONFIRMADA"
+    wizard.state.forma_pago = "CONTADO"
+    detalle_contado = {
+        "venta": {"id_venta": 1, "codigo_venta": "VC-1", "estado_venta": "CONFIRMADA", "precio_total": "1000.00", "moneda": "ARS"},
+        "compradores": [],
+        "objetos": [],
+        "plan_pago_v2": {"metodo_plan_pago": "PLAN_POR_BLOQUES", "tipo_plan": "FINANCIADO"},
+        "obligaciones_financieras": [{"importe_total": "1000.00", "tipo_item_cronograma": "CUOTA"}],
+    }
+    assert wizard._confirmed_payment_method_label(
+        detalle_contado["venta"],
+        detalle_contado["plan_pago_v2"],
+        detalle_contado,
+        detalle_contado["obligaciones_financieras"],
+    ) == "CONTADO"
+    wizard.state.detalle_venta_data = detalle_contado
+    confirmed_text = " ".join(_control_texts(wizard._build_confirmed_sale_detail_controls())).upper()
+    panel_text = " ".join(text for section in wizard._build_flow_state_sections() for text in _control_texts(section)).upper()
+    assert "CONTADO" in confirmed_text
+    assert "FINANCIADO" not in confirmed_text
+    assert "CONTADO" in panel_text
+    assert "FINANCIADO" not in panel_text
 
     friendly = wizard._confirm_error_message(
         ApiResult(

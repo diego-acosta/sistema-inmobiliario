@@ -536,8 +536,11 @@ Acción principal: `Nueva venta` o `Finalizar / Nueva venta`. Al presionarla, el
 wizard debe generar un estado inicial limpio y volver a `ORIGEN` sin cerrar la
 ventana. Deben limpiarse `confirm_data`, `confirm_error`, `preview_data`,
 `detalle_venta_data`, reserva seleccionada, objetos, compradores, plan,
-`op_id`, firmas de payload y flags técnicos de la operación anterior. La
-configuración general del `ApiClient` se conserva.
+`op_id`, firmas de payload, flags técnicos de la operación anterior, selección
+actual de objeto/comprador y caches visuales de buscadores del prototipo. La
+configuración general del `ApiClient` se conserva. Al iniciar el nuevo flujo, el
+panel lateral debe mostrar `Objetos: 0` y la moneda debe poder cambiarse porque
+no existe ningún objeto precargado.
 
 En `VENTA_CONFIRMADA`, `Anterior` queda deshabilitado o sin efecto para evitar
 volver a editar una venta ya confirmada. `Siguiente` puede quedar deshabilitado;
@@ -549,6 +552,11 @@ reconfirmar la misma reserva por contaminación del estado anterior. Si el
 backend rechaza una confirmación porque la reserva ya fue convertida, la UI debe
 mostrar el mensaje funcional: `La reserva seleccionada ya fue convertida en
 venta.`. En modo técnico se agrega el response/error completo del backend.
+
+La forma de pago mostrada en la pantalla final debe ser consistente entre panel
+lateral, resumen y detalle integral. Si la operación confirmada fue `CONTADO`,
+ninguna etiqueta de forma de pago debe mostrar `FINANCIADO`, aunque el detalle
+técnico del backend incluya estructuras internas de plan/obligaciones.
 
 Con **Mostrar datos técnicos** activo, la pantalla final debe exponer:
 
