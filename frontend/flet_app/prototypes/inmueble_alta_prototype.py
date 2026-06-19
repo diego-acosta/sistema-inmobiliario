@@ -10,6 +10,7 @@ Prueba inline sin backend:
 
 Alcance:
   - Pantalla aislada para validar el alta contra POST /api/v1/inmuebles.
+  - Permite cargar opcionalmente el dato catastral/registral inicial.
   - No integra el listado productivo de inmuebles.
   - No modifica backend, SQL, ventas, reservas ni financiero.
 """
@@ -31,9 +32,9 @@ import flet as ft
 
 from app.api_client import ApiClient, ApiResult
 
-
 ESTADOS_ADMINISTRATIVOS = ("ACTIVO", "INACTIVO")
 ESTADOS_JURIDICOS = ("REGULAR", "OBSERVADO")
+ESTADOS_DATO_CATASTRAL = ("ACTIVO", "INACTIVO", "HISTORICO")
 
 
 def _clean_text(value: str | None) -> str:
@@ -111,6 +112,64 @@ def build_inmueble_payload(values: dict[str, str | None]) -> dict[str, Any]:
     return payload
 
 
+def validate_dato_catastral_form(values: dict[str, str | None]) -> list[str]:
+    errors: list[str] = []
+    for field_name, label in (
+        ("superficie_titulo", "Superficie título"),
+        ("superficie_mensura", "Superficie mensura"),
+    ):
+        error = _validate_positive_decimal(values.get(field_name), label)
+        if error:
+            errors.append(error)
+    return errors
+
+
+def build_dato_catastral_payload(values: dict[str, str | None]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "estado_dato": _clean_text(values.get("estado_dato")) or "ACTIVO"
+    }
+    optional_text_fields = (
+        "nomenclatura_catastral",
+        "partida_inmobiliaria",
+        "matricula",
+        "folio_real",
+        "circunscripcion",
+        "seccion",
+        "manzana",
+        "lote",
+        "parcela",
+        "medidas",
+        "situacion_posesoria",
+        "situacion_dominial",
+        "observaciones",
+    )
+    for field_name in optional_text_fields:
+        clean_value = _clean_text(values.get(field_name))
+        if clean_value:
+            payload[field_name] = clean_value
+
+    for field_name in ("superficie_titulo", "superficie_mensura"):
+        clean_value = _clean_text(values.get(field_name))
+        if clean_value:
+            payload[field_name] = str(Decimal(clean_value))
+
+    return payload
+
+
+def _safe_border(width: int, color: str) -> ft.Border | None:
+    border_all = getattr(ft.border, "all", None)
+    if callable(border_all):
+        return border_all(width, color)
+
+    border_cls = getattr(ft, "Border", None)
+    border_side_cls = getattr(ft, "BorderSide", None)
+    if border_cls is None or border_side_cls is None:
+        return None
+
+    side = border_side_cls(width, color)
+    return border_cls(left=side, top=side, right=side, bottom=side)
+
+
 def format_api_error(result: ApiResult) -> str:
     parts = []
     if result.status_code is not None:
@@ -120,9 +179,7 @@ def format_api_error(result: ApiResult) -> str:
     if result.error_message:
         parts.append(f"error_message={result.error_message}")
     if result.error_details:
-        details = json.dumps(
-            result.error_details, ensure_ascii=False, default=str
-        )
+        details = json.dumps(result.error_details, ensure_ascii=False, default=str)
         parts.append("error_details=" + details)
     return " | ".join(parts) or "No se pudo crear el inmueble."
 
@@ -152,6 +209,39 @@ class InmuebleAltaPrototype:
         self.observaciones = ft.TextField(
             label="Observaciones", multiline=True, min_lines=2, max_lines=4
         )
+        self.cargar_dato_catastral = ft.Checkbox(
+            label="Cargar datos catastrales/registrales ahora",
+            value=False,
+        )
+        self.nomenclatura_catastral = ft.TextField(label="Nomenclatura catastral")
+        self.partida_inmobiliaria = ft.TextField(label="Partida inmobiliaria")
+        self.matricula = ft.TextField(label="Matrícula")
+        self.folio_real = ft.TextField(label="Folio real")
+        self.circunscripcion = ft.TextField(label="Circunscripción")
+        self.seccion = ft.TextField(label="Sección")
+        self.manzana = ft.TextField(label="Manzana")
+        self.lote = ft.TextField(label="Lote")
+        self.parcela = ft.TextField(label="Parcela")
+        self.superficie_titulo = ft.TextField(
+            label="Superficie título", hint_text="Ej.: 120.50"
+        )
+        self.superficie_mensura = ft.TextField(
+            label="Superficie mensura", hint_text="Ej.: 120.50"
+        )
+        self.medidas = ft.TextField(label="Medidas")
+        self.situacion_posesoria = ft.TextField(label="Situación posesoria")
+        self.situacion_dominial = ft.TextField(label="Situación dominial")
+        self.estado_dato = ft.Dropdown(
+            label="Estado dato",
+            value="ACTIVO",
+            options=[ft.dropdown.Option(value) for value in ESTADOS_DATO_CATASTRAL],
+        )
+        self.observaciones_catastrales = ft.TextField(
+            label="Observaciones catastrales/registrales",
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+        )
         self.message = ft.Container(visible=False)
         self.result_details = ft.Column(spacing=4, visible=False)
         self.save_button = ft.FilledButton(
@@ -180,19 +270,58 @@ class InmuebleAltaPrototype:
                     content=ft.Column(
                         controls=[
                             ft.Text(
-                                "Datos del inmueble",
+                                "Datos básicos del inmueble",
                                 size=18,
                                 weight=ft.FontWeight.W_700,
                             ),
                             ft.Text(
-                                "El alta crea solo el inmueble. No genera disponibilidad ni ocupación inicial.",
+                                "El alta crea el inmueble sin disponibilidad ni ocupación inicial.",
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
                             self.codigo_inmueble,
                             self.nombre_inmueble,
                             ft.Row([self.superficie, self.id_desarrollo], wrap=True),
-                            ft.Row([self.estado_administrativo, self.estado_juridico], wrap=True),
+                            ft.Row(
+                                [self.estado_administrativo, self.estado_juridico],
+                                wrap=True,
+                            ),
                             self.observaciones,
+                            ft.Divider(),
+                            ft.Text(
+                                "Datos catastrales y registrales",
+                                size=18,
+                                weight=ft.FontWeight.W_700,
+                            ),
+                            ft.Text(
+                                "Se cargan como subrecurso opcional después de crear el inmueble. No incluye linderos.",
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
+                            self.cargar_dato_catastral,
+                            ft.Row(
+                                [
+                                    self.nomenclatura_catastral,
+                                    self.partida_inmobiliaria,
+                                ],
+                                wrap=True,
+                            ),
+                            ft.Row([self.matricula, self.folio_real], wrap=True),
+                            ft.Row(
+                                [self.circunscripcion, self.seccion, self.manzana],
+                                wrap=True,
+                            ),
+                            ft.Row(
+                                [self.lote, self.parcela, self.estado_dato], wrap=True
+                            ),
+                            ft.Row(
+                                [self.superficie_titulo, self.superficie_mensura],
+                                wrap=True,
+                            ),
+                            self.medidas,
+                            ft.Row(
+                                [self.situacion_posesoria, self.situacion_dominial],
+                                wrap=True,
+                            ),
+                            self.observaciones_catastrales,
                             ft.Row([self.save_button, self.clear_button], spacing=10),
                             self.message,
                             self.result_details,
@@ -202,7 +331,7 @@ class InmuebleAltaPrototype:
                     bgcolor=ft.Colors.WHITE,
                     padding=20,
                     border_radius=8,
-                    border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+                    border=_safe_border(1, ft.Colors.BLUE_GREY_100),
                 ),
             ],
             spacing=14,
@@ -219,26 +348,94 @@ class InmuebleAltaPrototype:
             "observaciones": self.observaciones.value,
         }
 
+    def _current_dato_catastral_values(self) -> dict[str, str | None]:
+        return {
+            "nomenclatura_catastral": self.nomenclatura_catastral.value,
+            "partida_inmobiliaria": self.partida_inmobiliaria.value,
+            "matricula": self.matricula.value,
+            "folio_real": self.folio_real.value,
+            "circunscripcion": self.circunscripcion.value,
+            "seccion": self.seccion.value,
+            "manzana": self.manzana.value,
+            "lote": self.lote.value,
+            "parcela": self.parcela.value,
+            "superficie_titulo": self.superficie_titulo.value,
+            "superficie_mensura": self.superficie_mensura.value,
+            "medidas": self.medidas.value,
+            "situacion_posesoria": self.situacion_posesoria.value,
+            "situacion_dominial": self.situacion_dominial.value,
+            "estado_dato": self.estado_dato.value,
+            "observaciones": self.observaciones_catastrales.value,
+        }
+
     def _save(self, _event: ft.ControlEvent) -> None:
         values = self._current_values()
         errors = validate_form(values)
+        dato_values = self._current_dato_catastral_values()
+        if self.cargar_dato_catastral.value:
+            errors.extend(validate_dato_catastral_form(dato_values))
         if errors:
             self._show_message("\n".join(errors), success=False)
             self.page.update()
             return
 
+        inmueble_payload = build_inmueble_payload(values)
+        dato_payload = (
+            build_dato_catastral_payload(dato_values)
+            if self.cargar_dato_catastral.value
+            else None
+        )
         self.save_button.disabled = True
         self.page.update()
-        result = self.api_client.crear_inmueble(build_inmueble_payload(values))
+        inmueble_result = self.api_client.crear_inmueble(inmueble_payload)
+        dato_result: ApiResult | None = None
+        if inmueble_result.success and dato_payload is not None:
+            id_inmueble = (inmueble_result.data or {}).get("id_inmueble")
+            if id_inmueble is None:
+                dato_result = ApiResult(
+                    success=False,
+                    error_message="El backend no devolvió id_inmueble para asociar el dato catastral/registral.",
+                )
+            else:
+                dato_result = self.api_client.crear_dato_catastral_registral_inmueble(
+                    int(id_inmueble), dato_payload
+                )
         self.save_button.disabled = False
-        if result.success:
-            self._show_success(result.data or {})
+
+        if inmueble_result.success:
+            self._show_success(
+                inmueble_payload,
+                inmueble_result.data or {},
+                dato_payload,
+                dato_result,
+            )
         else:
-            self._show_message(format_api_error(result), success=False)
+            self._show_message(format_api_error(inmueble_result), success=False)
+            self._show_technical_details(
+                inmueble_payload, inmueble_result, dato_payload, dato_result
+            )
         self.page.update()
 
-    def _show_success(self, data: dict[str, Any]) -> None:
-        self._show_message("Inmueble creado correctamente.", success=True)
+    def _show_success(
+        self,
+        inmueble_payload: dict[str, Any],
+        data: dict[str, Any],
+        dato_payload: dict[str, Any] | None,
+        dato_result: ApiResult | None,
+    ) -> None:
+        messages = ["Inmueble creado correctamente"]
+        if dato_payload is not None:
+            if dato_result and dato_result.success:
+                messages.append("Datos catastrales/registrales creados correctamente")
+            else:
+                messages.append(
+                    "El inmueble fue creado, pero no se pudieron guardar los datos catastrales/registrales"
+                )
+                if dato_result is not None:
+                    messages.append(format_api_error(dato_result))
+        self._show_message(
+            "\n".join(messages), success=not (dato_result and not dato_result.success)
+        )
         rows: list[ft.Control] = []
         for label, key in (
             ("ID inmueble", "id_inmueble"),
@@ -255,8 +452,77 @@ class InmuebleAltaPrototype:
             rows.append(
                 ft.Text(f"uid_global: {data.get('uid_global')}", selectable=True)
             )
+        rows.append(ft.Divider())
+        rows.append(ft.Text("Modo técnico", weight=ft.FontWeight.W_700))
+        rows.extend(
+            self._technical_rows(inmueble_payload, data, dato_payload, dato_result)
+        )
         self.result_details.controls = rows
         self.result_details.visible = bool(rows)
+
+    def _show_technical_details(
+        self,
+        inmueble_payload: dict[str, Any],
+        inmueble_result: ApiResult,
+        dato_payload: dict[str, Any] | None,
+        dato_result: ApiResult | None,
+    ) -> None:
+        self.result_details.controls = [
+            ft.Text("Modo técnico", weight=ft.FontWeight.W_700),
+            *self._technical_rows(
+                inmueble_payload, inmueble_result, dato_payload, dato_result
+            ),
+        ]
+        self.result_details.visible = True
+
+    def _technical_rows(
+        self,
+        inmueble_payload: dict[str, Any],
+        inmueble_response: dict[str, Any] | ApiResult,
+        dato_payload: dict[str, Any] | None,
+        dato_result: ApiResult | None,
+    ) -> list[ft.Control]:
+        inmueble_data = (
+            inmueble_response
+            if isinstance(inmueble_response, dict)
+            else inmueble_response.data
+        )
+        backend_errors = []
+        if isinstance(inmueble_response, ApiResult) and not inmueble_response.success:
+            backend_errors.append(format_api_error(inmueble_response))
+        if dato_result is not None and not dato_result.success:
+            backend_errors.append(format_api_error(dato_result))
+        return [
+            ft.Text("payload inmueble enviado:"),
+            ft.Text(
+                json.dumps(inmueble_payload, ensure_ascii=False, indent=2, default=str),
+                selectable=True,
+            ),
+            ft.Text("response inmueble:"),
+            ft.Text(
+                json.dumps(inmueble_data, ensure_ascii=False, indent=2, default=str),
+                selectable=True,
+            ),
+            ft.Text("payload catastral enviado:"),
+            ft.Text(
+                json.dumps(dato_payload, ensure_ascii=False, indent=2, default=str),
+                selectable=True,
+            ),
+            ft.Text("response catastral:"),
+            ft.Text(
+                json.dumps(
+                    dato_result.data if dato_result else None,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                ),
+                selectable=True,
+            ),
+            ft.Text("errores backend:"),
+            ft.Text(
+                "\n".join(backend_errors) or "Sin errores backend.", selectable=True
+            ),
+        ]
 
     def _show_message(self, text: str, *, success: bool) -> None:
         self.message.content = ft.Text(
@@ -276,39 +542,60 @@ class InmuebleAltaPrototype:
             self.superficie,
             self.id_desarrollo,
             self.observaciones,
+            self.nomenclatura_catastral,
+            self.partida_inmobiliaria,
+            self.matricula,
+            self.folio_real,
+            self.circunscripcion,
+            self.seccion,
+            self.manzana,
+            self.lote,
+            self.parcela,
+            self.superficie_titulo,
+            self.superficie_mensura,
+            self.medidas,
+            self.situacion_posesoria,
+            self.situacion_dominial,
+            self.observaciones_catastrales,
         ):
             control.value = ""
+        self.cargar_dato_catastral.value = False
         self.estado_administrativo.value = "ACTIVO"
         self.estado_juridico.value = "REGULAR"
+        self.estado_dato.value = "ACTIVO"
         self.message.visible = False
         self.result_details.visible = False
         self.page.update()
 
 
 def _run_self_test() -> None:
-    minimum = build_inmueble_payload({
-        "codigo_inmueble": "  INM-FLET-999  ",
-        "estado_administrativo": "ACTIVO",
-        "estado_juridico": "REGULAR",
-        "nombre_inmueble": "",
-        "superficie": "",
-        "id_desarrollo": "",
-        "observaciones": "",
-    })
+    minimum = build_inmueble_payload(
+        {
+            "codigo_inmueble": "  INM-FLET-999  ",
+            "estado_administrativo": "ACTIVO",
+            "estado_juridico": "REGULAR",
+            "nombre_inmueble": "",
+            "superficie": "",
+            "id_desarrollo": "",
+            "observaciones": "",
+        }
+    )
     assert minimum == {
         "codigo_inmueble": "INM-FLET-999",
         "estado_administrativo": "ACTIVO",
         "estado_juridico": "REGULAR",
     }
-    complete = build_inmueble_payload({
-        "codigo_inmueble": "INM-FLET-998",
-        "estado_administrativo": "ACTIVO",
-        "estado_juridico": "OBSERVADO",
-        "nombre_inmueble": " Casa piloto Flet ",
-        "superficie": "120.50",
-        "id_desarrollo": "1",
-        "observaciones": " Alta desde prototipo Flet ",
-    })
+    complete = build_inmueble_payload(
+        {
+            "codigo_inmueble": "INM-FLET-998",
+            "estado_administrativo": "ACTIVO",
+            "estado_juridico": "OBSERVADO",
+            "nombre_inmueble": " Casa piloto Flet ",
+            "superficie": "120.50",
+            "id_desarrollo": "1",
+            "observaciones": " Alta desde prototipo Flet ",
+        }
+    )
     assert complete["id_desarrollo"] == 1
     assert complete["superficie"] == "120.50"
     assert validate_form(
@@ -327,6 +614,41 @@ def _run_self_test() -> None:
             "id_desarrollo": "0",
         }
     )
+    dato_payload = build_dato_catastral_payload(
+        {
+            "nomenclatura_catastral": " NC-1 ",
+            "partida_inmobiliaria": "",
+            "matricula": " MAT-1 ",
+            "folio_real": "",
+            "circunscripcion": "",
+            "seccion": "",
+            "manzana": " M1 ",
+            "lote": " L1 ",
+            "parcela": " P1 ",
+            "superficie_titulo": "100.25",
+            "superficie_mensura": "",
+            "medidas": "",
+            "situacion_posesoria": "",
+            "situacion_dominial": "",
+            "estado_dato": "ACTIVO",
+            "observaciones": " Obs ",
+        }
+    )
+    assert dato_payload == {
+        "estado_dato": "ACTIVO",
+        "nomenclatura_catastral": "NC-1",
+        "matricula": "MAT-1",
+        "manzana": "M1",
+        "lote": "L1",
+        "parcela": "P1",
+        "observaciones": "Obs",
+        "superficie_titulo": "100.25",
+    }
+    assert validate_dato_catastral_form({"superficie_titulo": "0"})
+    assert validate_dato_catastral_form({"superficie_mensura": "-1"})
+    _safe_border(1, ft.Colors.BLUE_GREY_100)
+    prototype = InmuebleAltaPrototype(page=object())  # type: ignore[arg-type]
+    assert prototype._build_layout() is not None
 
     captured: dict[str, Any] = {}
 
@@ -343,7 +665,9 @@ def _run_self_test() -> None:
             captured["json"] = json or {}
             return ApiResult(success=True, data={})
 
-    DummyClient(base_url="http://testserver").crear_inmueble(minimum, op_id="not-a-uuid")
+    DummyClient(base_url="http://testserver").crear_inmueble(
+        minimum, op_id="not-a-uuid"
+    )
     assert captured["path"] == "/api/v1/inmuebles"
     assert "If-Match-Version" not in captured["headers"]
     assert set(captured["headers"]) == {
@@ -353,6 +677,20 @@ def _run_self_test() -> None:
         "X-Instalacion-Id",
     }
     assert captured["json"] == minimum
+
+    DummyClient(base_url="http://testserver").crear_dato_catastral_registral_inmueble(
+        10, dato_payload, op_id="not-a-uuid"
+    )
+    assert captured["path"] == "/api/v1/inmuebles/10/datos-catastrales-registrales"
+    assert "If-Match-Version" not in captured["headers"]
+    assert set(captured["headers"]) == {
+        "X-Op-Id",
+        "X-Usuario-Id",
+        "X-Sucursal-Id",
+        "X-Instalacion-Id",
+    }
+    assert captured["json"] == dato_payload
+    assert "linderos" not in captured["json"]
     print("self-test ok")
 
 
