@@ -188,11 +188,18 @@ def build_dato_catastral_payload(values: dict[str, str | None]) -> dict[str, Any
 
 
 def _safe_border(width: int, color: str) -> ft.Border | None:
-    border_all = getattr(ft.border, "all", None)
+    border_cls = getattr(ft, "Border", None)
+    border_all = getattr(border_cls, "all", None) if border_cls is not None else None
     if callable(border_all):
         return border_all(width, color)
 
-    border_cls = getattr(ft, "Border", None)
+    legacy_border = getattr(ft, "border", None)
+    legacy_border_all = (
+        getattr(legacy_border, "all", None) if legacy_border is not None else None
+    )
+    if callable(legacy_border_all):
+        return legacy_border_all(width, color)
+
     border_side_cls = getattr(ft, "BorderSide", None)
     if border_cls is None or border_side_cls is None:
         return None
@@ -770,8 +777,16 @@ def main(page: ft.Page) -> None:
     InmuebleAltaPrototype(page).run()
 
 
+def _run_app() -> None:
+    run = getattr(ft, "run", None)
+    if callable(run):
+        run(main)
+        return
+    ft.app(target=main)
+
+
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         _run_self_test()
     else:
-        ft.app(target=main)
+        _run_app()
