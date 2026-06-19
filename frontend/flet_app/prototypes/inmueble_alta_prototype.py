@@ -17,7 +17,6 @@ Alcance:
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 import sys
@@ -31,181 +30,18 @@ if str(APP_ROOT) not in sys.path:
 import flet as ft
 
 from app.api_client import ApiClient, ApiResult
-
-ESTADOS_ADMINISTRATIVOS = ("ACTIVO", "INACTIVO")
-ESTADOS_JURIDICOS = ("REGULAR", "OBSERVADO")
-ESTADOS_DATO_CATASTRAL = ("ACTIVO", "INACTIVO", "HISTORICO")
-CATASTRAL_ADVANCED_FIELDS = (
-    "nomenclatura_catastral",
-    "partida_inmobiliaria",
-    "matricula",
-    "folio_real",
-    "circunscripcion",
-    "seccion",
-    "parcela",
-    "superficie_titulo",
-    "superficie_mensura",
-    "medidas",
-    "situacion_posesoria",
-    "situacion_dominial",
-    "observaciones",
+from app.inmueble_alta_helpers import (
+    ESTADOS_ADMINISTRATIVOS,
+    ESTADOS_DATO_CATASTRAL,
+    ESTADOS_JURIDICOS,
+    build_dato_catastral_payload,
+    build_inmueble_payload,
+    has_dato_catastral_util,
+    has_manzana_o_lote,
+    should_create_dato_catastral,
+    validate_dato_catastral_form,
+    validate_form,
 )
-
-
-def _clean_text(value: str | None) -> str:
-    return (value or "").strip()
-
-
-def _validate_positive_decimal(value: str | None, field_label: str) -> str | None:
-    text = _clean_text(value)
-    if not text:
-        return None
-    try:
-        number = Decimal(text)
-    except InvalidOperation:
-        return f"{field_label} debe ser un decimal positivo."
-    if number <= 0:
-        return f"{field_label} debe ser un decimal positivo."
-    return None
-
-
-def _validate_positive_int(value: str | None, field_label: str) -> str | None:
-    text = _clean_text(value)
-    if not text:
-        return None
-    try:
-        number = int(text)
-    except ValueError:
-        return f"{field_label} debe ser un entero positivo."
-    if number <= 0:
-        return f"{field_label} debe ser un entero positivo."
-    return None
-
-
-def validate_form(values: dict[str, str | None]) -> list[str]:
-    errors: list[str] = []
-    if not _clean_text(values.get("codigo_inmueble")):
-        errors.append("Código de inmueble es requerido.")
-    if not _clean_text(values.get("estado_administrativo")):
-        errors.append("Estado administrativo es requerido.")
-    if not _clean_text(values.get("estado_juridico")):
-        errors.append("Estado jurídico es requerido.")
-
-    superficie_error = _validate_positive_decimal(
-        values.get("superficie"), "Superficie"
-    )
-    if superficie_error:
-        errors.append(superficie_error)
-    desarrollo_error = _validate_positive_int(
-        values.get("id_desarrollo"), "ID desarrollo"
-    )
-    if desarrollo_error:
-        errors.append(desarrollo_error)
-    return errors
-
-
-def build_inmueble_payload(values: dict[str, str | None]) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "codigo_inmueble": _clean_text(values.get("codigo_inmueble")),
-        "estado_administrativo": _clean_text(values.get("estado_administrativo")),
-        "estado_juridico": _clean_text(values.get("estado_juridico")),
-    }
-    optional_text_fields = ("nombre_inmueble", "observaciones")
-    for field_name in optional_text_fields:
-        clean_value = _clean_text(values.get(field_name))
-        if clean_value:
-            payload[field_name] = clean_value
-
-    superficie = _clean_text(values.get("superficie"))
-    if superficie:
-        payload["superficie"] = str(Decimal(superficie))
-
-    id_desarrollo = _clean_text(values.get("id_desarrollo"))
-    if id_desarrollo:
-        payload["id_desarrollo"] = int(id_desarrollo)
-
-    return payload
-
-
-def validate_dato_catastral_form(values: dict[str, str | None]) -> list[str]:
-    errors: list[str] = []
-    for field_name, label in (
-        ("superficie_titulo", "Superficie título"),
-        ("superficie_mensura", "Superficie mensura"),
-    ):
-        error = _validate_positive_decimal(values.get(field_name), label)
-        if error:
-            errors.append(error)
-    return errors
-
-
-def has_dato_catastral_avanzado_util(values: dict[str, str | None]) -> bool:
-    return any(
-        _clean_text(values.get(field_name)) for field_name in CATASTRAL_ADVANCED_FIELDS
-    )
-
-
-def has_dato_catastral_util(
-    values: dict[str, str | None], *, incluir_avanzados: bool
-) -> bool:
-    return has_manzana_o_lote(values) or (
-        incluir_avanzados and has_dato_catastral_avanzado_util(values)
-    )
-
-
-def has_manzana_o_lote(values: dict[str, str | None]) -> bool:
-    return bool(_clean_text(values.get("manzana")) or _clean_text(values.get("lote")))
-
-
-def should_create_dato_catastral(
-    mostrar_datos_catastrales_avanzados: bool, values: dict[str, str | None]
-) -> bool:
-    return has_dato_catastral_util(
-        values, incluir_avanzados=mostrar_datos_catastrales_avanzados
-    )
-
-
-def build_dato_catastral_payload(
-    values: dict[str, str | None], *, incluir_avanzados: bool
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {"estado_dato": "ACTIVO"}
-
-    for field_name in ("manzana", "lote"):
-        clean_value = _clean_text(values.get(field_name))
-        if clean_value:
-            payload[field_name] = clean_value
-
-    if not incluir_avanzados:
-        return payload
-
-    estado_dato = _clean_text(values.get("estado_dato"))
-    if estado_dato:
-        payload["estado_dato"] = estado_dato
-
-    optional_text_fields = (
-        "nomenclatura_catastral",
-        "partida_inmobiliaria",
-        "matricula",
-        "folio_real",
-        "circunscripcion",
-        "seccion",
-        "parcela",
-        "medidas",
-        "situacion_posesoria",
-        "situacion_dominial",
-        "observaciones",
-    )
-    for field_name in optional_text_fields:
-        clean_value = _clean_text(values.get(field_name))
-        if clean_value:
-            payload[field_name] = clean_value
-
-    for field_name in ("superficie_titulo", "superficie_mensura"):
-        clean_value = _clean_text(values.get(field_name))
-        if clean_value:
-            payload[field_name] = str(Decimal(clean_value))
-
-    return payload
 
 
 def _safe_border(width: int, color: str) -> ft.Border | None:
@@ -756,9 +592,7 @@ def _run_self_test() -> None:
         "estado_dato": "ACTIVO",
         "observaciones": " Obs ",
     }
-    dato_payload = build_dato_catastral_payload(
-        dato_values, incluir_avanzados=True
-    )
+    dato_payload = build_dato_catastral_payload(dato_values, incluir_avanzados=True)
     assert dato_payload == {
         "estado_dato": "ACTIVO",
         "nomenclatura_catastral": "NC-1",
