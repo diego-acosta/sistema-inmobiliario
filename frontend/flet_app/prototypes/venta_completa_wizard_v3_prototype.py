@@ -81,6 +81,10 @@ PantallaWizard = Literal[
 MONEDAS_PERMITIDAS = ["ARS", "USD", "EUR"]
 MONEY_DECIMAL_QUANTUM = Decimal("0.01")
 MONEY_PRECISION_ERROR = "El importe debe tener como máximo 2 decimales."
+VENTA_SELECTOR_CONFLICT_STATES = {"activa", "confirmada", "en_proceso", "finalizada"}
+VENTA_SELECTOR_BLOCK_REASON = "Ya participa en una venta vigente"
+VENTA_SELECTOR_RELATED_BLOCK_REASON = "Tiene una venta vigente relacionada"
+VENTA_SELECTOR_ALREADY_ADDED_REASON = "Ya fue agregado a esta venta"
 WIZARD_VISIBLE_STEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Origen", ("ORIGEN", "SELECCIONAR_RESERVA")),
     ("Datos", ("DATOS_INICIALES",)),
@@ -927,7 +931,7 @@ class VentaCompletaWizardV3Prototype:
         else:
             errors.append(self._backend_selector_error("unidades funcionales", unidades_result))
 
-        self.backend_object_records = records
+        self.backend_object_records = self._enrich_object_records_with_venta_conflicts(records)
         if errors:
             self.backend_object_error = " ".join(errors)
         elif not records:
@@ -990,7 +994,7 @@ class VentaCompletaWizardV3Prototype:
 
     def _backend_object_selector_records(self) -> list[dict[str, Any]]:
         self._load_backend_object_records_if_needed()
-        return list(self.backend_object_records)
+        return self._mark_current_sale_objects_in_selector_records(self.backend_object_records)
 
     def _backend_buyer_selector_records(self) -> list[dict[str, Any]]:
         self._load_backend_buyer_records_if_needed()
@@ -1113,6 +1117,170 @@ class VentaCompletaWizardV3Prototype:
         return " ".join(parts)
 
     @staticmethod
+    def _venta_conflict_from_item(item: dict[str, Any]) -> dict[str, Any] | None:
+        for key in ("venta_conflictiva", "venta_vigente", "venta_actual"):
+            value = item.get(key)
+            if isinstance(value, dict) and value:
+                return value
+        for key in ("tiene_venta_vigente", "venta_vigente", "con_venta_vigente"):
+            if item.get(key) is True:
+                return {"motivo": VENTA_SELECTOR_BLOCK_REASON}
+        return None
+
+    @staticmethod
+    def _venta_is_selector_conflict(venta: dict[str, Any]) -> bool:
+        if venta.get("deleted_at") not in (None, ""):
+            return False
+        estado = str(venta.get("estado_venta") or venta.get("estado") or "").strip().lower()
+        return estado in VENTA_SELECTOR_CONFLICT_STATES
+
+    def _enrich_object_records_with_venta_conflicts(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        enriched: list[dict[str, Any]] = []
+        for record in records:
+            next_record = dict(record)
+            conflict = self._venta_conflict_from_item(next_record)
+            if conflict is not None:
+                next_record["venta_vigente"] = True
+                next_record["venta_conflictiva"] = conflict
+                next_record["motivo_bloqueo"] = VENTA_SELECTOR_BLOCK_REASON
+            enriched.append(next_record)
+
+        # Prototipo frontend: GET /api/v1/ventas no acepta filtro batch por muchos
+        # objetos; se consulta una pagina razonable por estado vigente y se indexa
+        # localmente para evitar una llamada por inmueble/UF del selector.
+        conflict_index = self._build_selector_venta_conflict_index(enriched)
+        return self._apply_selector_venta_conflict_index(enriched, conflict_index)
+
+    def _fetch_selector_active_ventas(self) -> list[dict[str, Any]]:
+        ventas: list[dict[str, Any]] = []
+        limit = 100
+        max_pages_per_state = 5
+        for estado in sorted(VENTA_SELECTOR_CONFLICT_STATES):
+            offset = 0
+            for _ in range(max_pages_per_state):
+                result = self.api.get_ventas(estado_venta=estado, limit=limit, offset=offset)
+                if not result.success:
+                    break
+                ventas.extend(self._api_items(result.data))
+                total = result.data.get("total") if isinstance(result.data, dict) else None
+                offset += limit
+                if not isinstance(total, int) or offset >= total:
+                    break
+        return ventas
+
+    @staticmethod
+    def _venta_conflict_summary(venta: dict[str, Any], objeto: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "id_venta": venta.get("id_venta"),
+            "codigo_venta": venta.get("codigo_venta"),
+            "estado_venta": venta.get("estado_venta"),
+            "id_inmueble": objeto.get("id_inmueble") if isinstance(objeto, dict) else None,
+            "id_unidad_funcional": objeto.get("id_unidad_funcional") if isinstance(objeto, dict) else None,
+        }
+
+    def _build_selector_venta_conflict_index(self, records: list[dict[str, Any]]) -> dict[str, dict[int, dict[str, Any]]]:
+        direct_inmuebles: dict[int, dict[str, Any]] = {}
+        direct_unidades: dict[int, dict[str, Any]] = {}
+        for venta in self._fetch_selector_active_ventas():
+            if not self._venta_is_selector_conflict(venta):
+                continue
+            for objeto in self._as_list(venta.get("objetos_resumen") or venta.get("objetos")):
+                if not isinstance(objeto, dict):
+                    continue
+                id_inmueble = _safe_int(objeto.get("id_inmueble"))
+                id_unidad = _safe_int(objeto.get("id_unidad_funcional"))
+                summary = self._venta_conflict_summary(venta, objeto)
+                if id_inmueble is not None:
+                    direct_inmuebles.setdefault(id_inmueble, summary)
+                if id_unidad is not None:
+                    direct_unidades.setdefault(id_unidad, summary)
+        return {"inmuebles": direct_inmuebles, "unidades": direct_unidades}
+
+    def _apply_selector_venta_conflict_index(
+        self,
+        records: list[dict[str, Any]],
+        conflict_index: dict[str, dict[int, dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        direct_inmuebles = conflict_index.get("inmuebles", {})
+        direct_unidades = conflict_index.get("unidades", {})
+        unidades_by_parent: dict[int, list[int]] = {}
+        for record in records:
+            if str(record.get("tipo_objeto") or "").upper() != "UNIDAD_FUNCIONAL":
+                continue
+            id_parent = _safe_int(record.get("id_inmueble") or record.get("inmueble_padre_id"))
+            id_unidad = _safe_int(record.get("id_unidad_funcional"))
+            if id_parent is not None and id_unidad is not None:
+                unidades_by_parent.setdefault(id_parent, []).append(id_unidad)
+
+        indexed: list[dict[str, Any]] = []
+        for record in records:
+            next_record = dict(record)
+            tipo_objeto = str(next_record.get("tipo_objeto") or "").upper()
+            id_inmueble = _safe_int(next_record.get("id_inmueble"))
+            id_unidad = _safe_int(next_record.get("id_unidad_funcional"))
+            if tipo_objeto == "INMUEBLE" and id_inmueble is not None:
+                direct = direct_inmuebles.get(id_inmueble)
+                if direct is not None and not next_record.get("motivo_bloqueo"):
+                    next_record["venta_vigente"] = True
+                    next_record["venta_conflictiva"] = direct
+                    next_record["motivo_bloqueo"] = VENTA_SELECTOR_BLOCK_REASON
+                elif not next_record.get("motivo_bloqueo"):
+                    for child_id in unidades_by_parent.get(id_inmueble, []):
+                        related = direct_unidades.get(child_id)
+                        if related is not None:
+                            next_record["venta_conflictiva_jerarquica"] = related
+                            next_record["motivo_bloqueo"] = VENTA_SELECTOR_RELATED_BLOCK_REASON
+                            break
+            elif tipo_objeto == "UNIDAD_FUNCIONAL" and id_unidad is not None:
+                direct = direct_unidades.get(id_unidad)
+                if direct is not None and not next_record.get("motivo_bloqueo"):
+                    next_record["venta_vigente"] = True
+                    next_record["venta_conflictiva"] = direct
+                    next_record["motivo_bloqueo"] = VENTA_SELECTOR_BLOCK_REASON
+                elif not next_record.get("motivo_bloqueo"):
+                    parent_id = _safe_int(next_record.get("id_inmueble") or next_record.get("inmueble_padre_id"))
+                    related = direct_inmuebles.get(parent_id) if parent_id is not None else None
+                    if related is not None:
+                        next_record["venta_conflictiva_jerarquica"] = related
+                        next_record["motivo_bloqueo"] = VENTA_SELECTOR_RELATED_BLOCK_REASON
+            indexed.append(next_record)
+        return indexed
+
+    @staticmethod
+    def _object_record_key(record: dict[str, Any]) -> tuple[str, int] | None:
+        tipo_objeto = str(record.get("tipo_objeto") or "").upper()
+        if tipo_objeto == "UNIDAD_FUNCIONAL":
+            id_unidad = _safe_int(record.get("id_unidad_funcional"))
+            return ("UNIDAD_FUNCIONAL", id_unidad) if id_unidad is not None else None
+        if tipo_objeto == "INMUEBLE":
+            id_inmueble = _safe_int(record.get("id_inmueble"))
+            return ("INMUEBLE", id_inmueble) if id_inmueble is not None else None
+        return None
+
+    def _current_sale_object_keys(self) -> set[tuple[str, int]]:
+        keys: set[tuple[str, int]] = set()
+        for objeto in self.state.objetos:
+            if objeto.tipo_objeto == "UNIDAD_FUNCIONAL" and objeto.id_unidad_funcional is not None:
+                keys.add(("UNIDAD_FUNCIONAL", int(objeto.id_unidad_funcional)))
+            elif objeto.tipo_objeto == "INMUEBLE" and objeto.id_inmueble is not None:
+                keys.add(("INMUEBLE", int(objeto.id_inmueble)))
+        return keys
+
+    def _mark_current_sale_objects_in_selector_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        current_keys = self._current_sale_object_keys()
+        marked: list[dict[str, Any]] = []
+        for record in records:
+            next_record = dict(record)
+            if self._object_record_key(next_record) in current_keys:
+                next_record["agregado_en_venta_actual"] = True
+                if not next_record.get("motivo_bloqueo"):
+                    next_record["motivo_bloqueo"] = VENTA_SELECTOR_ALREADY_ADDED_REASON
+            else:
+                next_record["agregado_en_venta_actual"] = False
+            marked.append(next_record)
+        return marked
+
+    @staticmethod
     def _availability_label(value: Any) -> str:
         if isinstance(value, dict):
             return str(
@@ -1127,6 +1295,7 @@ class VentaCompletaWizardV3Prototype:
         codigo = str(item.get("codigo_inmueble") or item.get("codigo") or item.get("id_inmueble") or "").strip()
         descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble").strip()
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        venta_conflictiva = self._venta_conflict_from_item(item)
         return {
             "tipo_objeto": "INMUEBLE",
             "id_inmueble": item.get("id_inmueble"),
@@ -1135,6 +1304,9 @@ class VentaCompletaWizardV3Prototype:
             "estado": disponibilidad,
             "estado_administrativo": item.get("estado_administrativo") or "",
             "ocupacion_actual": item.get("ocupacion_actual"),
+            "venta_vigente": bool(venta_conflictiva),
+            "venta_conflictiva": venta_conflictiva,
+            "motivo_bloqueo": VENTA_SELECTOR_BLOCK_REASON if venta_conflictiva else "",
             "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble."),
             "source": "backend",
             "persisted": True,
@@ -1145,9 +1317,11 @@ class VentaCompletaWizardV3Prototype:
         descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional").strip()
         inmueble = item.get("inmueble") if isinstance(item.get("inmueble"), dict) else {}
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        venta_conflictiva = self._venta_conflict_from_item(item)
         return {
             "tipo_objeto": "UNIDAD_FUNCIONAL",
             "id_unidad_funcional": item.get("id_unidad_funcional"),
+            "id_inmueble": item.get("id_inmueble") or inmueble.get("id_inmueble"),
             "codigo": codigo,
             "descripcion": descripcion,
             "inmueble_padre": inmueble.get("codigo_inmueble") or inmueble.get("nombre_inmueble") or item.get("id_inmueble"),
@@ -1155,6 +1329,9 @@ class VentaCompletaWizardV3Prototype:
             "estado_operativo": item.get("estado_operativo") or "",
             "estado_administrativo": item.get("estado_administrativo") or "",
             "ocupacion_actual": item.get("ocupacion_actual"),
+            "venta_vigente": bool(venta_conflictiva),
+            "venta_conflictiva": venta_conflictiva,
+            "motivo_bloqueo": VENTA_SELECTOR_BLOCK_REASON if venta_conflictiva else "",
             "resumen": str(item.get("observaciones") or "Unidad funcional."),
             "source": "backend",
             "persisted": True,
@@ -1229,6 +1406,8 @@ class VentaCompletaWizardV3Prototype:
                 show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_objeto_selector_scroll()
+        else:
+            self.objeto_selector.set_records(self._backend_object_selector_records())
         self.objeto_selector.set_show_technical_details(self.state.mostrar_datos_tecnicos)
 
         controls: list[ft.Control] = [
@@ -1300,10 +1479,14 @@ class VentaCompletaWizardV3Prototype:
         is_selectable = is_object_selectable(
             self.objeto_seleccionado.get("estado"),
             self.objeto_seleccionado.get("ocupacion_actual"),
+            self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva") or self.objeto_seleccionado.get("venta_conflictiva_jerarquica"),
+            self.objeto_seleccionado.get("motivo_bloqueo"),
         )
         availability_warning = object_selection_warning(
             self.objeto_seleccionado.get("estado"),
             self.objeto_seleccionado.get("ocupacion_actual"),
+            self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva") or self.objeto_seleccionado.get("venta_conflictiva_jerarquica"),
+            self.objeto_seleccionado.get("motivo_bloqueo"),
         )
         panel_content = ft.Column(
             controls=[
@@ -1330,6 +1513,23 @@ class VentaCompletaWizardV3Prototype:
                             *(
                                 [self._technical_chip(f"ocupacion_actual: {self.objeto_seleccionado.get('ocupacion_actual')}")]
                                 if self.objeto_seleccionado.get("ocupacion_actual")
+                                else []
+                            ),
+                            self._technical_chip(f"venta_vigente: {bool(self.objeto_seleccionado.get('venta_vigente') or self.objeto_seleccionado.get('venta_conflictiva'))}"),
+                            self._technical_chip(f"agregado_en_venta_actual: {bool(self.objeto_seleccionado.get('agregado_en_venta_actual'))}"),
+                            *(
+                                [self._technical_chip(f"venta_conflictiva_jerarquica: {self.objeto_seleccionado.get('venta_conflictiva_jerarquica')}")]
+                                if self.objeto_seleccionado.get("venta_conflictiva_jerarquica")
+                                else []
+                            ),
+                            *(
+                                [self._technical_chip(f"venta_conflictiva: {self.objeto_seleccionado.get('venta_conflictiva')}")]
+                                if self.objeto_seleccionado.get("venta_conflictiva")
+                                else []
+                            ),
+                            *(
+                                [self._technical_chip(f"motivo_bloqueo: {self.objeto_seleccionado.get('motivo_bloqueo')}")]
+                                if self.objeto_seleccionado.get("motivo_bloqueo")
                                 else []
                             ),
                         ]),
@@ -6460,7 +6660,12 @@ class VentaCompletaWizardV3Prototype:
         return f"{self._currency_label()} {_format_money(value)}"
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
-        if selected is not None and not is_object_selectable(selected.get("estado"), selected.get("ocupacion_actual")):
+        if selected is not None and not is_object_selectable(
+            selected.get("estado"),
+            selected.get("ocupacion_actual"),
+            selected.get("venta_vigente") or selected.get("venta_conflictiva") or selected.get("venta_conflictiva_jerarquica"),
+            selected.get("motivo_bloqueo"),
+        ):
             self.objeto_seleccionado = None
             if self.objeto_selector is not None:
                 self.objeto_selector.selected_panel.visible = False
@@ -6509,10 +6714,14 @@ class VentaCompletaWizardV3Prototype:
             if not is_object_selectable(
                 self.objeto_seleccionado.get("estado"),
                 self.objeto_seleccionado.get("ocupacion_actual"),
+                self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva") or self.objeto_seleccionado.get("venta_conflictiva_jerarquica"),
+                self.objeto_seleccionado.get("motivo_bloqueo"),
             ):
                 return object_selection_warning(
                     self.objeto_seleccionado.get("estado"),
                     self.objeto_seleccionado.get("ocupacion_actual"),
+                    self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva") or self.objeto_seleccionado.get("venta_conflictiva_jerarquica"),
+                    self.objeto_seleccionado.get("motivo_bloqueo"),
                 ) or "El objeto no está disponible para esta venta."
             if self.objeto_seleccionado.get("source") != "backend" or not self.objeto_seleccionado.get("persisted", False):
                 return "El objeto debe estar disponible y confirmado en el sistema."
@@ -6532,10 +6741,14 @@ class VentaCompletaWizardV3Prototype:
         if not is_object_selectable(
             self.objeto_seleccionado.get("estado"),
             self.objeto_seleccionado.get("ocupacion_actual"),
+            self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva") or self.objeto_seleccionado.get("venta_conflictiva_jerarquica"),
+            self.objeto_seleccionado.get("motivo_bloqueo"),
         ):
             self.precio_objeto_error = object_selection_warning(
                 self.objeto_seleccionado.get("estado"),
                 self.objeto_seleccionado.get("ocupacion_actual"),
+                self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva") or self.objeto_seleccionado.get("venta_conflictiva_jerarquica"),
+                self.objeto_seleccionado.get("motivo_bloqueo"),
             ) or "El objeto no está disponible para esta venta."
             self._render()
             return
@@ -7367,6 +7580,167 @@ def _run_self_test() -> None:
     assert "FINANCIADO" not in confirmed_text
     assert "CONTADO" in panel_text
     assert "FINANCIADO" not in panel_text
+
+
+
+    selectable_object = {
+        "tipo_objeto": "INMUEBLE",
+        "id_inmueble": 11,
+        "estado": "DISPONIBLE",
+        "ocupacion_actual": None,
+        "texto_visual": "Inmueble libre",
+        "source": "backend",
+        "persisted": True,
+    }
+    blocked_object = {
+        "tipo_objeto": "UNIDAD_FUNCIONAL",
+        "id_unidad_funcional": 12,
+        "estado": "DISPONIBLE",
+        "ocupacion_actual": None,
+        "venta_vigente": True,
+        "motivo_bloqueo": VENTA_SELECTOR_BLOCK_REASON,
+        "texto_visual": "UF vendida",
+        "source": "backend",
+        "persisted": True,
+    }
+    assert is_object_selectable(
+        selectable_object["estado"],
+        selectable_object["ocupacion_actual"],
+        selectable_object.get("venta_vigente"),
+        selectable_object.get("motivo_bloqueo"),
+    ) is True
+    assert is_object_selectable(
+        blocked_object["estado"],
+        blocked_object["ocupacion_actual"],
+        blocked_object.get("venta_vigente"),
+        blocked_object.get("motivo_bloqueo"),
+    ) is False
+    assert object_selection_warning(
+        blocked_object["estado"],
+        blocked_object["ocupacion_actual"],
+        blocked_object.get("venta_vigente"),
+        blocked_object.get("motivo_bloqueo"),
+    ) == VENTA_SELECTOR_BLOCK_REASON
+
+
+
+    class BatchWizard(TestWizard):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self.batch_fetch_count = 0
+
+        def _fetch_selector_active_ventas(self) -> list[dict[str, Any]]:  # type: ignore[override]
+            self.batch_fetch_count += 1
+            return [
+                {
+                    "id_venta": 900,
+                    "codigo_venta": "V-INM-900",
+                    "estado_venta": "confirmada",
+                    "objetos_resumen": [{"id_inmueble": 20, "id_unidad_funcional": None}],
+                },
+                {
+                    "id_venta": 901,
+                    "codigo_venta": "V-UF-901",
+                    "estado_venta": "activa",
+                    "objetos_resumen": [{"id_inmueble": None, "id_unidad_funcional": 31}],
+                },
+            ]
+
+    batch_wizard = BatchWizard(page=None)  # type: ignore[arg-type]
+    hierarchy_records = batch_wizard._enrich_object_records_with_venta_conflicts([
+        {"tipo_objeto": "INMUEBLE", "id_inmueble": 20, "estado": "DISPONIBLE"},
+        {"tipo_objeto": "UNIDAD_FUNCIONAL", "id_unidad_funcional": 21, "id_inmueble": 20, "estado": "DISPONIBLE"},
+        {"tipo_objeto": "INMUEBLE", "id_inmueble": 30, "estado": "DISPONIBLE"},
+        {"tipo_objeto": "UNIDAD_FUNCIONAL", "id_unidad_funcional": 31, "id_inmueble": 30, "estado": "DISPONIBLE"},
+        {"tipo_objeto": "INMUEBLE", "id_inmueble": 40, "estado": "DISPONIBLE"},
+    ])
+    direct_inmueble = hierarchy_records[0]
+    unit_blocked_by_parent = hierarchy_records[1]
+    inmueble_blocked_by_child = hierarchy_records[2]
+    direct_unit = hierarchy_records[3]
+    free_inmueble = hierarchy_records[4]
+    assert batch_wizard.batch_fetch_count == 1
+    assert direct_inmueble["motivo_bloqueo"] == VENTA_SELECTOR_BLOCK_REASON
+    assert direct_unit["motivo_bloqueo"] == VENTA_SELECTOR_BLOCK_REASON
+    assert unit_blocked_by_parent["motivo_bloqueo"] == VENTA_SELECTOR_RELATED_BLOCK_REASON
+    assert unit_blocked_by_parent.get("venta_conflictiva_jerarquica") is not None
+    assert object_selection_warning(
+        unit_blocked_by_parent["estado"],
+        unit_blocked_by_parent.get("ocupacion_actual"),
+        unit_blocked_by_parent.get("venta_conflictiva_jerarquica"),
+        unit_blocked_by_parent.get("motivo_bloqueo"),
+    ) == VENTA_SELECTOR_RELATED_BLOCK_REASON
+    assert inmueble_blocked_by_child["motivo_bloqueo"] == VENTA_SELECTOR_RELATED_BLOCK_REASON
+    assert inmueble_blocked_by_child.get("venta_conflictiva_jerarquica") is not None
+    assert is_object_selectable(
+        inmueble_blocked_by_child["estado"],
+        inmueble_blocked_by_child.get("ocupacion_actual"),
+        inmueble_blocked_by_child.get("venta_conflictiva_jerarquica"),
+        inmueble_blocked_by_child.get("motivo_bloqueo"),
+    ) is False
+    assert free_inmueble.get("motivo_bloqueo") in (None, "")
+    assert is_object_selectable(
+        free_inmueble["estado"],
+        free_inmueble.get("ocupacion_actual"),
+        free_inmueble.get("venta_vigente"),
+        free_inmueble.get("motivo_bloqueo"),
+    ) is True
+
+    wizard.state.objetos = [
+        ObjetoVentaWizardDraft(
+            tipo_objeto="INMUEBLE",
+            id_inmueble=11,
+            id_unidad_funcional=None,
+            texto_visual="Inmueble libre",
+            precio_asignado="1000.00",
+            persisted=True,
+        ),
+        ObjetoVentaWizardDraft(
+            tipo_objeto="UNIDAD_FUNCIONAL",
+            id_inmueble=None,
+            id_unidad_funcional=13,
+            texto_visual="UF agregada",
+            precio_asignado="500.00",
+            persisted=True,
+        ),
+    ]
+    marked = wizard._mark_current_sale_objects_in_selector_records([
+        selectable_object,
+        {
+            "tipo_objeto": "UNIDAD_FUNCIONAL",
+            "id_unidad_funcional": 13,
+            "estado": "DISPONIBLE",
+            "ocupacion_actual": None,
+            "texto_visual": "UF agregada",
+        },
+        blocked_object,
+    ])
+    added_inmueble = marked[0]
+    added_unidad = marked[1]
+    still_sale_blocked = marked[2]
+    assert added_inmueble["agregado_en_venta_actual"] is True
+    assert added_inmueble["motivo_bloqueo"] == VENTA_SELECTOR_ALREADY_ADDED_REASON
+    assert is_object_selectable(
+        added_inmueble["estado"],
+        added_inmueble["ocupacion_actual"],
+        added_inmueble.get("venta_vigente"),
+        added_inmueble.get("motivo_bloqueo"),
+    ) is False
+    assert object_selection_warning(
+        added_inmueble["estado"],
+        added_inmueble["ocupacion_actual"],
+        added_inmueble.get("venta_vigente"),
+        added_inmueble.get("motivo_bloqueo"),
+    ) == VENTA_SELECTOR_ALREADY_ADDED_REASON
+    assert added_unidad["agregado_en_venta_actual"] is True
+    assert added_unidad["motivo_bloqueo"] == VENTA_SELECTOR_ALREADY_ADDED_REASON
+    assert is_object_selectable(
+        added_unidad["estado"],
+        added_unidad["ocupacion_actual"],
+        added_unidad.get("venta_vigente"),
+        added_unidad.get("motivo_bloqueo"),
+    ) is False
+    assert still_sale_blocked["motivo_bloqueo"] == VENTA_SELECTOR_BLOCK_REASON
 
     friendly = wizard._confirm_error_message(
         ApiResult(

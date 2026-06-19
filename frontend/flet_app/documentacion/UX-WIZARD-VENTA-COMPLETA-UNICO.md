@@ -134,6 +134,39 @@ En todos los casos, esta restriccion es solo preventiva de frontend y no cambia
 payloads ni endpoints: el backend sigue siendo la fuente definitiva y valida la
 disponibilidad y la ocupacion al confirmar la venta.
 
+La disponibilidad operativa y la existencia de una venta vigente son controles
+distintos. Por eso el selector no confia solo en `estado_disponibilidad`:
+ademas bloquea inmuebles o unidades funcionales que ya participan en ventas con
+estado `activa`, `confirmada`, `en_proceso` o `finalizada`, aunque su
+disponibilidad siga figurando como `DISPONIBLE`. Las ventas `anulada`,
+`cancelada`, `borrador` o eliminadas logicamente (`deleted_at` informado) no son
+bloqueantes para esta advertencia preventiva.
+
+Cuando el listado de objetos ya incluye una marca de venta vigente, el wizard la
+reutiliza. Si no viene en el objeto, el prototipo consulta lecturas existentes de
+ventas vigentes por estado en una estrategia batch/paginada razonable y arma
+indices locales por `id_inmueble` e `id_unidad_funcional`; no debe hacer una
+consulta por cada objeto listado. Esta estrategia usa `GET /api/v1/ventas`
+porque no existe un filtro batch real para muchos objetos en el prototipo.
+
+El objeto conflictivo directo permanece visible como bloqueado, no seleccionable,
+con el motivo `Ya participa en una venta vigente`. Si el conflicto es
+jerarquico, el motivo es `Tiene una venta vigente relacionada`: una venta sobre
+el inmueble padre bloquea sus unidades funcionales cargadas, y una venta sobre
+una UF hija bloquea el inmueble padre cuando esa relacion esta disponible en los
+records cargados. En modo tecnico se exponen `estado_disponibilidad`,
+`ocupacion_actual`, `venta_vigente` / `venta_conflictiva`,
+`venta_conflictiva_jerarquica` y `motivo_bloqueo` para diagnostico.
+
+El selector tambien bloquea preventivamente los objetos que ya fueron agregados
+al draft de la venta actual (`state.objetos`). Este bloqueo no depende de una
+venta persistida ni reemplaza la validacion final del backend: evita que el
+usuario vuelva a seleccionar el mismo `id_inmueble` o `id_unidad_funcional` en
+el mismo flujo. El motivo visual es `Ya fue agregado a esta venta`; si el mismo
+registro ya tiene bloqueo por venta vigente, se conserva el motivo de venta
+vigente. En modo tecnico se muestra `agregado_en_venta_actual: true` junto con
+`motivo_bloqueo`.
+
 ## 4. Contratos backend existentes que guian el diseno
 
 El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:
