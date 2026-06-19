@@ -217,6 +217,9 @@ class WizardVentaCompletaV3State:
     confirm_status_code: int | None = None
     confirm_op_id: str | None = None
     confirm_payload_signature: str | None = None
+    confirm_payload: dict[str, Any] | None = None
+    confirm_endpoint: str | None = None
+    confirm_error_details: Any = None
     detalle_venta_loading: bool = False
     detalle_venta_data: dict[str, Any] | None = None
     detalle_venta_error: str | None = None
@@ -3750,6 +3753,12 @@ class VentaCompletaWizardV3Prototype:
         self.state.confirm_data = None
         self.state.confirm_error = None
         self.state.confirm_status_code = None
+        self.state.confirm_payload = payload
+        self.state.confirm_error_details = None
+        if self.state.origen == "RESERVA":
+            self.state.confirm_endpoint = f"POST /api/v1/reservas-venta/{self.state.id_reserva_venta}/confirmar-venta-completa"
+        else:
+            self.state.confirm_endpoint = "POST /api/v1/ventas/directa/confirmar-venta-completa"
         self._render()
         if self.state.origen == "RESERVA":
             result = self.api.confirmar_venta_completa_desde_reserva(
@@ -3772,6 +3781,7 @@ class VentaCompletaWizardV3Prototype:
             self.state.pantalla_actual = "VENTA_CONFIRMADA"
             self._load_confirmed_sale_detail(force=True)
             return
+        self.state.confirm_error_details = result.error_details
         self.state.confirm_error = self._confirm_error_message(result)
         self._render()
 
@@ -3831,6 +3841,19 @@ class VentaCompletaWizardV3Prototype:
         self.precio_objeto_value = ""
         self.fecha_venta_display_value = ""
         self.fecha_venta_error = None
+        self.backend_reservation_records = []
+        self.backend_reservation_error = None
+        self.backend_reservations_loaded = False
+        self.backend_object_records = []
+        self.backend_object_error = None
+        self.backend_objects_loaded = False
+        self.backend_buyer_records = []
+        self.backend_buyer_error = None
+        self.backend_buyers_loaded = False
+        self.rol_comprador_data = None
+        self.rol_comprador_catalog_loaded = False
+        self.rol_comprador_catalog_error = None
+        self.rol_comprador_manual_fallback_enabled = False
         self._render()
 
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
@@ -4326,6 +4349,17 @@ class VentaCompletaWizardV3Prototype:
         return f"{nombre or persona.get('id_persona') or comprador.get('id_persona') or '-'} / {rol.get('codigo_rol') or comprador.get('codigo_rol') or '-'} / {comprador.get('porcentaje_responsabilidad') or '-'}%"
 
     def _confirm_error_message(self, result: ApiResult) -> str:
+        if self._is_reservation_already_converted_error(result):
+            friendly = "La reserva seleccionada ya fue convertida en venta."
+            if self.state.mostrar_datos_tecnicos:
+                technical = {
+                    "status_code": result.status_code,
+                    "error_code": result.error_code,
+                    "error_message": result.error_message,
+                    "error_details": result.error_details,
+                }
+                return f"{friendly} Detalle técnico: {json.dumps(technical, ensure_ascii=False, default=str)}"
+            return friendly
         if result.status_code == 400:
             prefix = "El sistema rechazó la confirmación por validación."
         elif result.status_code == 409:
@@ -4345,11 +4379,31 @@ class VentaCompletaWizardV3Prototype:
             parts.append(result.error_message)
         return " ".join(parts)
 
+    @staticmethod
+    def _is_reservation_already_converted_error(result: ApiResult) -> bool:
+        haystack = " ".join(
+            str(value or "")
+            for value in (result.error_code, result.error_message, result.error_details)
+        ).upper()
+        converted_markers = (
+            "YA FUE CONVERTIDA",
+            "YA CONVERTIDA",
+            "RESERVA_CONVERTIDA",
+            "RESERVA_YA_CONVERTIDA",
+            "CONFIRMADA_VENTA",
+            "VENTA_CONFIRMADA",
+            "YA TIENE VENTA",
+        )
+        return any(marker in haystack for marker in converted_markers)
+
     def _reset_confirm_attempt(self, *, clear_error: bool = True) -> None:
         self.state.confirm_op_id = None
         self.state.confirm_payload_signature = None
         self.state.confirm_data = None
         self.state.confirm_status_code = None
+        self.state.confirm_payload = None
+        self.state.confirm_endpoint = None
+        self.state.confirm_error_details = None
         if clear_error:
             self.state.confirm_error = None
 
@@ -4521,8 +4575,20 @@ class VentaCompletaWizardV3Prototype:
     def _build_confirmed_sale_step(self) -> ft.Control:
         controls: list[ft.Control] = [
             ft.Text("Venta confirmada", size=24, weight=ft.FontWeight.W_700, color=ft.Colors.GREEN_900),
-            self._build_help_card("La venta se confirmó correctamente.", ft.Colors.GREEN_50, ft.Colors.GREEN_200),
+            self._build_help_card(
+                "La venta se confirmó correctamente. Esta operación ya no se edita desde el wizard; usá Nueva venta para iniciar otro flujo limpio.",
+                ft.Colors.GREEN_50,
+                ft.Colors.GREEN_200,
+            ),
+            *self._technical_controls(self._build_confirmed_sale_technical_controls()),
             *self._build_confirmed_sale_detail_controls(),
+            ft.Row(
+                controls=[
+                    ft.Container(expand=True),
+                    ft.FilledButton("Nueva venta", icon=ft.Icons.ADD_HOME_OUTLINED, on_click=self._restart_wizard),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
         ]
         return ft.Container(
             padding=ft.Padding(left=24, top=24, right=24, bottom=40),
@@ -4531,6 +4597,32 @@ class VentaCompletaWizardV3Prototype:
             border=_border_all(1, ft.Colors.BLUE_GREY_100),
             content=ft.Column(controls=controls, spacing=14),
         )
+
+
+    def _build_confirmed_sale_technical_controls(self) -> list[ft.Control]:
+        response = self.state.confirm_data if self.state.confirm_data is not None else {
+            "error": self.state.confirm_error,
+            "details": self.state.confirm_error_details,
+        }
+        payload = self.state.confirm_payload or {}
+        rows = [
+            _info_row("Endpoint", self.state.confirm_endpoint or "-"),
+            _info_row("id_venta", self._confirmed_sale_id() or "-"),
+            _info_row("id_reserva_venta", self.state.id_reserva_venta if self.state.origen == "RESERVA" else "NO APLICA"),
+            _info_row("op_id", self.state.confirm_op_id or "-"),
+        ]
+        return [
+            self._build_review_section_container(
+                [
+                    ft.Text("Datos técnicos de confirmación", size=16, weight=ft.FontWeight.W_700),
+                    *rows,
+                    ft.Text("Payload de confirmación", size=12, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700),
+                    ft.Text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), selectable=True, size=11),
+                    ft.Text("Response backend", size=12, weight=ft.FontWeight.W_700, color=ft.Colors.BLUE_GREY_700),
+                    ft.Text(json.dumps(response, ensure_ascii=False, indent=2, default=str), selectable=True, size=11),
+                ]
+            )
+        ]
 
     def _build_flow_state_panel(self) -> ft.Control:
         controls: list[ft.Control] = [ft.Text("Estado del flujo", size=20, weight=ft.FontWeight.W_700)]
@@ -4554,6 +4646,9 @@ class VentaCompletaWizardV3Prototype:
                 self._build_flow_state_section(
                     "Operación",
                     [
+                        _flow_info_row("Origen", self._origin_label()),
+                        _flow_info_row("Reserva", self.state.id_reserva_venta if self.state.origen == "RESERVA" else "NO APLICA"),
+                        _flow_info_row("Venta", self._confirmed_sale_id() or "-"),
                         _flow_info_row("Forma de pago", self._payment_method_status()),
                     ],
                 ),
@@ -7089,11 +7184,100 @@ def _info_row_control(label: str, value_control: ft.Control) -> ft.Control:
     )
 
 
+def _run_self_test() -> None:
+    class TestWizard(VentaCompletaWizardV3Prototype):
+        def _render(self) -> None:  # type: ignore[override]
+            return None
+
+    wizard = TestWizard(page=None)  # type: ignore[arg-type]
+    wizard.state.origen = "RESERVA"
+    wizard.state.pantalla_actual = "VENTA_CONFIRMADA"
+    wizard.state.id_reserva_venta = 77
+    wizard.state.version_registro = 3
+    wizard.state.texto_visual_reserva = "Reserva R-77"
+    wizard.state.reserva_visible_data = {"codigo": "R-77", "estado": "VIGENTE"}
+    wizard.state.objetos.append(
+        ObjetoVentaWizardDraft(
+            tipo_objeto="INMUEBLE",
+            id_inmueble=10,
+            id_unidad_funcional=None,
+            texto_visual="Inmueble 10",
+            precio_asignado="1000.00",
+            persisted=True,
+            heredado_reserva=True,
+        )
+    )
+    wizard.state.compradores.append(
+        CompradorWizardDraft(
+            id_persona=20,
+            texto_visual="Comprador 20",
+            porcentaje_responsabilidad="100.00",
+            id_rol_participacion="1",
+            persisted=True,
+            heredado_reserva=True,
+        )
+    )
+    wizard.state.preview_data = {"preview": True}
+    wizard.state.preview_stale = False
+    wizard.state.confirm_data = {"venta": {"id_venta": 555}}
+    wizard.state.confirm_error = "error anterior"
+    wizard.state.confirm_status_code = 201
+    wizard.state.confirm_op_id = "11111111-1111-1111-1111-111111111111"
+    wizard.state.confirm_payload_signature = "signature"
+    wizard.state.confirm_payload = {"payload": True}
+    wizard.state.confirm_endpoint = "POST /api/v1/reservas-venta/77/confirmar-venta-completa"
+    wizard.state.confirm_error_details = {"detail": "technical"}
+    wizard.state.detalle_venta_data = {"venta": {"id_venta": 555}}
+    wizard.state.detalle_venta_error = "detalle anterior"
+    wizard.state.detalle_venta_status_code = 200
+    wizard.state.detalle_venta_requested_id = 555
+    wizard.state.mostrar_datos_tecnicos = True
+
+    wizard._restart_wizard()
+
+    assert wizard.state.pantalla_actual == "ORIGEN"
+    assert wizard.state.origen is None
+    assert wizard.state.id_reserva_venta is None
+    assert wizard.state.version_registro is None
+    assert wizard.state.reserva_visible_data == {}
+    assert wizard.state.objetos == []
+    assert wizard.state.compradores == []
+    assert wizard.state.preview_data is None
+    assert wizard.state.confirm_data is None
+    assert wizard.state.confirm_error is None
+    assert wizard.state.confirm_op_id is None
+    assert wizard.state.confirm_payload_signature is None
+    assert wizard.state.confirm_payload is None
+    assert wizard.state.confirm_endpoint is None
+    assert wizard.state.detalle_venta_data is None
+    assert wizard.state.detalle_venta_requested_id is None
+    assert wizard.state.mostrar_datos_tecnicos is False
+
+    direct_payload = {"codigo_venta": "VD-1", "objetos": [], "compradores": []}
+    wizard.state.origen = "DIRECTA"
+    assert wizard._ensure_confirm_op_id_for_payload(direct_payload) == wizard.state.confirm_op_id
+    assert wizard.state.confirm_payload_signature == wizard._confirm_payload_signature(direct_payload)
+
+    friendly = wizard._confirm_error_message(
+        ApiResult(
+            success=False,
+            status_code=409,
+            error_code="RESERVA_YA_CONVERTIDA",
+            error_message="La reserva ya fue convertida",
+        )
+    )
+    assert friendly == "La reserva seleccionada ya fue convertida en venta."
+    print("self-test ok")
+
+
 def main(page: ft.Page) -> None:
     VentaCompletaWizardV3Prototype(page).run()
 
 
-if hasattr(ft, "run"):
-    ft.run(main)
-else:
-    ft.app(target=main)
+if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        _run_self_test()
+    elif hasattr(ft, "run"):
+        ft.run(main)
+    else:
+        ft.app(target=main)

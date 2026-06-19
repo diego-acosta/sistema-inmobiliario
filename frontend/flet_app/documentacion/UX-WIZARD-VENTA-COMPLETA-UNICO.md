@@ -510,6 +510,55 @@ Precarga preventiva desde reserva:
 El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
 registros persistidos de backend real.
 
+
+### Pantalla final - VENTA_CONFIRMADA
+
+Después de una confirmación exitosa desde reserva o venta directa, el wizard
+avanza a `VENTA_CONFIRMADA`. Este estado es terminal para la operación
+confirmada: la venta ya fue persistida por el endpoint compuesto y no se vuelve
+a editar desde este wizard.
+
+La pantalla debe mantener el detalle integral read-only de venta, cargado desde
+el backend, y mostrar un resumen ejecutivo claro con:
+
+- código de venta;
+- estado;
+- comprador/es;
+- objeto/s;
+- total;
+- forma de pago.
+
+El panel lateral debe quedar sincronizado con el estado final, incluyendo origen,
+`id_venta` resultante, reserva asociada cuando aplique, total, forma de pago,
+objetos, compradores y próximo paso `Finalizar / Nueva venta`.
+
+Acción principal: `Nueva venta` o `Finalizar / Nueva venta`. Al presionarla, el
+wizard debe generar un estado inicial limpio y volver a `ORIGEN` sin cerrar la
+ventana. Deben limpiarse `confirm_data`, `confirm_error`, `preview_data`,
+`detalle_venta_data`, reserva seleccionada, objetos, compradores, plan,
+`op_id`, firmas de payload y flags técnicos de la operación anterior. La
+configuración general del `ApiClient` se conserva.
+
+En `VENTA_CONFIRMADA`, `Anterior` queda deshabilitado o sin efecto para evitar
+volver a editar una venta ya confirmada. `Siguiente` puede quedar deshabilitado;
+la acción principal del usuario es iniciar una nueva venta.
+
+Si la operación confirmada venía desde reserva, iniciar una nueva venta debe
+empezar sin reserva seleccionada y sin estado heredado. No se debe permitir
+reconfirmar la misma reserva por contaminación del estado anterior. Si el
+backend rechaza una confirmación porque la reserva ya fue convertida, la UI debe
+mostrar el mensaje funcional: `La reserva seleccionada ya fue convertida en
+venta.`. En modo técnico se agrega el response/error completo del backend.
+
+Con **Mostrar datos técnicos** activo, la pantalla final debe exponer:
+
+- endpoint usado;
+- `id_venta` resultante;
+- `id_reserva_venta` si aplica;
+- `op_id` utilizado;
+- payload de confirmación;
+- response backend.
+
 ### Paso 2 - Datos de venta
 
 Campos base:
