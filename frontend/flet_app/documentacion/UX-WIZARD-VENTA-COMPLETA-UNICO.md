@@ -510,6 +510,63 @@ Precarga preventiva desde reserva:
 El flujo `DIRECTA` continúa hacia Datos iniciales y Objetos de venta usando
 registros persistidos de backend real.
 
+
+### Pantalla final - VENTA_CONFIRMADA
+
+Después de una confirmación exitosa desde reserva o venta directa, el wizard
+avanza a `VENTA_CONFIRMADA`. Este estado es terminal para la operación
+confirmada: la venta ya fue persistida por el endpoint compuesto y no se vuelve
+a editar desde este wizard.
+
+La pantalla debe mantener el detalle integral read-only de venta, cargado desde
+el backend, y mostrar un resumen ejecutivo claro con:
+
+- código de venta;
+- estado;
+- comprador/es;
+- objeto/s;
+- total;
+- forma de pago.
+
+El panel lateral debe quedar sincronizado con el estado final, incluyendo origen,
+`id_venta` resultante, reserva asociada cuando aplique, total, forma de pago,
+objetos, compradores y próximo paso `Finalizar / Nueva venta`.
+
+Acción principal: `Nueva venta` o `Finalizar / Nueva venta`. Al presionarla, el
+wizard debe generar un estado inicial limpio y volver a `ORIGEN` sin cerrar la
+ventana. Deben limpiarse `confirm_data`, `confirm_error`, `preview_data`,
+`detalle_venta_data`, reserva seleccionada, objetos, compradores, plan,
+`op_id`, firmas de payload, flags técnicos de la operación anterior, selección
+actual de objeto/comprador y caches visuales de buscadores del prototipo. La
+configuración general del `ApiClient` se conserva. Al iniciar el nuevo flujo, el
+panel lateral debe mostrar `Objetos: 0` y la moneda debe poder cambiarse porque
+no existe ningún objeto precargado.
+
+En `VENTA_CONFIRMADA`, `Anterior` queda deshabilitado o sin efecto para evitar
+volver a editar una venta ya confirmada. `Siguiente` puede quedar deshabilitado;
+la acción principal del usuario es iniciar una nueva venta.
+
+Si la operación confirmada venía desde reserva, iniciar una nueva venta debe
+empezar sin reserva seleccionada y sin estado heredado. No se debe permitir
+reconfirmar la misma reserva por contaminación del estado anterior. Si el
+backend rechaza una confirmación porque la reserva ya fue convertida, la UI debe
+mostrar el mensaje funcional: `La reserva seleccionada ya fue convertida en
+venta.`. En modo técnico se agrega el response/error completo del backend.
+
+La forma de pago mostrada en la pantalla final debe ser consistente entre panel
+lateral, resumen y detalle integral. Si la operación confirmada fue `CONTADO`,
+ninguna etiqueta de forma de pago debe mostrar `FINANCIADO`, aunque el detalle
+técnico del backend incluya estructuras internas de plan/obligaciones.
+
+Con **Mostrar datos técnicos** activo, la pantalla final debe exponer:
+
+- endpoint usado;
+- `id_venta` resultante;
+- `id_reserva_venta` si aplica;
+- `op_id` utilizado;
+- payload de confirmación;
+- response backend.
+
 ### Paso 2 - Datos de venta
 
 Campos base:
