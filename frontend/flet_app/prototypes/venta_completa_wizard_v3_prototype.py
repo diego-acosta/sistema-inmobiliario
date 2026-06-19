@@ -604,15 +604,31 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_header(self) -> ft.Control:
-        return ft.Column(
+        header_actions: list[ft.Control] = []
+        if self.embedded and self.on_close is not None and self.state.pantalla_actual != "VENTA_CONFIRMADA":
+            header_actions.append(
+                ft.OutlinedButton(
+                    "Volver a ventas",
+                    icon=ft.Icons.ARROW_BACK,
+                    on_click=lambda _: self.on_close(),
+                )
+            )
+        return ft.Row(
             controls=[
-                ft.Text("Venta completa V3", size=28, weight=ft.FontWeight.W_700),
-                ft.Text(
-                    "Prototipo pantalla por pantalla para avanzar el alta de venta completa V3.",
-                    color=ft.Colors.BLUE_GREY_700,
+                ft.Column(
+                    controls=[
+                        ft.Text("Venta completa V3", size=28, weight=ft.FontWeight.W_700),
+                        ft.Text(
+                            "Prototipo pantalla por pantalla para avanzar el alta de venta completa V3.",
+                            color=ft.Colors.BLUE_GREY_700,
+                        ),
+                    ],
+                    spacing=4,
+                    expand=True,
                 ),
+                *header_actions,
             ],
-            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.START,
         )
 
     def _wizard_step_items(self) -> list[str]:
