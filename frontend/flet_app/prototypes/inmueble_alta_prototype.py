@@ -30,6 +30,10 @@ if str(APP_ROOT) not in sys.path:
 import flet as ft
 
 from app.api_client import ApiClient, ApiResult
+from app.components.technical_output_panel import (
+    build_technical_output_panel,
+    format_technical_output,
+)
 from app.inmueble_alta_helpers import (
     ESTADOS_ADMINISTRATIVOS,
     ESTADOS_DATO_CATASTRAL,
@@ -404,9 +408,10 @@ class InmuebleAltaPrototype:
                 ft.Text(f"uid_global: {data.get('uid_global')}", selectable=True)
             )
         rows.append(ft.Divider())
-        rows.append(ft.Text("Modo técnico", weight=ft.FontWeight.W_700))
-        rows.extend(
-            self._technical_rows(inmueble_payload, data, dato_payload, dato_result)
+        rows.append(
+            self._build_technical_panel(
+                inmueble_payload, data, dato_payload, dato_result
+            )
         )
         self.result_details.controls = rows
         self.result_details.visible = bool(rows)
@@ -419,20 +424,19 @@ class InmuebleAltaPrototype:
         dato_result: ApiResult | None,
     ) -> None:
         self.result_details.controls = [
-            ft.Text("Modo técnico", weight=ft.FontWeight.W_700),
-            *self._technical_rows(
+            self._build_technical_panel(
                 inmueble_payload, inmueble_result, dato_payload, dato_result
-            ),
+            )
         ]
         self.result_details.visible = True
 
-    def _technical_rows(
+    def _build_technical_panel(
         self,
         inmueble_payload: dict[str, Any],
         inmueble_response: dict[str, Any] | ApiResult,
         dato_payload: dict[str, Any] | None,
         dato_result: ApiResult | None,
-    ) -> list[ft.Control]:
+    ) -> ft.Control:
         inmueble_data = (
             inmueble_response
             if isinstance(inmueble_response, dict)
@@ -443,41 +447,24 @@ class InmuebleAltaPrototype:
             backend_errors.append(format_api_error(inmueble_response))
         if dato_result is not None and not dato_result.success:
             backend_errors.append(format_api_error(dato_result))
-        return [
-            ft.Text(
-                "Manzana/lote no van en payload inmueble; "
-                "sí van en payload catastral asociado."
-            ),
-            ft.Text("payload inmueble enviado:"),
-            ft.Text(
-                json.dumps(inmueble_payload, ensure_ascii=False, indent=2, default=str),
-                selectable=True,
-            ),
-            ft.Text("response inmueble:"),
-            ft.Text(
-                json.dumps(inmueble_data, ensure_ascii=False, indent=2, default=str),
-                selectable=True,
-            ),
-            ft.Text("payload catastral enviado:"),
-            ft.Text(
-                json.dumps(dato_payload, ensure_ascii=False, indent=2, default=str),
-                selectable=True,
-            ),
-            ft.Text("response catastral:"),
-            ft.Text(
-                json.dumps(
-                    dato_result.data if dato_result else None,
-                    ensure_ascii=False,
-                    indent=2,
-                    default=str,
+        technical_text = format_technical_output(
+            [
+                (
+                    "nota técnica",
+                    "Manzana/lote no van en payload inmueble; "
+                    "sí van en payload catastral asociado.",
                 ),
-                selectable=True,
-            ),
-            ft.Text("errores backend:"),
-            ft.Text(
-                "\n".join(backend_errors) or "Sin errores backend.", selectable=True
-            ),
-        ]
+                ("payload inmueble enviado", inmueble_payload),
+                ("response inmueble", inmueble_data),
+                ("payload catastral enviado", dato_payload),
+                ("response catastral", dato_result.data if dato_result else None),
+                (
+                    "errores backend",
+                    "\n".join(backend_errors) or "Sin errores backend.",
+                ),
+            ]
+        )
+        return build_technical_output_panel(technical_text)
 
     def _show_message(self, text: str, *, success: bool) -> None:
         self.message.content = ft.Text(
