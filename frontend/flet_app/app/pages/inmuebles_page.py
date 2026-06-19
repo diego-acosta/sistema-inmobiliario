@@ -20,6 +20,10 @@ from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
 from app.components.status_badge import status_badge
+from app.components.technical_output_panel import (
+    build_technical_output_panel,
+    format_technical_output,
+)
 
 
 class InmueblesPage:
@@ -506,53 +510,26 @@ class InmuebleCreateForm:
         dato_payload: dict[str, Any] | None,
         dato_result: ApiResult | None,
     ) -> None:
-        self.technical.controls = [
-            ft.Text("Modo técnico", weight=ft.FontWeight.W_700),
-            ft.Text("payload inmueble enviado:"),
-            ft.Text(
-                json.dumps(inmueble_payload, ensure_ascii=False, indent=2, default=str),
-                selectable=True,
-            ),
-            ft.Text("response inmueble:"),
-            ft.Text(
-                json.dumps(
-                    (
-                        inmueble_response.data
-                        if isinstance(inmueble_response, ApiResult)
-                        else inmueble_response
-                    ),
-                    ensure_ascii=False,
-                    indent=2,
-                    default=str,
-                ),
-                selectable=True,
-            ),
-            ft.Text("payload catastral enviado:"),
-            ft.Text(
-                json.dumps(dato_payload, ensure_ascii=False, indent=2, default=str),
-                selectable=True,
-            ),
-            ft.Text("response catastral:"),
-            ft.Text(
-                json.dumps(
-                    dato_result.data if dato_result else None,
-                    ensure_ascii=False,
-                    indent=2,
-                    default=str,
-                ),
-                selectable=True,
-            ),
-            ft.Text("errores backend:"),
-            ft.Text(
-                "\n".join(
-                    _format_api_error(r)
-                    for r in (inmueble_response, dato_result)
-                    if isinstance(r, ApiResult) and not r.success
-                )
-                or "Sin errores backend.",
-                selectable=True,
-            ),
-        ]
+        inmueble_data = (
+            inmueble_response.data
+            if isinstance(inmueble_response, ApiResult)
+            else inmueble_response
+        )
+        backend_errors = "\n".join(
+            _format_api_error(r)
+            for r in (inmueble_response, dato_result)
+            if isinstance(r, ApiResult) and not r.success
+        ) or "Sin errores backend."
+        technical_text = format_technical_output(
+            [
+                ("payload inmueble enviado", inmueble_payload),
+                ("response inmueble", inmueble_data),
+                ("payload catastral enviado", dato_payload),
+                ("response catastral", dato_result.data if dato_result else None),
+                ("errores backend", backend_errors),
+            ]
+        )
+        self.technical.controls = [build_technical_output_panel(technical_text)]
         self.technical.visible = True
 
     def _new_create(self, _) -> None:
