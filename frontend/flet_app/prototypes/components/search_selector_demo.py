@@ -20,6 +20,7 @@ SelectorKind = Literal["reserva", "objeto", "persona"]
 SelectionCallback = Callable[[dict[str, Any] | None], None]
 SELECTABLE_OBJECT_STATUS = "DISPONIBLE"
 OBJECT_SALE_BLOCK_REASON = "Ya participa en una venta vigente"
+OBJECT_ALREADY_ADDED_REASON = "Ya fue agregado a esta venta"
 
 
 def object_sale_conflict(value: Any) -> bool:
@@ -36,6 +37,8 @@ def object_block_reason(data: dict[str, Any]) -> str:
         return motivo
     if object_sale_conflict(data.get("venta_vigente")) or object_sale_conflict(data.get("venta_conflictiva")):
         return OBJECT_SALE_BLOCK_REASON
+    if object_sale_conflict(data.get("agregado_en_venta_actual")):
+        return OBJECT_ALREADY_ADDED_REASON
     return ""
 
 
@@ -288,6 +291,7 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
             f"ocupacion_actual: {_clean(ocupacion)}" if _clean(ocupacion) else "",
             f"venta_vigente: {data.get('venta_vigente')}" if data.get("venta_vigente") is not None else "",
             f"venta_conflictiva: {_safe_visible_text(data.get('venta_conflictiva'))}" if data.get("venta_conflictiva") else "",
+            f"agregado_en_venta_actual: {data.get('agregado_en_venta_actual')}" if data.get("agregado_en_venta_actual") is not None else "",
             f"motivo_bloqueo: {object_block_reason(data)}" if object_block_reason(data) else "",
         ]
     )
@@ -307,6 +311,7 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
     payload["ocupacion_actual"] = ocupacion
     payload["venta_vigente"] = data.get("venta_vigente")
     payload["venta_conflictiva"] = data.get("venta_conflictiva")
+    payload["agregado_en_venta_actual"] = data.get("agregado_en_venta_actual")
     payload["motivo_bloqueo"] = object_block_reason(data)
     if estado_administrativo:
         payload["estado_administrativo"] = estado_administrativo
@@ -323,6 +328,7 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
             inmueble_padre,
             data.get("venta_vigente"),
             data.get("venta_conflictiva"),
+            data.get("agregado_en_venta_actual"),
             data.get("motivo_bloqueo"),
             tipo_objeto,
             data.get("id_inmueble"),
@@ -447,6 +453,26 @@ class SearchSelectorDemo:
 
     def view(self) -> ft.Control:
         return self.root
+
+    def set_records(self, records: list[dict[str, Any]]) -> None:
+        previous_payload = self.selected_payload
+        self._records = [_RECORD_FACTORY[self.selector_kind](record) for record in records]
+        self._selected = None
+        if previous_payload is not None:
+            for record in self._records:
+                if record.selection_payload == previous_payload and (
+                    self.selector_kind != "objeto"
+                    or is_object_selectable(
+                        record.selection_payload.get("estado"),
+                        record.selection_payload.get("ocupacion_actual"),
+                        record.selection_payload.get("venta_vigente") or record.selection_payload.get("venta_conflictiva"),
+                        record.selection_payload.get("motivo_bloqueo"),
+                    )
+                ):
+                    self._selected = record
+                    break
+        self._refresh_selection_panel()
+        self._refresh_results()
 
     def set_show_technical_details(self, show: bool) -> None:
         self.show_technical_details = show
@@ -630,7 +656,7 @@ class SearchSelectorDemo:
                         expand=True,
                     ),
                     ft.Button(
-                        "Seleccionar" if (is_selectable and not is_selected) else "Seleccionado" if is_selected else "No disponible",
+                        "Seleccionar" if (is_selectable and not is_selected) else "Seleccionado" if is_selected else "Ya agregado" if record.data.get("agregado_en_venta_actual") else "No disponible",
                         icon=ft.Icons.CHECK if is_selected else ft.Icons.BLOCK if not is_selectable else ft.Icons.CHECK_CIRCLE_OUTLINE,
                         disabled=is_selected or not is_selectable,
                         on_click=lambda _, selected_record=record: self._select_record(selected_record),

@@ -151,6 +151,15 @@ conflictivo permanece visible como bloqueado, no seleccionable, con el motivo
 `estado_disponibilidad`, `ocupacion_actual`, `venta_vigente` /
 `venta_conflictiva` y `motivo_bloqueo` para diagnostico.
 
+El selector tambien bloquea preventivamente los objetos que ya fueron agregados
+al draft de la venta actual (`state.objetos`). Este bloqueo no depende de una
+venta persistida ni reemplaza la validacion final del backend: evita que el
+usuario vuelva a seleccionar el mismo `id_inmueble` o `id_unidad_funcional` en
+el mismo flujo. El motivo visual es `Ya fue agregado a esta venta`; si el mismo
+registro ya tiene bloqueo por venta vigente, se conserva el motivo de venta
+vigente. En modo tecnico se muestra `agregado_en_venta_actual: true` junto con
+`motivo_bloqueo`.
+
 ## 4. Contratos backend existentes que guian el diseno
 
 El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:
