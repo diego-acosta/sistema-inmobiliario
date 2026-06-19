@@ -35,9 +35,11 @@ def _validate_positive_decimal(value: str | None, field_label: str) -> str | Non
         return None
     try:
         number = Decimal(text)
+        if not number.is_finite():
+            return f"{field_label} debe ser un decimal positivo."
+        if number <= 0:
+            return f"{field_label} debe ser un decimal positivo."
     except InvalidOperation:
-        return f"{field_label} debe ser un decimal positivo."
-    if number <= 0:
         return f"{field_label} debe ser un decimal positivo."
     return None
 

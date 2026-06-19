@@ -638,8 +638,30 @@ def _run_self_test() -> None:
         "manzana": "M2",
         "lote": "L2",
     }
+    decimal_error_message = "Superficie debe ser un decimal positivo."
+    for invalid_decimal in ("NaN", "sNaN", "Infinity", "-Infinity", "0", "-1", "abc"):
+        errors = validate_form(
+            {
+                "codigo_inmueble": "A",
+                "estado_administrativo": "ACTIVO",
+                "estado_juridico": "REGULAR",
+                "superficie": invalid_decimal,
+            }
+        )
+        assert decimal_error_message in errors
+    assert not validate_form(
+        {
+            "codigo_inmueble": "A",
+            "estado_administrativo": "ACTIVO",
+            "estado_juridico": "REGULAR",
+            "superficie": "100.50",
+        }
+    )
     assert validate_dato_catastral_form({"superficie_titulo": "0"})
     assert validate_dato_catastral_form({"superficie_mensura": "-1"})
+    assert validate_dato_catastral_form({"superficie_titulo": "NaN"})
+    assert validate_dato_catastral_form({"superficie_mensura": "Infinity"})
+    assert not validate_dato_catastral_form({"superficie_titulo": "100.50"})
     _safe_border(1, ft.Colors.BLUE_GREY_100)
     prototype = InmuebleAltaPrototype(page=object())  # type: ignore[arg-type]
     assert prototype._build_layout() is not None
