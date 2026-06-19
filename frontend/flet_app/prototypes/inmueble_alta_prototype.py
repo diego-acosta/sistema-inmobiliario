@@ -156,6 +156,20 @@ def build_dato_catastral_payload(values: dict[str, str | None]) -> dict[str, Any
     return payload
 
 
+def _safe_border(width: int, color: str) -> ft.Border | None:
+    border_all = getattr(ft.border, "all", None)
+    if callable(border_all):
+        return border_all(width, color)
+
+    border_cls = getattr(ft, "Border", None)
+    border_side_cls = getattr(ft, "BorderSide", None)
+    if border_cls is None or border_side_cls is None:
+        return None
+
+    side = border_side_cls(width, color)
+    return border_cls(left=side, top=side, right=side, bottom=side)
+
+
 def format_api_error(result: ApiResult) -> str:
     parts = []
     if result.status_code is not None:
@@ -317,7 +331,7 @@ class InmuebleAltaPrototype:
                     bgcolor=ft.Colors.WHITE,
                     padding=20,
                     border_radius=8,
-                    border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+                    border=_safe_border(1, ft.Colors.BLUE_GREY_100),
                 ),
             ],
             spacing=14,
@@ -632,6 +646,9 @@ def _run_self_test() -> None:
     }
     assert validate_dato_catastral_form({"superficie_titulo": "0"})
     assert validate_dato_catastral_form({"superficie_mensura": "-1"})
+    _safe_border(1, ft.Colors.BLUE_GREY_100)
+    prototype = InmuebleAltaPrototype(page=object())  # type: ignore[arg-type]
+    assert prototype._build_layout() is not None
 
     captured: dict[str, Any] = {}
 
