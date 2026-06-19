@@ -134,6 +134,23 @@ En todos los casos, esta restriccion es solo preventiva de frontend y no cambia
 payloads ni endpoints: el backend sigue siendo la fuente definitiva y valida la
 disponibilidad y la ocupacion al confirmar la venta.
 
+La disponibilidad operativa y la existencia de una venta vigente son controles
+distintos. Por eso el selector no confia solo en `estado_disponibilidad`:
+ademas bloquea inmuebles o unidades funcionales que ya participan en ventas con
+estado `activa`, `confirmada`, `en_proceso` o `finalizada`, aunque su
+disponibilidad siga figurando como `DISPONIBLE`. Las ventas `anulada`,
+`cancelada`, `borrador` o eliminadas logicamente (`deleted_at` informado) no son
+bloqueantes para esta advertencia preventiva.
+
+Cuando el listado de objetos ya incluye una marca de venta vigente, el wizard la
+reutiliza. Si no viene en el objeto, el prototipo consulta lecturas existentes de
+ventas por `id_inmueble` o `id_unidad_funcional` para marcar el conflicto sin
+crear endpoints write ni modificar contratos de confirmacion. El objeto
+conflictivo permanece visible como bloqueado, no seleccionable, con el motivo
+`Ya participa en una venta vigente`. En modo tecnico se exponen
+`estado_disponibilidad`, `ocupacion_actual`, `venta_vigente` /
+`venta_conflictiva` y `motivo_bloqueo` para diagnostico.
+
 ## 4. Contratos backend existentes que guian el diseno
 
 El wizard debe adaptarse a los endpoints compuestos reales existentes para confirmacion:

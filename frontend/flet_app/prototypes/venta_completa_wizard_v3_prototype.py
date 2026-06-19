@@ -81,6 +81,8 @@ PantallaWizard = Literal[
 MONEDAS_PERMITIDAS = ["ARS", "USD", "EUR"]
 MONEY_DECIMAL_QUANTUM = Decimal("0.01")
 MONEY_PRECISION_ERROR = "El importe debe tener como máximo 2 decimales."
+VENTA_SELECTOR_CONFLICT_STATES = {"activa", "confirmada", "en_proceso", "finalizada"}
+VENTA_SELECTOR_BLOCK_REASON = "Ya participa en una venta vigente"
 WIZARD_VISIBLE_STEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Origen", ("ORIGEN", "SELECCIONAR_RESERVA")),
     ("Datos", ("DATOS_INICIALES",)),
@@ -927,7 +929,7 @@ class VentaCompletaWizardV3Prototype:
         else:
             errors.append(self._backend_selector_error("unidades funcionales", unidades_result))
 
-        self.backend_object_records = records
+        self.backend_object_records = self._enrich_object_records_with_venta_conflicts(records)
         if errors:
             self.backend_object_error = " ".join(errors)
         elif not records:
@@ -1113,6 +1115,56 @@ class VentaCompletaWizardV3Prototype:
         return " ".join(parts)
 
     @staticmethod
+    def _venta_conflict_from_item(item: dict[str, Any]) -> dict[str, Any] | None:
+        for key in ("venta_conflictiva", "venta_vigente", "venta_actual"):
+            value = item.get(key)
+            if isinstance(value, dict) and value:
+                return value
+        for key in ("tiene_venta_vigente", "venta_vigente", "con_venta_vigente"):
+            if item.get(key) is True:
+                return {"motivo": VENTA_SELECTOR_BLOCK_REASON}
+        return None
+
+    @staticmethod
+    def _venta_is_selector_conflict(venta: dict[str, Any]) -> bool:
+        if venta.get("deleted_at") not in (None, ""):
+            return False
+        estado = str(venta.get("estado_venta") or venta.get("estado") or "").strip().lower()
+        return estado in VENTA_SELECTOR_CONFLICT_STATES
+
+    def _fetch_venta_conflict_for_object(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        params: dict[str, Any] = {"limit": 10}
+        if record.get("tipo_objeto") == "UNIDAD_FUNCIONAL":
+            params["id_unidad_funcional"] = record.get("id_unidad_funcional")
+        else:
+            params["id_inmueble"] = record.get("id_inmueble")
+        if not params.get("id_inmueble") and not params.get("id_unidad_funcional"):
+            return None
+        result = self.api.get_ventas(**params)
+        if not result.success:
+            return None
+        for venta in self._api_items(result.data):
+            if self._venta_is_selector_conflict(venta):
+                return {
+                    "id_venta": venta.get("id_venta"),
+                    "codigo_venta": venta.get("codigo_venta"),
+                    "estado_venta": venta.get("estado_venta"),
+                }
+        return None
+
+    def _enrich_object_records_with_venta_conflicts(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        enriched: list[dict[str, Any]] = []
+        for record in records:
+            next_record = dict(record)
+            conflict = self._venta_conflict_from_item(next_record) or self._fetch_venta_conflict_for_object(next_record)
+            if conflict is not None:
+                next_record["venta_vigente"] = True
+                next_record["venta_conflictiva"] = conflict
+                next_record["motivo_bloqueo"] = VENTA_SELECTOR_BLOCK_REASON
+            enriched.append(next_record)
+        return enriched
+
+    @staticmethod
     def _availability_label(value: Any) -> str:
         if isinstance(value, dict):
             return str(
@@ -1127,6 +1179,7 @@ class VentaCompletaWizardV3Prototype:
         codigo = str(item.get("codigo_inmueble") or item.get("codigo") or item.get("id_inmueble") or "").strip()
         descripcion = str(item.get("nombre_inmueble") or item.get("nombre") or item.get("descripcion") or "Inmueble").strip()
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        venta_conflictiva = self._venta_conflict_from_item(item)
         return {
             "tipo_objeto": "INMUEBLE",
             "id_inmueble": item.get("id_inmueble"),
@@ -1135,6 +1188,9 @@ class VentaCompletaWizardV3Prototype:
             "estado": disponibilidad,
             "estado_administrativo": item.get("estado_administrativo") or "",
             "ocupacion_actual": item.get("ocupacion_actual"),
+            "venta_vigente": bool(venta_conflictiva),
+            "venta_conflictiva": venta_conflictiva,
+            "motivo_bloqueo": VENTA_SELECTOR_BLOCK_REASON if venta_conflictiva else "",
             "resumen": str(item.get("direccion") or item.get("ubicacion") or item.get("observaciones") or "Inmueble."),
             "source": "backend",
             "persisted": True,
@@ -1145,6 +1201,7 @@ class VentaCompletaWizardV3Prototype:
         descripcion = str(item.get("nombre_unidad") or item.get("nombre") or item.get("descripcion") or "Unidad funcional").strip()
         inmueble = item.get("inmueble") if isinstance(item.get("inmueble"), dict) else {}
         disponibilidad = self._availability_label(item.get("disponibilidad_actual"))
+        venta_conflictiva = self._venta_conflict_from_item(item)
         return {
             "tipo_objeto": "UNIDAD_FUNCIONAL",
             "id_unidad_funcional": item.get("id_unidad_funcional"),
@@ -1155,6 +1212,9 @@ class VentaCompletaWizardV3Prototype:
             "estado_operativo": item.get("estado_operativo") or "",
             "estado_administrativo": item.get("estado_administrativo") or "",
             "ocupacion_actual": item.get("ocupacion_actual"),
+            "venta_vigente": bool(venta_conflictiva),
+            "venta_conflictiva": venta_conflictiva,
+            "motivo_bloqueo": VENTA_SELECTOR_BLOCK_REASON if venta_conflictiva else "",
             "resumen": str(item.get("observaciones") or "Unidad funcional."),
             "source": "backend",
             "persisted": True,
@@ -1300,10 +1360,14 @@ class VentaCompletaWizardV3Prototype:
         is_selectable = is_object_selectable(
             self.objeto_seleccionado.get("estado"),
             self.objeto_seleccionado.get("ocupacion_actual"),
+            self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva"),
+            self.objeto_seleccionado.get("motivo_bloqueo"),
         )
         availability_warning = object_selection_warning(
             self.objeto_seleccionado.get("estado"),
             self.objeto_seleccionado.get("ocupacion_actual"),
+            self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva"),
+            self.objeto_seleccionado.get("motivo_bloqueo"),
         )
         panel_content = ft.Column(
             controls=[
@@ -1330,6 +1394,17 @@ class VentaCompletaWizardV3Prototype:
                             *(
                                 [self._technical_chip(f"ocupacion_actual: {self.objeto_seleccionado.get('ocupacion_actual')}")]
                                 if self.objeto_seleccionado.get("ocupacion_actual")
+                                else []
+                            ),
+                            self._technical_chip(f"venta_vigente: {bool(self.objeto_seleccionado.get('venta_vigente') or self.objeto_seleccionado.get('venta_conflictiva'))}"),
+                            *(
+                                [self._technical_chip(f"venta_conflictiva: {self.objeto_seleccionado.get('venta_conflictiva')}")]
+                                if self.objeto_seleccionado.get("venta_conflictiva")
+                                else []
+                            ),
+                            *(
+                                [self._technical_chip(f"motivo_bloqueo: {self.objeto_seleccionado.get('motivo_bloqueo')}")]
+                                if self.objeto_seleccionado.get("motivo_bloqueo")
                                 else []
                             ),
                         ]),
@@ -6460,7 +6535,12 @@ class VentaCompletaWizardV3Prototype:
         return f"{self._currency_label()} {_format_money(value)}"
 
     def _on_objeto_selected(self, selected: dict[str, Any] | None) -> None:
-        if selected is not None and not is_object_selectable(selected.get("estado"), selected.get("ocupacion_actual")):
+        if selected is not None and not is_object_selectable(
+            selected.get("estado"),
+            selected.get("ocupacion_actual"),
+            selected.get("venta_vigente") or selected.get("venta_conflictiva"),
+            selected.get("motivo_bloqueo"),
+        ):
             self.objeto_seleccionado = None
             if self.objeto_selector is not None:
                 self.objeto_selector.selected_panel.visible = False
@@ -6509,10 +6589,14 @@ class VentaCompletaWizardV3Prototype:
             if not is_object_selectable(
                 self.objeto_seleccionado.get("estado"),
                 self.objeto_seleccionado.get("ocupacion_actual"),
+                self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva"),
+                self.objeto_seleccionado.get("motivo_bloqueo"),
             ):
                 return object_selection_warning(
                     self.objeto_seleccionado.get("estado"),
                     self.objeto_seleccionado.get("ocupacion_actual"),
+                    self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva"),
+                    self.objeto_seleccionado.get("motivo_bloqueo"),
                 ) or "El objeto no está disponible para esta venta."
             if self.objeto_seleccionado.get("source") != "backend" or not self.objeto_seleccionado.get("persisted", False):
                 return "El objeto debe estar disponible y confirmado en el sistema."
@@ -6532,10 +6616,14 @@ class VentaCompletaWizardV3Prototype:
         if not is_object_selectable(
             self.objeto_seleccionado.get("estado"),
             self.objeto_seleccionado.get("ocupacion_actual"),
+            self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva"),
+            self.objeto_seleccionado.get("motivo_bloqueo"),
         ):
             self.precio_objeto_error = object_selection_warning(
                 self.objeto_seleccionado.get("estado"),
                 self.objeto_seleccionado.get("ocupacion_actual"),
+                self.objeto_seleccionado.get("venta_vigente") or self.objeto_seleccionado.get("venta_conflictiva"),
+                self.objeto_seleccionado.get("motivo_bloqueo"),
             ) or "El objeto no está disponible para esta venta."
             self._render()
             return
@@ -7367,6 +7455,47 @@ def _run_self_test() -> None:
     assert "FINANCIADO" not in confirmed_text
     assert "CONTADO" in panel_text
     assert "FINANCIADO" not in panel_text
+
+
+
+    selectable_object = {
+        "tipo_objeto": "INMUEBLE",
+        "id_inmueble": 11,
+        "estado": "DISPONIBLE",
+        "ocupacion_actual": None,
+        "texto_visual": "Inmueble libre",
+        "source": "backend",
+        "persisted": True,
+    }
+    blocked_object = {
+        "tipo_objeto": "UNIDAD_FUNCIONAL",
+        "id_unidad_funcional": 12,
+        "estado": "DISPONIBLE",
+        "ocupacion_actual": None,
+        "venta_vigente": True,
+        "motivo_bloqueo": VENTA_SELECTOR_BLOCK_REASON,
+        "texto_visual": "UF vendida",
+        "source": "backend",
+        "persisted": True,
+    }
+    assert is_object_selectable(
+        selectable_object["estado"],
+        selectable_object["ocupacion_actual"],
+        selectable_object.get("venta_vigente"),
+        selectable_object.get("motivo_bloqueo"),
+    ) is True
+    assert is_object_selectable(
+        blocked_object["estado"],
+        blocked_object["ocupacion_actual"],
+        blocked_object.get("venta_vigente"),
+        blocked_object.get("motivo_bloqueo"),
+    ) is False
+    assert object_selection_warning(
+        blocked_object["estado"],
+        blocked_object["ocupacion_actual"],
+        blocked_object.get("venta_vigente"),
+        blocked_object.get("motivo_bloqueo"),
+    ) == VENTA_SELECTOR_BLOCK_REASON
 
     friendly = wizard._confirm_error_message(
         ApiResult(

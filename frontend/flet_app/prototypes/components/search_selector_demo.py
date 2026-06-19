@@ -19,6 +19,24 @@ import flet as ft
 SelectorKind = Literal["reserva", "objeto", "persona"]
 SelectionCallback = Callable[[dict[str, Any] | None], None]
 SELECTABLE_OBJECT_STATUS = "DISPONIBLE"
+OBJECT_SALE_BLOCK_REASON = "Ya participa en una venta vigente"
+
+
+def object_sale_conflict(value: Any) -> bool:
+    if isinstance(value, dict):
+        return bool(value)
+    if isinstance(value, str):
+        return _clean(value).lower() in {"true", "1", "si", "sí", "yes"}
+    return bool(value)
+
+
+def object_block_reason(data: dict[str, Any]) -> str:
+    motivo = _clean(data.get("motivo_bloqueo"))
+    if motivo:
+        return motivo
+    if object_sale_conflict(data.get("venta_vigente")) or object_sale_conflict(data.get("venta_conflictiva")):
+        return OBJECT_SALE_BLOCK_REASON
+    return ""
 
 
 def object_availability_status(value: Any) -> str:
@@ -75,11 +93,28 @@ def has_current_object_occupancy(value: Any) -> bool:
     return status not in NO_OCCUPANCY_STATUSES
 
 
-def is_object_selectable(disponibilidad: Any, ocupacion: Any = None) -> bool:
+def is_object_selectable(
+    disponibilidad: Any,
+    ocupacion: Any = None,
+    venta_vigente: Any = None,
+    motivo_bloqueo: Any = None,
+) -> bool:
+    if _clean(motivo_bloqueo) or object_sale_conflict(venta_vigente):
+        return False
     return is_object_selectable_status(disponibilidad) and not has_current_object_occupancy(ocupacion)
 
 
-def object_selection_warning(disponibilidad: Any, ocupacion: Any = None) -> str | None:
+def object_selection_warning(
+    disponibilidad: Any,
+    ocupacion: Any = None,
+    venta_vigente: Any = None,
+    motivo_bloqueo: Any = None,
+) -> str | None:
+    explicit_reason = _clean(motivo_bloqueo)
+    if explicit_reason:
+        return explicit_reason
+    if object_sale_conflict(venta_vigente):
+        return OBJECT_SALE_BLOCK_REASON
     if has_current_object_occupancy(ocupacion):
         return "Objeto con ocupación vigente; no puede seleccionarse para una venta directa."
     return object_availability_warning(disponibilidad)
@@ -251,6 +286,9 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
             f"id_unidad_funcional: {data.get('id_unidad_funcional')}" if data.get("id_unidad_funcional") is not None else "",
             f"estado_administrativo: {estado_administrativo}" if estado_administrativo else "",
             f"ocupacion_actual: {_clean(ocupacion)}" if _clean(ocupacion) else "",
+            f"venta_vigente: {data.get('venta_vigente')}" if data.get("venta_vigente") is not None else "",
+            f"venta_conflictiva: {_safe_visible_text(data.get('venta_conflictiva'))}" if data.get("venta_conflictiva") else "",
+            f"motivo_bloqueo: {object_block_reason(data)}" if object_block_reason(data) else "",
         ]
     )
     summary = _clean(data.get("resumen")) or primary
@@ -267,6 +305,9 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
         payload["id_inmueble"] = id_correspondiente
     payload["estado"] = disponibilidad
     payload["ocupacion_actual"] = ocupacion
+    payload["venta_vigente"] = data.get("venta_vigente")
+    payload["venta_conflictiva"] = data.get("venta_conflictiva")
+    payload["motivo_bloqueo"] = object_block_reason(data)
     if estado_administrativo:
         payload["estado_administrativo"] = estado_administrativo
     return SearchSelectorRecord(
@@ -280,6 +321,9 @@ def objeto_record(data: dict[str, Any]) -> SearchSelectorRecord:
             descripcion,
             disponibilidad,
             inmueble_padre,
+            data.get("venta_vigente"),
+            data.get("venta_conflictiva"),
+            data.get("motivo_bloqueo"),
             tipo_objeto,
             data.get("id_inmueble"),
             data.get("id_unidad_funcional"),
@@ -414,7 +458,12 @@ class SearchSelectorDemo:
         self.root.update()
 
     def _select_record(self, record: SearchSelectorRecord) -> None:
-        if self.selector_kind == "objeto" and not is_object_selectable(record.selection_payload.get("estado"), record.selection_payload.get("ocupacion_actual")):
+        if self.selector_kind == "objeto" and not is_object_selectable(
+            record.selection_payload.get("estado"),
+            record.selection_payload.get("ocupacion_actual"),
+            record.selection_payload.get("venta_vigente") or record.selection_payload.get("venta_conflictiva"),
+            record.selection_payload.get("motivo_bloqueo"),
+        ):
             return
         self._selected = record
         self._refresh_selection_panel()
@@ -521,8 +570,10 @@ class SearchSelectorDemo:
         estado = _clean(record.data.get("estado")) or _clean(record.data.get("disponibilidad"))
         ocupacion = record.data.get("ocupacion_actual")
         estado_upper = object_availability_status(estado)
-        is_selectable = is_object_selectable(estado, ocupacion)
-        warning_text = object_selection_warning(estado, ocupacion)
+        venta_vigente = record.data.get("venta_vigente") or record.data.get("venta_conflictiva")
+        motivo_bloqueo = object_block_reason(record.data)
+        is_selectable = is_object_selectable(estado, ocupacion, venta_vigente, motivo_bloqueo)
+        warning_text = object_selection_warning(estado, ocupacion, venta_vigente, motivo_bloqueo)
         is_warning = warning_text is not None
         return ft.Container(
             padding=12,
