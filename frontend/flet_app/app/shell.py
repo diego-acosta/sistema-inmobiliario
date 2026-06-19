@@ -125,6 +125,7 @@ class AppShell:
             "partes": 1,
             "parte_detail": 1,
             "inmuebles": 2,
+            "inmueble_create": 2,
             "inmueble_detail": 2,
             "unidad_detail": 2,
             "contratos": 3,
@@ -152,6 +153,12 @@ class AppShell:
             ).build()
         if route.name == "inmuebles":
             return InmueblesPage(api=self.api, on_navigate=self.navigate).build()
+        if route.name == "inmueble_create":
+            return InmueblesPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                detail_kind="create",
+            ).build()
         if route.name == "inmueble_detail":
             id_inmueble = self._route_int(route, "id_inmueble")
             if id_inmueble is None:
@@ -195,7 +202,9 @@ class AppShell:
                 detail_id=id_venta,
             ).build()
         if route.name == "venta_create_wizard":
-            return VentaCreateWizardPage(api=self.api, on_navigate=self.navigate).build()
+            return VentaCreateWizardPage(
+                api=self.api, on_navigate=self.navigate
+            ).build()
         if route.name == "finanzas":
             return FinanzasPage().build()
         return HomePage(on_navigate=self.navigate).build()
@@ -210,7 +219,9 @@ class AppShell:
         return ft.Column(
             controls=[
                 ft.Text(message, size=20, weight=ft.FontWeight.W_600),
-                ft.TextButton("Volver al inicio", on_click=lambda _: self.navigate("home")),
+                ft.TextButton(
+                    "Volver al inicio", on_click=lambda _: self.navigate("home")
+                ),
             ],
             spacing=12,
         )

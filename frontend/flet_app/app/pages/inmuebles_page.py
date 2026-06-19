@@ -42,6 +42,8 @@ class InmueblesPage:
             ).build()
         if self.detail_kind == "unidad" and self.detail_id is not None:
             return UnidadDetailView(self.api, self.on_navigate, self.detail_id).build()
+        if self.detail_kind == "create":
+            return InmuebleCreateView(self.api, self.on_navigate).build()
         return InmueblesHub(self.api, self.on_navigate).build()
 
 
@@ -74,7 +76,6 @@ class InmueblesListView:
         self.limit = 20
         self.offset = 0
         self.total = 0
-        self.form_container = ft.Container(visible=False)
         self.results = ft.Column(spacing=12, expand=True)
         self.page_info = ft.Text("")
 
@@ -89,12 +90,11 @@ class InmueblesListView:
                         ft.FilledButton(
                             "Nuevo inmueble",
                             icon=ft.Icons.ADD_HOME,
-                            on_click=self._open_create_form,
+                            on_click=lambda _: self.on_navigate("inmueble_create"),
                         ),
                     ],
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                self.form_container,
                 ft.Row(
                     controls=[
                         self.q,
@@ -112,25 +112,6 @@ class InmueblesListView:
             spacing=16,
             expand=True,
         )
-
-    def _open_create_form(self, _) -> None:
-        form = InmuebleCreateForm(
-            self.api,
-            on_close=lambda: self._refresh_after_create(close_form=True),
-            on_created=lambda: self._refresh_after_create(close_form=False),
-        )
-        self.form_container.content = form.build()
-        self.form_container.visible = True
-        self.form_container.update()
-
-    def _refresh_after_create(self, *, close_form: bool) -> None:
-        if close_form:
-            self.form_container.content = None
-            self.form_container.visible = False
-            self.form_container.update()
-        self.offset = 0
-        self._load()
-        self.results.update()
 
     def _on_search(self, _) -> None:
         self.offset = 0
@@ -202,6 +183,25 @@ class InmueblesListView:
         self.offset += self.limit
         self._load()
         self.results.update()
+
+
+class InmuebleCreateView:
+    def __init__(self, api: ApiClient, on_navigate) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+
+    def build(self) -> ft.Control:
+        form = InmuebleCreateForm(
+            self.api,
+            on_close=lambda: self.on_navigate("inmuebles"),
+            on_created=lambda: None,
+        )
+        return ft.Column(
+            controls=[form.build()],
+            spacing=16,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        )
 
 
 class InmuebleCreateForm:
@@ -314,7 +314,9 @@ class InmuebleCreateForm:
                                 "Nuevo inmueble", size=20, weight=ft.FontWeight.W_700
                             ),
                             ft.Container(expand=True),
-                            ft.TextButton("Cerrar", on_click=lambda _: self.on_close()),
+                            ft.TextButton(
+                                "Volver a inmuebles", on_click=lambda _: self.on_close()
+                            ),
                         ]
                     ),
                     ft.Text(

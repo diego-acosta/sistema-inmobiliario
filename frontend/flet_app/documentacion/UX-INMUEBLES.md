@@ -2,7 +2,7 @@
 
 ## Alta de inmueble integrada
 
-La pantalla real `frontend/flet_app/app/pages/inmuebles_page.py` incorpora el botón **Nuevo inmueble** en el listado de inmuebles y reutiliza los helpers compartidos de alta para crear el inmueble y, opcionalmente, su dato catastral/registral inicial.
+La pantalla real `frontend/flet_app/app/pages/inmuebles_page.py` incorpora el botón **Nuevo inmueble** en el listado de inmuebles. Ese botón navega a la ruta separada `inmueble_create`, donde se muestra la pantalla de alta sin renderizar el listado debajo, y reutiliza los helpers compartidos para crear el inmueble y, opcionalmente, su dato catastral/registral inicial.
 
 El formulario integrado mantiene el alcance validado: no envía linderos, no edita ni elimina datos catastrales/registrales, no implementa ficha/detalle completa y refresca el listado real después de un alta exitosa. Después de un alta creada, el formulario deshabilita Guardar inmueble y exige usar Nueva alta para limpiar campos y evitar doble guardado accidental.
 
@@ -37,7 +37,7 @@ El backend de datos catastrales/registrales ya existe como subrecurso de inmuebl
 
 ## Flujo UX
 
-1. Desde la pantalla real de inmuebles, el usuario presiona **Nuevo inmueble** y carga los **Datos básicos del inmueble**. En esta sección se muestran también `manzana` y `lote` por ser datos de uso cotidiano.
+1. Desde la pantalla real de inmuebles, el usuario presiona **Nuevo inmueble** y navega a una pantalla separada de alta donde carga los **Datos básicos del inmueble**. En esta sección se muestran también `manzana` y `lote` por ser datos de uso cotidiano.
 2. `manzana` y `lote` no se envían en el payload de `POST /api/v1/inmuebles`; se guardan como parte del dato catastral/registral asociado.
 3. El control `Mostrar datos catastrales/registrales avanzados` solo muestra u oculta campos avanzados; no significa por sí mismo que el dato catastral deba guardarse.
 4. Si la sección avanzada está oculta y no informa `manzana` ni `lote`, el prototipo crea solo el inmueble.
@@ -45,7 +45,7 @@ El backend de datos catastrales/registrales ya existe como subrecurso de inmuebl
 6. Si la sección avanzada está visible, el prototipo valida superficies positivas si fueron informadas y envía `manzana`/`lote` más los campos avanzados cargados.
 7. Con el `id_inmueble` devuelto por el backend, el prototipo invoca el alta del dato catastral/registral asociado cuando corresponde.
 8. En modo técnico se muestran payloads, responses y errores backend, destacando que `manzana`/`lote` no pertenecen al payload de inmueble.
-9. Si el alta es exitosa, la pantalla real refresca el listado de inmuebles y permite cerrar el formulario o usar **Nueva alta** para limpiar campos, ocultar avanzados y volver a habilitar el guardado.
+9. Si el alta es exitosa, la pantalla separada mantiene el mensaje y modo técnico, deshabilita el guardado y permite usar **Nueva alta** para limpiar campos, ocultar avanzados y volver a habilitar el guardado. Al volver a **Inmuebles**, el listado se carga nuevamente.
 
 ## Payload mínimo confirmado de inmueble
 
