@@ -4,7 +4,7 @@
 
 La pantalla real `frontend/flet_app/app/pages/inmuebles_page.py` incorpora el botón **Nuevo inmueble** en el listado de inmuebles y reutiliza los helpers compartidos de alta para crear el inmueble y, opcionalmente, su dato catastral/registral inicial.
 
-El formulario integrado mantiene el alcance validado: no envía linderos, no edita ni elimina datos catastrales/registrales, no implementa ficha/detalle completa y refresca el listado real después de un alta exitosa.
+El formulario integrado mantiene el alcance validado: no envía linderos, no edita ni elimina datos catastrales/registrales, no implementa ficha/detalle completa y refresca el listado real después de un alta exitosa. Después de un alta creada, el formulario deshabilita Guardar inmueble y exige usar Nueva alta para limpiar campos y evitar doble guardado accidental.
 
 ## Prototipo aislado de alta de inmueble
 
@@ -45,7 +45,7 @@ El backend de datos catastrales/registrales ya existe como subrecurso de inmuebl
 6. Si la sección avanzada está visible, el prototipo valida superficies positivas si fueron informadas y envía `manzana`/`lote` más los campos avanzados cargados.
 7. Con el `id_inmueble` devuelto por el backend, el prototipo invoca el alta del dato catastral/registral asociado cuando corresponde.
 8. En modo técnico se muestran payloads, responses y errores backend, destacando que `manzana`/`lote` no pertenecen al payload de inmueble.
-9. Si el alta es exitosa, la pantalla real refresca el listado de inmuebles y permite cerrar el formulario o limpiar campos para una nueva alta.
+9. Si el alta es exitosa, la pantalla real refresca el listado de inmuebles y permite cerrar el formulario o usar **Nueva alta** para limpiar campos, ocultar avanzados y volver a habilitar el guardado.
 
 ## Payload mínimo confirmado de inmueble
 

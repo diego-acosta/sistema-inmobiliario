@@ -270,6 +270,9 @@ class InmuebleCreateForm:
         self.save_button = ft.FilledButton(
             "Guardar inmueble", icon=ft.Icons.SAVE, on_click=self._save
         )
+        self.new_button = ft.FilledTonalButton(
+            "Nueva alta", icon=ft.Icons.ADD, on_click=self._new_create, visible=False
+        )
         self.root: ft.Control | None = None
 
     def build(self) -> ft.Control:
@@ -341,6 +344,7 @@ class InmuebleCreateForm:
                     ft.Row(
                         [
                             self.save_button,
+                            self.new_button,
                             ft.OutlinedButton(
                                 "Limpiar", icon=ft.Icons.CLEAR, on_click=self._clear
                             ),
@@ -354,7 +358,7 @@ class InmuebleCreateForm:
             ),
             padding=16,
             bgcolor=ft.Colors.WHITE,
-            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border=_safe_border(1, ft.Colors.BLUE_GREY_100),
             border_radius=8,
         )
         return self.root
@@ -471,6 +475,8 @@ class InmuebleCreateForm:
             self._show_technical(
                 inmueble_payload, inmueble_result.data, dato_payload, dato_result
             )
+            self.save_button.disabled = True
+            self.new_button.visible = True
             self.on_created()
         else:
             self._show_message(_format_api_error(inmueble_result), success=False)
@@ -478,6 +484,7 @@ class InmuebleCreateForm:
                 inmueble_payload, inmueble_result, dato_payload, dato_result
             )
         self.save_button.update()
+        self.new_button.update()
         self.message.update()
         self.technical.update()
 
@@ -546,7 +553,19 @@ class InmuebleCreateForm:
         ]
         self.technical.visible = True
 
+    def _new_create(self, _) -> None:
+        self._clear_form()
+        self.save_button.disabled = False
+        self.new_button.visible = False
+        if self.root is not None:
+            self.root.update()
+
     def _clear(self, _) -> None:
+        self._clear_form()
+        if self.root is not None:
+            self.root.update()
+
+    def _clear_form(self) -> None:
         for control in (
             self.codigo_inmueble,
             self.nombre_inmueble,
@@ -573,10 +592,11 @@ class InmuebleCreateForm:
         self.estado_administrativo.value = "ACTIVO"
         self.estado_juridico.value = "REGULAR"
         self.estado_dato.value = "ACTIVO"
+        self.mostrar_avanzados = False
+        self.toggle_avanzados.text = self._toggle_text()
+        self.avanzados.visible = False
         self.message.visible = False
         self.technical.visible = False
-        if self.root is not None:
-            self.root.update()
 
 
 class UnidadesListView:
@@ -913,6 +933,22 @@ class UnidadDetailView:
         )
 
 
+def _safe_border(width: int, color: str) -> Any | None:
+    border_cls = getattr(ft, "Border", None)
+    border_all = getattr(border_cls, "all", None) if border_cls is not None else None
+    if callable(border_all):
+        return border_all(width, color)
+
+    legacy_border = getattr(ft, "border", None)
+    legacy_border_all = (
+        getattr(legacy_border, "all", None) if legacy_border is not None else None
+    )
+    if callable(legacy_border_all):
+        return legacy_border_all(width, color)
+
+    return None
+
+
 def _format_api_error(result: ApiResult) -> str:
     parts = []
     if result.status_code is not None:
@@ -1079,7 +1115,7 @@ def _inmueble_header(data: dict[str, Any]) -> ft.Control:
             ]
         ),
         padding=16,
-        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border=_safe_border(1, ft.Colors.BLUE_GREY_100),
         border_radius=6,
     )
 
@@ -1109,7 +1145,7 @@ def _unidad_header(data: dict[str, Any]) -> ft.Control:
             ]
         ),
         padding=16,
-        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border=_safe_border(1, ft.Colors.BLUE_GREY_100),
         border_radius=6,
     )
 
@@ -1244,7 +1280,7 @@ def _empty(message: str) -> ft.Control:
     return ft.Container(
         content=ft.Text(message),
         padding=16,
-        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border=_safe_border(1, ft.Colors.BLUE_GREY_100),
         border_radius=6,
     )
 
