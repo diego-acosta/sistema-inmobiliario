@@ -124,6 +124,37 @@ def validate_dato_catastral_form(values: dict[str, str | None]) -> list[str]:
     return errors
 
 
+def has_dato_catastral_util(values: dict[str, str | None]) -> bool:
+    useful_fields = (
+        "nomenclatura_catastral",
+        "partida_inmobiliaria",
+        "matricula",
+        "folio_real",
+        "circunscripcion",
+        "seccion",
+        "manzana",
+        "lote",
+        "parcela",
+        "superficie_titulo",
+        "superficie_mensura",
+        "medidas",
+        "situacion_posesoria",
+        "situacion_dominial",
+        "observaciones",
+    )
+    return any(_clean_text(values.get(field_name)) for field_name in useful_fields)
+
+
+def has_manzana_o_lote(values: dict[str, str | None]) -> bool:
+    return bool(_clean_text(values.get("manzana")) or _clean_text(values.get("lote")))
+
+
+def should_create_dato_catastral(
+    cargar_dato_catastral: bool, values: dict[str, str | None]
+) -> bool:
+    return bool(cargar_dato_catastral or has_manzana_o_lote(values))
+
+
 def build_dato_catastral_payload(values: dict[str, str | None]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "estado_dato": _clean_text(values.get("estado_dato")) or "ACTIVO"
@@ -281,6 +312,11 @@ class InmuebleAltaPrototype:
                             self.codigo_inmueble,
                             self.nombre_inmueble,
                             ft.Row([self.superficie, self.id_desarrollo], wrap=True),
+                            ft.Row([self.manzana, self.lote], wrap=True),
+                            ft.Text(
+                                "Manzana y lote se guardan como dato catastral asociado.",
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
                             ft.Row(
                                 [self.estado_administrativo, self.estado_juridico],
                                 wrap=True,
@@ -306,12 +342,10 @@ class InmuebleAltaPrototype:
                             ),
                             ft.Row([self.matricula, self.folio_real], wrap=True),
                             ft.Row(
-                                [self.circunscripcion, self.seccion, self.manzana],
+                                [self.circunscripcion, self.seccion],
                                 wrap=True,
                             ),
-                            ft.Row(
-                                [self.lote, self.parcela, self.estado_dato], wrap=True
-                            ),
+                            ft.Row([self.parcela, self.estado_dato], wrap=True),
                             ft.Row(
                                 [self.superficie_titulo, self.superficie_mensura],
                                 wrap=True,
@@ -372,8 +406,15 @@ class InmuebleAltaPrototype:
         values = self._current_values()
         errors = validate_form(values)
         dato_values = self._current_dato_catastral_values()
-        if self.cargar_dato_catastral.value:
+        should_create_dato = should_create_dato_catastral(
+            bool(self.cargar_dato_catastral.value), dato_values
+        )
+        if should_create_dato:
             errors.extend(validate_dato_catastral_form(dato_values))
+        if self.cargar_dato_catastral.value and not has_dato_catastral_util(dato_values):
+            errors.append(
+                "Cargá al menos un dato catastral/registral o desactivá la opción."
+            )
         if errors:
             self._show_message("\n".join(errors), success=False)
             self.page.update()
@@ -381,9 +422,7 @@ class InmuebleAltaPrototype:
 
         inmueble_payload = build_inmueble_payload(values)
         dato_payload = (
-            build_dato_catastral_payload(dato_values)
-            if self.cargar_dato_catastral.value
-            else None
+            build_dato_catastral_payload(dato_values) if should_create_dato else None
         )
         self.save_button.disabled = True
         self.page.update()
@@ -426,7 +465,14 @@ class InmuebleAltaPrototype:
         messages = ["Inmueble creado correctamente"]
         if dato_payload is not None:
             if dato_result and dato_result.success:
-                messages.append("Datos catastrales/registrales creados correctamente")
+                if set(dato_payload) <= {"estado_dato", "manzana", "lote"} and (
+                    "manzana" in dato_payload or "lote" in dato_payload
+                ):
+                    messages.append("Datos de manzana/lote guardados correctamente")
+                else:
+                    messages.append(
+                        "Datos catastrales/registrales creados correctamente"
+                    )
             else:
                 messages.append(
                     "El inmueble fue creado, pero no se pudieron guardar los datos catastrales/registrales"
@@ -493,6 +539,10 @@ class InmuebleAltaPrototype:
         if dato_result is not None and not dato_result.success:
             backend_errors.append(format_api_error(dato_result))
         return [
+            ft.Text(
+                "Manzana/lote no van en payload inmueble; "
+                "sí van en payload catastral asociado."
+            ),
             ft.Text("payload inmueble enviado:"),
             ft.Text(
                 json.dumps(inmueble_payload, ensure_ascii=False, indent=2, default=str),
@@ -578,8 +628,12 @@ def _run_self_test() -> None:
             "superficie": "",
             "id_desarrollo": "",
             "observaciones": "",
+            "manzana": "M99",
+            "lote": "L99",
         }
     )
+    assert "manzana" not in minimum
+    assert "lote" not in minimum
     assert minimum == {
         "codigo_inmueble": "INM-FLET-999",
         "estado_administrativo": "ACTIVO",
@@ -643,6 +697,24 @@ def _run_self_test() -> None:
         "parcela": "P1",
         "observaciones": "Obs",
         "superficie_titulo": "100.25",
+    }
+    assert has_dato_catastral_util({"manzana": "M1", "lote": ""})
+    assert has_dato_catastral_util({"manzana": "", "lote": "L1"})
+    assert not has_dato_catastral_util(
+        {"manzana": "", "lote": "", "estado_dato": "ACTIVO"}
+    )
+    assert has_manzana_o_lote({"manzana": "M1", "lote": ""})
+    assert not has_manzana_o_lote({"manzana": "", "lote": ""})
+    assert should_create_dato_catastral(False, {"manzana": "M1", "lote": ""})
+    assert not should_create_dato_catastral(False, {"manzana": "", "lote": ""})
+    assert should_create_dato_catastral(True, {"manzana": "", "lote": ""})
+    dato_solo_manzana_lote = build_dato_catastral_payload(
+        {"manzana": " M2 ", "lote": " L2 ", "estado_dato": ""}
+    )
+    assert dato_solo_manzana_lote == {
+        "estado_dato": "ACTIVO",
+        "manzana": "M2",
+        "lote": "L2",
     }
     assert validate_dato_catastral_form({"superficie_titulo": "0"})
     assert validate_dato_catastral_form({"superficie_mensura": "-1"})
