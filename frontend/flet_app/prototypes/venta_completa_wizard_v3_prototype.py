@@ -38,7 +38,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import sys
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from uuid import uuid4
 
 import flet as ft
@@ -236,10 +236,22 @@ class WizardVentaCompletaV3State:
 
 
 class VentaCompletaWizardV3Prototype:
-    def __init__(self, page: ft.Page) -> None:
+    def __init__(
+        self,
+        page: ft.Page,
+        *,
+        api: ApiClient | None = None,
+        embedded: bool = False,
+        on_close: Callable[[], None] | None = None,
+        on_confirmed: Callable[[int | None], None] | None = None,
+    ) -> None:
         self.page = page
+        self.embedded = embedded
+        self.on_close = on_close
+        self.on_confirmed = on_confirmed
+        self.root = ft.Container(expand=True)
         self.state = WizardVentaCompletaV3State()
-        self.api = ApiClient(timeout=20.0)
+        self.api = api or ApiClient(timeout=20.0)
         self.reserva_selector: SearchSelectorDemo | None = None
         self.objeto_selector: SearchSelectorDemo | None = None
         self.comprador_selector: SearchSelectorDemo | None = None
@@ -484,24 +496,33 @@ class VentaCompletaWizardV3Prototype:
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self._render()
 
-    def _render(self) -> None:
-        self.page.controls.clear()
-        self.page.add(
-            ft.Container(
+    def build(self) -> ft.Control:
+        self._render(update=False)
+        return self.root
+
+    def _render(self, *, update: bool = True) -> None:
+        content = ft.Container(
+            expand=True,
+            padding=20,
+            content=ft.Column(
+                controls=[
+                    self._build_header(),
+                    self._build_center_area(),
+                    self._build_footer(),
+                ],
+                spacing=14,
                 expand=True,
-                padding=20,
-                content=ft.Column(
-                    controls=[
-                        self._build_header(),
-                        self._build_center_area(),
-                        self._build_footer(),
-                    ],
-                    spacing=14,
-                    expand=True,
-                ),
-            )
+            ),
         )
-        self.page.update()
+        if self.embedded:
+            self.root.content = content
+            if update and self.root.page is not None:
+                self.root.update()
+            return
+        self.page.controls.clear()
+        self.page.add(content)
+        if update:
+            self.page.update()
 
     def _build_center_area(self) -> ft.Control:
         return ft.Row(
@@ -3979,6 +4000,8 @@ class VentaCompletaWizardV3Prototype:
             self.state.detalle_venta_status_code = None
             self.state.detalle_venta_requested_id = None
             self.state.pantalla_actual = "VENTA_CONFIRMADA"
+            if self.on_confirmed is not None:
+                self.on_confirmed(self._confirmed_sale_id())
             self._load_confirmed_sale_detail(force=True)
             return
         self.state.confirm_error_details = result.error_details
@@ -4184,6 +4207,11 @@ class VentaCompletaWizardV3Prototype:
                             controls=[
                                 ft.Container(expand=True),
                                 ft.Button("Finalizar / Nueva venta", icon=ft.Icons.ADD_HOME_OUTLINED, on_click=self._restart_wizard),
+                                *(
+                                    [ft.OutlinedButton("Cerrar", icon=ft.Icons.CLOSE, on_click=lambda _: self.on_close())]
+                                    if self.on_close is not None
+                                    else []
+                                ),
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
