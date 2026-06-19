@@ -35,6 +35,21 @@ from app.api_client import ApiClient, ApiResult
 ESTADOS_ADMINISTRATIVOS = ("ACTIVO", "INACTIVO")
 ESTADOS_JURIDICOS = ("REGULAR", "OBSERVADO")
 ESTADOS_DATO_CATASTRAL = ("ACTIVO", "INACTIVO", "HISTORICO")
+CATASTRAL_ADVANCED_FIELDS = (
+    "nomenclatura_catastral",
+    "partida_inmobiliaria",
+    "matricula",
+    "folio_real",
+    "circunscripcion",
+    "seccion",
+    "parcela",
+    "superficie_titulo",
+    "superficie_mensura",
+    "medidas",
+    "situacion_posesoria",
+    "situacion_dominial",
+    "observaciones",
+)
 
 
 def _clean_text(value: str | None) -> str:
@@ -124,25 +139,18 @@ def validate_dato_catastral_form(values: dict[str, str | None]) -> list[str]:
     return errors
 
 
-def has_dato_catastral_util(values: dict[str, str | None]) -> bool:
-    useful_fields = (
-        "nomenclatura_catastral",
-        "partida_inmobiliaria",
-        "matricula",
-        "folio_real",
-        "circunscripcion",
-        "seccion",
-        "manzana",
-        "lote",
-        "parcela",
-        "superficie_titulo",
-        "superficie_mensura",
-        "medidas",
-        "situacion_posesoria",
-        "situacion_dominial",
-        "observaciones",
+def has_dato_catastral_avanzado_util(values: dict[str, str | None]) -> bool:
+    return any(
+        _clean_text(values.get(field_name)) for field_name in CATASTRAL_ADVANCED_FIELDS
     )
-    return any(_clean_text(values.get(field_name)) for field_name in useful_fields)
+
+
+def has_dato_catastral_util(
+    values: dict[str, str | None], *, incluir_avanzados: bool
+) -> bool:
+    return has_manzana_o_lote(values) or (
+        incluir_avanzados and has_dato_catastral_avanzado_util(values)
+    )
 
 
 def has_manzana_o_lote(values: dict[str, str | None]) -> bool:
@@ -150,15 +158,30 @@ def has_manzana_o_lote(values: dict[str, str | None]) -> bool:
 
 
 def should_create_dato_catastral(
-    cargar_dato_catastral: bool, values: dict[str, str | None]
+    mostrar_datos_catastrales_avanzados: bool, values: dict[str, str | None]
 ) -> bool:
-    return bool(cargar_dato_catastral or has_manzana_o_lote(values))
+    return has_dato_catastral_util(
+        values, incluir_avanzados=mostrar_datos_catastrales_avanzados
+    )
 
 
-def build_dato_catastral_payload(values: dict[str, str | None]) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "estado_dato": _clean_text(values.get("estado_dato")) or "ACTIVO"
-    }
+def build_dato_catastral_payload(
+    values: dict[str, str | None], *, incluir_avanzados: bool
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"estado_dato": "ACTIVO"}
+
+    for field_name in ("manzana", "lote"):
+        clean_value = _clean_text(values.get(field_name))
+        if clean_value:
+            payload[field_name] = clean_value
+
+    if not incluir_avanzados:
+        return payload
+
+    estado_dato = _clean_text(values.get("estado_dato"))
+    if estado_dato:
+        payload["estado_dato"] = estado_dato
+
     optional_text_fields = (
         "nomenclatura_catastral",
         "partida_inmobiliaria",
@@ -166,8 +189,6 @@ def build_dato_catastral_payload(values: dict[str, str | None]) -> dict[str, Any
         "folio_real",
         "circunscripcion",
         "seccion",
-        "manzana",
-        "lote",
         "parcela",
         "medidas",
         "situacion_posesoria",
@@ -247,10 +268,12 @@ class InmuebleAltaPrototype:
         self.observaciones = ft.TextField(
             label="Observaciones", multiline=True, min_lines=2, max_lines=4
         )
-        self.cargar_dato_catastral = ft.Checkbox(
-            label="Cargar datos catastrales/registrales ahora",
-            value=False,
+        self.mostrar_datos_catastrales_avanzados = False
+        self.toggle_datos_catastrales_avanzados = ft.OutlinedButton(
+            self._advanced_toggle_text(),
+            on_click=self._toggle_datos_catastrales_avanzados,
         )
+        self.datos_catastrales_avanzados = ft.Column(visible=False, spacing=12)
         self.nomenclatura_catastral = ft.TextField(label="Nomenclatura catastral")
         self.partida_inmobiliaria = ft.TextField(label="Partida inmobiliaria")
         self.matricula = ft.TextField(label="Matrícula")
@@ -296,6 +319,60 @@ class InmuebleAltaPrototype:
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.add(self._build_layout())
 
+    def _advanced_toggle_text(self) -> str:
+        if self.mostrar_datos_catastrales_avanzados:
+            return "Ocultar datos catastrales/registrales avanzados"
+        return "Mostrar datos catastrales/registrales avanzados"
+
+    def _toggle_datos_catastrales_avanzados(
+        self, _event: ft.ControlEvent | None = None
+    ) -> None:
+        self.mostrar_datos_catastrales_avanzados = (
+            not self.mostrar_datos_catastrales_avanzados
+        )
+        self._sync_datos_catastrales_avanzados_visibility()
+        self.page.update()
+
+    def _sync_datos_catastrales_avanzados_visibility(self) -> None:
+        self.toggle_datos_catastrales_avanzados.text = self._advanced_toggle_text()
+        self.datos_catastrales_avanzados.visible = (
+            self.mostrar_datos_catastrales_avanzados
+        )
+
+    def _build_datos_catastrales_avanzados(self) -> ft.Control:
+        self.datos_catastrales_avanzados.controls = [
+            ft.Text(
+                "Estos datos son opcionales y se guardan como información "
+                "catastral/registral asociada.",
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            ft.Row(
+                [
+                    self.nomenclatura_catastral,
+                    self.partida_inmobiliaria,
+                ],
+                wrap=True,
+            ),
+            ft.Row([self.matricula, self.folio_real], wrap=True),
+            ft.Row(
+                [self.circunscripcion, self.seccion],
+                wrap=True,
+            ),
+            ft.Row([self.parcela, self.estado_dato], wrap=True),
+            ft.Row(
+                [self.superficie_titulo, self.superficie_mensura],
+                wrap=True,
+            ),
+            self.medidas,
+            ft.Row(
+                [self.situacion_posesoria, self.situacion_dominial],
+                wrap=True,
+            ),
+            self.observaciones_catastrales,
+        ]
+        self._sync_datos_catastrales_avanzados_visibility()
+        return self.datos_catastrales_avanzados
+
     def _build_layout(self) -> ft.Control:
         return ft.Column(
             controls=[
@@ -339,30 +416,8 @@ class InmuebleAltaPrototype:
                                 "Se cargan como subrecurso opcional después de crear el inmueble. No incluye linderos.",
                                 color=ft.Colors.BLUE_GREY_700,
                             ),
-                            self.cargar_dato_catastral,
-                            ft.Row(
-                                [
-                                    self.nomenclatura_catastral,
-                                    self.partida_inmobiliaria,
-                                ],
-                                wrap=True,
-                            ),
-                            ft.Row([self.matricula, self.folio_real], wrap=True),
-                            ft.Row(
-                                [self.circunscripcion, self.seccion],
-                                wrap=True,
-                            ),
-                            ft.Row([self.parcela, self.estado_dato], wrap=True),
-                            ft.Row(
-                                [self.superficie_titulo, self.superficie_mensura],
-                                wrap=True,
-                            ),
-                            self.medidas,
-                            ft.Row(
-                                [self.situacion_posesoria, self.situacion_dominial],
-                                wrap=True,
-                            ),
-                            self.observaciones_catastrales,
+                            self.toggle_datos_catastrales_avanzados,
+                            self._build_datos_catastrales_avanzados(),
                             ft.Row([self.save_button, self.clear_button], spacing=10),
                             self.message,
                             self.result_details,
@@ -413,14 +468,17 @@ class InmuebleAltaPrototype:
         values = self._current_values()
         errors = validate_form(values)
         dato_values = self._current_dato_catastral_values()
+        avanzados_visibles = self.mostrar_datos_catastrales_avanzados
         should_create_dato = should_create_dato_catastral(
-            bool(self.cargar_dato_catastral.value), dato_values
+            avanzados_visibles, dato_values
         )
-        if should_create_dato:
+        if avanzados_visibles:
             errors.extend(validate_dato_catastral_form(dato_values))
-        if self.cargar_dato_catastral.value and not has_dato_catastral_util(dato_values):
+        if avanzados_visibles and not has_dato_catastral_util(
+            dato_values, incluir_avanzados=True
+        ):
             errors.append(
-                "Cargá al menos un dato catastral/registral o desactivá la opción."
+                "Cargá al menos un dato catastral/registral o ocultá la sección avanzada."
             )
         if errors:
             self._show_message("\n".join(errors), success=False)
@@ -429,7 +487,11 @@ class InmuebleAltaPrototype:
 
         inmueble_payload = build_inmueble_payload(values)
         dato_payload = (
-            build_dato_catastral_payload(dato_values) if should_create_dato else None
+            build_dato_catastral_payload(
+                dato_values, incluir_avanzados=avanzados_visibles
+            )
+            if should_create_dato
+            else None
         )
         self.save_button.disabled = True
         self.page.update()
@@ -616,7 +678,8 @@ class InmuebleAltaPrototype:
             self.observaciones_catastrales,
         ):
             control.value = ""
-        self.cargar_dato_catastral.value = False
+        self.mostrar_datos_catastrales_avanzados = False
+        self._sync_datos_catastrales_avanzados_visibility()
         self.estado_administrativo.value = "ACTIVO"
         self.estado_juridico.value = "REGULAR"
         self.estado_dato.value = "ACTIVO"
@@ -675,25 +738,26 @@ def _run_self_test() -> None:
             "id_desarrollo": "0",
         }
     )
+    dato_values = {
+        "nomenclatura_catastral": " NC-1 ",
+        "partida_inmobiliaria": "",
+        "matricula": " MAT-1 ",
+        "folio_real": "",
+        "circunscripcion": "",
+        "seccion": "",
+        "manzana": " M1 ",
+        "lote": " L1 ",
+        "parcela": " P1 ",
+        "superficie_titulo": "100.25",
+        "superficie_mensura": "",
+        "medidas": "",
+        "situacion_posesoria": "",
+        "situacion_dominial": "",
+        "estado_dato": "ACTIVO",
+        "observaciones": " Obs ",
+    }
     dato_payload = build_dato_catastral_payload(
-        {
-            "nomenclatura_catastral": " NC-1 ",
-            "partida_inmobiliaria": "",
-            "matricula": " MAT-1 ",
-            "folio_real": "",
-            "circunscripcion": "",
-            "seccion": "",
-            "manzana": " M1 ",
-            "lote": " L1 ",
-            "parcela": " P1 ",
-            "superficie_titulo": "100.25",
-            "superficie_mensura": "",
-            "medidas": "",
-            "situacion_posesoria": "",
-            "situacion_dominial": "",
-            "estado_dato": "ACTIVO",
-            "observaciones": " Obs ",
-        }
+        dato_values, incluir_avanzados=True
     )
     assert dato_payload == {
         "estado_dato": "ACTIVO",
@@ -705,18 +769,35 @@ def _run_self_test() -> None:
         "observaciones": "Obs",
         "superficie_titulo": "100.25",
     }
-    assert has_dato_catastral_util({"manzana": "M1", "lote": ""})
-    assert has_dato_catastral_util({"manzana": "", "lote": "L1"})
+    dato_oculto_con_residuales = build_dato_catastral_payload(
+        dato_values, incluir_avanzados=False
+    )
+    assert dato_oculto_con_residuales == {
+        "estado_dato": "ACTIVO",
+        "manzana": "M1",
+        "lote": "L1",
+    }
+    assert has_dato_catastral_util(
+        {"manzana": "M1", "lote": ""}, incluir_avanzados=False
+    )
+    assert has_dato_catastral_util(
+        {"manzana": "", "lote": "L1"}, incluir_avanzados=False
+    )
     assert not has_dato_catastral_util(
-        {"manzana": "", "lote": "", "estado_dato": "ACTIVO"}
+        {"manzana": "", "lote": "", "estado_dato": "ACTIVO"},
+        incluir_avanzados=True,
     )
     assert has_manzana_o_lote({"manzana": "M1", "lote": ""})
     assert not has_manzana_o_lote({"manzana": "", "lote": ""})
     assert should_create_dato_catastral(False, {"manzana": "M1", "lote": ""})
-    assert not should_create_dato_catastral(False, {"manzana": "", "lote": ""})
-    assert should_create_dato_catastral(True, {"manzana": "", "lote": ""})
+    dato_residual_oculto = dict(dato_values)
+    dato_residual_oculto.update({"manzana": "", "lote": ""})
+    assert not should_create_dato_catastral(False, dato_residual_oculto)
+    assert should_create_dato_catastral(True, {"matricula": "MAT-1"})
+    assert not should_create_dato_catastral(True, {"manzana": "", "lote": ""})
     dato_solo_manzana_lote = build_dato_catastral_payload(
-        {"manzana": " M2 ", "lote": " L2 ", "estado_dato": ""}
+        {"manzana": " M2 ", "lote": " L2 ", "estado_dato": "HISTORICO"},
+        incluir_avanzados=False,
     )
     assert dato_solo_manzana_lote == {
         "estado_dato": "ACTIVO",
