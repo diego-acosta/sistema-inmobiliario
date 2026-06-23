@@ -1744,7 +1744,6 @@ def _inmueble_technical_detail(
     return ft.ExpansionTile(
         title=ft.Text("Detalle técnico"),
         subtitle=ft.Text("Mostrar detalle"),
-        initially_expanded=False,
         controls=[
             build_technical_output_panel(
                 format_technical_output(
@@ -1902,7 +1901,6 @@ def _catastral_grid(row: dict[str, Any]) -> ft.Control:
             ft.ExpansionTile(
                 title=ft.Text("Datos secundarios"),
                 subtitle=ft.Text(f"{len(secondary)} campos cargados"),
-                initially_expanded=False,
                 controls=[key_value_grid(secondary)],
             )
         )
