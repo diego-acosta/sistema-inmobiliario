@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 import flet as ft
@@ -202,7 +203,11 @@ class VentaDetailView:
                                     ),
                                     detail_section(
                                         "Objeto vendido",
-                                        [_objetos_operativos(data.get("objetos"))],
+                                        [
+                                            _objetos_operativos(
+                                                data.get("objetos"), data.get("moneda")
+                                            )
+                                        ],
                                     ),
                                     detail_section(
                                         "Comprador / compradores",
@@ -283,7 +288,7 @@ def _venta_subtitle(data: dict[str, Any]) -> str:
             and data.get("reserva_origen")
             else "Venta directa"
         ),
-        _compact(data.get("fecha_venta")),
+        _format_date(data.get("fecha_venta")),
         _compact(data.get("moneda")),
     ]
     return " · ".join(part for part in parts if part and part != "-")
@@ -345,7 +350,7 @@ def _base_venta(data: dict[str, Any]) -> ft.Control:
         [
             ("Codigo", data.get("codigo_venta")),
             ("Estado", data.get("estado_venta")),
-            ("Fecha venta", data.get("fecha_venta")),
+            ("Fecha venta", _format_date(data.get("fecha_venta"))),
             ("Moneda", data.get("moneda")),
             ("Tipo plan financiero", data.get("tipo_plan_financiero")),
             ("Observaciones", data.get("observaciones")),
@@ -353,7 +358,7 @@ def _base_venta(data: dict[str, Any]) -> ft.Control:
     )
 
 
-def _objetos_table(value: object) -> ft.Control:
+def _objetos_table(value: object, moneda: object = None) -> ft.Control:
     rows = []
     for item in _safe_list(value):
         rows.append(
@@ -362,7 +367,9 @@ def _objetos_table(value: object) -> ft.Control:
                 "id_inmueble": item.get("id_inmueble"),
                 "id_unidad_funcional": item.get("id_unidad_funcional"),
                 "codigo_descripcion": _object_display(item),
-                "precio_asignado": item.get("precio_asignado"),
+                "precio_asignado": _format_money(
+                    item.get("moneda") or moneda, item.get("precio_asignado")
+                ),
             }
         )
     if not rows:
@@ -379,23 +386,28 @@ def _objetos_table(value: object) -> ft.Control:
     )
 
 
-def _objetos_operativos(value: object) -> ft.Control:
+def _objetos_operativos(value: object, moneda: object = None) -> ft.Control:
     rows = _safe_list(value)
     if not rows:
         return ft.Text("Sin objetos de venta registrados.")
     if len(rows) == 1:
-        return _single_object_card(rows[0])
-    return _objetos_table(rows)
+        return _single_object_card(rows[0], moneda)
+    return _objetos_table(rows, moneda)
 
 
-def _single_object_card(item: dict[str, Any]) -> ft.Control:
+def _single_object_card(item: dict[str, Any], moneda: object = None) -> ft.Control:
     return _compact_card(
         [
             ("Codigo / descripcion", _object_display(item)),
             ("Tipo objeto", item.get("tipo_objeto") or _tipo_objeto(item)),
             ("ID inmueble", item.get("id_inmueble")),
             ("ID unidad funcional", item.get("id_unidad_funcional")),
-            ("Precio asignado", item.get("precio_asignado")),
+            (
+                "Precio asignado",
+                _format_money(
+                    item.get("moneda") or moneda, item.get("precio_asignado")
+                ),
+            ),
         ]
     )
 
@@ -446,6 +458,17 @@ def _obligaciones_operativas_table(rows: list[dict[str, Any]]) -> ft.Control:
         return ft.Text("Sin obligaciones registradas.")
     if len(rows) == 1:
         return _single_obligation_card(rows[0])
+    formatted_rows = [
+        {
+            **row,
+            "fecha_vencimiento": _format_date(row.get("fecha_vencimiento")),
+            "importe_total": _format_money(row.get("moneda"), row.get("importe_total")),
+            "saldo_pendiente": _format_money(
+                row.get("moneda"), row.get("saldo_pendiente")
+            ),
+        }
+        for row in rows
+    ]
     return entity_table(
         columns=[
             ("Vencimiento", "fecha_vencimiento"),
@@ -454,17 +477,17 @@ def _obligaciones_operativas_table(rows: list[dict[str, Any]]) -> ft.Control:
             ("Saldo", "saldo_pendiente"),
             ("Moneda", "moneda"),
         ],
-        rows=rows,
+        rows=formatted_rows,
     )
 
 
 def _single_obligation_card(item: dict[str, Any]) -> ft.Control:
     return _compact_card(
         [
-            ("Vencimiento", item.get("fecha_vencimiento")),
+            ("Vencimiento", _format_date(item.get("fecha_vencimiento"))),
             ("Estado", item.get("estado_obligacion")),
-            ("Importe", item.get("importe_total")),
-            ("Saldo", item.get("saldo_pendiente")),
+            ("Importe", _format_money(item.get("moneda"), item.get("importe_total"))),
+            ("Saldo", _format_money(item.get("moneda"), item.get("saldo_pendiente"))),
             ("Moneda", item.get("moneda")),
         ]
     )
@@ -577,11 +600,11 @@ def _single_buyer_card(item: dict[str, Any]) -> ft.Control:
 
 
 def _party_participacion(item: dict[str, Any]) -> object:
-    return (
+    return _format_percent(
         item.get("porcentaje_responsabilidad")
         or item.get("porcentaje_participacion")
         or item.get("porcentaje")
-        or item.get("participacion")
+        or item.get("participacion"),
     )
 
 
@@ -887,13 +910,77 @@ def _compact(value: object) -> str:
 
 
 def _format_money(moneda: object, amount: object) -> str:
-    amount_text = _compact(amount)
-    if amount_text == "-":
+    amount_text = _format_decimal(amount, decimal_places=2)
+    if amount_text is None:
         return "-"
     moneda_text = _compact(moneda)
     if moneda_text == "-":
         return amount_text
     return f"{moneda_text} {amount_text}"
+
+
+def _format_date(value: object) -> str:
+    if value in (None, "", "-"):
+        return "-"
+    text = str(value).strip()
+    date_part = text[:10]
+    parts = date_part.split("-")
+    if len(parts) != 3:
+        return text
+    year, month, day = parts
+    if not (year.isdigit() and month.isdigit() and day.isdigit()):
+        return text
+    if len(year) != 4 or len(month) != 2 or len(day) != 2:
+        return text
+    return f"{day}/{month}/{year}"
+
+
+def _format_number(value: object) -> str:
+    if value in (None, "", "-"):
+        return "-"
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return _compact(value)
+    decimals = max(0, -number.as_tuple().exponent)
+    if number == number.to_integral():
+        decimals = 0
+    text = f"{number:,.{decimals}f}"
+    return text.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _format_percent(value: object) -> str:
+    formatted = _format_decimal(value, decimal_places=None, max_decimal_places=2)
+    if formatted is None:
+        return "-"
+    return f"{formatted}%"
+
+
+def _format_decimal(
+    value: object,
+    *,
+    decimal_places: int | None,
+    max_decimal_places: int | None = None,
+) -> str | None:
+    if value in (None, "", "-"):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if decimal_places is not None:
+        quantizer = Decimal("1").scaleb(-decimal_places)
+        number = number.quantize(quantizer)
+        decimals = decimal_places
+    else:
+        number = number.normalize()
+        decimals = max(0, -number.as_tuple().exponent)
+        if max_decimal_places is not None:
+            decimals = min(decimals, max_decimal_places)
+            quantizer = Decimal("1").scaleb(-decimals)
+            number = number.quantize(quantizer)
+    text = f"{number:,.{decimals}f}"
+    return text.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _parse_bool_or_none(value: object) -> tuple[bool | None, str | None]:
