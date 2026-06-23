@@ -238,3 +238,25 @@ Este PR no implementa edición, baja, ficha completa ni importación Excel de de
 - Versionado: la respuesta puede devolver `version_registro`; el alta no envía versión de entrada.
 - Rollback/transacción: la frontera transaccional corresponde al caso de uso backend de alta de desarrollo.
 - Tests del PR: `python -m compileall -q frontend/flet_app backend` y `git diff --check`.
+
+## Ficha real de desarrollo/loteo
+
+La pestaña **Inmuebles → Desarrollos** agrega la acción **Abrir ficha** por fila. La ruta interna `desarrollo_detail` permanece dentro del módulo Inmuebles, por lo que el rail lateral continúa marcando **Inmuebles** mientras se consulta la ficha.
+
+La ficha real consume `GET /api/v1/desarrollos/{id_desarrollo}` y muestra los datos principales confirmados del desarrollo/loteo: `id_desarrollo`, `codigo_desarrollo`, `nombre_desarrollo`, `descripcion`, `estado_desarrollo`, `observaciones`, `uid_global` y `version_registro` cuando estén disponibles en la respuesta. Incluye el botón **Volver a desarrollos** para regresar al listado real.
+
+La sección de inmuebles/lotes asociados usa el filtro existente `id_desarrollo` de `GET /api/v1/inmuebles` desde `ApiClient.listar_inmuebles(...)`. La UI calcula en frontend un resumen operativo con el total asociado y contadores derivados de los estados disponibles en cada fila; no inventa estados no devueltos por el backend. La tabla compacta muestra código, nombre, estado administrativo, estado jurídico, disponibilidad, ocupación, superficie, manzana y lote cuando esos campos vienen disponibles, e incluye **Abrir ficha** para navegar a la ficha real del inmueble existente.
+
+Si no hay asociaciones se muestra el estado vacío breve: **No hay inmuebles/lotes asociados a este desarrollo.** Esta ficha prepara el flujo posterior de importación de inmuebles/lotes desde Excel al permitir verificar visualmente que los lotes importados queden agrupados bajo el desarrollo/loteo correspondiente, sin implementar todavía el importador ni modificar SQL/backend.
+
+### Decisión CORE-EF para ficha de desarrollo/loteo
+
+- Naturaleza de los endpoints usados: `QUERY_READLIKE` (`GET /api/v1/desarrollos/{id_desarrollo}` y `GET /api/v1/inmuebles?id_desarrollo=...`).
+- Headers write: NO APLICA; la ficha solo consulta datos y no ejecuta comandos sincronizables.
+- `If-Match-Version`: NO APLICA; no modifica entidades existentes.
+- Idempotencia: NO APLICA; no hay endpoint write en esta ficha.
+- Outbox: NO APLICA; no hay mutación de negocio.
+- Lock lógico: NO APLICA; no bloquea entidades.
+- Versionado: solo se muestra `version_registro` si el backend lo devuelve.
+- Rollback/transacción: NO APLICA; flujo de lectura.
+- Tests del PR: `python -m compileall -q frontend/flet_app backend` y `git diff --check`.

@@ -128,6 +128,7 @@ class AppShell:
             "desarrollos": 2,
             "inmueble_create": 2,
             "desarrollo_create": 2,
+            "desarrollo_detail": 2,
             "inmueble_detail": 2,
             "unidad_detail": 2,
             "contratos": 3,
@@ -172,6 +173,16 @@ class AppShell:
                 api=self.api,
                 on_navigate=self.navigate,
                 detail_kind="desarrollo_create",
+            ).build()
+        if route.name == "desarrollo_detail":
+            id_desarrollo = self._route_int(route, "id_desarrollo")
+            if id_desarrollo is None:
+                return self._invalid_route("No se indico un desarrollo valido.")
+            return InmueblesPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                detail_kind="desarrollo",
+                detail_id=id_desarrollo,
             ).build()
         if route.name == "inmueble_detail":
             id_inmueble = self._route_int(route, "id_inmueble")
