@@ -149,12 +149,14 @@ class VentasListView:
                 "Abrir ficha",
                 disabled=id_venta is None,
                 on_click=(
-                    lambda _, id_venta=id_venta: self.on_navigate(
-                        "venta_detail", id_venta=id_venta
+                    (
+                        lambda _, id_venta=id_venta: self.on_navigate(
+                            "venta_detail", id_venta=id_venta
+                        )
                     )
-                )
-                if id_venta is not None
-                else None,
+                    if id_venta is not None
+                    else None
+                ),
             )
         ]
 
@@ -200,10 +202,34 @@ class VentaDetailView:
                     ]
                 ),
                 _venta_header(data),
+                detail_section("Resumen de venta", [_base_venta(data)]),
+                detail_section(
+                    "Objetos vendidos",
+                    [_objetos_table(data.get("objetos"))],
+                ),
+                detail_section(
+                    "Compradores / partes intervinientes",
+                    [_partes_table(data.get("partes"))],
+                ),
+                detail_section(
+                    "Reserva origen",
+                    [_reserva_origen(data.get("reserva_origen"))],
+                ),
+                detail_section(
+                    "Forma de pago / plan financiero",
+                    [
+                        _plan_financiero(
+                            data,
+                            data.get("condiciones_comerciales"),
+                            data.get("resumen_financiero"),
+                        )
+                    ],
+                ),
+                detail_section("Informacion tecnica minima", [_tecnica_minima(data)]),
                 detail_tabs(
                     [
                         (
-                            "Resumen",
+                            "Detalle ampliado",
                             [
                                 detail_section("Datos base", [_base_venta(data)]),
                                 detail_section(
@@ -343,6 +369,7 @@ def _venta_row(item: dict[str, Any]) -> dict[str, Any]:
 def _base_venta(data: dict[str, Any]) -> ft.Control:
     return key_value_grid(
         [
+            ("ID venta", data.get("id_venta")),
             ("Codigo", data.get("codigo_venta")),
             ("Estado", data.get("estado_venta")),
             ("Fecha venta", data.get("fecha_venta")),
@@ -382,8 +409,16 @@ def _venta_header(data: dict[str, Any]) -> ft.Control:
 
 def _reserva_origen(value: object) -> ft.Control:
     if not isinstance(value, dict) or not value:
-        return ft.Text("Sin reserva origen.")
-    return _dict_grid(value)
+        return ft.Text("Venta directa (sin reserva origen registrada).")
+    return key_value_grid(
+        [
+            ("ID reserva venta", value.get("id_reserva_venta")),
+            ("Codigo reserva", value.get("codigo_reserva")),
+            ("Estado reserva", value.get("estado_reserva")),
+            ("Fecha reserva", value.get("fecha_reserva")),
+            ("Vigente", value.get("vigente")),
+        ]
+    )
 
 
 def _objetos_table(value: object) -> ft.Control:
@@ -391,18 +426,22 @@ def _objetos_table(value: object) -> ft.Control:
     for item in _safe_list(value):
         rows.append(
             {
-                "codigo_nombre": _object_display(item),
+                "tipo_objeto": item.get("tipo_objeto") or _tipo_objeto(item),
+                "id_inmueble": item.get("id_inmueble"),
+                "id_unidad_funcional": item.get("id_unidad_funcional"),
+                "codigo_descripcion": _object_display(item),
                 "precio_asignado": item.get("precio_asignado"),
-                "observaciones": item.get("observaciones"),
             }
         )
     if not rows:
         return ft.Text("Sin objetos de venta registrados.")
     return entity_table(
         columns=[
-            ("Codigo / nombre", "codigo_nombre"),
+            ("Tipo objeto", "tipo_objeto"),
+            ("ID inmueble", "id_inmueble"),
+            ("ID unidad", "id_unidad_funcional"),
+            ("Codigo / descripcion", "codigo_descripcion"),
             ("Precio asignado", "precio_asignado"),
-            ("Observaciones", "observaciones"),
         ],
         rows=rows,
     )
@@ -431,6 +470,106 @@ def _condiciones_comerciales(value: object) -> ft.Control:
     return ft.Column(controls=controls, spacing=10)
 
 
+def _plan_financiero(
+    data: dict[str, Any],
+    condiciones: object,
+    resumen: object,
+) -> ft.Control:
+    condiciones_data = condiciones if isinstance(condiciones, dict) else {}
+    resumen_data = resumen if isinstance(resumen, dict) else {}
+    plan_v2 = data.get("plan_pago_v2")
+    controls: list[ft.Control] = [
+        key_value_grid(
+            [
+                (
+                    "Tipo plan financiero",
+                    condiciones_data.get("tipo_plan_financiero")
+                    or data.get("tipo_plan_financiero"),
+                ),
+                (
+                    "Condicion",
+                    condiciones_data.get("tipo_pago")
+                    or condiciones_data.get("condicion_pago")
+                    or data.get("tipo_pago"),
+                ),
+                (
+                    "Monto total",
+                    condiciones_data.get("monto_total") or data.get("monto_total"),
+                ),
+                ("Moneda", condiciones_data.get("moneda") or data.get("moneda")),
+                ("Entrega / anticipo", condiciones_data.get("importe_anticipo")),
+                (
+                    "Vencimiento anticipo",
+                    condiciones_data.get("fecha_vencimiento_anticipo"),
+                ),
+                ("Saldo", condiciones_data.get("importe_saldo")),
+                ("Vencimiento saldo", condiciones_data.get("fecha_vencimiento_saldo")),
+                ("Cantidad obligaciones", resumen_data.get("cantidad_obligaciones")),
+                (
+                    "Saldo pendiente",
+                    resumen_data.get("saldo_pendiente")
+                    or resumen_data.get("saldo_pendiente_total"),
+                ),
+            ]
+        )
+    ]
+    cuotas = _safe_list(condiciones_data.get("cuotas"))
+    if cuotas:
+        controls.extend(
+            [
+                ft.Text("Cuotas expuestas", weight=ft.FontWeight.W_600),
+                _cuotas_table(cuotas),
+            ]
+        )
+    if isinstance(plan_v2, dict) and plan_v2:
+        bloques = _safe_list(plan_v2.get("bloques"))
+        controls.extend(
+            [
+                ft.Text("Plan Pago V2 expuesto", weight=ft.FontWeight.W_600),
+                key_value_grid(
+                    [
+                        ("Tipo pago", plan_v2.get("tipo_pago")),
+                        ("Monto total plan", plan_v2.get("monto_total_plan")),
+                        ("Moneda", plan_v2.get("moneda")),
+                    ]
+                ),
+                _bloques_plan_table(bloques),
+            ]
+        )
+    if len(controls) == 1 and not condiciones_data and not resumen_data:
+        return ft.Text("Sin forma de pago / plan financiero expuesto.")
+    return ft.Column(controls=controls, spacing=10)
+
+
+def _bloques_plan_table(rows: list[dict[str, Any]]) -> ft.Control:
+    if not rows:
+        return ft.Text("Sin bloques de plan expuestos.")
+    return entity_table(
+        columns=[
+            ("Tipo", "tipo_bloque"),
+            ("Etiqueta", "etiqueta_bloque"),
+            ("Importe total", "importe_total_bloque"),
+            ("Cuotas", "cantidad_cuotas"),
+            ("Importe cuota", "importe_cuota"),
+            ("Vencimiento", "fecha_vencimiento"),
+        ],
+        rows=rows,
+    )
+
+
+def _tecnica_minima(data: dict[str, Any]) -> ft.Control:
+    return key_value_grid(
+        [
+            ("ID venta", data.get("id_venta")),
+            ("UID global", data.get("uid_global")),
+            ("Version registro", data.get("version_registro")),
+            ("Created at", data.get("created_at")),
+            ("Updated at", data.get("updated_at")),
+            ("Deleted at", data.get("deleted_at")),
+        ]
+    )
+
+
 def _cuotas_table(rows: list[dict[str, Any]]) -> ft.Control:
     if not rows:
         return ft.Text("Sin cuotas.")
@@ -451,20 +590,24 @@ def _partes_table(value: object) -> ft.Control:
     for item in _safe_list(value):
         rows.append(
             {
+                "id_persona": item.get("id_persona"),
                 "display_name": item.get("display_name") or _party_display(item),
                 "rol": _join_values(item.get("codigo_rol"), item.get("nombre_rol")),
+                "participacion": item.get("porcentaje_participacion")
+                or item.get("porcentaje")
+                or item.get("participacion"),
                 "tipo_relacion": item.get("tipo_relacion") or "venta",
-                "vigencia": _vigencia(item),
             }
         )
     if not rows:
         return ft.Text("Sin partes registradas.")
     return entity_table(
         columns=[
-            ("Nombre", "display_name"),
+            ("ID persona", "id_persona"),
+            ("Nombre / razon social", "display_name"),
             ("Rol", "rol"),
+            ("Participacion", "participacion"),
             ("Tipo relacion", "tipo_relacion"),
-            ("Vigencia", "vigencia"),
         ],
         rows=rows,
     )
@@ -556,10 +699,7 @@ def _table_any(value: object) -> ft.Control:
     keys = _first_visible_keys(rows, limit=8)
     if not keys:
         return ft.Text("Sin campos disponibles.")
-    compact_rows = [
-        {key: _compact(row.get(key)) for key in keys}
-        for row in rows
-    ]
+    compact_rows = [{key: _compact(row.get(key)) for key in keys} for row in rows]
     return entity_table(columns=[(key, key) for key in keys], rows=compact_rows)
 
 
@@ -572,14 +712,20 @@ def _dict_grid(value: object) -> ft.Control:
 def _list_payload(data: object) -> tuple[list[dict[str, Any]], int]:
     if isinstance(data, dict):
         raw_items = data.get("items", data.get("data", []))
-        total = _safe_int(data.get("total", len(raw_items) if isinstance(raw_items, list) else 0))
+        total = _safe_int(
+            data.get("total", len(raw_items) if isinstance(raw_items, list) else 0)
+        )
     elif isinstance(data, list):
         raw_items = data
         total = len(data)
     else:
         raw_items = []
         total = 0
-    items = [item for item in raw_items if isinstance(item, dict)] if isinstance(raw_items, list) else []
+    items = (
+        [item for item in raw_items if isinstance(item, dict)]
+        if isinstance(raw_items, list)
+        else []
+    )
     return items, total
 
 
@@ -632,9 +778,7 @@ def _party_display(item: dict[str, Any]) -> str:
     if razon:
         return str(razon)
     display = " ".join(
-        str(part)
-        for part in (item.get("nombre"), item.get("apellido"))
-        if part
+        str(part) for part in (item.get("nombre"), item.get("apellido")) if part
     )
     return display or str(item.get("codigo_persona") or item.get("id_persona") or "-")
 
@@ -654,6 +798,14 @@ def _object_display(item: dict[str, Any]) -> str:
         return f"Unidad {item.get('id_unidad_funcional')}"
     if item.get("id_inmueble") is not None:
         return f"Inmueble {item.get('id_inmueble')}"
+    return "-"
+
+
+def _tipo_objeto(item: dict[str, Any]) -> str:
+    if item.get("id_unidad_funcional") is not None:
+        return "unidad_funcional"
+    if item.get("id_inmueble") is not None:
+        return "inmueble"
     return "-"
 
 
