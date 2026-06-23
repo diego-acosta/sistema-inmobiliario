@@ -260,3 +260,22 @@ Si no hay asociaciones se muestra el estado vacío breve: **No hay inmuebles/lot
 - Versionado: solo se muestra `version_registro` si el backend lo devuelve.
 - Rollback/transacción: NO APLICA; flujo de lectura.
 - Tests del PR: `python -m compileall -q frontend/flet_app backend` y `git diff --check`.
+
+## Ficha real de inmueble con datos catastrales/registrales
+
+La ficha real de inmueble, accesible desde **Inmuebles → Listado → Abrir ficha**, consume el detalle integral existente y el subrecurso read-like existente `GET /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales` para mostrar en la vista principal una sección **Datos catastrales / registrales**. La sección presenta campos etiquetados y legibles, sin depender de JSON crudo en la vista principal.
+
+Cuando existen datos catastrales/registrales asociados, la ficha muestra, entre otros campos, **Manzana** y **Lote**; por lo tanto, si esos valores fueron cargados durante el alta inicial, quedan visibles al volver al listado y abrir la ficha del inmueble. Cuando un campo está vacío o `null`, la UI lo diferencia mostrando **Sin cargar**. Cuando no hay ningún dato asociado, muestra el estado vacío claro: **No hay datos catastrales/registrales asociados a este inmueble.**
+
+Este alcance no agrega edición, baja ni historial visual de datos catastrales/registrales. El detalle técnico se mantiene al final de la ficha para inspección del payload cuando corresponde, pero la lectura operativa principal no muestra JSON crudo.
+
+### Decisión CORE-EF ficha catastral
+
+- Naturaleza de los endpoints usados: `QUERY_READLIKE` (`GET /api/v1/inmuebles/{id_inmueble}/detalle-integral` y `GET /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales`).
+- Headers write: NO APLICA; no se crean ni modifican registros en este issue.
+- `If-Match-Version`: NO APLICA; la ficha solo lee datos.
+- Idempotencia: NO APLICA; no hay command write.
+- Outbox: NO APLICA; no hay evento de negocio nuevo.
+- Lock lógico: NO APLICA; no hay modificación de entidad.
+- Versionado: solo se muestra información existente si el backend la devuelve en modo técnico.
+- Rollback/transacción: NO APLICA; no hay frontera transaccional frontend nueva.

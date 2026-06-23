@@ -703,14 +703,10 @@ class InmuebleCreateForm:
         ]
         self.id_desarrollo.value = None
         if self.id_desarrollo.options:
-            self.desarrollos_help.value = (
-                "El desarrollo/loteo permite agrupar inmuebles para futuras consultas e importaciones."
-            )
+            self.desarrollos_help.value = "El desarrollo/loteo permite agrupar inmuebles para futuras consultas e importaciones."
             self.desarrollos_help.color = ft.Colors.BLUE_GREY_700
         else:
-            self.desarrollos_help.value = (
-                "No hay desarrollos cargados. Podés crear uno desde la pestaña Desarrollos."
-            )
+            self.desarrollos_help.value = "No hay desarrollos cargados. Podés crear uno desde la pestaña Desarrollos."
             self.desarrollos_help.color = ft.Colors.BLUE_GREY_700
 
     def _toggle_text(self) -> str:
@@ -1124,6 +1120,19 @@ class InmuebleDetailView:
         if not result.success:
             return _detail_error(self.on_navigate, result.error_message)
         data = result.data if isinstance(result.data, dict) else {}
+        catastral_result = self.api.listar_datos_catastrales_registrales_inmueble(
+            self.id_inmueble
+        )
+        datos_catastrales = (
+            catastral_result.data
+            if catastral_result.success and isinstance(catastral_result.data, list)
+            else _extract_datos_catastrales(data)
+        )
+        catastral_control = (
+            _datos_catastrales_registrales(datos_catastrales)
+            if catastral_result.success
+            else _catastral_read_error(catastral_result.error_message)
+        )
         return ft.Column(
             controls=[
                 _back_row(self.on_navigate),
@@ -1133,7 +1142,11 @@ class InmuebleDetailView:
                             _inmueble_title(data), size=30, weight=ft.FontWeight.W_700
                         ),
                         ft.Container(expand=True),
-                        status_badge(_text_or_none(data.get("estado_administrativo"))),
+                        status_badge(
+                            _text_or_none(
+                                _inmueble_data(data).get("estado_administrativo")
+                            )
+                        ),
                     ]
                 ),
                 _inmueble_header(data),
@@ -1144,8 +1157,12 @@ class InmuebleDetailView:
                             [
                                 detail_section("Datos base", [_base_inmueble(data)]),
                                 detail_section(
+                                    "Datos catastrales / registrales",
+                                    [catastral_control],
+                                ),
+                                detail_section(
                                     "Resumen operativo",
-                                    [_dict_grid(data.get("resumen_operativo"))],
+                                    [_resumen_operativo_inmueble(data)],
                                 ),
                             ],
                         ),
@@ -1212,7 +1229,23 @@ class InmuebleDetailView:
                                             data.get("trazabilidad_integracion")
                                         )
                                     ],
-                                )
+                                ),
+                                detail_section(
+                                    "Detalle tecnico",
+                                    [
+                                        build_technical_output_panel(
+                                            format_technical_output(
+                                                [
+                                                    ("detalle integral", data),
+                                                    (
+                                                        "datos catastrales / registrales",
+                                                        datos_catastrales,
+                                                    ),
+                                                ]
+                                            )
+                                        )
+                                    ],
+                                ),
                             ],
                         ),
                     ]
@@ -1322,7 +1355,7 @@ class UnidadDetailView:
                                             data.get("trazabilidad_integracion")
                                         )
                                     ],
-                                )
+                                ),
                             ],
                         ),
                     ]
@@ -1616,18 +1649,134 @@ def _current_states(data: dict[str, Any]) -> ft.Control:
     )
 
 
+def _inmueble_data(data: dict[str, Any]) -> dict[str, Any]:
+    inmueble = data.get("inmueble")
+    return inmueble if isinstance(inmueble, dict) else data
+
+
+def _desarrollo_label(
+    desarrollo: dict[str, Any] | None, inmueble: dict[str, Any]
+) -> str | None:
+    if desarrollo:
+        parts = [
+            desarrollo.get("codigo_desarrollo"),
+            desarrollo.get("nombre_desarrollo"),
+        ]
+        return " — ".join(str(part) for part in parts if part) or str(
+            desarrollo.get("id_desarrollo")
+        )
+    if inmueble.get("id_desarrollo") is not None:
+        return f"ID {inmueble.get('id_desarrollo')}"
+    return None
+
+
+def _extract_datos_catastrales(data: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in (
+        "datos_catastrales_registrales",
+        "datos_catastrales",
+        "dato_catastral_registral",
+    ):
+        value = data.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            return [value]
+    return []
+
+
+def _catastral_read_error(message: str | None) -> ft.Control:
+    return ft.Text(
+        message or "No se pudieron cargar los datos catastrales/registrales asociados."
+    )
+
+
+def _datos_catastrales_registrales(rows: list[dict[str, Any]]) -> ft.Control:
+    if not rows:
+        return ft.Text(
+            "No hay datos catastrales/registrales asociados a este inmueble."
+        )
+    controls = []
+    for index, row in enumerate(rows, start=1):
+        title = (
+            f"Dato catastral/registral #{index}"
+            if len(rows) > 1
+            else "Dato catastral/registral"
+        )
+        controls.append(ft.Text(title, weight=ft.FontWeight.W_600))
+        controls.append(_catastral_grid(row))
+    return ft.Column(controls=controls, spacing=10)
+
+
+def _catastral_grid(row: dict[str, Any]) -> ft.Control:
+    fields = [
+        ("Manzana", "manzana"),
+        ("Lote", "lote"),
+        ("Nomenclatura catastral", "nomenclatura_catastral"),
+        ("Partida inmobiliaria", "partida_inmobiliaria"),
+        ("Matrícula", "matricula"),
+        ("Folio real", "folio_real"),
+        ("Circunscripción", "circunscripcion"),
+        ("Sección", "seccion"),
+        ("Chacra", "chacra"),
+        ("Quinta", "quinta"),
+        ("Fracción", "fraccion"),
+        ("Parcela", "parcela"),
+        ("Subparcela", "subparcela"),
+        ("Superficie título", "superficie_titulo"),
+        ("Superficie mensura", "superficie_mensura"),
+        ("Medidas", "medidas"),
+        ("Situación posesoria", "situacion_posesoria"),
+        ("Situación dominial", "situacion_dominial"),
+        ("Organismo origen", "organismo_origen"),
+        ("Fecha desde", "fecha_desde"),
+        ("Fecha hasta", "fecha_hasta"),
+        ("Estado dato", "estado_dato"),
+        ("Observaciones", "observaciones"),
+    ]
+    return key_value_grid(
+        [(label, _loaded_or_empty(row.get(key))) for label, key in fields]
+    )
+
+
+def _loaded_or_empty(value: object) -> str:
+    if value is None or value == "":
+        return "Sin cargar"
+    return str(value)
+
+
+def _resumen_operativo_inmueble(data: dict[str, Any]) -> ft.Control:
+    resumen = (
+        data.get("resumen_operativo")
+        if isinstance(data.get("resumen_operativo"), dict)
+        else {}
+    )
+    inmueble = _inmueble_data(data)
+    merged = {
+        **resumen,
+        "cantidad_unidades_funcionales": inmueble.get("cantidad_unidades_funcionales")
+        or data.get("cantidad_unidades_funcionales")
+        or len(_safe_list(data.get("unidades_funcionales"))),
+    }
+    return _dict_grid(merged)
+
+
 def _base_inmueble(data: dict[str, Any]) -> ft.Control:
+    inmueble = _inmueble_data(data)
+    desarrollo = (
+        data.get("desarrollo") if isinstance(data.get("desarrollo"), dict) else None
+    )
     return key_value_grid(
         [
-            ("Codigo", data.get("codigo_inmueble")),
-            ("Nombre", data.get("nombre_inmueble") or data.get("nombre")),
-            ("Tipo", data.get("tipo_inmueble")),
-            ("Direccion", data.get("direccion")),
-            ("Ubicacion", data.get("ubicacion")),
-            ("Superficie", data.get("superficie")),
-            ("Estado administrativo", data.get("estado_administrativo")),
-            ("Estado juridico", data.get("estado_juridico")),
-            ("Observaciones", data.get("observaciones")),
+            ("Codigo", inmueble.get("codigo_inmueble")),
+            ("Nombre", inmueble.get("nombre_inmueble") or inmueble.get("nombre")),
+            ("Tipo", inmueble.get("tipo_inmueble")),
+            ("Direccion", inmueble.get("direccion")),
+            ("Ubicacion", inmueble.get("ubicacion")),
+            ("Desarrollo/loteo", _desarrollo_label(desarrollo, inmueble)),
+            ("Superficie", inmueble.get("superficie")),
+            ("Estado administrativo", inmueble.get("estado_administrativo")),
+            ("Estado juridico", inmueble.get("estado_juridico")),
+            ("Observaciones", inmueble.get("observaciones")),
         ]
     )
 
@@ -1650,12 +1799,13 @@ def _base_unidad(data: dict[str, Any]) -> ft.Control:
 
 
 def _inmueble_header(data: dict[str, Any]) -> ft.Control:
+    inmueble = _inmueble_data(data)
     return ft.Container(
         content=key_value_grid(
             [
                 ("Inmueble", _inmueble_title(data)),
-                ("Estado administrativo", data.get("estado_administrativo")),
-                ("Estado juridico", data.get("estado_juridico")),
+                ("Estado administrativo", inmueble.get("estado_administrativo")),
+                ("Estado juridico", inmueble.get("estado_juridico")),
                 (
                     "Disponibilidad actual",
                     _validity_label(
@@ -1670,7 +1820,12 @@ def _inmueble_header(data: dict[str, Any]) -> ft.Control:
                         data.get("ocupacion_ambigua"),
                     ),
                 ),
-                ("Cantidad de unidades", data.get("cantidad_unidades_funcionales")),
+                (
+                    "Cantidad de unidades",
+                    inmueble.get("cantidad_unidades_funcionales")
+                    or data.get("cantidad_unidades_funcionales")
+                    or len(_safe_list(data.get("unidades_funcionales"))),
+                ),
             ]
         ),
         padding=16,
@@ -1845,10 +2000,11 @@ def _empty(message: str) -> ft.Control:
 
 
 def _inmueble_title(data: dict[str, Any]) -> str:
+    inmueble = _inmueble_data(data)
     return str(
-        data.get("nombre_inmueble")
-        or data.get("nombre")
-        or data.get("codigo_inmueble")
+        inmueble.get("nombre_inmueble")
+        or inmueble.get("nombre")
+        or inmueble.get("codigo_inmueble")
         or "Ficha de inmueble"
     )
 
