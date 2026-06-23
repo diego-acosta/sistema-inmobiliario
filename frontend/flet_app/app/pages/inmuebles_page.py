@@ -33,11 +33,13 @@ class InmueblesPage:
         on_navigate,
         detail_kind: str | None = None,
         detail_id: int | None = None,
+        initial_tab: str | None = None,
     ) -> None:
         self.api = api
         self.on_navigate = on_navigate
         self.detail_kind = detail_kind
         self.detail_id = detail_id
+        self.initial_tab = initial_tab
 
     def build(self) -> ft.Control:
         if self.detail_kind == "inmueble" and self.detail_id is not None:
@@ -48,15 +50,21 @@ class InmueblesPage:
             return UnidadDetailView(self.api, self.on_navigate, self.detail_id).build()
         if self.detail_kind == "create":
             return InmuebleCreateView(self.api, self.on_navigate).build()
-        return InmueblesHub(self.api, self.on_navigate).build()
+        if self.detail_kind == "desarrollo_create":
+            return DesarrolloCreateView(self.api, self.on_navigate).build()
+        return InmueblesHub(self.api, self.on_navigate, self.initial_tab).build()
 
 
 class InmueblesHub:
-    def __init__(self, api: ApiClient, on_navigate) -> None:
+    def __init__(
+        self, api: ApiClient, on_navigate, initial_tab: str | None = None
+    ) -> None:
         self.api = api
         self.on_navigate = on_navigate
+        self.initial_tab = initial_tab
 
     def build(self) -> ft.Control:
+        selected_index = 2 if self.initial_tab == "desarrollos" else 0
         return detail_tabs(
             [
                 ("Inmuebles", [InmueblesListView(self.api, self.on_navigate).build()]),
@@ -64,7 +72,12 @@ class InmueblesHub:
                     "Unidades funcionales",
                     [UnidadesListView(self.api, self.on_navigate).build()],
                 ),
-            ]
+                (
+                    "Desarrollos",
+                    [DesarrollosListView(self.api, self.on_navigate).build()],
+                ),
+            ],
+            selected_index=selected_index,
         )
 
 
@@ -187,6 +200,253 @@ class InmueblesListView:
         self.offset += self.limit
         self._load()
         self.results.update()
+
+
+class DesarrollosListView:
+    def __init__(self, api: ApiClient, on_navigate) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+        self.results = ft.Column(spacing=12, expand=True)
+
+    def build(self) -> ft.Control:
+        self._load()
+        return ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Text(
+                            "Desarrollos / Loteos",
+                            size=28,
+                            weight=ft.FontWeight.W_700,
+                        ),
+                        ft.Container(expand=True),
+                        ft.FilledButton(
+                            "Nuevo desarrollo",
+                            icon=ft.Icons.ADD_BUSINESS,
+                            on_click=lambda _: self.on_navigate("desarrollo_create"),
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                self.results,
+            ],
+            spacing=16,
+            expand=True,
+        )
+
+    def _load(self) -> None:
+        result = self.api.get_desarrollos()
+        self.results.controls.clear()
+        if not result.success:
+            self.results.controls.append(
+                error_state(
+                    result.error_message or "No se pudieron cargar los desarrollos."
+                )
+            )
+            return
+        items, _total = _list_payload(result.data)
+        rows = [_desarrollo_row(item) for item in items]
+        if not rows:
+            self.results.controls.append(_empty("No hay desarrollos/loteos cargados."))
+            return
+        self.results.controls.append(
+            entity_table(
+                columns=[
+                    ("Código", "codigo"),
+                    ("Nombre", "nombre"),
+                    ("Estado", "estado"),
+                    ("Descripción", "descripcion"),
+                    ("Observaciones", "observaciones"),
+                ],
+                rows=rows,
+            )
+        )
+
+
+class DesarrolloCreateView:
+    def __init__(self, api: ApiClient, on_navigate) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+
+    def build(self) -> ft.Control:
+        form = DesarrolloCreateForm(
+            self.api,
+            on_close=lambda: self.on_navigate("desarrollos"),
+        )
+        return ft.Column(
+            controls=[form.build()],
+            spacing=16,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+
+class DesarrolloCreateForm:
+    def __init__(self, api: ApiClient, on_close: Callable[[], None]) -> None:
+        self.api = api
+        self.on_close = on_close
+        self.codigo_desarrollo = ft.TextField(label="Código desarrollo *", width=260)
+        self.nombre_desarrollo = ft.TextField(label="Nombre desarrollo *", width=320)
+        self.descripcion = ft.TextField(
+            label="Descripción", multiline=True, min_lines=2, max_lines=3
+        )
+        self.estado_desarrollo = ft.Dropdown(
+            label="Estado desarrollo *",
+            value="ACTIVO",
+            width=220,
+            options=[ft.dropdown.Option(v) for v in ("ACTIVO", "INACTIVO")],
+        )
+        self.observaciones = ft.TextField(
+            label="Observaciones", multiline=True, min_lines=2, max_lines=3
+        )
+        self.message = ft.Container(visible=False)
+        self.technical = ft.Column(spacing=4, visible=False)
+        self.save_button = ft.FilledButton(
+            "Guardar desarrollo", icon=ft.Icons.SAVE, on_click=self._save
+        )
+        self.new_button = ft.FilledTonalButton(
+            "Nueva alta", icon=ft.Icons.ADD, on_click=self._new_create, visible=False
+        )
+        self.root: ft.Control | None = None
+
+    def build(self) -> ft.Control:
+        self.root = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Nuevo desarrollo / loteo",
+                                size=20,
+                                weight=ft.FontWeight.W_700,
+                            ),
+                            ft.Container(expand=True),
+                            ft.TextButton(
+                                "Volver a desarrollos",
+                                on_click=lambda _: self.on_close(),
+                            ),
+                        ]
+                    ),
+                    ft.Row(
+                        [
+                            self.codigo_desarrollo,
+                            self.nombre_desarrollo,
+                            self.estado_desarrollo,
+                        ],
+                        wrap=True,
+                        spacing=10,
+                    ),
+                    self.descripcion,
+                    self.observaciones,
+                    ft.Row(
+                        [
+                            self.save_button,
+                            self.new_button,
+                            ft.OutlinedButton(
+                                "Limpiar", icon=ft.Icons.CLEAR, on_click=self._clear
+                            ),
+                            ft.OutlinedButton(
+                                "Volver a desarrollos",
+                                icon=ft.Icons.ARROW_BACK,
+                                on_click=lambda _: self.on_close(),
+                            ),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                    self.message,
+                    self.technical,
+                ],
+                spacing=12,
+            ),
+            padding=16,
+            bgcolor=ft.Colors.WHITE,
+            border=_safe_border(1, ft.Colors.BLUE_GREY_100),
+            border_radius=8,
+        )
+        return self.root
+
+    def _current_values(self) -> dict[str, str | None]:
+        return {
+            "codigo_desarrollo": self.codigo_desarrollo.value,
+            "nombre_desarrollo": self.nombre_desarrollo.value,
+            "descripcion": self.descripcion.value,
+            "estado_desarrollo": self.estado_desarrollo.value,
+            "observaciones": self.observaciones.value,
+        }
+
+    def _save(self, _) -> None:
+        values = self._current_values()
+        errors = _validate_desarrollo_form(values)
+        if errors:
+            self._show_message("\n".join(errors), success=False)
+            self.message.update()
+            return
+        payload = _build_desarrollo_payload(values)
+        self.save_button.disabled = True
+        self.save_button.update()
+        result = self.api.crear_desarrollo(payload)
+        if result.success:
+            self._show_message("Desarrollo creado correctamente", success=True)
+            self._show_technical(payload, result)
+            self.save_button.disabled = True
+            self.new_button.visible = True
+        else:
+            self._show_message(_format_api_error(result), success=False)
+            self._show_technical(payload, result)
+            self.save_button.disabled = False
+        self.save_button.update()
+        self.new_button.update()
+        self.message.update()
+        self.technical.update()
+
+    def _show_message(self, text: str, *, success: bool) -> None:
+        self.message.content = ft.Text(
+            text, color=ft.Colors.GREEN_800 if success else ft.Colors.RED_800
+        )
+        self.message.bgcolor = ft.Colors.GREEN_50 if success else ft.Colors.RED_50
+        self.message.padding = 12
+        self.message.border_radius = 6
+        self.message.visible = True
+
+    def _show_technical(self, payload: dict[str, Any], result: ApiResult) -> None:
+        technical_text = format_technical_output(
+            [
+                ("payload desarrollo enviado", payload),
+                ("response desarrollo", result.data),
+                (
+                    "errores backend",
+                    (
+                        "Sin errores backend."
+                        if result.success
+                        else _format_api_error(result)
+                    ),
+                ),
+            ]
+        )
+        self.technical.controls = [build_technical_output_panel(technical_text)]
+        self.technical.visible = True
+
+    def _new_create(self, _) -> None:
+        self._clear_form()
+        self.save_button.disabled = False
+        self.new_button.visible = False
+        if self.root is not None:
+            self.root.update()
+
+    def _clear(self, _) -> None:
+        self._clear_form()
+        if self.root is not None:
+            self.root.update()
+
+    def _clear_form(self) -> None:
+        self.codigo_desarrollo.value = ""
+        self.nombre_desarrollo.value = ""
+        self.descripcion.value = ""
+        self.estado_desarrollo.value = "ACTIVO"
+        self.observaciones.value = ""
+        self.message.visible = False
+        self.technical.visible = False
 
 
 class InmuebleCreateView:
@@ -515,11 +775,14 @@ class InmuebleCreateForm:
             if isinstance(inmueble_response, ApiResult)
             else inmueble_response
         )
-        backend_errors = "\n".join(
-            _format_api_error(r)
-            for r in (inmueble_response, dato_result)
-            if isinstance(r, ApiResult) and not r.success
-        ) or "Sin errores backend."
+        backend_errors = (
+            "\n".join(
+                _format_api_error(r)
+                for r in (inmueble_response, dato_result)
+                if isinstance(r, ApiResult) and not r.success
+            )
+            or "Sin errores backend."
+        )
         technical_text = format_technical_output(
             [
                 (
@@ -984,6 +1247,43 @@ def _inmueble_row(item: dict[str, Any]) -> dict[str, Any]:
         ),
         "cantidad_unidades": item.get("cantidad_unidades_funcionales"),
     }
+
+
+def _desarrollo_row(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id_desarrollo": item.get("id_desarrollo"),
+        "codigo": item.get("codigo_desarrollo"),
+        "nombre": item.get("nombre_desarrollo"),
+        "estado": item.get("estado_desarrollo"),
+        "descripcion": item.get("descripcion"),
+        "observaciones": item.get("observaciones"),
+    }
+
+
+def _validate_desarrollo_form(values: dict[str, str | None]) -> list[str]:
+    errors: list[str] = []
+    if not str(values.get("codigo_desarrollo") or "").strip():
+        errors.append("Código desarrollo es requerido.")
+    if not str(values.get("nombre_desarrollo") or "").strip():
+        errors.append("Nombre desarrollo es requerido.")
+    if not str(values.get("estado_desarrollo") or "").strip():
+        errors.append("Estado desarrollo es requerido.")
+    return errors
+
+
+def _build_desarrollo_payload(values: dict[str, str | None]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key in (
+        "codigo_desarrollo",
+        "nombre_desarrollo",
+        "descripcion",
+        "estado_desarrollo",
+        "observaciones",
+    ):
+        value = str(values.get(key) or "").strip()
+        if value:
+            payload[key] = value
+    return payload
 
 
 def _unidad_row(item: dict[str, Any]) -> dict[str, Any]:

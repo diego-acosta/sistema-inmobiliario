@@ -139,6 +139,21 @@ class ApiClient:
             json=payload,
         )
 
+    def get_desarrollos(self) -> ApiResult:
+        return self._get("/api/v1/desarrollos")
+
+    def get_desarrollo(self, id_desarrollo: int) -> ApiResult:
+        return self._get(f"/api/v1/desarrollos/{id_desarrollo}")
+
+    def crear_desarrollo(
+        self, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        return self._post(
+            "/api/v1/desarrollos",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
     def crear_dato_catastral_registral_inmueble(
         self,
         id_inmueble: int,
@@ -396,7 +411,6 @@ class ApiClient:
             },
             json=payload,
         )
-
 
     def generar_venta_desde_reserva(
         self,

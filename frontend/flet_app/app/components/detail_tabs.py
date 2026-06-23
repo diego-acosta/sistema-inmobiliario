@@ -3,14 +3,13 @@ import inspect
 
 import flet as ft
 
-
 TabContent = tuple[str, Sequence[ft.Control]]
 
 
-def detail_tabs(items: Sequence[TabContent]) -> ft.Control:
+def detail_tabs(items: Sequence[TabContent], selected_index: int = 0) -> ft.Control:
     if _supports_classic_tabs():
         return ft.Tabs(
-            selected_index=0,
+            selected_index=selected_index,
             expand=True,
             tabs=[
                 ft.Tab(
