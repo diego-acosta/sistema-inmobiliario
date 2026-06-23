@@ -216,3 +216,23 @@ El panel técnico muestra:
 - Versionado: la respuesta puede incluir `version_registro`; las altas no envían versión de entrada.
 - Rollback/transacción: cada llamada mantiene su frontera backend. Si falla la segunda llamada, el inmueble queda creado y la UI informa el fallo parcial.
 - Tests del PR: compileall, diff check, prueba inline de payload/headers sin backend vivo y, si el entorno lo permite, test backend específico del subrecurso.
+
+## Desarrollos / Loteos integrado
+
+La pantalla real de Inmuebles incorpora una pestaña **Desarrollos** junto a **Inmuebles** y **Unidades funcionales**. La vista `DesarrollosListView` consume el listado real `GET /api/v1/desarrollos`, muestra **Desarrollos / Loteos**, ofrece el botón **Nuevo desarrollo** y presenta las columnas código, nombre, estado, descripción y observaciones.
+
+El alta navega a una pantalla separada (`desarrollo_create`) mediante `DesarrolloCreateView`; no se incrusta el formulario arriba del listado. El formulario mínimo envía a `POST /api/v1/desarrollos` solo campos no vacíos: `codigo_desarrollo`, `nombre_desarrollo`, `descripcion`, `estado_desarrollo` y `observaciones`. La UI valida como requeridos código, nombre y estado, usa `ACTIVO` por defecto, deshabilita **Guardar desarrollo** tras una creación exitosa y habilita **Nueva alta** para limpiar el formulario y evitar doble guardado accidental. Al usar **Volver a desarrollos** se regresa al hub de Inmuebles, donde el listado se recarga.
+
+Este PR no implementa edición, baja, ficha completa ni importación Excel de desarrollos. La asociación de inmuebles a desarrollos y las futuras importaciones quedan como evolución posterior sobre los endpoints ya existentes.
+
+### Decisión CORE-EF para desarrollo
+
+- Naturaleza del endpoint write usado: `COMMAND_WRITE_NEGOCIO` (`POST /api/v1/desarrollos`).
+- Headers: aplica; `ApiClient.crear_desarrollo(...)` envía `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id` mediante el helper común del cliente Flet.
+- `If-Match-Version`: NO APLICA; es alta de una entidad nueva y no modifica una entidad existente/versionada.
+- Idempotencia: aplica por `X-Op-Id` a nivel de contrato CORE-EF; la UI conserva un `op_id` por intento mientras el payload no cambie, lo reutiliza ante reintentos por error/timeout, genera uno nuevo si el payload cambia y lo reinicia con **Nueva alta** o **Limpiar**.
+- Outbox: NO CONFIRMADO en frontend; no se declara cumplimiento profundo sin evidencia backend adicional en este PR.
+- Lock lógico: NO APLICA en frontend; no bloquea una entidad existente.
+- Versionado: la respuesta puede devolver `version_registro`; el alta no envía versión de entrada.
+- Rollback/transacción: la frontera transaccional corresponde al caso de uso backend de alta de desarrollo.
+- Tests del PR: `python -m compileall -q frontend/flet_app backend` y `git diff --check`.
