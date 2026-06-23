@@ -195,6 +195,13 @@ class ApiClient:
     def get_inmueble_detalle_integral(self, id_inmueble: int) -> ApiResult:
         return self._get(f"/api/v1/inmuebles/{id_inmueble}/detalle-integral")
 
+    def listar_datos_catastrales_registrales_inmueble(
+        self, id_inmueble: int
+    ) -> ApiResult:
+        return self._get(
+            f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales"
+        )
+
     def listar_inmuebles(
         self,
         *,
