@@ -1,5 +1,6 @@
 import json
 from typing import Any, Callable
+from uuid import uuid4
 
 import flet as ft
 
@@ -307,6 +308,8 @@ class DesarrolloCreateForm:
         self.new_button = ft.FilledTonalButton(
             "Nueva alta", icon=ft.Icons.ADD, on_click=self._new_create, visible=False
         )
+        self.current_op_id: str | None = None
+        self.current_payload_fingerprint: str | None = None
         self.root: ft.Control | None = None
 
     def build(self) -> ft.Control:
@@ -383,9 +386,16 @@ class DesarrolloCreateForm:
             self.message.update()
             return
         payload = _build_desarrollo_payload(values)
+        fingerprint = _payload_fingerprint(payload)
+        if (
+            self.current_op_id is None
+            or self.current_payload_fingerprint != fingerprint
+        ):
+            self.current_op_id = str(uuid4())
+            self.current_payload_fingerprint = fingerprint
         self.save_button.disabled = True
         self.save_button.update()
-        result = self.api.crear_desarrollo(payload)
+        result = self.api.crear_desarrollo(payload, op_id=self.current_op_id)
         if result.success:
             self._show_message("Desarrollo creado correctamente", success=True)
             self._show_technical(payload, result)
@@ -445,6 +455,8 @@ class DesarrolloCreateForm:
         self.descripcion.value = ""
         self.estado_desarrollo.value = "ACTIVO"
         self.observaciones.value = ""
+        self.current_op_id = None
+        self.current_payload_fingerprint = None
         self.message.visible = False
         self.technical.visible = False
 
@@ -1269,6 +1281,10 @@ def _validate_desarrollo_form(values: dict[str, str | None]) -> list[str]:
     if not str(values.get("estado_desarrollo") or "").strip():
         errors.append("Estado desarrollo es requerido.")
     return errors
+
+
+def _payload_fingerprint(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
 
 
 def _build_desarrollo_payload(values: dict[str, str | None]) -> dict[str, Any]:

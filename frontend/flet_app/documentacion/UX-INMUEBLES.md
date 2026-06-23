@@ -230,7 +230,7 @@ Este PR no implementa edición, baja, ficha completa ni importación Excel de de
 - Naturaleza del endpoint write usado: `COMMAND_WRITE_NEGOCIO` (`POST /api/v1/desarrollos`).
 - Headers: aplica; `ApiClient.crear_desarrollo(...)` envía `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id` mediante el helper común del cliente Flet.
 - `If-Match-Version`: NO APLICA; es alta de una entidad nueva y no modifica una entidad existente/versionada.
-- Idempotencia: aplica por `X-Op-Id` a nivel de contrato CORE-EF; la UI genera un UUID válido por intento y evita doble click deshabilitando el guardado tras éxito, sin persistencia local de reintentos.
+- Idempotencia: aplica por `X-Op-Id` a nivel de contrato CORE-EF; la UI conserva un `op_id` por intento mientras el payload no cambie, lo reutiliza ante reintentos por error/timeout, genera uno nuevo si el payload cambia y lo reinicia con **Nueva alta** o **Limpiar**.
 - Outbox: NO CONFIRMADO en frontend; no se declara cumplimiento profundo sin evidencia backend adicional en este PR.
 - Lock lógico: NO APLICA en frontend; no bloquea una entidad existente.
 - Versionado: la respuesta puede devolver `version_registro`; el alta no envía versión de entrada.
