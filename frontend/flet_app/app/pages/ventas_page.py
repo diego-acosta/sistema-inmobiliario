@@ -4,7 +4,6 @@ import flet as ft
 
 from app.api_client import ApiClient
 from app.components.detail_section import detail_section, key_value_grid
-from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
 from app.components.status_badge import status_badge
@@ -186,146 +185,55 @@ class VentaDetailView:
             return _detail_error(self.on_navigate, result.error_message)
 
         data = result.data if isinstance(result.data, dict) else {}
+        technical_detail = _technical_detail_collapsible(data)
         return ft.Column(
             controls=[
                 _back_row(self.on_navigate),
+                _venta_operativa_header(data),
+                _summary_cards(data),
                 ft.Row(
                     controls=[
-                        ft.Text(
-                            _venta_title(data),
-                            size=30,
-                            weight=ft.FontWeight.W_700,
-                        ),
-                        ft.Container(expand=True),
-                        status_badge(_text_or_none(data.get("estado_venta"))),
-                    ]
-                ),
-                detail_section("Resumen de venta", [_base_venta(data)]),
-                detail_section(
-                    "Objetos vendidos",
-                    [_objetos_table(data.get("objetos"))],
-                ),
-                detail_section(
-                    "Compradores / partes intervinientes",
-                    [_partes_table(data.get("partes"))],
-                ),
-                detail_section(
-                    "Forma de pago / plan financiero",
-                    [
-                        _plan_financiero(
-                            data,
-                            data.get("condiciones_comerciales"),
-                            data.get("resumen_financiero"),
-                        )
-                    ],
-                ),
-                detail_section(
-                    "Reserva origen",
-                    [_reserva_origen(data.get("reserva_origen"))],
-                ),
-                detail_section(
-                    "Detalle ampliado / tecnico",
-                    [
                         ft.Container(
-                            content=detail_tabs(
-                                [
-                                    (
-                                        "Tecnico",
-                                        [
-                                            detail_section(
-                                                "Informacion tecnica minima",
-                                                [_tecnica_minima(data)],
-                                            ),
-                                        ],
+                            content=ft.Column(
+                                controls=[
+                                    detail_section(
+                                        "Resumen de venta", [_base_venta(data)]
                                     ),
-                                    (
-                                        "Financiero",
-                                        [
-                                            detail_section(
-                                                "Plan Pago V2 por bloques",
-                                                [
-                                                    _plan_pago_v2_readonly(
-                                                        data.get("plan_pago_v2")
-                                                    )
-                                                ],
-                                            ),
-                                            detail_section(
-                                                "Relacion financiera",
-                                                [
-                                                    _relacion_financiera(
-                                                        data.get("relacion_financiera"),
-                                                        data.get("resumen_financiero"),
-                                                    )
-                                                ],
-                                            ),
-                                            detail_section(
-                                                "Obligaciones",
-                                                [
-                                                    _obligaciones_table(
-                                                        data.get(
-                                                            "obligaciones_financieras"
-                                                        )
-                                                    )
-                                                ],
-                                            ),
-                                            detail_section(
-                                                "Resumen financiero",
-                                                [
-                                                    _resumen_financiero(
-                                                        data.get("resumen_financiero")
-                                                    )
-                                                ],
-                                            ),
-                                        ],
+                                    detail_section(
+                                        "Objeto vendido",
+                                        [_objetos_operativos(data.get("objetos"))],
                                     ),
-                                    (
-                                        "Instrumentos y cierre",
-                                        [
-                                            detail_section(
-                                                "Instrumentos",
-                                                [
-                                                    _table_any(
-                                                        data.get(
-                                                            "instrumentos_compraventa"
-                                                        )
-                                                    )
-                                                ],
-                                            ),
-                                            detail_section(
-                                                "Cesiones",
-                                                [_table_any(data.get("cesiones"))],
-                                            ),
-                                            detail_section(
-                                                "Escrituraciones",
-                                                [
-                                                    _table_any(
-                                                        data.get("escrituraciones")
-                                                    )
-                                                ],
-                                            ),
-                                        ],
+                                    detail_section(
+                                        "Comprador / compradores",
+                                        [_partes_operativas(data.get("partes"))],
                                     ),
-                                    (
-                                        "Integracion inmobiliaria",
-                                        [
-                                            detail_section(
-                                                "Integracion inmobiliaria",
-                                                [
-                                                    _integration_view(
-                                                        data.get(
-                                                            "integracion_inmobiliaria"
-                                                        )
-                                                    )
-                                                ],
-                                            )
-                                        ],
-                                    ),
-                                ]
+                                ],
+                                spacing=12,
                             ),
-                            height=520,
+                            expand=True,
+                        ),
+                        ft.Container(
+                            content=ft.Column(
+                                controls=[
+                                    detail_section(
+                                        "Plan de pago / obligaciones",
+                                        [_plan_obligaciones_operativas(data)],
+                                    ),
+                                    detail_section(
+                                        "Origen",
+                                        [_origen_operativo(data.get("reserva_origen"))],
+                                    ),
+                                ],
+                                spacing=12,
+                            ),
+                            expand=True,
                         ),
                     ],
+                    spacing=12,
+                    run_spacing=12,
+                    wrap=True,
                 ),
+                technical_detail,
             ],
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
@@ -351,41 +259,99 @@ def _venta_row(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _venta_operativa_header(data: dict[str, Any]) -> ft.Control:
+    return ft.Row(
+        controls=[
+            ft.Column(
+                controls=[
+                    ft.Text(_venta_title(data), size=30, weight=ft.FontWeight.W_700),
+                    ft.Text(_venta_subtitle(data), color=ft.Colors.BLUE_GREY_600),
+                ],
+                spacing=2,
+                expand=True,
+            ),
+            status_badge(_text_or_none(data.get("estado_venta"))),
+        ],
+        vertical_alignment=ft.CrossAxisAlignment.START,
+    )
+
+
+def _venta_subtitle(data: dict[str, Any]) -> str:
+    parts = [
+        (
+            "Desde reserva"
+            if isinstance(data.get("reserva_origen"), dict)
+            and data.get("reserva_origen")
+            else "Venta directa"
+        ),
+        _compact(data.get("fecha_venta")),
+        _compact(data.get("moneda")),
+    ]
+    return " · ".join(part for part in parts if part and part != "-")
+
+
+def _summary_cards(data: dict[str, Any]) -> ft.Control:
+    resumen = data.get("resumen_financiero")
+    resumen_data = resumen if isinstance(resumen, dict) else {}
+    condiciones = data.get("condiciones_comerciales")
+    condiciones_data = condiciones if isinstance(condiciones, dict) else {}
+    moneda = condiciones_data.get("moneda") or data.get("moneda")
+    saldo_pendiente = resumen_data.get("saldo_pendiente") or resumen_data.get(
+        "saldo_pendiente_total"
+    )
+    cantidad_obligaciones = resumen_data.get("cantidad_obligaciones")
+    if cantidad_obligaciones is None:
+        cantidad_obligaciones = len(_safe_list(data.get("obligaciones_financieras")))
+    return ft.Row(
+        controls=[
+            _metric_card(
+                "Total venta",
+                _format_money(
+                    moneda,
+                    condiciones_data.get("monto_total") or data.get("monto_total"),
+                ),
+            ),
+            _metric_card("Saldo pendiente", _format_money(moneda, saldo_pendiente)),
+            _metric_card(
+                "Forma de pago",
+                condiciones_data.get("tipo_plan_financiero")
+                or data.get("tipo_plan_financiero"),
+            ),
+            _metric_card("Obligaciones", cantidad_obligaciones),
+        ],
+        spacing=12,
+        run_spacing=12,
+        wrap=True,
+    )
+
+
+def _metric_card(label: str, value: object) -> ft.Control:
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Text(label, size=12, color=ft.Colors.BLUE_GREY_600),
+                ft.Text(_compact(value), size=18, weight=ft.FontWeight.W_700),
+            ],
+            spacing=4,
+        ),
+        padding=14,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+        width=190,
+    )
+
+
 def _base_venta(data: dict[str, Any]) -> ft.Control:
     return key_value_grid(
         [
-            ("ID venta", data.get("id_venta")),
             ("Codigo", data.get("codigo_venta")),
             ("Estado", data.get("estado_venta")),
             ("Fecha venta", data.get("fecha_venta")),
-            ("Monto total", data.get("monto_total")),
             ("Moneda", data.get("moneda")),
             ("Tipo plan financiero", data.get("tipo_plan_financiero")),
             ("Observaciones", data.get("observaciones")),
         ]
     )
-
-
-def _reserva_origen(value: object) -> ft.Control:
-    if not isinstance(value, dict) or not value:
-        return ft.Text("Venta directa (sin reserva origen registrada).")
-
-    estado = value.get("estado_reserva_venta") or value.get("estado_reserva")
-    rows = [
-        ("ID reserva venta", value.get("id_reserva_venta")),
-        ("Estado reserva", estado),
-    ]
-    optional_rows = [
-        ("Codigo reserva", value.get("codigo_reserva")),
-        ("Fecha reserva", value.get("fecha_reserva")),
-        ("Vigente", value.get("vigente")),
-    ]
-    rows.extend(
-        (label, field_value)
-        for label, field_value in optional_rows
-        if field_value not in (None, "")
-    )
-    return key_value_grid(rows)
 
 
 def _objetos_table(value: object) -> ft.Control:
@@ -414,98 +380,81 @@ def _objetos_table(value: object) -> ft.Control:
     )
 
 
-def _condiciones_comerciales(value: object) -> ft.Control:
-    if not isinstance(value, dict) or not value:
-        return ft.Text("Sin condiciones comerciales registradas.")
-    cuotas = _safe_list(value.get("cuotas"))
-    controls: list[ft.Control] = [
-        key_value_grid(
-            [
-                ("Monto total", value.get("monto_total")),
-                ("Moneda", value.get("moneda")),
-                ("Tipo plan financiero", value.get("tipo_plan_financiero")),
-                ("Importe anticipo", value.get("importe_anticipo")),
-                ("Vencimiento anticipo", value.get("fecha_vencimiento_anticipo")),
-                ("Importe saldo", value.get("importe_saldo")),
-                ("Vencimiento saldo", value.get("fecha_vencimiento_saldo")),
-                ("Observaciones", value.get("observaciones")),
-            ]
-        ),
-        ft.Text("Cuotas", weight=ft.FontWeight.W_600),
-        _cuotas_table(cuotas),
-    ]
-    return ft.Column(controls=controls, spacing=10)
+def _objetos_operativos(value: object) -> ft.Control:
+    rows = _safe_list(value)
+    if not rows:
+        return ft.Text("Sin objetos de venta registrados.")
+    if len(rows) == 1:
+        return _single_object_card(rows[0])
+    return _objetos_table(rows)
 
 
-def _plan_financiero(
-    data: dict[str, Any],
-    condiciones: object,
-    resumen: object,
-) -> ft.Control:
+def _single_object_card(item: dict[str, Any]) -> ft.Control:
+    return _compact_card(
+        [
+            ("Codigo / descripcion", _object_display(item)),
+            ("Tipo objeto", item.get("tipo_objeto") or _tipo_objeto(item)),
+            ("ID inmueble", item.get("id_inmueble")),
+            ("ID unidad funcional", item.get("id_unidad_funcional")),
+            ("Precio asignado", item.get("precio_asignado")),
+        ]
+    )
+
+
+def _plan_obligaciones_operativas(data: dict[str, Any]) -> ft.Control:
+    condiciones = data.get("condiciones_comerciales")
     condiciones_data = condiciones if isinstance(condiciones, dict) else {}
+    resumen = data.get("resumen_financiero")
     resumen_data = resumen if isinstance(resumen, dict) else {}
-    plan_v2 = data.get("plan_pago_v2")
-    controls: list[ft.Control] = [
-        key_value_grid(
-            [
-                (
-                    "Tipo plan financiero",
-                    condiciones_data.get("tipo_plan_financiero")
-                    or data.get("tipo_plan_financiero"),
-                ),
-                (
-                    "Condicion",
-                    condiciones_data.get("tipo_pago")
-                    or condiciones_data.get("condicion_pago")
-                    or data.get("tipo_pago"),
-                ),
-                (
-                    "Monto total",
-                    condiciones_data.get("monto_total") or data.get("monto_total"),
-                ),
-                ("Moneda", condiciones_data.get("moneda") or data.get("moneda")),
-                ("Entrega / anticipo", condiciones_data.get("importe_anticipo")),
-                (
-                    "Vencimiento anticipo",
-                    condiciones_data.get("fecha_vencimiento_anticipo"),
-                ),
-                ("Saldo", condiciones_data.get("importe_saldo")),
-                ("Vencimiento saldo", condiciones_data.get("fecha_vencimiento_saldo")),
-                ("Cantidad obligaciones", resumen_data.get("cantidad_obligaciones")),
-                (
-                    "Saldo pendiente",
-                    resumen_data.get("saldo_pendiente")
-                    or resumen_data.get("saldo_pendiente_total"),
-                ),
-            ]
-        )
-    ]
-    cuotas = _safe_list(condiciones_data.get("cuotas"))
-    if cuotas:
-        controls.extend(
-            [
-                ft.Text("Cuotas expuestas", weight=ft.FontWeight.W_600),
-                _cuotas_table(cuotas),
-            ]
-        )
-    if isinstance(plan_v2, dict) and plan_v2:
-        bloques = _safe_list(plan_v2.get("bloques"))
-        controls.extend(
-            [
-                ft.Text("Plan Pago V2 expuesto", weight=ft.FontWeight.W_600),
-                key_value_grid(
-                    [
-                        ("Tipo pago", plan_v2.get("tipo_pago")),
-                        ("Monto total plan", plan_v2.get("monto_total_plan")),
-                        ("Moneda", plan_v2.get("moneda")),
-                    ]
-                ),
-                _bloques_plan_table(bloques),
-            ]
-        )
-    if len(controls) == 1 and not condiciones_data and not resumen_data:
-        return ft.Text("Sin forma de pago / plan financiero expuesto.")
-    return ft.Column(controls=controls, spacing=10)
+    moneda = condiciones_data.get("moneda") or data.get("moneda")
+    saldo_pendiente = resumen_data.get("saldo_pendiente") or resumen_data.get(
+        "saldo_pendiente_total"
+    )
+    obligaciones = _safe_list(data.get("obligaciones_financieras"))
+    cantidad_obligaciones = resumen_data.get("cantidad_obligaciones")
+    if cantidad_obligaciones is None:
+        cantidad_obligaciones = len(obligaciones)
+
+    return ft.Column(
+        controls=[
+            key_value_grid(
+                [
+                    (
+                        "Tipo de plan",
+                        condiciones_data.get("tipo_plan_financiero")
+                        or data.get("tipo_plan_financiero"),
+                    ),
+                    (
+                        "Monto total",
+                        _format_money(
+                            moneda,
+                            condiciones_data.get("monto_total")
+                            or data.get("monto_total"),
+                        ),
+                    ),
+                    ("Saldo pendiente", _format_money(moneda, saldo_pendiente)),
+                    ("Cantidad obligaciones", cantidad_obligaciones),
+                ]
+            ),
+            _obligaciones_operativas_table(obligaciones),
+        ],
+        spacing=10,
+    )
+
+
+def _obligaciones_operativas_table(rows: list[dict[str, Any]]) -> ft.Control:
+    if not rows:
+        return ft.Text("Sin obligaciones registradas.")
+    return entity_table(
+        columns=[
+            ("Vencimiento", "fecha_vencimiento"),
+            ("Estado", "estado_obligacion"),
+            ("Importe", "importe_total"),
+            ("Saldo", "saldo_pendiente"),
+            ("Moneda", "moneda"),
+        ],
+        rows=rows,
+    )
 
 
 def _plan_pago_v2_readonly(value: object) -> ft.Control:
@@ -568,21 +517,6 @@ def _tecnica_minima(data: dict[str, Any]) -> ft.Control:
     )
 
 
-def _cuotas_table(rows: list[dict[str, Any]]) -> ft.Control:
-    if not rows:
-        return ft.Text("Sin cuotas.")
-    return entity_table(
-        columns=[
-            ("Numero", "numero_cuota"),
-            ("Importe", "importe_cuota"),
-            ("Vencimiento", "fecha_vencimiento"),
-            ("Moneda", "moneda"),
-            ("Observaciones", "observaciones"),
-        ],
-        rows=rows,
-    )
-
-
 def _partes_table(value: object) -> ft.Control:
     rows = []
     for item in _safe_list(value):
@@ -591,10 +525,7 @@ def _partes_table(value: object) -> ft.Control:
                 "id_persona": item.get("id_persona"),
                 "display_name": item.get("display_name") or _party_display(item),
                 "rol": _join_values(item.get("codigo_rol"), item.get("nombre_rol")),
-                "participacion": item.get("porcentaje_responsabilidad")
-                or item.get("porcentaje_participacion")
-                or item.get("porcentaje")
-                or item.get("participacion"),
+                "participacion": _party_participacion(item),
                 "tipo_relacion": item.get("tipo_relacion") or "venta",
             }
         )
@@ -609,6 +540,65 @@ def _partes_table(value: object) -> ft.Control:
             ("Tipo relacion", "tipo_relacion"),
         ],
         rows=rows,
+    )
+
+
+def _partes_operativas(value: object) -> ft.Control:
+    rows = _safe_list(value)
+    if not rows:
+        return ft.Text("Sin partes registradas.")
+    if len(rows) == 1:
+        return _single_buyer_card(rows[0])
+    return _partes_table(rows)
+
+
+def _single_buyer_card(item: dict[str, Any]) -> ft.Control:
+    return _compact_card(
+        [
+            ("Nombre / razon social", item.get("display_name") or _party_display(item)),
+            ("Rol", _join_values(item.get("codigo_rol"), item.get("nombre_rol"))),
+            ("Participacion", _party_participacion(item)),
+            ("Tipo relacion", item.get("tipo_relacion") or "venta"),
+        ]
+    )
+
+
+def _party_participacion(item: dict[str, Any]) -> object:
+    return (
+        item.get("porcentaje_responsabilidad")
+        or item.get("porcentaje_participacion")
+        or item.get("porcentaje")
+        or item.get("participacion")
+    )
+
+
+def _origen_operativo(value: object) -> ft.Control:
+    if not isinstance(value, dict) or not value:
+        return _compact_card(
+            [
+                ("Origen", "Venta directa"),
+                ("Reserva", "Sin reserva origen registrada."),
+            ]
+        )
+
+    rows = [
+        ("ID reserva venta", value.get("id_reserva_venta")),
+        (
+            "Estado reserva",
+            value.get("estado_reserva_venta") or value.get("estado_reserva"),
+        ),
+    ]
+    if value.get("codigo_reserva") not in (None, ""):
+        rows.append(("Codigo reserva", value.get("codigo_reserva")))
+    return _compact_card(rows)
+
+
+def _compact_card(rows: list[tuple[str, object]]) -> ft.Control:
+    return ft.Container(
+        content=key_value_grid(rows),
+        padding=12,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
     )
 
 
@@ -636,59 +626,85 @@ def _relacion_financiera(value: object, resumen: object) -> ft.Control:
     )
 
 
-def _obligaciones_table(value: object) -> ft.Control:
-    rows = []
-    for item in _safe_list(value):
-        rows.append(
-            {
-                "fecha_emision": item.get("fecha_emision"),
-                "fecha_vencimiento": item.get("fecha_vencimiento"),
-                "estado_obligacion": item.get("estado_obligacion"),
-                "importe_total": item.get("importe_total"),
-                "saldo_pendiente": item.get("saldo_pendiente"),
-                "moneda": item.get("moneda"),
-                "composiciones": _nested_summary(
-                    item.get("composiciones"),
-                    "nombre_concepto_financiero",
-                    "importe_componente",
+def _technical_detail_collapsible(data: dict[str, Any]) -> ft.Control:
+    body = ft.Column(
+        controls=_technical_detail_controls(data),
+        spacing=10,
+        visible=False,
+    )
+    toggle = ft.TextButton("Mostrar detalle", icon=ft.Icons.EXPAND_MORE)
+
+    def _toggle_detail(_) -> None:
+        body.visible = not body.visible
+        toggle.text = "Ocultar detalle" if body.visible else "Mostrar detalle"
+        toggle.icon = ft.Icons.EXPAND_LESS if body.visible else ft.Icons.EXPAND_MORE
+        body.update()
+        toggle.update()
+
+    toggle.on_click = _toggle_detail
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Text(
+                            "Detalle tecnico",
+                            weight=ft.FontWeight.W_700,
+                            size=18,
+                        ),
+                        ft.Container(expand=True),
+                        toggle,
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                "obligados": _nested_summary(
-                    item.get("obligados"),
-                    "rol_obligado",
-                    "porcentaje_responsabilidad",
-                ),
-            }
+                body,
+            ],
+            spacing=8,
+        ),
+        padding=12,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+    )
+
+
+def _technical_detail_controls(data: dict[str, Any]) -> list[ft.Control]:
+    controls: list[ft.Control] = [
+        detail_section("Informacion tecnica minima", [_tecnica_minima(data)])
+    ]
+    if isinstance(data.get("plan_pago_v2"), dict) and data.get("plan_pago_v2"):
+        controls.append(
+            detail_section(
+                "Plan Pago V2 por bloques",
+                [_plan_pago_v2_readonly(data.get("plan_pago_v2"))],
+            )
         )
-    if not rows:
-        return ft.Text("Sin obligaciones registradas.")
-    return entity_table(
-        columns=[
-            ("Emision", "fecha_emision"),
-            ("Vencimiento", "fecha_vencimiento"),
-            ("Estado", "estado_obligacion"),
-            ("Importe total", "importe_total"),
-            ("Saldo pendiente", "saldo_pendiente"),
-            ("Moneda", "moneda"),
-            ("Composiciones", "composiciones"),
-            ("Obligados", "obligados"),
-        ],
-        rows=rows,
-    )
-
-
-def _resumen_financiero(value: object) -> ft.Control:
-    if not isinstance(value, dict) or not value:
-        return ft.Text("Sin resumen financiero.")
-    return key_value_grid(
-        [
-            ("Cantidad obligaciones", value.get("cantidad_obligaciones")),
-            ("Saldo total", value.get("saldo_total")),
-            ("Saldo pendiente", value.get("saldo_pendiente")),
-            ("Cantidad vencidas", value.get("cantidad_vencidas")),
-            ("Cantidad canceladas", value.get("cantidad_canceladas")),
-            ("Cantidad anuladas", value.get("cantidad_anuladas")),
-        ]
-    )
+    if isinstance(data.get("relacion_financiera"), dict) and data.get(
+        "relacion_financiera"
+    ):
+        controls.append(
+            detail_section(
+                "Relacion financiera",
+                [
+                    _relacion_financiera(
+                        data.get("relacion_financiera"),
+                        data.get("resumen_financiero"),
+                    )
+                ],
+            )
+        )
+    for title, key in (
+        ("Instrumentos", "instrumentos_compraventa"),
+        ("Cesiones", "cesiones"),
+        ("Escrituraciones", "escrituraciones"),
+    ):
+        if _safe_list(data.get(key)):
+            controls.append(detail_section(title, [_table_any(data.get(key))]))
+    integracion = data.get("integracion_inmobiliaria")
+    if integracion:
+        controls.append(
+            detail_section("Integracion inmobiliaria", [_integration_view(integracion)])
+        )
+    return controls
 
 
 def _table_any(value: object) -> ft.Control:
@@ -826,12 +842,6 @@ def _nested_count(value: object) -> str:
     return f"{count} registros"
 
 
-def _vigencia(item: dict[str, Any]) -> str:
-    desde = item.get("fecha_desde") or "-"
-    hasta = item.get("fecha_hasta") or "-"
-    return f"{desde} / {hasta}"
-
-
 def _join_values(*values: object) -> str:
     return " - ".join(str(value) for value in values if value not in (None, ""))
 
@@ -861,6 +871,16 @@ def _compact(value: object) -> str:
     if value is None:
         return "-"
     return str(value)
+
+
+def _format_money(moneda: object, amount: object) -> str:
+    amount_text = _compact(amount)
+    if amount_text == "-":
+        return "-"
+    moneda_text = _compact(moneda)
+    if moneda_text == "-":
+        return amount_text
+    return f"{moneda_text} {amount_text}"
 
 
 def _parse_bool_or_none(value: object) -> tuple[bool | None, str | None]:
@@ -926,7 +946,8 @@ def _empty(message: str) -> ft.Control:
 
 
 def _venta_title(data: dict[str, Any]) -> str:
-    return str(data.get("codigo_venta") or "Ficha de venta")
+    codigo = data.get("codigo_venta") or data.get("id_venta")
+    return f"Venta {codigo}" if codigo not in (None, "") else "Ficha de venta"
 
 
 def _safe_int(value: object) -> int:
