@@ -601,7 +601,8 @@ def _partes_table(value: object) -> ft.Control:
                 "id_persona": item.get("id_persona"),
                 "display_name": item.get("display_name") or _party_display(item),
                 "rol": _join_values(item.get("codigo_rol"), item.get("nombre_rol")),
-                "participacion": item.get("porcentaje_participacion")
+                "participacion": item.get("porcentaje_responsabilidad")
+                or item.get("porcentaje_participacion")
                 or item.get("porcentaje")
                 or item.get("participacion"),
                 "tipo_relacion": item.get("tipo_relacion") or "venta",
