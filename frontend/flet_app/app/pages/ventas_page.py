@@ -410,15 +410,23 @@ def _venta_header(data: dict[str, Any]) -> ft.Control:
 def _reserva_origen(value: object) -> ft.Control:
     if not isinstance(value, dict) or not value:
         return ft.Text("Venta directa (sin reserva origen registrada).")
-    return key_value_grid(
-        [
-            ("ID reserva venta", value.get("id_reserva_venta")),
-            ("Codigo reserva", value.get("codigo_reserva")),
-            ("Estado reserva", value.get("estado_reserva")),
-            ("Fecha reserva", value.get("fecha_reserva")),
-            ("Vigente", value.get("vigente")),
-        ]
+
+    estado = value.get("estado_reserva_venta") or value.get("estado_reserva")
+    rows = [
+        ("ID reserva venta", value.get("id_reserva_venta")),
+        ("Estado reserva", estado),
+    ]
+    optional_rows = [
+        ("Codigo reserva", value.get("codigo_reserva")),
+        ("Fecha reserva", value.get("fecha_reserva")),
+        ("Vigente", value.get("vigente")),
+    ]
+    rows.extend(
+        (label, field_value)
+        for label, field_value in optional_rows
+        if field_value not in (None, "")
     )
+    return key_value_grid(rows)
 
 
 def _objetos_table(value: object) -> ft.Control:
