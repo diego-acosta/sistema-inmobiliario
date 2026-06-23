@@ -8,7 +8,6 @@ from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
 from app.components.status_badge import status_badge
-from app.pages.plan_pago_v2_bloques import PlanPagoV2BloquesPanel
 
 
 class VentasPage:
@@ -245,17 +244,9 @@ class VentaDetailView:
                                             detail_section(
                                                 "Plan Pago V2 por bloques",
                                                 [
-                                                    PlanPagoV2BloquesPanel(
-                                                        api=self.api,
-                                                        id_venta=self.id_venta,
-                                                        monto_total=data.get(
-                                                            "monto_total"
-                                                        ),
-                                                        moneda=data.get("moneda"),
-                                                        existing_plan=data.get(
-                                                            "plan_pago_v2"
-                                                        ),
-                                                    ).build()
+                                                    _plan_pago_v2_readonly(
+                                                        data.get("plan_pago_v2")
+                                                    )
                                                 ],
                                             ),
                                             detail_section(
@@ -517,19 +508,50 @@ def _plan_financiero(
     return ft.Column(controls=controls, spacing=10)
 
 
+def _plan_pago_v2_readonly(value: object) -> ft.Control:
+    if not isinstance(value, dict) or not value:
+        return ft.Text("La venta no tiene plan de pago V2 generado.")
+
+    return ft.Column(
+        controls=[
+            key_value_grid(
+                [
+                    ("ID plan", value.get("id_plan_pago_venta")),
+                    ("Metodo", value.get("metodo_plan_pago")),
+                    ("Estado", value.get("estado_plan_pago")),
+                    ("Tipo pago", value.get("tipo_pago")),
+                    ("Monto total plan", value.get("monto_total_plan")),
+                    ("Moneda", value.get("moneda")),
+                ]
+            ),
+            _bloques_plan_table(_safe_list(value.get("bloques"))),
+        ],
+        spacing=10,
+    )
+
+
 def _bloques_plan_table(rows: list[dict[str, Any]]) -> ft.Control:
     if not rows:
         return ft.Text("Sin bloques de plan expuestos.")
     return entity_table(
         columns=[
+            ("Numero", "numero_bloque"),
             ("Tipo", "tipo_bloque"),
             ("Etiqueta", "etiqueta_bloque"),
+            ("Estado", "estado_bloque"),
             ("Importe total", "importe_total_bloque"),
             ("Cuotas", "cantidad_cuotas"),
             ("Importe cuota", "importe_cuota"),
             ("Vencimiento", "fecha_vencimiento"),
+            ("Obligaciones", "obligaciones_resumen"),
         ],
-        rows=rows,
+        rows=[
+            {
+                **row,
+                "obligaciones_resumen": _nested_count(row.get("obligaciones")),
+            }
+            for row in rows
+        ],
     )
 
 
@@ -793,6 +815,15 @@ def _nested_summary(value: object, label_key: str, amount_key: str) -> str:
         amount = item.get(amount_key)
         parts.append(_join_values(label, amount))
     return "; ".join(part for part in parts if part) or "-"
+
+
+def _nested_count(value: object) -> str:
+    if not isinstance(value, list):
+        return "-"
+    count = len(value)
+    if count == 1:
+        return "1 registro"
+    return f"{count} registros"
 
 
 def _vigencia(item: dict[str, Any]) -> str:
