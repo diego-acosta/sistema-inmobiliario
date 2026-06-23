@@ -53,6 +53,10 @@ class InmueblesPage:
             return InmuebleCreateView(self.api, self.on_navigate).build()
         if self.detail_kind == "desarrollo_create":
             return DesarrolloCreateView(self.api, self.on_navigate).build()
+        if self.detail_kind == "desarrollo" and self.detail_id is not None:
+            return DesarrolloDetailView(
+                self.api, self.on_navigate, self.detail_id
+            ).build()
         return InmueblesHub(self.api, self.on_navigate, self.initial_tab).build()
 
 
@@ -260,8 +264,27 @@ class DesarrollosListView:
                     ("Observaciones", "observaciones"),
                 ],
                 rows=rows,
+                actions=self._row_actions,
             )
         )
+
+    def _row_actions(self, row: dict[str, Any]) -> list[ft.Control]:
+        id_desarrollo = row.get("id_desarrollo")
+        return [
+            ft.TextButton(
+                "Abrir ficha",
+                disabled=id_desarrollo is None,
+                on_click=(
+                    (
+                        lambda _, id_desarrollo=id_desarrollo: self.on_navigate(
+                            "desarrollo_detail", id_desarrollo=id_desarrollo
+                        )
+                    )
+                    if id_desarrollo is not None
+                    else None
+                ),
+            )
+        ]
 
 
 class DesarrolloCreateView:
@@ -1021,6 +1044,75 @@ class UnidadesListView:
         self.results.update()
 
 
+class DesarrolloDetailView:
+    def __init__(self, api: ApiClient, on_navigate, id_desarrollo: int) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+        self.id_desarrollo = id_desarrollo
+
+    def build(self) -> ft.Control:
+        desarrollo_result = self.api.get_desarrollo(self.id_desarrollo)
+        if not desarrollo_result.success:
+            return _desarrollo_detail_error(
+                self.on_navigate, desarrollo_result.error_message
+            )
+        data = _unwrap_data(desarrollo_result.data)
+        inmuebles_result = self.api.listar_inmuebles(
+            id_desarrollo=self.id_desarrollo, limit=500, offset=0
+        )
+        inmuebles: list[dict[str, Any]] = []
+        inmuebles_error: str | None = None
+        if inmuebles_result.success:
+            inmuebles, _total = _list_payload(inmuebles_result.data)
+            inmuebles = [
+                item
+                for item in inmuebles
+                if _safe_int(item.get("id_desarrollo")) == self.id_desarrollo
+            ]
+        else:
+            inmuebles_error = (
+                inmuebles_result.error_message
+                or "No se pudieron cargar los inmuebles asociados."
+            )
+
+        return ft.Column(
+            controls=[
+                ft.TextButton(
+                    "Volver a desarrollos",
+                    icon=ft.Icons.ARROW_BACK,
+                    on_click=lambda _: self.on_navigate("desarrollos"),
+                ),
+                ft.Row(
+                    controls=[
+                        ft.Text(
+                            f"Desarrollo / Loteo {_desarrollo_title(data)}",
+                            size=30,
+                            weight=ft.FontWeight.W_700,
+                        ),
+                        ft.Container(expand=True),
+                        status_badge(_text_or_none(data.get("estado_desarrollo"))),
+                    ]
+                ),
+                detail_section("Datos principales", [_base_desarrollo(data)]),
+                detail_section(
+                    "Resumen de inmuebles/lotes asociados",
+                    [_desarrollo_resumen_inmuebles(inmuebles, inmuebles_error)],
+                ),
+                detail_section(
+                    "Inmuebles/lotes asociados",
+                    [
+                        _desarrollo_inmuebles_table(
+                            inmuebles, inmuebles_error, self.on_navigate
+                        )
+                    ],
+                ),
+            ],
+            spacing=14,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+
 class InmuebleDetailView:
     def __init__(self, api: ApiClient, on_navigate, id_inmueble: int) -> None:
         self.api = api
@@ -1307,6 +1399,9 @@ def _inmueble_row(item: dict[str, Any]) -> dict[str, Any]:
             item.get("ocupacion_actual"), item.get("ocupacion_ambigua")
         ),
         "cantidad_unidades": item.get("cantidad_unidades_funcionales"),
+        "superficie": item.get("superficie"),
+        "manzana": item.get("manzana"),
+        "lote": item.get("lote"),
     }
 
 
@@ -1375,6 +1470,113 @@ def _unidad_row(item: dict[str, Any]) -> dict[str, Any]:
             item.get("ocupacion_actual"), item.get("ocupacion_ambigua")
         ),
     }
+
+
+def _unwrap_data(data: object) -> dict[str, Any]:
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        return data["data"]
+    return data if isinstance(data, dict) else {}
+
+
+def _desarrollo_title(data: dict[str, Any]) -> str:
+    return str(
+        data.get("codigo_desarrollo")
+        or data.get("nombre_desarrollo")
+        or data.get("id_desarrollo")
+        or ""
+    )
+
+
+def _base_desarrollo(data: dict[str, Any]) -> ft.Control:
+    return key_value_grid(
+        [
+            ("id_desarrollo", data.get("id_desarrollo")),
+            ("codigo_desarrollo", data.get("codigo_desarrollo")),
+            ("nombre_desarrollo", data.get("nombre_desarrollo")),
+            ("descripcion", data.get("descripcion")),
+            ("estado_desarrollo", data.get("estado_desarrollo")),
+            ("observaciones", data.get("observaciones")),
+            ("uid_global", data.get("uid_global")),
+            ("version_registro", data.get("version_registro")),
+        ]
+    )
+
+
+def _desarrollo_resumen_inmuebles(
+    inmuebles: list[dict[str, Any]], error_message: str | None
+) -> ft.Control:
+    if error_message:
+        return error_state(error_message)
+    counts: dict[str, int] = {"Total": len(inmuebles)}
+    for item in inmuebles:
+        label = _inmueble_estado_resumen(item)
+        counts[label] = counts.get(label, 0) + 1
+    return key_value_grid([(key, value) for key, value in counts.items()])
+
+
+def _inmueble_estado_resumen(item: dict[str, Any]) -> str:
+    disponibilidad = _validity_label(
+        item.get("disponibilidad_actual"), item.get("disponibilidad_ambigua")
+    )
+    if disponibilidad and disponibilidad != "Sin vigente":
+        return disponibilidad
+    return str(item.get("estado_administrativo") or "Otros estados")
+
+
+def _desarrollo_inmuebles_table(
+    inmuebles: list[dict[str, Any]], error_message: str | None, on_navigate
+) -> ft.Control:
+    if error_message:
+        return ft.Text("No se puede mostrar el listado asociado en este momento.")
+    if not inmuebles:
+        return ft.Text("No hay inmuebles/lotes asociados a este desarrollo.")
+    rows = [_inmueble_row(item) for item in inmuebles]
+
+    def actions(row: dict[str, Any]) -> list[ft.Control]:
+        id_inmueble = row.get("id_inmueble")
+        return [
+            ft.TextButton(
+                "Abrir ficha",
+                disabled=id_inmueble is None,
+                on_click=(
+                    (
+                        lambda _, id_inmueble=id_inmueble: on_navigate(
+                            "inmueble_detail", id_inmueble=id_inmueble
+                        )
+                    )
+                    if id_inmueble is not None
+                    else None
+                ),
+            )
+        ]
+
+    return entity_table(
+        columns=[
+            ("Código", "codigo"),
+            ("Nombre", "nombre"),
+            ("Estado administrativo", "estado_administrativo"),
+            ("Estado jurídico", "estado_juridico"),
+            ("Disponibilidad", "disponibilidad"),
+            ("Ocupación", "ocupacion"),
+            ("Superficie", "superficie"),
+            ("Manzana", "manzana"),
+            ("Lote", "lote"),
+        ],
+        rows=rows,
+        actions=actions,
+    )
+
+
+def _desarrollo_detail_error(on_navigate, message: str | None) -> ft.Control:
+    return ft.Column(
+        controls=[
+            ft.TextButton(
+                "Volver a desarrollos", on_click=lambda _: on_navigate("desarrollos")
+            ),
+            error_state(message or "No se pudo cargar la ficha del desarrollo."),
+        ],
+        spacing=12,
+    )
 
 
 def _validity_label(value: object, ambiguous: object) -> str:
