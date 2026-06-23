@@ -1135,124 +1135,53 @@ class InmuebleDetailView:
         )
         return ft.Column(
             controls=[
-                _back_row(self.on_navigate),
-                ft.Row(
+                _inmueble_operational_header(self.on_navigate, data),
+                _inmueble_summary_cards(data, datos_catastrales),
+                ft.ResponsiveRow(
                     controls=[
-                        ft.Text(
-                            _inmueble_title(data), size=30, weight=ft.FontWeight.W_700
+                        ft.Container(
+                            col={"sm": 12, "md": 8},
+                            content=ft.Column(
+                                controls=[
+                                    detail_section(
+                                        "Datos del inmueble", [_base_inmueble(data)]
+                                    ),
+                                    detail_section(
+                                        "Datos catastrales / registrales",
+                                        [catastral_control],
+                                    ),
+                                ],
+                                spacing=12,
+                            ),
                         ),
-                        ft.Container(expand=True),
-                        status_badge(
-                            _text_or_none(
-                                _inmueble_data(data).get("estado_administrativo")
-                            )
+                        ft.Container(
+                            col={"sm": 12, "md": 4},
+                            content=ft.Column(
+                                controls=[
+                                    detail_section(
+                                        "Estado operativo",
+                                        [_estado_operativo_inmueble(data)],
+                                    ),
+                                    detail_section(
+                                        "Relaciones asociadas",
+                                        [_relaciones_asociadas_inmueble(data)],
+                                    ),
+                                    detail_section(
+                                        "Historial", [_historial_inmueble(data)]
+                                    ),
+                                ],
+                                spacing=12,
+                            ),
                         ),
-                    ]
+                    ],
+                    spacing=12,
+                    run_spacing=12,
                 ),
-                _inmueble_header(data),
-                detail_tabs(
-                    [
-                        (
-                            "Resumen",
-                            [
-                                detail_section("Datos base", [_base_inmueble(data)]),
-                                detail_section(
-                                    "Datos catastrales / registrales",
-                                    [catastral_control],
-                                ),
-                                detail_section(
-                                    "Resumen operativo",
-                                    [_resumen_operativo_inmueble(data)],
-                                ),
-                            ],
-                        ),
-                        (
-                            "Disponibilidad / ocupacion",
-                            [
-                                detail_section(
-                                    "Disponibilidad / ocupacion actual",
-                                    [_current_states(data)],
-                                ),
-                                detail_section(
-                                    "Historial de disponibilidad",
-                                    [_table_any(data.get("disponibilidades"))],
-                                ),
-                                detail_section(
-                                    "Historial de ocupacion",
-                                    [_table_any(data.get("ocupaciones"))],
-                                ),
-                            ],
-                        ),
-                        (
-                            "Servicios / responsables",
-                            [
-                                detail_section(
-                                    "Servicios", [_table_any(data.get("servicios"))]
-                                ),
-                                detail_section(
-                                    "Responsables de servicio",
-                                    [_table_any(data.get("responsables_servicio"))],
-                                ),
-                            ],
-                        ),
-                        (
-                            "Operaciones asociadas",
-                            [
-                                detail_section(
-                                    "Unidades funcionales",
-                                    [_table_any(data.get("unidades_funcionales"))],
-                                ),
-                                detail_section(
-                                    "Reservas de venta",
-                                    [_table_any(data.get("reservas_venta"))],
-                                ),
-                                detail_section(
-                                    "Ventas", [_table_any(data.get("ventas"))]
-                                ),
-                                detail_section(
-                                    "Reservas locativas",
-                                    [_table_any(data.get("reservas_locativas"))],
-                                ),
-                                detail_section(
-                                    "Contratos de alquiler",
-                                    [_table_any(data.get("contratos_alquiler"))],
-                                ),
-                            ],
-                        ),
-                        (
-                            "Trazabilidad",
-                            [
-                                detail_section(
-                                    "Trazabilidad de integracion",
-                                    [
-                                        _traceability(
-                                            data.get("trazabilidad_integracion")
-                                        )
-                                    ],
-                                ),
-                                detail_section(
-                                    "Detalle tecnico",
-                                    [
-                                        build_technical_output_panel(
-                                            format_technical_output(
-                                                [
-                                                    ("detalle integral", data),
-                                                    (
-                                                        "datos catastrales / registrales",
-                                                        datos_catastrales,
-                                                    ),
-                                                ]
-                                            )
-                                        )
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ]
-                ),
+                _inmueble_technical_detail(data, datos_catastrales),
             ],
             spacing=14,
             expand=True,
+            scroll=ft.ScrollMode.AUTO,
         )
 
 
@@ -1649,6 +1578,229 @@ def _current_states(data: dict[str, Any]) -> ft.Control:
     )
 
 
+def _inmueble_operational_header(on_navigate, data: dict[str, Any]) -> ft.Control:
+    inmueble = _inmueble_data(data)
+    desarrollo = (
+        data.get("desarrollo") if isinstance(data.get("desarrollo"), dict) else None
+    )
+    subtitle_parts = [
+        _desarrollo_label(desarrollo, inmueble),
+        _display_or_none(inmueble.get("estado_juridico")),
+        _format_surface(inmueble.get("superficie")),
+    ]
+    subtitle = " · ".join(part for part in subtitle_parts if part)
+    return ft.Column(
+        controls=[
+            _back_row(on_navigate),
+            ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text(
+                                _inmueble_title(data),
+                                size=30,
+                                weight=ft.FontWeight.W_700,
+                            ),
+                            ft.Text(
+                                subtitle or "Sin datos operativos principales",
+                                color=ft.Colors.BLUE_GREY_700,
+                            ),
+                        ],
+                        spacing=2,
+                    ),
+                    ft.Container(expand=True),
+                    status_badge(_text_or_none(inmueble.get("estado_administrativo"))),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+        ],
+        spacing=8,
+    )
+
+
+def _inmueble_summary_cards(
+    data: dict[str, Any], datos_catastrales: list[dict[str, Any]]
+) -> ft.Control:
+    inmueble = _inmueble_data(data)
+    desarrollo = (
+        data.get("desarrollo") if isinstance(data.get("desarrollo"), dict) else None
+    )
+    catastral = _first_catastral(datos_catastrales)
+    cards = [
+        ("Desarrollo/loteo", _desarrollo_label(desarrollo, inmueble) or "Sin asociar"),
+        ("Manzana / Lote", _manzana_lote_label(catastral)),
+        ("Superficie", _format_surface(inmueble.get("superficie")) or "Sin cargar"),
+        ("Estado jurídico", _loaded_or_empty(inmueble.get("estado_juridico"))),
+        (
+            "Disponibilidad",
+            _validity_label(
+                data.get("disponibilidad_actual"), data.get("disponibilidad_ambigua")
+            ),
+        ),
+        (
+            "Ocupación",
+            _validity_label(
+                data.get("ocupacion_actual"), data.get("ocupacion_ambigua")
+            ),
+        ),
+    ]
+    return ft.ResponsiveRow(
+        controls=[
+            ft.Container(
+                col={"sm": 12, "md": 6, "lg": 2},
+                content=_summary_card(title, value),
+            )
+            for title, value in cards
+        ],
+        spacing=12,
+        run_spacing=12,
+    )
+
+
+def _summary_card(title: str, value: object) -> ft.Control:
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Text(title, size=12, color=ft.Colors.BLUE_GREY_700),
+                ft.Text(
+                    str(value), size=16, weight=ft.FontWeight.W_600, selectable=True
+                ),
+            ],
+            spacing=4,
+        ),
+        padding=12,
+        border=_safe_border(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+    )
+
+
+def _estado_operativo_inmueble(data: dict[str, Any]) -> ft.Control:
+    return key_value_grid(
+        [
+            (
+                "Disponibilidad actual",
+                _validity_label(
+                    data.get("disponibilidad_actual"),
+                    data.get("disponibilidad_ambigua"),
+                ),
+            ),
+            (
+                "Ocupación actual",
+                _validity_label(
+                    data.get("ocupacion_actual"), data.get("ocupacion_ambigua")
+                ),
+            ),
+            ("Unidades funcionales", len(_safe_list(data.get("unidades_funcionales")))),
+            ("Servicios asociados", len(_safe_list(data.get("servicios")))),
+        ]
+    )
+
+
+def _relaciones_asociadas_inmueble(data: dict[str, Any]) -> ft.Control:
+    collections = [
+        ("Unidades funcionales", "unidades_funcionales"),
+        ("Servicios", "servicios"),
+        ("Reservas de venta", "reservas_venta"),
+        ("Ventas", "ventas"),
+        ("Reservas locativas", "reservas_locativas"),
+        ("Contratos de alquiler", "contratos_alquiler"),
+    ]
+    controls: list[ft.Control] = [
+        key_value_grid(
+            [(label, len(_safe_list(data.get(key)))) for label, key in collections]
+        )
+    ]
+    for label, key in collections:
+        rows = _safe_list(data.get(key))
+        if rows:
+            controls.append(ft.Text(label, weight=ft.FontWeight.W_600))
+            controls.append(_table_any(rows))
+    return ft.Column(controls=controls, spacing=10)
+
+
+def _historial_inmueble(data: dict[str, Any]) -> ft.Control:
+    disponibilidades = _safe_list(data.get("disponibilidades"))
+    ocupaciones = _safe_list(data.get("ocupaciones"))
+    if not disponibilidades and not ocupaciones:
+        return ft.Text("Sin historial de disponibilidad/ocupación.")
+    controls: list[ft.Control] = []
+    if disponibilidades:
+        controls.extend(
+            [
+                ft.Text("Disponibilidad", weight=ft.FontWeight.W_600),
+                _table_any(disponibilidades),
+            ]
+        )
+    if ocupaciones:
+        controls.extend(
+            [ft.Text("Ocupación", weight=ft.FontWeight.W_600), _table_any(ocupaciones)]
+        )
+    return ft.Column(controls=controls, spacing=10)
+
+
+def _inmueble_technical_detail(
+    data: dict[str, Any], datos_catastrales: list[dict[str, Any]]
+) -> ft.Control:
+    return ft.ExpansionTile(
+        title=ft.Text("Detalle técnico"),
+        subtitle=ft.Text("Mostrar detalle"),
+        initially_expanded=False,
+        controls=[
+            build_technical_output_panel(
+                format_technical_output(
+                    [
+                        ("detalle integral", data),
+                        ("datos catastrales / registrales", datos_catastrales),
+                    ]
+                )
+            )
+        ],
+    )
+
+
+def _first_catastral(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return rows[0] if rows else {}
+
+
+def _manzana_lote_label(row: dict[str, Any]) -> str:
+    manzana = _display_or_none(row.get("manzana")) or "Sin cargar"
+    lote = _display_or_none(row.get("lote")) or "Sin cargar"
+    return f"{manzana} / {lote}"
+
+
+def _display_or_none(value: object) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return "Sí" if value else "No"
+    return str(value)
+
+
+def _format_surface(value: object) -> str | None:
+    text = _display_or_none(value)
+    if text is None:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return f"{text} m²" if "m" not in text.lower() else text
+    if number.is_integer():
+        return f"{int(number)} m²"
+    return f"{number:g} m²"
+
+
+def _format_date(value: object) -> str | None:
+    text = _display_or_none(value)
+    if text is None:
+        return None
+    date_part = text[:10]
+    pieces = date_part.split("-")
+    if len(pieces) == 3 and all(pieces):
+        year, month, day = pieces
+        return f"{day}/{month}/{year}"
+    return text
+
+
 def _inmueble_data(data: dict[str, Any]) -> dict[str, Any]:
     inmueble = data.get("inmueble")
     return inmueble if isinstance(inmueble, dict) else data
@@ -1695,32 +1847,34 @@ def _datos_catastrales_registrales(rows: list[dict[str, Any]]) -> ft.Control:
         return ft.Text(
             "No hay datos catastrales/registrales asociados a este inmueble."
         )
-    controls = []
+    controls: list[ft.Control] = []
     for index, row in enumerate(rows, start=1):
-        title = (
-            f"Dato catastral/registral #{index}"
-            if len(rows) > 1
-            else "Dato catastral/registral"
-        )
-        controls.append(ft.Text(title, weight=ft.FontWeight.W_600))
+        if len(rows) > 1:
+            controls.append(
+                ft.Text(
+                    f"Dato catastral/registral #{index}", weight=ft.FontWeight.W_600
+                )
+            )
         controls.append(_catastral_grid(row))
     return ft.Column(controls=controls, spacing=10)
 
 
 def _catastral_grid(row: dict[str, Any]) -> ft.Control:
-    fields = [
+    primary_fields = [
         ("Manzana", "manzana"),
         ("Lote", "lote"),
+        ("Parcela", "parcela"),
         ("Nomenclatura catastral", "nomenclatura_catastral"),
         ("Partida inmobiliaria", "partida_inmobiliaria"),
         ("Matrícula", "matricula"),
         ("Folio real", "folio_real"),
+    ]
+    secondary_fields = [
         ("Circunscripción", "circunscripcion"),
         ("Sección", "seccion"),
         ("Chacra", "chacra"),
         ("Quinta", "quinta"),
         ("Fracción", "fraccion"),
-        ("Parcela", "parcela"),
         ("Subparcela", "subparcela"),
         ("Superficie título", "superficie_titulo"),
         ("Superficie mensura", "superficie_mensura"),
@@ -1733,15 +1887,42 @@ def _catastral_grid(row: dict[str, Any]) -> ft.Control:
         ("Estado dato", "estado_dato"),
         ("Observaciones", "observaciones"),
     ]
-    return key_value_grid(
-        [(label, _loaded_or_empty(row.get(key))) for label, key in fields]
-    )
+    primary = [
+        (label, _format_catastral_value(key, row.get(key), relevant=True))
+        for label, key in primary_fields
+    ]
+    secondary = [
+        (label, _format_catastral_value(key, row.get(key), relevant=False))
+        for label, key in secondary_fields
+        if _display_or_none(row.get(key)) is not None
+    ]
+    controls: list[ft.Control] = [key_value_grid(primary)]
+    if secondary:
+        controls.append(
+            ft.ExpansionTile(
+                title=ft.Text("Datos secundarios"),
+                subtitle=ft.Text(f"{len(secondary)} campos cargados"),
+                initially_expanded=False,
+                controls=[key_value_grid(secondary)],
+            )
+        )
+    return ft.Column(controls=controls, spacing=8)
+
+
+def _format_catastral_value(key: str, value: object, *, relevant: bool) -> str:
+    if _display_or_none(value) is None:
+        return "Sin cargar" if relevant else ""
+    if key in {"superficie_titulo", "superficie_mensura"}:
+        return _format_surface(value) or "Sin cargar"
+    if key in {"fecha_desde", "fecha_hasta"}:
+        return _format_date(value) or "Sin cargar"
+    if isinstance(value, bool):
+        return "Sí" if value else "No"
+    return str(value)
 
 
 def _loaded_or_empty(value: object) -> str:
-    if value is None or value == "":
-        return "Sin cargar"
-    return str(value)
+    return _display_or_none(value) or "Sin cargar"
 
 
 def _resumen_operativo_inmueble(data: dict[str, Any]) -> ft.Control:
@@ -1765,20 +1946,34 @@ def _base_inmueble(data: dict[str, Any]) -> ft.Control:
     desarrollo = (
         data.get("desarrollo") if isinstance(data.get("desarrollo"), dict) else None
     )
-    return key_value_grid(
+    rows = _compact_key_values(
         [
-            ("Codigo", inmueble.get("codigo_inmueble")),
-            ("Nombre", inmueble.get("nombre_inmueble") or inmueble.get("nombre")),
-            ("Tipo", inmueble.get("tipo_inmueble")),
-            ("Direccion", inmueble.get("direccion")),
-            ("Ubicacion", inmueble.get("ubicacion")),
-            ("Desarrollo/loteo", _desarrollo_label(desarrollo, inmueble)),
-            ("Superficie", inmueble.get("superficie")),
-            ("Estado administrativo", inmueble.get("estado_administrativo")),
-            ("Estado juridico", inmueble.get("estado_juridico")),
-            ("Observaciones", inmueble.get("observaciones")),
+            ("Código", inmueble.get("codigo_inmueble"), True),
+            (
+                "Nombre",
+                inmueble.get("nombre_inmueble") or inmueble.get("nombre"),
+                False,
+            ),
+            ("Desarrollo/loteo", _desarrollo_label(desarrollo, inmueble), True),
+            ("Superficie", _format_surface(inmueble.get("superficie")), True),
+            ("Estado administrativo", inmueble.get("estado_administrativo"), True),
+            ("Estado jurídico", inmueble.get("estado_juridico"), True),
+            ("Observaciones", inmueble.get("observaciones"), False),
         ]
     )
+    return key_value_grid(rows)
+
+
+def _compact_key_values(
+    items: list[tuple[str, object, bool]],
+) -> list[tuple[str, object]]:
+    rows: list[tuple[str, object]] = []
+    for label, value, relevant in items:
+        formatted = _display_or_none(value)
+        if formatted is None and not relevant:
+            continue
+        rows.append((label, formatted or "Sin cargar"))
+    return rows
 
 
 def _base_unidad(data: dict[str, Any]) -> ft.Control:

@@ -279,3 +279,11 @@ Este alcance no agrega edición, baja ni historial visual de datos catastrales/r
 - Lock lógico: NO APLICA; no hay modificación de entidad.
 - Versionado: solo se muestra información existente si el backend la devuelve en modo técnico.
 - Rollback/transacción: NO APLICA; no hay frontera transaccional frontend nueva.
+
+### Ajuste operativo de la ficha de inmueble
+
+La ficha real de inmueble se reorganiza como vista operativa read-only: encabezado con título, badge y subtítulo compacto; tarjetas superiores para desarrollo/loteo, Manzana/Lote, superficie, estado jurídico, disponibilidad y ocupación; y cuerpo en `ResponsiveRow` con una columna principal para datos del inmueble y datos catastrales/registrales, más una columna lateral para estado operativo, relaciones asociadas e historial.
+
+Los datos catastrales/registrales priorizan los campos de uso operativo (**Manzana**, **Lote**, **Parcela**, nomenclatura, partida, matrícula y folio real). Los campos secundarios solo se muestran en un detalle colapsado cuando tienen valor, para evitar una lista extensa de campos **Sin cargar**. La superficie se presenta en formato operativo (`m²`) y las fechas secundarias se formatean como `dd/mm/aaaa`.
+
+El detalle técnico queda al final en un bloque colapsado **Detalle técnico / Mostrar detalle** con el detalle integral y los datos catastrales/registrales crudos. La vista principal mantiene la restricción de no mostrar JSON crudo y no agrega edición de inmueble ni edición de dato catastral/registral.
