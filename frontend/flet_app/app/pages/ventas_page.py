@@ -191,27 +191,46 @@ class VentaDetailView:
                 _back_row(self.on_navigate),
                 _venta_operativa_header(data),
                 _summary_cards(data),
-                ft.Column(
+                ft.ResponsiveRow(
                     controls=[
-                        detail_section("Resumen de venta", [_base_venta(data)]),
-                        detail_section(
-                            "Objeto vendido",
-                            [_objetos_operativos(data.get("objetos"))],
+                        ft.Container(
+                            col={"sm": 12, "md": 7, "lg": 7},
+                            content=ft.Column(
+                                controls=[
+                                    detail_section(
+                                        "Resumen de venta", [_base_venta(data)]
+                                    ),
+                                    detail_section(
+                                        "Objeto vendido",
+                                        [_objetos_operativos(data.get("objetos"))],
+                                    ),
+                                    detail_section(
+                                        "Comprador / compradores",
+                                        [_partes_operativas(data.get("partes"))],
+                                    ),
+                                ],
+                                spacing=12,
+                            ),
                         ),
-                        detail_section(
-                            "Comprador / compradores",
-                            [_partes_operativas(data.get("partes"))],
-                        ),
-                        detail_section(
-                            "Plan de pago / obligaciones",
-                            [_plan_obligaciones_operativas(data)],
-                        ),
-                        detail_section(
-                            "Origen",
-                            [_origen_operativo(data.get("reserva_origen"))],
+                        ft.Container(
+                            col={"sm": 12, "md": 5, "lg": 5},
+                            content=ft.Column(
+                                controls=[
+                                    detail_section(
+                                        "Plan de pago / obligaciones",
+                                        [_plan_obligaciones_operativas(data)],
+                                    ),
+                                    detail_section(
+                                        "Origen",
+                                        [_origen_operativo(data.get("reserva_origen"))],
+                                    ),
+                                ],
+                                spacing=12,
+                            ),
                         ),
                     ],
                     spacing=12,
+                    run_spacing=12,
                 ),
                 technical_detail,
             ],
@@ -425,6 +444,8 @@ def _plan_obligaciones_operativas(data: dict[str, Any]) -> ft.Control:
 def _obligaciones_operativas_table(rows: list[dict[str, Any]]) -> ft.Control:
     if not rows:
         return ft.Text("Sin obligaciones registradas.")
+    if len(rows) == 1:
+        return _single_obligation_card(rows[0])
     return entity_table(
         columns=[
             ("Vencimiento", "fecha_vencimiento"),
@@ -434,6 +455,18 @@ def _obligaciones_operativas_table(rows: list[dict[str, Any]]) -> ft.Control:
             ("Moneda", "moneda"),
         ],
         rows=rows,
+    )
+
+
+def _single_obligation_card(item: dict[str, Any]) -> ft.Control:
+    return _compact_card(
+        [
+            ("Vencimiento", item.get("fecha_vencimiento")),
+            ("Estado", item.get("estado_obligacion")),
+            ("Importe", item.get("importe_total")),
+            ("Saldo", item.get("saldo_pendiente")),
+            ("Moneda", item.get("moneda")),
+        ]
     )
 
 
