@@ -71,7 +71,7 @@ El backend de datos catastrales/registrales ya existe como subrecurso de inmuebl
 }
 ```
 
-El prototipo construye un payload limpio: no envía campos vacíos, recorta textos, convierte `id_desarrollo` a entero positivo cuando se informa y mantiene `superficie` como decimal compatible con el backend. Aunque se muestran visualmente en datos básicos, `manzana` y `lote` no se agregan a este payload.
+El prototipo construye un payload limpio: no envía campos vacíos, recorta textos, convierte `id_desarrollo` a entero positivo cuando se informa y mantiene `superficie` como decimal compatible con el backend. En la pantalla real principal, el usuario selecciona el desarrollo/loteo desde un control operativo alimentado por `GET /api/v1/desarrollos`; no debe escribir manualmente `id_desarrollo`. Aunque se muestran visualmente en datos básicos, `manzana` y `lote` no se agregan a este payload.
 
 ## Payload opcional de dato catastral/registral
 
@@ -140,7 +140,7 @@ El backend sigue siendo la fuente de verdad. El prototipo solo bloquea errores b
 - `estado_administrativo` requerido.
 - `estado_juridico` requerido.
 - `superficie` debe ser decimal positivo si se informa.
-- `id_desarrollo` debe ser entero positivo si se informa.
+- `id_desarrollo` debe ser entero positivo si se informa; en la pantalla real se obtiene desde la selección de desarrollo/loteo existente y no desde carga manual del usuario.
 - `superficie_titulo` debe ser decimal positivo si se informa.
 - `superficie_mensura` debe ser decimal positivo si se informa.
 
@@ -223,7 +223,9 @@ La pantalla real de Inmuebles incorpora una pestaña **Desarrollos** junto a **I
 
 El alta navega a una pantalla separada (`desarrollo_create`) mediante `DesarrolloCreateView`; no se incrusta el formulario arriba del listado. El formulario mínimo envía a `POST /api/v1/desarrollos` solo campos no vacíos: `codigo_desarrollo`, `nombre_desarrollo`, `descripcion`, `estado_desarrollo` y `observaciones`. La UI valida como requeridos código, nombre y estado, usa `ACTIVO` por defecto, deshabilita **Guardar desarrollo** tras una creación exitosa y habilita **Nueva alta** para limpiar el formulario y evitar doble guardado accidental. Al usar **Volver a desarrollos** se regresa al hub de Inmuebles, donde el listado se recarga.
 
-Este PR no implementa edición, baja, ficha completa ni importación Excel de desarrollos. La asociación de inmuebles a desarrollos y las futuras importaciones quedan como evolución posterior sobre los endpoints ya existentes.
+El alta real de inmueble carga los desarrollos/loteos existentes al abrir la pantalla y permite seleccionar uno mostrando `CODIGO — Nombre desarrollo`. Si se selecciona un desarrollo, el payload de `POST /api/v1/inmuebles` incluye `id_desarrollo`; si no se selecciona, el campo se omite y el flujo de alta sin desarrollo sigue permitido. Si no hay desarrollos, la UI orienta a crearlos desde la pestaña **Desarrollos**; si falla la carga, muestra un error claro y permite continuar sin asociación.
+
+Este PR no implementa edición, baja, ficha completa ni importación Excel de desarrollos. La asociación desde el alta prepara el camino para la ficha de desarrollo y para la importación de inmuebles/lotes desde Excel sobre los endpoints ya existentes.
 
 ### Decisión CORE-EF para desarrollo
 

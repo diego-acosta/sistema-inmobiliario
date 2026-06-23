@@ -494,7 +494,16 @@ class InmuebleCreateForm:
         self.codigo_inmueble = ft.TextField(label="Código de inmueble *", width=260)
         self.nombre_inmueble = ft.TextField(label="Nombre inmueble", width=260)
         self.superficie = ft.TextField(label="Superficie", width=160)
-        self.id_desarrollo = ft.TextField(label="ID desarrollo", width=160)
+        self.id_desarrollo = ft.Dropdown(
+            label="Desarrollo / loteo",
+            width=360,
+            options=[],
+            hint_text="Sin desarrollo/loteo",
+        )
+        self.desarrollos_help = ft.Text(
+            "El desarrollo/loteo permite agrupar inmuebles para futuras consultas e importaciones.",
+            color=ft.Colors.BLUE_GREY_700,
+        )
         self.manzana = ft.TextField(label="Manzana", width=160)
         self.lote = ft.TextField(label="Lote", width=160)
         self.estado_administrativo = ft.Dropdown(
@@ -552,6 +561,7 @@ class InmuebleCreateForm:
         self.root: ft.Control | None = None
 
     def build(self) -> ft.Control:
+        self._load_desarrollos()
         self.avanzados.controls = [
             ft.Row(
                 [self.nomenclatura_catastral, self.partida_inmobiliaria],
@@ -602,7 +612,13 @@ class InmuebleCreateForm:
                     self.codigo_inmueble,
                     self.nombre_inmueble,
                     ft.Row(
-                        [self.superficie, self.id_desarrollo, self.manzana, self.lote],
+                        [self.superficie, self.id_desarrollo],
+                        wrap=True,
+                        spacing=10,
+                    ),
+                    self.desarrollos_help,
+                    ft.Row(
+                        [self.manzana, self.lote],
                         wrap=True,
                         spacing=10,
                     ),
@@ -640,6 +656,39 @@ class InmuebleCreateForm:
             border_radius=8,
         )
         return self.root
+
+    def _load_desarrollos(self) -> None:
+        result = self.api.get_desarrollos()
+        if not result.success:
+            self.id_desarrollo.options = []
+            self.id_desarrollo.value = None
+            self.desarrollos_help.value = (
+                "No se pudieron cargar los desarrollos/loteos. "
+                "Podés guardar el inmueble sin desarrollo."
+            )
+            self.desarrollos_help.color = ft.Colors.RED_800
+            return
+
+        items, _total = _list_payload(result.data)
+        self.id_desarrollo.options = [
+            ft.dropdown.Option(
+                str(item["id_desarrollo"]),
+                _desarrollo_option_label(item),
+            )
+            for item in items
+            if item.get("id_desarrollo") is not None
+        ]
+        self.id_desarrollo.value = None
+        if self.id_desarrollo.options:
+            self.desarrollos_help.value = (
+                "El desarrollo/loteo permite agrupar inmuebles para futuras consultas e importaciones."
+            )
+            self.desarrollos_help.color = ft.Colors.BLUE_GREY_700
+        else:
+            self.desarrollos_help.value = (
+                "No hay desarrollos cargados. Podés crear uno desde la pestaña Desarrollos."
+            )
+            self.desarrollos_help.color = ft.Colors.BLUE_GREY_700
 
     def _toggle_text(self) -> str:
         return (
@@ -829,7 +878,6 @@ class InmuebleCreateForm:
             self.codigo_inmueble,
             self.nombre_inmueble,
             self.superficie,
-            self.id_desarrollo,
             self.manzana,
             self.lote,
             self.observaciones,
@@ -848,6 +896,7 @@ class InmuebleCreateForm:
             self.observaciones_catastrales,
         ):
             control.value = ""
+        self.id_desarrollo.value = None
         self.estado_administrativo.value = "ACTIVO"
         self.estado_juridico.value = "REGULAR"
         self.estado_dato.value = "ACTIVO"
@@ -1259,6 +1308,14 @@ def _inmueble_row(item: dict[str, Any]) -> dict[str, Any]:
         ),
         "cantidad_unidades": item.get("cantidad_unidades_funcionales"),
     }
+
+
+def _desarrollo_option_label(item: dict[str, Any]) -> str:
+    codigo = str(item.get("codigo_desarrollo") or "").strip()
+    nombre = str(item.get("nombre_desarrollo") or "").strip()
+    if codigo and nombre:
+        return f"{codigo} — {nombre}"
+    return codigo or nombre or f"Desarrollo #{item.get('id_desarrollo')}"
 
 
 def _desarrollo_row(item: dict[str, Any]) -> dict[str, Any]:
