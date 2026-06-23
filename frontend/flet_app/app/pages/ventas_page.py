@@ -191,47 +191,27 @@ class VentaDetailView:
                 _back_row(self.on_navigate),
                 _venta_operativa_header(data),
                 _summary_cards(data),
-                ft.Row(
+                ft.Column(
                     controls=[
-                        ft.Container(
-                            content=ft.Column(
-                                controls=[
-                                    detail_section(
-                                        "Resumen de venta", [_base_venta(data)]
-                                    ),
-                                    detail_section(
-                                        "Objeto vendido",
-                                        [_objetos_operativos(data.get("objetos"))],
-                                    ),
-                                    detail_section(
-                                        "Comprador / compradores",
-                                        [_partes_operativas(data.get("partes"))],
-                                    ),
-                                ],
-                                spacing=12,
-                            ),
-                            expand=True,
+                        detail_section("Resumen de venta", [_base_venta(data)]),
+                        detail_section(
+                            "Objeto vendido",
+                            [_objetos_operativos(data.get("objetos"))],
                         ),
-                        ft.Container(
-                            content=ft.Column(
-                                controls=[
-                                    detail_section(
-                                        "Plan de pago / obligaciones",
-                                        [_plan_obligaciones_operativas(data)],
-                                    ),
-                                    detail_section(
-                                        "Origen",
-                                        [_origen_operativo(data.get("reserva_origen"))],
-                                    ),
-                                ],
-                                spacing=12,
-                            ),
-                            expand=True,
+                        detail_section(
+                            "Comprador / compradores",
+                            [_partes_operativas(data.get("partes"))],
+                        ),
+                        detail_section(
+                            "Plan de pago / obligaciones",
+                            [_plan_obligaciones_operativas(data)],
+                        ),
+                        detail_section(
+                            "Origen",
+                            [_origen_operativo(data.get("reserva_origen"))],
                         ),
                     ],
                     spacing=12,
-                    run_spacing=12,
-                    wrap=True,
                 ),
                 technical_detail,
             ],
