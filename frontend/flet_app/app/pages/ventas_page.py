@@ -201,7 +201,6 @@ class VentaDetailView:
                         status_badge(_text_or_none(data.get("estado_venta"))),
                     ]
                 ),
-                _venta_header(data),
                 detail_section("Resumen de venta", [_base_venta(data)]),
                 detail_section(
                     "Objetos vendidos",
@@ -210,10 +209,6 @@ class VentaDetailView:
                 detail_section(
                     "Compradores / partes intervinientes",
                     [_partes_table(data.get("partes"))],
-                ),
-                detail_section(
-                    "Reserva origen",
-                    [_reserva_origen(data.get("reserva_origen"))],
                 ),
                 detail_section(
                     "Forma de pago / plan financiero",
@@ -225,129 +220,120 @@ class VentaDetailView:
                         )
                     ],
                 ),
-                detail_section("Informacion tecnica minima", [_tecnica_minima(data)]),
-                ft.Container(
-                    content=detail_tabs(
-                        [
-                            (
-                                "Detalle ampliado",
+                detail_section(
+                    "Reserva origen",
+                    [_reserva_origen(data.get("reserva_origen"))],
+                ),
+                detail_section(
+                    "Detalle ampliado / tecnico",
+                    [
+                        ft.Container(
+                            content=detail_tabs(
                                 [
-                                    detail_section("Datos base", [_base_venta(data)]),
-                                    detail_section(
-                                        "Reserva origen",
-                                        [_reserva_origen(data.get("reserva_origen"))],
-                                    ),
-                                ],
-                            ),
-                            (
-                                "Objetos",
-                                [
-                                    detail_section(
-                                        "Objetos de venta",
-                                        [_objetos_table(data.get("objetos"))],
-                                    )
-                                ],
-                            ),
-                            (
-                                "Partes / compradores",
-                                [
-                                    detail_section(
-                                        "Partes / compradores",
-                                        [_partes_table(data.get("partes"))],
-                                    )
-                                ],
-                            ),
-                            (
-                                "Condiciones comerciales",
-                                [
-                                    detail_section(
-                                        "Condiciones comerciales",
+                                    (
+                                        "Tecnico",
                                         [
-                                            _condiciones_comerciales(
-                                                data.get("condiciones_comerciales")
-                                            )
-                                        ],
-                                    )
-                                ],
-                            ),
-                            (
-                                "Financiero",
-                                [
-                                    detail_section(
-                                        "Plan Pago V2 por bloques",
-                                        [
-                                            PlanPagoV2BloquesPanel(
-                                                api=self.api,
-                                                id_venta=self.id_venta,
-                                                monto_total=data.get("monto_total"),
-                                                moneda=data.get("moneda"),
-                                                existing_plan=data.get("plan_pago_v2"),
-                                            ).build()
+                                            detail_section(
+                                                "Informacion tecnica minima",
+                                                [_tecnica_minima(data)],
+                                            ),
                                         ],
                                     ),
-                                    detail_section(
-                                        "Relacion financiera",
+                                    (
+                                        "Financiero",
                                         [
-                                            _relacion_financiera(
-                                                data.get("relacion_financiera"),
-                                                data.get("resumen_financiero"),
-                                            )
+                                            detail_section(
+                                                "Plan Pago V2 por bloques",
+                                                [
+                                                    PlanPagoV2BloquesPanel(
+                                                        api=self.api,
+                                                        id_venta=self.id_venta,
+                                                        monto_total=data.get(
+                                                            "monto_total"
+                                                        ),
+                                                        moneda=data.get("moneda"),
+                                                        existing_plan=data.get(
+                                                            "plan_pago_v2"
+                                                        ),
+                                                    ).build()
+                                                ],
+                                            ),
+                                            detail_section(
+                                                "Relacion financiera",
+                                                [
+                                                    _relacion_financiera(
+                                                        data.get("relacion_financiera"),
+                                                        data.get("resumen_financiero"),
+                                                    )
+                                                ],
+                                            ),
+                                            detail_section(
+                                                "Obligaciones",
+                                                [
+                                                    _obligaciones_table(
+                                                        data.get(
+                                                            "obligaciones_financieras"
+                                                        )
+                                                    )
+                                                ],
+                                            ),
+                                            detail_section(
+                                                "Resumen financiero",
+                                                [
+                                                    _resumen_financiero(
+                                                        data.get("resumen_financiero")
+                                                    )
+                                                ],
+                                            ),
                                         ],
                                     ),
-                                    detail_section(
-                                        "Obligaciones",
+                                    (
+                                        "Instrumentos y cierre",
                                         [
-                                            _obligaciones_table(
-                                                data.get("obligaciones_financieras")
-                                            )
+                                            detail_section(
+                                                "Instrumentos",
+                                                [
+                                                    _table_any(
+                                                        data.get(
+                                                            "instrumentos_compraventa"
+                                                        )
+                                                    )
+                                                ],
+                                            ),
+                                            detail_section(
+                                                "Cesiones",
+                                                [_table_any(data.get("cesiones"))],
+                                            ),
+                                            detail_section(
+                                                "Escrituraciones",
+                                                [
+                                                    _table_any(
+                                                        data.get("escrituraciones")
+                                                    )
+                                                ],
+                                            ),
                                         ],
                                     ),
-                                    detail_section(
-                                        "Resumen financiero",
-                                        [
-                                            _resumen_financiero(
-                                                data.get("resumen_financiero")
-                                            )
-                                        ],
-                                    ),
-                                ],
-                            ),
-                            (
-                                "Instrumentos y cierre",
-                                [
-                                    detail_section(
-                                        "Instrumentos",
-                                        [
-                                            _table_any(
-                                                data.get("instrumentos_compraventa")
-                                            )
-                                        ],
-                                    ),
-                                    detail_section(
-                                        "Cesiones", [_table_any(data.get("cesiones"))]
-                                    ),
-                                    detail_section(
-                                        "Escrituraciones",
-                                        [_table_any(data.get("escrituraciones"))],
-                                    ),
-                                ],
-                            ),
-                            (
-                                "Integracion inmobiliaria",
-                                [
-                                    detail_section(
+                                    (
                                         "Integracion inmobiliaria",
                                         [
-                                            _integration_view(
-                                                data.get("integracion_inmobiliaria")
+                                            detail_section(
+                                                "Integracion inmobiliaria",
+                                                [
+                                                    _integration_view(
+                                                        data.get(
+                                                            "integracion_inmobiliaria"
+                                                        )
+                                                    )
+                                                ],
                                             )
                                         ],
-                                    )
-                                ],
+                                    ),
+                                ]
                             ),
-                        ]
-                    ),
-                    height=520,
+                            height=520,
+                        ),
+                    ],
                 ),
             ],
             spacing=14,
@@ -386,32 +372,6 @@ def _base_venta(data: dict[str, Any]) -> ft.Control:
             ("Tipo plan financiero", data.get("tipo_plan_financiero")),
             ("Observaciones", data.get("observaciones")),
         ]
-    )
-
-
-def _venta_header(data: dict[str, Any]) -> ft.Control:
-    resumen = data.get("resumen_financiero")
-    resumen_data = resumen if isinstance(resumen, dict) else {}
-    return ft.Container(
-        content=key_value_grid(
-            [
-                ("Venta", _venta_title(data)),
-                ("Estado", data.get("estado_venta")),
-                ("Fecha venta", data.get("fecha_venta")),
-                ("Monto total", data.get("monto_total")),
-                ("Moneda", data.get("moneda")),
-                ("Tipo plan financiero", data.get("tipo_plan_financiero")),
-                ("Comprador principal", _partes_resumen(data.get("partes"))),
-                (
-                    "Saldo pendiente",
-                    resumen_data.get("saldo_pendiente")
-                    or resumen_data.get("saldo_pendiente_total"),
-                ),
-            ]
-        ),
-        padding=16,
-        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
-        border_radius=6,
     )
 
 
