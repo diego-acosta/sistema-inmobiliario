@@ -20,6 +20,12 @@ from app.components.detail_section import detail_section, key_value_grid
 from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
+from app.components.loading_state import (
+    DeferredControlLoader,
+    DeferredLoadingContainer,
+    loading_state,
+    safe_update,
+)
 from app.components.status_badge import status_badge
 from app.components.technical_output_panel import (
     build_technical_output_panel,
@@ -52,9 +58,13 @@ class InmueblesPage:
 
     def build(self) -> ft.Control:
         if self.detail_kind == "inmueble" and self.detail_id is not None:
-            return InmuebleDetailView(
-                self.api, self.on_navigate, self.detail_id
-            ).build()
+            return DeferredLoadingContainer(
+                lambda: InmuebleDetailView(
+                    self.api, self.on_navigate, self.detail_id
+                ).build(),
+                message="Cargando ficha de inmueble...",
+                error_builder=lambda message: _detail_error(self.on_navigate, message),
+            )
         if self.detail_kind == "unidad" and self.detail_id is not None:
             return UnidadDetailView(self.api, self.on_navigate, self.detail_id).build()
         if self.detail_kind == "create":
@@ -64,9 +74,15 @@ class InmueblesPage:
         if self.detail_kind == "desarrollo_create":
             return DesarrolloCreateView(self.api, self.on_navigate).build()
         if self.detail_kind == "desarrollo" and self.detail_id is not None:
-            return DesarrolloDetailView(
-                self.api, self.on_navigate, self.detail_id
-            ).build()
+            return DeferredLoadingContainer(
+                lambda: DesarrolloDetailView(
+                    self.api, self.on_navigate, self.detail_id
+                ).build(),
+                message="Cargando ficha de desarrollo/loteo...",
+                error_builder=lambda message: _desarrollo_detail_error(
+                    self.on_navigate, message
+                ),
+            )
         return InmueblesHub(self.api, self.on_navigate, self.initial_tab).build()
 
 
@@ -116,7 +132,6 @@ class InmueblesListView:
         self.page_info = ft.Text("")
 
     def build(self) -> ft.Control:
-        self._load()
         return ft.Column(
             controls=[
                 ft.Row(
@@ -143,7 +158,9 @@ class InmueblesListView:
                     wrap=True,
                     spacing=10,
                 ),
-                self.results,
+                DeferredControlLoader(
+                    self.results, self._load, message="Cargando inmuebles..."
+                ),
             ],
             spacing=16,
             expand=True,
@@ -151,8 +168,10 @@ class InmueblesListView:
 
     def _on_search(self, _) -> None:
         self.offset = 0
+        self.results.controls = [loading_state("Cargando inmuebles...")]
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _load(self) -> None:
         result = self.api.get_inmuebles(
@@ -212,13 +231,17 @@ class InmueblesListView:
 
     def _previous(self, _) -> None:
         self.offset = max(0, self.offset - self.limit)
+        self.results.controls = [loading_state("Cargando inmuebles...")]
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _next(self, _) -> None:
         self.offset += self.limit
+        self.results.controls = [loading_state("Cargando inmuebles...")]
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
 
 class DesarrollosListView:
@@ -228,7 +251,6 @@ class DesarrollosListView:
         self.results = ft.Column(spacing=12, expand=True)
 
     def build(self) -> ft.Control:
-        self._load()
         return ft.Column(
             controls=[
                 ft.Row(
@@ -247,7 +269,9 @@ class DesarrollosListView:
                     ],
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                self.results,
+                DeferredControlLoader(
+                    self.results, self._load, message="Cargando desarrollos..."
+                ),
             ],
             spacing=16,
             expand=True,
@@ -1299,7 +1323,6 @@ class UnidadesListView:
         self.results = ft.Column(spacing=12, expand=True)
 
     def build(self) -> ft.Control:
-        self._load()
         return ft.Column(
             controls=[
                 ft.Row(
@@ -1329,7 +1352,11 @@ class UnidadesListView:
                     wrap=True,
                     spacing=10,
                 ),
-                self.results,
+                DeferredControlLoader(
+                    self.results,
+                    self._load,
+                    message="Cargando unidades funcionales...",
+                ),
             ],
             spacing=16,
             expand=True,
@@ -1337,8 +1364,10 @@ class UnidadesListView:
 
     def _on_search(self, _) -> None:
         self.offset = 0
+        self.results.controls = [loading_state("Cargando unidades funcionales...")]
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _load(self) -> None:
         result = self.api.get_unidades_funcionales(
@@ -1401,13 +1430,17 @@ class UnidadesListView:
 
     def _previous(self, _) -> None:
         self.offset = max(0, self.offset - self.limit)
+        self.results.controls = [loading_state("Cargando unidades funcionales...")]
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _next(self, _) -> None:
         self.offset += self.limit
+        self.results.controls = [loading_state("Cargando unidades funcionales...")]
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
 
 class DesarrolloDetailView:
