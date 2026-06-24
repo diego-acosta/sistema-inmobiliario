@@ -1712,6 +1712,9 @@ parezca congelada.
   el wizard debe mostrar feedback inmediato, por ejemplo **Cargando reserva
   seleccionada...**, **Cargando objeto seleccionado...** o **Cargando comprador
   seleccionado...**, y debe ignorar clicks repetidos hasta completar la selección.
+- Al generar o recalcular el preview de plan de pago, debe mostrar **Cargando
+  preview de plan de pago...**, evitar cálculos duplicados mientras la carga está
+  activa y dejar errores del preview visibles para reintentar.
 - Durante la confirmación o creación de venta, el botón principal debe quedar
   deshabilitado y debe mostrarse **Confirmando venta...** para evitar doble click
   o doble envío.
@@ -1726,7 +1729,8 @@ Decision CORE-EF para estos estados UX:
   endpoints ni contratos HTTP.
 - Idempotencia: se conserva el `op_id` existente por firma de payload y se evita
   doble envío deshabilitando la acción mientras `confirm_loading` está activo;
-  para selectores read-like se evita doble selección con flags de carga locales.
+  para selectores read-like se evita doble selección con flags de carga locales;
+  para el preview se evita doble cálculo con `preview_loading`.
 - Outbox: NO APLICA en frontend; depende del endpoint existente.
 - Lock logico: NO APLICA en frontend; depende del endpoint existente.
 - Versionado: se conserva el uso existente de `version_registro` al confirmar

@@ -3470,7 +3470,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.preview_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Calculando vista previa del plan...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Cargando preview de plan de pago...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -3501,7 +3501,7 @@ class VentaCompletaWizardV3Prototype:
         if self.state.preview_loading:
             controls.append(
                 ft.Row(
-                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Calculando vista previa del plan...")],
+                    controls=[ft.ProgressRing(width=18, height=18), ft.Text("Cargando preview de plan de pago...")],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -3784,18 +3784,27 @@ class VentaCompletaWizardV3Prototype:
         }
         return labels.get(item_type, item_type or "-")
 
-    def _run_plan_payment_preview_before_next(self) -> bool:
+    def _request_plan_payment_preview_before_next(self, target_screen: PantallaWizard) -> None:
+        if self.state.preview_loading:
+            return
         validation_error = self._preview_local_validation_error()
         if validation_error is not None:
             self.state.preview_error = validation_error
             self.state.preview_status_code = None
             self.state.preview_loading = False
             self._render()
-            return False
+            return
         payload = self._build_plan_payment_preview_payload()
         self.state.preview_loading = True
         self.state.preview_error = None
         self._render()
+        self.page.run_thread(
+            lambda: self._run_plan_payment_preview_request(payload, target_screen)
+        )
+
+    def _run_plan_payment_preview_request(
+        self, payload: dict[str, Any], target_screen: PantallaWizard
+    ) -> None:
         result = self.api.preview_plan_pago_venta_v2_sin_venta(payload)
         self.state.preview_loading = False
         self.state.preview_status_code = result.status_code
@@ -3803,9 +3812,11 @@ class VentaCompletaWizardV3Prototype:
             self.state.preview_data = result.data
             self.state.preview_error = None
             self.state.preview_stale = False
-            return True
+            self.state.pantalla_actual = target_screen
+            self._render()
+            return
         self.state.preview_error = self._preview_error_message(result)
-        return False
+        self._render()
 
     def _preview_error_message(self, result: ApiResult) -> str:
         parts = ["No se pudo obtener el preview del plan."]
@@ -5688,21 +5699,16 @@ class VentaCompletaWizardV3Prototype:
         elif self.state.pantalla_actual == "FORMA_PAGO":
             if self.state.forma_pago == "FINANCIADO":
                 self.state.pantalla_actual = "PLAN_ANTICIPO"
-            elif self._run_plan_payment_preview_before_next():
-                self.state.pantalla_actual = "PREVIEW_PLAN_PAGO"
             else:
-                self._render()
+                self._request_plan_payment_preview_before_next("PREVIEW_PLAN_PAGO")
                 return
         elif self.state.pantalla_actual == "PLAN_ANTICIPO":
             self.state.pantalla_actual = "PLAN_TRAMOS"
         elif self.state.pantalla_actual == "PLAN_TRAMOS":
             self.state.pantalla_actual = "PLAN_RESUMEN"
         elif self.state.pantalla_actual == "PLAN_RESUMEN":
-            if self._run_plan_payment_preview_before_next():
-                self.state.pantalla_actual = "PREVIEW_PLAN_PAGO"
-            else:
-                self._render()
-                return
+            self._request_plan_payment_preview_before_next("PREVIEW_PLAN_PAGO")
+            return
         elif self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
             if self.state.preview_stale:
                 self.state.preview_error = "El preview está desactualizado. Volvé a la edición del plan y avanzá con Siguiente para recalcularlo."
