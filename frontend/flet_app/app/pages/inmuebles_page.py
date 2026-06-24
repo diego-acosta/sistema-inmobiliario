@@ -1,5 +1,5 @@
 import json
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 from uuid import uuid4
 
 import flet as ft
@@ -1443,6 +1443,81 @@ class UnidadesListView:
         safe_update(self.results)
 
 
+class DesarrolloInmueblesLoadResult(NamedTuple):
+    items: list[dict[str, Any]]
+    total: int | None
+    complete: bool
+    error_message: str | None
+
+
+def _load_all_desarrollo_inmuebles(
+    api: ApiClient, id_desarrollo: int, page_size: int = 500
+) -> DesarrolloInmueblesLoadResult:
+    items: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    offset = 0
+    total: int | None = None
+    total_is_reliable = False
+
+    while True:
+        result = api.listar_inmuebles(
+            id_desarrollo=id_desarrollo, limit=page_size, offset=offset
+        )
+        if not result.success:
+            base_message = (
+                result.error_message
+                or "No se pudieron cargar todos los inmuebles asociados."
+            )
+            if items:
+                base_message = (
+                    f"Carga parcial: se cargaron {len(items)}"
+                    + (f" de {total}" if total is not None else "")
+                    + f" inmuebles/lotes asociados. {base_message}"
+                )
+            return DesarrolloInmueblesLoadResult(items, total, False, base_message)
+
+        page_items, page_total = _list_payload(result.data)
+        if _list_payload_has_total(result.data):
+            total = page_total
+            total_is_reliable = True
+        elif total is None:
+            total = None
+
+        filtered_page = [
+            item
+            for item in page_items
+            if _safe_int(item.get("id_desarrollo")) == id_desarrollo
+        ]
+        new_items: list[dict[str, Any]] = []
+        for item in filtered_page:
+            id_inmueble = _safe_int_or_none(item.get("id_inmueble"))
+            if id_inmueble is None:
+                new_items.append(item)
+                continue
+            if id_inmueble in seen_ids:
+                continue
+            seen_ids.add(id_inmueble)
+            new_items.append(item)
+        items.extend(new_items)
+
+        if total_is_reliable and total is not None and len(items) >= total:
+            return DesarrolloInmueblesLoadResult(items, total, True, None)
+        if not page_items:
+            resolved_total = total if total_is_reliable else len(items)
+            return DesarrolloInmueblesLoadResult(items, resolved_total, True, None)
+        if not total_is_reliable and len(page_items) < page_size:
+            return DesarrolloInmueblesLoadResult(items, len(items), True, None)
+        if page_items and not new_items:
+            return DesarrolloInmueblesLoadResult(
+                items,
+                total,
+                False,
+                "Carga parcial: el backend devolvió una página repetida y se detuvo la carga para evitar duplicados.",
+            )
+
+        offset += page_size
+
+
 class DesarrolloDetailView:
     def __init__(self, api: ApiClient, on_navigate, id_desarrollo: int) -> None:
         self.api = api
@@ -1456,23 +1531,11 @@ class DesarrolloDetailView:
                 self.on_navigate, desarrollo_result.error_message
             )
         data = _unwrap_data(desarrollo_result.data)
-        inmuebles_result = self.api.listar_inmuebles(
-            id_desarrollo=self.id_desarrollo, limit=500, offset=0
+        inmuebles_result = _load_all_desarrollo_inmuebles(
+            self.api, self.id_desarrollo, page_size=500
         )
-        inmuebles: list[dict[str, Any]] = []
-        inmuebles_error: str | None = None
-        if inmuebles_result.success:
-            inmuebles, _total = _list_payload(inmuebles_result.data)
-            inmuebles = [
-                item
-                for item in inmuebles
-                if _safe_int(item.get("id_desarrollo")) == self.id_desarrollo
-            ]
-        else:
-            inmuebles_error = (
-                inmuebles_result.error_message
-                or "No se pudieron cargar los inmuebles asociados."
-            )
+        inmuebles = inmuebles_result.items
+        inmuebles_error = inmuebles_result.error_message
 
         return ft.Column(
             controls=[
@@ -1495,7 +1558,14 @@ class DesarrolloDetailView:
                 detail_section("Datos principales", [_base_desarrollo(data)]),
                 detail_section(
                     "Resumen de inmuebles/lotes asociados",
-                    [_desarrollo_resumen_inmuebles(inmuebles, inmuebles_error)],
+                    [
+                        _desarrollo_resumen_inmuebles(
+                            inmuebles,
+                            inmuebles_result.total,
+                            inmuebles_result.complete,
+                            inmuebles_error,
+                        )
+                    ],
                 ),
                 detail_section(
                     "Inmuebles/lotes asociados",
@@ -1761,6 +1831,10 @@ def _list_payload(data: object) -> tuple[list[dict[str, Any]], int]:
     return items, total
 
 
+def _list_payload_has_total(data: object) -> bool:
+    return isinstance(data, dict) and "total" in data
+
+
 def _inmueble_row(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id_inmueble": item.get("id_inmueble"),
@@ -1931,15 +2005,37 @@ def _base_desarrollo(data: dict[str, Any]) -> ft.Control:
 
 
 def _desarrollo_resumen_inmuebles(
-    inmuebles: list[dict[str, Any]], error_message: str | None
+    inmuebles: list[dict[str, Any]],
+    total: int | None,
+    complete: bool,
+    error_message: str | None,
 ) -> ft.Control:
-    if error_message:
+    if error_message and not inmuebles:
         return error_state(error_message)
-    counts: dict[str, int] = {"Total": len(inmuebles)}
+    total_label = (
+        total if complete and total is not None else f"{len(inmuebles)} cargados"
+    )
+    counts: dict[str, object] = {"Total": total_label}
+    if not complete:
+        counts["Estado de carga"] = "Parcial; el total definitivo no está confirmado"
+        if total is not None:
+            counts["Total informado por backend"] = total
     for item in inmuebles:
         label = _inmueble_estado_resumen(item)
-        counts[label] = counts.get(label, 0) + 1
-    return key_value_grid([(key, value) for key, value in counts.items()])
+        current_count = counts.get(label, 0)
+        counts[label] = (current_count if isinstance(current_count, int) else 0) + 1
+    controls: list[ft.Control] = [
+        key_value_grid([(key, value) for key, value in counts.items()])
+    ]
+    if error_message:
+        controls.append(
+            ft.Text(
+                error_message,
+                color=ft.Colors.ORANGE_900,
+                weight=ft.FontWeight.W_600,
+            )
+        )
+    return ft.Column(controls=controls, spacing=8)
 
 
 def _inmueble_estado_resumen(item: dict[str, Any]) -> str:
@@ -1954,7 +2050,7 @@ def _inmueble_estado_resumen(item: dict[str, Any]) -> str:
 def _desarrollo_inmuebles_table(
     inmuebles: list[dict[str, Any]], error_message: str | None, on_navigate
 ) -> ft.Control:
-    if error_message:
+    if error_message and not inmuebles:
         return ft.Text("No se puede mostrar el listado asociado en este momento.")
     if not inmuebles:
         return ft.Text("No hay inmuebles/lotes asociados a este desarrollo.")
@@ -1978,21 +2074,33 @@ def _desarrollo_inmuebles_table(
             )
         ]
 
-    return entity_table(
-        columns=[
-            ("Código", "codigo"),
-            ("Nombre", "nombre"),
-            ("Estado administrativo", "estado_administrativo"),
-            ("Estado jurídico", "estado_juridico"),
-            ("Disponibilidad", "disponibilidad"),
-            ("Ocupación", "ocupacion"),
-            ("Superficie", "superficie"),
-            ("Manzana", "manzana"),
-            ("Lote", "lote"),
-        ],
-        rows=rows,
-        actions=actions,
+    controls: list[ft.Control] = []
+    if error_message:
+        controls.append(
+            ft.Text(
+                "Listado parcial por error de carga; las filas visibles se pueden abrir.",
+                color=ft.Colors.ORANGE_900,
+                weight=ft.FontWeight.W_600,
+            )
+        )
+    controls.append(
+        entity_table(
+            columns=[
+                ("Código", "codigo"),
+                ("Nombre", "nombre"),
+                ("Estado administrativo", "estado_administrativo"),
+                ("Estado jurídico", "estado_juridico"),
+                ("Disponibilidad", "disponibilidad"),
+                ("Ocupación", "ocupacion"),
+                ("Superficie", "superficie"),
+                ("Manzana", "manzana"),
+                ("Lote", "lote"),
+            ],
+            rows=rows,
+            actions=actions,
+        )
     )
+    return ft.Column(controls=controls, spacing=8)
 
 
 def _desarrollo_detail_error(on_navigate, message: str | None) -> ft.Control:
