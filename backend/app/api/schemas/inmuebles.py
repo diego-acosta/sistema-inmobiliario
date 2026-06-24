@@ -32,6 +32,8 @@ class InmuebleCreateResponse(BaseModel):
 class InmuebleDetailData(BaseModel):
     id_inmueble: int
     id_desarrollo: int | None
+    uid_global: str | None = None
+    version_registro: int | None = None
     codigo_inmueble: str
     nombre_inmueble: str | None
     superficie: Decimal | None
@@ -185,7 +187,11 @@ class InmuebleDatoCatastralRegistralBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_fecha_rango(self) -> "InmuebleDatoCatastralRegistralBase":
-        if self.fecha_desde is not None and self.fecha_hasta is not None and self.fecha_hasta < self.fecha_desde:
+        if (
+            self.fecha_desde is not None
+            and self.fecha_hasta is not None
+            and self.fecha_hasta < self.fecha_desde
+        ):
             raise ValueError("INVALID_DATE_RANGE")
         return self
 

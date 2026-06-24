@@ -166,6 +166,37 @@ class ApiClient:
             json=payload,
         )
 
+    def actualizar_inmueble(
+        self,
+        id_inmueble: int,
+        payload: dict[str, Any],
+        if_match_version: int,
+        op_id: str | None = None,
+    ) -> ApiResult:
+        headers = self._core_ef_write_headers(op_id)
+        headers["If-Match-Version"] = str(if_match_version)
+        return self._put(
+            f"/api/v1/inmuebles/{id_inmueble}",
+            headers=headers,
+            json=payload,
+        )
+
+    def actualizar_dato_catastral_registral_inmueble(
+        self,
+        id_inmueble: int,
+        id_dato_catastral_registral: int,
+        payload: dict[str, Any],
+        if_match_version: int,
+        op_id: str | None = None,
+    ) -> ApiResult:
+        headers = self._core_ef_write_headers(op_id)
+        headers["If-Match-Version"] = str(if_match_version)
+        return self._put(
+            f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}",
+            headers=headers,
+            json=payload,
+        )
+
     def get_inmuebles(
         self,
         *,
@@ -542,6 +573,69 @@ class ApiClient:
                     params=self._clean_params(params or {}),
                     headers=headers,
                     json=self._clean_params(json or {}),
+                )
+        except httpx.ConnectError:
+            return ApiResult(
+                success=False,
+                error_message=(
+                    f"No se pudo conectar con el backend en {self.base_url}."
+                ),
+            )
+        except httpx.TimeoutException:
+            return ApiResult(
+                success=False,
+                error_message="La consulta al backend excedio el tiempo de espera.",
+            )
+        except httpx.HTTPError as exc:
+            return ApiResult(success=False, error_message=str(exc))
+
+        if response.status_code >= 400:
+            error_payload = self._parse_error(response)
+            return ApiResult(
+                success=False,
+                error_message=error_payload["message"],
+                status_code=response.status_code,
+                error_code=error_payload["code"],
+                error_details=error_payload["details"],
+            )
+
+        try:
+            payload = response.json()
+        except ValueError:
+            return ApiResult(
+                success=False,
+                error_message="El backend devolvio una respuesta no JSON.",
+                status_code=response.status_code,
+            )
+
+        if not isinstance(payload, dict) or "data" not in payload:
+            return ApiResult(
+                success=False,
+                error_message="El backend devolvio un formato JSON inesperado.",
+                status_code=response.status_code,
+            )
+
+        return ApiResult(
+            success=True,
+            data=payload.get("data"),
+            status_code=response.status_code,
+        )
+
+    def _put(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> ApiResult:
+        url = f"{self.base_url}{path}"
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.put(
+                    url,
+                    params=self._clean_params(params or {}),
+                    headers=headers,
+                    json=json or {},
                 )
         except httpx.ConnectError:
             return ApiResult(
