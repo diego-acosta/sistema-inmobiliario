@@ -24,14 +24,22 @@ def loading_state(message: str = "Cargando...") -> ft.Control:
     )
 
 
+def get_control_page(control: ft.Control) -> ft.Page | None:
+    """Return the control page only when Flet considers it mounted."""
+    try:
+        return control.page
+    except (AssertionError, RuntimeError):
+        return None
+
+
 def safe_update(control: ft.Control) -> None:
     """Update a mounted control through its Page so Flet repaints immediately."""
-    page = getattr(control, "page", None)
+    page = get_control_page(control)
     if page is None:
         return
     try:
         page.update(control)
-    except AssertionError:
+    except (AssertionError, RuntimeError):
         # The user may have navigated away between the page check and update().
         return
 
@@ -62,7 +70,9 @@ class DeferredLoadingContainer(ft.Container):
         if self._started:
             return
         self._started = True
-        self.page.run_thread(self._load)
+        page = get_control_page(self)
+        if page is not None:
+            page.run_thread(self._load)
 
     def will_unmount(self) -> None:
         self._mounted = False
@@ -81,7 +91,7 @@ class DeferredLoadingContainer(ft.Container):
             )
             traceback.print_exc()
 
-        if not self._mounted or self.page is None:
+        if not self._mounted or get_control_page(self) is None:
             return
         self.content = content
         safe_update(self)
@@ -110,7 +120,9 @@ class DeferredControlLoader(ft.Container):
         if self._started:
             return
         self._started = True
-        self.page.run_thread(self._load)
+        page = get_control_page(self)
+        if page is not None:
+            page.run_thread(self._load)
 
     def will_unmount(self) -> None:
         self._mounted = False
@@ -120,5 +132,5 @@ class DeferredControlLoader(ft.Container):
             self._loader()
         except Exception:
             traceback.print_exc()
-        if self._mounted and self._control.page is not None:
+        if self._mounted and get_control_page(self._control) is not None:
             safe_update(self._control)

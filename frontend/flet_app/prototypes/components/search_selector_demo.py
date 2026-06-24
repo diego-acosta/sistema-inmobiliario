@@ -15,6 +15,8 @@ from typing import Any, Callable, Literal
 
 import flet as ft
 
+from app.components.loading_state import safe_update
+
 
 SelectorKind = Literal["reserva", "objeto", "persona"]
 SelectionCallback = Callable[[dict[str, Any] | None], None]
@@ -487,7 +489,7 @@ class SearchSelectorDemo:
 
     def _on_search_change(self, _: ft.ControlEvent) -> None:
         self._refresh_results()
-        self.root.update()
+        safe_update(self.root)
 
     def _select_record(self, record: SearchSelectorRecord) -> None:
         if self.selector_kind == "objeto" and not is_object_selectable(
@@ -502,7 +504,7 @@ class SearchSelectorDemo:
         self._refresh_results()
         if self.on_selection_change is not None:
             self.on_selection_change(self.selected_payload)
-        self.root.update()
+        safe_update(self.root)
 
     def _clear_selection(self, _: ft.ControlEvent | None = None) -> None:
         self._selected = None
@@ -510,7 +512,7 @@ class SearchSelectorDemo:
         self._refresh_results()
         if self.on_selection_change is not None:
             self.on_selection_change(None)
-        self.root.update()
+        safe_update(self.root)
 
     def _matching_records(self) -> list[SearchSelectorRecord]:
         query = _clean(self.search_field.value).lower()

@@ -1694,3 +1694,46 @@ Decision CORE-EF para esta pantalla:
 - Lock logico: NO APLICA; no bloquea entidades.
 - Versionado: NO APLICA; no modifica entidad versionada.
 - Rollback/transaccion: NO APLICA; no abre frontera transaccional de negocio.
+
+## Estados de carga del Wizard Venta Completa
+
+El Wizard Venta Completa debe mostrar feedback visible en cada espera provocada
+por consultas backend o confirmaciones de negocio, para evitar que la pantalla
+parezca congelada.
+
+- Al abrir `venta_create_wizard`, la pantalla debe montar primero un estado
+  **Cargando Wizard Venta Completa...** y luego renderizar el wizard.
+- Las listas backend para seleccionar reservas, inmuebles, unidades funcionales u
+  objetos disponibles deben cargarse de forma diferida con mensajes visibles,
+  por ejemplo **Cargando inmuebles disponibles...**.
+- Las consultas de personas, partes, compradores o roles necesarios deben mostrar
+  mensajes visibles, por ejemplo **Buscando compradores...** o **Cargando partes...**.
+- Al seleccionar una reserva, objeto inmobiliario o comprador desde un buscador,
+  el wizard debe mostrar feedback inmediato, por ejemplo **Cargando reserva
+  seleccionada...**, **Cargando objeto seleccionado...** o **Cargando comprador
+  seleccionado...**, y debe ignorar clicks repetidos hasta completar la selección.
+- Al generar o recalcular el preview de plan de pago, debe mostrar **Cargando
+  preview de plan de pago...**, evitar cálculos duplicados mientras la carga está
+  activa y dejar errores del preview visibles para reintentar.
+- Durante la confirmación o creación de venta, el botón principal debe quedar
+  deshabilitado y debe mostrarse **Confirmando venta...** para evitar doble click
+  o doble envío.
+- Si una consulta o confirmación falla, la UI debe mostrar un error claro sin
+  traceback para el usuario y permitir reintentar desde el flujo existente.
+
+Decision CORE-EF para estos estados UX:
+
+- Clasificacion: `QUERY_READLIKE` para cargas de listas/detalles y
+  `COMMAND_WRITE_NEGOCIO` solo para la confirmación existente de venta.
+- Headers write: NO APLICA en este ajuste frontend; no se agregan ni modifican
+  endpoints ni contratos HTTP.
+- Idempotencia: se conserva el `op_id` existente por firma de payload y se evita
+  doble envío deshabilitando la acción mientras `confirm_loading` está activo;
+  para selectores read-like se evita doble selección con flags de carga locales;
+  para el preview se evita doble cálculo con `preview_loading`.
+- Outbox: NO APLICA en frontend; depende del endpoint existente.
+- Lock logico: NO APLICA en frontend; depende del endpoint existente.
+- Versionado: se conserva el uso existente de `version_registro` al confirmar
+  desde reserva.
+- Rollback/transaccion: NO APLICA en frontend; no cambia la frontera
+  transaccional del backend existente.
