@@ -65,6 +65,14 @@ class InmueblesPage:
                 message="Cargando ficha de inmueble...",
                 error_builder=lambda message: _detail_error(self.on_navigate, message),
             )
+        if self.detail_kind == "inmueble_edit" and self.detail_id is not None:
+            return DeferredLoadingContainer(
+                lambda: InmuebleEditView(
+                    self.api, self.on_navigate, self.detail_id
+                ).build(),
+                message="Cargando edición de inmueble...",
+                error_builder=lambda message: _detail_error(self.on_navigate, message),
+            )
         if self.detail_kind == "unidad" and self.detail_id is not None:
             return UnidadDetailView(self.api, self.on_navigate, self.detail_id).build()
         if self.detail_kind == "create":
@@ -1582,6 +1590,274 @@ class DesarrolloDetailView:
         )
 
 
+class InmuebleEditView:
+    def __init__(self, api: ApiClient, on_navigate, id_inmueble: int) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+        self.id_inmueble = id_inmueble
+        self.message = ft.Text(visible=False)
+        self.save_button = ft.FilledButton(
+            "Guardar", icon=ft.Icons.SAVE, on_click=self._save
+        )
+        self.data: dict[str, Any] = {}
+        self.dato: dict[str, Any] | None = None
+
+    def build(self) -> ft.Control:
+        result = self.api.get_inmueble_detalle_integral(self.id_inmueble)
+        if not result.success:
+            return _detail_error(self.on_navigate, result.error_message)
+        self.data = result.data if isinstance(result.data, dict) else {}
+        catastral_result = self.api.listar_datos_catastrales_registrales_inmueble(
+            self.id_inmueble
+        )
+        datos = (
+            catastral_result.data
+            if catastral_result.success and isinstance(catastral_result.data, list)
+            else _extract_datos_catastrales(self.data)
+        )
+        self.dato = _select_dato_catastral_editable(datos)
+        inmueble = _inmueble_data(self.data)
+        self.codigo_inmueble = ft.TextField(
+            label="Código",
+            value=_field_text(inmueble.get("codigo_inmueble")),
+            disabled=True,
+        )
+        self.nombre_inmueble = ft.TextField(
+            label="Nombre",
+            value=_field_text(
+                inmueble.get("nombre_inmueble") or inmueble.get("nombre")
+            ),
+        )
+        self.superficie = ft.TextField(
+            label="Superficie", value=_field_text(inmueble.get("superficie"))
+        )
+        self.estado_administrativo = ft.Dropdown(
+            label="Estado administrativo",
+            value=_field_text(inmueble.get("estado_administrativo"))
+            or ESTADOS_ADMINISTRATIVOS[0],
+            options=[ft.dropdown.Option(value) for value in ESTADOS_ADMINISTRATIVOS],
+        )
+        self.estado_juridico = ft.Dropdown(
+            label="Estado jurídico",
+            value=_field_text(inmueble.get("estado_juridico")) or ESTADOS_JURIDICOS[0],
+            options=[ft.dropdown.Option(value) for value in ESTADOS_JURIDICOS],
+        )
+        self.observaciones = ft.TextField(
+            label="Observaciones",
+            value=_field_text(inmueble.get("observaciones")),
+            multiline=True,
+        )
+        self.catastral_fields: dict[str, ft.Control] = {}
+        for field_name, label in (
+            ("manzana", "Manzana"),
+            ("lote", "Lote"),
+            ("nomenclatura_catastral", "Nomenclatura catastral"),
+            ("partida_inmobiliaria", "Partida inmobiliaria"),
+            ("matricula", "Matrícula"),
+            ("superficie_titulo", "Superficie título"),
+            ("medidas", "Medidas"),
+            ("situacion_posesoria", "Situación posesoria"),
+            ("situacion_dominial", "Situación dominial"),
+            ("observaciones", "Observaciones catastrales/registrales"),
+        ):
+            self.catastral_fields[field_name] = ft.TextField(
+                label=label,
+                value=_field_text((self.dato or {}).get(field_name)),
+                multiline=field_name in {"medidas", "observaciones"},
+                disabled=self.dato is None,
+            )
+        self.catastral_fields["estado_dato"] = ft.Dropdown(
+            label="Estado dato",
+            value=_field_text((self.dato or {}).get("estado_dato")) or "ACTIVO",
+            options=[ft.dropdown.Option(value) for value in ESTADOS_DATO_CATASTRAL],
+            disabled=self.dato is None,
+        )
+        catastral_controls: list[ft.Control] = []
+        if self.dato is None:
+            catastral_controls.append(
+                ft.Text(
+                    "No hay dato catastral/registral asociado para editar. "
+                    "Crealo desde el alta real del inmueble o desde el flujo existente."
+                )
+            )
+        catastral_controls.extend(self.catastral_fields.values())
+        return ft.Column(
+            controls=[
+                _back_row(self.on_navigate),
+                ft.Text(
+                    f"Editar inmueble {_inmueble_title(self.data)}",
+                    size=28,
+                    weight=ft.FontWeight.W_700,
+                ),
+                detail_section(
+                    "Datos básicos",
+                    [
+                        ft.ResponsiveRow(
+                            [
+                                ft.Container(content=control, col={"sm": 12, "md": 6})
+                                for control in (
+                                    self.codigo_inmueble,
+                                    self.nombre_inmueble,
+                                    self.superficie,
+                                    self.estado_administrativo,
+                                    self.estado_juridico,
+                                    self.observaciones,
+                                )
+                            ],
+                            spacing=12,
+                            run_spacing=12,
+                        )
+                    ],
+                ),
+                detail_section(
+                    "Datos catastrales / registrales",
+                    [
+                        ft.ResponsiveRow(
+                            [
+                                ft.Container(content=control, col={"sm": 12, "md": 6})
+                                for control in catastral_controls
+                            ],
+                            spacing=12,
+                            run_spacing=12,
+                        )
+                    ],
+                ),
+                ft.Row(
+                    [
+                        self.save_button,
+                        ft.OutlinedButton(
+                            "Cancelar",
+                            on_click=lambda _: self.on_navigate(
+                                "inmueble_detail", id_inmueble=self.id_inmueble
+                            ),
+                        ),
+                    ]
+                ),
+                self.message,
+            ],
+            spacing=14,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+    def _save(self, _) -> None:
+        inmueble = _inmueble_data(self.data)
+        errors = validate_form(self._inmueble_values(inmueble))
+        if self.dato is not None:
+            errors.extend(validate_dato_catastral_form(self._dato_values()))
+        if errors:
+            self._show_message("\n".join(errors), success=False)
+            return
+        op_id = str(uuid4())
+        results: list[tuple[str, ApiResult]] = []
+        basic_payload = self._basic_payload(inmueble)
+        if basic_payload:
+            version = _safe_int(inmueble.get("version_registro"))
+            if version <= 0:
+                self._show_message(
+                    "No se pudo determinar version_registro del inmueble.",
+                    success=False,
+                )
+                return
+            results.append(
+                (
+                    "datos básicos",
+                    self.api.actualizar_inmueble(
+                        self.id_inmueble, basic_payload, version, op_id=op_id
+                    ),
+                )
+            )
+        if self.dato is not None:
+            dato_payload = self._dato_payload()
+            if dato_payload:
+                version = _safe_int(self.dato.get("version_registro"))
+                id_dato = _safe_int(self.dato.get("id_dato_catastral_registral"))
+                if version <= 0 or id_dato <= 0:
+                    self._show_message(
+                        "No se pudo determinar versión o identificador del dato catastral/registral.",
+                        success=False,
+                    )
+                    return
+                results.append(
+                    (
+                        "datos catastrales/registrales",
+                        self.api.actualizar_dato_catastral_registral_inmueble(
+                            self.id_inmueble,
+                            id_dato,
+                            dato_payload,
+                            version,
+                            op_id=op_id,
+                        ),
+                    )
+                )
+        if not results:
+            self._show_message("No hay cambios para guardar.", success=True)
+            return
+        failures = [
+            f"{name}: {_format_api_error(result)}"
+            for name, result in results
+            if not result.success
+        ]
+        if failures:
+            self._show_message(
+                "Algunas partes no se pudieron guardar:\n" + "\n".join(failures),
+                success=False,
+            )
+            return
+        self._show_message("Cambios guardados correctamente.", success=True)
+        self.on_navigate("inmueble_detail", id_inmueble=self.id_inmueble)
+
+    def _inmueble_values(self, inmueble: dict[str, Any]) -> dict[str, str | None]:
+        return {
+            "codigo_inmueble": _field_text(inmueble.get("codigo_inmueble")),
+            "nombre_inmueble": self.nombre_inmueble.value,
+            "superficie": self.superficie.value,
+            "id_desarrollo": _field_text(inmueble.get("id_desarrollo")),
+            "estado_administrativo": self.estado_administrativo.value,
+            "estado_juridico": self.estado_juridico.value,
+            "observaciones": self.observaciones.value,
+        }
+
+    def _basic_payload(self, inmueble: dict[str, Any]) -> dict[str, Any]:
+        payload = build_inmueble_payload(self._inmueble_values(inmueble))
+        for field_name in ("nombre_inmueble", "observaciones", "superficie"):
+            if not str(getattr(self, field_name).value or "").strip():
+                payload[field_name] = None
+        if _field_text(inmueble.get("id_desarrollo")) == "":
+            payload["id_desarrollo"] = None
+        comparable = {key: _field_text(value) for key, value in payload.items()}
+        current = {key: _field_text(inmueble.get(key)) for key in payload}
+        return payload if comparable != current else {}
+
+    def _dato_values(self) -> dict[str, str | None]:
+        return {
+            key: getattr(control, "value", None)
+            for key, control in self.catastral_fields.items()
+        }
+
+    def _dato_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        for field_name, control in self.catastral_fields.items():
+            value = getattr(control, "value", None)
+            current = (self.dato or {}).get(field_name)
+            if _field_text(value) == _field_text(current):
+                continue
+            clean_value = str(value or "").strip()
+            if field_name == "superficie_titulo" and clean_value:
+                payload[field_name] = clean_value
+            elif field_name == "estado_dato":
+                payload[field_name] = clean_value or "ACTIVO"
+            else:
+                payload[field_name] = clean_value or None
+        return payload
+
+    def _show_message(self, text: str, *, success: bool) -> None:
+        self.message.value = text
+        self.message.visible = True
+        self.message.color = ft.Colors.GREEN_700 if success else ft.Colors.RED_800
+        safe_update(self.message)
+
+
 class InmuebleDetailView:
     def __init__(self, api: ApiClient, on_navigate, id_inmueble: int) -> None:
         self.api = api
@@ -1611,6 +1887,13 @@ class InmuebleDetailView:
                 _inmueble_operational_header(self.on_navigate, data),
                 ft.Row(
                     controls=[
+                        ft.FilledButton(
+                            "Editar",
+                            icon=ft.Icons.EDIT,
+                            on_click=lambda _: self.on_navigate(
+                                "inmueble_edit", id_inmueble=self.id_inmueble
+                            ),
+                        ),
                         ft.FilledButton(
                             "Nueva UF",
                             icon=ft.Icons.ADD_HOME_WORK,
@@ -2393,6 +2676,23 @@ def _desarrollo_label(
     if inmueble.get("id_desarrollo") is not None:
         return f"ID {inmueble.get('id_desarrollo')}"
     return None
+
+
+def _field_text(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _select_dato_catastral_editable(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    for row in rows:
+        if row.get("estado_dato") == "ACTIVO":
+            return row
+    return rows[0]
 
 
 def _extract_datos_catastrales(data: dict[str, Any]) -> list[dict[str, Any]]:
