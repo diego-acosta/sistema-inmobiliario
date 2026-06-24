@@ -50,6 +50,7 @@ for import_path in (str(FLET_APP_ROOT), str(PROTOTYPES_DIR)):
         sys.path.insert(0, import_path)
 
 from app.api_client import ApiClient, ApiResult
+from app.components.loading_state import loading_state, safe_update
 from components.search_selector_demo import (
     SearchSelectorDemo,
     create_search_selector_demo,
@@ -260,13 +261,17 @@ class VentaCompletaWizardV3Prototype:
         self.backend_reservation_records: list[dict[str, Any]] = []
         self.backend_reservation_error: str | None = None
         self.backend_reservations_loaded = False
+        self.backend_reservations_loading = False
         self.backend_object_records: list[dict[str, Any]] = []
         self.backend_object_error: str | None = None
         self.backend_objects_loaded = False
+        self.backend_objects_loading = False
         self.backend_buyer_records: list[dict[str, Any]] = []
         self.backend_buyer_error: str | None = None
         self.backend_buyers_loaded = False
+        self.backend_buyers_loading = False
         self.rol_comprador_catalog_loaded = False
+        self.rol_comprador_loading = False
         self.rol_comprador_catalog_error: str | None = None
         self.rol_comprador_manual_fallback_enabled = False
         self.rol_comprador_data: dict[str, Any] | None = None
@@ -517,7 +522,7 @@ class VentaCompletaWizardV3Prototype:
         if self.embedded:
             self.root.content = content
             if update and self.root.page is not None:
-                self.root.update()
+                safe_update(self.root)
             return
         self.page.controls.clear()
         self.page.add(content)
@@ -825,6 +830,12 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_reserva_selection_step(self) -> ft.Control:
+        if not self.backend_reservations_loaded:
+            self._start_deferred_load(
+                self._load_backend_reservation_records_if_needed,
+                "backend_reservations_loading",
+            )
+            return self._build_deferred_step_loading("Cargando reservas disponibles...")
         if self.reserva_selector is None:
             self.reserva_selector = create_search_selector_demo(
                 title="Reservas reales",
@@ -863,6 +874,33 @@ class VentaCompletaWizardV3Prototype:
             return
         self.reserva_selector.results_column.height = 260
         self.reserva_selector.results_column.scroll = ft.ScrollMode.AUTO
+
+    def _start_deferred_load(
+        self,
+        loader: Callable[[], None],
+        loading_attr: str,
+    ) -> None:
+        if getattr(self, loading_attr, False):
+            return
+        setattr(self, loading_attr, True)
+        self.page.run_thread(lambda: self._run_deferred_load(loader, loading_attr))
+
+    def _run_deferred_load(self, loader: Callable[[], None], loading_attr: str) -> None:
+        try:
+            loader()
+        finally:
+            setattr(self, loading_attr, False)
+            if self.root.page is not None:
+                self._render()
+
+    def _build_deferred_step_loading(self, message: str) -> ft.Control:
+        return ft.Container(
+            padding=18,
+            border_radius=14,
+            bgcolor=ft.Colors.WHITE,
+            border=_border_all(1, ft.Colors.BLUE_GREY_100),
+            content=loading_state(message),
+        )
 
     def _build_initial_sale_data_step(self) -> ft.Control:
         currency_locked = self._currency_locked_by_objects()
@@ -1433,6 +1471,12 @@ class VentaCompletaWizardV3Prototype:
                     spacing=10,
                 ),
             )
+        if not self.backend_objects_loaded:
+            self._start_deferred_load(
+                self._load_backend_object_records_if_needed,
+                "backend_objects_loading",
+            )
+            return self._build_deferred_step_loading("Cargando inmuebles disponibles...")
         if self.objeto_selector is None:
             self.objeto_selector = create_search_selector_demo(
                 title="Buscador de objeto inmobiliario real",
@@ -1761,7 +1805,19 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA":
             return self._build_reserva_buyers_info_step()
 
-        self._load_rol_comprador_if_needed()
+        if not self.rol_comprador_catalog_loaded:
+            self._start_deferred_load(
+                self._load_rol_comprador_if_needed,
+                "rol_comprador_loading",
+            )
+            return self._build_deferred_step_loading("Cargando partes...")
+
+        if not self.backend_buyers_loaded:
+            self._start_deferred_load(
+                self._load_backend_buyer_records_if_needed,
+                "backend_buyers_loading",
+            )
+            return self._build_deferred_step_loading("Buscando compradores...")
 
         if self.comprador_selector is None:
             self.comprador_selector = create_search_selector_demo(
@@ -3975,6 +4031,8 @@ class VentaCompletaWizardV3Prototype:
         return cuotas
 
     def _confirm_sale(self, _: ft.ControlEvent | None = None) -> None:
+        if self.state.confirm_loading:
+            return
         if not self._can_confirm_sale():
             persisted_errors = self._non_persisted_confirmation_errors()
             if persisted_errors:
@@ -3997,6 +4055,15 @@ class VentaCompletaWizardV3Prototype:
         else:
             self.state.confirm_endpoint = "POST /api/v1/ventas/directa/confirmar-venta-completa"
         self._render()
+        self.page.run_thread(
+            lambda: self._run_confirm_sale_request(payload, confirm_op_id)
+        )
+
+    def _run_confirm_sale_request(
+        self,
+        payload: dict[str, Any],
+        confirm_op_id: str,
+    ) -> None:
         if self.state.origen == "RESERVA":
             result = self.api.confirmar_venta_completa_desde_reserva(
                 int(self.state.id_reserva_venta or 0),
@@ -4088,14 +4155,18 @@ class VentaCompletaWizardV3Prototype:
         self.backend_reservation_records = []
         self.backend_reservation_error = None
         self.backend_reservations_loaded = False
+        self.backend_reservations_loading = False
         self.backend_object_records = []
         self.backend_object_error = None
         self.backend_objects_loaded = False
+        self.backend_objects_loading = False
         self.backend_buyer_records = []
         self.backend_buyer_error = None
         self.backend_buyers_loaded = False
+        self.backend_buyers_loading = False
         self.rol_comprador_data = None
         self.rol_comprador_catalog_loaded = False
+        self.rol_comprador_loading = False
         self.rol_comprador_catalog_error = None
         self.rol_comprador_manual_fallback_enabled = False
         self._render()

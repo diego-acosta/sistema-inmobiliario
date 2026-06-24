@@ -5,13 +5,16 @@ from typing import Callable
 import flet as ft
 
 from app.api_client import ApiClient
+from app.components.loading_state import DeferredLoadingContainer
 from prototypes.venta_completa_wizard_v3_prototype import VentaCompletaWizardV3Prototype
 
 
 class VentaCompletaWizardV3Page:
     """Pantalla real que integra el Wizard Venta Completa V3 validado."""
 
-    def __init__(self, page: ft.Page, api: ApiClient, on_navigate: Callable[..., None]) -> None:
+    def __init__(
+        self, page: ft.Page, api: ApiClient, on_navigate: Callable[..., None]
+    ) -> None:
         self.page = page
         self.api = api
         self.on_navigate = on_navigate
@@ -25,7 +28,10 @@ class VentaCompletaWizardV3Page:
         )
 
     def build(self) -> ft.Control:
-        return self.wizard.build()
+        return DeferredLoadingContainer(
+            self.wizard.build,
+            message="Cargando Wizard Venta Completa...",
+        )
 
     def _close(self) -> None:
         self.on_navigate("ventas")
