@@ -1752,7 +1752,7 @@ class InmuebleEditView:
         results: list[tuple[str, ApiResult]] = []
         basic_payload = self._basic_payload(inmueble)
         if basic_payload:
-            version = _safe_int(inmueble.get("version_registro"))
+            version = _inmueble_version_registro(self.data, inmueble)
             if version <= 0:
                 self._show_message(
                     "No se pudo determinar version_registro del inmueble.",
@@ -2682,6 +2682,14 @@ def _field_text(value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _inmueble_version_registro(data: dict[str, Any], inmueble: dict[str, Any]) -> int:
+    return (
+        _safe_int(inmueble.get("version_registro"))
+        or _safe_int(data.get("version_registro"))
+        or _safe_int(data.get("inmueble_version_registro"))
+    )
 
 
 def _select_dato_catastral_editable(

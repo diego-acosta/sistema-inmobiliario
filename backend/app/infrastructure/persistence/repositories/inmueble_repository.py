@@ -1611,6 +1611,8 @@ class InmuebleRepository(BaseRepository[Any]):
             SELECT
                 id_inmueble,
                 id_desarrollo,
+                uid_global::text AS uid_global,
+                version_registro,
                 codigo_inmueble,
                 nombre_inmueble,
                 superficie,
@@ -1631,6 +1633,8 @@ class InmuebleRepository(BaseRepository[Any]):
         return {
             "id_inmueble": row["id_inmueble"],
             "id_desarrollo": row["id_desarrollo"],
+            "uid_global": row["uid_global"],
+            "version_registro": row["version_registro"],
             "codigo_inmueble": row["codigo_inmueble"],
             "nombre_inmueble": row["nombre_inmueble"],
             "superficie": row["superficie"],
