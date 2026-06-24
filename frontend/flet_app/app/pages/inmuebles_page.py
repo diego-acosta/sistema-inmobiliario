@@ -26,6 +26,14 @@ from app.components.technical_output_panel import (
     format_technical_output,
 )
 
+ESTADOS_ADMINISTRATIVOS_UNIDAD_FUNCIONAL = ("ACTIVA", "INACTIVA")
+ESTADOS_OPERATIVOS_UNIDAD_FUNCIONAL = (
+    "DISPONIBLE",
+    "RESERVADA",
+    "NO_DISPONIBLE",
+    "USO_INTERNO",
+)
+
 
 class InmueblesPage:
     def __init__(
@@ -974,15 +982,19 @@ class UnidadCreateForm:
         self.superficie = ft.TextField(label="Superficie", width=160)
         self.estado_administrativo = ft.Dropdown(
             label="Estado administrativo *",
-            value="ACTIVO",
+            value="ACTIVA",
             width=220,
-            options=[ft.dropdown.Option(v) for v in ESTADOS_ADMINISTRATIVOS],
+            options=[
+                ft.dropdown.Option(v) for v in ESTADOS_ADMINISTRATIVOS_UNIDAD_FUNCIONAL
+            ],
         )
-        self.estado_juridico = ft.Dropdown(
-            label="Estado jurídico *",
-            value="REGULAR",
+        self.estado_operativo = ft.Dropdown(
+            label="Estado operativo *",
+            value="DISPONIBLE",
             width=220,
-            options=[ft.dropdown.Option(v) for v in ESTADOS_JURIDICOS],
+            options=[
+                ft.dropdown.Option(v) for v in ESTADOS_OPERATIVOS_UNIDAD_FUNCIONAL
+            ],
         )
         self.observaciones = ft.TextField(
             label="Observaciones", multiline=True, min_lines=2, max_lines=3
@@ -996,6 +1008,8 @@ class UnidadCreateForm:
             "Nueva alta", icon=ft.Icons.ADD, on_click=self._new_create, visible=False
         )
         self.created_id_unidad_funcional: int | None = None
+        self.current_op_id: str | None = None
+        self.current_payload_fingerprint: str | None = None
         self.root: ft.Control | None = None
 
     def build(self) -> ft.Control:
@@ -1037,7 +1051,7 @@ class UnidadCreateForm:
                         spacing=10,
                     ),
                     ft.Row(
-                        controls=[self.estado_administrativo, self.estado_juridico],
+                        controls=[self.estado_administrativo, self.estado_operativo],
                         wrap=True,
                         spacing=10,
                     ),
@@ -1132,7 +1146,7 @@ class UnidadCreateForm:
             "nombre_unidad": self.nombre_unidad.value,
             "superficie": self.superficie.value,
             "estado_administrativo": self.estado_administrativo.value,
-            "estado_juridico": self.estado_juridico.value,
+            "estado_operativo": self.estado_operativo.value,
             "observaciones": self.observaciones.value,
         }
 
@@ -1148,9 +1162,20 @@ class UnidadCreateForm:
             self.message.update()
             return
         payload = _build_unidad_payload(values)
+        fingerprint = _payload_fingerprint(
+            {"id_inmueble": id_inmueble, "payload": payload}
+        )
+        if (
+            self.current_op_id is None
+            or self.current_payload_fingerprint != fingerprint
+        ):
+            self.current_op_id = str(uuid4())
+            self.current_payload_fingerprint = fingerprint
         self.save_button.disabled = True
         self.save_button.update()
-        result = self.api.crear_unidad_funcional(id_inmueble, payload)
+        result = self.api.crear_unidad_funcional(
+            id_inmueble, payload, op_id=self.current_op_id
+        )
         if result.success:
             self.created_id_unidad_funcional = _safe_int_or_none(
                 (result.data or {}).get("id_unidad_funcional")
@@ -1187,9 +1212,10 @@ class UnidadCreateForm:
             [
                 (
                     "nota técnica",
-                    "id_inmueble viaja en path; estado jurídico de UI se envía como estado_operativo por contrato backend existente.",
+                    "id_inmueble viaja en path; la UF usa estados administrativo y operativo propios del contrato backend.",
                 ),
                 ("payload UF enviado", payload),
+                ("op_id usado", self.current_op_id),
                 ("response UF", result.data),
                 (
                     "errores backend",
@@ -1223,10 +1249,12 @@ class UnidadCreateForm:
         self.codigo_unidad.value = ""
         self.nombre_unidad.value = ""
         self.superficie.value = ""
-        self.estado_administrativo.value = "ACTIVO"
-        self.estado_juridico.value = "REGULAR"
+        self.estado_administrativo.value = "ACTIVA"
+        self.estado_operativo.value = "DISPONIBLE"
         self.observaciones.value = ""
         self.created_id_unidad_funcional = None
+        self.current_op_id = None
+        self.current_payload_fingerprint = None
         self.message.visible = False
         self.technical.visible = False
 
@@ -1785,10 +1813,16 @@ def _validate_unidad_form(values: dict[str, str | None]) -> list[str]:
         errors.append("Inmueble padre es requerido.")
     if not str(values.get("codigo_unidad") or "").strip():
         errors.append("Código de unidad funcional es requerido.")
-    if not str(values.get("estado_administrativo") or "").strip():
+    estado_administrativo = str(values.get("estado_administrativo") or "").strip()
+    if not estado_administrativo:
         errors.append("Estado administrativo es requerido.")
-    if not str(values.get("estado_juridico") or "").strip():
-        errors.append("Estado jurídico es requerido.")
+    elif estado_administrativo not in ESTADOS_ADMINISTRATIVOS_UNIDAD_FUNCIONAL:
+        errors.append("Estado administrativo debe ser ACTIVA o INACTIVA.")
+    estado_operativo = str(values.get("estado_operativo") or "").strip()
+    if not estado_operativo:
+        errors.append("Estado operativo es requerido.")
+    elif estado_operativo not in ESTADOS_OPERATIVOS_UNIDAD_FUNCIONAL:
+        errors.append("Estado operativo no es válido para unidad funcional.")
     superficie = str(values.get("superficie") or "").strip()
     if superficie:
         try:
@@ -1805,7 +1839,7 @@ def _build_unidad_payload(values: dict[str, str | None]) -> dict[str, Any]:
         "nombre_unidad": "nombre_unidad",
         "superficie": "superficie",
         "estado_administrativo": "estado_administrativo",
-        "estado_juridico": "estado_operativo",
+        "estado_operativo": "estado_operativo",
         "observaciones": "observaciones",
     }
     for source, target in mapping.items():

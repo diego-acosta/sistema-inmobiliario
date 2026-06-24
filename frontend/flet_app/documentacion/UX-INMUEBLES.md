@@ -296,19 +296,19 @@ La pantalla real de inmuebles permite crear unidades funcionales asociadas a un 
 - Desde la ficha real de inmueble, el botón **Nueva UF** abre el mismo formulario con el inmueble padre precargado y fijo.
 - El alta consume el endpoint existente `POST /api/v1/inmuebles/{id_inmueble}/unidades-funcionales` mediante `ApiClient.crear_unidad_funcional(...)`; por eso `id_inmueble` viaja en el path y el body envía solo campos aceptados por el contrato backend.
 - La UI muestra mensaje de éxito, permite nueva alta, volver al listado/ficha de inmueble según origen y abrir la ficha de la UF creada cuando el backend devuelve `id_unidad_funcional`.
-- En modo técnico se exponen el payload enviado, la response backend y los errores backend sin mostrar tracebacks al usuario.
+- En modo técnico se exponen el payload enviado, el `op_id` usado, la response backend y los errores backend sin mostrar tracebacks al usuario.
 
 ### Payload de unidad funcional usado por Flet
 
-El formulario presenta **Estado jurídico** por consistencia UX, pero el backend existente de unidad funcional espera `estado_operativo`; la UI lo mapea explícitamente a ese campo sin modificar backend ni SQL.
+El formulario no usa `estado_juridico` porque ese campo no pertenece al contrato de alta de unidad funcional. La UF usa catálogos propios: `estado_administrativo` con valores `ACTIVA` / `INACTIVA`, y `estado_operativo` con valores operativos de UF (`DISPONIBLE`, `RESERVADA`, `NO_DISPONIBLE`, `USO_INTERNO`) alineados con los valores existentes revisados en tests/seeds/backend para unidades y disponibilidad operativa.
 
 ```json
 {
   "codigo_unidad": "UF-001",
   "nombre_unidad": "Departamento 1",
   "superficie": "50",
-  "estado_administrativo": "ACTIVO",
-  "estado_operativo": "REGULAR",
+  "estado_administrativo": "ACTIVA",
+  "estado_operativo": "DISPONIBLE",
   "observaciones": "opcional"
 }
 ```
@@ -321,9 +321,9 @@ Este cambio no implementa edición ni baja de unidades funcionales, servicios, o
 
 - Naturaleza del endpoint usado: `COMMAND_WRITE_NEGOCIO` ya existente (`POST /api/v1/inmuebles/{id_inmueble}/unidades-funcionales`).
 - Headers: aplica; `ApiClient.crear_unidad_funcional(...)` reutiliza el helper común CORE-EF del cliente Flet para enviar `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`.
-- Idempotencia: NO CONFIRMADO en frontend; se genera `X-Op-Id` por llamada mediante helper común y no se declara cumplimiento profundo sin evidencia adicional de repository/SQL/tests en este PR.
+- Idempotencia: NO CONFIRMADO en backend desde este PR; en frontend se mantiene un `X-Op-Id` estable para el mismo intento lógico (`id_inmueble + payload`) y se regenera cuando cambia el inmueble padre, cambia el payload, se usa **Nueva alta** o se limpia el formulario.
 - Outbox: NO CONFIRMADO en frontend; no se declara cumplimiento profundo sin evidencia adicional en este PR.
 - Lock lógico: NO APLICA en frontend; no se implementan bloqueos nuevos.
 - Versionado: NO APLICA para alta nueva; no se modifica entidad existente/versionada ni se requiere `If-Match-Version` en este flujo de creación.
 - Rollback/transacción: frontera transaccional del backend existente para el alta de UF; la UI ejecuta una única llamada de creación.
-- Tests ejecutados en este PR: `python -m compileall -q frontend/flet_app backend` y `git diff --check`.
+- Tests ejecutados en este PR: `python -m compileall -q frontend/flet_app backend`, `git diff --check` y `python -m black --check frontend/flet_app/app/pages/inmuebles_page.py frontend/flet_app/app/api_client.py frontend/flet_app/app/shell.py`.
