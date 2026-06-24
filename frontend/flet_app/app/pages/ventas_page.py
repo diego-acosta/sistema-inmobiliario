@@ -7,7 +7,12 @@ from app.api_client import ApiClient
 from app.components.detail_section import detail_section, key_value_grid
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
-from app.components.loading_state import DeferredLoadingContainer, loading_state
+from app.components.loading_state import (
+    DeferredControlLoader,
+    DeferredLoadingContainer,
+    loading_state,
+    safe_update,
+)
 from app.components.status_badge import status_badge
 
 
@@ -85,8 +90,8 @@ class VentasListView:
                     wrap=True,
                     spacing=10,
                 ),
-                DeferredLoadingContainer(
-                    self._loaded_results, message="Cargando ventas..."
+                DeferredControlLoader(
+                    self.results, self._load, message="Cargando ventas..."
                 ),
             ],
             spacing=16,
@@ -94,17 +99,13 @@ class VentasListView:
             expand=True,
         )
 
-    def _loaded_results(self) -> ft.Control:
-        self._load()
-        return self.results
-
     def _on_search(self, _) -> None:
         self.offset = _safe_int(self.offset_field.value)
         self.limit = _safe_limit_int(self.limit_field.value, default=20)
         self.results.controls = [loading_state("Cargando ventas...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _load(self) -> None:
         self.results.controls.clear()
@@ -177,9 +178,9 @@ class VentasListView:
         self.offset = max(0, self.offset - self.limit)
         self.offset_field.value = str(self.offset)
         self.results.controls = [loading_state("Cargando ventas...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _next(self, _) -> None:
         if self.limit <= 0:
@@ -187,9 +188,9 @@ class VentasListView:
         self.offset += self.limit
         self.offset_field.value = str(self.offset)
         self.results.controls = [loading_state("Cargando ventas...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
 
 class VentaDetailView:

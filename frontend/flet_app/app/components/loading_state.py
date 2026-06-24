@@ -20,10 +20,20 @@ def loading_state(message: str = "Cargando...") -> ft.Control:
             spacing=12,
             tight=True,
         ),
-        alignment=ft.alignment.center,
         padding=24,
         expand=True,
     )
+
+
+def safe_update(control: ft.Control) -> None:
+    """Update a control only when Flet has already mounted it on a page."""
+    if getattr(control, "page", None) is None:
+        return
+    try:
+        control.update()
+    except AssertionError:
+        # The user may have navigated away between the page check and update().
+        return
 
 
 class DeferredLoadingContainer(ft.Container):
@@ -45,19 +55,24 @@ class DeferredLoadingContainer(ft.Container):
         self._loader = loader
         self._error_builder = error_builder
         self._started = False
+        self._mounted = False
 
     def did_mount(self) -> None:
+        self._mounted = True
         if self._started:
             return
         self._started = True
         Thread(target=self._load, daemon=True).start()
 
+    def will_unmount(self) -> None:
+        self._mounted = False
+
     def _load(self) -> None:
         try:
-            self.content = self._loader()
+            content = self._loader()
         except Exception as exc:  # defensive UI boundary: never expose traceback.
             message = str(exc) or "No se pudieron cargar los datos."
-            self.content = (
+            content = (
                 self._error_builder(message)
                 if self._error_builder is not None
                 else ft.Text(
@@ -65,4 +80,45 @@ class DeferredLoadingContainer(ft.Container):
                 )
             )
             traceback.print_exc()
-        self.update()
+
+        if not self._mounted or self.page is None:
+            return
+        self.content = content
+        safe_update(self)
+
+
+class DeferredControlLoader(ft.Container):
+    """Mount an existing control immediately and populate it in the background."""
+
+    def __init__(
+        self,
+        control: ft.Control,
+        loader: Callable[[], None],
+        *,
+        message: str = "Cargando...",
+    ) -> None:
+        self._control = control
+        self._loader = loader
+        self._started = False
+        self._mounted = False
+        if hasattr(control, "controls"):
+            control.controls = [loading_state(message)]
+        super().__init__(content=control, expand=True)
+
+    def did_mount(self) -> None:
+        self._mounted = True
+        if self._started:
+            return
+        self._started = True
+        Thread(target=self._load, daemon=True).start()
+
+    def will_unmount(self) -> None:
+        self._mounted = False
+
+    def _load(self) -> None:
+        try:
+            self._loader()
+        except Exception:
+            traceback.print_exc()
+        if self._mounted and self._control.page is not None:
+            safe_update(self._control)

@@ -20,7 +20,12 @@ from app.components.detail_section import detail_section, key_value_grid
 from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
-from app.components.loading_state import DeferredLoadingContainer, loading_state
+from app.components.loading_state import (
+    DeferredControlLoader,
+    DeferredLoadingContainer,
+    loading_state,
+    safe_update,
+)
 from app.components.status_badge import status_badge
 from app.components.technical_output_panel import (
     build_technical_output_panel,
@@ -153,24 +158,20 @@ class InmueblesListView:
                     wrap=True,
                     spacing=10,
                 ),
-                DeferredLoadingContainer(
-                    self._loaded_results, message="Cargando inmuebles..."
+                DeferredControlLoader(
+                    self.results, self._load, message="Cargando inmuebles..."
                 ),
             ],
             spacing=16,
             expand=True,
         )
 
-    def _loaded_results(self) -> ft.Control:
-        self._load()
-        return self.results
-
     def _on_search(self, _) -> None:
         self.offset = 0
         self.results.controls = [loading_state("Cargando inmuebles...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _load(self) -> None:
         result = self.api.get_inmuebles(
@@ -231,16 +232,16 @@ class InmueblesListView:
     def _previous(self, _) -> None:
         self.offset = max(0, self.offset - self.limit)
         self.results.controls = [loading_state("Cargando inmuebles...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _next(self, _) -> None:
         self.offset += self.limit
         self.results.controls = [loading_state("Cargando inmuebles...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
 
 class DesarrollosListView:
@@ -268,17 +269,13 @@ class DesarrollosListView:
                     ],
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                DeferredLoadingContainer(
-                    self._loaded_results, message="Cargando desarrollos..."
+                DeferredControlLoader(
+                    self.results, self._load, message="Cargando desarrollos..."
                 ),
             ],
             spacing=16,
             expand=True,
         )
-
-    def _loaded_results(self) -> ft.Control:
-        self._load()
-        return self.results
 
     def _load(self) -> None:
         result = self.api.get_desarrollos()
@@ -1355,24 +1352,22 @@ class UnidadesListView:
                     wrap=True,
                     spacing=10,
                 ),
-                DeferredLoadingContainer(
-                    self._loaded_results, message="Cargando unidades funcionales..."
+                DeferredControlLoader(
+                    self.results,
+                    self._load,
+                    message="Cargando unidades funcionales...",
                 ),
             ],
             spacing=16,
             expand=True,
         )
 
-    def _loaded_results(self) -> ft.Control:
-        self._load()
-        return self.results
-
     def _on_search(self, _) -> None:
         self.offset = 0
         self.results.controls = [loading_state("Cargando unidades funcionales...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _load(self) -> None:
         result = self.api.get_unidades_funcionales(
@@ -1436,16 +1431,16 @@ class UnidadesListView:
     def _previous(self, _) -> None:
         self.offset = max(0, self.offset - self.limit)
         self.results.controls = [loading_state("Cargando unidades funcionales...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
     def _next(self, _) -> None:
         self.offset += self.limit
         self.results.controls = [loading_state("Cargando unidades funcionales...")]
-        self.results.update()
+        safe_update(self.results)
         self._load()
-        self.results.update()
+        safe_update(self.results)
 
 
 class DesarrolloDetailView:
