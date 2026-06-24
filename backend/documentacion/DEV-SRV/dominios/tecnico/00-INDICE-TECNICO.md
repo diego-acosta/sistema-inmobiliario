@@ -16,6 +16,7 @@ Organizar los servicios y catálogos del dominio técnico en formato modular y r
 - [[SRV-TEC-003-gestion-de-conflictos-de-sincronizacion]]
 - [[SRV-TEC-004-gestion-de-estado-de-sincronizacion-y-jobs-tecnicos]]
 - [[SRV-TEC-005-gestion-de-importacion-y-exportacion-tecnica]]
+- [[SRV-TEC-IMPORT-EXCEL-001]]
 - [[SRV-TEC-006-gestion-de-respaldo-recuperacion-e-integridad-tecnica]]
 - [[SRV-TEC-007-consulta-y-reporte-tecnico]]
 
