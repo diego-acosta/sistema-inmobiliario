@@ -12,9 +12,25 @@ def normalize_text(value: Any) -> str | None:
 
 
 def normalize_decimal(value: Any) -> Decimal | None:
-    if value is None or str(value).strip() == "":
+    if value is None:
         return None
-    text = str(value).strip().replace(".", "").replace(",", ".")
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+
+    text = str(value).strip()
+    if text == "":
+        return None
+    if "," in text and "." in text:
+        decimal_separator = "," if text.rfind(",") > text.rfind(".") else "."
+        thousands_separator = "." if decimal_separator == "," else ","
+        text = text.replace(thousands_separator, "")
+        if decimal_separator == ",":
+            text = text.replace(",", ".")
+    elif "," in text:
+        text = text.replace(",", ".")
+
     try:
         return Decimal(text)
     except InvalidOperation:

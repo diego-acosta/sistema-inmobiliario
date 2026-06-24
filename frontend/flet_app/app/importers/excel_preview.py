@@ -36,15 +36,23 @@ def build_preview(
 
         for field_key, field in fields_by_key.items():
             source_column = source_by_target.get(field_key)
-            value = raw_values.get(source_column) if source_column else None
-            if field.normalizer is not None:
-                value = field.normalizer(value)
+            raw_value = raw_values.get(source_column) if source_column else None
+            raw_is_empty = _is_empty(raw_value)
+            value = field.normalizer(raw_value) if field.normalizer is not None else raw_value
+            normalized_is_empty = _is_empty(value)
             mapped_values[field_key] = value
-            is_empty = value is None or (isinstance(value, str) and not value.strip())
-            if field.required and is_empty:
+
+            if field.required and normalized_is_empty:
                 errors.append(f"{field.label}: campo requerido.")
                 continue
-            if not is_empty and field.validator is not None:
+            if (
+                not raw_is_empty
+                and normalized_is_empty
+                and field.normalizer is not None
+            ):
+                errors.append(f"{field.label}: valor inválido o no convertible.")
+                continue
+            if not normalized_is_empty and field.validator is not None:
                 message = field.validator(value)
                 if message:
                     errors.append(f"{field.label}: {message}")
@@ -70,6 +78,10 @@ def build_preview(
         valid_rows=valid_rows,
         invalid_rows=invalid_rows,
     )
+
+
+def _is_empty(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
 
 
 def simulate_confirm(preview: ImportPreviewResult) -> ImportConfirmResult:

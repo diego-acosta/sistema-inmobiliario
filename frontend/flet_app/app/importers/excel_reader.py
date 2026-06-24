@@ -46,13 +46,16 @@ def read_excel_workbook(path: str | Path, sheet_name: str | None = None) -> Exce
     if active_sheet not in sheet_names:
         raise ExcelImportError(f"La hoja '{active_sheet}' no existe en el archivo.")
 
-    sheets = {name: _read_sheet(workbook[name]) for name in sheet_names}
-    workbook.close()
+    try:
+        selected_sheet = _read_sheet(workbook[active_sheet])
+    finally:
+        workbook.close()
+
     return ExcelWorkbookData(
         path=str(file_path),
         sheet_names=sheet_names,
         active_sheet=active_sheet,
-        sheets=sheets,
+        sheets={active_sheet: selected_sheet},
     )
 
 

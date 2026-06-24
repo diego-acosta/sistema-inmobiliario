@@ -162,18 +162,28 @@ class ExcelImportWizard(ft.Column):
         if not self.workbook:
             return _section("2. Seleccionar hoja", [ft.Text("Pendiente de archivo válido.")])
         options = [ft.dropdown.Option(name) for name in self.workbook.sheet_names]
-        sheet = self.workbook.sheets[self.selected_sheet or self.workbook.active_sheet]
-        return _section(
-            "2. Seleccionar hoja y detectar columnas",
-            [
-                ft.Dropdown(label="Hoja", value=self.selected_sheet, options=options, on_change=self._on_sheet_change),
-                ft.Text(f"Columnas detectadas: {', '.join(c.name for c in sheet.columns)}"),
-                ft.Text(f"Filas leídas: {len(sheet.rows)}"),
-            ],
-        )
+        selected = self.selected_sheet or self.workbook.active_sheet
+        sheet = self.workbook.sheets.get(selected)
+        controls: list[ft.Control] = [
+            ft.Dropdown(label="Hoja", value=selected, options=options, on_change=self._on_sheet_change),
+        ]
+        if sheet is None:
+            controls.append(ft.Text("La hoja seleccionada no pudo leerse. Elegí otra hoja para reintentar."))
+        else:
+            controls.extend(
+                [
+                    ft.Text(f"Columnas detectadas: {', '.join(c.name for c in sheet.columns)}"),
+                    ft.Text(f"Filas leídas: {len(sheet.rows)}"),
+                ]
+            )
+        return _section("2. Seleccionar hoja y detectar columnas", controls)
 
     def _mapping_step(self) -> ft.Control:
-        if not self.workbook or not self.selected_sheet:
+        if (
+            not self.workbook
+            or not self.selected_sheet
+            or self.selected_sheet not in self.workbook.sheets
+        ):
             return _section("3. Mapear columnas", [ft.Text("Pendiente de detección de columnas.")])
         sheet = self.workbook.sheets[self.selected_sheet]
         current = {mapping.target_field: mapping.source_column for mapping in self.mappings}
