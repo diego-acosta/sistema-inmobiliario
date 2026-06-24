@@ -287,3 +287,43 @@ La ficha real de inmueble se reorganiza como vista operativa read-only: encabeza
 Los datos catastrales/registrales priorizan los campos de uso operativo (**Manzana**, **Lote**, **Parcela**, nomenclatura, partida, matrícula y folio real). Los campos secundarios solo se muestran en un detalle colapsado cuando tienen valor, para evitar una lista extensa de campos **Sin cargar**. La superficie se presenta en formato operativo (`m²`) y las fechas secundarias se formatean como `dd/mm/aaaa`.
 
 El detalle técnico queda al final en un bloque colapsado **Detalle técnico / Mostrar detalle** con el detalle integral y los datos catastrales/registrales crudos. La vista principal mantiene la restricción de no mostrar JSON crudo y no agrega edición de inmueble ni edición de dato catastral/registral.
+
+## Alta real de unidad funcional desde frontend
+
+La pantalla real de inmuebles permite crear unidades funcionales asociadas a un inmueble existente sin agregar endpoints nuevos. El flujo usa la ruta interna `unidad_create`, que puede abrirse sin parámetros desde la pestaña **Unidades funcionales** o con `id_inmueble` precargado desde la ficha real de inmueble mediante `unidad_create?id_inmueble=...`.
+
+- Desde **Unidades funcionales**, el botón **Nueva unidad funcional** abre el formulario y permite seleccionar el inmueble padre desde el backend, mostrando cada opción como `CODIGO — Nombre`.
+- Desde la ficha real de inmueble, el botón **Nueva UF** abre el mismo formulario con el inmueble padre precargado y fijo.
+- El alta consume el endpoint existente `POST /api/v1/inmuebles/{id_inmueble}/unidades-funcionales` mediante `ApiClient.crear_unidad_funcional(...)`; por eso `id_inmueble` viaja en el path y el body envía solo campos aceptados por el contrato backend.
+- La UI muestra mensaje de éxito, permite nueva alta, volver al listado/ficha de inmueble según origen y abrir la ficha de la UF creada cuando el backend devuelve `id_unidad_funcional`.
+- En modo técnico se exponen el payload enviado, el `op_id` usado, la response backend y los errores backend sin mostrar tracebacks al usuario.
+
+### Payload de unidad funcional usado por Flet
+
+El formulario no usa `estado_juridico` porque ese campo no pertenece al contrato de alta de unidad funcional. La UF usa catálogos propios: `estado_administrativo` con valores `ACTIVA` / `INACTIVA`, y `estado_operativo` con valores operativos de UF (`DISPONIBLE`, `RESERVADA`, `NO_DISPONIBLE`, `USO_INTERNO`) alineados con los valores existentes revisados en tests/seeds/backend para unidades y disponibilidad operativa.
+
+```json
+{
+  "codigo_unidad": "UF-001",
+  "nombre_unidad": "Departamento 1",
+  "superficie": "50",
+  "estado_administrativo": "ACTIVA",
+  "estado_operativo": "DISPONIBLE",
+  "observaciones": "opcional"
+}
+```
+
+### Fuera de alcance confirmado
+
+Este cambio no implementa edición ni baja de unidades funcionales, servicios, ocupación/disponibilidad automática, ventas, desarrollos/loteos, importador Excel, edición de inmuebles, backend nuevo ni SQL nuevo.
+
+### Decisión CORE-EF — alta de unidad funcional desde UI
+
+- Naturaleza del endpoint usado: `COMMAND_WRITE_NEGOCIO` ya existente (`POST /api/v1/inmuebles/{id_inmueble}/unidades-funcionales`).
+- Headers: aplica; `ApiClient.crear_unidad_funcional(...)` reutiliza el helper común CORE-EF del cliente Flet para enviar `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`.
+- Idempotencia: NO CONFIRMADO en backend desde este PR; en frontend se mantiene un `X-Op-Id` estable para el mismo intento lógico (`id_inmueble + payload`) y se regenera cuando cambia el inmueble padre, cambia el payload, se usa **Nueva alta** o se limpia el formulario.
+- Outbox: NO CONFIRMADO en frontend; no se declara cumplimiento profundo sin evidencia adicional en este PR.
+- Lock lógico: NO APLICA en frontend; no se implementan bloqueos nuevos.
+- Versionado: NO APLICA para alta nueva; no se modifica entidad existente/versionada ni se requiere `If-Match-Version` en este flujo de creación.
+- Rollback/transacción: frontera transaccional del backend existente para el alta de UF; la UI ejecuta una única llamada de creación.
+- Tests ejecutados en este PR: `python -m compileall -q frontend/flet_app backend`, `git diff --check` y `python -m black --check frontend/flet_app/app/pages/inmuebles_page.py frontend/flet_app/app/api_client.py frontend/flet_app/app/shell.py`.

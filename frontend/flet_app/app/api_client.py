@@ -225,6 +225,18 @@ class ApiClient:
             offset=offset,
         )
 
+    def crear_unidad_funcional(
+        self,
+        id_inmueble: int,
+        payload: dict[str, Any],
+        op_id: str | None = None,
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/inmuebles/{id_inmueble}/unidades-funcionales",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
     def get_unidades_funcionales(
         self,
         *,

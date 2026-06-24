@@ -126,7 +126,9 @@ class AppShell:
             "parte_detail": 1,
             "inmuebles": 2,
             "desarrollos": 2,
+            "unidades_funcionales": 2,
             "inmueble_create": 2,
+            "unidad_create": 2,
             "desarrollo_create": 2,
             "desarrollo_detail": 2,
             "inmueble_detail": 2,
@@ -162,6 +164,12 @@ class AppShell:
                 on_navigate=self.navigate,
                 initial_tab="desarrollos",
             ).build()
+        if route.name == "unidades_funcionales":
+            return InmueblesPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                initial_tab="unidades",
+            ).build()
         if route.name == "inmueble_create":
             return InmueblesPage(
                 api=self.api,
@@ -173,6 +181,14 @@ class AppShell:
                 api=self.api,
                 on_navigate=self.navigate,
                 detail_kind="desarrollo_create",
+            ).build()
+        if route.name == "unidad_create":
+            id_inmueble = self._route_int(route, "id_inmueble")
+            return InmueblesPage(
+                api=self.api,
+                on_navigate=self.navigate,
+                detail_kind="unidad_create",
+                detail_id=id_inmueble,
             ).build()
         if route.name == "desarrollo_detail":
             id_desarrollo = self._route_int(route, "id_desarrollo")

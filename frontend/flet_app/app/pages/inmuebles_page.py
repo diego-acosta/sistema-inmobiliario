@@ -26,6 +26,14 @@ from app.components.technical_output_panel import (
     format_technical_output,
 )
 
+ESTADOS_ADMINISTRATIVOS_UNIDAD_FUNCIONAL = ("ACTIVA", "INACTIVA")
+ESTADOS_OPERATIVOS_UNIDAD_FUNCIONAL = (
+    "DISPONIBLE",
+    "RESERVADA",
+    "NO_DISPONIBLE",
+    "USO_INTERNO",
+)
+
 
 class InmueblesPage:
     def __init__(
@@ -51,6 +59,8 @@ class InmueblesPage:
             return UnidadDetailView(self.api, self.on_navigate, self.detail_id).build()
         if self.detail_kind == "create":
             return InmuebleCreateView(self.api, self.on_navigate).build()
+        if self.detail_kind == "unidad_create":
+            return UnidadCreateView(self.api, self.on_navigate, self.detail_id).build()
         if self.detail_kind == "desarrollo_create":
             return DesarrolloCreateView(self.api, self.on_navigate).build()
         if self.detail_kind == "desarrollo" and self.detail_id is not None:
@@ -69,7 +79,11 @@ class InmueblesHub:
         self.initial_tab = initial_tab
 
     def build(self) -> ft.Control:
-        selected_index = 2 if self.initial_tab == "desarrollos" else 0
+        selected_index = (
+            2
+            if self.initial_tab == "desarrollos"
+            else 1 if self.initial_tab == "unidades" else 0
+        )
         return detail_tabs(
             [
                 ("Inmuebles", [InmueblesListView(self.api, self.on_navigate).build()]),
@@ -926,6 +940,349 @@ class InmuebleCreateForm:
         self.technical.visible = False
 
 
+class UnidadCreateView:
+    def __init__(self, api: ApiClient, on_navigate, id_inmueble: int | None) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+        self.id_inmueble = id_inmueble
+
+    def build(self) -> ft.Control:
+        form = UnidadCreateForm(
+            self.api,
+            on_navigate=self.on_navigate,
+            id_inmueble=self.id_inmueble,
+        )
+        return ft.Column(
+            controls=[form.build()],
+            spacing=16,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+
+class UnidadCreateForm:
+    def __init__(self, api: ApiClient, on_navigate, id_inmueble: int | None) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+        self.prefilled_id_inmueble = id_inmueble
+        self.inmuebles_by_id: dict[str, dict[str, Any]] = {}
+        self.id_inmueble = ft.Dropdown(
+            label="Inmueble padre *",
+            width=420,
+            options=[],
+            disabled=id_inmueble is not None,
+        )
+        self.inmueble_help = ft.Text(
+            "Cargando inmuebles...", color=ft.Colors.BLUE_GREY_700
+        )
+        self.codigo_unidad = ft.TextField(
+            label="Código de unidad funcional *", width=260
+        )
+        self.nombre_unidad = ft.TextField(label="Nombre / descripción", width=320)
+        self.superficie = ft.TextField(label="Superficie", width=160)
+        self.estado_administrativo = ft.Dropdown(
+            label="Estado administrativo *",
+            value="ACTIVA",
+            width=220,
+            options=[
+                ft.dropdown.Option(v) for v in ESTADOS_ADMINISTRATIVOS_UNIDAD_FUNCIONAL
+            ],
+        )
+        self.estado_operativo = ft.Dropdown(
+            label="Estado operativo *",
+            value="DISPONIBLE",
+            width=220,
+            options=[
+                ft.dropdown.Option(v) for v in ESTADOS_OPERATIVOS_UNIDAD_FUNCIONAL
+            ],
+        )
+        self.observaciones = ft.TextField(
+            label="Observaciones", multiline=True, min_lines=2, max_lines=3
+        )
+        self.message = ft.Container(visible=False)
+        self.technical = ft.Column(spacing=4, visible=False)
+        self.save_button = ft.FilledButton(
+            "Guardar unidad funcional", icon=ft.Icons.SAVE, on_click=self._save
+        )
+        self.new_button = ft.FilledTonalButton(
+            "Nueva alta", icon=ft.Icons.ADD, on_click=self._new_create, visible=False
+        )
+        self.created_id_unidad_funcional: int | None = None
+        self.current_op_id: str | None = None
+        self.current_payload_fingerprint: str | None = None
+        self.root: ft.Control | None = None
+
+    def build(self) -> ft.Control:
+        self._load_inmuebles()
+        self.root = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Text(
+                                "Nueva unidad funcional",
+                                size=20,
+                                weight=ft.FontWeight.W_700,
+                            ),
+                            ft.Container(expand=True),
+                            ft.TextButton(
+                                (
+                                    "Volver a ficha"
+                                    if self.prefilled_id_inmueble
+                                    else "Volver a unidades"
+                                ),
+                                on_click=self._go_back,
+                            ),
+                        ],
+                    ),
+                    ft.Text(
+                        "La unidad funcional se crea como subrecurso del inmueble padre existente.",
+                        color=ft.Colors.BLUE_GREY_700,
+                    ),
+                    self.id_inmueble,
+                    self.inmueble_help,
+                    ft.Row(
+                        controls=[
+                            self.codigo_unidad,
+                            self.nombre_unidad,
+                            self.superficie,
+                        ],
+                        wrap=True,
+                        spacing=10,
+                    ),
+                    ft.Row(
+                        controls=[self.estado_administrativo, self.estado_operativo],
+                        wrap=True,
+                        spacing=10,
+                    ),
+                    self.observaciones,
+                    ft.Row(
+                        controls=[
+                            self.save_button,
+                            self.new_button,
+                            ft.OutlinedButton(
+                                "Limpiar", icon=ft.Icons.CLEAR, on_click=self._clear
+                            ),
+                            ft.OutlinedButton(
+                                (
+                                    "Volver a ficha del inmueble"
+                                    if self.prefilled_id_inmueble
+                                    else "Volver al listado"
+                                ),
+                                icon=ft.Icons.ARROW_BACK,
+                                on_click=self._go_back,
+                            ),
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.OutlinedButton(
+                                "Abrir ficha UF creada",
+                                icon=ft.Icons.OPEN_IN_NEW,
+                                visible=False,
+                                data="open_created",
+                                on_click=self._open_created,
+                            )
+                        ]
+                    ),
+                    self.message,
+                    self.technical,
+                ],
+                spacing=12,
+            ),
+            padding=16,
+            bgcolor=ft.Colors.WHITE,
+            border=_safe_border(1, ft.Colors.BLUE_GREY_100),
+            border_radius=8,
+        )
+        return self.root
+
+    def _load_inmuebles(self) -> None:
+        result = self.api.listar_inmuebles(limit=500, offset=0)
+        if not result.success:
+            self.id_inmueble.options = []
+            self.inmueble_help.value = (
+                result.error_message or "No se pudieron cargar los inmuebles."
+            )
+            self.inmueble_help.color = ft.Colors.RED_800
+            return
+        items, _total = _list_payload(result.data)
+        self.inmuebles_by_id = {
+            str(item["id_inmueble"]): item
+            for item in items
+            if item.get("id_inmueble") is not None
+        }
+        self.id_inmueble.options = [
+            ft.dropdown.Option(key, _inmueble_option_label(item))
+            for key, item in self.inmuebles_by_id.items()
+        ]
+        if self.prefilled_id_inmueble is not None:
+            selected = str(self.prefilled_id_inmueble)
+            self.id_inmueble.value = selected
+            item = self.inmuebles_by_id.get(selected)
+            self.inmueble_help.value = (
+                f"Inmueble padre precargado: {_inmueble_option_label(item)}"
+                if item
+                else f"Inmueble padre precargado: ID {self.prefilled_id_inmueble}"
+            )
+            self.inmueble_help.color = ft.Colors.BLUE_GREY_700
+        elif self.id_inmueble.options:
+            self.inmueble_help.value = (
+                "Seleccioná el inmueble padre para asociar la UF."
+            )
+            self.inmueble_help.color = ft.Colors.BLUE_GREY_700
+        else:
+            self.inmueble_help.value = (
+                "No hay inmuebles cargados para asociar unidades funcionales."
+            )
+            self.inmueble_help.color = ft.Colors.RED_800
+
+    def _current_values(self) -> dict[str, str | None]:
+        return {
+            "id_inmueble": self.id_inmueble.value,
+            "codigo_unidad": self.codigo_unidad.value,
+            "nombre_unidad": self.nombre_unidad.value,
+            "superficie": self.superficie.value,
+            "estado_administrativo": self.estado_administrativo.value,
+            "estado_operativo": self.estado_operativo.value,
+            "observaciones": self.observaciones.value,
+        }
+
+    def _save(self, _) -> None:
+        values = self._current_values()
+        errors = _validate_unidad_form(values)
+        id_inmueble = _safe_int_or_none(values.get("id_inmueble"))
+        if errors or id_inmueble is None:
+            self._show_message(
+                "\n".join(errors or ["Seleccioná un inmueble padre válido."]),
+                success=False,
+            )
+            self.message.update()
+            return
+        payload = _build_unidad_payload(values)
+        fingerprint = _payload_fingerprint(
+            {"id_inmueble": id_inmueble, "payload": payload}
+        )
+        if (
+            self.current_op_id is None
+            or self.current_payload_fingerprint != fingerprint
+        ):
+            self.current_op_id = str(uuid4())
+            self.current_payload_fingerprint = fingerprint
+        self.save_button.disabled = True
+        self.save_button.update()
+        result = self.api.crear_unidad_funcional(
+            id_inmueble, payload, op_id=self.current_op_id
+        )
+        if result.success:
+            self.created_id_unidad_funcional = _safe_int_or_none(
+                (result.data or {}).get("id_unidad_funcional")
+                if isinstance(result.data, dict)
+                else None
+            )
+            self._show_message("Unidad funcional creada correctamente", success=True)
+            self._show_technical(payload, result)
+            self.save_button.disabled = True
+            self.new_button.visible = True
+            self._set_open_created_visible(self.created_id_unidad_funcional is not None)
+        else:
+            self._show_message(_format_api_error(result), success=False)
+            self._show_technical(payload, result)
+            self.save_button.disabled = False
+        self.save_button.update()
+        self.new_button.update()
+        self.message.update()
+        self.technical.update()
+        if self.root is not None:
+            self.root.update()
+
+    def _show_message(self, text: str, *, success: bool) -> None:
+        self.message.content = ft.Text(
+            text, color=ft.Colors.GREEN_800 if success else ft.Colors.RED_800
+        )
+        self.message.bgcolor = ft.Colors.GREEN_50 if success else ft.Colors.RED_50
+        self.message.padding = 12
+        self.message.border_radius = 6
+        self.message.visible = True
+
+    def _show_technical(self, payload: dict[str, Any], result: ApiResult) -> None:
+        technical_text = format_technical_output(
+            [
+                (
+                    "nota técnica",
+                    "id_inmueble viaja en path; la UF usa estados administrativo y operativo propios del contrato backend.",
+                ),
+                ("payload UF enviado", payload),
+                ("op_id usado", self.current_op_id),
+                ("response UF", result.data),
+                (
+                    "errores backend",
+                    (
+                        "Sin errores backend."
+                        if result.success
+                        else _format_api_error(result)
+                    ),
+                ),
+            ]
+        )
+        self.technical.controls = [build_technical_output_panel(technical_text)]
+        self.technical.visible = True
+
+    def _new_create(self, _) -> None:
+        self._clear_form(clear_parent=self.prefilled_id_inmueble is None)
+        self.save_button.disabled = False
+        self.new_button.visible = False
+        self._set_open_created_visible(False)
+        if self.root is not None:
+            self.root.update()
+
+    def _clear(self, _) -> None:
+        self._clear_form(clear_parent=self.prefilled_id_inmueble is None)
+        if self.root is not None:
+            self.root.update()
+
+    def _clear_form(self, *, clear_parent: bool) -> None:
+        if clear_parent:
+            self.id_inmueble.value = None
+        self.codigo_unidad.value = ""
+        self.nombre_unidad.value = ""
+        self.superficie.value = ""
+        self.estado_administrativo.value = "ACTIVA"
+        self.estado_operativo.value = "DISPONIBLE"
+        self.observaciones.value = ""
+        self.created_id_unidad_funcional = None
+        self.current_op_id = None
+        self.current_payload_fingerprint = None
+        self.message.visible = False
+        self.technical.visible = False
+
+    def _go_back(self, _) -> None:
+        if self.prefilled_id_inmueble is not None:
+            self.on_navigate("inmueble_detail", id_inmueble=self.prefilled_id_inmueble)
+        else:
+            self.on_navigate("unidades_funcionales")
+
+    def _open_created(self, _) -> None:
+        if self.created_id_unidad_funcional is not None:
+            self.on_navigate(
+                "unidad_detail", id_unidad_funcional=self.created_id_unidad_funcional
+            )
+
+    def _set_open_created_visible(self, visible: bool) -> None:
+        if self.root is None:
+            return
+        content = getattr(self.root, "content", None)
+        controls = getattr(content, "controls", [])
+        for control in controls:
+            if isinstance(control, ft.Row):
+                for child in control.controls:
+                    if getattr(child, "data", None) == "open_created":
+                        child.visible = visible
+                        return
+
+
 class UnidadesListView:
     def __init__(self, api: ApiClient, on_navigate) -> None:
         self.api = api
@@ -945,7 +1302,20 @@ class UnidadesListView:
         self._load()
         return ft.Column(
             controls=[
-                ft.Text("Unidades funcionales", size=28, weight=ft.FontWeight.W_700),
+                ft.Row(
+                    controls=[
+                        ft.Text(
+                            "Unidades funcionales", size=28, weight=ft.FontWeight.W_700
+                        ),
+                        ft.Container(expand=True),
+                        ft.FilledButton(
+                            "Nueva unidad funcional",
+                            icon=ft.Icons.ADD_HOME_WORK,
+                            on_click=lambda _: self.on_navigate("unidad_create"),
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
                 ft.Row(
                     controls=[
                         self.q,
@@ -1136,6 +1506,17 @@ class InmuebleDetailView:
         return ft.Column(
             controls=[
                 _inmueble_operational_header(self.on_navigate, data),
+                ft.Row(
+                    controls=[
+                        ft.FilledButton(
+                            "Nueva UF",
+                            icon=ft.Icons.ADD_HOME_WORK,
+                            on_click=lambda _: self.on_navigate(
+                                "unidad_create", id_inmueble=self.id_inmueble
+                            ),
+                        ),
+                    ],
+                ),
                 _inmueble_summary_cards(data, datos_catastrales),
                 ft.ResponsiveRow(
                     controls=[
@@ -1413,6 +1794,58 @@ def _build_desarrollo_payload(values: dict[str, str | None]) -> dict[str, Any]:
         value = str(values.get(key) or "").strip()
         if value:
             payload[key] = value
+    return payload
+
+
+def _inmueble_option_label(item: dict[str, Any] | None) -> str:
+    if not item:
+        return "Inmueble no cargado"
+    codigo = str(item.get("codigo_inmueble") or "").strip()
+    nombre = str(item.get("nombre_inmueble") or item.get("nombre") or "").strip()
+    if codigo and nombre:
+        return f"{codigo} — {nombre}"
+    return codigo or nombre or f"Inmueble #{item.get('id_inmueble')}"
+
+
+def _validate_unidad_form(values: dict[str, str | None]) -> list[str]:
+    errors: list[str] = []
+    if _safe_int_or_none(values.get("id_inmueble")) is None:
+        errors.append("Inmueble padre es requerido.")
+    if not str(values.get("codigo_unidad") or "").strip():
+        errors.append("Código de unidad funcional es requerido.")
+    estado_administrativo = str(values.get("estado_administrativo") or "").strip()
+    if not estado_administrativo:
+        errors.append("Estado administrativo es requerido.")
+    elif estado_administrativo not in ESTADOS_ADMINISTRATIVOS_UNIDAD_FUNCIONAL:
+        errors.append("Estado administrativo debe ser ACTIVA o INACTIVA.")
+    estado_operativo = str(values.get("estado_operativo") or "").strip()
+    if not estado_operativo:
+        errors.append("Estado operativo es requerido.")
+    elif estado_operativo not in ESTADOS_OPERATIVOS_UNIDAD_FUNCIONAL:
+        errors.append("Estado operativo no es válido para unidad funcional.")
+    superficie = str(values.get("superficie") or "").strip()
+    if superficie:
+        try:
+            float(superficie)
+        except ValueError:
+            errors.append("Superficie debe ser numérica.")
+    return errors
+
+
+def _build_unidad_payload(values: dict[str, str | None]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    mapping = {
+        "codigo_unidad": "codigo_unidad",
+        "nombre_unidad": "nombre_unidad",
+        "superficie": "superficie",
+        "estado_administrativo": "estado_administrativo",
+        "estado_operativo": "estado_operativo",
+        "observaciones": "observaciones",
+    }
+    for source, target in mapping.items():
+        value = str(values.get(source) or "").strip()
+        if value:
+            payload[target] = value
     return payload
 
 
