@@ -272,6 +272,12 @@ class VentaCompletaWizardV3Prototype:
         self.backend_buyers_loading = False
         self.rol_comprador_catalog_loaded = False
         self.rol_comprador_loading = False
+        self.reserva_select_loading = False
+        self.object_select_loading = False
+        self.buyer_select_loading = False
+        self.reserva_select_error: str | None = None
+        self.object_select_error: str | None = None
+        self.buyer_select_error: str | None = None
         self.rol_comprador_catalog_error: str | None = None
         self.rol_comprador_manual_fallback_enabled = False
         self.rol_comprador_data: dict[str, Any] | None = None
@@ -830,6 +836,8 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_reserva_selection_step(self) -> ft.Control:
+        if self.reserva_select_loading:
+            return self._build_deferred_step_loading("Cargando reserva seleccionada...")
         if not self.backend_reservations_loaded:
             self._start_deferred_load(
                 self._load_backend_reservation_records_if_needed,
@@ -842,7 +850,7 @@ class VentaCompletaWizardV3Prototype:
                 placeholder="Buscar por código, estado, objeto o comprador",
                 records=self._backend_reservation_selector_records(),
                 selector_kind="reserva",
-                on_selection_change=self._on_reserva_selected,
+                on_selection_change=self._request_reserva_selected,
                 show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_reserva_selector_scroll()
@@ -857,6 +865,7 @@ class VentaCompletaWizardV3Prototype:
                 weight=ft.FontWeight.W_600,
             ),
             *([self._build_help_card(self.backend_reservation_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)] if self.backend_reservation_error else []),
+            *([self._build_help_card(self.reserva_select_error, ft.Colors.RED_50, ft.Colors.RED_200)] if self.reserva_select_error else []),
             self.reserva_selector.view(),
             self._build_reserva_selected_card(),
             *([self._build_help_card(self._reservation_state_warning() or "", ft.Colors.AMBER_50, ft.Colors.AMBER_200)] if self._reservation_state_warning() else []),
@@ -1471,6 +1480,8 @@ class VentaCompletaWizardV3Prototype:
                     spacing=10,
                 ),
             )
+        if self.object_select_loading:
+            return self._build_deferred_step_loading("Cargando objeto seleccionado...")
         if not self.backend_objects_loaded:
             self._start_deferred_load(
                 self._load_backend_object_records_if_needed,
@@ -1483,7 +1494,7 @@ class VentaCompletaWizardV3Prototype:
                 placeholder="Código, descripción o tipo del objeto",
                 selector_kind="objeto",
                 records=self._backend_object_selector_records(),
-                on_selection_change=self._on_objeto_selected,
+                on_selection_change=self._request_objeto_selected,
                 show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_objeto_selector_scroll()
@@ -1505,6 +1516,11 @@ class VentaCompletaWizardV3Prototype:
             *(
                 [self._build_help_card(self.backend_object_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)]
                 if self.backend_object_error is not None
+                else []
+            ),
+            *(
+                [self._build_help_card(self.object_select_error, ft.Colors.RED_50, ft.Colors.RED_200)]
+                if self.object_select_error is not None
                 else []
             ),
             ft.Row(
@@ -1805,6 +1821,9 @@ class VentaCompletaWizardV3Prototype:
         if self.state.origen == "RESERVA":
             return self._build_reserva_buyers_info_step()
 
+        if self.buyer_select_loading:
+            return self._build_deferred_step_loading("Cargando comprador seleccionado...")
+
         if not self.rol_comprador_catalog_loaded:
             self._start_deferred_load(
                 self._load_rol_comprador_if_needed,
@@ -1825,7 +1844,7 @@ class VentaCompletaWizardV3Prototype:
                 placeholder="Nombre, documento, código o dato visible del comprador",
                 selector_kind="persona",
                 records=self._backend_buyer_selector_records(),
-                on_selection_change=self._on_comprador_selected,
+                on_selection_change=self._request_comprador_selected,
                 show_technical_details=self.state.mostrar_datos_tecnicos,
             )
             self._configure_comprador_selector_scroll()
@@ -1852,6 +1871,11 @@ class VentaCompletaWizardV3Prototype:
                     *(
                         [self._build_help_card(self.backend_buyer_error, ft.Colors.AMBER_50, ft.Colors.AMBER_200)]
                         if self.backend_buyer_error is not None
+                        else []
+                    ),
+                    *(
+                        [self._build_help_card(self.buyer_select_error, ft.Colors.RED_50, ft.Colors.RED_200)]
+                        if self.buyer_select_error is not None
                         else []
                     ),
                     ft.Row(
@@ -4167,6 +4191,12 @@ class VentaCompletaWizardV3Prototype:
         self.rol_comprador_data = None
         self.rol_comprador_catalog_loaded = False
         self.rol_comprador_loading = False
+        self.reserva_select_loading = False
+        self.object_select_loading = False
+        self.buyer_select_loading = False
+        self.reserva_select_error = None
+        self.object_select_error = None
+        self.buyer_select_error = None
         self.rol_comprador_catalog_error = None
         self.rol_comprador_manual_fallback_enabled = False
         self._render()
@@ -5534,12 +5564,76 @@ class VentaCompletaWizardV3Prototype:
     def _reservation_buyers_missing_message(self) -> str:
         return self.state.reserva_visible_data.get("compradores_warning") or self._reservation_buyers_preload_warning() or "La reserva seleccionada no informa compradores/reservantes luego de consultar el detalle."
 
+    def _request_reserva_selected(self, selected: dict[str, Any] | None) -> None:
+        self._request_selector_selection(
+            selected,
+            self._on_reserva_selected,
+            "reserva_select_loading",
+            "reserva_select_error",
+            "No se pudo aplicar la selección de reserva.",
+        )
+
+    def _request_objeto_selected(self, selected: dict[str, Any] | None) -> None:
+        self._request_selector_selection(
+            selected,
+            self._on_objeto_selected,
+            "object_select_loading",
+            "object_select_error",
+            "No se pudo aplicar la selección de objeto.",
+        )
+
+    def _request_comprador_selected(self, selected: dict[str, Any] | None) -> None:
+        self._request_selector_selection(
+            selected,
+            self._on_comprador_selected,
+            "buyer_select_loading",
+            "buyer_select_error",
+            "No se pudo aplicar la selección de comprador.",
+        )
+
+    def _request_selector_selection(
+        self,
+        selected: dict[str, Any] | None,
+        handler: Callable[[dict[str, Any] | None], None],
+        loading_attr: str,
+        error_attr: str,
+        fallback_error: str,
+    ) -> None:
+        if getattr(self, loading_attr, False):
+            return
+        setattr(self, loading_attr, True)
+        setattr(self, error_attr, None)
+        self._render()
+        self.page.run_thread(
+            lambda: self._run_selector_selection(
+                selected, handler, loading_attr, error_attr, fallback_error
+            )
+        )
+
+    def _run_selector_selection(
+        self,
+        selected: dict[str, Any] | None,
+        handler: Callable[[dict[str, Any] | None], None],
+        loading_attr: str,
+        error_attr: str,
+        fallback_error: str,
+    ) -> None:
+        try:
+            handler(selected)
+        except Exception as exc:
+            setattr(self, error_attr, str(exc) or fallback_error)
+        finally:
+            setattr(self, loading_attr, False)
+            if self.root.page is not None:
+                self._render()
+
     def _on_reserva_selected(self, selected: dict[str, Any] | None) -> None:
         self.state.id_reserva_venta = None
         self.state.version_registro = None
         self.state.texto_visual_reserva = None
         self.state.reserva_visible_data = {}
         self._reset_reservation_detail_diagnostics()
+        self.reserva_select_error = None
         if selected is not None:
             self.state.origen = "RESERVA"
             self.state.id_reserva_venta = _safe_int(selected.get("id_reserva_venta"))
@@ -6786,6 +6880,7 @@ class VentaCompletaWizardV3Prototype:
                 self.objeto_selector.selected_panel.visible = False
             self._render()
             return
+        self.object_select_error = None
         self.objeto_seleccionado = selected
         self.precio_objeto_value = ""
         self.precio_objeto_field.value = ""
@@ -6983,6 +7078,7 @@ class VentaCompletaWizardV3Prototype:
         self._render()
 
     def _on_comprador_selected(self, selected: dict[str, Any] | None) -> None:
+        self.buyer_select_error = None
         self.comprador_seleccionado = selected
         self.porcentaje_comprador_value = ""
         self.porcentaje_comprador_field.value = ""

@@ -1708,6 +1708,10 @@ parezca congelada.
   por ejemplo **Cargando inmuebles disponibles...**.
 - Las consultas de personas, partes, compradores o roles necesarios deben mostrar
   mensajes visibles, por ejemplo **Buscando compradores...** o **Cargando partes...**.
+- Al seleccionar una reserva, objeto inmobiliario o comprador desde un buscador,
+  el wizard debe mostrar feedback inmediato, por ejemplo **Cargando reserva
+  seleccionada...**, **Cargando objeto seleccionado...** o **Cargando comprador
+  seleccionado...**, y debe ignorar clicks repetidos hasta completar la selección.
 - Durante la confirmación o creación de venta, el botón principal debe quedar
   deshabilitado y debe mostrarse **Confirmando venta...** para evitar doble click
   o doble envío.
@@ -1721,7 +1725,8 @@ Decision CORE-EF para estos estados UX:
 - Headers write: NO APLICA en este ajuste frontend; no se agregan ni modifican
   endpoints ni contratos HTTP.
 - Idempotencia: se conserva el `op_id` existente por firma de payload y se evita
-  doble envío deshabilitando la acción mientras `confirm_loading` está activo.
+  doble envío deshabilitando la acción mientras `confirm_loading` está activo;
+  para selectores read-like se evita doble selección con flags de carga locales.
 - Outbox: NO APLICA en frontend; depende del endpoint existente.
 - Lock logico: NO APLICA en frontend; depende del endpoint existente.
 - Versionado: se conserva el uso existente de `version_registro` al confirmar
