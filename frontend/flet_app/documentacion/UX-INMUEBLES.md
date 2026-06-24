@@ -327,3 +327,21 @@ Este cambio no implementa edición ni baja de unidades funcionales, servicios, o
 - Versionado: NO APLICA para alta nueva; no se modifica entidad existente/versionada ni se requiere `If-Match-Version` en este flujo de creación.
 - Rollback/transacción: frontera transaccional del backend existente para el alta de UF; la UI ejecuta una única llamada de creación.
 - Tests ejecutados en este PR: `python -m compileall -q frontend/flet_app backend`, `git diff --check` y `python -m black --check frontend/flet_app/app/pages/inmuebles_page.py frontend/flet_app/app/api_client.py frontend/flet_app/app/shell.py`.
+
+## Estados de carga para consultas backend
+
+Las pantallas Flet que consultan backend durante la navegación o el render inicial deben mostrar un estado de carga visible antes de reemplazar el contenido con los datos finales. El patrón recomendado es reutilizar `loading_state(...)` para mantener un feedback consistente con `ProgressRing` y mensaje claro.
+
+Pantallas cubiertas en esta primera etapa:
+
+- Ficha integral de inmueble: `Cargando ficha de inmueble...`.
+- Ficha de desarrollo/loteo: `Cargando ficha de desarrollo/loteo...`.
+- Listados principales de inmuebles, desarrollos/loteos y unidades funcionales.
+- Ficha integral de venta y listado principal de ventas.
+
+Reglas UX:
+
+- Una pantalla con consulta backend no debe quedar visualmente en blanco ni parecer congelada.
+- Los listados deben mostrar feedback de carga al abrirse y al relanzar búsquedas o paginación.
+- Si una consulta backend falla, la pantalla debe mostrar un estado de error claro, sin traceback para el usuario y preservando los controles de navegación cuando correspondan.
+- Los formularios que cargan dropdowns desde backend deben mantener texto de ayuda explícito mientras se cargan datos y mostrar un mensaje comprensible si el backend no responde.
