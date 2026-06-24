@@ -527,7 +527,7 @@ class VentaCompletaWizardV3Prototype:
         )
         if self.embedded:
             self.root.content = content
-            if update and self.root.page is not None:
+            if update:
                 safe_update(self.root)
             return
         self.page.controls.clear()
@@ -899,8 +899,7 @@ class VentaCompletaWizardV3Prototype:
             loader()
         finally:
             setattr(self, loading_attr, False)
-            if self.root.page is not None:
-                self._render()
+            self._render()
 
     def _build_deferred_step_loading(self, message: str) -> ft.Control:
         return ft.Container(
@@ -5624,8 +5623,7 @@ class VentaCompletaWizardV3Prototype:
             setattr(self, error_attr, str(exc) or fallback_error)
         finally:
             setattr(self, loading_attr, False)
-            if self.root.page is not None:
-                self._render()
+            self._render()
 
     def _on_reserva_selected(self, selected: dict[str, Any] | None) -> None:
         self.state.id_reserva_venta = None
