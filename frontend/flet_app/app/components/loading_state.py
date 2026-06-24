@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from threading import Thread
 import traceback
 
 import flet as ft
@@ -26,11 +25,12 @@ def loading_state(message: str = "Cargando...") -> ft.Control:
 
 
 def safe_update(control: ft.Control) -> None:
-    """Update a control only when Flet has already mounted it on a page."""
-    if getattr(control, "page", None) is None:
+    """Update a mounted control through its Page so Flet repaints immediately."""
+    page = getattr(control, "page", None)
+    if page is None:
         return
     try:
-        control.update()
+        page.update(control)
     except AssertionError:
         # The user may have navigated away between the page check and update().
         return
@@ -62,7 +62,7 @@ class DeferredLoadingContainer(ft.Container):
         if self._started:
             return
         self._started = True
-        Thread(target=self._load, daemon=True).start()
+        self.page.run_thread(self._load)
 
     def will_unmount(self) -> None:
         self._mounted = False
@@ -110,7 +110,7 @@ class DeferredControlLoader(ft.Container):
         if self._started:
             return
         self._started = True
-        Thread(target=self._load, daemon=True).start()
+        self.page.run_thread(self._load)
 
     def will_unmount(self) -> None:
         self._mounted = False
