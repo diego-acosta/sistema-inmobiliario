@@ -146,6 +146,11 @@ class InmueblesListView:
                     controls=[
                         ft.Text("Inmuebles", size=28, weight=ft.FontWeight.W_700),
                         ft.Container(expand=True),
+                        ft.ElevatedButton(
+                            "Importar inmuebles",
+                            icon=ft.Icons.UPLOAD_FILE,
+                            on_click=lambda _: self.on_navigate("inmuebles_import_excel"),
+                        ),
                         ft.FilledButton(
                             "Nuevo inmueble",
                             icon=ft.Icons.ADD_HOME,

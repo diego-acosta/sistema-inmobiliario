@@ -17,6 +17,7 @@ from app.importers.excel_preview import build_preview, simulate_confirm
 from app.importers.excel_reader import ExcelImportError, read_excel_workbook
 
 ConfirmCallback = Callable[[ImportPreviewResult], ImportConfirmResult]
+PreviewCallback = Callable[[object, list[ImportMapping]], ImportPreviewResult]
 
 
 class ExcelImportWizard(ft.Column):
@@ -28,11 +29,19 @@ class ExcelImportWizard(ft.Column):
         target_fields: list[ImportTargetField],
         title: str = "Importador Excel",
         confirm_callback: ConfirmCallback | None = None,
+        preview_callback: PreviewCallback | None = None,
+        description: str | None = None,
+        confirm_label: str = "Confirmación simulada",
+        report_pending_label: str = "Pendiente de confirmación simulada.",
     ) -> None:
         super().__init__(spacing=16, expand=True, scroll=ft.ScrollMode.AUTO)
         self.target_fields = target_fields
         self.title = title
         self.confirm_callback = confirm_callback or simulate_confirm
+        self.preview_callback = preview_callback
+        self.description = description or "Flujo local reutilizable: lectura .xlsx, detección de columnas, mapping, preview y confirmación simulada."
+        self.confirm_label = confirm_label
+        self.report_pending_label = report_pending_label
         self.file_path: str | None = None
         self.workbook: ExcelWorkbookData | None = None
         self.selected_sheet: str | None = None
@@ -109,7 +118,11 @@ class ExcelImportWizard(ft.Column):
             self._render_update()
             return
         sheet = self.workbook.sheets[self.selected_sheet]
-        self.preview = build_preview(sheet, self.target_fields, self.mappings)
+        self.preview = (
+            self.preview_callback(sheet, self.mappings)
+            if self.preview_callback is not None
+            else build_preview(sheet, self.target_fields, self.mappings)
+        )
         self.confirm_result = None
         self.error_message = None
         self._render_update()
@@ -132,7 +145,7 @@ class ExcelImportWizard(ft.Column):
         controls: list[ft.Control] = [
             ft.Text(self.title, size=24, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Flujo local reutilizable: lectura .xlsx, detección de columnas, mapping, preview y confirmación simulada.",
+                self.description,
                 color=ft.Colors.BLUE_GREY_700,
             ),
         ]
@@ -243,19 +256,21 @@ class ExcelImportWizard(ft.Column):
                     ],
                     scroll=ft.ScrollMode.AUTO,
                 ),
-                ft.ElevatedButton("Confirmación simulada", icon=ft.Icons.CHECK_CIRCLE_OUTLINE, on_click=self._confirm),
+                ft.ElevatedButton(self.confirm_label, icon=ft.Icons.CHECK_CIRCLE_OUTLINE, on_click=self._confirm),
             ],
         )
 
     def _report_step(self) -> ft.Control:
         if self.confirm_result is None:
-            return _section("5. Reporte final", [ft.Text("Pendiente de confirmación simulada.")])
+            return _section("5. Reporte final", [ft.Text(self.report_pending_label)])
         result = self.confirm_result
         return _section(
             "5. Reporte final",
             [
-                ft.Text(f"Total: {result.total} | Simulados creados: {result.created} | Omitidos: {result.skipped} | Fallidos: {result.failed}"),
+                ft.Text(f"Total: {result.total} | Creados: {result.created} | Omitidos: {result.skipped} | Fallidos: {result.failed}"),
+                ft.Text(f"IDs creados: {result.created_ids or '-'}", selectable=True),
                 ft.Text(f"Errores por fila: {result.errors_by_row or '-'}", selectable=True),
+                ft.Text(f"Advertencias por fila: {result.warnings_by_row or '-'}", selectable=True),
             ],
         )
 

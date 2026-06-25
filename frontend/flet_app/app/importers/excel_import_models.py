@@ -77,3 +77,5 @@ class ImportConfirmResult:
     skipped: int
     failed: int
     errors_by_row: dict[int, list[str]]
+    created_ids: list[int] = field(default_factory=list)
+    warnings_by_row: dict[int, list[str]] = field(default_factory=dict)
