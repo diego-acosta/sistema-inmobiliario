@@ -4,10 +4,26 @@ from app.api_client import ApiResult
 from app.pages.inmuebles_page import InmuebleEditView
 
 
+def _control_texts(control) -> list[str]:
+    texts: list[str] = []
+    value = getattr(control, "value", None)
+    if isinstance(value, str):
+        texts.append(value)
+    content = getattr(control, "content", None)
+    if content is not None:
+        texts.extend(_control_texts(content))
+    for child in getattr(control, "controls", []) or []:
+        texts.extend(_control_texts(child))
+    return texts
+
+
 class FakeApi:
-    def __init__(self, *, datos=None, fail_create: bool = False) -> None:
+    def __init__(
+        self, *, datos=None, fail_create: bool = False, fail_list: bool = False
+    ) -> None:
         self.datos = datos or []
         self.fail_create = fail_create
+        self.fail_list = fail_list
         self.updated = []
         self.created = []
         self.basic_updates = []
@@ -26,6 +42,8 @@ class FakeApi:
         )
 
     def listar_datos_catastrales_registrales_inmueble(self, id_inmueble):
+        if self.fail_list:
+            return ApiResult(False, error_message="falló listado catastral")
         return ApiResult(True, data=self.datos)
 
     def actualizar_inmueble(self, id_inmueble, payload, if_match_version, op_id=None):
@@ -131,3 +149,24 @@ def test_error_al_crear_dato_catastral_muestra_mensaje_claro() -> None:
     assert view.message.visible is True
     assert "crear datos catastrales/registrales" in view.message.value
     assert "falló creación catastral" in view.message.value
+
+
+def test_fallo_al_listar_catastral_bloquea_seccion_y_no_crea() -> None:
+    api = FakeApi(fail_list=True)
+    view = _build_view(api)
+
+    assert view.dato is None
+    assert view.datos_catastrales_load_failed is True
+    assert view.catastral_fields["manzana"].disabled is True
+    view.catastral_fields["manzana"].value = "M4"
+    view.catastral_fields["lote"].value = "L4"
+    view.nombre_inmueble.value = "Casa con cambio básico"
+    view._save(None)
+
+    assert api.created == []
+    assert api.updated == []
+    assert len(api.basic_updates) == 1
+    assert api.basic_updates[0][1]["nombre_inmueble"] == "Casa con cambio básico"
+
+    control = view.build()
+    assert any("Para evitar duplicados" in text for text in _control_texts(control))

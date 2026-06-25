@@ -1606,6 +1606,7 @@ class InmuebleEditView:
         )
         self.data: dict[str, Any] = {}
         self.dato: dict[str, Any] | None = None
+        self.datos_catastrales_load_failed = False
 
     def build(self) -> ft.Control:
         result = self.api.get_inmueble_detalle_integral(self.id_inmueble)
@@ -1615,12 +1616,17 @@ class InmuebleEditView:
         catastral_result = self.api.listar_datos_catastrales_registrales_inmueble(
             self.id_inmueble
         )
+        self.datos_catastrales_load_failed = not catastral_result.success
         datos = (
             catastral_result.data
             if catastral_result.success and isinstance(catastral_result.data, list)
-            else _extract_datos_catastrales(self.data)
+            else []
         )
-        self.dato = _select_dato_catastral_editable(datos)
+        self.dato = (
+            None
+            if self.datos_catastrales_load_failed
+            else _select_dato_catastral_editable(datos)
+        )
         inmueble = _inmueble_data(self.data)
         self.codigo_inmueble = ft.TextField(
             label="Código",
@@ -1681,14 +1687,24 @@ class InmuebleEditView:
                 label=label,
                 value=_field_text((self.dato or {}).get(field_name)),
                 multiline=field_name in {"medidas", "observaciones"},
+                disabled=self.datos_catastrales_load_failed,
             )
         self.catastral_fields["estado_dato"] = ft.Dropdown(
             label="Estado dato",
             value=_field_text((self.dato or {}).get("estado_dato")) or "ACTIVO",
             options=[ft.dropdown.Option(value) for value in ESTADOS_DATO_CATASTRAL],
+            disabled=self.datos_catastrales_load_failed,
         )
         catastral_controls: list[ft.Control] = []
-        if self.dato is None:
+        if self.datos_catastrales_load_failed:
+            catastral_controls.append(
+                ft.Text(
+                    "No se pudieron cargar los datos catastrales/registrales "
+                    "existentes. Para evitar duplicados, esta sección queda "
+                    "bloqueada hasta recargar la ficha."
+                )
+            )
+        elif self.dato is None:
             catastral_controls.append(
                 ft.Text(
                     "Este inmueble no tiene dato catastral/registral cargado. "
@@ -1762,7 +1778,8 @@ class InmuebleEditView:
     def _save(self, _) -> None:
         inmueble = _inmueble_data(self.data)
         errors = validate_form(self._inmueble_values(inmueble))
-        errors.extend(validate_dato_catastral_form(self._dato_values()))
+        if not self.datos_catastrales_load_failed:
+            errors.extend(validate_dato_catastral_form(self._dato_values()))
         if errors:
             self._show_message("\n".join(errors), success=False)
             return
@@ -1786,7 +1803,9 @@ class InmuebleEditView:
                 )
             )
         dato_payload = self._dato_payload()
-        if self.dato is None:
+        if self.datos_catastrales_load_failed:
+            dato_payload = {}
+        elif self.dato is None:
             dato_values = self._dato_values()
             if should_create_dato_catastral(True, dato_values):
                 dato_payload = build_dato_catastral_payload(
