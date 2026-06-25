@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+from app.api_client import ApiResult
+from app.importers.excel_import_models import ExcelColumn, ExcelSheetData
+from app.importers.excel_mapping import suggest_mapping
+from app.importers.inmuebles_excel_importer import (
+    build_catastral_import_payload,
+    build_inmueble_import_payload,
+    build_inmuebles_preview,
+    confirm_inmuebles_import,
+    inmueble_import_target_fields,
+)
+
+
+class FakeApi:
+    def __init__(self) -> None:
+        self.created_payloads = []
+        self.catastral_payloads = []
+
+    def crear_inmueble(self, payload, op_id=None):
+        self.created_payloads.append((payload, op_id))
+        if payload["codigo_inmueble"] == "FALLA":
+            return ApiResult(False, error_message="falló alta")
+        return ApiResult(True, data={"id_inmueble": len(self.created_payloads)})
+
+    def crear_dato_catastral_registral_inmueble(self, id_inmueble, payload, op_id=None):
+        self.catastral_payloads.append((id_inmueble, payload, op_id))
+        return ApiResult(True, data={"id_dato_catastral_registral": 10})
+
+
+def _sheet(rows):
+    headers = ["codigo", "descripcion", "desarrollo", "manzana", "lote", "m2", "partida"]
+    return ExcelSheetData(
+        name="Datos",
+        columns=[ExcelColumn(i, h, h) for i, h in enumerate(headers)],
+        rows=[dict(zip(headers, values), __row_number__=idx + 2) for idx, values in enumerate(rows)],
+        header_row_number=1,
+    )
+
+
+def test_mapping_automatico_de_columnas_inmobiliarias() -> None:
+    mapping = suggest_mapping(_sheet([]).columns, inmueble_import_target_fields())
+    assert {m.target_field: m.source_column for m in mapping}["codigo_inmueble"] == "codigo"
+    assert {m.target_field: m.source_column for m in mapping}["nombre_inmueble"] == "descripcion"
+    assert {m.target_field: m.source_column for m in mapping}["superficie"] == "m2"
+
+
+def test_validacion_codigo_requerido_y_superficie_positiva() -> None:
+    sheet = _sheet([["", "Sin código", "", "", "", "-1", ""]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    assert preview.invalid_rows == 1
+    assert "Código inmueble: campo requerido." in preview.rows[0].errors
+    assert "Superficie: Debe ser un decimal positivo." in preview.rows[0].errors
+
+
+def test_detecta_duplicados_internos_y_contra_sistema() -> None:
+    sheet = _sheet([["A1", "Uno", "", "", "", "10", ""], ["A1", "Dos", "", "", "", "11", ""], ["B2", "Tres", "", "", "", "12", ""]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()), existing_codes={"b2"})
+    assert preview.invalid_rows == 2
+    assert "Código de inmueble duplicado dentro del archivo." in preview.rows[1].errors
+    assert "Código de inmueble ya existe en el sistema." in preview.rows[2].errors
+
+
+def test_preview_valida_desarrollo_y_genera_warnings() -> None:
+    sheet = _sheet([["A1", "", "Barrio Norte", "", "", "10", ""]])
+    preview = build_inmuebles_preview(
+        sheet,
+        suggest_mapping(sheet.columns, inmueble_import_target_fields()),
+        desarrollos=[{"id_desarrollo": 7, "codigo_desarrollo": "BN", "nombre_desarrollo": "Barrio Norte"}],
+    )
+    assert preview.valid_rows == 1
+    assert preview.rows[0].mapped_values["id_desarrollo"] == "7"
+    assert preview.rows[0].status == "WARNING"
+    assert any("Falta nombre" in warning for warning in preview.rows[0].warnings)
+
+
+def test_armado_de_payloads_inmueble_y_dato_catastral() -> None:
+    values = {
+        "codigo_inmueble": "A1",
+        "nombre_inmueble": "Lote A1",
+        "superficie": "12.5",
+        "estado_administrativo": "ACTIVO",
+        "estado_juridico": "REGULAR",
+        "id_desarrollo": "3",
+        "manzana": "M1",
+        "lote": "L1",
+        "partida_inmobiliaria": "P123",
+    }
+    assert build_inmueble_import_payload(values) == {
+        "codigo_inmueble": "A1",
+        "nombre_inmueble": "Lote A1",
+        "superficie": "12.5",
+        "estado_administrativo": "ACTIVO",
+        "estado_juridico": "REGULAR",
+        "id_desarrollo": 3,
+    }
+    assert build_catastral_import_payload(values) == {
+        "estado_dato": "ACTIVO",
+        "manzana": "M1",
+        "lote": "L1",
+        "partida_inmobiliaria": "P123",
+    }
+
+
+def test_confirmacion_mockeada_reporta_creadas_y_fallidas() -> None:
+    sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"], ["FALLA", "Dos", "", "", "", "11", ""]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    api = FakeApi()
+    result = confirm_inmuebles_import(api, preview, import_run_id="run-1")
+    assert result.created == 1
+    assert result.failed == 1
+    assert result.created_ids == [1]
+    assert api.catastral_payloads[0][0] == 1

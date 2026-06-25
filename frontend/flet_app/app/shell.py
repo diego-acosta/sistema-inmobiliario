@@ -8,6 +8,7 @@ from app.pages.finanzas_page import FinanzasPage
 from app.pages.excel_import_demo_page import ExcelImportDemoPage
 from app.pages.home_page import HomePage
 from app.pages.inmuebles_page import InmueblesPage
+from app.pages.inmuebles_import_excel_page import InmueblesImportExcelPage
 from app.pages.parte_detail_page import ParteDetailPage
 from app.pages.partes_list_page import PartesListPage
 from app.pages.venta_completa_wizard_v3_page import VentaCompletaWizardV3Page
@@ -139,6 +140,7 @@ class AppShell:
             "desarrollo_detail": 2,
             "inmueble_detail": 2,
             "inmueble_edit": 2,
+            "inmuebles_import_excel": 2,
             "unidad_detail": 2,
             "contratos": 3,
             "contrato_detail": 3,
@@ -178,6 +180,8 @@ class AppShell:
                 on_navigate=self.navigate,
                 initial_tab="unidades",
             ).build()
+        if route.name == "inmuebles_import_excel":
+            return InmueblesImportExcelPage(api=self.api, on_navigate=self.navigate).build()
         if route.name == "inmueble_create":
             return InmueblesPage(
                 api=self.api,
