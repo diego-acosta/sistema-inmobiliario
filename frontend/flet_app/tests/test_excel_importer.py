@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.importers.excel_import_models import ImportTargetField
+from app.importers.excel_import_models import ImportRowPreview, ImportTargetField
 from app.importers.excel_mapping import suggest_mapping
 from app.importers.excel_preview import build_preview, simulate_confirm
 from app.importers.excel_reader import ExcelImportError, normalize_column_name, read_excel_workbook
@@ -150,3 +150,59 @@ def test_confirmacion_simulada_con_reporte(tmp_path: Path) -> None:
     assert result.created == 1
     assert result.failed == 1
     assert result.errors_by_row == {4: ["Código: campo requerido.", "Superficie: Debe ser un decimal positivo."]}
+
+
+def test_preview_values_son_legibles_y_no_dependen_del_diccionario_completo(tmp_path: Path) -> None:
+    sheet = read_excel_workbook(_workbook(tmp_path / "demo.xlsx")).sheets["Datos"]
+    preview = build_preview(sheet, _target_fields(), suggest_mapping(sheet.columns, _target_fields()))
+
+    assert preview.rows[0].visible_preview_values() == {
+        "Código": "A-1",
+        "Nombre": "Lote A",
+        "Superficie": Decimal("10.5"),
+    }
+    assert preview.rows[0].mapped_values["codigo"] == "A-1"
+    result = simulate_confirm(preview)
+    assert result.created == 1
+
+
+def test_import_row_preview_values_none_usa_fallback_generico() -> None:
+    row = ImportRowPreview(
+        row_number=2,
+        raw_values={},
+        mapped_values={"codigo": "A1", "vacio": ""},
+        errors=[],
+        warnings=[],
+        status="VALID",
+        preview_values=None,
+    )
+
+    assert row.visible_preview_values() == {"codigo": "A1"}
+
+
+def test_import_row_preview_values_vacio_explicito_no_usa_fallback() -> None:
+    row = ImportRowPreview(
+        row_number=2,
+        raw_values={},
+        mapped_values={"codigo": "A1"},
+        errors=[],
+        warnings=[],
+        status="VALID",
+        preview_values={},
+    )
+
+    assert row.visible_preview_values() == {}
+
+
+def test_import_row_preview_values_custom_devuelve_valores_legibles() -> None:
+    row = ImportRowPreview(
+        row_number=2,
+        raw_values={},
+        mapped_values={"codigo": "A1"},
+        errors=[],
+        warnings=[],
+        status="VALID",
+        preview_values={"Código": "A1"},
+    )
+
+    assert row.visible_preview_values() == {"Código": "A1"}

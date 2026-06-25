@@ -58,6 +58,7 @@ def build_preview(
                     errors.append(f"{field.label}: {message}")
 
         status = STATUS_INVALID if errors else (STATUS_WARNING if warnings else STATUS_VALID)
+        preview_values = _default_preview_values(mapped_values, target_fields)
         rows.append(
             ImportRowPreview(
                 row_number=row_number,
@@ -66,6 +67,7 @@ def build_preview(
                 errors=errors,
                 warnings=warnings,
                 status=status,
+                preview_values=preview_values,
             )
         )
 
@@ -78,6 +80,18 @@ def build_preview(
         valid_rows=valid_rows,
         invalid_rows=invalid_rows,
     )
+
+
+def _default_preview_values(mapped_values: dict[str, Any], target_fields: list[ImportTargetField], limit: int = 6) -> dict[str, Any]:
+    preview: dict[str, Any] = {}
+    for field in target_fields:
+        value = mapped_values.get(field.key)
+        if _is_empty(value):
+            continue
+        preview[field.label] = value
+        if len(preview) >= limit:
+            break
+    return preview
 
 
 def _is_empty(value: Any) -> bool:

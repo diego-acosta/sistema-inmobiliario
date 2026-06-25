@@ -50,6 +50,15 @@ CATASTRAL_FIELDS = (
 )
 
 DATE_FORMAT_HELP = "Usá formato AAAA-MM-DD."
+INMUEBLES_PREVIEW_FIELDS = (
+    ("codigo_inmueble", "Código"),
+    ("nombre_inmueble", "Nombre/descripción"),
+    ("desarrollo", "Desarrollo"),
+    ("manzana", "Manzana"),
+    ("lote", "Lote"),
+    ("partida_inmobiliaria", "Partida"),
+    ("matricula", "Matrícula"),
+)
 
 
 class InmueblesImportApi(Protocol):
@@ -148,11 +157,16 @@ def build_inmuebles_preview(
             row.errors.append("Fecha hasta no puede ser anterior a fecha desde.")
         if not has_catastral_data(values):
             row.warnings.append("No hay datos catastrales/registrales para crear.")
+        row.preview_values = build_inmuebles_preview_values(values)
         row.status = STATUS_INVALID if row.errors else (STATUS_WARNING if row.warnings else STATUS_VALID)
 
     preview.valid_rows = sum(1 for row in preview.rows if row.status != STATUS_INVALID)
     preview.invalid_rows = preview.total_rows - preview.valid_rows
     return preview
+
+
+def build_inmuebles_preview_values(values: dict[str, Any]) -> dict[str, Any]:
+    return {label: values.get(key) for key, label in INMUEBLES_PREVIEW_FIELDS if normalize_text(values.get(key))}
 
 
 def build_inmueble_import_payload(values: dict[str, Any]) -> dict[str, Any]:
