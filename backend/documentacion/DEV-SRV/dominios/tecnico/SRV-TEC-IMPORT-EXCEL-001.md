@@ -14,7 +14,7 @@ Crear una base reusable para importadores Excel del sistema, sin implementar tod
 Clasificación del concepto:
 
 - **Soporte transversal técnico:** lectura de archivos Excel, normalización de encabezados, mapeo, preview, validación estructural por fila y reporte técnico.
-- **Núcleo de dominio:** cada importador específico que cree/modifique entidades pertenece al dominio dueño de esas entidades; por ejemplo, inmuebles/lotes al dominio inmobiliario/operativo según contrato vigente, personas al dominio personas, ventas al dominio comercial y pagos al dominio financiero.
+- **Núcleo de dominio:** cada importador específico que cree/modifique entidades pertenece al dominio dueño de esas entidades; por ejemplo, inmuebles/lotes al Dominio Inmobiliario, personas al dominio personas, ventas al dominio comercial y pagos al dominio financiero. Operativo puede aportar contexto de ejecución y trazabilidad, pero no define ownership del activo inmobiliario ni de sus writes principales.
 - **Compatibilidad heredada:** no aplica como modelo principal para este diseño; cualquier compatibilidad con planillas existentes deberá declararse por importador específico.
 
 ## 2. Alcance
@@ -34,7 +34,7 @@ El importador reusable propuesto cubre:
 
 Queda fuera de este PR documental y de la primera base reusable:
 
-- importador específico de inmuebles/lotes (#212);
+- importador específico de inmuebles/lotes (#212), que pertenece al Dominio Inmobiliario;
 - importación directa sin preview;
 - cambios SQL;
 - endpoints backend nuevos;
@@ -262,7 +262,7 @@ Reglas del modelo:
 
 - **Etapa 1:** infraestructura reusable de lectura/mapeo/preview.
 - **Etapa 2:** componente UI reusable de importación.
-- **Etapa 3:** importador específico de inmuebles/lotes (#212).
+- **Etapa 3:** importador específico de inmuebles/lotes (#212), documentado e implementado como importador del Dominio Inmobiliario.
 - **Etapa 4:** validaciones contra backend.
 - **Etapa 5:** confirmación real y reporte final.
 - **Etapa 6:** futuros importadores personas/ventas/pagos.
@@ -297,7 +297,7 @@ Para cerrar la épica #205 deberá existir, como mínimo:
 
 ## 14. Validación contra arquitectura, implementación y tests
 
-- Dominio correcto: el reusable queda clasificado como soporte transversal técnico; los writes pertenecen al dominio dueño de cada entidad.
+- Dominio correcto: el reusable queda clasificado como soporte transversal técnico; los writes pertenecen al dominio dueño de cada entidad. Para #212, desarrollos, inmuebles, lotes, unidades funcionales, datos catastrales/registrales y disponibilidad inmobiliaria inicial pertenecen al Dominio Inmobiliario.
 - No invasión de dominios: este PR no mueve lógica ni crea endpoints; solo documenta diseño.
 - Coherencia DEV-SRV: se alinea con `SRV-TEC-005` sin reemplazar la importación/exportación técnica de lotes persistidos.
 - Coherencia DEV-API: no se declara contrato HTTP nuevo.
