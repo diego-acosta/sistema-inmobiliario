@@ -270,6 +270,7 @@ class ExcelImportWizard(ft.Column):
                 ft.Text(f"Total: {result.total} | Creados: {result.created} | Omitidos: {result.skipped} | Fallidos: {result.failed}"),
                 ft.Text(f"IDs creados: {result.created_ids or '-'}", selectable=True),
                 ft.Text(f"Errores por fila: {result.errors_by_row or '-'}", selectable=True),
+                ft.Text(f"Advertencias por fila: {result.warnings_by_row or '-'}", selectable=True),
             ],
         )
 

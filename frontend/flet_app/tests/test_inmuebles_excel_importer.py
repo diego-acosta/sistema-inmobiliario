@@ -13,9 +13,10 @@ from app.importers.inmuebles_excel_importer import (
 
 
 class FakeApi:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_catastral: bool = False) -> None:
         self.created_payloads = []
         self.catastral_payloads = []
+        self.fail_catastral = fail_catastral
 
     def crear_inmueble(self, payload, op_id=None):
         self.created_payloads.append((payload, op_id))
@@ -25,6 +26,8 @@ class FakeApi:
 
     def crear_dato_catastral_registral_inmueble(self, id_inmueble, payload, op_id=None):
         self.catastral_payloads.append((id_inmueble, payload, op_id))
+        if self.fail_catastral:
+            return ApiResult(False, error_message="falló catastro")
         return ApiResult(True, data={"id_dato_catastral_registral": 10})
 
 
@@ -102,6 +105,31 @@ def test_armado_de_payloads_inmueble_y_dato_catastral() -> None:
     }
 
 
+def test_confirmacion_con_fallo_de_inmueble_reporta_failed() -> None:
+    sheet = _sheet([["FALLA", "Dos", "", "", "", "11", ""]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    result = confirm_inmuebles_import(FakeApi(), preview, import_run_id="run-1")
+    assert result.created == 0
+    assert result.failed == 1
+    assert result.created_ids == []
+    assert result.errors_by_row == {2: ["falló alta"]}
+    assert result.warnings_by_row == {}
+
+
+def test_confirmacion_con_fallo_catastral_reporta_created_con_warning() -> None:
+    sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    api = FakeApi(fail_catastral=True)
+    result = confirm_inmuebles_import(api, preview, import_run_id="run-1")
+    assert result.created == 1
+    assert result.failed == 0
+    assert result.created_ids == [1]
+    assert result.errors_by_row == {}
+    assert result.warnings_by_row == {
+        2: ["Inmueble creado, pero falló el dato catastral/registral: falló catastro"]
+    }
+
+
 def test_confirmacion_mockeada_reporta_creadas_y_fallidas() -> None:
     sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"], ["FALLA", "Dos", "", "", "", "11", ""]])
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
@@ -110,4 +138,5 @@ def test_confirmacion_mockeada_reporta_creadas_y_fallidas() -> None:
     assert result.created == 1
     assert result.failed == 1
     assert result.created_ids == [1]
+    assert result.warnings_by_row == {}
     assert api.catastral_payloads[0][0] == 1

@@ -148,6 +148,7 @@ def collect_existing_codes(api: InmueblesImportApi, codes: set[str]) -> tuple[se
 def confirm_inmuebles_import(api: InmueblesImportApi, preview: ImportPreviewResult, import_run_id: str) -> ImportConfirmResult:
     created = skipped = failed = 0
     errors_by_row: dict[int, list[str]] = {}
+    warnings_by_row: dict[int, list[str]] = {}
     created_ids: list[int] = []
     for row in preview.rows:
         if row.status == STATUS_INVALID:
@@ -161,18 +162,29 @@ def confirm_inmuebles_import(api: InmueblesImportApi, preview: ImportPreviewResu
             failed += 1
             errors_by_row[row.row_number] = [inmueble_result.error_message or "No se pudo crear el inmueble."]
             continue
+
+        created += 1
         id_inmueble = _extract_id(inmueble_result.data, "id_inmueble")
         if id_inmueble is not None:
             created_ids.append(id_inmueble)
+
         catastral_payload = build_catastral_import_payload(row.mapped_values)
         if catastral_payload and id_inmueble is not None:
             cat_result = api.crear_dato_catastral_registral_inmueble(id_inmueble, catastral_payload, op_id=str(uuid5(NAMESPACE_URL, op_seed + ":catastral")))
             if not cat_result.success:
-                failed += 1
-                errors_by_row[row.row_number] = [cat_result.error_message or "Inmueble creado, pero falló el dato catastral/registral."]
-                continue
-        created += 1
-    return ImportConfirmResult(total=preview.total_rows, created=created, skipped=skipped, failed=failed, errors_by_row=errors_by_row, created_ids=created_ids)
+                warnings_by_row[row.row_number] = [
+                    "Inmueble creado, pero falló el dato catastral/registral: "
+                    f"{cat_result.error_message or 'No se pudo crear el dato catastral/registral.'}"
+                ]
+    return ImportConfirmResult(
+        total=preview.total_rows,
+        created=created,
+        skipped=skipped,
+        failed=failed,
+        errors_by_row=errors_by_row,
+        created_ids=created_ids,
+        warnings_by_row=warnings_by_row,
+    )
 
 
 def _string_form_values(values: dict[str, Any]) -> dict[str, str | None]:
