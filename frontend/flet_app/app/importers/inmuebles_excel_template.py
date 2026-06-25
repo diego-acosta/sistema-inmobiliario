@@ -27,8 +27,8 @@ EXPECTED_HEADERS: Final[tuple[str, ...]] = (
 )
 
 EXAMPLE_ROWS: Final[tuple[tuple[str, ...], ...]] = (
-    ("IMP-001", "Lote importado 1", "Loteo existente", "M1", "L1", "10.5", "", "", "P-001", "", "", "", ""),
-    ("IMP-002", "Lote importado 2", "Loteo existente", "M1", "L2", "1234.56", "", "", "P-002", "", "", "", ""),
+    ("IMP-001", "Lote importado 1", "Loteo existente", "M1", "L1", "", "10.5", "", "P-001", "", "", "", ""),
+    ("IMP-002", "Lote importado 2", "Loteo existente", "M1", "L2", "", "1234.56", "", "P-002", "", "", "", ""),
     ("IMP-003", "Ejemplo sin dato catastral", "", "", "", "", "500", "", "", "", "", "", ""),
 )
 

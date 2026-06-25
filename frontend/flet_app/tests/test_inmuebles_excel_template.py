@@ -32,10 +32,26 @@ def test_plantilla_tiene_hoja_ayuda_con_codigo_obligatorio(tmp_path) -> None:
 def test_plantilla_incluye_ejemplos_pedidos(tmp_path) -> None:
     path = create_inmuebles_excel_template(str(tmp_path / "plantilla.xlsx"))
     sheet = load_workbook(path)["Datos"]
-    rows = [tuple(cell.value or "" for cell in row) for row in sheet.iter_rows(min_row=2, max_row=4)]
-    assert rows[0][:9] == ("IMP-001", "Lote importado 1", "Loteo existente", "M1", "L1", "10.5", "", "", "P-001")
-    assert rows[1][:9] == ("IMP-002", "Lote importado 2", "Loteo existente", "M1", "L2", "1234.56", "", "", "P-002")
-    assert rows[2][:9] == ("IMP-003", "Ejemplo sin dato catastral", "", "", "", "", "500", "", "")
+    headers = [cell.value for cell in sheet[1]]
+    rows = [
+        dict(zip(headers, (cell.value or "" for cell in row)))
+        for row in sheet.iter_rows(min_row=2, max_row=4)
+    ]
+
+    assert rows[0]["codigo"] == "IMP-001"
+    assert rows[0]["parcela"] == ""
+    assert rows[0]["m2"] == "10.5"
+    assert rows[0]["partida"] == "P-001"
+
+    assert rows[1]["codigo"] == "IMP-002"
+    assert rows[1]["parcela"] == ""
+    assert rows[1]["m2"] == "1234.56"
+    assert rows[1]["partida"] == "P-002"
+
+    assert rows[2]["codigo"] == "IMP-003"
+    assert rows[2]["parcela"] == ""
+    assert rows[2]["m2"] == "500"
+    assert rows[2]["partida"] == ""
 
 
 def test_plantilla_documenta_aliases_y_restricciones_de_alcance(tmp_path) -> None:
