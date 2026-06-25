@@ -956,6 +956,8 @@ class InmuebleCreateForm:
         for control in (
             self.codigo_inmueble,
             self.nombre_inmueble,
+            self.calle,
+            self.altura,
             self.superficie,
             self.manzana,
             self.lote,
