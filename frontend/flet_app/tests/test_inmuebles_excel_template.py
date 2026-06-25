@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+from openpyxl import load_workbook
+
+from app.importers.inmuebles_excel_template import EXPECTED_HEADERS, create_inmuebles_excel_template
+
+
+def test_crea_plantilla_excel(tmp_path) -> None:
+    path = create_inmuebles_excel_template(str(tmp_path / "plantilla.xlsx"))
+    workbook = load_workbook(path)
+    assert path.endswith("plantilla.xlsx")
+    assert workbook.sheetnames == ["Datos", "Ayuda"]
+
+
+def test_plantilla_tiene_hoja_datos_y_encabezados(tmp_path) -> None:
+    path = create_inmuebles_excel_template(str(tmp_path / "plantilla.xlsx"))
+    sheet = load_workbook(path)["Datos"]
+    headers = [cell.value for cell in sheet[1]]
+    assert headers == list(EXPECTED_HEADERS)
+    assert sheet.freeze_panes == "A2"
+
+
+def test_plantilla_tiene_hoja_ayuda_con_codigo_obligatorio(tmp_path) -> None:
+    path = create_inmuebles_excel_template(str(tmp_path / "plantilla.xlsx"))
+    sheet = load_workbook(path)["Ayuda"]
+    values = [cell.value for row in sheet.iter_rows() for cell in row if cell.value]
+    assert "codigo es obligatorio." in values
+    assert any(value == "codigo" for value in values)
+    assert any("Obligatoria" == value for value in values)
+
+
+def test_plantilla_incluye_ejemplos_pedidos(tmp_path) -> None:
+    path = create_inmuebles_excel_template(str(tmp_path / "plantilla.xlsx"))
+    sheet = load_workbook(path)["Datos"]
+    rows = [tuple(cell.value or "" for cell in row) for row in sheet.iter_rows(min_row=2, max_row=4)]
+    assert rows[0][:9] == ("IMP-001", "Lote importado 1", "Loteo existente", "M1", "L1", "10.5", "", "", "P-001")
+    assert rows[1][:9] == ("IMP-002", "Lote importado 2", "Loteo existente", "M1", "L2", "1234.56", "", "", "P-002")
+    assert rows[2][:9] == ("IMP-003", "Ejemplo sin dato catastral", "", "", "", "", "500", "", "")
+
+
+def test_plantilla_documenta_aliases_y_restricciones_de_alcance(tmp_path) -> None:
+    path = create_inmuebles_excel_template(str(tmp_path / "plantilla.xlsx"))
+    sheet = load_workbook(path)["Ayuda"]
+    text = "\n".join(str(cell.value) for row in sheet.iter_rows() for cell in row if cell.value)
+    assert "codigo, código, codigo_lote, cod_lote, lote_codigo" in text
+    assert "desarrollo, loteo, emprendimiento, barrio" in text
+    assert "No se importan ventas." in text
+    assert "No se importa geometría/plano." in text

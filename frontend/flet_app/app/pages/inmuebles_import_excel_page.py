@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 import flet as ft
@@ -7,6 +8,7 @@ import flet as ft
 from app.api_client import ApiClient
 from app.components.excel_import_wizard import ExcelImportWizard
 from app.importers.excel_import_models import ImportConfirmResult, ImportPreviewResult
+from app.importers.inmuebles_excel_template import create_inmuebles_excel_template
 from app.importers.inmuebles_excel_importer import (
     collect_existing_codes,
     build_inmuebles_preview,
@@ -21,6 +23,7 @@ class InmueblesImportExcelPage:
     def __init__(self, api: ApiClient, on_navigate) -> None:
         self.api = api
         self.on_navigate = on_navigate
+        self.template_picker = ft.FilePicker(on_result=self._on_template_path_selected)
 
     def build(self) -> ft.Control:
         return ft.Column(
@@ -36,6 +39,7 @@ class InmueblesImportExcelPage:
                     "Especialización técnica del importador Excel reusable: valida preview y confirma creando inmuebles y datos catastrales/registrales mediante endpoints del Dominio Inmobiliario.",
                     color=ft.Colors.BLUE_GREY_700,
                 ),
+                self._help_section(),
                 ExcelImportWizard(
                     target_fields=inmueble_import_target_fields(),
                     title="Importador Excel — inmuebles/lotes",
@@ -50,6 +54,50 @@ class InmueblesImportExcelPage:
             expand=True,
             scroll=ft.ScrollMode.AUTO,
         )
+
+
+    def _help_section(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text("Ayuda rápida", size=18, weight=ft.FontWeight.W_600),
+                    ft.Text("Usá la hoja Datos de la plantilla como guía: el código es obligatorio y no puede repetirse ni existir previamente en el sistema."),
+                    ft.Text("Si informás desarrollo, debe coincidir con el código o nombre de un desarrollo existente antes de importar."),
+                    ft.Text("Manzana, lote, parcela, nomenclatura, partida y matrícula se usan como dato catastral/registral; lote no se crea como entidad separada."),
+                    ft.Text("El preview mostrará errores y advertencias antes de confirmar la importación real. No se importan ventas, precios, servicios ni geometría/plano."),
+                    ft.ElevatedButton(
+                        "Descargar plantilla Excel",
+                        icon=ft.Icons.DOWNLOAD,
+                        on_click=self._download_template,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=16,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=8,
+            bgcolor=ft.Colors.BLUE_GREY_50,
+        )
+
+    def _download_template(self, event: ft.ControlEvent) -> None:
+        page = event.page
+        if page and self.template_picker not in page.overlay:
+            page.overlay.append(self.template_picker)
+            page.update()
+        self.template_picker.save_file(
+            dialog_title="Guardar plantilla Excel de inmuebles",
+            file_name="plantilla_importacion_inmuebles.xlsx",
+            allowed_extensions=["xlsx"],
+        )
+
+    def _on_template_path_selected(self, event: ft.FilePickerResultEvent) -> None:
+        if not event.path:
+            return
+        path = create_inmuebles_excel_template(event.path)
+        if event.page:
+            event.page.snack_bar = ft.SnackBar(ft.Text(f"Plantilla Excel generada: {Path(path).name}"))
+            event.page.snack_bar.open = True
+            event.page.update()
 
     def _preview(self, sheet, mappings) -> ImportPreviewResult:
         codes = {
