@@ -5,6 +5,7 @@ from app.config import get_api_base_url
 from app.router import AppRouter, Route
 from app.pages.contratos_page import ContratosPage
 from app.pages.finanzas_page import FinanzasPage
+from app.pages.excel_import_demo_page import ExcelImportDemoPage
 from app.pages.home_page import HomePage
 from app.pages.inmuebles_page import InmueblesPage
 from app.pages.parte_detail_page import ParteDetailPage
@@ -111,12 +112,17 @@ class AppShell:
                     selected_icon=ft.Icons.ACCOUNT_BALANCE_WALLET,
                     label="Finanzas",
                 ),
+                ft.NavigationRailDestination(
+                    icon=ft.Icons.UPLOAD_FILE_OUTLINED,
+                    selected_icon=ft.Icons.UPLOAD_FILE,
+                    label="Import Excel",
+                ),
             ],
             on_change=self._on_nav_change,
         )
 
     def _on_nav_change(self, event: ft.ControlEvent) -> None:
-        routes = ["home", "partes", "inmuebles", "contratos", "ventas", "finanzas"]
+        routes = ["home", "partes", "inmuebles", "contratos", "ventas", "finanzas", "excel_import_demo"]
         self.navigate(routes[event.control.selected_index])
 
     def _sync_rail(self, route: Route) -> None:
@@ -140,6 +146,7 @@ class AppShell:
             "venta_detail": 4,
             "venta_create_wizard": 4,
             "finanzas": 5,
+            "excel_import_demo": 6,
         }
         self.rail.selected_index = index_by_route.get(route.name, 0)
 
@@ -259,6 +266,8 @@ class AppShell:
             ).build()
         if route.name == "finanzas":
             return FinanzasPage().build()
+        if route.name == "excel_import_demo":
+            return ExcelImportDemoPage().build()
         return HomePage(on_navigate=self.navigate).build()
 
     def _route_int(self, route: Route, key: str) -> int | None:
