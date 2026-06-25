@@ -16,7 +16,13 @@ El importador puede consumir contexto de ejecución compuesto por usuario autent
 
 ## Decisión
 
-El importador específico de inmuebles/lotes de #212 se clasifica como **núcleo del Dominio Inmobiliario** para los writes principales que creen o modifiquen activos inmobiliarios.
+El importador Excel de inmuebles/lotes (#212) se clasifica como una **especialización técnica del importador Excel reusable**, orientada al Dominio Inmobiliario.
+
+Como proceso de importación, conserva naturaleza técnica/transversal: lectura de archivo, detección de hojas y columnas, normalización, mapping, preview, validación estructural, orquestación de confirmación y reporte final.
+
+Como operación de negocio, no es dueño de las reglas inmobiliarias ni de la persistencia del activo. La confirmación real debe delegar los writes en contratos, endpoints, commands o servicios del Dominio Inmobiliario.
+
+En consecuencia, la infraestructura del importador puede ser técnica/reusable, pero los efectos persistentes sobre inmuebles, unidades funcionales, datos catastrales/registrales y disponibilidad inmobiliaria pertenecen al Dominio Inmobiliario.
 
 La confirmación real de #212 deberá resolverse mediante contratos, endpoints, commands y servicios del Dominio Inmobiliario para:
 
@@ -44,7 +50,7 @@ Operativo puede participar como consumidor o aportante de contexto de ejecución
 ## Relación con #205 y #212
 
 - #205: esta decisión corrige y precisa la documentación del importador Excel reusable. No cambia su naturaleza de soporte transversal técnico/frontend.
-- #212: esta decisión prepara la implementación del importador específico de inmuebles/lotes y fija su ownership en el Dominio Inmobiliario.
+- #212: esta decisión prepara la implementación del importador específico de inmuebles/lotes y fija que sus efectos persistentes sobre activos inmobiliarios pertenecen al Dominio Inmobiliario.
 
 Esta decisión no cierra #205 ni #212.
 
