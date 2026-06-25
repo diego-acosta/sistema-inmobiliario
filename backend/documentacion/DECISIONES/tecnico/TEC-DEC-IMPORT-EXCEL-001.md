@@ -16,7 +16,7 @@ Adoptar un **enfoque mixto** para el importador Excel reusable:
 
 1. La primera implementación deberá resolver lectura local, selección de hoja, normalización de encabezados, mapeo y preview estructural en frontend Flet.
 2. Las validaciones de negocio definitivas deberán quedar en backend o consultarse mediante endpoints read-like/previews específicos del dominio dueño.
-3. La confirmación real deberá usar endpoints existentes o futuros commands del dominio dueño, no un servicio transversal que invada semántica de personas, comercial, inmobiliario, operativo o financiero. Para inmuebles/lotes, el dominio dueño es inmobiliario; operativo solo puede aportar contexto de ejecución y trazabilidad.
+3. La confirmación real deberá usar endpoints existentes o futuros commands del dominio dueño, no un servicio transversal que invada semántica de personas, comercial, inmobiliario, operativo o financiero. Para inmuebles/lotes, el dominio dueño es inmobiliario; el contexto de usuario/autorización, auditoría, headers CORE-EF, `op_id` y trazabilidad técnica no transfiere ownership al Dominio Operativo.
 4. Cualquier endpoint write que cree/modifique entidades sincronizables deberá aplicar CORE-EF desde su primer PR de implementación.
 5. La épica #205 no queda cerrada con esta decisión; esta decisión prepara el PR de implementación posterior.
 

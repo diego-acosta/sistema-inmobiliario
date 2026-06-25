@@ -14,7 +14,7 @@ Crear una base reusable para importadores Excel del sistema, sin implementar tod
 Clasificación del concepto:
 
 - **Soporte transversal técnico:** lectura de archivos Excel, normalización de encabezados, mapeo, preview, validación estructural por fila y reporte técnico.
-- **Núcleo de dominio:** cada importador específico que cree/modifique entidades pertenece al dominio dueño de esas entidades; por ejemplo, inmuebles/lotes al Dominio Inmobiliario, personas al dominio personas, ventas al dominio comercial y pagos al dominio financiero. Operativo puede aportar contexto de ejecución y trazabilidad, pero no define ownership del activo inmobiliario ni de sus writes principales.
+- **Núcleo de dominio:** cada importador específico que cree/modifique entidades pertenece al dominio dueño de esas entidades; por ejemplo, inmuebles/lotes al Dominio Inmobiliario, personas al dominio personas, ventas al dominio comercial y pagos al dominio financiero. El contexto de ejecución puede incluir usuario autenticado, sucursal, instalación, headers CORE-EF, `op_id` y trazabilidad técnica, pero ese contexto no transfiere ownership al Dominio Operativo ni define ownership del activo inmobiliario o de sus writes principales.
 - **Compatibilidad heredada:** no aplica como modelo principal para este diseño; cualquier compatibilidad con planillas existentes deberá declararse por importador específico.
 
 ## 2. Alcance
@@ -297,7 +297,7 @@ Para cerrar la épica #205 deberá existir, como mínimo:
 
 ## 14. Validación contra arquitectura, implementación y tests
 
-- Dominio correcto: el reusable queda clasificado como soporte transversal técnico; los writes pertenecen al dominio dueño de cada entidad. Para #212, desarrollos, inmuebles, lotes, unidades funcionales, datos catastrales/registrales y disponibilidad inmobiliaria inicial pertenecen al Dominio Inmobiliario.
+- Dominio correcto: el reusable queda clasificado como soporte transversal técnico; los writes pertenecen al dominio dueño de cada entidad. Para #212, desarrollos cuando correspondan, inmuebles —incluidos los identificados funcionalmente como lotes—, unidades funcionales si aplican, datos catastrales/registrales del inmueble y disponibilidad inmobiliaria inicial pertenecen al Dominio Inmobiliario. `lote` no queda documentado como entidad persistente separada.
 - No invasión de dominios: este PR no mueve lógica ni crea endpoints; solo documenta diseño.
 - Coherencia DEV-SRV: se alinea con `SRV-TEC-005` sin reemplazar la importación/exportación técnica de lotes persistidos.
 - Coherencia DEV-API: no se declara contrato HTTP nuevo.

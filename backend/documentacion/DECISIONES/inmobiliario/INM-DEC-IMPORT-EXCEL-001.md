@@ -12,7 +12,7 @@ Esa documentación mencionaba los inmuebles/lotes con una formulación ambigua e
 
 El Dominio Inmobiliario es dueño del activo inmobiliario y de su estructura base. En la implementación/documentación vigente esto incluye, entre otros conceptos, `desarrollo`, `inmueble`, `unidad_funcional`, disponibilidad inmobiliaria y datos propios del activo cuando estén implementados o se documenten como pendientes del dominio.
 
-El Dominio Operativo conserva ownership de contexto operativo como usuario, sucursal, instalación, ejecución del proceso, auditoría operativa, trazabilidad técnica y contexto de importación, pero no del activo inmobiliario.
+El importador puede consumir contexto de ejecución compuesto por usuario autenticado, sucursal, instalación, headers CORE-EF, `op_id` y trazabilidad técnica. Ese contexto no transfiere ownership al Dominio Operativo: usuario/autorización pertenecen al dominio administrativo o a infraestructura de seguridad; CORE-EF/trazabilidad técnica pertenecen a infraestructura transversal; auditoría institucional pertenece al dominio administrativo/auditoría cuando corresponda; sucursal/instalación actúan como contexto global/técnico-operativo. Operativo no es dueño del activo inmobiliario ni de los writes inmobiliarios.
 
 ## Decisión
 
@@ -20,24 +20,26 @@ El importador específico de inmuebles/lotes de #212 se clasifica como **núcleo
 
 La confirmación real de #212 deberá resolverse mediante contratos, endpoints, commands y servicios del Dominio Inmobiliario para:
 
-- desarrollos;
-- inmuebles;
-- lotes;
-- unidades funcionales;
-- datos catastrales/registrales, cuando existan contratos vigentes o se documenten como pendientes inmobiliarios;
+- desarrollos, cuando corresponda resolver o asociar contexto existente;
+- inmuebles, incluyendo aquellos que funcionalmente se identifiquen como lotes;
+- unidades funcionales, si el caso futuro las incluye;
+- datos catastrales/registrales del inmueble, incluyendo manzana, lote, parcela, nomenclatura, partida o matrícula cuando correspondan;
 - disponibilidad inmobiliaria inicial, si correspondiera.
+
+`lote` no se documenta como entidad persistente separada. En #212, lote es una denominación funcional o dato identificatorio/catastral de un inmueble, salvo que una decisión futura cree formalmente una entidad distinta.
 
 La base Excel reusable de #205 permanece clasificada como **soporte transversal técnico/frontend reusable**: puede aportar lectura, normalización, mapping, preview estructural, reporte técnico y componentes UI, pero no define reglas de negocio ni ownership del activo inmobiliario.
 
-Operativo puede intervenir únicamente como **soporte/contexto de ejecución y trazabilidad**. No debe definir los campos semánticos del activo inmobiliario ni ejecutar como dueño los writes principales del importador de inmuebles/lotes.
+Operativo puede participar como consumidor o aportante de contexto de ejecución o información operativa, pero no debe recibir ownership de los writes inmobiliarios, ni ownership de autenticación/autorización, auditoría institucional o trazabilidad CORE-EF.
 
 ## Consecuencias
 
 - #212 debe documentar su mapping, validaciones de negocio y confirmación real dentro del Dominio Inmobiliario.
 - Cualquier endpoint/command nuevo o modificado para confirmar #212 debe quedar documentado en DEV-SRV/DEV-API inmobiliario antes o junto con la implementación.
 - La UI puede reutilizar el importador Excel común, pero debe confirmar contra contratos inmobiliarios vigentes o futuros debidamente documentados.
-- No se debe crear un importador operativo que persista desarrollos, inmuebles, lotes, unidades funcionales o disponibilidad inmobiliaria como si fueran ownership operativo.
-- Si la importación necesita usuario, sucursal, instalación, ejecución, auditoría o trazabilidad técnica, esos datos pueden viajar como contexto CORE-EF o trazabilidad, sin cambiar el dominio dueño del write.
+- No se debe crear un importador operativo que persista desarrollos, inmuebles, unidades funcionales o disponibilidad inmobiliaria como si fueran ownership operativo.
+- No se debe promover `lote` como entidad write separada: la información de lote/manzana/parcela debe viajar como dato del inmueble o como dato catastral/registral asociado, según contratos vigentes.
+- Si la importación necesita usuario autenticado, sucursal, instalación, headers CORE-EF, `op_id`, auditoría institucional o trazabilidad técnica, esos datos viajan como contexto del caso de uso sin cambiar el dominio dueño del write y sin asignar auth/audit/CORE-EF al Dominio Operativo.
 
 ## Relación con #205 y #212
 
