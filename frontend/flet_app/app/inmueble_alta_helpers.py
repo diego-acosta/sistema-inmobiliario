@@ -124,7 +124,9 @@ def validate_dato_catastral_form(values: dict[str, str | None]) -> list[str]:
 
 def has_dato_catastral_avanzado_util(values: dict[str, str | None]) -> bool:
     return any(
-        clean_text(values.get(field_name)) for field_name in CATASTRAL_ADVANCED_FIELDS
+        clean_text(values.get(field_name))
+        for field_name in CATASTRAL_ADVANCED_FIELDS
+        if field_name != "estado_dato"
     )
 
 
