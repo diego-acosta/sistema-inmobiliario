@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.api_client import ApiResult
+from app.components.excel_import_wizard import ExcelImportWizard
 from app.importers.excel_import_models import ExcelColumn, ExcelSheetData
 from app.importers.excel_mapping import suggest_mapping
 from app.importers.inmuebles_excel_importer import (
@@ -333,3 +334,15 @@ def test_preview_inmuebles_invalido_y_warning_exponen_mensajes_legibles() -> Non
     assert preview.rows[1].status == "WARNING"
     assert any("Falta nombre" in warning for warning in preview.rows[1].warnings)
     assert preview.rows[1].visible_preview_values()["Código"] == "PR233-103"
+
+
+def test_preview_inmuebles_preview_vacio_no_agrega_columnas_tecnicas_ni_desplaza_legibles() -> None:
+    sheet = _sheet([["", "", "", "", "", "10", ""], ["PR233-104", "Lote visible", "", "MZ-8", "LT-10", "10", "PI-456"]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+
+    assert preview.rows[0].visible_preview_values() == {}
+    columns = ExcelImportWizard._preview_columns(object(), preview)
+
+    assert "superficie" not in columns
+    assert "estado_administrativo" not in columns
+    assert columns[:5] == ["Código", "Nombre/descripción", "Manzana", "Lote", "Partida"]

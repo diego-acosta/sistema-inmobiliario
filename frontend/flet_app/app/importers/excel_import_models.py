@@ -59,10 +59,10 @@ class ImportRowPreview:
     errors: list[str]
     warnings: list[str]
     status: str
-    preview_values: dict[str, Any] = field(default_factory=dict)
+    preview_values: dict[str, Any] | None = None
 
     def visible_preview_values(self) -> dict[str, Any]:
-        if self.preview_values:
+        if self.preview_values is not None:
             return self.preview_values
         return {key: value for key, value in self.mapped_values.items() if not _is_empty(value)}
 
