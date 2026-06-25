@@ -9,6 +9,8 @@ class InmuebleCreateRequest(BaseModel):
     id_desarrollo: int | None = None
     codigo_inmueble: str
     nombre_inmueble: str | None = None
+    calle: str | None = None
+    altura: str | None = None
     superficie: Decimal | None = None
     estado_administrativo: str
     estado_juridico: str
@@ -36,6 +38,8 @@ class InmuebleDetailData(BaseModel):
     version_registro: int | None = None
     codigo_inmueble: str
     nombre_inmueble: str | None
+    calle: str | None = None
+    altura: str | None = None
     superficie: Decimal | None
     estado_administrativo: str
     estado_juridico: str
@@ -60,6 +64,8 @@ class InmuebleListItem(BaseModel):
     nombre: str | None = None
     descripcion: str | None = None
     tipo_inmueble: str | None = None
+    calle: str | None = None
+    altura: str | None = None
     direccion: str | None = None
     ubicacion: str | None = None
     superficie: Decimal | None
@@ -86,6 +92,8 @@ class InmuebleUpdateRequest(BaseModel):
     id_desarrollo: int | None = None
     codigo_inmueble: str
     nombre_inmueble: str | None = None
+    calle: str | None = None
+    altura: str | None = None
     superficie: Decimal | None = None
     estado_administrativo: str
     estado_juridico: str
@@ -98,6 +106,8 @@ class InmuebleUpdateData(BaseModel):
     id_desarrollo: int | None
     codigo_inmueble: str
     nombre_inmueble: str | None
+    calle: str | None = None
+    altura: str | None = None
     superficie: Decimal | None
     estado_administrativo: str
     estado_juridico: str

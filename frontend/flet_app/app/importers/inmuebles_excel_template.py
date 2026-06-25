@@ -14,6 +14,8 @@ EXPECTED_HEADERS: Final[tuple[str, ...]] = (
     "codigo",
     "descripcion",
     "desarrollo",
+    "calle",
+    "altura",
     "estado_administrativo",
     "estado_juridico",
     "m2",
@@ -45,16 +47,16 @@ EXPECTED_HEADERS: Final[tuple[str, ...]] = (
 
 EXAMPLE_ROWS: Final[tuple[tuple[str, ...], ...]] = (
     (
-        "IMP-001", "Lote importado básico", "Loteo existente", "ACTIVO", "REGULAR", "500", "Fila básica sin dato catastral avanzado",
+        "IMP-001", "Lote importado básico", "Loteo existente", "San Martín", "123", "ACTIVO", "REGULAR", "500", "Fila básica sin dato catastral avanzado",
         "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
     ),
     (
-        "IMP-002", "Lote con catastro avanzado", "Loteo existente", "ACTIVO", "REGULAR", "1234.56", "Fila con dato catastral/registral completo",
+        "IMP-002", "Lote con catastro avanzado", "Loteo existente", "Ruta 8", "S/N", "ACTIVO", "REGULAR", "1234.56", "Fila con dato catastral/registral completo",
         "FR-001", "I", "A", "CH-1", "Q-2", "F-3", "M1", "L2", "P-10", "SP-1", "NC-001", "P-001", "MAT-001",
         "1200.50", "1198.75", "20x60", "POSESION REGULAR", "DOMINIO PERFECTO", "Catastro municipal", "2026-01-01", "", "ACTIVO", "Observación catastral ejemplo",
     ),
     (
-        "IMP-003", "Ejemplo con estructura completa y vacíos", "", "", "", "750", "",
+        "IMP-003", "Ejemplo con estructura completa y vacíos", "", "", "", "", "", "750", "",
         "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
     ),
 )
@@ -63,6 +65,8 @@ COLUMN_HELP: Final[tuple[tuple[str, str, str, str, str], ...]] = (
     ("codigo", "Obligatoria", "Texto", "Identificador del inmueble. No debe repetirse ni existir previamente.", "codigo, código, codigo_lote, cod_lote, lote_codigo"),
     ("descripcion", "Opcional", "Texto", "Nombre o descripción visible del inmueble/lote.", "descripcion, descripción, nombre, nombre_lote"),
     ("desarrollo", "Opcional", "Texto", "Código o nombre de un desarrollo existente si se informa.", "desarrollo, loteo, emprendimiento, barrio"),
+    ("calle", "Opcional", "Texto", "Calle del inmueble para dirección básica estructurada.", "calle, nombre_calle, via"),
+    ("altura", "Opcional", "Texto", "Altura del inmueble; admite valores como S/N o 123 bis.", "altura, numero, nro, número"),
     ("estado_administrativo", "Opcional", "Texto", "Estado administrativo del inmueble; si falta se usa ACTIVO.", "estado_administrativo, estado, estado_admin"),
     ("estado_juridico", "Opcional", "Texto", "Estado jurídico del inmueble; si falta se usa REGULAR.", "estado_juridico, estado legal, situacion juridica, situación jurídica"),
     ("m2", "Opcional", "Decimal positivo", "Superficie del inmueble.", "superficie, superficie_m2, m2, metros"),

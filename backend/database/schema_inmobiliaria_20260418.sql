@@ -2983,6 +2983,8 @@ CREATE TABLE public.inmueble (
     id_desarrollo bigint,
     codigo_inmueble character varying(50) NOT NULL,
     nombre_inmueble character varying(150),
+    calle character varying(150),
+    altura character varying(50),
     superficie numeric(14,2),
     estado_administrativo character varying(30) NOT NULL,
     estado_juridico character varying(30) NOT NULL,

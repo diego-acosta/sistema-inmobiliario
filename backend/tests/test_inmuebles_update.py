@@ -51,6 +51,8 @@ def test_update_inmueble_actualiza_en_postgresql(client, db_session) -> None:
             "id_desarrollo": id_desarrollo,
             "codigo_inmueble": "INM-UPD-999",
             "nombre_inmueble": "Unidad Actualizada",
+            "calle": "Belgrano",
+            "altura": "S/N",
             "superficie": "88.40",
             "estado_administrativo": "INACTIVO",
             "estado_juridico": "OBSERVADO",
@@ -67,6 +69,8 @@ def test_update_inmueble_actualiza_en_postgresql(client, db_session) -> None:
             "id_desarrollo": id_desarrollo,
             "codigo_inmueble": "INM-UPD-999",
             "nombre_inmueble": "Unidad Actualizada",
+            "calle": "Belgrano",
+            "altura": "S/N",
             "superficie": "88.40",
             "estado_administrativo": "INACTIVO",
             "estado_juridico": "OBSERVADO",
@@ -83,6 +87,8 @@ def test_update_inmueble_actualiza_en_postgresql(client, db_session) -> None:
                 id_desarrollo,
                 codigo_inmueble,
                 nombre_inmueble,
+                calle,
+                altura,
                 superficie,
                 estado_administrativo,
                 estado_juridico,
@@ -102,6 +108,8 @@ def test_update_inmueble_actualiza_en_postgresql(client, db_session) -> None:
     assert row["id_desarrollo"] == id_desarrollo
     assert row["codigo_inmueble"] == "INM-UPD-999"
     assert row["nombre_inmueble"] == "Unidad Actualizada"
+    assert row["calle"] == "Belgrano"
+    assert row["altura"] == "S/N"
     assert str(row["superficie"]) == "88.40"
     assert row["estado_administrativo"] == "INACTIVO"
     assert row["estado_juridico"] == "OBSERVADO"

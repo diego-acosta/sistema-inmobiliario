@@ -35,6 +35,8 @@ class FakeApi:
                 "id_inmueble": id_inmueble,
                 "codigo_inmueble": "INM-1",
                 "nombre_inmueble": "Casa",
+                "calle": "San Martín",
+                "altura": "123",
                 "estado_administrativo": "ACTIVO",
                 "estado_juridico": "REGULAR",
                 "version_registro": 7,
@@ -130,12 +132,16 @@ def test_edicion_sin_dato_y_catastral_vacio_no_crea_y_guarda_basicos() -> None:
     view = _build_view(api)
 
     view.nombre_inmueble.value = "Casa actualizada"
+    view.calle.value = "Belgrano"
+    view.altura.value = "S/N"
     view._save(None)
 
     assert api.created == []
     assert api.updated == []
     assert len(api.basic_updates) == 1
     assert api.basic_updates[0][1]["nombre_inmueble"] == "Casa actualizada"
+    assert api.basic_updates[0][1]["calle"] == "Belgrano"
+    assert api.basic_updates[0][1]["altura"] == "S/N"
 
 
 def test_error_al_crear_dato_catastral_muestra_mensaje_claro() -> None:

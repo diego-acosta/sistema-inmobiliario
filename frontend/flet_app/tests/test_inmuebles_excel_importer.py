@@ -36,7 +36,7 @@ def _sheet(rows):
     headers = ["codigo", "descripcion", "desarrollo", "manzana", "lote", "m2", "partida"]
     return ExcelSheetData(
         name="Datos",
-        columns=[ExcelColumn(i, h, h) for i, h in enumerate(headers)],
+        columns=[ExcelColumn(i, h, h.replace("ú", "u")) for i, h in enumerate(headers)],
         rows=[dict(zip(headers, values), __row_number__=idx + 2) for idx, values in enumerate(rows)],
         header_row_number=1,
     )
@@ -174,7 +174,7 @@ def _advanced_sheet(rows):
     ]
     return ExcelSheetData(
         name="Datos",
-        columns=[ExcelColumn(i, h, h) for i, h in enumerate(headers)],
+        columns=[ExcelColumn(i, h, h.replace("ú", "u")) for i, h in enumerate(headers)],
         rows=[dict(zip(headers, values), __row_number__=idx + 2) for idx, values in enumerate(rows)],
         header_row_number=1,
     )
@@ -346,3 +346,20 @@ def test_preview_inmuebles_preview_vacio_no_agrega_columnas_tecnicas_ni_desplaza
     assert "superficie" not in columns
     assert "estado_administrativo" not in columns
     assert columns[:5] == ["Código", "Nombre/descripción", "Manzana", "Lote", "Partida"]
+
+
+def test_importador_mapea_aliases_direccion_basica() -> None:
+    headers = ["codigo", "descripcion", "nombre_calle", "número"]
+    sheet = ExcelSheetData(
+        name="Datos",
+        columns=[ExcelColumn(i, h, h.replace("ú", "u")) for i, h in enumerate(headers)],
+        rows=[dict(zip(["codigo", "descripcion", "nombre_calle", "numero"], ["A1", "Lote A1", "San Martín", "123 bis"]), __row_number__=2)],
+        header_row_number=1,
+    )
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+
+    values = preview.rows[0].mapped_values
+    assert values["calle"] == "San Martín"
+    assert values["altura"] == "123 bis"
+    assert build_inmueble_import_payload(values)["calle"] == "San Martín"
+    assert build_inmueble_import_payload(values)["altura"] == "123 bis"

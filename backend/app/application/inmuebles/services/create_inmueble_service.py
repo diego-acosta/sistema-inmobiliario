@@ -14,6 +14,8 @@ class InmuebleCreatePayload:
     id_desarrollo: int | None
     codigo_inmueble: str
     nombre_inmueble: str | None
+    calle: str | None
+    altura: str | None
     superficie: Decimal | None
     estado_administrativo: str
     estado_juridico: str
@@ -57,6 +59,8 @@ class CreateInmuebleService:
             id_desarrollo=command.id_desarrollo,
             codigo_inmueble=command.codigo_inmueble,
             nombre_inmueble=command.nombre_inmueble,
+            calle=command.calle,
+            altura=command.altura,
             superficie=command.superficie,
             estado_administrativo=command.estado_administrativo,
             estado_juridico=command.estado_juridico,

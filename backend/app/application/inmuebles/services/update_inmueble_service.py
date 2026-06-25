@@ -14,6 +14,8 @@ class InmuebleUpdatePayload:
     id_desarrollo: int | None
     codigo_inmueble: str
     nombre_inmueble: str | None
+    calle: str | None
+    altura: str | None
     superficie: Decimal | None
     estado_administrativo: str
     estado_juridico: str
@@ -69,6 +71,8 @@ class UpdateInmuebleService:
             id_desarrollo=command.id_desarrollo,
             codigo_inmueble=command.codigo_inmueble,
             nombre_inmueble=command.nombre_inmueble,
+            calle=command.calle,
+            altura=command.altura,
             superficie=command.superficie,
             estado_administrativo=command.estado_administrativo,
             estado_juridico=command.estado_juridico,
@@ -97,6 +101,8 @@ class UpdateInmuebleService:
                 "id_desarrollo": payload.id_desarrollo,
                 "codigo_inmueble": payload.codigo_inmueble,
                 "nombre_inmueble": payload.nombre_inmueble,
+                "calle": payload.calle,
+                "altura": payload.altura,
                 "superficie": payload.superficie,
                 "estado_administrativo": payload.estado_administrativo,
                 "estado_juridico": payload.estado_juridico,

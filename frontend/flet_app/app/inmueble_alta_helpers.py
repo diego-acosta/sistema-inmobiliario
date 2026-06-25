@@ -94,7 +94,7 @@ def build_inmueble_payload(values: dict[str, str | None]) -> dict[str, Any]:
         "estado_administrativo": clean_text(values.get("estado_administrativo")),
         "estado_juridico": clean_text(values.get("estado_juridico")),
     }
-    for field_name in ("nombre_inmueble", "observaciones"):
+    for field_name in ("nombre_inmueble", "calle", "altura", "observaciones"):
         clean_value = clean_text(values.get(field_name))
         if clean_value:
             payload[field_name] = clean_value
