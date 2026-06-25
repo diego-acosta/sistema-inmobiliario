@@ -1606,6 +1606,7 @@ class InmuebleEditView:
         )
         self.data: dict[str, Any] = {}
         self.dato: dict[str, Any] | None = None
+        self.datos_catastrales_load_failed = False
 
     def build(self) -> ft.Control:
         result = self.api.get_inmueble_detalle_integral(self.id_inmueble)
@@ -1615,12 +1616,17 @@ class InmuebleEditView:
         catastral_result = self.api.listar_datos_catastrales_registrales_inmueble(
             self.id_inmueble
         )
+        self.datos_catastrales_load_failed = not catastral_result.success
         datos = (
             catastral_result.data
             if catastral_result.success and isinstance(catastral_result.data, list)
-            else _extract_datos_catastrales(self.data)
+            else []
         )
-        self.dato = _select_dato_catastral_editable(datos)
+        self.dato = (
+            None
+            if self.datos_catastrales_load_failed
+            else _select_dato_catastral_editable(datos)
+        )
         inmueble = _inmueble_data(self.data)
         self.codigo_inmueble = ft.TextField(
             label="Código",
@@ -1656,34 +1662,58 @@ class InmuebleEditView:
         for field_name, label in (
             ("manzana", "Manzana"),
             ("lote", "Lote"),
+            ("parcela", "Parcela"),
             ("nomenclatura_catastral", "Nomenclatura catastral"),
             ("partida_inmobiliaria", "Partida inmobiliaria"),
             ("matricula", "Matrícula"),
+            ("folio_real", "Folio real"),
+            ("circunscripcion", "Circunscripción"),
+            ("seccion", "Sección"),
+            ("chacra", "Chacra"),
+            ("quinta", "Quinta"),
+            ("fraccion", "Fracción"),
+            ("subparcela", "Subparcela"),
             ("superficie_titulo", "Superficie título"),
+            ("superficie_mensura", "Superficie mensura"),
             ("medidas", "Medidas"),
             ("situacion_posesoria", "Situación posesoria"),
             ("situacion_dominial", "Situación dominial"),
+            ("organismo_origen", "Organismo origen"),
+            ("fecha_desde", "Fecha desde"),
+            ("fecha_hasta", "Fecha hasta"),
             ("observaciones", "Observaciones catastrales/registrales"),
         ):
             self.catastral_fields[field_name] = ft.TextField(
                 label=label,
                 value=_field_text((self.dato or {}).get(field_name)),
                 multiline=field_name in {"medidas", "observaciones"},
-                disabled=self.dato is None,
+                disabled=self.datos_catastrales_load_failed,
             )
         self.catastral_fields["estado_dato"] = ft.Dropdown(
             label="Estado dato",
             value=_field_text((self.dato or {}).get("estado_dato")) or "ACTIVO",
             options=[ft.dropdown.Option(value) for value in ESTADOS_DATO_CATASTRAL],
-            disabled=self.dato is None,
+            disabled=self.datos_catastrales_load_failed,
         )
         catastral_controls: list[ft.Control] = []
-        if self.dato is None:
+        if self.datos_catastrales_load_failed:
             catastral_controls.append(
                 ft.Text(
-                    "No hay dato catastral/registral asociado para editar. "
-                    "Crealo desde el alta real del inmueble o desde el flujo existente."
+                    "No se pudieron cargar los datos catastrales/registrales "
+                    "existentes. Para evitar duplicados, esta sección queda "
+                    "bloqueada hasta recargar la ficha."
                 )
+            )
+        elif self.dato is None:
+            catastral_controls.append(
+                ft.Text(
+                    "Este inmueble no tiene dato catastral/registral cargado. "
+                    "Completá los campos y al guardar se creará uno nuevo."
+                )
+            )
+        else:
+            catastral_controls.append(
+                ft.Text("Editando dato catastral/registral existente.")
             )
         catastral_controls.extend(self.catastral_fields.values())
         return ft.Column(
@@ -1748,7 +1778,7 @@ class InmuebleEditView:
     def _save(self, _) -> None:
         inmueble = _inmueble_data(self.data)
         errors = validate_form(self._inmueble_values(inmueble))
-        if self.dato is not None:
+        if not self.datos_catastrales_load_failed:
             errors.extend(validate_dato_catastral_form(self._dato_values()))
         if errors:
             self._show_message("\n".join(errors), success=False)
@@ -1772,29 +1802,44 @@ class InmuebleEditView:
                     ),
                 )
             )
-        if self.dato is not None:
-            dato_payload = self._dato_payload()
-            if dato_payload:
-                version = _safe_int(self.dato.get("version_registro"))
-                id_dato = _safe_int(self.dato.get("id_dato_catastral_registral"))
-                if version <= 0 or id_dato <= 0:
-                    self._show_message(
-                        "No se pudo determinar versión o identificador del dato catastral/registral.",
-                        success=False,
-                    )
-                    return
+        dato_payload = self._dato_payload()
+        if self.datos_catastrales_load_failed:
+            dato_payload = {}
+        elif self.dato is None:
+            dato_values = self._dato_values()
+            if should_create_dato_catastral(True, dato_values):
+                dato_payload = build_dato_catastral_payload(
+                    dato_values, incluir_avanzados=True
+                )
                 results.append(
                     (
-                        "datos catastrales/registrales",
-                        self.api.actualizar_dato_catastral_registral_inmueble(
-                            self.id_inmueble,
-                            id_dato,
-                            dato_payload,
-                            version,
-                            op_id=op_id,
+                        "crear datos catastrales/registrales",
+                        self.api.crear_dato_catastral_registral_inmueble(
+                            self.id_inmueble, dato_payload, op_id=op_id
                         ),
                     )
                 )
+        elif dato_payload:
+            version = _safe_int(self.dato.get("version_registro"))
+            id_dato = _safe_int(self.dato.get("id_dato_catastral_registral"))
+            if version <= 0 or id_dato <= 0:
+                self._show_message(
+                    "No se pudo determinar versión o identificador del dato catastral/registral.",
+                    success=False,
+                )
+                return
+            results.append(
+                (
+                    "actualizar datos catastrales/registrales",
+                    self.api.actualizar_dato_catastral_registral_inmueble(
+                        self.id_inmueble,
+                        id_dato,
+                        dato_payload,
+                        version,
+                        op_id=op_id,
+                    ),
+                )
+            )
         if not results:
             self._show_message("No hay cambios para guardar.", success=True)
             return
@@ -1848,7 +1893,7 @@ class InmuebleEditView:
             if _field_text(value) == _field_text(current):
                 continue
             clean_value = str(value or "").strip()
-            if field_name == "superficie_titulo" and clean_value:
+            if field_name in {"superficie_titulo", "superficie_mensura"} and clean_value:
                 payload[field_name] = clean_value
             elif field_name == "estado_dato":
                 payload[field_name] = clean_value or "ACTIVO"
