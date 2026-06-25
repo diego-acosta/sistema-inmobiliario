@@ -17,6 +17,8 @@ def test_get_inmuebles_devuelve_solo_no_borrados(client, db_session) -> None:
             "id_desarrollo": None,
             "codigo_inmueble": "INM-LIST-001",
             "nombre_inmueble": "Unidad Uno",
+            "calle": "San Martín",
+            "altura": "123",
             "superficie": "55.25",
             "estado_administrativo": "ACTIVO",
             "estado_juridico": "REGULAR",
@@ -72,6 +74,9 @@ def test_get_inmuebles_devuelve_solo_no_borrados(client, db_session) -> None:
             "id_desarrollo",
             "codigo_inmueble",
             "nombre_inmueble",
+            "calle",
+            "altura",
+            "direccion",
             "superficie",
             "estado_administrativo",
             "estado_juridico",
@@ -82,6 +87,9 @@ def test_get_inmuebles_devuelve_solo_no_borrados(client, db_session) -> None:
         "id_desarrollo": None,
         "codigo_inmueble": "INM-LIST-001",
         "nombre_inmueble": "Unidad Uno",
+        "calle": "San Martín",
+        "altura": "123",
+        "direccion": "San Martín 123",
         "superficie": "55.25",
         "estado_administrativo": "ACTIVO",
         "estado_juridico": "REGULAR",
@@ -106,6 +114,8 @@ def test_get_inmuebles_devuelve_solo_no_borrados(client, db_session) -> None:
                 id_inmueble,
                 codigo_inmueble,
                 nombre_inmueble,
+                calle,
+                altura,
                 superficie,
                 estado_administrativo,
                 estado_juridico,
@@ -121,6 +131,8 @@ def test_get_inmuebles_devuelve_solo_no_borrados(client, db_session) -> None:
     assert row["id_inmueble"] == id_inmueble_1
     assert row["codigo_inmueble"] == "INM-LIST-001"
     assert row["nombre_inmueble"] == "Unidad Uno"
+    assert row["calle"] == "San Martín"
+    assert row["altura"] == "123"
     assert str(row["superficie"]) == "55.25"
     assert row["estado_administrativo"] == "ACTIVO"
     assert row["estado_juridico"] == "REGULAR"

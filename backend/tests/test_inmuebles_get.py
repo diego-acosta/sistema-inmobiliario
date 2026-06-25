@@ -31,6 +31,8 @@ def test_get_inmueble_devuelve_inmueble_activo(client, db_session) -> None:
             "id_desarrollo": id_desarrollo,
             "codigo_inmueble": "INM-GET-001",
             "nombre_inmueble": "Unidad 1",
+            "calle": "San Martín",
+            "altura": "123 bis",
             "superficie": "98.75",
             "estado_administrativo": "ACTIVO",
             "estado_juridico": "REGULAR",
@@ -50,6 +52,8 @@ def test_get_inmueble_devuelve_inmueble_activo(client, db_session) -> None:
             "id_desarrollo": id_desarrollo,
             "codigo_inmueble": "INM-GET-001",
             "nombre_inmueble": "Unidad 1",
+            "calle": "San Martín",
+            "altura": "123 bis",
             "superficie": "98.75",
             "estado_administrativo": "ACTIVO",
             "estado_juridico": "REGULAR",
@@ -65,6 +69,8 @@ def test_get_inmueble_devuelve_inmueble_activo(client, db_session) -> None:
                 id_desarrollo,
                 codigo_inmueble,
                 nombre_inmueble,
+                calle,
+                altura,
                 superficie,
                 estado_administrativo,
                 estado_juridico,
@@ -80,6 +86,8 @@ def test_get_inmueble_devuelve_inmueble_activo(client, db_session) -> None:
     assert row["id_desarrollo"] == id_desarrollo
     assert row["codigo_inmueble"] == "INM-GET-001"
     assert row["nombre_inmueble"] == "Unidad 1"
+    assert row["calle"] == "San Martín"
+    assert row["altura"] == "123 bis"
     assert str(row["superficie"]) == "98.75"
     assert row["estado_administrativo"] == "ACTIVO"
     assert row["estado_juridico"] == "REGULAR"

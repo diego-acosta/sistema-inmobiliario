@@ -567,6 +567,8 @@ class InmuebleCreateForm:
         self.mostrar_avanzados = False
         self.codigo_inmueble = ft.TextField(label="Código de inmueble *", width=260)
         self.nombre_inmueble = ft.TextField(label="Nombre inmueble", width=260)
+        self.calle = ft.TextField(label="Calle", width=260)
+        self.altura = ft.TextField(label="Altura", width=160)
         self.superficie = ft.TextField(label="Superficie", width=160)
         self.id_desarrollo = ft.Dropdown(
             label="Desarrollo / loteo",
@@ -686,6 +688,11 @@ class InmuebleCreateForm:
                     self.codigo_inmueble,
                     self.nombre_inmueble,
                     ft.Row(
+                        [self.calle, self.altura],
+                        wrap=True,
+                        spacing=10,
+                    ),
+                    ft.Row(
                         [self.superficie, self.id_desarrollo],
                         wrap=True,
                         spacing=10,
@@ -778,6 +785,8 @@ class InmuebleCreateForm:
         return {
             "codigo_inmueble": self.codigo_inmueble.value,
             "nombre_inmueble": self.nombre_inmueble.value,
+            "calle": self.calle.value,
+            "altura": self.altura.value,
             "superficie": self.superficie.value,
             "id_desarrollo": self.id_desarrollo.value,
             "estado_administrativo": self.estado_administrativo.value,
@@ -1639,6 +1648,12 @@ class InmuebleEditView:
                 inmueble.get("nombre_inmueble") or inmueble.get("nombre")
             ),
         )
+        self.calle = ft.TextField(
+            label="Calle", value=_field_text(inmueble.get("calle"))
+        )
+        self.altura = ft.TextField(
+            label="Altura", value=_field_text(inmueble.get("altura"))
+        )
         self.superficie = ft.TextField(
             label="Superficie", value=_field_text(inmueble.get("superficie"))
         )
@@ -1733,6 +1748,8 @@ class InmuebleEditView:
                                 for control in (
                                     self.codigo_inmueble,
                                     self.nombre_inmueble,
+                                    self.calle,
+                                    self.altura,
                                     self.superficie,
                                     self.estado_administrativo,
                                     self.estado_juridico,
@@ -1861,6 +1878,8 @@ class InmuebleEditView:
         return {
             "codigo_inmueble": _field_text(inmueble.get("codigo_inmueble")),
             "nombre_inmueble": self.nombre_inmueble.value,
+            "calle": self.calle.value,
+            "altura": self.altura.value,
             "superficie": self.superficie.value,
             "id_desarrollo": _field_text(inmueble.get("id_desarrollo")),
             "estado_administrativo": self.estado_administrativo.value,
@@ -1870,7 +1889,13 @@ class InmuebleEditView:
 
     def _basic_payload(self, inmueble: dict[str, Any]) -> dict[str, Any]:
         payload = build_inmueble_payload(self._inmueble_values(inmueble))
-        for field_name in ("nombre_inmueble", "observaciones", "superficie"):
+        for field_name in (
+            "nombre_inmueble",
+            "calle",
+            "altura",
+            "observaciones",
+            "superficie",
+        ):
             if not str(getattr(self, field_name).value or "").strip():
                 payload[field_name] = None
         if _field_text(inmueble.get("id_desarrollo")) == "":
@@ -2182,11 +2207,21 @@ def _inmueble_row(item: dict[str, Any]) -> dict[str, Any]:
             item.get("ocupacion_actual"), item.get("ocupacion_ambigua")
         ),
         "cantidad_unidades": item.get("cantidad_unidades_funcionales"),
+        "direccion": item.get("direccion") or _format_inmueble_direccion(item),
         "superficie": item.get("superficie"),
         "manzana": item.get("manzana"),
         "lote": item.get("lote"),
     }
 
+
+
+def _format_inmueble_direccion(item: dict[str, Any]) -> str | None:
+    parts = [
+        str(item.get(field) or "").strip()
+        for field in ("calle", "altura")
+        if str(item.get(field) or "").strip()
+    ]
+    return " ".join(parts) if parts else None
 
 def _desarrollo_option_label(item: dict[str, Any]) -> str:
     codigo = str(item.get("codigo_desarrollo") or "").strip()
@@ -2885,6 +2920,7 @@ def _base_inmueble(data: dict[str, Any]) -> ft.Control:
                 False,
             ),
             ("Desarrollo/loteo", _desarrollo_label(desarrollo, inmueble), True),
+            ("Dirección", inmueble.get("direccion") or _format_inmueble_direccion(inmueble), False),
             ("Superficie", _format_surface(inmueble.get("superficie")), True),
             ("Estado administrativo", inmueble.get("estado_administrativo"), True),
             ("Estado jurídico", inmueble.get("estado_juridico"), True),

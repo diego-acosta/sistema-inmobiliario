@@ -10,6 +10,8 @@ class CreateInmuebleCommand:
     id_desarrollo: int | None
     codigo_inmueble: str
     nombre_inmueble: str | None
+    calle: str | None
+    altura: str | None
     superficie: Decimal | None
     estado_administrativo: str
     estado_juridico: str

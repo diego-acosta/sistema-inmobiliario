@@ -12,6 +12,11 @@ INTEGRACION_COMERCIAL_EVENT_TYPES = (
 )
 
 
+def _format_inmueble_direccion(calle: object, altura: object) -> str | None:
+    parts = [str(value).strip() for value in (calle, altura) if str(value or "").strip()]
+    return " ".join(parts) if parts else None
+
+
 class InmuebleRepository(BaseRepository[Any]):
     def __init__(self, session) -> None:
         super().__init__(session)
@@ -1429,6 +1434,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 (
                     LOWER(i.codigo_inmueble) LIKE :q
                     OR LOWER(COALESCE(i.nombre_inmueble, '')) LIKE :q
+                    OR LOWER(COALESCE(i.calle, '')) LIKE :q
+                    OR LOWER(COALESCE(i.altura, '')) LIKE :q
                     OR LOWER(COALESCE(i.observaciones, '')) LIKE :q
                 )
                 """
@@ -1534,6 +1541,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 i.id_desarrollo,
                 i.codigo_inmueble,
                 i.nombre_inmueble,
+                i.calle,
+                i.altura,
                 i.superficie,
                 i.estado_administrativo,
                 i.estado_juridico,
@@ -1589,7 +1598,9 @@ class InmuebleRepository(BaseRepository[Any]):
                 "nombre": row["nombre_inmueble"],
                 "descripcion": row["observaciones"],
                 "tipo_inmueble": None,
-                "direccion": None,
+                "calle": row["calle"],
+                "altura": row["altura"],
+                "direccion": _format_inmueble_direccion(row["calle"], row["altura"]),
                 "ubicacion": None,
                 "superficie": row["superficie"],
                 "estado_administrativo": row["estado_administrativo"],
@@ -1615,6 +1626,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 version_registro,
                 codigo_inmueble,
                 nombre_inmueble,
+                calle,
+                altura,
                 superficie,
                 estado_administrativo,
                 estado_juridico,
@@ -1637,6 +1650,8 @@ class InmuebleRepository(BaseRepository[Any]):
             "version_registro": row["version_registro"],
             "codigo_inmueble": row["codigo_inmueble"],
             "nombre_inmueble": row["nombre_inmueble"],
+            "calle": row["calle"],
+            "altura": row["altura"],
             "superficie": row["superficie"],
             "estado_administrativo": row["estado_administrativo"],
             "estado_juridico": row["estado_juridico"],
@@ -1651,6 +1666,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 id_desarrollo,
                 codigo_inmueble,
                 nombre_inmueble,
+                calle,
+                altura,
                 superficie,
                 estado_administrativo,
                 estado_juridico,
@@ -1672,6 +1689,8 @@ class InmuebleRepository(BaseRepository[Any]):
             "id_desarrollo": row["id_desarrollo"],
             "codigo_inmueble": row["codigo_inmueble"],
             "nombre_inmueble": row["nombre_inmueble"],
+            "calle": row["calle"],
+            "altura": row["altura"],
             "superficie": row["superficie"],
             "estado_administrativo": row["estado_administrativo"],
             "estado_juridico": row["estado_juridico"],
@@ -1769,6 +1788,8 @@ class InmuebleRepository(BaseRepository[Any]):
             "id_desarrollo": values["id_desarrollo"],
             "codigo_inmueble": values["codigo_inmueble"],
             "nombre_inmueble": values["nombre_inmueble"],
+            "calle": values["calle"],
+            "altura": values["altura"],
             "superficie": values["superficie"],
             "estado_administrativo": values["estado_administrativo"],
             "estado_juridico": values["estado_juridico"],
@@ -1790,6 +1811,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 id_desarrollo,
                 codigo_inmueble,
                 nombre_inmueble,
+                calle,
+                altura,
                 superficie,
                 estado_administrativo,
                 estado_juridico,
@@ -1808,6 +1831,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 :id_desarrollo,
                 :codigo_inmueble,
                 :nombre_inmueble,
+                :calle,
+                :altura,
                 :superficie,
                 :estado_administrativo,
                 :estado_juridico,
@@ -3401,6 +3426,8 @@ class InmuebleRepository(BaseRepository[Any]):
             "id_desarrollo": values["id_desarrollo"],
             "codigo_inmueble": values["codigo_inmueble"],
             "nombre_inmueble": values["nombre_inmueble"],
+            "calle": values["calle"],
+            "altura": values["altura"],
             "superficie": values["superficie"],
             "estado_administrativo": values["estado_administrativo"],
             "estado_juridico": values["estado_juridico"],
@@ -3421,6 +3448,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 id_desarrollo = :id_desarrollo,
                 codigo_inmueble = :codigo_inmueble,
                 nombre_inmueble = :nombre_inmueble,
+                calle = :calle,
+                altura = :altura,
                 superficie = :superficie,
                 estado_administrativo = :estado_administrativo,
                 estado_juridico = :estado_juridico,
@@ -3438,6 +3467,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 id_desarrollo,
                 codigo_inmueble,
                 nombre_inmueble,
+                calle,
+                altura,
                 superficie,
                 estado_administrativo,
                 estado_juridico,
@@ -3458,6 +3489,8 @@ class InmuebleRepository(BaseRepository[Any]):
                 "id_desarrollo": row["id_desarrollo"],
                 "codigo_inmueble": row["codigo_inmueble"],
                 "nombre_inmueble": row["nombre_inmueble"],
+                "calle": row["calle"],
+                "altura": row["altura"],
                 "superficie": row["superficie"],
                 "estado_administrativo": row["estado_administrativo"],
                 "estado_juridico": row["estado_juridico"],
