@@ -62,6 +62,8 @@ def test_plantilla_documenta_aliases_y_restricciones_de_alcance(tmp_path) -> Non
     assert "desarrollo, loteo, emprendimiento, barrio" in text
     assert "superficie_titulo" in text
     assert "fecha_desde" in text
+    assert "opcionales, indican vigencia" in text
+    assert "pueden quedar vacías en una carga normal" in text
     assert "observaciones_catastrales" in text
     assert "No se importan ventas." in text
     assert "No se importa geometría/plano." in text

@@ -213,8 +213,8 @@ def test_payload_catastral_con_campos_avanzados_y_fechas() -> None:
         "situacion_posesoria": "REGULAR",
         "situacion_dominial": "DOMINIO",
         "organismo_origen": "Catastro",
-        "fecha_desde": "2026-01-01",
-        "fecha_hasta": "2026-12-31",
+        "fecha_desde": "2026-01-01T00:00:00",
+        "fecha_hasta": "2026-12-31T00:00:00",
         "estado_dato": "HISTORICO",
         "observaciones_catastrales": "Obs cat",
     }
@@ -237,13 +237,41 @@ def test_payload_catastral_con_campos_avanzados_y_fechas() -> None:
         "situacion_posesoria": "REGULAR",
         "situacion_dominial": "DOMINIO",
         "organismo_origen": "Catastro",
-        "fecha_desde": "2026-01-01",
-        "fecha_hasta": "2026-12-31",
+        "fecha_desde": "2026-01-01T00:00:00",
+        "fecha_hasta": "2026-12-31T00:00:00",
         "observaciones": "Obs cat",
         "superficie_titulo": "1200.50",
         "superficie_mensura": "1198.75",
     }
 
+
+
+def test_fechas_vacias_no_generan_error_ni_se_envian_en_payload() -> None:
+    sheet = _advanced_sheet([
+        ["ADV-FECHA-VACIA", "Sin vigencia", "100", "FR-1", "", "", "", "", "", "M", "L", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    assert preview.invalid_rows == 0
+    payload = build_catastral_import_payload(preview.rows[0].mapped_values)
+    assert payload is not None
+    assert "fecha_desde" not in payload
+    assert "fecha_hasta" not in payload
+
+
+def test_fechas_se_normalizan_a_datetime_iso() -> None:
+    sheet = _advanced_sheet([
+        ["ADV-FECHA-ISO", "Con vigencia", "100", "FR-1", "", "", "", "", "", "M", "L", "", "", "", "", "", "", "", "", "", "", "", "2026-01-01", "2026-12-31", "", ""],
+        ["ADV-FECHA-SLASH", "Con vigencia slash", "100", "FR-2", "", "", "", "", "", "M", "L", "", "", "", "", "", "", "", "", "", "", "", "01/01/2026", "", "", ""],
+    ])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    assert preview.invalid_rows == 0
+    assert preview.rows[0].mapped_values["fecha_desde"] == "2026-01-01T00:00:00"
+    assert preview.rows[0].mapped_values["fecha_hasta"] == "2026-12-31T00:00:00"
+    assert preview.rows[1].mapped_values["fecha_desde"] == "2026-01-01T00:00:00"
+    payload = build_catastral_import_payload(preview.rows[0].mapped_values)
+    assert payload is not None
+    assert payload["fecha_desde"] == "2026-01-01T00:00:00"
+    assert payload["fecha_hasta"] == "2026-12-31T00:00:00"
 
 def test_preview_valida_fechas_y_superficies_avanzadas() -> None:
     sheet = _advanced_sheet([
@@ -270,5 +298,5 @@ def test_confirmacion_mockeada_envia_dato_catastral_completo() -> None:
     assert payload["folio_real"] == "FR-1"
     assert payload["subparcela"] == "SP"
     assert payload["superficie_titulo"] == "1200.50"
-    assert payload["fecha_desde"] == "2026-01-01"
+    assert payload["fecha_desde"] == "2026-01-01T00:00:00"
     assert payload["observaciones"] == "Obs cat"

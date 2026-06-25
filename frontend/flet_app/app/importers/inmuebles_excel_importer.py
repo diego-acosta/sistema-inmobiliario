@@ -236,8 +236,10 @@ def _string_form_values(values: dict[str, Any]) -> dict[str, str | None]:
             result[key] = None
         elif isinstance(value, Decimal):
             result[key] = str(value)
-        elif isinstance(value, (date, datetime)):
+        elif isinstance(value, datetime):
             result[key] = value.isoformat()
+        elif isinstance(value, date):
+            result[key] = datetime.combine(value, datetime.min.time()).isoformat()
         else:
             result[key] = str(value)
     return result
@@ -247,19 +249,20 @@ def normalize_date(value: Any) -> str | None:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, date):
         return value.isoformat()
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time()).isoformat()
     text = str(value).strip()
     if not text:
         return None
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
-            return datetime.strptime(text, fmt).date().isoformat()
+            parsed_date = datetime.strptime(text, fmt).date()
+            return datetime.combine(parsed_date, datetime.min.time()).isoformat()
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(text).date().isoformat()
+        return datetime.fromisoformat(text).isoformat()
     except ValueError:
         return None
 
