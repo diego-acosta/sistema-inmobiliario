@@ -150,3 +150,17 @@ def test_confirmacion_simulada_con_reporte(tmp_path: Path) -> None:
     assert result.created == 1
     assert result.failed == 1
     assert result.errors_by_row == {4: ["Código: campo requerido.", "Superficie: Debe ser un decimal positivo."]}
+
+
+def test_preview_values_son_legibles_y_no_dependen_del_diccionario_completo(tmp_path: Path) -> None:
+    sheet = read_excel_workbook(_workbook(tmp_path / "demo.xlsx")).sheets["Datos"]
+    preview = build_preview(sheet, _target_fields(), suggest_mapping(sheet.columns, _target_fields()))
+
+    assert preview.rows[0].visible_preview_values() == {
+        "Código": "A-1",
+        "Nombre": "Lote A",
+        "Superficie": Decimal("10.5"),
+    }
+    assert preview.rows[0].mapped_values["codigo"] == "A-1"
+    result = simulate_confirm(preview)
+    assert result.created == 1

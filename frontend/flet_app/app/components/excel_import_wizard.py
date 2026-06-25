@@ -226,15 +226,19 @@ class ExcelImportWizard(ft.Column):
         if self.preview is None:
             return _section("4. Preview", [ft.Text("Pendiente de generación.")])
         preview = self.preview
+        preview_columns = self._preview_columns(preview)
         rows = []
         for row in preview.rows[:50]:
+            visible_values = row.visible_preview_values()
             rows.append(
                 ft.DataRow(
                     cells=[
                         ft.DataCell(ft.Text(str(row.row_number))),
                         ft.DataCell(ft.Text(row.status)),
-                        ft.DataCell(ft.Text(str(row.mapped_values))),
-                        ft.DataCell(ft.Text("; ".join(row.errors + row.warnings) or "-")),
+                        *[ft.DataCell(ft.Text(_display_value(visible_values.get(column)))) for column in preview_columns],
+                        ft.DataCell(ft.Text("; ".join(row.errors) or "-")),
+                        ft.DataCell(ft.Text("; ".join(row.warnings) or "-")),
+                        ft.DataCell(ft.Text(_compact_mapped_values(row.mapped_values))),
                     ]
                 )
             )
@@ -248,8 +252,10 @@ class ExcelImportWizard(ft.Column):
                             columns=[
                                 ft.DataColumn(ft.Text("Fila")),
                                 ft.DataColumn(ft.Text("Estado")),
-                                ft.DataColumn(ft.Text("Valores mapeados")),
-                                ft.DataColumn(ft.Text("Errores / advertencias")),
+                                *[ft.DataColumn(ft.Text(column)) for column in preview_columns],
+                                ft.DataColumn(ft.Text("Errores")),
+                                ft.DataColumn(ft.Text("Advertencias")),
+                                ft.DataColumn(ft.Text("Detalle técnico")),
                             ],
                             rows=rows,
                         )
@@ -259,6 +265,16 @@ class ExcelImportWizard(ft.Column):
                 ft.ElevatedButton(self.confirm_label, icon=ft.Icons.CHECK_CIRCLE_OUTLINE, on_click=self._confirm),
             ],
         )
+
+    def _preview_columns(self, preview: ImportPreviewResult, limit: int = 7) -> list[str]:
+        columns: list[str] = []
+        for row in preview.rows[:50]:
+            for column in row.visible_preview_values():
+                if column not in columns:
+                    columns.append(column)
+                if len(columns) >= limit:
+                    return columns
+        return columns
 
     def _report_step(self) -> ft.Control:
         if self.confirm_result is None:
@@ -286,3 +302,17 @@ def _section(title: str, controls: list[ft.Control]) -> ft.Control:
 
 def _message_box(message: str, bgcolor: str, color: str) -> ft.Control:
     return ft.Container(content=ft.Text(message, color=color), bgcolor=bgcolor, padding=12, border_radius=6)
+
+
+def _display_value(value: object) -> str:
+    return "-" if value is None or (isinstance(value, str) and not value.strip()) else str(value)
+
+
+def _compact_mapped_values(values: dict[str, object], limit: int = 4) -> str:
+    visible = [(key, value) for key, value in values.items() if _display_value(value) != "-"]
+    if not visible:
+        return "-"
+    parts = [f"{key}: {value}" for key, value in visible[:limit]]
+    if len(visible) > limit:
+        parts.append(f"+{len(visible) - limit} campos")
+    return " | ".join(parts)

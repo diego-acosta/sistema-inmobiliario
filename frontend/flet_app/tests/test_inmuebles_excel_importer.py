@@ -300,3 +300,36 @@ def test_confirmacion_mockeada_envia_dato_catastral_completo() -> None:
     assert payload["superficie_titulo"] == "1200.50"
     assert payload["fecha_desde"] == "2026-01-01T00:00:00"
     assert payload["observaciones"] == "Obs cat"
+
+
+def test_preview_inmuebles_muestra_codigo_nombre_y_no_diccionario_como_principal() -> None:
+    sheet = _sheet([["PR233-101", "Lote legible", "", "", "", "10", ""]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+
+    visible = preview.rows[0].visible_preview_values()
+    assert visible["Código"] == "PR233-101"
+    assert visible["Nombre/descripción"] == "Lote legible"
+    assert "codigo_inmueble" not in visible
+    assert preview.rows[0].mapped_values["codigo_inmueble"] == "PR233-101"
+
+
+def test_preview_inmuebles_muestra_datos_catastrales_principales() -> None:
+    sheet = _sheet([["PR233-102", "Lote con catastro", "", "MZ-7", "LT-9", "10", "PI-123"]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+
+    visible = preview.rows[0].visible_preview_values()
+    assert visible["Manzana"] == "MZ-7"
+    assert visible["Lote"] == "LT-9"
+    assert visible["Partida"] == "PI-123"
+
+
+def test_preview_inmuebles_invalido_y_warning_exponen_mensajes_legibles() -> None:
+    sheet = _sheet([["", "Sin código", "", "", "", "-3", ""], ["PR233-103", "", "", "", "", "10", ""]])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+
+    assert preview.rows[0].status == "INVALID"
+    assert "Código inmueble: campo requerido." in preview.rows[0].errors
+    assert "Superficie: Debe ser un decimal positivo." in preview.rows[0].errors
+    assert preview.rows[1].status == "WARNING"
+    assert any("Falta nombre" in warning for warning in preview.rows[1].warnings)
+    assert preview.rows[1].visible_preview_values()["Código"] == "PR233-103"
