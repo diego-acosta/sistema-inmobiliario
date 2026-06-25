@@ -14,48 +14,94 @@ EXPECTED_HEADERS: Final[tuple[str, ...]] = (
     "codigo",
     "descripcion",
     "desarrollo",
+    "estado_administrativo",
+    "estado_juridico",
+    "m2",
+    "observaciones",
+    "folio_real",
+    "circunscripcion",
+    "seccion",
+    "chacra",
+    "quinta",
+    "fraccion",
     "manzana",
     "lote",
     "parcela",
-    "m2",
+    "subparcela",
     "nomenclatura_catastral",
     "partida",
     "matricula",
-    "estado_administrativo",
-    "estado_juridico",
-    "observaciones",
+    "superficie_titulo",
+    "superficie_mensura",
+    "medidas",
+    "situacion_posesoria",
+    "situacion_dominial",
+    "organismo_origen",
+    "fecha_desde",
+    "fecha_hasta",
+    "estado_dato",
+    "observaciones_catastrales",
 )
 
 EXAMPLE_ROWS: Final[tuple[tuple[str, ...], ...]] = (
-    ("IMP-001", "Lote importado 1", "Loteo existente", "M1", "L1", "", "10.5", "", "P-001", "", "", "", ""),
-    ("IMP-002", "Lote importado 2", "Loteo existente", "M1", "L2", "", "1234.56", "", "P-002", "", "", "", ""),
-    ("IMP-003", "Ejemplo sin dato catastral", "", "", "", "", "500", "", "", "", "", "", ""),
+    (
+        "IMP-001", "Lote importado básico", "Loteo existente", "ACTIVO", "REGULAR", "500", "Fila básica sin dato catastral avanzado",
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    ),
+    (
+        "IMP-002", "Lote con catastro avanzado", "Loteo existente", "ACTIVO", "REGULAR", "1234.56", "Fila con dato catastral/registral completo",
+        "FR-001", "I", "A", "CH-1", "Q-2", "F-3", "M1", "L2", "P-10", "SP-1", "NC-001", "P-001", "MAT-001",
+        "1200.50", "1198.75", "20x60", "POSESION REGULAR", "DOMINIO PERFECTO", "Catastro municipal", "2026-01-01", "", "ACTIVO", "Observación catastral ejemplo",
+    ),
+    (
+        "IMP-003", "Ejemplo con estructura completa y vacíos", "", "", "", "750", "",
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    ),
 )
 
-COLUMN_HELP: Final[tuple[tuple[str, str, str, str], ...]] = (
-    ("codigo", "Obligatoria", "Identificador del inmueble a importar.", "codigo, código, codigo_lote, cod_lote, lote_codigo"),
-    ("descripcion", "Opcional", "Nombre o descripción visible del inmueble/lote.", "descripcion, descripción, nombre, nombre_lote"),
-    ("desarrollo", "Opcional", "Debe coincidir con código o nombre de un desarrollo existente si se informa.", "desarrollo, loteo, emprendimiento, barrio"),
-    ("manzana", "Opcional", "Dato funcional/catastral usado para crear dato catastral/registral.", "manzana, mz, mza"),
-    ("lote", "Opcional", "No es una entidad separada; se trata como dato funcional/catastral del inmueble.", "lote, parcela, nro_lote, numero_lote"),
-    ("parcela", "Opcional", "Dato catastral/registral del inmueble.", "parcela"),
-    ("m2", "Opcional", "Superficie; debe ser número positivo si se informa.", "superficie, superficie_m2, m2, metros"),
-    ("nomenclatura_catastral", "Opcional", "Dato catastral/registral del inmueble.", "nomenclatura_catastral"),
-    ("partida", "Opcional", "Partida inmobiliaria para crear dato catastral/registral.", "partida, partida_inmobiliaria"),
-    ("matricula", "Opcional", "Matrícula registral para crear dato catastral/registral.", "matricula, matrícula, matricula_registral"),
-    ("estado_administrativo", "Opcional", "Estado administrativo del inmueble; si falta, el importador aplica el default vigente.", "estado_administrativo"),
-    ("estado_juridico", "Opcional", "Estado jurídico del inmueble; si falta, el importador aplica el default vigente.", "estado_juridico"),
-    ("observaciones", "Opcional", "Notas internas del inmueble.", "observaciones"),
+COLUMN_HELP: Final[tuple[tuple[str, str, str, str, str], ...]] = (
+    ("codigo", "Obligatoria", "Texto", "Identificador del inmueble. No debe repetirse ni existir previamente.", "codigo, código, codigo_lote, cod_lote, lote_codigo"),
+    ("descripcion", "Opcional", "Texto", "Nombre o descripción visible del inmueble/lote.", "descripcion, descripción, nombre, nombre_lote"),
+    ("desarrollo", "Opcional", "Texto", "Código o nombre de un desarrollo existente si se informa.", "desarrollo, loteo, emprendimiento, barrio"),
+    ("estado_administrativo", "Opcional", "Texto", "Estado administrativo del inmueble; si falta se usa ACTIVO.", "estado_administrativo, estado, estado_admin"),
+    ("estado_juridico", "Opcional", "Texto", "Estado jurídico del inmueble; si falta se usa REGULAR.", "estado_juridico, estado legal, situacion juridica, situación jurídica"),
+    ("m2", "Opcional", "Decimal positivo", "Superficie del inmueble.", "superficie, superficie_m2, m2, metros"),
+    ("observaciones", "Opcional", "Texto", "Observaciones del inmueble básico.", "observaciones, obs, comentarios"),
+    ("folio_real", "Opcional", "Texto", "Folio real del dato registral.", "folio_real"),
+    ("circunscripcion", "Opcional", "Texto", "Circunscripción catastral.", "circunscripcion, circunscripción, circ"),
+    ("seccion", "Opcional", "Texto", "Sección catastral.", "seccion, sección, sec"),
+    ("chacra", "Opcional", "Texto", "Chacra catastral.", "chacra"),
+    ("quinta", "Opcional", "Texto", "Quinta catastral.", "quinta"),
+    ("fraccion", "Opcional", "Texto", "Fracción catastral.", "fraccion, fracción"),
+    ("manzana", "Opcional", "Texto", "Manzana usada para crear dato catastral/registral.", "manzana, mz, mza"),
+    ("lote", "Opcional", "Texto", "Dato funcional/catastral del inmueble; no crea una entidad lote separada.", "lote, nro_lote, numero_lote, número_lote"),
+    ("parcela", "Opcional", "Texto", "Parcela catastral.", "parcela"),
+    ("subparcela", "Opcional", "Texto", "Subparcela catastral.", "subparcela, sub_parcela"),
+    ("nomenclatura_catastral", "Opcional", "Texto", "Nomenclatura catastral.", "nomenclatura_catastral, nomenclatura, nomenclatura catastro"),
+    ("partida", "Opcional", "Texto", "Partida inmobiliaria.", "partida, partida_inmobiliaria"),
+    ("matricula", "Opcional", "Texto", "Matrícula registral.", "matricula, matrícula, matricula_registral"),
+    ("superficie_titulo", "Opcional", "Decimal positivo", "Superficie según título.", "superficie_titulo, superficie título, superficie_de_titulo"),
+    ("superficie_mensura", "Opcional", "Decimal positivo", "Superficie según mensura.", "superficie_mensura, superficie_de_mensura"),
+    ("medidas", "Opcional", "Texto", "Medidas o dimensiones descriptivas.", "medidas"),
+    ("situacion_posesoria", "Opcional", "Texto", "Situación posesoria.", "situacion_posesoria, situación posesoria"),
+    ("situacion_dominial", "Opcional", "Texto", "Situación dominial.", "situacion_dominial, situación dominial"),
+    ("organismo_origen", "Opcional", "Texto", "Organismo de origen del dato catastral/registral.", "organismo_origen, organismo"),
+    ("fecha_desde", "Opcional", "Fecha AAAA-MM-DD", "Inicio de vigencia del dato catastral/registral.", "fecha_desde, vigencia_desde"),
+    ("fecha_hasta", "Opcional", "Fecha AAAA-MM-DD", "Fin de vigencia; no puede ser anterior a fecha_desde.", "fecha_hasta, vigencia_hasta"),
+    ("estado_dato", "Opcional", "ACTIVO/INACTIVO/HISTORICO", "Estado del dato catastral/registral; si falta se usa ACTIVO.", "estado_dato, estado_dato_catastral"),
+    ("observaciones_catastrales", "Opcional", "Texto", "Observaciones propias del dato catastral/registral.", "observaciones_catastrales, observaciones_catastro, observaciones_registrales"),
 )
 
 VALIDATION_RULES: Final[tuple[str, ...]] = (
     "codigo es obligatorio.",
     "codigo no debe repetirse en el archivo.",
     "codigo no debe existir previamente en el sistema.",
-    "m2 debe ser número positivo si se informa.",
+    "m2, superficie_titulo y superficie_mensura deben ser números positivos si se informan.",
+    "fecha_desde y fecha_hasta deben informarse como fecha válida; se recomienda AAAA-MM-DD.",
+    "fecha_hasta no puede ser anterior a fecha_desde.",
     "desarrollo debe coincidir con código o nombre de un desarrollo existente.",
     "lote no es una entidad separada; se trata como dato funcional/catastral del inmueble.",
-    "Manzana, lote, parcela, nomenclatura, partida y matrícula se usan para crear dato catastral/registral.",
+    "Las columnas catastrales/registrales vacías se omiten del payload.",
     "No se importan ventas.",
     "No se importan precios.",
     "No se importan servicios.",
@@ -92,7 +138,7 @@ def _build_data_sheet(sheet) -> None:
 
 
 def _build_help_sheet(sheet) -> None:
-    sheet.append(("Plantilla de importación de inmuebles/lotes",))
+    sheet.append(("Plantilla completa de importación de inmuebles/lotes",))
     sheet["A1"].font = Font(size=14, bold=True)
     sheet.append(("",))
     sheet.append(("Reglas de validación",))
@@ -100,7 +146,7 @@ def _build_help_sheet(sheet) -> None:
     for rule in VALIDATION_RULES:
         sheet.append((rule,))
     sheet.append(("",))
-    sheet.append(("Columnas", "Obligatoriedad", "Descripción", "Aliases aceptados"))
+    sheet.append(("Columnas", "Obligatoriedad", "Formato esperado", "Descripción", "Aliases aceptados"))
     header_row = sheet.max_row
     for item in COLUMN_HELP:
         sheet.append(item)

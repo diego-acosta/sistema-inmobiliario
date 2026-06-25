@@ -140,3 +140,135 @@ def test_confirmacion_mockeada_reporta_creadas_y_fallidas() -> None:
     assert result.created_ids == [1]
     assert result.warnings_by_row == {}
     assert api.catastral_payloads[0][0] == 1
+
+
+def _advanced_sheet(rows):
+    headers = [
+        "codigo",
+        "descripcion",
+        "m2",
+        "folio_real",
+        "circunscripcion",
+        "seccion",
+        "chacra",
+        "quinta",
+        "fraccion",
+        "manzana",
+        "lote",
+        "parcela",
+        "subparcela",
+        "nomenclatura_catastral",
+        "partida",
+        "matricula",
+        "superficie_titulo",
+        "superficie_mensura",
+        "medidas",
+        "situacion_posesoria",
+        "situacion_dominial",
+        "organismo_origen",
+        "fecha_desde",
+        "fecha_hasta",
+        "estado_dato",
+        "observaciones_catastrales",
+    ]
+    return ExcelSheetData(
+        name="Datos",
+        columns=[ExcelColumn(i, h, h) for i, h in enumerate(headers)],
+        rows=[dict(zip(headers, values), __row_number__=idx + 2) for idx, values in enumerate(rows)],
+        header_row_number=1,
+    )
+
+
+def test_mapping_automatico_de_campos_catastrales_avanzados() -> None:
+    mapping = suggest_mapping(_advanced_sheet([]).columns, inmueble_import_target_fields())
+    by_target = {m.target_field: m.source_column for m in mapping}
+    assert by_target["folio_real"] == "folio_real"
+    assert by_target["subparcela"] == "subparcela"
+    assert by_target["superficie_titulo"] == "superficie_titulo"
+    assert by_target["fecha_desde"] == "fecha_desde"
+    assert by_target["observaciones_catastrales"] == "observaciones_catastrales"
+
+
+def test_payload_catastral_con_campos_avanzados_y_fechas() -> None:
+    values = {
+        "codigo_inmueble": "ADV-1",
+        "estado_administrativo": "ACTIVO",
+        "estado_juridico": "REGULAR",
+        "folio_real": "FR-1",
+        "circunscripcion": "I",
+        "seccion": "A",
+        "chacra": "CH",
+        "quinta": "Q",
+        "fraccion": "F",
+        "manzana": "M",
+        "lote": "L",
+        "parcela": "P",
+        "subparcela": "SP",
+        "nomenclatura_catastral": "NC",
+        "partida_inmobiliaria": "PI",
+        "matricula": "MAT",
+        "superficie_titulo": "1200.50",
+        "superficie_mensura": "1198.75",
+        "medidas": "20x60",
+        "situacion_posesoria": "REGULAR",
+        "situacion_dominial": "DOMINIO",
+        "organismo_origen": "Catastro",
+        "fecha_desde": "2026-01-01",
+        "fecha_hasta": "2026-12-31",
+        "estado_dato": "HISTORICO",
+        "observaciones_catastrales": "Obs cat",
+    }
+    assert build_catastral_import_payload(values) == {
+        "estado_dato": "HISTORICO",
+        "manzana": "M",
+        "lote": "L",
+        "nomenclatura_catastral": "NC",
+        "partida_inmobiliaria": "PI",
+        "matricula": "MAT",
+        "folio_real": "FR-1",
+        "circunscripcion": "I",
+        "seccion": "A",
+        "chacra": "CH",
+        "quinta": "Q",
+        "fraccion": "F",
+        "parcela": "P",
+        "subparcela": "SP",
+        "medidas": "20x60",
+        "situacion_posesoria": "REGULAR",
+        "situacion_dominial": "DOMINIO",
+        "organismo_origen": "Catastro",
+        "fecha_desde": "2026-01-01",
+        "fecha_hasta": "2026-12-31",
+        "observaciones": "Obs cat",
+        "superficie_titulo": "1200.50",
+        "superficie_mensura": "1198.75",
+    }
+
+
+def test_preview_valida_fechas_y_superficies_avanzadas() -> None:
+    sheet = _advanced_sheet([
+        ["A1", "Avanzado", "10", "", "", "", "", "", "", "", "", "", "", "", "", "", "-1", "2", "", "", "", "", "2026-01-01", "2025-12-31", "", ""],
+        ["A2", "Fecha inválida", "10", "", "", "", "", "", "", "", "", "", "", "", "", "", "1", "2", "", "", "", "", "31/12/2026", "mal", "", ""],
+    ])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    assert preview.invalid_rows == 2
+    assert "Superficie título: Debe ser un decimal positivo." in preview.rows[0].errors
+    assert "Fecha hasta no puede ser anterior a fecha desde." in preview.rows[0].errors
+    assert "Fecha hasta: valor inválido o no convertible." in preview.rows[1].errors
+
+
+def test_confirmacion_mockeada_envia_dato_catastral_completo() -> None:
+    sheet = _advanced_sheet([
+        ["ADV-1", "Avanzado", "100", "FR-1", "I", "A", "CH", "Q", "F", "M", "L", "P", "SP", "NC", "PI", "MAT", "1200.50", "1198.75", "20x60", "REGULAR", "DOMINIO", "Catastro", "2026-01-01", "", "ACTIVO", "Obs cat"],
+    ])
+    preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
+    api = FakeApi()
+    result = confirm_inmuebles_import(api, preview, import_run_id="run-adv")
+    assert result.created == 1
+    assert result.failed == 0
+    _, payload, _ = api.catastral_payloads[0]
+    assert payload["folio_real"] == "FR-1"
+    assert payload["subparcela"] == "SP"
+    assert payload["superficie_titulo"] == "1200.50"
+    assert payload["fecha_desde"] == "2026-01-01"
+    assert payload["observaciones"] == "Obs cat"

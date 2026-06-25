@@ -15,13 +15,22 @@ CATASTRAL_ADVANCED_FIELDS = (
     "folio_real",
     "circunscripcion",
     "seccion",
+    "chacra",
+    "quinta",
+    "fraccion",
     "parcela",
+    "subparcela",
     "superficie_titulo",
     "superficie_mensura",
     "medidas",
     "situacion_posesoria",
     "situacion_dominial",
+    "organismo_origen",
+    "fecha_desde",
+    "fecha_hasta",
+    "estado_dato",
     "observaciones",
+    "observaciones_catastrales",
 )
 
 
@@ -160,15 +169,27 @@ def build_dato_catastral_payload(
         "folio_real",
         "circunscripcion",
         "seccion",
+        "chacra",
+        "quinta",
+        "fraccion",
         "parcela",
+        "subparcela",
         "medidas",
         "situacion_posesoria",
         "situacion_dominial",
-        "observaciones",
+        "organismo_origen",
+        "fecha_desde",
+        "fecha_hasta",
     ):
         clean_value = clean_text(values.get(field_name))
         if clean_value:
             payload[field_name] = clean_value
+    observaciones_catastrales = clean_text(values.get("observaciones_catastrales"))
+    observaciones = clean_text(values.get("observaciones"))
+    if observaciones_catastrales:
+        payload["observaciones"] = observaciones_catastrales
+    elif observaciones:
+        payload["observaciones"] = observaciones
     for field_name in ("superficie_titulo", "superficie_mensura"):
         clean_value = clean_text(values.get(field_name))
         if clean_value:

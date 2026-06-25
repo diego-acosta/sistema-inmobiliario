@@ -61,10 +61,11 @@ class InmueblesImportExcelPage:
             content=ft.Column(
                 [
                     ft.Text("Ayuda rápida", size=18, weight=ft.FontWeight.W_600),
-                    ft.Text("Usá la hoja Datos de la plantilla como guía: el código es obligatorio y no puede repetirse ni existir previamente en el sistema."),
+                    ft.Text("La plantilla es completa: incluye columnas básicas del inmueble y datos catastrales/registrales avanzados soportados."),
+                    ft.Text("Solo el código es obligatorio; las columnas avanzadas pueden quedar vacías y se omiten del payload si no se informan."),
                     ft.Text("Si informás desarrollo, debe coincidir con el código o nombre de un desarrollo existente antes de importar."),
-                    ft.Text("Manzana, lote, parcela, nomenclatura, partida y matrícula se usan como dato catastral/registral; lote no se crea como entidad separada."),
-                    ft.Text("El preview mostrará errores y advertencias antes de confirmar la importación real. No se importan ventas, precios, servicios ni geometría/plano."),
+                    ft.Text("Lote se guarda como dato funcional/catastral del inmueble; no se crea una entidad lote separada."),
+                    ft.Text("El preview valida códigos, superficies, fechas y desarrollo antes de confirmar. No se importan ventas, precios, servicios ni geometría/plano."),
                     ft.ElevatedButton(
                         "Descargar plantilla Excel",
                         icon=ft.Icons.DOWNLOAD,

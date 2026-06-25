@@ -39,18 +39,18 @@ def test_plantilla_incluye_ejemplos_pedidos(tmp_path) -> None:
     ]
 
     assert rows[0]["codigo"] == "IMP-001"
-    assert rows[0]["parcela"] == ""
-    assert rows[0]["m2"] == "10.5"
-    assert rows[0]["partida"] == "P-001"
+    assert rows[0]["m2"] == "500"
+    assert rows[0]["folio_real"] == ""
 
     assert rows[1]["codigo"] == "IMP-002"
-    assert rows[1]["parcela"] == ""
+    assert rows[1]["parcela"] == "P-10"
     assert rows[1]["m2"] == "1234.56"
-    assert rows[1]["partida"] == "P-002"
+    assert rows[1]["partida"] == "P-001"
+    assert rows[1]["superficie_titulo"] == "1200.50"
+    assert rows[1]["fecha_desde"] == "2026-01-01"
 
     assert rows[2]["codigo"] == "IMP-003"
-    assert rows[2]["parcela"] == ""
-    assert rows[2]["m2"] == "500"
+    assert rows[2]["m2"] == "750"
     assert rows[2]["partida"] == ""
 
 
@@ -60,5 +60,30 @@ def test_plantilla_documenta_aliases_y_restricciones_de_alcance(tmp_path) -> Non
     text = "\n".join(str(cell.value) for row in sheet.iter_rows() for cell in row if cell.value)
     assert "codigo, código, codigo_lote, cod_lote, lote_codigo" in text
     assert "desarrollo, loteo, emprendimiento, barrio" in text
+    assert "superficie_titulo" in text
+    assert "fecha_desde" in text
+    assert "observaciones_catastrales" in text
     assert "No se importan ventas." in text
     assert "No se importa geometría/plano." in text
+
+
+def test_plantilla_incluye_columnas_avanzadas(tmp_path) -> None:
+    path = create_inmuebles_excel_template(str(tmp_path / "plantilla.xlsx"))
+    sheet = load_workbook(path)["Datos"]
+    headers = [cell.value for cell in sheet[1]]
+    for header in (
+        "folio_real",
+        "circunscripcion",
+        "chacra",
+        "quinta",
+        "fraccion",
+        "subparcela",
+        "superficie_titulo",
+        "superficie_mensura",
+        "organismo_origen",
+        "fecha_desde",
+        "fecha_hasta",
+        "estado_dato",
+        "observaciones_catastrales",
+    ):
+        assert header in headers

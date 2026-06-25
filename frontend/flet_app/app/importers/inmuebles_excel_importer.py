@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol
 from uuid import uuid5, NAMESPACE_URL
@@ -23,13 +24,32 @@ from app.inmueble_alta_helpers import build_dato_catastral_payload, build_inmueb
 DEFAULT_ESTADO_ADMINISTRATIVO = "ACTIVO"
 DEFAULT_ESTADO_JURIDICO = "REGULAR"
 CATASTRAL_FIELDS = (
+    "folio_real",
+    "circunscripcion",
+    "seccion",
+    "chacra",
+    "quinta",
+    "fraccion",
     "manzana",
     "lote",
     "parcela",
+    "subparcela",
     "nomenclatura_catastral",
     "partida_inmobiliaria",
     "matricula",
+    "superficie_titulo",
+    "superficie_mensura",
+    "medidas",
+    "situacion_posesoria",
+    "situacion_dominial",
+    "organismo_origen",
+    "fecha_desde",
+    "fecha_hasta",
+    "estado_dato",
+    "observaciones_catastrales",
 )
+
+DATE_FORMAT_HELP = "Usá formato AAAA-MM-DD."
 
 
 class InmueblesImportApi(Protocol):
@@ -51,18 +71,34 @@ def inmueble_import_target_fields() -> list[ImportTargetField]:
         ImportTargetField("codigo_inmueble", "Código inmueble", True, ["codigo", "código", "codigo_lote", "cod_lote", "lote_codigo"], normalizer=normalize_text),
         ImportTargetField("nombre_inmueble", "Nombre inmueble", False, ["nombre", "descripcion", "descripción", "nombre_lote"], normalizer=normalize_text),
         ImportTargetField("desarrollo", "Desarrollo", False, ["loteo", "emprendimiento", "barrio"], normalizer=normalize_text),
-        ImportTargetField("manzana", "Manzana", False, ["mz", "mza"], normalizer=normalize_text),
-        ImportTargetField("lote", "Lote", False, ["parcela", "nro_lote", "numero_lote"], normalizer=normalize_text),
-        ImportTargetField("parcela", "Parcela", False, [], normalizer=normalize_text),
+        ImportTargetField("estado_administrativo", "Estado administrativo", False, ["estado", "estado_admin"], normalizer=normalize_text),
+        ImportTargetField("estado_juridico", "Estado jurídico", False, ["estado legal", "situacion juridica", "situación jurídica"], normalizer=normalize_text),
         ImportTargetField("superficie", "Superficie", False, ["superficie_m2", "m2", "metros"], validator=positive_decimal_validator, normalizer=normalize_decimal),
+        ImportTargetField("observaciones", "Observaciones", False, ["obs", "comentarios"], normalizer=normalize_text),
+        ImportTargetField("folio_real", "Folio real", False, [], normalizer=normalize_text),
+        ImportTargetField("circunscripcion", "Circunscripción", False, ["circunscripción", "circ"], normalizer=normalize_text),
+        ImportTargetField("seccion", "Sección", False, ["sección", "sec"], normalizer=normalize_text),
+        ImportTargetField("chacra", "Chacra", False, [], normalizer=normalize_text),
+        ImportTargetField("quinta", "Quinta", False, [], normalizer=normalize_text),
+        ImportTargetField("fraccion", "Fracción", False, ["fracción"], normalizer=normalize_text),
+        ImportTargetField("manzana", "Manzana", False, ["mz", "mza"], normalizer=normalize_text),
+        ImportTargetField("lote", "Lote", False, ["nro_lote", "numero_lote", "número_lote"], normalizer=normalize_text),
+        ImportTargetField("parcela", "Parcela", False, [], normalizer=normalize_text),
+        ImportTargetField("subparcela", "Subparcela", False, ["sub_parcela"], normalizer=normalize_text),
         ImportTargetField("nomenclatura_catastral", "Nomenclatura catastral", False, ["nomenclatura", "nomenclatura catastro"], normalizer=normalize_text),
         ImportTargetField("partida_inmobiliaria", "Partida inmobiliaria", False, ["partida"], normalizer=normalize_text),
         ImportTargetField("matricula", "Matrícula", False, ["matrícula", "matricula_registral"], normalizer=normalize_text),
-        ImportTargetField("estado_administrativo", "Estado administrativo", False, ["estado"], normalizer=normalize_text),
-        ImportTargetField("estado_juridico", "Estado jurídico", False, ["estado legal", "situacion juridica"], normalizer=normalize_text),
-        ImportTargetField("observaciones", "Observaciones", False, ["obs", "comentarios"], normalizer=normalize_text),
+        ImportTargetField("superficie_titulo", "Superficie título", False, ["superficie título", "superficie_de_titulo"], validator=positive_decimal_validator, normalizer=normalize_decimal),
+        ImportTargetField("superficie_mensura", "Superficie mensura", False, ["superficie_de_mensura"], validator=positive_decimal_validator, normalizer=normalize_decimal),
+        ImportTargetField("medidas", "Medidas", False, [], normalizer=normalize_text),
+        ImportTargetField("situacion_posesoria", "Situación posesoria", False, ["situación posesoria"], normalizer=normalize_text),
+        ImportTargetField("situacion_dominial", "Situación dominial", False, ["situación dominial"], normalizer=normalize_text),
+        ImportTargetField("organismo_origen", "Organismo origen", False, ["organismo"], normalizer=normalize_text),
+        ImportTargetField("fecha_desde", "Fecha desde", False, ["vigencia_desde"], validator=date_validator, normalizer=normalize_date),
+        ImportTargetField("fecha_hasta", "Fecha hasta", False, ["vigencia_hasta"], validator=date_validator, normalizer=normalize_date),
+        ImportTargetField("estado_dato", "Estado dato catastral", False, ["estado_dato_catastral"], validator=estado_dato_validator, normalizer=normalize_upper_text),
+        ImportTargetField("observaciones_catastrales", "Observaciones catastrales", False, ["observaciones_catastro", "observaciones_registrales"], normalizer=normalize_text),
     ]
-
 
 def build_inmuebles_preview(
     sheet: Any,
@@ -106,6 +142,10 @@ def build_inmuebles_preview(
         if not normalize_text(values.get("estado_juridico")):
             values["estado_juridico"] = DEFAULT_ESTADO_JURIDICO
             row.warnings.append(f"Falta estado jurídico: se usará {DEFAULT_ESTADO_JURIDICO}.")
+        fecha_desde = values.get("fecha_desde")
+        fecha_hasta = values.get("fecha_hasta")
+        if fecha_desde and fecha_hasta and str(fecha_hasta) < str(fecha_desde):
+            row.errors.append("Fecha hasta no puede ser anterior a fecha desde.")
         if not has_catastral_data(values):
             row.warnings.append("No hay datos catastrales/registrales para crear.")
         row.status = STATUS_INVALID if row.errors else (STATUS_WARNING if row.warnings else STATUS_VALID)
@@ -128,6 +168,8 @@ def build_catastral_import_payload(values: dict[str, Any]) -> dict[str, Any] | N
     if not has_catastral_data(values):
         return None
     form_values = _string_form_values(values)
+    if not form_values.get("observaciones_catastrales"):
+        form_values["observaciones"] = None
     return build_dato_catastral_payload(form_values, incluir_avanzados=True)
 
 
@@ -194,9 +236,49 @@ def _string_form_values(values: dict[str, Any]) -> dict[str, str | None]:
             result[key] = None
         elif isinstance(value, Decimal):
             result[key] = str(value)
+        elif isinstance(value, (date, datetime)):
+            result[key] = value.isoformat()
         else:
             result[key] = str(value)
     return result
+
+
+def normalize_date(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text).date().isoformat()
+    except ValueError:
+        return None
+
+
+def date_validator(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    return None if normalize_date(value) else f"Fecha inválida. {DATE_FORMAT_HELP}"
+
+
+def estado_dato_validator(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    return None if str(value).strip().upper() in {"ACTIVO", "INACTIVO", "HISTORICO"} else "Debe ser ACTIVO, INACTIVO o HISTORICO."
+
+
+def normalize_upper_text(value: Any) -> str | None:
+    text = normalize_text(value)
+    return text.upper() if text else None
 
 
 def _build_desarrollo_index(items: list[dict[str, Any]]) -> dict[str, DesarrolloRef]:
