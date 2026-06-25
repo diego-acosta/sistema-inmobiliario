@@ -56,6 +56,9 @@ Alinear la documentacion del dominio inmobiliario con la implementacion real de 
 - [[EVT-INM]]
 - [[EST-INM]]
 
+## Decisiones documentales relacionadas
+- [[INM-DEC-IMPORT-EXCEL-001]]: ownership inmobiliario del importador Excel de inmuebles/lotes (#212) y corrección de ambigüedad de #205.
+
 ## Notas de alineacion
 - `instalacion` aparece hoy como metadata tecnica (`id_instalacion_origen`, `id_instalacion_ultima_modificacion`) y no como entidad de dominio inmobiliario.
 - Los conceptos futuros se conservan, pero quedan marcados explicitamente para no inducir a error sobre funcionalidad disponible.

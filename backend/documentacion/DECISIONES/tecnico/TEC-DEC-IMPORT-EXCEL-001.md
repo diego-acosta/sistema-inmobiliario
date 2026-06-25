@@ -16,7 +16,7 @@ Adoptar un **enfoque mixto** para el importador Excel reusable:
 
 1. La primera implementación deberá resolver lectura local, selección de hoja, normalización de encabezados, mapeo y preview estructural en frontend Flet.
 2. Las validaciones de negocio definitivas deberán quedar en backend o consultarse mediante endpoints read-like/previews específicos del dominio dueño.
-3. La confirmación real deberá usar endpoints existentes o futuros commands del dominio dueño, no un servicio transversal que invada semántica de personas, comercial, operativo/inmobiliario o financiero.
+3. La confirmación real deberá usar endpoints existentes o futuros commands del dominio dueño, no un servicio transversal que invada semántica de personas, comercial, inmobiliario, operativo o financiero. Para inmuebles/lotes, el dominio dueño es inmobiliario; el contexto de usuario/autorización, auditoría, headers CORE-EF, `op_id` y trazabilidad técnica no transfiere ownership al Dominio Operativo.
 4. Cualquier endpoint write que cree/modifique entidades sincronizables deberá aplicar CORE-EF desde su primer PR de implementación.
 5. La épica #205 no queda cerrada con esta decisión; esta decisión prepara el PR de implementación posterior.
 
@@ -49,7 +49,7 @@ Aceptado porque separa responsabilidades: frontend para interacción y estructur
 ## Consecuencias
 
 - La base reusable no define campos de negocio globales; cada importador específico declarará sus `ImportTargetField`.
-- El importador de inmuebles/lotes (#212) deberá documentar su mapping y validaciones sin invadir otros dominios.
+- El importador de inmuebles/lotes (#212) deberá documentar su mapping y validaciones como importador específico del Dominio Inmobiliario, sin delegar los writes principales al Dominio Operativo ni invadir otros dominios.
 - Si se agrega `openpyxl`, se hará en un PR de implementación con justificación y pruebas.
 - Si se crea backend de preview/importación, deberá tener contrato DEV-API y tests propios.
 - No se modifica SQL ni se crea persistencia de importaciones en esta decisión.
@@ -57,6 +57,7 @@ Aceptado porque separa responsabilidades: frontend para interacción y estructur
 ## Referencias
 
 - `backend/documentacion/DEV-SRV/dominios/tecnico/SRV-TEC-IMPORT-EXCEL-001.md`
+- `backend/documentacion/DECISIONES/inmobiliario/INM-DEC-IMPORT-EXCEL-001.md`
 - `backend/documentacion/DEV-SRV/dominios/tecnico/SRV-TEC-005-gestion-de-importacion-y-exportacion-tecnica.md`
 - `backend/documentacion/CORE-EF/`
 - `frontend/flet_app/documentacion/UX-INMUEBLES.md`
