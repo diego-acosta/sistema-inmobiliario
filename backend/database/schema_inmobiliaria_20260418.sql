@@ -8790,6 +8790,13 @@ CREATE INDEX idx_inmueble_dcr_id_inmueble_activo ON public.inmueble_dato_catastr
 
 
 --
+-- Name: ux_inmueble_dcr_unico_no_eliminado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_inmueble_dcr_unico_no_eliminado ON public.inmueble_dato_catastral_registral USING btree (id_inmueble) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: idx_inmueble_dcr_matricula_activa; Type: INDEX; Schema: public; Owner: -
 --
 

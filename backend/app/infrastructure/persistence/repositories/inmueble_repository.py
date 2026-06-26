@@ -117,6 +117,21 @@ class InmuebleRepository(BaseRepository[Any]):
         ).mappings().all()
         return [self._map_dcr_row(row) for row in rows]
 
+    def has_dato_catastral_registral_no_eliminado(self, id_inmueble: int) -> bool:
+        statement = text(
+            """
+            SELECT 1
+            FROM inmueble_dato_catastral_registral
+            WHERE id_inmueble = :id_inmueble
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        )
+        return (
+            self.db.execute(statement, {"id_inmueble": id_inmueble}).scalar_one_or_none()
+            is not None
+        )
+
     def get_dato_catastral_registral(
         self, id_inmueble: int, id_dato: int
     ) -> dict[str, Any] | None:

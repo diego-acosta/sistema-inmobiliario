@@ -1026,8 +1026,8 @@ La evidencia vigente confirma:
 | Metodo | Endpoint | Estado | Descripcion |
 |---|---|---|---|
 | `GET` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales` | vigente | Lista registros no borrados del inmueble (`QUERY_READLIKE`) |
-| `POST` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales` | vigente | Crea dato catastral/registral (`COMMAND_WRITE_NEGOCIO`) |
+| `POST` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales` | vigente | Crea el dato catastral/registral principal solo si no existe otro no eliminado (`COMMAND_WRITE_NEGOCIO`) |
 | `PUT` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}` | vigente | Actualiza dato con `If-Match-Version` (`COMMAND_WRITE_NEGOCIO`) |
 | `PATCH` | `/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}/baja` | vigente | Baja logica por `deleted_at` con `If-Match-Version` (`COMMAND_WRITE_NEGOCIO`) |
 
-Notas: ya existe soporte SQL y API inicial; frontend queda pendiente; no se modifico `POST /api/v1/inmuebles`; no existe campo `linderos`.
+Notas: decision funcional "Sin historial formal por ahora". El sistema opera con un dato catastral/registral principal unico por inmueble; la regla se garantiza en base de datos con el indice unico parcial `ux_inmueble_dcr_unico_no_eliminado` sobre `id_inmueble` donde `deleted_at IS NULL`. `fecha_desde`, `fecha_hasta` y `estado_dato` se conservan por compatibilidad, pero no disparan historial automatico, cierre de vigencias ni consulta por fecha. Si `POST` detecta un dato no eliminado existente o si PostgreSQL rechaza un insert concurrente por ese indice, responde `409 INMUEBLE_DATO_CATASTRAL_YA_EXISTE` con el mensaje `El inmueble ya posee un dato catastral/registral. Debe editar el existente.`. Ya existe soporte SQL y API inicial; no se modifico `POST /api/v1/inmuebles`; no existe campo `linderos`.

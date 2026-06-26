@@ -417,6 +417,17 @@ def _dato_catastral_error_response(result, *, action: str) -> JSONResponse:
         )
         return JSONResponse(status_code=409, content=error.model_dump())
 
+    if "INMUEBLE_DATO_CATASTRAL_YA_EXISTE" in result.errors:
+        error = ErrorResponse(
+            error_code="INMUEBLE_DATO_CATASTRAL_YA_EXISTE",
+            error_message=(
+                "El inmueble ya posee un dato catastral/registral. "
+                "Debe editar el existente."
+            ),
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=409, content=error.model_dump())
+
     validation_errors = {
         "INVALID_DATE_RANGE",
         "INVALID_SUPERFICIE",

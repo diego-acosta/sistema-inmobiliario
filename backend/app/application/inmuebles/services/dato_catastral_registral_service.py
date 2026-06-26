@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from app.application.common.results import AppResult
 from app.application.inmuebles.commands.manage_dato_catastral_registral import (
     BajaDatoCatastralRegistralCommand,
@@ -11,6 +13,7 @@ from app.application.inmuebles.commands.manage_dato_catastral_registral import (
 )
 
 ESTADOS_DATO = {"ACTIVO", "INACTIVO", "HISTORICO"}
+UNICO_NO_ELIMINADO_CONSTRAINT = "ux_inmueble_dcr_unico_no_eliminado"
 
 
 @dataclass(slots=True)
@@ -32,6 +35,9 @@ class Repository(Protocol):
     def list_datos_catastrales_registrales(
         self, id_inmueble: int
     ) -> list[dict[str, Any]]:
+        ...
+
+    def has_dato_catastral_registral_no_eliminado(self, id_inmueble: int) -> bool:
         ...
 
     def create_dato_catastral_registral(
@@ -112,6 +118,10 @@ class DatoCatastralRegistralService:
     ) -> AppResult[dict[str, Any]]:
         if not self.repository.inmueble_exists(command.id_inmueble):
             return AppResult.fail("NOT_FOUND_INMUEBLE")
+        if self.repository.has_dato_catastral_registral_no_eliminado(
+            command.id_inmueble
+        ):
+            return AppResult.fail("INMUEBLE_DATO_CATASTRAL_YA_EXISTE")
         values = _command_values(command)
         errors = _validate_values(values)
         if errors:
@@ -128,7 +138,21 @@ class DatoCatastralRegistralService:
             id_instalacion=id_instalacion,
             op_id=op_id,
         )
-        return AppResult.ok(self.repository.create_dato_catastral_registral(payload))
+        try:
+            created = self.repository.create_dato_catastral_registral(payload)
+        except IntegrityError as exc:
+            if self._is_unico_no_eliminado_violation(exc):
+                return AppResult.fail("INMUEBLE_DATO_CATASTRAL_YA_EXISTE")
+            raise
+        return AppResult.ok(created)
+
+    @staticmethod
+    def _is_unico_no_eliminado_violation(exc: IntegrityError) -> bool:
+        diag = getattr(getattr(exc, "orig", None), "diag", None)
+        return (
+            getattr(diag, "constraint_name", None)
+            == UNICO_NO_ELIMINADO_CONSTRAINT
+        )
 
     def update(
         self, command: UpdateDatoCatastralRegistralCommand
