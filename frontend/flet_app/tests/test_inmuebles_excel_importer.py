@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from app.api_client import ApiResult
-from app.components.excel_import_wizard import ExcelImportWizard
-from app.importers.excel_import_models import ExcelColumn, ExcelSheetData
+from app.components.excel_import_wizard import (
+    ExcelImportWizard,
+    format_created_ids,
+    format_row_ranges,
+    group_messages_by_text,
+)
+from app.importers.excel_import_models import ExcelColumn, ExcelSheetData, ExcelWorkbookData, ImportConfirmResult
 from app.importers.excel_mapping import suggest_mapping
 from app.importers.inmuebles_excel_importer import (
     build_catastral_import_payload,
@@ -431,7 +436,7 @@ def test_preview_inmuebles_preview_vacio_no_agrega_columnas_tecnicas_ni_desplaza
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
 
     assert preview.rows[0].visible_preview_values() == {}
-    columns = ExcelImportWizard._preview_columns(object(), preview)
+    columns = ExcelImportWizard._preview_columns(object(), preview.rows)
 
     assert "superficie" not in columns
     assert "estado_administrativo" not in columns
@@ -453,3 +458,93 @@ def test_importador_mapea_aliases_direccion_basica() -> None:
     assert values["altura"] == "123 bis"
     assert build_inmueble_import_payload(values)["calle"] == "San Martín"
     assert build_inmueble_import_payload(values)["altura"] == "123 bis"
+
+
+def _collect_text_values(control) -> list[str]:
+    values: list[str] = []
+    if hasattr(control, "value") and isinstance(control.value, str):
+        values.append(control.value)
+    for child_attr in ("controls", "cells"):
+        for child in getattr(control, child_attr, []) or []:
+            values.extend(_collect_text_values(child))
+    content = getattr(control, "content", None)
+    if content is not None:
+        values.extend(_collect_text_values(content))
+    return values
+
+
+def test_format_row_ranges_compacta_consecutivos_y_sueltos() -> None:
+    assert format_row_ranges([98, 99, 100, 105]) == "98–100, 105"
+
+
+def test_group_messages_by_text_agrupa_repetidos_por_mensaje() -> None:
+    groups = group_messages_by_text({31: ["Superficie inválida"], 98: ["Desarrollo no existe"], 99: ["Desarrollo no existe"]})
+
+    assert groups[0].message == "Desarrollo no existe"
+    assert groups[0].rows == [98, 99]
+    assert groups[1].message == "Superficie inválida"
+    assert groups[1].rows == [31]
+
+
+def test_reporte_final_no_muestra_representaciones_crudas() -> None:
+    wizard = ExcelImportWizard(target_fields=inmueble_import_target_fields())
+    wizard.confirm_result = ImportConfirmResult(
+        total=3,
+        created=1,
+        skipped=1,
+        failed=1,
+        created_ids=[10],
+        errors_by_row={31: ["Superficie: valor inválido o no convertible."]},
+        warnings_by_row={45: ["Falta nombre: se usará el código como nombre por defecto."]},
+    )
+
+    text = "\n".join(_collect_text_values(wizard._report_step()))
+
+    assert "Total: 3 | Creados: 1 | Omitidos: 1 | Fallidos: 1" in text
+    assert "Superficie: valor inválido o no convertible. — 1 fila — fila 31" in text
+    assert "{31:" not in text
+    assert "['" not in text
+
+
+def test_format_created_ids_compacta_si_son_muchos() -> None:
+    assert format_created_ids(list(range(1, 56)), limit=5) == "1, 2, 3, 4, 5 ... y 50 más"
+
+
+def test_paginacion_preview_cambia_rango_columnas_activas_sin_recalcular_preview() -> None:
+    calls = 0
+    rows = [[f"A{i}", f"Lote {i}", "", "", "", "10", ""] for i in range(1, 56)]
+    rows[54][6] = "PARTIDA-55"
+    sheet = _sheet(rows)
+
+    def preview_callback(sheet_arg, mappings):
+        nonlocal calls
+        calls += 1
+        return build_inmuebles_preview(sheet_arg, mappings)
+
+    wizard = ExcelImportWizard(
+        target_fields=inmueble_import_target_fields(),
+        preview_callback=preview_callback,
+    )
+    wizard.workbook = ExcelWorkbookData(path="test.xlsx", sheet_names=["Datos"], active_sheet="Datos", sheets={"Datos": sheet})
+    wizard.selected_sheet = "Datos"
+    wizard.mappings = suggest_mapping(sheet.columns, inmueble_import_target_fields())
+
+    wizard._build_preview(None)
+
+    assert calls == 1
+    assert wizard._preview_range_text() == "Mostrando 1–50 de 55"
+    assert [row.row_number for row in wizard._preview_page_rows()][:2] == [2, 3]
+    assert "Partida" not in wizard._preview_columns(wizard._preview_page_rows())
+
+    wizard._next_preview_page(None)
+
+    assert calls == 1
+    assert wizard._preview_range_text() == "Mostrando 51–55 de 55"
+    assert [row.row_number for row in wizard._preview_page_rows()] == [52, 53, 54, 55, 56]
+    assert "Partida" in wizard._preview_columns(wizard._preview_page_rows())
+
+    wizard._previous_preview_page(None)
+
+    assert calls == 1
+    assert wizard._preview_range_text() == "Mostrando 1–50 de 55"
+    assert "Partida" not in wizard._preview_columns(wizard._preview_page_rows())

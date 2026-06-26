@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import flet as ft
@@ -18,6 +19,19 @@ from app.importers.excel_reader import ExcelImportError, read_excel_workbook
 
 ConfirmCallback = Callable[[ImportPreviewResult], ImportConfirmResult]
 PreviewCallback = Callable[[object, list[ImportMapping]], ImportPreviewResult]
+
+PREVIEW_PAGE_SIZE = 50
+CREATED_IDS_DISPLAY_LIMIT = 50
+
+
+@dataclass(slots=True, frozen=True)
+class GroupedRowMessages:
+    message: str
+    rows: list[int]
+
+    @property
+    def count(self) -> int:
+        return len(self.rows)
 
 
 class ExcelImportWizard(ft.Column):
@@ -48,6 +62,7 @@ class ExcelImportWizard(ft.Column):
         self.mappings: list[ImportMapping] = []
         self.preview: ImportPreviewResult | None = None
         self.confirm_result: ImportConfirmResult | None = None
+        self.preview_page = 0
         self.error_message: str | None = None
         self.loading = False
         self.file_picker = ft.FilePicker(on_result=self._on_file_selected)
@@ -68,6 +83,7 @@ class ExcelImportWizard(ft.Column):
         self.workbook = None
         self.preview = None
         self.confirm_result = None
+        self.preview_page = 0
         self.error_message = None
         self._read_workbook()
 
@@ -92,6 +108,7 @@ class ExcelImportWizard(ft.Column):
             self.mappings = suggest_mapping(sheet.columns, self.target_fields)
             self.preview = None
             self.confirm_result = None
+            self.preview_page = 0
             self.error_message = None
         except ExcelImportError as exc:
             self.error_message = str(exc)
@@ -110,6 +127,7 @@ class ExcelImportWizard(ft.Column):
         self.mappings = updated
         self.preview = None
         self.confirm_result = None
+        self.preview_page = 0
         self._render_update()
 
     def _build_preview(self, _: ft.ControlEvent) -> None:
@@ -124,6 +142,7 @@ class ExcelImportWizard(ft.Column):
             else build_preview(sheet, self.target_fields, self.mappings)
         )
         self.confirm_result = None
+        self.preview_page = 0
         self.error_message = None
         self._render_update()
 
@@ -226,9 +245,11 @@ class ExcelImportWizard(ft.Column):
         if self.preview is None:
             return _section("4. Preview", [ft.Text("Pendiente de generación.")])
         preview = self.preview
-        preview_columns = self._preview_columns(preview)
+        self.preview_page = self._bounded_preview_page()
+        page_rows = self._preview_page_rows()
+        preview_columns = self._preview_columns(page_rows)
         rows = []
-        for row in preview.rows[:50]:
+        for row in page_rows:
             visible_values = row.visible_preview_values()
             rows.append(
                 ft.DataRow(
@@ -246,6 +267,14 @@ class ExcelImportWizard(ft.Column):
             "4. Preview",
             [
                 ft.Text(f"Filas: {preview.total_rows} | Válidas: {preview.valid_rows} | Inválidas: {preview.invalid_rows}"),
+                ft.Row(
+                    [
+                        ft.ElevatedButton("Anterior", on_click=self._previous_preview_page, disabled=self.preview_page <= 0),
+                        ft.Text(self._preview_range_text()),
+                        ft.ElevatedButton("Siguiente", on_click=self._next_preview_page, disabled=(self.preview_page + 1) * PREVIEW_PAGE_SIZE >= preview.total_rows),
+                    ],
+                    spacing=12,
+                ),
                 ft.Row(
                     [
                         ft.DataTable(
@@ -266,9 +295,44 @@ class ExcelImportWizard(ft.Column):
             ],
         )
 
-    def _preview_columns(self, preview: ImportPreviewResult, limit: int = 7) -> list[str]:
+    def _bounded_preview_page(self) -> int:
+        if self.preview is None or self.preview.total_rows <= 0:
+            return 0
+        max_page = (self.preview.total_rows - 1) // PREVIEW_PAGE_SIZE
+        return min(max(self.preview_page, 0), max_page)
+
+    def _preview_page_rows(self):
+        if self.preview is None:
+            return []
+        page = self._bounded_preview_page()
+        start = page * PREVIEW_PAGE_SIZE
+        return self.preview.rows[start:start + PREVIEW_PAGE_SIZE]
+
+    def _preview_range_text(self) -> str:
+        if self.preview is None or self.preview.total_rows <= 0:
+            return "Mostrando 0–0 de 0"
+        page = self._bounded_preview_page()
+        start = page * PREVIEW_PAGE_SIZE
+        end = min(start + PREVIEW_PAGE_SIZE, self.preview.total_rows)
+        return f"Mostrando {start + 1}–{end} de {self.preview.total_rows}"
+
+    def _next_preview_page(self, _: ft.ControlEvent | None = None) -> None:
+        if self.preview is None:
+            return
+        self.preview_page = self._bounded_preview_page()
+        if (self.preview_page + 1) * PREVIEW_PAGE_SIZE < self.preview.total_rows:
+            self.preview_page += 1
+            self._render_update()
+
+    def _previous_preview_page(self, _: ft.ControlEvent | None = None) -> None:
+        if self.preview is None:
+            return
+        self.preview_page = max(self._bounded_preview_page() - 1, 0)
+        self._render_update()
+
+    def _preview_columns(self, rows, limit: int = 7) -> list[str]:
         columns: list[str] = []
-        for row in preview.rows[:50]:
+        for row in rows:
             for column in row.visible_preview_values():
                 if column not in columns:
                     columns.append(column)
@@ -280,15 +344,17 @@ class ExcelImportWizard(ft.Column):
         if self.confirm_result is None:
             return _section("5. Reporte final", [ft.Text(self.report_pending_label)])
         result = self.confirm_result
-        return _section(
-            "5. Reporte final",
-            [
-                ft.Text(f"Total: {result.total} | Creados: {result.created} | Omitidos: {result.skipped} | Fallidos: {result.failed}"),
-                ft.Text(f"IDs creados: {result.created_ids or '-'}", selectable=True),
-                ft.Text(f"Errores por fila: {result.errors_by_row or '-'}", selectable=True),
-                ft.Text(f"Advertencias por fila: {result.warnings_by_row or '-'}", selectable=True),
-            ],
-        )
+        error_groups = [_message_group_text(group) for group in group_messages_by_text(result.errors_by_row)]
+        warning_groups = [_message_group_text(group) for group in group_messages_by_text(result.warnings_by_row)]
+        controls: list[ft.Control] = [
+            ft.Text(f"Total: {result.total} | Creados: {result.created} | Omitidos: {result.skipped} | Fallidos: {result.failed}"),
+            ft.Text(f"IDs creados: {format_created_ids(result.created_ids)}", selectable=True),
+            ft.Text("Errores", weight=ft.FontWeight.W_600),
+            *(error_groups or [ft.Text("Sin errores.")]),
+            ft.Text("Advertencias", weight=ft.FontWeight.W_600),
+            *(warning_groups or [ft.Text("Sin advertencias.")]),
+        ]
+        return _section("5. Reporte final", controls)
 
 
 def _section(title: str, controls: list[ft.Control]) -> ft.Control:
@@ -316,3 +382,53 @@ def _compact_mapped_values(values: dict[str, object], limit: int = 4) -> str:
     if len(visible) > limit:
         parts.append(f"+{len(visible) - limit} campos")
     return " | ".join(parts)
+
+
+def format_row_ranges(rows: list[int]) -> str:
+    ordered = sorted({int(row) for row in rows})
+    if not ordered:
+        return "-"
+    ranges: list[str] = []
+    start = previous = ordered[0]
+    for row in ordered[1:]:
+        if row == previous + 1:
+            previous = row
+            continue
+        ranges.append(_format_range(start, previous))
+        start = previous = row
+    ranges.append(_format_range(start, previous))
+    return ", ".join(ranges)
+
+
+def group_messages_by_text(messages_by_row: dict[int, list[str]]) -> list[GroupedRowMessages]:
+    grouped: dict[str, list[int]] = {}
+    for row_number, messages in messages_by_row.items():
+        for message in messages:
+            text = str(message).strip()
+            if not text:
+                continue
+            grouped.setdefault(text, []).append(int(row_number))
+    return [
+        GroupedRowMessages(message=message, rows=sorted(set(rows)))
+        for message, rows in sorted(grouped.items(), key=lambda item: (-len(set(item[1])), item[0]))
+    ]
+
+
+def format_created_ids(ids: list[int], limit: int = CREATED_IDS_DISPLAY_LIMIT) -> str:
+    if not ids:
+        return "-"
+    visible = ids[:limit]
+    text = ", ".join(str(item) for item in visible)
+    remaining = len(ids) - len(visible)
+    if remaining > 0:
+        text = f"{text} ... y {remaining} más"
+    return text
+
+
+def _format_range(start: int, end: int) -> str:
+    return str(start) if start == end else f"{start}–{end}"
+
+
+def _message_group_text(group: GroupedRowMessages) -> ft.Control:
+    row_label = "fila" if group.count == 1 else "filas"
+    return ft.Text(f"{group.message} — {group.count} {row_label} — {row_label} {format_row_ranges(group.rows)}", selectable=True)
