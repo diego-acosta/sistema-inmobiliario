@@ -61,6 +61,10 @@ from app.api.schemas.inmuebles import (
     InmuebleImportacionBuscarExistentesData,
     InmuebleImportacionBuscarExistentesRequest,
     InmuebleImportacionBuscarExistentesResponse,
+    InmuebleImportacionConfirmarData,
+    InmuebleImportacionConfirmarItemData,
+    InmuebleImportacionConfirmarRequest,
+    InmuebleImportacionConfirmarResponse,
     InmuebleImportacionExistenteItem,
     InmuebleDesasociarDesarrolloData,
     InmuebleDesasociarDesarrolloResponse,
@@ -185,6 +189,10 @@ from app.application.inmuebles.services.associate_inmueble_desarrollo_service im
 )
 from app.application.inmuebles.services.create_inmueble_service import (
     CreateInmuebleService,
+)
+from app.application.inmuebles.services.confirm_importacion_inmuebles_service import (
+    ConfirmImportacionInmueblesService,
+    ImportacionInmuebleItem,
 )
 from app.application.inmuebles.services.dato_catastral_registral_service import (
     DatoCatastralRegistralService,
@@ -489,6 +497,71 @@ def buscar_inmuebles_existentes_importacion(
                 InmuebleImportacionExistenteItem(**item)
                 for item in (result.data or [])
             ]
+        )
+    )
+
+
+@router.post(
+    "/api/v1/inmuebles/importacion/confirmar",
+    status_code=201,
+    response_model=InmuebleImportacionConfirmarResponse,
+    openapi_extra=_CORE_EF_REQUIRED_HEADERS_OPENAPI,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def confirmar_importacion_inmuebles(
+    request: InmuebleImportacionConfirmarRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> InmuebleImportacionConfirmarResponse | JSONResponse:
+    core_ef_headers = _parse_core_ef_headers_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    items = [
+        ImportacionInmuebleItem(
+            fila=item.fila,
+            inmueble=item.inmueble,
+            dato_catastral_registral=item.dato_catastral_registral,
+        )
+        for item in request.items
+    ]
+    service = ConfirmImportacionInmueblesService(repository=InmuebleRepository(db))
+    try:
+        result = service.execute(_build_inmueble_command_context(core_ef_headers), items)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message="No se pudo confirmar la importación de inmuebles.",
+            details={"error": str(exc)},
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        error = ErrorResponse(
+            error_code="APPLICATION_ERROR",
+            error_message="No se pudo confirmar la importación de inmuebles.",
+            details={"errors": result.errors},
+        )
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return InmuebleImportacionConfirmarResponse(
+        data=InmuebleImportacionConfirmarData(
+            creados=result.data["creados"],
+            items=[
+                InmuebleImportacionConfirmarItemData(**item)
+                for item in result.data["items"]
+            ],
         )
     )
 

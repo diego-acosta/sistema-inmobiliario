@@ -150,7 +150,7 @@ class InmuebleRepository(BaseRepository[Any]):
         ).mappings().one_or_none()
         return self._map_dcr_row(row) if row is not None else None
 
-    def create_dato_catastral_registral(self, payload: Any) -> dict[str, Any]:
+    def create_dato_catastral_registral_sin_commit(self, payload: Any) -> dict[str, Any]:
         values = self._dcr_payload_values(payload)
         columns = [
             "id_inmueble",
@@ -183,10 +183,14 @@ class InmuebleRepository(BaseRepository[Any]):
             RETURNING {self._DCR_COLUMNS}
             """
         )
+        row = self.db.execute(statement, values).mappings().one()
+        return self._map_dcr_row(row)
+
+    def create_dato_catastral_registral(self, payload: Any) -> dict[str, Any]:
         try:
-            row = self.db.execute(statement, values).mappings().one()
+            created = self.create_dato_catastral_registral_sin_commit(payload)
             self.db.commit()
-            return self._map_dcr_row(row)
+            return created
         except Exception:
             self.db.rollback()
             raise
@@ -1658,6 +1662,42 @@ class InmuebleRepository(BaseRepository[Any]):
             for row in rows
         ]
 
+
+    def find_imported_by_codes_and_op_id(
+        self, codigos: list[str], op_id: Any
+    ) -> list[dict[str, Any]]:
+        if not codigos:
+            return []
+        statement = text(
+            """
+            SELECT
+                i.id_inmueble,
+                i.codigo_inmueble,
+                i.estado_administrativo,
+                d.id_dato_catastral_registral
+            FROM inmueble i
+            LEFT JOIN inmueble_dato_catastral_registral d
+              ON d.id_inmueble = i.id_inmueble
+             AND d.deleted_at IS NULL
+            WHERE lower(btrim(i.codigo_inmueble)) = ANY(:codigos)
+              AND i.deleted_at IS NULL
+              AND i.op_id_alta = :op_id
+            ORDER BY i.codigo_inmueble, i.id_inmueble
+            """
+        )
+        rows = self.db.execute(
+            statement, {"codigos": codigos, "op_id": op_id}
+        ).mappings().all()
+        return [
+            {
+                "codigo": row["codigo_inmueble"],
+                "id_inmueble": row["id_inmueble"],
+                "estado_inmueble": row["estado_administrativo"],
+                "id_dato_catastral_registral": row["id_dato_catastral_registral"],
+            }
+            for row in rows
+        ]
+
     def get_inmueble(self, id_inmueble: int) -> dict[str, Any] | None:
         statement = text(
             """
@@ -1808,7 +1848,7 @@ class InmuebleRepository(BaseRepository[Any]):
         ).scalar_one_or_none()
         return result is not None
 
-    def create_inmueble(self, payload: Any) -> dict[str, Any]:
+    def create_inmueble_sin_commit(self, payload: Any) -> dict[str, Any]:
         if isinstance(payload, dict):
             values = payload
         elif is_dataclass(payload):
@@ -1891,18 +1931,22 @@ class InmuebleRepository(BaseRepository[Any]):
             """
         )
 
+        result = self.db.execute(statement, db_values)
+        row = result.mappings().one()
+        return {
+            "id_inmueble": row["id_inmueble"],
+            "uid_global": row["uid_global"],
+            "version_registro": row["version_registro"],
+            "codigo_inmueble": row["codigo_inmueble"],
+            "estado_administrativo": row["estado_administrativo"],
+            "estado_juridico": row["estado_juridico"],
+        }
+
+    def create_inmueble(self, payload: Any) -> dict[str, Any]:
         try:
-            result = self.db.execute(statement, db_values)
-            row = result.mappings().one()
+            created = self.create_inmueble_sin_commit(payload)
             self.db.commit()
-            return {
-                "id_inmueble": row["id_inmueble"],
-                "uid_global": row["uid_global"],
-                "version_registro": row["version_registro"],
-                "codigo_inmueble": row["codigo_inmueble"],
-                "estado_administrativo": row["estado_administrativo"],
-                "estado_juridico": row["estado_juridico"],
-            }
+            return created
         except Exception:
             self.db.rollback()
             raise
