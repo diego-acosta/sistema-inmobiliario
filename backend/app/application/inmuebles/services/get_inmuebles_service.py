@@ -59,7 +59,9 @@ class BuscarInmueblesExistentesImportacionService:
         self.repository = repository
 
     def execute(self, *, codigos: list[str]) -> AppResult[list[dict[str, Any]]]:
-        codigos_normalizados = sorted({str(codigo).strip() for codigo in codigos if str(codigo).strip()})
+        codigos_normalizados = sorted(
+            {str(codigo).strip().casefold() for codigo in codigos if str(codigo).strip()}
+        )
         if not codigos_normalizados:
             return AppResult.ok([])
         return AppResult.ok(self.repository.find_existing_by_codes(codigos_normalizados))

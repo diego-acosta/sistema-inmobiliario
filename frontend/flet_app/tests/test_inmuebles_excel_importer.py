@@ -69,6 +69,29 @@ def test_collect_existing_codes_usa_endpoint_batch_y_no_listado_general() -> Non
     assert api.list_calls == []
 
 
+def test_collect_existing_codes_normaliza_case_insensitive_desde_respuesta_batch() -> None:
+    api = FakeApi()
+    api.batch_result = ApiResult(
+        True,
+        data={
+            "existentes": [
+                {
+                    "codigo": "IMP-BATCH-CASE",
+                    "id_inmueble": 1,
+                    "estado_inmueble": "ACTIVO",
+                }
+            ]
+        },
+    )
+
+    existing, errors = collect_existing_codes(api, {" imp-batch-case "})
+
+    assert existing == {"imp-batch-case"}
+    assert errors == []
+    assert api.batch_calls == [["imp-batch-case"]]
+    assert api.list_calls == []
+
+
 def test_collect_existing_codes_reporta_error_claro_si_falla_batch() -> None:
     api = FakeApi()
     api.batch_result = ApiResult(False, error_message="timeout")

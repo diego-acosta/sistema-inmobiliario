@@ -9637,6 +9637,13 @@ CREATE INDEX ix_historial_parametro_parametro_fecha ON public.historial_parametr
 
 
 --
+-- Name: ix_inmueble_codigo_normalizado_activo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_inmueble_codigo_normalizado_activo ON public.inmueble USING btree (lower(btrim((codigo_inmueble)::text))) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: ix_inmueble_sucursal_vigencia; Type: INDEX; Schema: public; Owner: -
 --
 

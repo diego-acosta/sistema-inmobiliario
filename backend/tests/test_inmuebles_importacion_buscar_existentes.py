@@ -47,6 +47,24 @@ def test_buscar_existentes_devuelve_inmuebles_por_codigos(client) -> None:
     }
 
 
+def test_buscar_existentes_compara_codigo_normalizado_case_insensitive(client) -> None:
+    id_inmueble = _crear_inmueble(client, "IMP-BATCH-CASE")
+
+    response = client.post(
+        "/api/v1/inmuebles/importacion/buscar-existentes",
+        json={"codigos": [" imp-batch-case "]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["existentes"] == [
+        {
+            "codigo": "IMP-BATCH-CASE",
+            "id_inmueble": id_inmueble,
+            "estado_inmueble": "ACTIVO",
+        }
+    ]
+
+
 def test_buscar_existentes_ignora_codigos_vacios_y_repetidos(client) -> None:
     id_inmueble = _crear_inmueble(client, "IMP-BATCH-002")
 

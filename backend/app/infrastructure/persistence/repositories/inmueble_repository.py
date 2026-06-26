@@ -1643,7 +1643,7 @@ class InmuebleRepository(BaseRepository[Any]):
                 codigo_inmueble,
                 estado_administrativo
             FROM inmueble
-            WHERE codigo_inmueble = ANY(:codigos)
+            WHERE lower(btrim(codigo_inmueble)) = ANY(:codigos)
               AND deleted_at IS NULL
             ORDER BY codigo_inmueble, id_inmueble
             """
