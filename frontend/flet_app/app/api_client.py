@@ -232,6 +232,12 @@ class ApiClient:
             },
         )
 
+    def buscar_inmuebles_existentes_importacion(self, codigos: list[str]) -> ApiResult:
+        return self._post(
+            "/api/v1/inmuebles/importacion/buscar-existentes",
+            json={"codigos": codigos},
+        )
+
     def get_inmueble_detalle_integral(self, id_inmueble: int) -> ApiResult:
         return self._get(f"/api/v1/inmuebles/{id_inmueble}/detalle-integral")
 

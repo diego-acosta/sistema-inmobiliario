@@ -88,6 +88,25 @@ class InmuebleListResponse(BaseModel):
     offset: int | None = None
 
 
+class InmuebleImportacionBuscarExistentesRequest(BaseModel):
+    codigos: list[str] = Field(default_factory=list)
+
+
+class InmuebleImportacionExistenteItem(BaseModel):
+    codigo: str
+    id_inmueble: int
+    estado_inmueble: str
+
+
+class InmuebleImportacionBuscarExistentesData(BaseModel):
+    existentes: list[InmuebleImportacionExistenteItem]
+
+
+class InmuebleImportacionBuscarExistentesResponse(BaseModel):
+    ok: Literal[True] = True
+    data: InmuebleImportacionBuscarExistentesData
+
+
 class InmuebleUpdateRequest(BaseModel):
     id_desarrollo: int | None = None
     codigo_inmueble: str

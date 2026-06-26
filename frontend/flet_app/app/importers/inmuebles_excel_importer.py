@@ -65,7 +65,7 @@ INMUEBLES_PREVIEW_FIELDS = (
 
 
 class InmueblesImportApi(Protocol):
-    def get_inmuebles(self, **kwargs: Any) -> ApiResult: ...
+    def buscar_inmuebles_existentes_importacion(self, codigos: list[str]) -> ApiResult: ...
     def get_desarrollos(self) -> ApiResult: ...
     def crear_inmueble(self, payload: dict[str, Any], op_id: str | None = None) -> ApiResult: ...
     def crear_dato_catastral_registral_inmueble(self, id_inmueble: int, payload: dict[str, Any], op_id: str | None = None) -> ApiResult: ...
@@ -194,17 +194,20 @@ def build_catastral_import_payload(values: dict[str, Any]) -> dict[str, Any] | N
 
 
 def collect_existing_codes(api: InmueblesImportApi, codes: set[str]) -> tuple[set[str], list[str]]:
-    existing: set[str] = set()
-    errors: list[str] = []
-    for code in sorted(codes):
-        result = api.get_inmuebles(q=code, limit=20, offset=0)
-        if not result.success:
-            errors.append(f"No se pudo validar código {code}: {result.error_message}")
-            continue
-        for item in _items(result.data):
-            if _code(item.get("codigo_inmueble")) == _code(code):
-                existing.add(_code(code))
-    return existing, errors
+    normalized_codes = sorted({str(code).strip() for code in codes if str(code).strip()})
+    if not normalized_codes:
+        return set(), []
+
+    result = api.buscar_inmuebles_existentes_importacion(normalized_codes)
+    if not result.success:
+        return set(), [f"No se pudo validar códigos existentes: {result.error_message}"]
+
+    existing = {
+        _code(item.get("codigo"))
+        for item in _items(result.data, key="existentes")
+        if _code(item.get("codigo"))
+    }
+    return existing, []
 
 
 def confirm_inmuebles_import(api: InmueblesImportApi, preview: ImportPreviewResult, import_run_id: str) -> ImportConfirmResult:
@@ -327,11 +330,13 @@ def _code(value: Any) -> str:
     return (normalize_text(value) or "").casefold()
 
 
-def _items(data: Any) -> list[dict[str, Any]]:
+def _items(data: Any, *, key: str | None = None) -> list[dict[str, Any]]:
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
     if isinstance(data, dict):
-        items = data.get("items") or data.get("data") or []
+        items = data.get(key) if key else None
+        if items is None:
+            items = data.get("items") or data.get("data") or []
         return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
     return []
 

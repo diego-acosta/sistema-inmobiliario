@@ -4,6 +4,9 @@ from app.application.common.results import AppResult
 
 
 class InmuebleRepository(Protocol):
+    def find_existing_by_codes(self, codigos: list[str]) -> list[dict[str, Any]]:
+        ...
+
     def get_inmuebles(
         self,
         *,
@@ -49,3 +52,16 @@ class GetInmueblesService:
             offset=offset,
         )
         return AppResult.ok(inmuebles)
+
+
+class BuscarInmueblesExistentesImportacionService:
+    def __init__(self, repository: InmuebleRepository) -> None:
+        self.repository = repository
+
+    def execute(self, *, codigos: list[str]) -> AppResult[list[dict[str, Any]]]:
+        codigos_normalizados = sorted(
+            {str(codigo).strip().casefold() for codigo in codigos if str(codigo).strip()}
+        )
+        if not codigos_normalizados:
+            return AppResult.ok([])
+        return AppResult.ok(self.repository.find_existing_by_codes(codigos_normalizados))
