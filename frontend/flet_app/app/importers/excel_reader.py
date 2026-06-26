@@ -12,6 +12,12 @@ class ExcelImportError(ValueError):
     """User-safe error raised while reading Excel files."""
 
 
+EXCEL_ACCESS_ERROR_MESSAGE = (
+    "No se pudo leer el archivo Excel. "
+    "Verificá que no esté abierto en Excel, que no esté bloqueado y volvé a intentar."
+)
+
+
 def normalize_column_name(text: object) -> str:
     value = "" if text is None else str(text)
     value = unicodedata.normalize("NFKD", value.strip().lower())
@@ -36,6 +42,8 @@ def read_excel_workbook(path: str | Path, sheet_name: str | None = None) -> Exce
 
     try:
         workbook = load_workbook(file_path, read_only=True, data_only=True)
+    except (PermissionError, OSError) as exc:
+        raise ExcelImportError(EXCEL_ACCESS_ERROR_MESSAGE) from exc
     except Exception as exc:  # noqa: BLE001 - keep traceback away from UI
         raise ExcelImportError("No se pudo leer el archivo Excel.") from exc
 
@@ -48,6 +56,8 @@ def read_excel_workbook(path: str | Path, sheet_name: str | None = None) -> Exce
 
     try:
         selected_sheet = _read_sheet(workbook[active_sheet])
+    except (PermissionError, OSError) as exc:
+        raise ExcelImportError(EXCEL_ACCESS_ERROR_MESSAGE) from exc
     finally:
         workbook.close()
 

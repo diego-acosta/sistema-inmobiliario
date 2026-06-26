@@ -8,7 +8,7 @@ import pytest
 from app.importers.excel_import_models import ImportRowPreview, ImportTargetField
 from app.importers.excel_mapping import suggest_mapping
 from app.importers.excel_preview import build_preview, simulate_confirm
-from app.importers.excel_reader import ExcelImportError, normalize_column_name, read_excel_workbook
+from app.importers.excel_reader import EXCEL_ACCESS_ERROR_MESSAGE, ExcelImportError, normalize_column_name, read_excel_workbook
 from app.importers.excel_validators import normalize_decimal, normalize_text, positive_decimal_validator
 
 
@@ -93,6 +93,22 @@ def test_hoja_vacia_seleccionada_lanza_error_claro(tmp_path: Path) -> None:
             sheet_name="Plantilla",
         )
 
+
+
+def test_excel_bloqueado_o_sin_permisos_lanza_mensaje_amigable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    openpyxl = pytest.importorskip("openpyxl")
+    file_path = tmp_path / "bloqueado.xlsx"
+    file_path.write_bytes(b"placeholder")
+
+    def raise_permission_error(*args, **kwargs):
+        raise PermissionError("archivo bloqueado por otro proceso")
+
+    monkeypatch.setattr(openpyxl, "load_workbook", raise_permission_error)
+
+    with pytest.raises(ExcelImportError) as exc_info:
+        read_excel_workbook(file_path)
+
+    assert str(exc_info.value) == EXCEL_ACCESS_ERROR_MESSAGE
 
 def test_mapping_automatico_por_alias(tmp_path: Path) -> None:
     sheet = read_excel_workbook(_workbook(tmp_path / "demo.xlsx")).sheets["Datos"]
