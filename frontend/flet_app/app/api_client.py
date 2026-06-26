@@ -238,6 +238,15 @@ class ApiClient:
             json={"codigos": codigos},
         )
 
+    def confirmar_importacion_inmuebles(
+        self, items: list[dict[str, Any]], op_id: str | None = None
+    ) -> ApiResult:
+        return self._post(
+            "/api/v1/inmuebles/importacion/confirmar",
+            headers=self._core_ef_write_headers(op_id),
+            json={"items": items},
+        )
+
     def get_inmueble_detalle_integral(self, id_inmueble: int) -> ApiResult:
         return self._get(f"/api/v1/inmuebles/{id_inmueble}/detalle-integral")
 

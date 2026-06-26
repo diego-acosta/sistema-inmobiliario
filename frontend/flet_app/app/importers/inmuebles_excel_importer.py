@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol
-from uuid import uuid5, NAMESPACE_URL
+from uuid import NAMESPACE_URL, uuid5
 
 from app.api_client import ApiResult
 from app.importers.excel_import_models import (
@@ -67,8 +67,7 @@ INMUEBLES_PREVIEW_FIELDS = (
 class InmueblesImportApi(Protocol):
     def buscar_inmuebles_existentes_importacion(self, codigos: list[str]) -> ApiResult: ...
     def get_desarrollos(self) -> ApiResult: ...
-    def crear_inmueble(self, payload: dict[str, Any], op_id: str | None = None) -> ApiResult: ...
-    def crear_dato_catastral_registral_inmueble(self, id_inmueble: int, payload: dict[str, Any], op_id: str | None = None) -> ApiResult: ...
+    def confirmar_importacion_inmuebles(self, items: list[dict[str, Any]], op_id: str | None = None) -> ApiResult: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -211,45 +210,84 @@ def collect_existing_codes(api: InmueblesImportApi, codes: set[str]) -> tuple[se
 
 
 def confirm_inmuebles_import(api: InmueblesImportApi, preview: ImportPreviewResult, import_run_id: str) -> ImportConfirmResult:
-    created = skipped = failed = 0
+    skipped = 0
     errors_by_row: dict[int, list[str]] = {}
-    warnings_by_row: dict[int, list[str]] = {}
-    created_ids: list[int] = []
+    items: list[dict[str, Any]] = []
+
     for row in preview.rows:
         if row.status == STATUS_INVALID:
             skipped += 1
             errors_by_row[row.row_number] = list(row.errors)
             continue
-        code = normalize_text(row.mapped_values.get("codigo_inmueble"))
-        op_seed = f"{import_run_id}:{row.row_number}:{code}"
-        inmueble_result = api.crear_inmueble(build_inmueble_import_payload(row.mapped_values), op_id=str(uuid5(NAMESPACE_URL, op_seed + ":inmueble")))
-        if not inmueble_result.success:
-            failed += 1
-            errors_by_row[row.row_number] = [inmueble_result.error_message or "No se pudo crear el inmueble."]
-            continue
 
-        created += 1
-        id_inmueble = _extract_id(inmueble_result.data, "id_inmueble")
-        if id_inmueble is not None:
-            created_ids.append(id_inmueble)
-
+        item: dict[str, Any] = {
+            "fila": row.row_number,
+            "inmueble": build_inmueble_import_payload(row.mapped_values),
+        }
         catastral_payload = build_catastral_import_payload(row.mapped_values)
-        if catastral_payload and id_inmueble is not None:
-            cat_result = api.crear_dato_catastral_registral_inmueble(id_inmueble, catastral_payload, op_id=str(uuid5(NAMESPACE_URL, op_seed + ":catastral")))
-            if not cat_result.success:
-                warnings_by_row[row.row_number] = [
-                    "Inmueble creado, pero falló el dato catastral/registral: "
-                    f"{cat_result.error_message or 'No se pudo crear el dato catastral/registral.'}"
-                ]
+        if catastral_payload:
+            item["dato_catastral_registral"] = catastral_payload
+        items.append(item)
+
+    if not items:
+        return ImportConfirmResult(
+            total=preview.total_rows,
+            created=0,
+            skipped=skipped,
+            failed=0,
+            errors_by_row=errors_by_row,
+        )
+
+    op_id = str(uuid5(NAMESPACE_URL, f"{import_run_id}:inmuebles-importacion-confirmar"))
+    result = api.confirmar_importacion_inmuebles(items, op_id=op_id)
+    if not result.success:
+        failed = len(items)
+        message = result.error_message or "No se pudo confirmar la importación de inmuebles."
+        row_errors = _batch_error_rows(result.error_details)
+        if row_errors:
+            errors_by_row.update(row_errors)
+        else:
+            for item in items:
+                errors_by_row[int(item["fila"])] = [message]
+        return ImportConfirmResult(
+            total=preview.total_rows,
+            created=0,
+            skipped=skipped,
+            failed=failed,
+            errors_by_row=errors_by_row,
+        )
+
+    data = result.data or {}
+    created_items = _items(data, key="items")
+    created_ids = [
+        int(item["id_inmueble"])
+        for item in created_items
+        if item.get("id_inmueble") is not None
+    ]
     return ImportConfirmResult(
         total=preview.total_rows,
-        created=created,
+        created=int(data.get("creados") or len(created_items)),
         skipped=skipped,
-        failed=failed,
+        failed=0,
         errors_by_row=errors_by_row,
         created_ids=created_ids,
-        warnings_by_row=warnings_by_row,
     )
+
+
+def _batch_error_rows(details: Any) -> dict[int, list[str]]:
+    errors = details.get("errors") if isinstance(details, dict) else None
+    if not isinstance(errors, list):
+        return {}
+    rows: dict[int, list[str]] = {}
+    for error in errors:
+        if not isinstance(error, str) or not error.startswith("FILA_"):
+            continue
+        try:
+            row_number = int(error.removeprefix("FILA_"))
+        except ValueError:
+            continue
+        rows[row_number] = ["No se pudo confirmar esta fila en la importación batch."]
+    return rows
 
 
 def _string_form_values(values: dict[str, Any]) -> dict[str, str | None]:

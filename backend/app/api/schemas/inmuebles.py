@@ -107,6 +107,8 @@ class InmuebleImportacionBuscarExistentesResponse(BaseModel):
     data: InmuebleImportacionBuscarExistentesData
 
 
+
+
 class InmuebleUpdateRequest(BaseModel):
     id_desarrollo: int | None = None
     codigo_inmueble: str
@@ -256,6 +258,33 @@ class InmuebleDatoCatastralRegistralCreateResponse(BaseModel):
 class InmuebleDatoCatastralRegistralUpdateResponse(BaseModel):
     ok: Literal[True] = True
     data: InmuebleDatoCatastralRegistralData
+
+
+class InmuebleImportacionConfirmarItemRequest(BaseModel):
+    fila: int = Field(..., ge=1)
+    inmueble: InmuebleCreateRequest
+    dato_catastral_registral: InmuebleDatoCatastralRegistralCreateRequest | None = None
+
+
+class InmuebleImportacionConfirmarRequest(BaseModel):
+    items: list[InmuebleImportacionConfirmarItemRequest] = Field(..., min_length=1)
+
+
+class InmuebleImportacionConfirmarItemData(BaseModel):
+    fila: int
+    codigo_inmueble: str
+    id_inmueble: int
+    id_dato_catastral_registral: int | None = None
+
+
+class InmuebleImportacionConfirmarData(BaseModel):
+    creados: int
+    items: list[InmuebleImportacionConfirmarItemData]
+
+
+class InmuebleImportacionConfirmarResponse(BaseModel):
+    ok: Literal[True] = True
+    data: InmuebleImportacionConfirmarData
 
 
 class InmuebleDatoCatastralRegistralBajaData(BaseModel):

@@ -22,6 +22,8 @@ class FakeApi:
         self.batch_calls = []
         self.list_calls = []
         self.batch_result = ApiResult(True, data={"existentes": []})
+        self.confirm_result = None
+        self.confirm_calls = []
 
     def buscar_inmuebles_existentes_importacion(self, codigos):
         self.batch_calls.append(codigos)
@@ -33,15 +35,27 @@ class FakeApi:
 
     def crear_inmueble(self, payload, op_id=None):
         self.created_payloads.append((payload, op_id))
-        if payload["codigo_inmueble"] == "FALLA":
-            return ApiResult(False, error_message="falló alta")
-        return ApiResult(True, data={"id_inmueble": len(self.created_payloads)})
+        return ApiResult(False, error_message="no debe usarse alta por fila")
 
     def crear_dato_catastral_registral_inmueble(self, id_inmueble, payload, op_id=None):
         self.catastral_payloads.append((id_inmueble, payload, op_id))
-        if self.fail_catastral:
-            return ApiResult(False, error_message="falló catastro")
-        return ApiResult(True, data={"id_dato_catastral_registral": 10})
+        return ApiResult(False, error_message="no debe usarse catastro por fila")
+
+    def confirmar_importacion_inmuebles(self, items, op_id=None):
+        self.confirm_calls.append((items, op_id))
+        if self.confirm_result is not None:
+            return self.confirm_result
+        if any(item["inmueble"]["codigo_inmueble"] == "FALLA" for item in items):
+            return ApiResult(False, error_message="falló alta", error_details={"errors": ["FILA_2"]})
+        data_items = []
+        for index, item in enumerate(items, start=1):
+            data_items.append({
+                "fila": item["fila"],
+                "codigo_inmueble": item["inmueble"]["codigo_inmueble"],
+                "id_inmueble": index,
+                "id_dato_catastral_registral": 10 if item.get("dato_catastral_registral") else None,
+            })
+        return ApiResult(True, data={"creados": len(data_items), "items": data_items})
 
 
 def _sheet(rows):
@@ -175,34 +189,39 @@ def test_confirmacion_con_fallo_de_inmueble_reporta_failed() -> None:
     assert result.created == 0
     assert result.failed == 1
     assert result.created_ids == []
-    assert result.errors_by_row == {2: ["falló alta"]}
+    assert result.errors_by_row == {2: ["No se pudo confirmar esta fila en la importación batch."]}
     assert result.warnings_by_row == {}
 
 
-def test_confirmacion_con_fallo_catastral_reporta_created_con_warning() -> None:
+def test_confirmacion_con_fallo_batch_reporta_failed_sin_importacion_parcial() -> None:
     sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"]])
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
-    api = FakeApi(fail_catastral=True)
+    api = FakeApi()
+    api.confirm_result = ApiResult(False, error_message="falló catastro", error_details={"errors": ["FILA_2"]})
     result = confirm_inmuebles_import(api, preview, import_run_id="run-1")
-    assert result.created == 1
-    assert result.failed == 0
-    assert result.created_ids == [1]
-    assert result.errors_by_row == {}
-    assert result.warnings_by_row == {
-        2: ["Inmueble creado, pero falló el dato catastral/registral: falló catastro"]
-    }
+    assert result.created == 0
+    assert result.failed == 1
+    assert result.created_ids == []
+    assert result.errors_by_row == {2: ["No se pudo confirmar esta fila en la importación batch."]}
+    assert result.warnings_by_row == {}
 
 
-def test_confirmacion_mockeada_reporta_creadas_y_fallidas() -> None:
-    sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"], ["FALLA", "Dos", "", "", "", "11", ""]])
+def test_confirmacion_mockeada_envia_una_sola_llamada_batch() -> None:
+    sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"], ["B1", "Dos", "", "", "", "11", ""]])
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
     api = FakeApi()
     result = confirm_inmuebles_import(api, preview, import_run_id="run-1")
-    assert result.created == 1
-    assert result.failed == 1
-    assert result.created_ids == [1]
+    assert result.created == 2
+    assert result.failed == 0
+    assert result.created_ids == [1, 2]
     assert result.warnings_by_row == {}
-    assert api.catastral_payloads[0][0] == 1
+    assert len(api.confirm_calls) == 1
+    assert api.created_payloads == []
+    assert api.catastral_payloads == []
+    items, op_id = api.confirm_calls[0]
+    assert op_id
+    assert items[0]["dato_catastral_registral"]["partida_inmobiliaria"] == "P"
+    assert "dato_catastral_registral" not in items[1]
 
 
 def _advanced_sheet(rows):
@@ -361,7 +380,8 @@ def test_confirmacion_mockeada_envia_dato_catastral_completo() -> None:
     result = confirm_inmuebles_import(api, preview, import_run_id="run-adv")
     assert result.created == 1
     assert result.failed == 0
-    _, payload, _ = api.catastral_payloads[0]
+    items, _ = api.confirm_calls[0]
+    payload = items[0]["dato_catastral_registral"]
     assert payload["folio_real"] == "FR-1"
     assert payload["nomenclatura_madre"] == "NC-MADRE"
     assert payload["subparcela"] == "SP"
