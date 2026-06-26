@@ -26,6 +26,7 @@
 - estructura SQL para persistir datos catastrales, registrales y fisicos avanzados asociados a inmuebles
 - constraints SQL minimas para vigencia, superficies positivas y estados `ACTIVO`, `INACTIVO`, `HISTORICO`
 - indices activos por inmueble, nomenclatura catastral, partida inmobiliaria, matricula y estado del dato
+- indice unico parcial `ux_inmueble_dcr_unico_no_eliminado` sobre `id_inmueble` con condicion `deleted_at IS NULL`, que garantiza atomicamente un unico dato principal no eliminado por inmueble
 - politica funcional de alta API: `POST /datos-catastrales-registrales` permite crear solo si el inmueble no tiene un dato catastral/registral no eliminado; si ya existe, debe editarse el existente
 
 ## Funcionalidad pendiente
@@ -55,7 +56,7 @@
 
 - Ya existe soporte SQL y API backend inicial para `public.inmueble_dato_catastral_registral`.
 - La API permite listar, crear, actualizar y dar de baja logica registros no borrados asociados a un `inmueble` existente.
-- El endpoint de creacion estandar no crea multiples datos no eliminados para el mismo inmueble: responde `INMUEBLE_DATO_CATASTRAL_YA_EXISTE` y solicita editar el existente.
+- El endpoint de creacion estandar no crea multiples datos no eliminados para el mismo inmueble: valida previamente y ademas mapea la violacion concurrente del indice `ux_inmueble_dcr_unico_no_eliminado` a `INMUEBLE_DATO_CATASTRAL_YA_EXISTE`, solicitando editar el existente.
 - No se modifico el contrato vigente de `POST /api/v1/inmuebles`.
 - Frontend permite cargar el dato principal al crear/editar inmueble, editar el existente y mostrar un principal en detalle sin gestion historica.
 - No existe campo `linderos` en SQL, request ni response.
@@ -63,7 +64,7 @@
 ## Decision CORE-EF
 
 - `GET /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales`: `QUERY_READLIKE`; NO APLICA headers write porque no modifica estado.
-- `POST /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales`: `COMMAND_WRITE_NEGOCIO`; requiere `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; NO APLICA `If-Match-Version` por ser alta; rechaza la creacion si ya existe un dato no eliminado para el inmueble.
+- `POST /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales`: `COMMAND_WRITE_NEGOCIO`; requiere `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; NO APLICA `If-Match-Version` por ser alta; rechaza la creacion si ya existe un dato no eliminado para el inmueble y queda protegido atomicamente por indice unico parcial.
 - `PUT /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}`: `COMMAND_WRITE_NEGOCIO`; requiere headers CORE-EF e `If-Match-Version`; valida `version_registro`.
 - `PATCH /api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato_catastral_registral}/baja`: `COMMAND_WRITE_NEGOCIO`; requiere headers CORE-EF e `If-Match-Version`; valida `version_registro` y marca `deleted_at`.
 - Idempotencia: NO APLICA persistencia especifica de idempotencia en esta primera API; `op_id` queda trazado en campos CORE-EF.

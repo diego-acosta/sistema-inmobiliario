@@ -1,11 +1,65 @@
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
+
+from app.application.common.commands import CommandContext
+from app.application.inmuebles.commands.manage_dato_catastral_registral import (
+    CreateDatoCatastralRegistralCommand,
+)
+from app.application.inmuebles.services.dato_catastral_registral_service import (
+    DatoCatastralRegistralService,
+)
+
 HEADERS = {
     "X-Op-Id": "550e8400-e29b-41d4-a716-446655440000",
     "X-Usuario-Id": "1",
     "X-Sucursal-Id": "1",
     "X-Instalacion-Id": "1",
 }
+
+
+class _Context(CommandContext):
+    __slots__ = ("id_instalacion", "op_id")
+
+    def __init__(self) -> None:
+        super().__init__(actor_id="1")
+        self.id_instalacion = 1
+        self.op_id = None
+
+
+class _FakeDiag:
+    constraint_name = "ux_inmueble_dcr_unico_no_eliminado"
+
+
+class _FakeUniqueViolation(Exception):
+    diag = _FakeDiag()
+
+
+class _RepositoryWithDcrUniqueViolation:
+    def inmueble_exists(self, id_inmueble: int) -> bool:
+        return True
+
+    def list_datos_catastrales_registrales(self, id_inmueble: int):
+        return []
+
+    def has_dato_catastral_registral_no_eliminado(self, id_inmueble: int) -> bool:
+        return False
+
+    def create_dato_catastral_registral(self, payload):
+        raise IntegrityError(
+            "INSERT INTO inmueble_dato_catastral_registral",
+            {},
+            _FakeUniqueViolation(),
+        )
+
+    def get_dato_catastral_registral(self, id_inmueble: int, id_dato: int):
+        return None
+
+    def update_dato_catastral_registral(self, payload):
+        return None
+
+    def baja_dato_catastral_registral(self, payload):
+        return None
 
 
 def _headers(**extra):
@@ -59,6 +113,47 @@ def _payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+def test_service_traduce_unique_index_concurrente_a_error_funcional():
+    service = DatoCatastralRegistralService(
+        repository=_RepositoryWithDcrUniqueViolation()
+    )
+
+    result = service.create(
+        CreateDatoCatastralRegistralCommand(
+            context=_Context(),
+            id_inmueble=1,
+            nomenclatura_catastral="NC-UNICA",
+            nomenclatura_madre=None,
+            partida_inmobiliaria=None,
+            matricula=None,
+            folio_real=None,
+            circunscripcion=None,
+            seccion=None,
+            chacra=None,
+            quinta=None,
+            fraccion=None,
+            manzana=None,
+            lote=None,
+            parcela=None,
+            subparcela=None,
+            superficie_titulo=None,
+            superficie_mensura=None,
+            medidas=None,
+            situacion_posesoria=None,
+            situacion_dominial=None,
+            organismo_origen=None,
+            fecha_desde=None,
+            fecha_hasta=None,
+            estado_dato="ACTIVO",
+            observaciones=None,
+        )
+    )
+
+    assert result.success is False
+    assert result.data is None
+    assert result.errors == ["INMUEBLE_DATO_CATASTRAL_YA_EXISTE"]
 
 
 def test_crear_listar_actualizar_y_baja_dato_catastral_registral(client):
