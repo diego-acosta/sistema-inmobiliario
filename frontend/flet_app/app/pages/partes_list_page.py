@@ -277,6 +277,7 @@ class PersonaCreateForm:
         id_persona = data.get("id_persona")
         self._set_message(f"Persona creada correctamente. ID: {id_persona}")
         self.clear_button.text = "Nueva alta"
+        self._safe_update(self.clear_button)
 
     def _clear_form(self, _=None) -> None:
         self.tipo_persona.value = "FISICA"
@@ -288,7 +289,27 @@ class PersonaCreateForm:
         self.observaciones.value = ""
         self.message.value = ""
         self.clear_button.text = "Limpiar"
+        self._refresh_form_controls()
 
     def _set_message(self, text: str, *, is_error: bool = False) -> None:
         self.message.value = text
         self.message.color = ft.Colors.RED_700 if is_error else ft.Colors.GREEN_700
+        self._safe_update(self.message)
+
+    def _refresh_form_controls(self) -> None:
+        self._safe_update(
+            self.tipo_persona,
+            self.nombre,
+            self.apellido,
+            self.razon_social,
+            self.fecha_nacimiento,
+            self.estado_persona,
+            self.observaciones,
+            self.message,
+            self.clear_button,
+        )
+
+    def _safe_update(self, *controls) -> None:
+        for control in controls:
+            if getattr(control, "page", None) is not None:
+                control.update()

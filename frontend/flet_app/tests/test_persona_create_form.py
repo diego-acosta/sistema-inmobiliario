@@ -116,3 +116,41 @@ def test_limpiar_nueva_alta_resetea_formulario() -> None:
     assert form.observaciones.value == ""
     assert form.message.value == ""
     assert form.clear_button.text == "Limpiar"
+
+
+class DummyControl:
+    def __init__(self, mounted: bool) -> None:
+        self.page = object() if mounted else None
+        self.updated = 0
+
+    def update(self) -> None:
+        self.updated += 1
+
+
+def test_set_message_actualiza_estado_y_no_rompe_sin_montar() -> None:
+    form = PersonaCreateForm(
+        FakeApi(ApiResult(True)),
+        on_close=lambda: None,
+        on_created=lambda _: None,
+    )
+    form.build()
+
+    form._set_message("Error claro", is_error=True)
+
+    assert form.message.value == "Error claro"
+    assert form.message.color is not None
+
+
+def test_safe_update_intenta_refrescar_solo_controles_montados() -> None:
+    form = PersonaCreateForm(
+        FakeApi(ApiResult(True)),
+        on_close=lambda: None,
+        on_created=lambda _: None,
+    )
+    mounted = DummyControl(mounted=True)
+    unmounted = DummyControl(mounted=False)
+
+    form._safe_update(mounted, unmounted)
+
+    assert mounted.updated == 1
+    assert unmounted.updated == 0
