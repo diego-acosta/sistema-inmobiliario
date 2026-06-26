@@ -1632,6 +1632,32 @@ class InmuebleRepository(BaseRepository[Any]):
         ]
         return {"items": items, "total": total, "limit": limit, "offset": offset}
 
+
+    def find_existing_by_codes(self, codigos: list[str]) -> list[dict[str, Any]]:
+        if not codigos:
+            return []
+        statement = text(
+            """
+            SELECT
+                id_inmueble,
+                codigo_inmueble,
+                estado_administrativo
+            FROM inmueble
+            WHERE codigo_inmueble = ANY(:codigos)
+              AND deleted_at IS NULL
+            ORDER BY codigo_inmueble, id_inmueble
+            """
+        )
+        rows = self.db.execute(statement, {"codigos": codigos}).mappings().all()
+        return [
+            {
+                "codigo": row["codigo_inmueble"],
+                "id_inmueble": row["id_inmueble"],
+                "estado_inmueble": row["estado_administrativo"],
+            }
+            for row in rows
+        ]
+
     def get_inmueble(self, id_inmueble: int) -> dict[str, Any] | None:
         statement = text(
             """

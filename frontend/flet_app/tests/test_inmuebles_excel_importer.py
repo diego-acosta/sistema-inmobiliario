@@ -8,6 +8,7 @@ from app.importers.inmuebles_excel_importer import (
     build_catastral_import_payload,
     build_inmueble_import_payload,
     build_inmuebles_preview,
+    collect_existing_codes,
     confirm_inmuebles_import,
     inmueble_import_target_fields,
 )
@@ -18,6 +19,17 @@ class FakeApi:
         self.created_payloads = []
         self.catastral_payloads = []
         self.fail_catastral = fail_catastral
+        self.batch_calls = []
+        self.list_calls = []
+        self.batch_result = ApiResult(True, data={"existentes": []})
+
+    def buscar_inmuebles_existentes_importacion(self, codigos):
+        self.batch_calls.append(codigos)
+        return self.batch_result
+
+    def get_inmuebles(self, **kwargs):
+        self.list_calls.append(kwargs)
+        return ApiResult(True, data={"items": []})
 
     def crear_inmueble(self, payload, op_id=None):
         self.created_payloads.append((payload, op_id))
@@ -40,6 +52,33 @@ def _sheet(rows):
         rows=[dict(zip(headers, values), __row_number__=idx + 2) for idx, values in enumerate(rows)],
         header_row_number=1,
     )
+
+
+def test_collect_existing_codes_usa_endpoint_batch_y_no_listado_general() -> None:
+    api = FakeApi()
+    api.batch_result = ApiResult(
+        True,
+        data={"existentes": [{"codigo": "A1", "id_inmueble": 1, "estado_inmueble": "ACTIVO"}]},
+    )
+
+    existing, errors = collect_existing_codes(api, {" A1 ", "B2", ""})
+
+    assert existing == {"a1"}
+    assert errors == []
+    assert api.batch_calls == [["A1", "B2"]]
+    assert api.list_calls == []
+
+
+def test_collect_existing_codes_reporta_error_claro_si_falla_batch() -> None:
+    api = FakeApi()
+    api.batch_result = ApiResult(False, error_message="timeout")
+
+    existing, errors = collect_existing_codes(api, {"A1", "B2"})
+
+    assert existing == set()
+    assert errors == ["No se pudo validar códigos existentes: timeout"]
+    assert api.batch_calls == [["A1", "B2"]]
+    assert api.list_calls == []
 
 
 def test_mapping_automatico_de_columnas_inmobiliarias() -> None:

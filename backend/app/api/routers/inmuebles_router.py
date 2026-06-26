@@ -58,6 +58,9 @@ from app.api.schemas.inmuebles import (
     InmuebleCreateData,
     InmuebleCreateRequest,
     InmuebleCreateResponse,
+    InmuebleImportacionBuscarExistentesRequest,
+    InmuebleImportacionBuscarExistentesResponse,
+    InmuebleImportacionExistenteItem,
     InmuebleDesasociarDesarrolloData,
     InmuebleDesasociarDesarrolloResponse,
     InmuebleDetailData,
@@ -222,6 +225,7 @@ from app.application.inmuebles.services.get_inmueble_servicios_service import (
     GetInmuebleServiciosService,
 )
 from app.application.inmuebles.services.get_inmuebles_service import (
+    BuscarInmueblesExistentesImportacionService,
     GetInmueblesService,
 )
 from app.application.inmuebles.services.get_unidad_funcional_disponibilidades_service import (
@@ -456,6 +460,34 @@ def _dato_update_command_kwargs(request) -> dict:
     explicit_values = request.model_dump(exclude_unset=True)
     values["provided_fields"] = frozenset(explicit_values.keys())
     return values
+
+
+@router.post(
+    "/api/v1/inmuebles/importacion/buscar-existentes",
+    response_model=InmuebleImportacionBuscarExistentesResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def buscar_inmuebles_existentes_importacion(
+    request: InmuebleImportacionBuscarExistentesRequest,
+    db: Session = Depends(get_db),
+) -> InmuebleImportacionBuscarExistentesResponse | JSONResponse:
+    repository = InmuebleRepository(db)
+    service = BuscarInmueblesExistentesImportacionService(repository=repository)
+    try:
+        result = service.execute(codigos=request.codigos)
+    except Exception as exc:
+        error = ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            error_message=str(exc),
+        )
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    return InmuebleImportacionBuscarExistentesResponse(
+        existentes=[
+            InmuebleImportacionExistenteItem(**item)
+            for item in (result.data or [])
+        ]
+    )
 
 
 @router.post(
