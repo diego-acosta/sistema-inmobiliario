@@ -133,6 +133,54 @@ def test_nomenclatura_madre_es_opcional(client):
     assert response.json()["data"]["nomenclatura_madre"] is None
 
 
+def test_no_permite_crear_segundo_dato_no_eliminado_para_mismo_inmueble(client):
+    id_inmueble = _crear_inmueble(client, "INM-DCR-UNICO")
+    first = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=_payload(matricula="MAT-UNICA-001"),
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=_payload(matricula="MAT-UNICA-002"),
+    )
+
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "INMUEBLE_DATO_CATASTRAL_YA_EXISTE"
+    assert (
+        second.json()["error_message"]
+        == "El inmueble ya posee un dato catastral/registral. Debe editar el existente."
+    )
+
+
+def test_permite_crear_dato_luego_de_baja_logica(client):
+    id_inmueble = _crear_inmueble(client, "INM-DCR-RECREA")
+    first = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=_payload(matricula="MAT-BAJA-001"),
+    )
+    assert first.status_code == 201
+    data = first.json()["data"]
+    baja = client.patch(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{data['id_dato_catastral_registral']}/baja",
+        headers=_headers(**{"If-Match-Version": str(data["version_registro"])}),
+    )
+    assert baja.status_code == 200
+
+    second = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=_payload(matricula="MAT-BAJA-002"),
+    )
+
+    assert second.status_code == 201
+    assert second.json()["data"]["matricula"] == "MAT-BAJA-002"
+
+
 def test_no_permite_inmueble_inexistente(client):
     response = client.post(
         "/api/v1/inmuebles/999999/datos-catastrales-registrales",

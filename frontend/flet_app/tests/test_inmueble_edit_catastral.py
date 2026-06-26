@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.api_client import ApiResult
-from app.pages.inmuebles_page import InmuebleEditView
+from app.pages.inmuebles_page import InmuebleEditView, _datos_catastrales_registrales
 
 
 def _control_texts(control) -> list[str]:
@@ -181,3 +181,29 @@ def test_fallo_al_listar_catastral_bloquea_seccion_y_no_crea() -> None:
 
     control = view.build()
     assert any("Para evitar duplicados" in text for text in _control_texts(control))
+
+
+def test_detalle_muestra_dato_principal_si_hay_datos_heredados() -> None:
+    control = _datos_catastrales_registrales(
+        [
+            {
+                "id_dato_catastral_registral": 1,
+                "manzana": "M-HEREDADA",
+                "lote": "L-HEREDADA",
+                "estado_dato": "HISTORICO",
+            },
+            {
+                "id_dato_catastral_registral": 2,
+                "manzana": "M-ACTIVA",
+                "lote": "L-ACTIVA",
+                "estado_dato": "ACTIVO",
+            },
+        ]
+    )
+    texts = _control_texts(control)
+
+    assert "Dato catastral/registral principal" in texts
+    assert any("datos heredados adicionales" in text for text in texts)
+    assert "M-ACTIVA" in texts
+    assert "L-ACTIVA" in texts
+    assert "M-HEREDADA" not in texts

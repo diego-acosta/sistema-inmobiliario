@@ -2708,7 +2708,7 @@ def _inmueble_technical_detail(
 
 
 def _first_catastral(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    return rows[0] if rows else {}
+    return _select_dato_catastral_editable(rows) or {}
 
 
 def _manzana_lote_label(row: dict[str, Any]) -> str:
@@ -2821,15 +2821,19 @@ def _datos_catastrales_registrales(rows: list[dict[str, Any]]) -> ft.Control:
         return ft.Text(
             "No hay datos catastrales/registrales asociados a este inmueble."
         )
-    controls: list[ft.Control] = []
-    for index, row in enumerate(rows, start=1):
-        if len(rows) > 1:
-            controls.append(
-                ft.Text(
-                    f"Dato catastral/registral #{index}", weight=ft.FontWeight.W_600
-                )
+    principal = _select_dato_catastral_editable(rows) or rows[0]
+    controls: list[ft.Control] = [
+        ft.Text("Dato catastral/registral principal", weight=ft.FontWeight.W_600),
+        _catastral_grid(principal),
+    ]
+    if len(rows) > 1:
+        controls.append(
+            ft.Text(
+                "Existen datos heredados adicionales; esta pantalla muestra solo el "
+                "principal y no gestiona historial formal.",
+                color=ft.Colors.BLUE_GREY_700,
             )
-        controls.append(_catastral_grid(row))
+        )
     return ft.Column(controls=controls, spacing=10)
 
 

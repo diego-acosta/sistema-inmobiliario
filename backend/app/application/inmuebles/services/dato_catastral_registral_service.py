@@ -34,6 +34,9 @@ class Repository(Protocol):
     ) -> list[dict[str, Any]]:
         ...
 
+    def has_dato_catastral_registral_no_eliminado(self, id_inmueble: int) -> bool:
+        ...
+
     def create_dato_catastral_registral(
         self, payload: DatoCatastralRegistralPayload
     ) -> dict[str, Any]:
@@ -112,6 +115,10 @@ class DatoCatastralRegistralService:
     ) -> AppResult[dict[str, Any]]:
         if not self.repository.inmueble_exists(command.id_inmueble):
             return AppResult.fail("NOT_FOUND_INMUEBLE")
+        if self.repository.has_dato_catastral_registral_no_eliminado(
+            command.id_inmueble
+        ):
+            return AppResult.fail("INMUEBLE_DATO_CATASTRAL_YA_EXISTE")
         values = _command_values(command)
         errors = _validate_values(values)
         if errors:
