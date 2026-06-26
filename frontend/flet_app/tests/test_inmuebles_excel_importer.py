@@ -436,7 +436,7 @@ def test_preview_inmuebles_preview_vacio_no_agrega_columnas_tecnicas_ni_desplaza
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
 
     assert preview.rows[0].visible_preview_values() == {}
-    columns = ExcelImportWizard._preview_columns(object(), preview)
+    columns = ExcelImportWizard._preview_columns(object(), preview.rows)
 
     assert "superficie" not in columns
     assert "estado_administrativo" not in columns
@@ -510,9 +510,11 @@ def test_format_created_ids_compacta_si_son_muchos() -> None:
     assert format_created_ids(list(range(1, 56)), limit=5) == "1, 2, 3, 4, 5 ... y 50 más"
 
 
-def test_paginacion_preview_cambia_rango_sin_recalcular_preview() -> None:
+def test_paginacion_preview_cambia_rango_columnas_activas_sin_recalcular_preview() -> None:
     calls = 0
-    sheet = _sheet([[f"A{i}", f"Lote {i}", "", "", "", "10", ""] for i in range(1, 56)])
+    rows = [[f"A{i}", f"Lote {i}", "", "", "", "10", ""] for i in range(1, 56)]
+    rows[54][6] = "PARTIDA-55"
+    sheet = _sheet(rows)
 
     def preview_callback(sheet_arg, mappings):
         nonlocal calls
@@ -532,14 +534,17 @@ def test_paginacion_preview_cambia_rango_sin_recalcular_preview() -> None:
     assert calls == 1
     assert wizard._preview_range_text() == "Mostrando 1–50 de 55"
     assert [row.row_number for row in wizard._preview_page_rows()][:2] == [2, 3]
+    assert "Partida" not in wizard._preview_columns(wizard._preview_page_rows())
 
     wizard._next_preview_page(None)
 
     assert calls == 1
     assert wizard._preview_range_text() == "Mostrando 51–55 de 55"
     assert [row.row_number for row in wizard._preview_page_rows()] == [52, 53, 54, 55, 56]
+    assert "Partida" in wizard._preview_columns(wizard._preview_page_rows())
 
     wizard._previous_preview_page(None)
 
     assert calls == 1
     assert wizard._preview_range_text() == "Mostrando 1–50 de 55"
+    assert "Partida" not in wizard._preview_columns(wizard._preview_page_rows())

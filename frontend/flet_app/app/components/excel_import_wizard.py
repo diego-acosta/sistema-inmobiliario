@@ -246,9 +246,10 @@ class ExcelImportWizard(ft.Column):
             return _section("4. Preview", [ft.Text("Pendiente de generación.")])
         preview = self.preview
         self.preview_page = self._bounded_preview_page()
-        preview_columns = self._preview_columns(preview)
+        page_rows = self._preview_page_rows()
+        preview_columns = self._preview_columns(page_rows)
         rows = []
-        for row in self._preview_page_rows():
+        for row in page_rows:
             visible_values = row.visible_preview_values()
             rows.append(
                 ft.DataRow(
@@ -329,9 +330,9 @@ class ExcelImportWizard(ft.Column):
         self.preview_page = max(self._bounded_preview_page() - 1, 0)
         self._render_update()
 
-    def _preview_columns(self, preview: ImportPreviewResult, limit: int = 7) -> list[str]:
+    def _preview_columns(self, rows, limit: int = 7) -> list[str]:
         columns: list[str] = []
-        for row in preview.rows[:50]:
+        for row in rows:
             for column in row.visible_preview_values():
                 if column not in columns:
                     columns.append(column)
