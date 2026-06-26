@@ -15,7 +15,7 @@ from app.importers.excel_import_models import (
 )
 from app.importers.excel_mapping import suggest_mapping
 from app.importers.excel_preview import build_preview, simulate_confirm
-from app.importers.excel_reader import ExcelImportError, read_excel_workbook
+from app.importers.excel_reader import EXCEL_ACCESS_ERROR_MESSAGE, ExcelImportError, read_excel_workbook
 
 ConfirmCallback = Callable[[ImportPreviewResult], ImportConfirmResult]
 PreviewCallback = Callable[[object, list[ImportMapping]], ImportPreviewResult]
@@ -112,6 +112,12 @@ class ExcelImportWizard(ft.Column):
             self.error_message = None
         except ExcelImportError as exc:
             self.error_message = str(exc)
+            self.workbook = None
+            self.preview = None
+        except (PermissionError, OSError):
+            self.error_message = EXCEL_ACCESS_ERROR_MESSAGE
+            self.workbook = None
+            self.preview = None
         finally:
             self.loading = False
             self._render_update()
