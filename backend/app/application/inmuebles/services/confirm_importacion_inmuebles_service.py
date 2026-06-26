@@ -41,8 +41,9 @@ class ConfirmImportacionInmueblesService:
     CORE-EF: COMMAND_WRITE_NEGOCIO.
     - Headers: un único X-Op-Id para toda la operación batch.
     - If-Match-Version: NO APLICA; sólo crea registros nuevos.
-    - Idempotencia/outbox/locks: NO APLICA en este PR; se preserva op_id común
-      sin tabla de idempotencia.
+    - Idempotencia: retry idéntico por códigos con el mismo X-Op-Id devuelve
+      los ids ya persistidos sin crear duplicados.
+    - Outbox/locks: NO APLICA en este PR.
     - Transacción: una única transacción física controlada por este servicio.
     """
 
@@ -61,9 +62,12 @@ class ConfirmImportacionInmueblesService:
                 "CODIGO_INMUEBLE_DUPLICADO", f"FILA_{duplicated_row}"
             )
 
-        existing = self.repository.find_existing_by_codes(
-            [str(item.inmueble.codigo_inmueble).strip().lower() for item in items]
-        )
+        normalized_codes = self._normalized_codes(items)
+        retry_result = self._idempotent_retry_result(context, items, normalized_codes)
+        if retry_result is not None:
+            return retry_result
+
+        existing = self.repository.find_existing_by_codes(normalized_codes)
         if existing:
             codigo = str(existing[0].get("codigo") or "")
             row = next(
@@ -133,12 +137,58 @@ class ConfirmImportacionInmueblesService:
 
         return AppResult.ok({"creados": len(created_items), "items": created_items})
 
-    @staticmethod
-    def _duplicated_row(items: list[ImportacionInmuebleItem]) -> int | None:
+    def _idempotent_retry_result(
+        self, context: Any, items: list[ImportacionInmuebleItem], normalized_codes: list[str]
+    ) -> AppResult[dict[str, Any]] | None:
+        op_id = getattr(context, "op_id", None)
+        if op_id is None:
+            return None
+
+        imported = self.repository.find_imported_by_codes_and_op_id(
+            normalized_codes, op_id
+        )
+        if not imported:
+            return None
+
+        by_code = {self._normalize_code(row["codigo"]): row for row in imported}
+        all_items_imported = all(
+            self._normalize_code(item.inmueble.codigo_inmueble) in by_code
+            for item in items
+        )
+        if not all_items_imported:
+            return AppResult.fail("IMPORTACION_BATCH_RETRY_PARCIAL")
+
+        result_items: list[dict[str, Any]] = []
+        for item in items:
+            row = by_code[self._normalize_code(item.inmueble.codigo_inmueble)]
+            id_dato = row.get("id_dato_catastral_registral")
+            if item.dato_catastral_registral is not None and id_dato is None:
+                return AppResult.fail("IMPORTACION_BATCH_RETRY_PARCIAL")
+            result_items.append(
+                {
+                    "fila": item.fila,
+                    "codigo_inmueble": row["codigo"],
+                    "id_inmueble": row["id_inmueble"],
+                    "id_dato_catastral_registral": id_dato,
+                }
+            )
+
+        return AppResult.ok({"creados": len(result_items), "items": result_items})
+
+    @classmethod
+    def _duplicated_row(cls, items: list[ImportacionInmuebleItem]) -> int | None:
         seen: set[str] = set()
         for item in items:
-            code = str(item.inmueble.codigo_inmueble).strip().lower()
+            code = cls._normalize_code(item.inmueble.codigo_inmueble)
             if code in seen:
                 return item.fila
             seen.add(code)
         return None
+
+    @classmethod
+    def _normalized_codes(cls, items: list[ImportacionInmuebleItem]) -> list[str]:
+        return [cls._normalize_code(item.inmueble.codigo_inmueble) for item in items]
+
+    @staticmethod
+    def _normalize_code(codigo: Any) -> str:
+        return str(codigo).strip().lower()

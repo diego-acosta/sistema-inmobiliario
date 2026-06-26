@@ -1662,6 +1662,42 @@ class InmuebleRepository(BaseRepository[Any]):
             for row in rows
         ]
 
+
+    def find_imported_by_codes_and_op_id(
+        self, codigos: list[str], op_id: Any
+    ) -> list[dict[str, Any]]:
+        if not codigos:
+            return []
+        statement = text(
+            """
+            SELECT
+                i.id_inmueble,
+                i.codigo_inmueble,
+                i.estado_administrativo,
+                d.id_dato_catastral_registral
+            FROM inmueble i
+            LEFT JOIN inmueble_dato_catastral_registral d
+              ON d.id_inmueble = i.id_inmueble
+             AND d.deleted_at IS NULL
+            WHERE lower(btrim(i.codigo_inmueble)) = ANY(:codigos)
+              AND i.deleted_at IS NULL
+              AND i.op_id_alta = :op_id
+            ORDER BY i.codigo_inmueble, i.id_inmueble
+            """
+        )
+        rows = self.db.execute(
+            statement, {"codigos": codigos, "op_id": op_id}
+        ).mappings().all()
+        return [
+            {
+                "codigo": row["codigo_inmueble"],
+                "id_inmueble": row["id_inmueble"],
+                "estado_inmueble": row["estado_administrativo"],
+                "id_dato_catastral_registral": row["id_dato_catastral_registral"],
+            }
+            for row in rows
+        ]
+
     def get_inmueble(self, id_inmueble: int) -> dict[str, Any] | None:
         statement = text(
             """

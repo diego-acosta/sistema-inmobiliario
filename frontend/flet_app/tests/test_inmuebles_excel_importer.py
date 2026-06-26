@@ -193,16 +193,19 @@ def test_confirmacion_con_fallo_de_inmueble_reporta_failed() -> None:
     assert result.warnings_by_row == {}
 
 
-def test_confirmacion_con_fallo_batch_reporta_failed_sin_importacion_parcial() -> None:
-    sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"]])
+def test_confirmacion_con_fallo_batch_reporta_todas_las_filas_revertidas() -> None:
+    sheet = _sheet([["A1", "Uno", "", "M", "L", "10", "P"], ["B1", "Dos", "", "", "", "11", ""]])
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
     api = FakeApi()
-    api.confirm_result = ApiResult(False, error_message="falló catastro", error_details={"errors": ["FILA_2"]})
+    api.confirm_result = ApiResult(False, error_message="falló catastro", error_details={"errors": ["FILA_3"]})
     result = confirm_inmuebles_import(api, preview, import_run_id="run-1")
     assert result.created == 0
-    assert result.failed == 1
+    assert result.failed == 2
     assert result.created_ids == []
-    assert result.errors_by_row == {2: ["No se pudo confirmar esta fila en la importación batch."]}
+    assert result.errors_by_row == {
+        2: ["No se importó porque la operación batch fue revertida."],
+        3: ["No se pudo confirmar esta fila en la importación batch."],
+    }
     assert result.warnings_by_row == {}
 
 

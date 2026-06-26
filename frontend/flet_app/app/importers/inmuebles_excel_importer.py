@@ -244,9 +244,11 @@ def confirm_inmuebles_import(api: InmueblesImportApi, preview: ImportPreviewResu
         failed = len(items)
         message = result.error_message or "No se pudo confirmar la importación de inmuebles."
         row_errors = _batch_error_rows(result.error_details)
-        if row_errors:
-            errors_by_row.update(row_errors)
-        else:
+        rollback_message = "No se importó porque la operación batch fue revertida."
+        for item in items:
+            row_number = int(item["fila"])
+            errors_by_row[row_number] = row_errors.get(row_number, [rollback_message])
+        if not row_errors:
             for item in items:
                 errors_by_row[int(item["fila"])] = [message]
         return ImportConfirmResult(

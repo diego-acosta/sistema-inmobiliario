@@ -10,7 +10,13 @@ HEADERS = {
 URL = "/api/v1/inmuebles/importacion/confirmar"
 
 
-def _item(fila: int, codigo: str, *, partida: str | None = None) -> dict:
+def _item(
+    fila: int,
+    codigo: str,
+    *,
+    partida: str | None = None,
+    id_desarrollo: int | None = None,
+) -> dict:
     item = {
         "fila": fila,
         "inmueble": {
@@ -19,6 +25,7 @@ def _item(fila: int, codigo: str, *, partida: str | None = None) -> dict:
             "superficie": "10.5",
             "estado_administrativo": "ACTIVO",
             "estado_juridico": "REGULAR",
+            "id_desarrollo": id_desarrollo,
         },
     }
     if partida:
@@ -127,7 +134,10 @@ def test_confirmacion_batch_requiere_headers_core_ef(client) -> None:
         URL, headers=headers, json={"items": [_item(2, "IMP-BAT-HDR-001")]}
     )
     assert response.status_code == 400
-    assert response.json()["error_code"] == "CORE_EF_HEADER_REQUIRED"
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert "X-Op-Id" in body["error_message"]
+    assert body["details"] == {"header": "X-Op-Id"}
 
 
 def test_confirmacion_batch_no_requiere_if_match_version(client) -> None:
@@ -135,3 +145,73 @@ def test_confirmacion_batch_no_requiere_if_match_version(client) -> None:
         URL, headers=HEADERS, json={"items": [_item(2, "IMP-BAT-NOIF-001")]}
     )
     assert response.status_code == 201
+
+
+def test_confirmacion_batch_retry_mismo_op_id_devuelve_ids_existentes(client, db_session) -> None:
+    headers = {**HEADERS, "X-Op-Id": "550e8400-e29b-41d4-a716-4466554400aa"}
+    payload = {
+        "items": [
+            _item(2, "IMP-BAT-IDEMP-001", partida="P-IDEMP-1"),
+            _item(3, "IMP-BAT-IDEMP-002"),
+        ]
+    }
+
+    first = client.post(URL, headers=headers, json=payload)
+    assert first.status_code == 201
+    first_items = first.json()["data"]["items"]
+
+    retry = client.post(URL, headers=headers, json=payload)
+    assert retry.status_code == 201
+    retry_body = retry.json()
+    assert retry_body["ok"] is True
+    assert retry_body["data"]["creados"] == 2
+    assert retry_body["data"]["items"] == first_items
+
+    count = db_session.execute(
+        text(
+            "SELECT count(*) FROM inmueble "
+            "WHERE codigo_inmueble IN ('IMP-BAT-IDEMP-001', 'IMP-BAT-IDEMP-002')"
+        )
+    ).scalar_one()
+    assert count == 2
+
+
+def test_confirmacion_batch_mismo_codigo_con_otro_op_id_es_duplicado(client) -> None:
+    first = client.post(
+        URL,
+        headers={**HEADERS, "X-Op-Id": "550e8400-e29b-41d4-a716-4466554400ab"},
+        json={"items": [_item(2, "IMP-BAT-CONFLICT-001")]},
+    )
+    assert first.status_code == 201
+
+    conflict = client.post(
+        URL,
+        headers={**HEADERS, "X-Op-Id": "550e8400-e29b-41d4-a716-4466554400ac"},
+        json={"items": [_item(2, "IMP-BAT-CONFLICT-001")]},
+    )
+    assert conflict.status_code == 400
+    assert "CODIGO_INMUEBLE_YA_EXISTE" in conflict.json()["details"]["errors"]
+
+
+def test_confirmacion_batch_rollback_real_despues_de_insert_parcial(client, db_session) -> None:
+    response = client.post(
+        URL,
+        headers={**HEADERS, "X-Op-Id": "550e8400-e29b-41d4-a716-4466554400ad"},
+        json={
+            "items": [
+                _item(2, "IMP-BAT-ROLLBACK-REAL-001"),
+                _item(3, "IMP-BAT-ROLLBACK-REAL-002", id_desarrollo=999999),
+            ]
+        },
+    )
+
+    assert response.status_code == 400
+    assert "NOT_FOUND_DESARROLLO" in response.json()["details"]["errors"]
+    count = db_session.execute(
+        text(
+            "SELECT count(*) FROM inmueble "
+            "WHERE codigo_inmueble IN "
+            "('IMP-BAT-ROLLBACK-REAL-001', 'IMP-BAT-ROLLBACK-REAL-002')"
+        )
+    ).scalar_one()
+    assert count == 0
