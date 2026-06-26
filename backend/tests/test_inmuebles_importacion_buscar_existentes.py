@@ -37,13 +37,15 @@ def test_buscar_existentes_devuelve_inmuebles_por_codigos(client) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "ok": True,
-        "existentes": [
-            {
-                "codigo": "IMP-BATCH-001",
-                "id_inmueble": id_inmueble,
-                "estado_inmueble": "ACTIVO",
-            }
-        ],
+        "data": {
+            "existentes": [
+                {
+                    "codigo": "IMP-BATCH-001",
+                    "id_inmueble": id_inmueble,
+                    "estado_inmueble": "ACTIVO",
+                }
+            ]
+        },
     }
 
 
@@ -56,7 +58,7 @@ def test_buscar_existentes_compara_codigo_normalizado_case_insensitive(client) -
     )
 
     assert response.status_code == 200
-    assert response.json()["existentes"] == [
+    assert response.json()["data"]["existentes"] == [
         {
             "codigo": "IMP-BATCH-CASE",
             "id_inmueble": id_inmueble,
@@ -74,7 +76,7 @@ def test_buscar_existentes_ignora_codigos_vacios_y_repetidos(client) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["existentes"] == [
+    assert response.json()["data"]["existentes"] == [
         {"codigo": "IMP-BATCH-002", "id_inmueble": id_inmueble, "estado_inmueble": "ACTIVO"}
     ]
 
@@ -93,7 +95,7 @@ def test_buscar_existentes_no_devuelve_inmuebles_borrados(client, db_session) ->
     )
 
     assert response.status_code == 200
-    assert response.json()["existentes"] == []
+    assert response.json()["data"]["existentes"] == []
 
 
 def test_buscar_existentes_soporta_lista_sin_coincidencias(client) -> None:
@@ -103,4 +105,4 @@ def test_buscar_existentes_soporta_lista_sin_coincidencias(client) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "existentes": []}
+    assert response.json() == {"ok": True, "data": {"existentes": []}}

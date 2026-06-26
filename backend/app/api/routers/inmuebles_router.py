@@ -58,6 +58,7 @@ from app.api.schemas.inmuebles import (
     InmuebleCreateData,
     InmuebleCreateRequest,
     InmuebleCreateResponse,
+    InmuebleImportacionBuscarExistentesData,
     InmuebleImportacionBuscarExistentesRequest,
     InmuebleImportacionBuscarExistentesResponse,
     InmuebleImportacionExistenteItem,
@@ -483,10 +484,12 @@ def buscar_inmuebles_existentes_importacion(
         return JSONResponse(status_code=500, content=error.model_dump())
 
     return InmuebleImportacionBuscarExistentesResponse(
-        existentes=[
-            InmuebleImportacionExistenteItem(**item)
-            for item in (result.data or [])
-        ]
+        data=InmuebleImportacionBuscarExistentesData(
+            existentes=[
+                InmuebleImportacionExistenteItem(**item)
+                for item in (result.data or [])
+            ]
+        )
     )
 
 

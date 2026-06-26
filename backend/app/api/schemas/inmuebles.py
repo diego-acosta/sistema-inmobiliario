@@ -98,9 +98,13 @@ class InmuebleImportacionExistenteItem(BaseModel):
     estado_inmueble: str
 
 
+class InmuebleImportacionBuscarExistentesData(BaseModel):
+    existentes: list[InmuebleImportacionExistenteItem]
+
+
 class InmuebleImportacionBuscarExistentesResponse(BaseModel):
     ok: Literal[True] = True
-    existentes: list[InmuebleImportacionExistenteItem]
+    data: InmuebleImportacionBuscarExistentesData
 
 
 class InmuebleUpdateRequest(BaseModel):
