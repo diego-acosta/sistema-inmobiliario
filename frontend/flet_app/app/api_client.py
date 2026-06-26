@@ -230,6 +230,7 @@ class ApiClient:
                 "limit": limit,
                 "offset": offset,
             },
+            preserve_envelope=True,
         )
 
     def buscar_inmuebles_existentes_importacion(self, codigos: list[str]) -> ApiResult:
@@ -530,7 +531,13 @@ class ApiClient:
             json=payload,
         )
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> ApiResult:
+    def _get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        preserve_envelope: bool = False,
+    ) -> ApiResult:
         url = f"{self.base_url}{path}"
         try:
             with httpx.Client(timeout=self.timeout) as client:
@@ -578,7 +585,7 @@ class ApiClient:
 
         return ApiResult(
             success=True,
-            data=payload.get("data"),
+            data=payload if preserve_envelope else payload.get("data"),
             status_code=response.status_code,
         )
 
