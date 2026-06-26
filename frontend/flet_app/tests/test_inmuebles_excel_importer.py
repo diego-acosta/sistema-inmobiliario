@@ -9,7 +9,7 @@ from app.components.excel_import_wizard import (
 )
 from app.importers.excel_import_models import ExcelColumn, ExcelSheetData, ExcelWorkbookData, ImportConfirmResult
 from app.importers.excel_mapping import suggest_mapping
-from app.importers.excel_reader import EXCEL_ACCESS_ERROR_MESSAGE
+from app.importers.excel_reader import EXCEL_ACCESS_ERROR_MESSAGE, ExcelImportError
 from app.importers.inmuebles_excel_importer import (
     build_catastral_import_payload,
     build_inmueble_import_payload,
@@ -485,15 +485,39 @@ def test_wizard_muestra_mensaje_amigable_y_no_genera_preview_si_excel_bloqueado(
     )
     wizard = ExcelImportWizard(target_fields=inmueble_import_target_fields())
     wizard.file_path = "bloqueado.xlsx"
+    wizard.confirm_result = ImportConfirmResult(total=1, created=1, skipped=0, failed=0, errors_by_row={})
 
     wizard._read_workbook()
 
     assert wizard.error_message == EXCEL_ACCESS_ERROR_MESSAGE
     assert wizard.workbook is None
     assert wizard.preview is None
+    assert wizard.confirm_result is None
     text = "\n".join(_collect_text_values(wizard))
     assert EXCEL_ACCESS_ERROR_MESSAGE in text
     assert "Pendiente de archivo válido." in text
+
+
+def test_wizard_limpia_reporte_previo_si_lectura_falla_con_excel_import_error(monkeypatch) -> None:
+    message = "La hoja seleccionada no pudo leerse."
+
+    def raise_excel_import_error(*args, **kwargs):
+        raise ExcelImportError(message)
+
+    monkeypatch.setattr(
+        "app.components.excel_import_wizard.read_excel_workbook",
+        raise_excel_import_error,
+    )
+    wizard = ExcelImportWizard(target_fields=inmueble_import_target_fields())
+    wizard.file_path = "invalido.xlsx"
+    wizard.confirm_result = ImportConfirmResult(total=1, created=1, skipped=0, failed=0, errors_by_row={})
+
+    wizard._read_workbook()
+
+    assert wizard.error_message == message
+    assert wizard.workbook is None
+    assert wizard.preview is None
+    assert wizard.confirm_result is None
 
 
 def test_wizard_mantiene_flujo_normal_con_excel_legible(monkeypatch) -> None:

@@ -114,10 +114,12 @@ class ExcelImportWizard(ft.Column):
             self.error_message = str(exc)
             self.workbook = None
             self.preview = None
+            self.confirm_result = None
         except (PermissionError, OSError):
             self.error_message = EXCEL_ACCESS_ERROR_MESSAGE
             self.workbook = None
             self.preview = None
+            self.confirm_result = None
         finally:
             self.loading = False
             self._render_update()
