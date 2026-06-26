@@ -86,6 +86,7 @@ def test_edicion_con_dato_existente_actualiza_con_version() -> None:
                 "manzana": "M1",
                 "lote": "L1",
                 "partida_inmobiliaria": "P1",
+                "nomenclatura_madre": "NM1",
                 "estado_dato": "ACTIVO",
                 "version_registro": 3,
             }
@@ -94,14 +95,16 @@ def test_edicion_con_dato_existente_actualiza_con_version() -> None:
     view = _build_view(api)
 
     assert view.catastral_fields["manzana"].value == "M1"
+    assert view.catastral_fields["nomenclatura_madre"].value == "NM1"
     view.catastral_fields["lote"].value = "L2"
+    view.catastral_fields["nomenclatura_madre"].value = "NM2"
     view._save(None)
 
     assert api.created == []
     assert len(api.updated) == 1
     _, id_dato, payload, if_match_version, op_id = api.updated[0]
     assert id_dato == 10
-    assert payload == {"lote": "L2"}
+    assert payload == {"lote": "L2", "nomenclatura_madre": "NM2"}
     assert if_match_version == 3
     assert op_id
 
@@ -115,6 +118,7 @@ def test_edicion_sin_dato_crea_catastral_sin_version() -> None:
     view.catastral_fields["manzana"].value = "M2"
     view.catastral_fields["lote"].value = "L3"
     view.catastral_fields["partida_inmobiliaria"].value = "P2"
+    view.catastral_fields["nomenclatura_madre"].value = "NM-CREADA"
     view._save(None)
 
     assert api.updated == []
@@ -123,6 +127,7 @@ def test_edicion_sin_dato_crea_catastral_sin_version() -> None:
     assert payload["manzana"] == "M2"
     assert payload["lote"] == "L3"
     assert payload["partida_inmobiliaria"] == "P2"
+    assert payload["nomenclatura_madre"] == "NM-CREADA"
     assert payload["estado_dato"] == "ACTIVO"
     assert op_id
 

@@ -8,7 +8,7 @@
 ## Modelo implementado
 - tabla separada `inmueble_dato_catastral_registral`
 - vinculacion obligatoria con `inmueble` mediante `id_inmueble`
-- campos catastrales/registrales/fisicos avanzados: nomenclatura catastral, partida inmobiliaria, matricula, folio real, circunscripcion, seccion, chacra, quinta, fraccion, manzana, lote, parcela, subparcela, superficies de titulo/mensura, medidas, situacion posesoria/dominial y organismo de origen
+- campos catastrales/registrales/fisicos avanzados: nomenclatura catastral, nomenclatura madre, partida inmobiliaria, matricula, folio real, circunscripcion, seccion, chacra, quinta, fraccion, manzana, lote, parcela, subparcela, superficies de titulo/mensura, medidas, situacion posesoria/dominial y organismo de origen
 - vigencia/historial mediante `fecha_desde`, `fecha_hasta` y `estado_dato`
 - trazabilidad tecnica CORE-EF transversal: `uid_global`, `version_registro`, timestamps, instalacion y `op_id`
 

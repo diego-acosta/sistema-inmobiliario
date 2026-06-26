@@ -8,6 +8,7 @@ from app.application.common.commands import CommandContext
 @dataclass(slots=True)
 class DatoCatastralRegistralFields:
     nomenclatura_catastral: str | None
+    nomenclatura_madre: str | None
     partida_inmobiliaria: str | None
     matricula: str | None
     folio_real: str | None

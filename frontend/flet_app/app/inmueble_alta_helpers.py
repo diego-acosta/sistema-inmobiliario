@@ -10,6 +10,7 @@ ESTADOS_JURIDICOS = ("REGULAR", "OBSERVADO")
 ESTADOS_DATO_CATASTRAL = ("ACTIVO", "INACTIVO", "HISTORICO")
 CATASTRAL_ADVANCED_FIELDS = (
     "nomenclatura_catastral",
+    "nomenclatura_madre",
     "partida_inmobiliaria",
     "matricula",
     "folio_real",
@@ -166,6 +167,7 @@ def build_dato_catastral_payload(
         payload["estado_dato"] = estado_dato
     for field_name in (
         "nomenclatura_catastral",
+        "nomenclatura_madre",
         "partida_inmobiliaria",
         "matricula",
         "folio_real",

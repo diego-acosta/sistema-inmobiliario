@@ -80,6 +80,7 @@ def test_plantilla_incluye_columnas_avanzadas(tmp_path) -> None:
         "quinta",
         "fraccion",
         "subparcela",
+        "nomenclatura_madre",
         "superficie_titulo",
         "superficie_mensura",
         "organismo_origen",

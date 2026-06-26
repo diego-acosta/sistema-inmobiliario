@@ -604,6 +604,9 @@ class InmuebleCreateForm:
         self.nomenclatura_catastral = ft.TextField(
             label="Nomenclatura catastral", width=260
         )
+        self.nomenclatura_madre = ft.TextField(
+            label="Nomenclatura madre", width=260
+        )
         self.partida_inmobiliaria = ft.TextField(
             label="Partida inmobiliaria", width=260
         )
@@ -640,7 +643,7 @@ class InmuebleCreateForm:
         self._load_desarrollos()
         self.avanzados.controls = [
             ft.Row(
-                [self.nomenclatura_catastral, self.partida_inmobiliaria],
+                [self.nomenclatura_catastral, self.nomenclatura_madre, self.partida_inmobiliaria],
                 wrap=True,
                 spacing=10,
             ),
@@ -797,6 +800,7 @@ class InmuebleCreateForm:
     def _current_dato_values(self) -> dict[str, str | None]:
         return {
             "nomenclatura_catastral": self.nomenclatura_catastral.value,
+            "nomenclatura_madre": self.nomenclatura_madre.value,
             "partida_inmobiliaria": self.partida_inmobiliaria.value,
             "matricula": self.matricula.value,
             "folio_real": self.folio_real.value,
@@ -963,6 +967,7 @@ class InmuebleCreateForm:
             self.lote,
             self.observaciones,
             self.nomenclatura_catastral,
+            self.nomenclatura_madre,
             self.partida_inmobiliaria,
             self.matricula,
             self.folio_real,
@@ -1681,6 +1686,7 @@ class InmuebleEditView:
             ("lote", "Lote"),
             ("parcela", "Parcela"),
             ("nomenclatura_catastral", "Nomenclatura catastral"),
+            ("nomenclatura_madre", "Nomenclatura madre"),
             ("partida_inmobiliaria", "Partida inmobiliaria"),
             ("matricula", "Matrícula"),
             ("folio_real", "Folio real"),
@@ -2833,6 +2839,7 @@ def _catastral_grid(row: dict[str, Any]) -> ft.Control:
         ("Lote", "lote"),
         ("Parcela", "parcela"),
         ("Nomenclatura catastral", "nomenclatura_catastral"),
+        ("Nomenclatura madre", "nomenclatura_madre"),
         ("Partida inmobiliaria", "partida_inmobiliaria"),
         ("Matrícula", "matricula"),
         ("Folio real", "folio_real"),

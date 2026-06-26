@@ -31,6 +31,7 @@ EXPECTED_HEADERS: Final[tuple[str, ...]] = (
     "parcela",
     "subparcela",
     "nomenclatura_catastral",
+    "nomenclatura_madre",
     "partida",
     "matricula",
     "superficie_titulo",
@@ -48,16 +49,16 @@ EXPECTED_HEADERS: Final[tuple[str, ...]] = (
 EXAMPLE_ROWS: Final[tuple[tuple[str, ...], ...]] = (
     (
         "IMP-001", "Lote importado básico", "Loteo existente", "San Martín", "123", "ACTIVO", "REGULAR", "500", "Fila básica sin dato catastral avanzado",
-        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
     ),
     (
         "IMP-002", "Lote con catastro avanzado", "Loteo existente", "Ruta 8", "S/N", "ACTIVO", "REGULAR", "1234.56", "Fila con dato catastral/registral completo",
-        "FR-001", "I", "A", "CH-1", "Q-2", "F-3", "M1", "L2", "P-10", "SP-1", "NC-001", "P-001", "MAT-001",
+        "FR-001", "I", "A", "CH-1", "Q-2", "F-3", "M1", "L2", "P-10", "SP-1", "NC-001", "NC-MADRE-001", "P-001", "MAT-001",
         "1200.50", "1198.75", "20x60", "POSESION REGULAR", "DOMINIO PERFECTO", "Catastro municipal", "2026-01-01", "", "ACTIVO", "Observación catastral ejemplo",
     ),
     (
         "IMP-003", "Ejemplo con estructura completa y vacíos", "", "", "", "", "", "750", "",
-        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
     ),
 )
 
@@ -82,6 +83,7 @@ COLUMN_HELP: Final[tuple[tuple[str, str, str, str, str], ...]] = (
     ("parcela", "Opcional", "Texto", "Parcela catastral.", "parcela"),
     ("subparcela", "Opcional", "Texto", "Subparcela catastral.", "subparcela, sub_parcela"),
     ("nomenclatura_catastral", "Opcional", "Texto", "Nomenclatura catastral.", "nomenclatura_catastral, nomenclatura, nomenclatura catastro"),
+    ("nomenclatura_madre", "Opcional", "Texto", "Nomenclatura madre u origen del inmueble/lote, si deriva de una nomenclatura anterior.", "nomenclatura_madre, nomenclatura madre, nom_madre, nomenclatura origen, nomenclatura_origen"),
     ("partida", "Opcional", "Texto", "Partida inmobiliaria.", "partida, partida_inmobiliaria"),
     ("matricula", "Opcional", "Texto", "Matrícula registral.", "matricula, matrícula, matricula_registral"),
     ("superficie_titulo", "Opcional", "Decimal positivo", "Superficie según título.", "superficie_titulo, superficie título, superficie_de_titulo"),

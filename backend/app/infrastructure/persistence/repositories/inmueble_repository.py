@@ -59,6 +59,7 @@ class InmuebleRepository(BaseRepository[Any]):
                 created_at,
                 updated_at,
                 nomenclatura_catastral,
+                nomenclatura_madre,
                 partida_inmobiliaria,
                 matricula,
                 folio_real,
