@@ -44,6 +44,15 @@ class ApiClient:
     def get_persona_detalle_integral(self, id_persona: int) -> ApiResult:
         return self._get(f"/api/v1/personas/{id_persona}/detalle-integral")
 
+    def crear_persona(
+        self, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        return self._post(
+            "/api/v1/personas",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
     def buscar_personas(
         self,
         *,
@@ -727,8 +736,8 @@ class ApiClient:
                     parts.append("errors=" + ", ".join(str(error) for error in errors))
                 else:
                     parts.append(f"errors={errors}")
-            if extra:
-                parts.append(f"details={extra}")
+            for key, value in extra.items():
+                parts.append(f"{key}={value}")
             return " | ".join(parts)
         return f"details={details}"
 

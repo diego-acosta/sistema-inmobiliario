@@ -28,7 +28,11 @@ class PartesListPage:
                     controls=[
                         ft.Text("Partes", size=28, weight=ft.FontWeight.W_700),
                         ft.Container(expand=True),
-                        ft.Text("Consulta operativa", color=ft.Colors.BLUE_GREY_600),
+                        ft.FilledButton(
+                            "Nueva parte",
+                            icon=ft.Icons.PERSON_ADD,
+                            on_click=lambda _: self.on_navigate("persona_create"),
+                        ),
                     ]
                 ),
                 ft.Row(
@@ -162,3 +166,150 @@ class PartesListPage:
         self.offset += self.limit
         self._load()
         self.results.update()
+
+
+class PersonaCreateView:
+    def __init__(self, api: ApiClient, on_navigate) -> None:
+        self.api = api
+        self.on_navigate = on_navigate
+
+    def build(self) -> ft.Control:
+        return PersonaCreateForm(
+            self.api,
+            on_close=lambda: self.on_navigate("partes"),
+            on_created=lambda id_persona: self.on_navigate(
+                "parte_detail", id_persona=id_persona
+            ),
+        ).build()
+
+
+class PersonaCreateForm:
+    def __init__(self, api: ApiClient, on_close, on_created) -> None:
+        self.api = api
+        self.on_close = on_close
+        self.on_created = on_created
+        self.tipo_persona = ft.Dropdown(
+            label="Tipo de parte",
+            width=220,
+            value="FISICA",
+            options=[ft.dropdown.Option("FISICA"), ft.dropdown.Option("JURIDICA")],
+        )
+        self.nombre = ft.TextField(label="Nombre", width=260)
+        self.apellido = ft.TextField(label="Apellido", width=260)
+        self.razon_social = ft.TextField(label="Razón social", width=360)
+        self.fecha_nacimiento = ft.TextField(label="Fecha (AAAA-MM-DD)", width=190)
+        self.estado_persona = ft.Dropdown(
+            label="Estado",
+            width=180,
+            value="ACTIVA",
+            options=[ft.dropdown.Option("ACTIVA"), ft.dropdown.Option("INACTIVA")],
+        )
+        self.observaciones = ft.TextField(
+            label="Observaciones", multiline=True, min_lines=2, max_lines=4
+        )
+        self.message = ft.Text("")
+        self.submit_button = ft.FilledButton("Crear parte", on_click=self._submit)
+        self.clear_button = ft.OutlinedButton("Limpiar", on_click=self._clear_form)
+
+    def build(self) -> ft.Control:
+        return ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Text("Nueva parte", size=28, weight=ft.FontWeight.W_700),
+                        ft.Container(expand=True),
+                        ft.TextButton("Volver", on_click=lambda _: self.on_close()),
+                    ]
+                ),
+                ft.Text(
+                    "Alta básica de parte. Documentos, contactos y roles se cargan en la ficha.",
+                    color=ft.Colors.BLUE_GREY_600,
+                ),
+                ft.Row(
+                    controls=[
+                        self.tipo_persona,
+                        self.estado_persona,
+                        self.fecha_nacimiento,
+                    ],
+                    wrap=True,
+                    spacing=12,
+                ),
+                ft.Row(
+                    controls=[self.nombre, self.apellido, self.razon_social],
+                    wrap=True,
+                    spacing=12,
+                ),
+                self.observaciones,
+                self.message,
+                ft.Row(controls=[self.submit_button, self.clear_button], spacing=12),
+            ],
+            spacing=16,
+            expand=True,
+        )
+
+    def _values(self) -> dict[str, str | None]:
+        return {
+            "tipo_persona": self.tipo_persona.value,
+            "nombre": self.nombre.value,
+            "apellido": self.apellido.value,
+            "razon_social": self.razon_social.value,
+            "fecha_nacimiento": self.fecha_nacimiento.value,
+            "estado_persona": self.estado_persona.value,
+            "observaciones": self.observaciones.value,
+        }
+
+    def _submit(self, _) -> None:
+        from app.persona_alta_helpers import build_persona_payload, validate_persona_form
+
+        errors = validate_persona_form(self._values())
+        if errors:
+            self._set_message("No se pudo crear: " + " ".join(errors), is_error=True)
+            return
+
+        result = self.api.crear_persona(build_persona_payload(self._values()))
+        if not result.success:
+            self._set_message(
+                result.error_message or "No se pudo crear la parte.", is_error=True
+            )
+            return
+
+        data = result.data if isinstance(result.data, dict) else {}
+        id_persona = data.get("id_persona")
+        self._set_message(f"Parte creada correctamente. ID: {id_persona}")
+        self.clear_button.text = "Nueva alta"
+        self._safe_update(self.clear_button)
+
+    def _clear_form(self, _=None) -> None:
+        self.tipo_persona.value = "FISICA"
+        self.nombre.value = ""
+        self.apellido.value = ""
+        self.razon_social.value = ""
+        self.fecha_nacimiento.value = ""
+        self.estado_persona.value = "ACTIVA"
+        self.observaciones.value = ""
+        self.message.value = ""
+        self.clear_button.text = "Limpiar"
+        self._refresh_form_controls()
+
+    def _set_message(self, text: str, *, is_error: bool = False) -> None:
+        self.message.value = text
+        self.message.color = ft.Colors.RED_700 if is_error else ft.Colors.GREEN_700
+        self._safe_update(self.message)
+
+    def _refresh_form_controls(self) -> None:
+        self._safe_update(
+            self.tipo_persona,
+            self.nombre,
+            self.apellido,
+            self.razon_social,
+            self.fecha_nacimiento,
+            self.estado_persona,
+            self.observaciones,
+            self.message,
+            self.clear_button,
+        )
+
+    def _safe_update(self, *controls) -> None:
+        for control in controls:
+            if getattr(control, "page", None) is not None:
+                control.update()
