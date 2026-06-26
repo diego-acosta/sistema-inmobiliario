@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.api_client import ApiResult
 from app.pages.partes_list_page import PersonaCreateForm
-from app.persona_alta_helpers import build_persona_payload
+from app.persona_alta_helpers import build_persona_payload, validate_persona_form
 
 
 class FakeApi:
@@ -13,6 +13,49 @@ class FakeApi:
     def crear_persona(self, payload, op_id=None):
         self.payloads.append(payload)
         return self.result
+
+
+def test_form_usa_copy_visible_de_parte() -> None:
+    form = PersonaCreateForm(
+        FakeApi(ApiResult(True)),
+        on_close=lambda: None,
+        on_created=lambda _: None,
+    )
+    form.build()
+
+    assert form.tipo_persona.label == "Tipo de parte"
+    assert form.submit_button.text == "Crear parte"
+
+
+def test_validacion_visible_habla_de_parte_fisica() -> None:
+    form = PersonaCreateForm(
+        FakeApi(ApiResult(True)),
+        on_close=lambda: None,
+        on_created=lambda _: None,
+    )
+    form.build()
+
+    form._submit(None)
+
+    assert "parte física" in form.message.value
+    assert "persona física" not in form.message.value
+
+
+def test_validacion_visible_habla_de_parte_juridica() -> None:
+    errors = validate_persona_form(
+        {
+            "tipo_persona": "JURIDICA",
+            "nombre": "",
+            "apellido": "",
+            "razon_social": "",
+            "fecha_nacimiento": "",
+            "estado_persona": "ACTIVA",
+            "observaciones": "",
+        }
+    )
+
+    assert "Razón social es requerida para parte jurídica." in errors
+    assert all("persona jurídica" not in error for error in errors)
 
 
 def test_build_persona_payload_arma_alta_valida_persona_fisica() -> None:
@@ -73,7 +116,7 @@ def test_alta_exitosa_muestra_mensaje_claro_e_id_creado() -> None:
     form._submit(None)
 
     assert api.payloads[0]["nombre"] == "Ada"
-    assert form.message.value == "Persona creada correctamente. ID: 42"
+    assert form.message.value == "Parte creada correctamente. ID: 42"
     assert "{" not in form.message.value
     assert form.clear_button.text == "Nueva alta"
 
@@ -102,7 +145,7 @@ def test_limpiar_nueva_alta_resetea_formulario() -> None:
     form.fecha_nacimiento.value = "2020-01-01"
     form.estado_persona.value = "INACTIVA"
     form.observaciones.value = "Obs"
-    form.message.value = "Persona creada correctamente. ID: 1"
+    form.message.value = "Parte creada correctamente. ID: 1"
     form.clear_button.text = "Nueva alta"
 
     form._clear_form()

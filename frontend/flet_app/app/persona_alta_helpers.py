@@ -19,17 +19,17 @@ def validate_persona_form(values: dict[str, str | None]) -> list[str]:
     estado_persona = clean_text(values.get("estado_persona"))
 
     if tipo_persona not in TIPOS_PERSONA:
-        errors.append("Tipo de persona es requerido y debe ser FISICA o JURIDICA.")
+        errors.append("Tipo de parte es requerido y debe ser FISICA o JURIDICA.")
     if estado_persona not in ESTADOS_PERSONA:
-        errors.append("Estado de persona es requerido y debe ser ACTIVA o INACTIVA.")
+        errors.append("Estado de la parte es requerido y debe ser ACTIVA o INACTIVA.")
 
     if tipo_persona == "FISICA":
         if not clean_text(values.get("nombre")):
-            errors.append("Nombre es requerido para persona física.")
+            errors.append("Nombre es requerido para parte física.")
         if not clean_text(values.get("apellido")):
-            errors.append("Apellido es requerido para persona física.")
+            errors.append("Apellido es requerido para parte física.")
     elif tipo_persona == "JURIDICA" and not clean_text(values.get("razon_social")):
-        errors.append("Razón social es requerida para persona jurídica.")
+        errors.append("Razón social es requerida para parte jurídica.")
 
     fecha_nacimiento = clean_text(values.get("fecha_nacimiento"))
     if fecha_nacimiento:
@@ -59,7 +59,7 @@ def build_persona_payload(values: dict[str, str | None]) -> dict[str, Any]:
         payload["razon_social"] = None
     elif tipo_persona == "JURIDICA":
         # El contrato backend actual tipa nombre y apellido como str requeridos;
-        # para persona jurídica se envían vacíos y la identidad visible queda
+        # para parte jurídica se envían vacíos y la identidad visible queda
         # representada por razon_social.
         payload["nombre"] = ""
         payload["apellido"] = ""

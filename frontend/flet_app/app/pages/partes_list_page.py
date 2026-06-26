@@ -29,7 +29,7 @@ class PartesListPage:
                         ft.Text("Partes", size=28, weight=ft.FontWeight.W_700),
                         ft.Container(expand=True),
                         ft.FilledButton(
-                            "Nueva persona",
+                            "Nueva parte",
                             icon=ft.Icons.PERSON_ADD,
                             on_click=lambda _: self.on_navigate("persona_create"),
                         ),
@@ -189,7 +189,7 @@ class PersonaCreateForm:
         self.on_close = on_close
         self.on_created = on_created
         self.tipo_persona = ft.Dropdown(
-            label="Tipo de persona",
+            label="Tipo de parte",
             width=220,
             value="FISICA",
             options=[ft.dropdown.Option("FISICA"), ft.dropdown.Option("JURIDICA")],
@@ -208,7 +208,7 @@ class PersonaCreateForm:
             label="Observaciones", multiline=True, min_lines=2, max_lines=4
         )
         self.message = ft.Text("")
-        self.submit_button = ft.FilledButton("Crear persona", on_click=self._submit)
+        self.submit_button = ft.FilledButton("Crear parte", on_click=self._submit)
         self.clear_button = ft.OutlinedButton("Limpiar", on_click=self._clear_form)
 
     def build(self) -> ft.Control:
@@ -216,13 +216,13 @@ class PersonaCreateForm:
             controls=[
                 ft.Row(
                     controls=[
-                        ft.Text("Nueva persona", size=28, weight=ft.FontWeight.W_700),
+                        ft.Text("Nueva parte", size=28, weight=ft.FontWeight.W_700),
                         ft.Container(expand=True),
                         ft.TextButton("Volver", on_click=lambda _: self.on_close()),
                     ]
                 ),
                 ft.Text(
-                    "Alta básica del dominio Personas. Documentos y contactos se cargan fuera de este formulario.",
+                    "Alta básica de parte. Documentos, contactos y roles se cargan en la ficha.",
                     color=ft.Colors.BLUE_GREY_600,
                 ),
                 ft.Row(
@@ -269,13 +269,13 @@ class PersonaCreateForm:
         result = self.api.crear_persona(build_persona_payload(self._values()))
         if not result.success:
             self._set_message(
-                result.error_message or "No se pudo crear la persona.", is_error=True
+                result.error_message or "No se pudo crear la parte.", is_error=True
             )
             return
 
         data = result.data if isinstance(result.data, dict) else {}
         id_persona = data.get("id_persona")
-        self._set_message(f"Persona creada correctamente. ID: {id_persona}")
+        self._set_message(f"Parte creada correctamente. ID: {id_persona}")
         self.clear_button.text = "Nueva alta"
         self._safe_update(self.clear_button)
 
