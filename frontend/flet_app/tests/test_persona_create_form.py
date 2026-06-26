@@ -106,9 +106,10 @@ def test_build_persona_payload_arma_alta_valida_persona_juridica() -> None:
     }
 
 
-def test_alta_exitosa_muestra_mensaje_claro_e_id_creado() -> None:
+def test_alta_exitosa_muestra_mensaje_claro_e_id_creado_y_navega_a_ficha() -> None:
     api = FakeApi(ApiResult(True, data={"id_persona": 42}))
-    form = PersonaCreateForm(api, on_close=lambda: None, on_created=lambda _: None)
+    created_ids: list[int] = []
+    form = PersonaCreateForm(api, on_close=lambda: None, on_created=created_ids.append)
     form.build()
     form.nombre.value = "Ada"
     form.apellido.value = "Lovelace"
@@ -119,6 +120,7 @@ def test_alta_exitosa_muestra_mensaje_claro_e_id_creado() -> None:
     assert form.message.value == "Parte creada correctamente. ID: 42"
     assert "{" not in form.message.value
     assert form.clear_button.text == "Nueva alta"
+    assert created_ids == [42]
 
 
 def test_error_backend_se_muestra_claro_sin_dict_crudo() -> None:

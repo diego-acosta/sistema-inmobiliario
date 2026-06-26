@@ -278,6 +278,8 @@ class PersonaCreateForm:
         self._set_message(f"Parte creada correctamente. ID: {id_persona}")
         self.clear_button.text = "Nueva alta"
         self._safe_update(self.clear_button)
+        if id_persona is not None:
+            self.on_created(id_persona)
 
     def _clear_form(self, _=None) -> None:
         self.tipo_persona.value = "FISICA"
