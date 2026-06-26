@@ -33,6 +33,7 @@ def _crear_inmueble(client, codigo="INM-DCR-001") -> int:
 def _payload(**overrides):
     payload = {
         "nomenclatura_catastral": "NC-001",
+        "nomenclatura_madre": "NC-MADRE-001",
         "partida_inmobiliaria": "PI-001",
         "matricula": "MAT-001",
         "folio_real": "FR-001",
@@ -72,22 +73,25 @@ def test_crear_listar_actualizar_y_baja_dato_catastral_registral(client):
     data = create.json()["data"]
     assert data["id_inmueble"] == id_inmueble
     assert data["version_registro"] == 1
+    assert data["nomenclatura_madre"] == "NC-MADRE-001"
     assert "linderos" not in data
     id_dato = data["id_dato_catastral_registral"]
 
     listed = client.get(f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales")
     assert listed.status_code == 200
     assert len(listed.json()["data"]) == 1
+    assert listed.json()["data"][0]["nomenclatura_madre"] == "NC-MADRE-001"
     assert "linderos" not in listed.json()["data"][0]
 
     updated = client.put(
         f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato}",
         headers=_headers(**{"If-Match-Version": "1"}),
-        json=_payload(matricula="MAT-002", estado_dato="HISTORICO"),
+        json=_payload(matricula="MAT-002", nomenclatura_madre="NC-MADRE-002", estado_dato="HISTORICO"),
     )
     assert updated.status_code == 200
     assert updated.json()["data"]["version_registro"] == 2
     assert updated.json()["data"]["matricula"] == "MAT-002"
+    assert updated.json()["data"]["nomenclatura_madre"] == "NC-MADRE-002"
 
     conflict = client.put(
         f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales/{id_dato}",
@@ -112,6 +116,21 @@ def test_crear_listar_actualizar_y_baja_dato_catastral_registral(client):
     empty = client.get(f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales")
     assert empty.status_code == 200
     assert empty.json()["data"] == []
+
+
+def test_nomenclatura_madre_es_opcional(client):
+    id_inmueble = _crear_inmueble(client, "INM-DCR-NM-OPT")
+    payload = _payload()
+    payload.pop("nomenclatura_madre")
+
+    response = client.post(
+        f"/api/v1/inmuebles/{id_inmueble}/datos-catastrales-registrales",
+        headers=_headers(),
+        json=payload,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["nomenclatura_madre"] is None
 
 
 def test_no_permite_inmueble_inexistente(client):
@@ -154,6 +173,7 @@ def test_actualizacion_parcial_conserva_campos_omitidos(client):
         json=_payload(
             nomenclatura_catastral="NC-PARCIAL-001",
             partida_inmobiliaria="PI-PARCIAL-001",
+            nomenclatura_madre="NC-MADRE-PARCIAL-001",
             matricula="MAT-PARCIAL-001",
             estado_dato="HISTORICO",
             superficie_titulo="123.45",
@@ -177,6 +197,7 @@ def test_actualizacion_parcial_conserva_campos_omitidos(client):
     assert data["matricula"] == "MAT-PARCIAL-002"
     assert data["nomenclatura_catastral"] == original["nomenclatura_catastral"]
     assert data["partida_inmobiliaria"] == original["partida_inmobiliaria"]
+    assert data["nomenclatura_madre"] == original["nomenclatura_madre"]
     assert data["superficie_titulo"] == original["superficie_titulo"]
     assert data["observaciones"] == original["observaciones"]
     assert data["estado_dato"] == "HISTORICO"

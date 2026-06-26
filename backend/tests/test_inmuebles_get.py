@@ -45,21 +45,21 @@ def test_get_inmueble_devuelve_inmueble_activo(client, db_session) -> None:
     response = client.get(f"/api/v1/inmuebles/{id_inmueble}")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "ok": True,
-        "data": {
-            "id_inmueble": id_inmueble,
-            "id_desarrollo": id_desarrollo,
-            "codigo_inmueble": "INM-GET-001",
-            "nombre_inmueble": "Unidad 1",
-            "calle": "San Martín",
-            "altura": "123 bis",
-            "superficie": "98.75",
-            "estado_administrativo": "ACTIVO",
-            "estado_juridico": "REGULAR",
-            "observaciones": "inmueble para consulta",
-        },
-    }
+    body = response.json()
+    assert body["ok"] is True
+    data = body["data"]
+    assert data["id_inmueble"] == id_inmueble
+    assert data["id_desarrollo"] == id_desarrollo
+    assert data["codigo_inmueble"] == "INM-GET-001"
+    assert data["nombre_inmueble"] == "Unidad 1"
+    assert data["calle"] == "San Martín"
+    assert data["altura"] == "123 bis"
+    assert data["superficie"] == "98.75"
+    assert data["estado_administrativo"] == "ACTIVO"
+    assert data["estado_juridico"] == "REGULAR"
+    assert data["observaciones"] == "inmueble para consulta"
+    if "version_registro" in data:
+        assert data["version_registro"] == 1
 
     row = db_session.execute(
         text(

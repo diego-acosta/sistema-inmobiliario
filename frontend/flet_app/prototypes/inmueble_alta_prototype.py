@@ -115,6 +115,7 @@ class InmuebleAltaPrototype:
         )
         self.datos_catastrales_avanzados = ft.Column(visible=False, spacing=12)
         self.nomenclatura_catastral = ft.TextField(label="Nomenclatura catastral")
+        self.nomenclatura_madre = ft.TextField(label="Nomenclatura madre")
         self.partida_inmobiliaria = ft.TextField(label="Partida inmobiliaria")
         self.matricula = ft.TextField(label="Matrícula")
         self.folio_real = ft.TextField(label="Folio real")
@@ -189,6 +190,7 @@ class InmuebleAltaPrototype:
             ft.Row(
                 [
                     self.nomenclatura_catastral,
+                    self.nomenclatura_madre,
                     self.partida_inmobiliaria,
                 ],
                 wrap=True,
@@ -287,6 +289,7 @@ class InmuebleAltaPrototype:
     def _current_dato_catastral_values(self) -> dict[str, str | None]:
         return {
             "nomenclatura_catastral": self.nomenclatura_catastral.value,
+            "nomenclatura_madre": self.nomenclatura_madre.value,
             "partida_inmobiliaria": self.partida_inmobiliaria.value,
             "matricula": self.matricula.value,
             "folio_real": self.folio_real.value,
@@ -485,6 +488,7 @@ class InmuebleAltaPrototype:
             self.id_desarrollo,
             self.observaciones,
             self.nomenclatura_catastral,
+            self.nomenclatura_madre,
             self.partida_inmobiliaria,
             self.matricula,
             self.folio_real,
@@ -563,6 +567,7 @@ def _run_self_test() -> None:
     )
     dato_values = {
         "nomenclatura_catastral": " NC-1 ",
+        "nomenclatura_madre": " NM-1 ",
         "partida_inmobiliaria": "",
         "matricula": " MAT-1 ",
         "folio_real": "",
@@ -583,6 +588,7 @@ def _run_self_test() -> None:
     assert dato_payload == {
         "estado_dato": "ACTIVO",
         "nomenclatura_catastral": "NC-1",
+        "nomenclatura_madre": "NM-1",
         "matricula": "MAT-1",
         "manzana": "M1",
         "lote": "L1",

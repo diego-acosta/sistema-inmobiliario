@@ -3030,6 +3030,7 @@ CREATE TABLE public.inmueble_dato_catastral_registral (
     op_id_ultima_modificacion uuid,
     id_inmueble bigint NOT NULL,
     nomenclatura_catastral character varying(120),
+    nomenclatura_madre character varying(120),
     partida_inmobiliaria character varying(80),
     matricula character varying(80),
     folio_real character varying(80),

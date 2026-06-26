@@ -158,6 +158,7 @@ class InmuebleDesasociarDesarrolloResponse(BaseModel):
 
 class InmuebleDatoCatastralRegistralBase(BaseModel):
     nomenclatura_catastral: str | None = None
+    nomenclatura_madre: str | None = None
     partida_inmobiliaria: str | None = None
     matricula: str | None = None
     folio_real: str | None = None

@@ -159,6 +159,7 @@ def _advanced_sheet(rows):
         "parcela",
         "subparcela",
         "nomenclatura_catastral",
+        "nomenclatura_madre",
         "partida",
         "matricula",
         "superficie_titulo",
@@ -188,6 +189,7 @@ def test_mapping_automatico_de_campos_catastrales_avanzados() -> None:
     assert by_target["superficie_titulo"] == "superficie_titulo"
     assert by_target["fecha_desde"] == "fecha_desde"
     assert by_target["observaciones_catastrales"] == "observaciones_catastrales"
+    assert by_target["nomenclatura_madre"] == "nomenclatura_madre"
 
 
 def test_payload_catastral_con_campos_avanzados_y_fechas() -> None:
@@ -206,6 +208,7 @@ def test_payload_catastral_con_campos_avanzados_y_fechas() -> None:
         "parcela": "P",
         "subparcela": "SP",
         "nomenclatura_catastral": "NC",
+        "nomenclatura_madre": "NC-MADRE",
         "partida_inmobiliaria": "PI",
         "matricula": "MAT",
         "superficie_titulo": "1200.50",
@@ -224,6 +227,7 @@ def test_payload_catastral_con_campos_avanzados_y_fechas() -> None:
         "manzana": "M",
         "lote": "L",
         "nomenclatura_catastral": "NC",
+        "nomenclatura_madre": "NC-MADRE",
         "partida_inmobiliaria": "PI",
         "matricula": "MAT",
         "folio_real": "FR-1",
@@ -261,8 +265,8 @@ def test_fechas_vacias_no_generan_error_ni_se_envian_en_payload() -> None:
 
 def test_fechas_se_normalizan_a_datetime_iso() -> None:
     sheet = _advanced_sheet([
-        ["ADV-FECHA-ISO", "Con vigencia", "100", "FR-1", "", "", "", "", "", "M", "L", "", "", "", "", "", "", "", "", "", "", "", "2026-01-01", "2026-12-31", "", ""],
-        ["ADV-FECHA-SLASH", "Con vigencia slash", "100", "FR-2", "", "", "", "", "", "M", "L", "", "", "", "", "", "", "", "", "", "", "", "01/01/2026", "", "", ""],
+        ["ADV-FECHA-ISO", "Con vigencia", "100", "FR-1", "", "", "", "", "", "M", "L", "", "", "", "", "", "", "", "", "", "", "", "", "2026-01-01", "2026-12-31", "", ""],
+        ["ADV-FECHA-SLASH", "Con vigencia slash", "100", "FR-2", "", "", "", "", "", "M", "L", "", "", "", "", "", "", "", "", "", "", "", "", "01/01/2026", "", "", ""],
     ])
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
     assert preview.invalid_rows == 0
@@ -276,8 +280,8 @@ def test_fechas_se_normalizan_a_datetime_iso() -> None:
 
 def test_preview_valida_fechas_y_superficies_avanzadas() -> None:
     sheet = _advanced_sheet([
-        ["A1", "Avanzado", "10", "", "", "", "", "", "", "", "", "", "", "", "", "", "-1", "2", "", "", "", "", "2026-01-01", "2025-12-31", "", ""],
-        ["A2", "Fecha inválida", "10", "", "", "", "", "", "", "", "", "", "", "", "", "", "1", "2", "", "", "", "", "31/12/2026", "mal", "", ""],
+        ["A1", "Avanzado", "10", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "-1", "2", "", "", "", "", "2026-01-01", "2025-12-31", "", ""],
+        ["A2", "Fecha inválida", "10", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "1", "2", "", "", "", "", "31/12/2026", "mal", "", ""],
     ])
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
     assert preview.invalid_rows == 2
@@ -288,7 +292,7 @@ def test_preview_valida_fechas_y_superficies_avanzadas() -> None:
 
 def test_confirmacion_mockeada_envia_dato_catastral_completo() -> None:
     sheet = _advanced_sheet([
-        ["ADV-1", "Avanzado", "100", "FR-1", "I", "A", "CH", "Q", "F", "M", "L", "P", "SP", "NC", "PI", "MAT", "1200.50", "1198.75", "20x60", "REGULAR", "DOMINIO", "Catastro", "2026-01-01", "", "ACTIVO", "Obs cat"],
+        ["ADV-1", "Avanzado", "100", "FR-1", "I", "A", "CH", "Q", "F", "M", "L", "P", "SP", "NC", "NC-MADRE", "PI", "MAT", "1200.50", "1198.75", "20x60", "REGULAR", "DOMINIO", "Catastro", "2026-01-01", "", "ACTIVO", "Obs cat"],
     ])
     preview = build_inmuebles_preview(sheet, suggest_mapping(sheet.columns, inmueble_import_target_fields()))
     api = FakeApi()
@@ -297,6 +301,7 @@ def test_confirmacion_mockeada_envia_dato_catastral_completo() -> None:
     assert result.failed == 0
     _, payload, _ = api.catastral_payloads[0]
     assert payload["folio_real"] == "FR-1"
+    assert payload["nomenclatura_madre"] == "NC-MADRE"
     assert payload["subparcela"] == "SP"
     assert payload["superficie_titulo"] == "1200.50"
     assert payload["fecha_desde"] == "2026-01-01T00:00:00"
