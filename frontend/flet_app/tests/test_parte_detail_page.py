@@ -136,3 +136,36 @@ def test_ficha_muestra_error_de_carga_amigable() -> None:
     assert "Volver al listado" in text
     assert "No se pudo cargar la ficha." in text
     assert "{'" not in text
+
+
+def test_listado_no_expone_alta_aislada_ni_navega_a_persona_create() -> None:
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    control = PartesListPage(
+        FakeApi(),
+        on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)),
+    ).build()
+    text = "\n".join(_texts(control))
+
+    assert "Nueva parte" not in text
+    assert "Crear parte" not in text
+    assert all(
+        getattr(item, "on_click", None) is None
+        or getattr(item, "text", None) not in {"Nueva parte", "Crear parte"}
+        for item in _walk(control)
+    )
+    assert navigations == []
+
+
+def test_shell_no_renderiza_ruta_operativa_persona_create() -> None:
+    from app.router import Route
+    from app.shell import AppShell
+
+    shell = AppShell.__new__(AppShell)
+    shell.navigate = lambda *_args, **_kwargs: None
+
+    control = AppShell._render_route(shell, Route("persona_create"))
+    text = "\n".join(_texts(control))
+
+    assert "Sistema Inmobiliario" in text
+    assert "Nueva parte" not in text
+    assert "Crear parte" not in text
