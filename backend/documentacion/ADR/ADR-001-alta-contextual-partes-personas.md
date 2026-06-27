@@ -64,7 +64,7 @@ Los contextos válidos iniciales para resolver alta/reutilización de Persona/Pa
 - locador;
 - representante/apoderado;
 - relación entre personas;
-- obligado financiero;
+- obligado financiero derivado de venta, contrato, acuerdo, regularización u otro origen autorizado;
 - usuario vinculado;
 - importación histórica autorizada;
 - regularización administrativa autorizada.
@@ -78,7 +78,7 @@ Esta lista define el punto de partida de la decisión. La incorporación de nuev
 - relaciones entre personas y representación/apoderamiento: núcleo del dominio `personas` cuando modelan vínculos entre sujetos.
 - comprador en venta o reserva de venta: rol contextual del dominio `comercial`.
 - locatario, garante y locador: roles contextuales del circuito locativo correspondiente; no son atributos base de `persona`.
-- obligado financiero: rol contextual del dominio `financiero`; no es identidad base.
+- obligado financiero: responsabilidad económica materializada por el dominio `financiero` mediante `obligacion_obligado`, derivada de un dominio origen o soporte funcional. Financiero no crea sujetos ni define roles funcionales primarios; consume personas resueltas por el origen correspondiente.
 - usuario vinculado: vínculo con el dominio `administrativo`; `usuario` no pertenece a `personas`.
 - estructuras de participación o vinculación contextual existentes: soporte transversal o compatibilidad heredada según su materialización real; no trasladan ownership semántico del contexto al dominio `personas`.
 - importación histórica autorizada y regularización administrativa autorizada: excepciones controladas, no flujo operativo normal.
@@ -107,7 +107,7 @@ Estas excepciones deben quedar identificadas como tales y no habilitan un flujo 
 ## Consecuencias
 
 - La ficha de Parte/Persona debe ser principalmente una vista de identidad, consulta, enriquecimiento y trazabilidad, no el punto normal de alta funcional aislada.
-- Los flujos comerciales, locativos, financieros o administrativos deben resolver sujetos desde su propio contexto funcional sin redefinir la identidad base.
+- Los flujos comerciales, locativos, financieros o administrativos deben resolver sujetos desde su propio contexto funcional sin redefinir la identidad base. En particular, `financiero` no es dueño del alta funcional de Persona salvo regularización explícitamente autorizada; consume personas resueltas por el dominio origen o soporte funcional correspondiente.
 - La búsqueda/reutilización de personas se vuelve obligatoria antes de crear una nueva persona desde un flujo contextual.
 - Los duplicados se reducen al hacer explícito el paso de búsqueda y reutilización.
 - La trazabilidad mejora porque cada nueva persona funcional queda asociada al motivo que justificó su alta.
@@ -126,6 +126,11 @@ Cualquier cambio posterior que modifique endpoints write, contratos de API, pers
 - Coherente con `DEV-ARCH-COM-001`: comprador, cliente comprador y otros roles comerciales permanecen contextuales al dominio comercial.
 - Coherente con `DEV-ARCH-OPE-001`: no incorpora lógica de caja operativa ni redefine el dominio operativo.
 - Coherente con `DEV-ARCH-ANA-001`: no asigna operaciones write ni ownership funcional al dominio analítico, que permanece read-only.
+
+## Trazabilidad
+
+- Issue: #276.
+- Cierre esperado del PR: Closes #276.
 
 ## Decisión CORE-EF
 
