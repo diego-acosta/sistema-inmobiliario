@@ -10,7 +10,7 @@ from app.pages.home_page import HomePage
 from app.pages.inmuebles_page import InmueblesPage
 from app.pages.inmuebles_import_excel_page import InmueblesImportExcelPage
 from app.pages.parte_detail_page import ParteDetailPage
-from app.pages.partes_list_page import PartesListPage, PersonaCreateView
+from app.pages.partes_list_page import PartesListPage
 from app.pages.venta_completa_wizard_v3_page import VentaCompletaWizardV3Page
 from app.pages.ventas_page import VentasPage
 
@@ -131,7 +131,6 @@ class AppShell:
             "home": 0,
             "partes": 1,
             "parte_detail": 1,
-            "persona_create": 1,
             "inmuebles": 2,
             "desarrollos": 2,
             "unidades_funcionales": 2,
@@ -158,8 +157,6 @@ class AppShell:
             return HomePage(on_navigate=self.navigate).build()
         if route.name == "partes":
             return PartesListPage(api=self.api, on_navigate=self.navigate).build()
-        if route.name == "persona_create":
-            return PersonaCreateView(api=self.api, on_navigate=self.navigate).build()
         if route.name == "parte_detail":
             id_persona = self._route_int(route, "id_persona")
             if id_persona is None:
