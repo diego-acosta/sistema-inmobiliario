@@ -193,12 +193,28 @@ class ResolverParte:
                 or persona.get("nombre")
             ),
             "tipo_persona": persona.get("tipo_persona"),
-            "documento_principal": persona.get("documento_principal")
-            or persona.get("documento"),
+            "documento_principal": self._normalize_documento_principal(
+                persona.get("documento_principal") or persona.get("documento")
+            ),
             "cuit_cuil": persona.get("cuit_cuil")
             or persona.get("cuit")
             or persona.get("cuil"),
         }
+
+    def _normalize_documento_principal(self, documento: Any) -> str | None:
+        if documento is None:
+            return None
+
+        if isinstance(documento, dict):
+            documento = (
+                documento.get("numero_documento")
+                or documento.get("numero")
+                or documento.get("valor")
+            )
+            if documento is None:
+                return None
+
+        return str(documento)
 
     def _message(self, title: str, body: str) -> ft.Control:
         return ft.Container(

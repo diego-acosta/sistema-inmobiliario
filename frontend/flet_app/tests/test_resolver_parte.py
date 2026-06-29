@@ -101,6 +101,42 @@ def test_resolver_parte_busca_y_selecciona_persona_existente() -> None:
     assert "Persona seleccionada" in "\n".join(_texts(control))
 
 
+def test_resolver_parte_normaliza_documento_principal_dict() -> None:
+    selected: list[dict[str, Any]] = []
+    api = FakeApi(
+        ApiResult(
+            True,
+            data={
+                "items": [
+                    {
+                        "id_persona": 8,
+                        "display_name": "Grace Hopper",
+                        "tipo_persona": "FISICA",
+                        "documento_principal": {
+                            "tipo_documento": "DNI",
+                            "numero_documento": "12345678",
+                        },
+                    }
+                ]
+            },
+        )
+    )
+    resolver = ResolverParte(api, selected.append)
+    control = resolver.build()
+    resolver.search.value = "Grace"
+
+    _find_button(control, "Buscar").on_click(None)
+
+    text = "\n".join(_texts(control))
+    assert "12345678" in text
+    assert "numero_documento" not in text
+    assert "tipo_documento" not in text
+
+    _find_button(control, "Seleccionar").on_click(None)
+
+    assert selected[0]["documento_principal"] == "12345678"
+
+
 def test_resolver_parte_muestra_sin_resultados_y_error_api() -> None:
     resolver = ResolverParte(
         FakeApi(ApiResult(True, data={"items": []})), lambda _: None
