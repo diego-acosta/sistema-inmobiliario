@@ -51,6 +51,7 @@ for import_path in (str(FLET_APP_ROOT), str(PROTOTYPES_DIR)):
 
 from app.api_client import ApiClient, ApiResult
 from app.components.loading_state import loading_state, safe_update
+from app.components.resolver_parte import ResolverParte
 from components.search_selector_demo import (
     SearchSelectorDemo,
     create_search_selector_demo,
@@ -122,6 +123,10 @@ class CompradorWizardDraft:
     source: str = "manual"
     persisted: bool = False
     heredado_reserva: bool = False
+    display_name: str | None = None
+    tipo_persona: str | None = None
+    documento_principal: str | None = None
+    cuit_cuil: str | None = None
 
 
 @dataclass
@@ -255,7 +260,7 @@ class VentaCompletaWizardV3Prototype:
         self.api = api or ApiClient(timeout=20.0)
         self.reserva_selector: SearchSelectorDemo | None = None
         self.objeto_selector: SearchSelectorDemo | None = None
-        self.comprador_selector: SearchSelectorDemo | None = None
+        self.comprador_selector: ResolverParte | None = None
         self.objeto_seleccionado: dict[str, Any] | None = None
         self.comprador_seleccionado: dict[str, Any] | None = None
         self.backend_reservation_records: list[dict[str, Any]] = []
@@ -1830,24 +1835,14 @@ class VentaCompletaWizardV3Prototype:
             )
             return self._build_deferred_step_loading("Cargando partes...")
 
-        if not self.backend_buyers_loaded:
-            self._start_deferred_load(
-                self._load_backend_buyer_records_if_needed,
-                "backend_buyers_loading",
-            )
-            return self._build_deferred_step_loading("Buscando compradores...")
-
         if self.comprador_selector is None:
-            self.comprador_selector = create_search_selector_demo(
-                title="Buscador de persona real",
-                placeholder="Nombre, documento, código o dato visible del comprador",
-                selector_kind="persona",
-                records=self._backend_buyer_selector_records(),
-                on_selection_change=self._request_comprador_selected,
-                show_technical_details=self.state.mostrar_datos_tecnicos,
+            self.comprador_selector = ResolverParte(
+                self.api,
+                self._request_comprador_selected,
+                titulo="Comprador",
+                placeholder="Buscar persona existente por nombre, documento o CUIT/CUIL",
+                limit=10,
             )
-            self._configure_comprador_selector_scroll()
-        self.comprador_selector.set_show_technical_details(self.state.mostrar_datos_tecnicos)
 
         return ft.Container(
             padding=18,
@@ -1879,7 +1874,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     ft.Row(
                         controls=[
-                            ft.Container(content=self.comprador_selector.view(), expand=True),
+                            ft.Container(content=self.comprador_selector.build(), expand=True),
                             ft.Container(width=380, content=self._build_buyers_side_panel()),
                         ],
                         spacing=14,
@@ -1985,18 +1980,12 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(controls=pending_controls, spacing=8),
         )
 
-    def _configure_comprador_selector_scroll(self) -> None:
-        if self.comprador_selector is None:
-            return
-        self.comprador_selector.results_column.height = 260
-        self.comprador_selector.results_column.scroll = ft.ScrollMode.AUTO
-
     def _build_buyers_side_panel(self) -> ft.Control:
         controls: list[ft.Control] = []
         if self.comprador_seleccionado is not None:
             controls.append(self._build_selected_buyer_panel())
-        if self.rol_comprador_manual_fallback_enabled:
-            controls.append(self._build_manual_buyer_persisted_panel())
+        # No se ofrece carga manual/alta aislada de compradores: el comprador
+        # contextual de venta debe resolverse como Persona/Parte existente.
         controls.extend([self._build_added_buyers_list(), self._build_buyers_summary()])
         return ft.Column(controls=controls, spacing=12)
 
@@ -2071,7 +2060,8 @@ class VentaCompletaWizardV3Prototype:
             content=ft.Column(
                 controls=[
                     ft.Text("Comprador seleccionado", size=18, weight=ft.FontWeight.W_700),
-                    ft.Text(str(self.comprador_seleccionado.get("texto_visual") or "-"), weight=ft.FontWeight.W_600),
+                    ft.Text(str(self._selected_buyer_display(self.comprador_seleccionado)), weight=ft.FontWeight.W_600),
+                    *self._selected_buyer_identity_rows(self.comprador_seleccionado),
                     ft.Row(
                         controls=[
                             _badge("Rol: COMPRADOR", ft.Colors.GREEN_50, ft.Colors.GREEN_200),
@@ -2079,10 +2069,10 @@ class VentaCompletaWizardV3Prototype:
                                 self._technical_chip(f"ID técnico secundario (id_persona): {self.comprador_seleccionado.get('id_persona') or '-'}"),
                                 self._technical_chip(
                                     self._record_source_label(
-                                        str(self.comprador_seleccionado.get("source") or "backend"),
-                                        bool(self.comprador_seleccionado.get("persisted", False)),
+                                        str(self.comprador_seleccionado.get("source") or "resolver_parte"),
+                                        True,
                                     ),
-                                    persisted=bool(self.comprador_seleccionado.get("persisted", False)),
+                                    persisted=True,
                                 ),
                             ]),
                         ],
@@ -2175,6 +2165,7 @@ class VentaCompletaWizardV3Prototype:
                                         size=12,
                                         color=ft.Colors.BLUE_GREY_700,
                                     ),
+                                    *[ft.Text(value, size=12, color=ft.Colors.BLUE_GREY_700) for value in self._buyer_identity_texts(comprador)],
                                 ],
                                 spacing=8,
                                 wrap=True,
@@ -4235,9 +4226,6 @@ class VentaCompletaWizardV3Prototype:
         self.manual_buyer_text_field.value = ""
         self.manual_buyer_role_field.value = ""
         self.manual_buyer_percentage_field.value = ""
-        if self.comprador_selector is not None:
-            self.comprador_selector.selected_panel.visible = False
-
     def _build_confirmed_sale_detail_controls(self) -> list[ft.Control]:
         if self.state.detalle_venta_loading:
             return [ft.Text("Cargando detalle integral...", color=ft.Colors.BLUE_GREY_700)]
@@ -7090,8 +7078,6 @@ class VentaCompletaWizardV3Prototype:
             self.rol_comprador_value = ""
             self.rol_comprador_field.value = ""
         self.comprador_error = None
-        if self.comprador_selector is not None:
-            self.comprador_selector.selected_panel.visible = False
         self._render()
 
     def _clear_selected_buyer(self, _: ft.ControlEvent | None = None) -> None:
@@ -7110,6 +7096,37 @@ class VentaCompletaWizardV3Prototype:
 
     def _on_rol_comprador_change(self, _: ft.ControlEvent) -> None:
         self.rol_comprador_value = str(self.rol_comprador_field.value or "")
+
+
+    @staticmethod
+    def _selected_buyer_display(selected: dict[str, Any] | None) -> str:
+        if selected is None:
+            return "-"
+        return str(
+            selected.get("display_name")
+            or selected.get("texto_visual")
+            or selected.get("nombre")
+            or selected.get("id_persona")
+            or "-"
+        )
+
+    def _selected_buyer_identity_rows(self, selected: dict[str, Any] | None) -> list[ft.Control]:
+        if selected is None:
+            return []
+        values = [
+            ("Tipo", selected.get("tipo_persona")),
+            ("Documento", selected.get("documento_principal")),
+            ("CUIT/CUIL", selected.get("cuit_cuil")),
+        ]
+        return [_info_row(label, value) for label, value in values if value]
+
+    @staticmethod
+    def _buyer_identity_texts(comprador: CompradorWizardDraft) -> list[str]:
+        return [
+            str(value)
+            for value in (comprador.tipo_persona, comprador.documento_principal, comprador.cuit_cuil)
+            if value
+        ]
 
     def _selected_buyer_validation_message(self) -> str | None:
         if self.comprador_seleccionado is None or self.comprador_seleccionado.get("id_persona") is None:
@@ -7148,11 +7165,15 @@ class VentaCompletaWizardV3Prototype:
         self.state.compradores.append(
             CompradorWizardDraft(
                 id_persona=int(self.comprador_seleccionado.get("id_persona")),
-                texto_visual=str(self.comprador_seleccionado.get("texto_visual") or "-"),
+                texto_visual=str(self._selected_buyer_display(self.comprador_seleccionado)),
                 porcentaje_responsabilidad=_format_decimal(parsed_percentage) if parsed_percentage is not None else "",
                 id_rol_participacion=self._rol_comprador_id_resuelto(),
                 source=str(self.comprador_seleccionado.get("source") or "backend"),
-                persisted=bool(self.comprador_seleccionado.get("persisted", False)),
+                persisted=True,
+                display_name=self.comprador_seleccionado.get("display_name"),
+                tipo_persona=self.comprador_seleccionado.get("tipo_persona"),
+                documento_principal=self.comprador_seleccionado.get("documento_principal"),
+                cuit_cuil=self.comprador_seleccionado.get("cuit_cuil"),
             )
         )
         self._mark_plan_preview_stale()
