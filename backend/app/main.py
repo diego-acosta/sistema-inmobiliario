@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.routers.administrativo_router import router as administrativo_router
 from app.api.routers.comercial_router import router as comercial_router
 from app.api.routers.edificaciones_router import router as edificaciones_router
 from app.api.routers.inmuebles_router import router as inmuebles_router
@@ -36,6 +37,10 @@ OPENAPI_TAGS = [
         "description": "Dominio financiero: relaciones generadoras, obligaciones y movimientos.",
     },
     {
+        "name": "Administrativo",
+        "description": "Dominio administrativo: usuarios del sistema y soporte de administración.",
+    },
+    {
         "name": "health",
         "description": "Endpoints tecnicos de salud del servicio.",
     },
@@ -56,3 +61,4 @@ app.include_router(servicios_router)
 app.include_router(comercial_router)
 app.include_router(locativo_router)
 app.include_router(financiero_router)
+app.include_router(administrativo_router)
