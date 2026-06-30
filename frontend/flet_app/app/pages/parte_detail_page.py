@@ -17,6 +17,10 @@ class ParteDetailPage:
         self.api = api
         self.id_persona = id_persona
         self.on_navigate = on_navigate
+        self.data: dict[str, Any] = {}
+        self.edit_panel = ft.Container(visible=False)
+        self.edit_message = ft.Text("", visible=False)
+        self.edit_fields: dict[str, ft.TextField] = {}
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -48,6 +52,7 @@ class ParteDetailPage:
                 spacing=12,
             )
 
+        self.data = data
         return ft.Column(
             controls=[
                 ft.Row(
@@ -59,6 +64,7 @@ class ParteDetailPage:
                     ]
                 ),
                 self._header_card(data),
+                self.edit_panel,
                 detail_tabs(
                     [
                         (
@@ -146,10 +152,19 @@ class ParteDetailPage:
                             ),
                             ft.Container(expand=True),
                             status_badge(data.get("estado_persona")),
+                            ft.OutlinedButton(
+                                "Editar datos básicos",
+                                on_click=lambda _: self._open_basic_edit(),
+                            ),
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     ft.Text(secondary or "Sin datos principales.", size=12, color=ft.Colors.BLUE_GREY_700),
+                    ft.Text(
+                        f"version_registro: {data.get('version_registro')}",
+                        size=11,
+                        color=ft.Colors.BLUE_GREY_600,
+                    ) if data.get("version_registro") is not None else ft.Container(),
                 ],
                 spacing=4,
             ),
@@ -157,6 +172,141 @@ class ParteDetailPage:
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
             border_radius=6,
         )
+
+
+    def _open_basic_edit(self) -> None:
+        data = self.data
+        self.edit_message.visible = False
+        self.edit_fields = {
+            "tipo_persona": ft.TextField(
+                label="Tipo de persona",
+                value=str(data.get("tipo_persona") or ""),
+                width=180,
+            ),
+            "nombre": ft.TextField(
+                label="Nombre", value=str(data.get("nombre") or ""), width=220
+            ),
+            "apellido": ft.TextField(
+                label="Apellido", value=str(data.get("apellido") or ""), width=220
+            ),
+            "razon_social": ft.TextField(
+                label="Razón social",
+                value=str(data.get("razon_social") or ""),
+                width=280,
+            ),
+            "fecha_nacimiento": ft.TextField(
+                label="Fecha nacimiento/constitución",
+                value=str(data.get("fecha_nacimiento") or ""),
+                width=220,
+            ),
+            "estado_persona": ft.TextField(
+                label="Estado",
+                value=str(data.get("estado_persona") or ""),
+                width=160,
+            ),
+            "observaciones": ft.TextField(
+                label="Observaciones",
+                value=str(data.get("observaciones") or ""),
+                multiline=True,
+                min_lines=2,
+                max_lines=4,
+                width=560,
+            ),
+        }
+        self.edit_panel.content = detail_section(
+            "Editar datos básicos",
+            [
+                ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                self.edit_fields["tipo_persona"],
+                                self.edit_fields["estado_persona"],
+                                self.edit_fields["nombre"],
+                                self.edit_fields["apellido"],
+                                self.edit_fields["fecha_nacimiento"],
+                            ],
+                            wrap=True,
+                            spacing=10,
+                        ),
+                        self.edit_fields["razon_social"],
+                        self.edit_fields["observaciones"],
+                        self.edit_message,
+                        ft.Row(
+                            controls=[
+                                ft.ElevatedButton("Guardar", on_click=self._save_basic_edit),
+                                ft.TextButton("Cancelar", on_click=self._cancel_basic_edit),
+                            ],
+                            spacing=10,
+                        ),
+                    ],
+                    spacing=10,
+                )
+            ],
+        )
+        self.edit_panel.visible = True
+        self._safe_update(self.edit_panel)
+
+    def _cancel_basic_edit(self, _) -> None:
+        self.edit_panel.visible = False
+        self.edit_panel.content = None
+        self.edit_fields = {}
+        self._safe_update(self.edit_panel)
+
+    def _save_basic_edit(self, _) -> None:
+        version = self.data.get("version_registro")
+        if version is None:
+            self._show_edit_error(
+                "La ficha no informa version_registro. "
+                "Recargá la ficha e intentá nuevamente."
+            )
+            return
+        payload = {
+            "tipo_persona": self._clean_field("tipo_persona"),
+            "nombre": self._clean_field("nombre") or None,
+            "apellido": self._clean_field("apellido") or None,
+            "razon_social": self._clean_field("razon_social") or None,
+            "fecha_nacimiento": self._clean_field("fecha_nacimiento") or None,
+            "estado_persona": self._clean_field("estado_persona"),
+            "observaciones": self._clean_field("observaciones") or None,
+        }
+        result = self.api.actualizar_persona(
+            self.id_persona, payload, int(version), op_id=str(uuid4())
+        )
+        if not result.success:
+            if result.status_code in {409, 412} or result.error_code == "CONCURRENCY_ERROR":
+                self._show_edit_error(
+                    "La persona fue modificada por otro usuario. "
+                    "Recargá la ficha e intentá nuevamente."
+                )
+            else:
+                self._show_edit_error(result.error_message or "No se pudo actualizar la persona.")
+            return
+        refreshed = self.api.get_persona_detalle_integral(self.id_persona)
+        if not refreshed.success or not isinstance(refreshed.data, dict):
+            self._show_edit_error(
+                "Los datos se guardaron, pero no se pudo recargar la ficha. "
+                "Volvé a abrirla desde el listado."
+            )
+            return
+
+        self.data = refreshed.data
+        self.on_navigate("parte_detail", id_persona=self.id_persona)
+
+    def _clean_field(self, key: str) -> str:
+        return (self.edit_fields[key].value or "").strip()
+
+    def _show_edit_error(self, message: str) -> None:
+        self.edit_message.value = message
+        self.edit_message.color = ft.Colors.RED_700
+        self.edit_message.visible = True
+        self._safe_update(self.edit_message)
+
+    def _safe_update(self, control: ft.Control) -> None:
+        try:
+            control.update()
+        except AssertionError:
+            pass
 
     def _datos_base(self, data: dict[str, Any]) -> ft.Control:
         razon_social = data.get("razon_social")

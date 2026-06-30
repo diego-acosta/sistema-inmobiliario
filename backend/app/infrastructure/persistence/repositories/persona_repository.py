@@ -23,7 +23,8 @@ class PersonaRepository(BaseRepository[Any]):
                 razon_social,
                 fecha_nacimiento_constitucion,
                 estado_persona,
-                observaciones
+                observaciones,
+                version_registro
             FROM persona
             WHERE id_persona = :id_persona
               AND deleted_at IS NULL
@@ -42,6 +43,7 @@ class PersonaRepository(BaseRepository[Any]):
             "fecha_nacimiento": row["fecha_nacimiento_constitucion"],
             "estado_persona": row["estado_persona"],
             "observaciones": row["observaciones"],
+            "version_registro": row["version_registro"],
         }
 
     def list_personas(

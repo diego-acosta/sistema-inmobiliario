@@ -161,6 +161,7 @@ class PersonaDetailData(BaseModel):
     fecha_nacimiento: date | None
     estado_persona: str
     observaciones: str | None
+    version_registro: int
     documentos: list["PersonaDocumentoListItem"]
     domicilios: list["PersonaDomicilioListItem"]
     contactos: list["PersonaContactoListItem"]
