@@ -1,0 +1,155 @@
+from fastapi import APIRouter, Depends, Header, Query
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.api.core_ef_headers import CoreEFHeaderValidationError, parse_core_ef_headers
+from app.api.dependencies import get_db
+from app.api.schemas.administrativo import (
+    ErrorResponse,
+    UsuarioSistemaBajaResponse,
+    UsuarioSistemaCreateRequest,
+    UsuarioSistemaCreateResponse,
+    UsuarioSistemaData,
+    UsuarioSistemaDetailResponse,
+    UsuarioSistemaListResponse,
+)
+from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
+    UsuarioSistemaRepository,
+)
+
+
+router = APIRouter(tags=["Administrativo"])
+
+
+def _error(status_code: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content=ErrorResponse(
+            error_code=code,
+            error_message=message,
+            details=details or {},
+        ).model_dump(),
+    )
+
+
+def _parse_core_or_error(
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+) -> JSONResponse | None:
+    try:
+        parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _error(
+            400,
+            "CORE_EF_HEADERS_INVALIDOS",
+            exc.message,
+            {"header": exc.header_name, "reason": exc.reason},
+        )
+    return None
+
+
+@router.post(
+    "/api/v1/administrativo/usuarios",
+    status_code=201,
+    response_model=UsuarioSistemaCreateResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def create_usuario_sistema(
+    request: UsuarioSistemaCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> UsuarioSistemaCreateResponse | JSONResponse:
+    header_error = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if header_error is not None:
+        return header_error
+
+    try:
+        usuario = UsuarioSistemaRepository(db).create(request.model_dump())
+    except IntegrityError:
+        return _error(400, "USUARIO_DUPLICADO", "Ya existe un usuario con ese código o login.")
+    except Exception as exc:
+        return _error(500, "INTERNAL_ERROR", "No se pudo crear el usuario del sistema.", {"error": str(exc)})
+
+    return UsuarioSistemaCreateResponse(data=UsuarioSistemaData(**usuario))
+
+
+@router.get(
+    "/api/v1/administrativo/usuarios",
+    response_model=UsuarioSistemaListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_usuarios_sistema(
+    incluir_bajas: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> UsuarioSistemaListResponse | JSONResponse:
+    try:
+        usuarios = UsuarioSistemaRepository(db).list(incluir_bajas=incluir_bajas)
+    except Exception as exc:
+        return _error(500, "INTERNAL_ERROR", "No se pudo listar usuarios del sistema.", {"error": str(exc)})
+    return UsuarioSistemaListResponse(data=[UsuarioSistemaData(**usuario) for usuario in usuarios])
+
+
+@router.get(
+    "/api/v1/administrativo/usuarios/{id_usuario}",
+    response_model=UsuarioSistemaDetailResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_usuario_sistema(
+    id_usuario: int,
+    db: Session = Depends(get_db),
+) -> UsuarioSistemaDetailResponse | JSONResponse:
+    try:
+        usuario = UsuarioSistemaRepository(db).get(id_usuario)
+    except Exception as exc:
+        return _error(500, "INTERNAL_ERROR", "No se pudo obtener el usuario del sistema.", {"error": str(exc)})
+    if usuario is None:
+        return _error(404, "USUARIO_NO_ENCONTRADO", "Usuario del sistema no encontrado.")
+    return UsuarioSistemaDetailResponse(data=UsuarioSistemaData(**usuario))
+
+
+@router.patch(
+    "/api/v1/administrativo/usuarios/{id_usuario}/baja",
+    response_model=UsuarioSistemaBajaResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def baja_usuario_sistema(
+    id_usuario: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> UsuarioSistemaBajaResponse | JSONResponse:
+    header_error = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if header_error is not None:
+        return header_error
+
+    try:
+        usuario = UsuarioSistemaRepository(db).baja_logica(id_usuario)
+    except Exception as exc:
+        return _error(500, "INTERNAL_ERROR", "No se pudo dar de baja el usuario del sistema.", {"error": str(exc)})
+    if usuario is None:
+        return _error(404, "USUARIO_NO_ENCONTRADO", "Usuario del sistema no encontrado.")
+    return UsuarioSistemaBajaResponse(data=UsuarioSistemaData(**usuario))
