@@ -69,6 +69,7 @@ PantallaWizard = Literal[
     "DATOS_INICIALES",
     "OBJETOS",
     "COMPRADORES",
+    "COMPRADOR_CONTEXTUAL",
     "FORMA_PAGO",
     "PLAN_ANTICIPO",
     "PLAN_TRAMOS",
@@ -91,7 +92,7 @@ WIZARD_VISIBLE_STEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Origen", ("ORIGEN", "SELECCIONAR_RESERVA")),
     ("Datos", ("DATOS_INICIALES",)),
     ("Objetos", ("OBJETOS",)),
-    ("Compradores", ("COMPRADORES",)),
+    ("Compradores", ("COMPRADORES", "COMPRADOR_CONTEXTUAL")),
     ("Pago", ("FORMA_PAGO",)),
     (
         "Plan",
@@ -128,6 +129,7 @@ class CompradorWizardDraft:
     documento_principal: str | None = None
     cuit_cuil: str | None = None
     datos_persona: dict[str, Any] | None = None
+    ficha_persona_contextual: dict[str, Any] | None = None
 
 
 @dataclass
@@ -344,6 +346,16 @@ class VentaCompletaWizardV3Prototype:
         self.contextual_buyer_cuit_field = ft.TextField(label="CUIT/CUIL")
         self.contextual_buyer_doc_tipo_field = ft.TextField(label="Tipo documento", value="DNI")
         self.contextual_buyer_doc_numero_field = ft.TextField(label="Número documento")
+        self.contextual_buyer_email_field = ft.TextField(label="Email de contacto")
+        self.contextual_buyer_telefono_field = ft.TextField(label="Teléfono de contacto")
+        self.contextual_buyer_domicilio_calle_field = ft.TextField(label="Calle / domicilio")
+        self.contextual_buyer_domicilio_numero_field = ft.TextField(label="Número")
+        self.contextual_buyer_domicilio_localidad_field = ft.TextField(label="Localidad")
+        self.contextual_buyer_domicilio_provincia_field = ft.TextField(label="Provincia")
+        self.contextual_buyer_domicilio_pais_field = ft.TextField(label="País", value="Argentina")
+        self.contextual_buyer_observaciones_field = ft.TextField(
+            label="Observaciones de la persona", multiline=True, min_lines=3, max_lines=5
+        )
         self.manual_buyer_id_value = ""
         self.manual_buyer_text_value = ""
         self.manual_buyer_role_value = ""
@@ -777,6 +789,8 @@ class VentaCompletaWizardV3Prototype:
             return self._build_objects_step()
         if self.state.pantalla_actual == "COMPRADORES":
             return self._build_buyers_step()
+        if self.state.pantalla_actual == "COMPRADOR_CONTEXTUAL":
+            return self._build_contextual_buyer_full_step()
         if self.state.pantalla_actual == "FORMA_PAGO":
             return self._build_payment_method_step()
         if self.state.pantalla_actual == "PLAN_ANTICIPO":
@@ -2001,10 +2015,29 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = [
             ft.Text("Crear comprador en esta venta", size=18, weight=ft.FontWeight.W_700),
             ft.Text(
-                "Usar solo si no existe una Persona reutilizable. Se creará y vinculará como COMPRADOR al confirmar esta venta.",
+                "Si no existe una Persona reutilizable, abrí una ficha contextual completa. No es alta aislada global: vuelve a esta venta y se persiste al confirmar.",
                 size=12,
                 color=ft.Colors.BLUE_GREY_700,
             ),
+            ft.Button(
+                "Crear comprador en esta venta",
+                icon=ft.Icons.PERSON_ADD_ALT_1,
+                on_click=self._open_contextual_buyer_full_step,
+            ),
+        ]
+        if self.contextual_buyer_error:
+            controls.append(ft.Text(self.contextual_buyer_error, size=12, color=ft.Colors.RED_700))
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.PURPLE_50,
+            border=_border_all(1, ft.Colors.PURPLE_200),
+            content=ft.Column(controls=controls, spacing=8),
+        )
+
+
+    def _build_contextual_buyer_full_step(self) -> ft.Control:
+        identity_fields: list[ft.Control] = [
             ft.Dropdown(
                 label="Tipo de persona",
                 value=self.contextual_buyer_tipo_value,
@@ -2013,25 +2046,90 @@ class VentaCompletaWizardV3Prototype:
                     ft.dropdown.Option("JURIDICA", "Jurídica"),
                 ],
                 on_change=self._on_contextual_buyer_tipo_change,
-            ),
+            )
         ]
         if self.contextual_buyer_tipo_value == "JURIDICA":
-            controls.append(self.contextual_buyer_razon_social_field)
+            identity_fields.append(self.contextual_buyer_razon_social_field)
         else:
-            controls.extend([self.contextual_buyer_nombre_field, self.contextual_buyer_apellido_field])
-        controls.extend([
+            identity_fields.extend([self.contextual_buyer_nombre_field, self.contextual_buyer_apellido_field])
+        identity_fields.extend([
             self.contextual_buyer_cuit_field,
             ft.Row(controls=[self.contextual_buyer_doc_tipo_field, self.contextual_buyer_doc_numero_field], spacing=8),
         ])
+        controls: list[ft.Control] = [
+            ft.Text("Crear comprador para esta venta", size=24, weight=ft.FontWeight.W_700),
+            self._build_help_card(
+                "Ficha contextual de Parte/Persona iniciada desde Venta. Guardar no llama a crear_persona: agrega un draft COMPRADOR y vuelve al wizard.",
+                ft.Colors.PURPLE_50,
+                ft.Colors.PURPLE_200,
+            ),
+            self._build_help_card(
+                "Contexto: origen=venta_directa · rol_destino=COMPRADOR · return_to=venta_completa_wizard_v3 · pantalla_retorno=COMPRADORES.",
+                ft.Colors.BLUE_50,
+                ft.Colors.BLUE_200,
+            ),
+            ft.Container(
+                padding=14,
+                border_radius=12,
+                bgcolor=ft.Colors.WHITE,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(controls=[ft.Text("Datos personales o jurídicos", size=18, weight=ft.FontWeight.W_700), *identity_fields], spacing=8),
+            ),
+            ft.Container(
+                padding=14,
+                border_radius=12,
+                bgcolor=ft.Colors.WHITE,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(
+                    controls=[
+                        ft.Text("Contactos", size=18, weight=ft.FontWeight.W_700),
+                        self.contextual_buyer_email_field,
+                        self.contextual_buyer_telefono_field,
+                    ],
+                    spacing=8,
+                ),
+            ),
+            ft.Container(
+                padding=14,
+                border_radius=12,
+                bgcolor=ft.Colors.WHITE,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(
+                    controls=[
+                        ft.Text("Domicilio", size=18, weight=ft.FontWeight.W_700),
+                        self.contextual_buyer_domicilio_calle_field,
+                        ft.Row(controls=[self.contextual_buyer_domicilio_numero_field, self.contextual_buyer_domicilio_localidad_field], spacing=8),
+                        ft.Row(controls=[self.contextual_buyer_domicilio_provincia_field, self.contextual_buyer_domicilio_pais_field], spacing=8),
+                    ],
+                    spacing=8,
+                ),
+            ),
+            ft.Container(
+                padding=14,
+                border_radius=12,
+                bgcolor=ft.Colors.WHITE,
+                border=_border_all(1, ft.Colors.BLUE_GREY_100),
+                content=ft.Column(controls=[ft.Text("Observaciones", size=18, weight=ft.FontWeight.W_700), self.contextual_buyer_observaciones_field], spacing=8),
+            ),
+        ]
         if self.contextual_buyer_error:
             controls.append(ft.Text(self.contextual_buyer_error, size=12, color=ft.Colors.RED_700))
-        controls.append(ft.Button("Agregar comprador contextual", icon=ft.Icons.PERSON_ADD_ALT_1, on_click=self._add_contextual_buyer))
+        controls.append(
+            ft.Row(
+                controls=[
+                    ft.Button("Guardar y volver a la venta", icon=ft.Icons.SAVE, on_click=self._add_contextual_buyer),
+                    ft.OutlinedButton("Cancelar y volver", icon=ft.Icons.ARROW_BACK, on_click=self._cancel_contextual_buyer_full_step),
+                ],
+                spacing=8,
+                wrap=True,
+            )
+        )
         return ft.Container(
-            padding=14,
-            border_radius=12,
+            padding=18,
+            border_radius=14,
             bgcolor=ft.Colors.PURPLE_50,
             border=_border_all(1, ft.Colors.PURPLE_200),
-            content=ft.Column(controls=controls, spacing=8),
+            content=ft.Column(controls=controls, spacing=14),
         )
 
     def _build_rol_comprador_status_card(self) -> ft.Control:
@@ -5244,6 +5342,15 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_navigation(self) -> ft.Control:
+        if self.state.pantalla_actual == "COMPRADOR_CONTEXTUAL":
+            return ft.Row(
+                controls=[
+                    ft.OutlinedButton("Cancelar y volver", icon=ft.Icons.ARROW_BACK, on_click=self._cancel_contextual_buyer_full_step),
+                    ft.Container(expand=True),
+                    ft.Button("Guardar y volver a la venta", icon=ft.Icons.SAVE, on_click=self._add_contextual_buyer),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
         if self.state.pantalla_actual == "REVISION_GENERAL":
             self.next_button = ft.Button(
                 "Confirmar venta",
@@ -5263,7 +5370,7 @@ class VentaCompletaWizardV3Prototype:
                 ft.OutlinedButton(
                     "Anterior",
                     icon=ft.Icons.ARROW_BACK,
-                    disabled=self.state.pantalla_actual in {"ORIGEN", "VENTA_CONFIRMADA"} or self.state.confirm_loading,
+                    disabled=self.state.pantalla_actual in {"ORIGEN", "VENTA_CONFIRMADA", "COMPRADOR_CONTEXTUAL"} or self.state.confirm_loading,
                     on_click=self._previous_step,
                 ),
                 ft.Container(expand=True),
@@ -5832,6 +5939,8 @@ class VentaCompletaWizardV3Prototype:
             return self._financed_plan_difference() == Decimal("0")
         if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
             return self.state.preview_data is not None and not self.state.preview_stale
+        if self.state.pantalla_actual == "COMPRADOR_CONTEXTUAL":
+            return False
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return self._general_review_is_valid()
         return False
@@ -7161,6 +7270,16 @@ class VentaCompletaWizardV3Prototype:
     def _on_rol_comprador_change(self, _: ft.ControlEvent) -> None:
         self.rol_comprador_value = str(self.rol_comprador_field.value or "")
 
+    def _open_contextual_buyer_full_step(self, _: ft.ControlEvent | None = None) -> None:
+        self.contextual_buyer_error = None
+        self.state.pantalla_actual = "COMPRADOR_CONTEXTUAL"
+        self._render()
+
+    def _cancel_contextual_buyer_full_step(self, _: ft.ControlEvent | None = None) -> None:
+        self.contextual_buyer_error = None
+        self.state.pantalla_actual = "COMPRADORES"
+        self._render()
+
     def _on_contextual_buyer_tipo_change(self, event: ft.ControlEvent) -> None:
         self.contextual_buyer_tipo_value = str(getattr(event.control, "value", None) or "FISICA")
         self.contextual_buyer_error = None
@@ -7196,6 +7315,29 @@ class VentaCompletaWizardV3Prototype:
         cuit = str(self.contextual_buyer_cuit_field.value or "").strip()
         doc_tipo = str(self.contextual_buyer_doc_tipo_field.value or "").strip()
         doc_numero = str(self.contextual_buyer_doc_numero_field.value or "").strip()
+        email = str(self.contextual_buyer_email_field.value or "").strip()
+        telefono = str(self.contextual_buyer_telefono_field.value or "").strip()
+        calle = str(self.contextual_buyer_domicilio_calle_field.value or "").strip()
+        numero = str(self.contextual_buyer_domicilio_numero_field.value or "").strip()
+        localidad = str(self.contextual_buyer_domicilio_localidad_field.value or "").strip()
+        provincia = str(self.contextual_buyer_domicilio_provincia_field.value or "").strip()
+        pais = str(self.contextual_buyer_domicilio_pais_field.value or "").strip()
+        observaciones = str(self.contextual_buyer_observaciones_field.value or "").strip()
+        contactos = []
+        if email:
+            contactos.append({"tipo_contacto": "EMAIL", "valor": email, "principal": True})
+        if telefono:
+            contactos.append({"tipo_contacto": "TELEFONO", "valor": telefono, "principal": not contactos})
+        domicilios = []
+        if any([calle, numero, localidad, provincia, pais]):
+            domicilios.append({
+                "tipo_domicilio": "PRINCIPAL",
+                "calle": calle or None,
+                "numero": numero or None,
+                "localidad": localidad or None,
+                "provincia": provincia or None,
+                "pais": pais or None,
+            })
         datos_persona: dict[str, Any] = {
             "tipo_persona": tipo,
             "nombre": nombre or None,
@@ -7207,6 +7349,12 @@ class VentaCompletaWizardV3Prototype:
                 if doc_numero
                 else None
             ),
+        }
+        ficha_persona_contextual: dict[str, Any] = {
+            **datos_persona,
+            "contactos": contactos,
+            "domicilios": domicilios,
+            "observaciones": observaciones or None,
         }
         texto = razon_social if tipo == "JURIDICA" else f"{nombre} {apellido}".strip()
         self.state.compradores.append(
@@ -7222,6 +7370,7 @@ class VentaCompletaWizardV3Prototype:
                 documento_principal=doc_numero or None,
                 cuit_cuil=cuit or None,
                 datos_persona=datos_persona,
+                ficha_persona_contextual=ficha_persona_contextual,
             )
         )
         self._mark_plan_preview_stale()
@@ -7230,7 +7379,16 @@ class VentaCompletaWizardV3Prototype:
         self.contextual_buyer_razon_social_field.value = ""
         self.contextual_buyer_cuit_field.value = ""
         self.contextual_buyer_doc_numero_field.value = ""
+        self.contextual_buyer_email_field.value = ""
+        self.contextual_buyer_telefono_field.value = ""
+        self.contextual_buyer_domicilio_calle_field.value = ""
+        self.contextual_buyer_domicilio_numero_field.value = ""
+        self.contextual_buyer_domicilio_localidad_field.value = ""
+        self.contextual_buyer_domicilio_provincia_field.value = ""
+        self.contextual_buyer_domicilio_pais_field.value = "Argentina"
+        self.contextual_buyer_observaciones_field.value = ""
         self.contextual_buyer_error = None
+        self.state.pantalla_actual = "COMPRADORES"
         self._render()
 
     @staticmethod
@@ -7326,6 +7484,12 @@ class VentaCompletaWizardV3Prototype:
         if 0 <= index < len(self.state.compradores):
             self.state.compradores.pop(index)
             self._mark_plan_preview_stale()
+            self.comprador_seleccionado = None
+            self.comprador_selector = None
+            self.comprador_error = None
+            self.buyer_select_error = None
+            self.porcentaje_comprador_value = ""
+            self.porcentaje_comprador_field.value = ""
         self._render()
 
     def _distribute_buyers_equally(self, _: ft.ControlEvent | None = None) -> None:
@@ -7510,6 +7674,8 @@ class VentaCompletaWizardV3Prototype:
             return "calcular preview del plan" if self._can_advance() else "ajustar diferencia del plan"
         if self.state.pantalla_actual == "PREVIEW_PLAN_PAGO":
             return "revisión general de venta" if self._can_advance() else "recalcular preview del plan"
+        if self.state.pantalla_actual == "COMPRADOR_CONTEXTUAL":
+            return "guardar comprador contextual o cancelar y volver"
         if self.state.pantalla_actual == "REVISION_GENERAL":
             return "confirmar venta" if self._can_confirm_sale() else "resolver pendientes de revisión"
         if self.state.pantalla_actual == "VENTA_CONFIRMADA":
