@@ -63,6 +63,42 @@ class UsuarioSistemaBajaResponse(BaseModel):
     data: UsuarioSistemaData
 
 
+class RolSeguridadData(BaseModel):
+    id_rol_seguridad: int
+    codigo_rol: str
+    nombre_rol: str
+    descripcion: str | None
+    estado_rol: str
+
+
+class PermisoData(BaseModel):
+    id_permiso: int
+    codigo_permiso: str
+    nombre_permiso: str
+    descripcion: str | None
+    estado_permiso: str
+
+
+class RolSeguridadListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[RolSeguridadData]
+
+
+class RolSeguridadDetailResponse(BaseModel):
+    ok: Literal[True] = True
+    data: RolSeguridadData
+
+
+class PermisoListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[PermisoData]
+
+
+class RolSeguridadPermisosResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[PermisoData]
+
+
 class ErrorResponse(BaseModel):
     ok: Literal[False] = False
     error_code: str
