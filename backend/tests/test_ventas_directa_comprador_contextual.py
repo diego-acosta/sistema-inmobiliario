@@ -23,6 +23,7 @@ from app.application.comercial.services.confirm_venta_directa_completa_service i
 
 OP_ID = UUID("11111111-1111-1111-1111-111111111111")
 OTHER_OP_ID = UUID("22222222-2222-2222-2222-222222222222")
+_DEFAULT_DOCUMENTO = object()
 
 
 class FakeDb:
@@ -70,19 +71,25 @@ def _datos_persona(
     apellido: str | None = "Pérez",
     razon_social: str | None = None,
     cuit_cuil: str | None = None,
-    documento: ConfirmVentaDirectaCompletaDocumentoPersonaInput | None = None,
+    documento: (
+        ConfirmVentaDirectaCompletaDocumentoPersonaInput | None | object
+    ) = _DEFAULT_DOCUMENTO,
 ) -> ConfirmVentaDirectaCompletaDatosPersonaInput:
+    if documento is _DEFAULT_DOCUMENTO:
+        documento_principal = ConfirmVentaDirectaCompletaDocumentoPersonaInput(
+            tipo_documento="DNI",
+            numero_documento="12345678",
+        )
+    else:
+        documento_principal = documento
+
     return ConfirmVentaDirectaCompletaDatosPersonaInput(
         tipo_persona=tipo_persona,
         nombre=nombre,
         apellido=apellido,
         razon_social=razon_social,
         cuit_cuil=cuit_cuil,
-        documento_principal=documento
-        or ConfirmVentaDirectaCompletaDocumentoPersonaInput(
-            tipo_documento="DNI",
-            numero_documento="12345678",
-        ),
+        documento_principal=documento_principal,
     )
 
 
@@ -227,4 +234,3 @@ def test_validaciones_contextuales_minimas() -> None:
         )
         == "IDENTIFICACION_PERSONA_REQUERIDA"
     )
-
