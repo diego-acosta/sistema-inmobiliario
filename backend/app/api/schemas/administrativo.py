@@ -40,6 +40,7 @@ class UsuarioSistemaData(BaseModel):
     fecha_ultimo_acceso: datetime | None
     usuario_sistema_interno: bool
     observaciones: str | None
+    version_registro: int
 
 
 class UsuarioSistemaCreateResponse(BaseModel):

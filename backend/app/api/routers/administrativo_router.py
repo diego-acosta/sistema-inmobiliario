@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.core_ef_headers import CoreEFHeaderValidationError, parse_core_ef_headers
+from app.api.core_ef_headers import CoreEFHeaderValidationError, CoreEFHeaders, parse_core_ef_headers
 from app.api.dependencies import get_db
 from app.api.schemas.administrativo import (
     ErrorResponse,
@@ -15,6 +15,8 @@ from app.api.schemas.administrativo import (
     UsuarioSistemaListResponse,
 )
 from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
+    UsuarioConcurrencyError,
+    UsuarioIdempotencyConflictError,
     UsuarioSistemaRepository,
 )
 
@@ -39,9 +41,9 @@ def _parse_core_or_error(
     x_usuario_id: str | None,
     x_sucursal_id: str | None,
     x_instalacion_id: str | None,
-) -> JSONResponse | None:
+) -> CoreEFHeaders | JSONResponse:
     try:
-        parse_core_ef_headers(
+        return parse_core_ef_headers(
             x_op_id=x_op_id,
             x_usuario_id=x_usuario_id,
             x_sucursal_id=x_sucursal_id,
@@ -50,11 +52,11 @@ def _parse_core_or_error(
     except CoreEFHeaderValidationError as exc:
         return _error(
             400,
-            "CORE_EF_HEADERS_INVALIDOS",
+            "VALIDATION_ERROR",
             exc.message,
             {"header": exc.header_name, "reason": exc.reason},
         )
-    return None
+
 
 
 @router.post(
@@ -71,21 +73,23 @@ def create_usuario_sistema(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> UsuarioSistemaCreateResponse | JSONResponse:
-    header_error = _parse_core_or_error(
+    core = _parse_core_or_error(
         x_op_id=x_op_id,
         x_usuario_id=x_usuario_id,
         x_sucursal_id=x_sucursal_id,
         x_instalacion_id=x_instalacion_id,
     )
-    if header_error is not None:
-        return header_error
+    if isinstance(core, JSONResponse):
+        return core
 
     try:
-        usuario = UsuarioSistemaRepository(db).create(request.model_dump())
+        usuario = UsuarioSistemaRepository(db).create(request.model_dump(), core)
+    except UsuarioIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
     except IntegrityError:
-        return _error(400, "USUARIO_DUPLICADO", "Ya existe un usuario con ese código o login.")
+        return _error(409, "TECHNICAL_INCONSISTENCY", "Ya existe un usuario con ese código o login.")
     except Exception as exc:
-        return _error(500, "INTERNAL_ERROR", "No se pudo crear el usuario del sistema.", {"error": str(exc)})
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo crear el usuario del sistema.", {"error": str(exc)})
 
     return UsuarioSistemaCreateResponse(data=UsuarioSistemaData(**usuario))
 
@@ -102,7 +106,7 @@ def list_usuarios_sistema(
     try:
         usuarios = UsuarioSistemaRepository(db).list(incluir_bajas=incluir_bajas)
     except Exception as exc:
-        return _error(500, "INTERNAL_ERROR", "No se pudo listar usuarios del sistema.", {"error": str(exc)})
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo listar usuarios del sistema.", {"error": str(exc)})
     return UsuarioSistemaListResponse(data=[UsuarioSistemaData(**usuario) for usuario in usuarios])
 
 
@@ -118,9 +122,9 @@ def get_usuario_sistema(
     try:
         usuario = UsuarioSistemaRepository(db).get(id_usuario)
     except Exception as exc:
-        return _error(500, "INTERNAL_ERROR", "No se pudo obtener el usuario del sistema.", {"error": str(exc)})
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo obtener el usuario del sistema.", {"error": str(exc)})
     if usuario is None:
-        return _error(404, "USUARIO_NO_ENCONTRADO", "Usuario del sistema no encontrado.")
+        return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
     return UsuarioSistemaDetailResponse(data=UsuarioSistemaData(**usuario))
 
 
@@ -136,20 +140,35 @@ def baja_usuario_sistema(
     x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> UsuarioSistemaBajaResponse | JSONResponse:
-    header_error = _parse_core_or_error(
-        x_op_id=x_op_id,
-        x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id,
-        x_instalacion_id=x_instalacion_id,
-    )
-    if header_error is not None:
-        return header_error
+    try:
+        core = parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=if_match_version,
+            require_if_match_version=True,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _error(
+            400,
+            "VALIDATION_ERROR",
+            exc.message,
+            {"header": exc.header_name, "reason": exc.reason},
+        )
 
     try:
-        usuario = UsuarioSistemaRepository(db).baja_logica(id_usuario)
+        usuario = UsuarioSistemaRepository(db).baja_logica(
+            id_usuario,
+            core=core,
+            if_match_version=core.if_match_version or 0,
+        )
+    except UsuarioConcurrencyError as exc:
+        return _error(409, "CONCURRENCY_ERROR", str(exc))
     except Exception as exc:
-        return _error(500, "INTERNAL_ERROR", "No se pudo dar de baja el usuario del sistema.", {"error": str(exc)})
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo dar de baja el usuario del sistema.", {"error": str(exc)})
     if usuario is None:
-        return _error(404, "USUARIO_NO_ENCONTRADO", "Usuario del sistema no encontrado.")
+        return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
     return UsuarioSistemaBajaResponse(data=UsuarioSistemaData(**usuario))

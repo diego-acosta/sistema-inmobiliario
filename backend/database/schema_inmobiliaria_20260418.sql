@@ -5372,7 +5372,14 @@ CREATE TABLE public.usuario (
     fecha_baja timestamp without time zone,
     fecha_ultimo_acceso timestamp without time zone,
     usuario_sistema_interno boolean DEFAULT false NOT NULL,
-    observaciones text
+    observaciones text,
+    version_registro integer DEFAULT 1 NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid
 );
 
 
@@ -7916,6 +7923,13 @@ ALTER TABLE ONLY public.unidad_funcional_servicio
 
 ALTER TABLE ONLY public.unidad_funcional
     ADD CONSTRAINT uq_unidad_funcional_uid_global UNIQUE (uid_global);
+
+
+--
+-- Name: ux_usuario_op_id_alta; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_usuario_op_id_alta ON public.usuario USING btree (op_id_alta) WHERE (op_id_alta IS NOT NULL);
 
 
 --
