@@ -67,3 +67,39 @@ def test_actualizar_persona_envia_headers_core_ef_e_if_match(monkeypatch) -> Non
         "X-Instalacion-Id": "1",
         "If-Match-Version": "7",
     }
+
+
+def test_crear_datos_asociados_persona_envia_headers_core_ef(monkeypatch) -> None:
+    calls = []
+
+    def fake_post(self, path, json=None, params=None, headers=None):
+        calls.append({"path": path, "json": json, "headers": headers})
+        return ApiResult(True, data={})
+
+    monkeypatch.setattr(ApiClient, "_post", fake_post)
+    client = ApiClient(base_url="http://testserver")
+    op_id = "550e8400-e29b-41d4-a716-446655440000"
+
+    client.crear_persona_documento(
+        42, {"tipo_documento": "DNI", "numero_documento": "123"}, op_id=op_id
+    )
+    client.crear_persona_contacto(
+        42, {"tipo_contacto": "EMAIL", "valor_contacto": "a@b.com"}, op_id=op_id
+    )
+    client.crear_persona_domicilio(
+        42, {"tipo_domicilio": "REAL", "direccion": "Calle 1"}, op_id=op_id
+    )
+
+    assert [call["path"] for call in calls] == [
+        "/api/v1/personas/42/documentos",
+        "/api/v1/personas/42/contactos",
+        "/api/v1/personas/42/domicilios",
+    ]
+    for call in calls:
+        assert call["headers"] == {
+            "X-Op-Id": op_id,
+            "X-Usuario-Id": "1",
+            "X-Sucursal-Id": "1",
+            "X-Instalacion-Id": "1",
+        }
+        assert "If-Match-Version" not in call["headers"]

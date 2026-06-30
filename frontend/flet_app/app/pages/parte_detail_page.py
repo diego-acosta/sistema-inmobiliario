@@ -21,6 +21,10 @@ class ParteDetailPage:
         self.edit_panel = ft.Container(visible=False)
         self.edit_message = ft.Text("", visible=False)
         self.edit_fields: dict[str, ft.TextField] = {}
+        self.associated_panel = ft.Container(visible=False)
+        self.associated_message = ft.Text("", visible=False)
+        self.associated_fields: dict[str, ft.TextField] = {}
+        self.associated_principal = ft.Checkbox(label="Principal", value=False)
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -65,6 +69,7 @@ class ParteDetailPage:
                 ),
                 self._header_card(data),
                 self.edit_panel,
+                self.associated_panel,
                 detail_tabs(
                     [
                         (
@@ -84,15 +89,24 @@ class ParteDetailPage:
                             [
                                 detail_section(
                                     "Documentos",
-                                    [self._documentos_table(data.get("documentos", []))],
+                                    [
+                                        self._associated_actions("documento"),
+                                        self._documentos_table(data.get("documentos", [])),
+                                    ],
                                 ),
                                 detail_section(
                                     "Contactos",
-                                    [self._contactos_table(data.get("contactos", []))],
+                                    [
+                                        self._associated_actions("contacto"),
+                                        self._contactos_table(data.get("contactos", [])),
+                                    ],
                                 ),
                                 detail_section(
                                     "Domicilios",
-                                    [self._domicilios_table(data.get("domicilios", []))],
+                                    [
+                                        self._associated_actions("domicilio"),
+                                        self._domicilios_table(data.get("domicilios", [])),
+                                    ],
                                 ),
                             ],
                         ),
@@ -292,6 +306,136 @@ class ParteDetailPage:
 
         self.data = refreshed.data
         self.on_navigate("parte_detail", id_persona=self.id_persona)
+
+
+    def _associated_actions(self, kind: str) -> ft.Control:
+        labels = {
+            "documento": "Agregar documento",
+            "contacto": "Agregar contacto",
+            "domicilio": "Agregar domicilio",
+        }
+        return ft.Row(
+            controls=[
+                ft.OutlinedButton(
+                    labels[kind],
+                    on_click=lambda _, selected=kind: self._show_associated_form(
+                        selected
+                    ),
+                )
+            ]
+        )
+
+    def _show_associated_form(self, kind: str) -> None:
+        self.associated_fields = self._associated_form_fields(kind)
+        self.associated_principal = ft.Checkbox(label="Principal", value=False)
+        self.associated_message = ft.Text("", visible=False)
+        title = {
+            "documento": "Agregar documento",
+            "contacto": "Agregar contacto",
+            "domicilio": "Agregar domicilio",
+        }[kind]
+        self.associated_panel.content = ft.Card(
+            content=ft.Container(
+                padding=16,
+                content=ft.Column(
+                    controls=[
+                        ft.Text(title, size=18, weight=ft.FontWeight.BOLD),
+                        ft.Column(
+                            controls=list(self.associated_fields.values()), spacing=8
+                        ),
+                        self.associated_principal,
+                        self.associated_message,
+                        ft.Row(
+                            controls=[
+                                ft.ElevatedButton(
+                                    "Guardar",
+                                    on_click=lambda _: self._save_associated(kind),
+                                ),
+                                ft.TextButton("Cancelar", on_click=self._cancel_associated),
+                            ]
+                        ),
+                    ],
+                    spacing=10,
+                ),
+            )
+        )
+        self.associated_panel.visible = True
+        self._safe_update(self.associated_panel)
+
+    def _associated_form_fields(self, kind: str) -> dict[str, ft.TextField]:
+        if kind == "documento":
+            return {
+                "tipo_documento": ft.TextField(label="Tipo de documento"),
+                "numero_documento": ft.TextField(label="Número de documento"),
+                "pais_emision": ft.TextField(label="País de emisión"),
+                "fecha_desde": ft.TextField(label="Fecha desde"),
+                "fecha_hasta": ft.TextField(label="Fecha hasta"),
+                "observaciones": ft.TextField(label="Observaciones", multiline=True),
+            }
+        if kind == "contacto":
+            return {
+                "tipo_contacto": ft.TextField(label="Tipo de contacto"),
+                "valor_contacto": ft.TextField(label="Valor de contacto"),
+                "fecha_desde": ft.TextField(label="Fecha desde"),
+                "fecha_hasta": ft.TextField(label="Fecha hasta"),
+                "observaciones": ft.TextField(label="Observaciones", multiline=True),
+            }
+        return {
+            "tipo_domicilio": ft.TextField(label="Tipo de domicilio"),
+            "direccion": ft.TextField(label="Dirección"),
+            "localidad": ft.TextField(label="Localidad"),
+            "provincia": ft.TextField(label="Provincia"),
+            "pais": ft.TextField(label="País"),
+            "codigo_postal": ft.TextField(label="Código postal"),
+            "fecha_desde": ft.TextField(label="Fecha desde"),
+            "fecha_hasta": ft.TextField(label="Fecha hasta"),
+            "observaciones": ft.TextField(label="Observaciones", multiline=True),
+        }
+
+    def _cancel_associated(self, _) -> None:
+        self.associated_panel.visible = False
+        self.associated_panel.content = None
+        self.associated_fields = {}
+        self._safe_update(self.associated_panel)
+
+    def _save_associated(self, kind: str) -> None:
+        payload = {
+            key: ((field.value or "").strip() or None)
+            for key, field in self.associated_fields.items()
+        }
+        payload["es_principal"] = bool(self.associated_principal.value)
+        if kind == "documento":
+            result = self.api.crear_persona_documento(
+                self.id_persona, payload, op_id=str(uuid4())
+            )
+        elif kind == "contacto":
+            result = self.api.crear_persona_contacto(
+                self.id_persona, payload, op_id=str(uuid4())
+            )
+        else:
+            result = self.api.crear_persona_domicilio(
+                self.id_persona, payload, op_id=str(uuid4())
+            )
+        if not result.success:
+            self._show_associated_error(
+                result.error_message or f"No se pudo guardar el {kind}."
+            )
+            return
+        refreshed = self.api.get_persona_detalle_integral(self.id_persona)
+        if not refreshed.success or not isinstance(refreshed.data, dict):
+            self._show_associated_error(
+                "El dato se guardó, pero no se pudo recargar la ficha. "
+                "Volvé a abrirla desde el listado."
+            )
+            return
+        self.data = refreshed.data
+        self.on_navigate("parte_detail", id_persona=self.id_persona)
+
+    def _show_associated_error(self, message: str) -> None:
+        self.associated_message.value = message
+        self.associated_message.color = ft.Colors.RED_700
+        self.associated_message.visible = True
+        self._safe_update(self.associated_message)
 
     def _clean_field(self, key: str) -> str:
         return (self.edit_fields[key].value or "").strip()

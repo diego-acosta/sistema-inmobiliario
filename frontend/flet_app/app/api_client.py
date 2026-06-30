@@ -68,6 +68,34 @@ class ApiClient:
             json=payload,
         )
 
+
+    def crear_persona_documento(
+        self, id_persona: int, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/personas/{id_persona}/documentos",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
+    def crear_persona_contacto(
+        self, id_persona: int, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/personas/{id_persona}/contactos",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
+    def crear_persona_domicilio(
+        self, id_persona: int, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/personas/{id_persona}/domicilios",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
     def buscar_personas(
         self,
         *,
