@@ -7484,6 +7484,12 @@ class VentaCompletaWizardV3Prototype:
         if 0 <= index < len(self.state.compradores):
             self.state.compradores.pop(index)
             self._mark_plan_preview_stale()
+            self.comprador_seleccionado = None
+            self.comprador_selector = None
+            self.comprador_error = None
+            self.buyer_select_error = None
+            self.porcentaje_comprador_value = ""
+            self.porcentaje_comprador_field.value = ""
         self._render()
 
     def _distribute_buyers_equally(self, _: ft.ControlEvent | None = None) -> None:

@@ -362,3 +362,48 @@ def test_comprador_existente_sigue_funcionando_con_ficha_contextual_disponible()
     assert wizard.state.compradores[0].id_persona == 281
     assert wizard.state.compradores[0].datos_persona is None
     assert api.crear_persona_calls == []
+
+
+def test_quitar_comprador_existente_resetea_selector_y_permite_rebuscarlo() -> None:
+    wizard, api = _wizard()
+    control = wizard._build_buyers_step()
+    assert wizard.comprador_selector is not None
+    wizard.comprador_selector.search.value = "Compradora"
+    _find_button(control, "Buscar").on_click(None)
+    _find_button(control, "Seleccionar").on_click(None)
+    old_selector = wizard.comprador_selector
+    wizard._add_selected_buyer(None)
+    assert len(wizard.state.compradores) == 1
+
+    wizard.comprador_error = "error previo"
+    wizard.buyer_select_error = "error selector previo"
+    wizard.porcentaje_comprador_value = "50"
+    wizard.porcentaje_comprador_field.value = "50"
+    wizard.state.preview_data = {"ok": True}
+    wizard.state.preview_stale = False
+    wizard._remove_buyer(0)
+
+    assert wizard.state.compradores == []
+    assert wizard.state.preview_stale is True
+    assert wizard.comprador_seleccionado is None
+    assert wizard.comprador_selector is not old_selector
+    assert wizard.comprador_selector is not None
+    assert wizard.comprador_error is None
+    assert wizard.buyer_select_error is None
+    assert wizard.porcentaje_comprador_value == ""
+    assert wizard.porcentaje_comprador_field.value == ""
+
+    rebuilt = wizard._build_buyers_step()
+    assert wizard.comprador_selector is not None
+    wizard.comprador_selector.search.value = "Compradora"
+    _find_button(rebuilt, "Buscar").on_click(None)
+    _find_button(rebuilt, "Seleccionar").on_click(None)
+    wizard._add_selected_buyer(None)
+
+    assert api.buscar_calls == [
+        {"q": "Compradora", "limit": 10, "offset": 0},
+        {"q": "Compradora", "limit": 10, "offset": 0},
+    ]
+    assert len(wizard.state.compradores) == 1
+    assert wizard.state.compradores[0].id_persona == 281
+    assert api.crear_persona_calls == []
