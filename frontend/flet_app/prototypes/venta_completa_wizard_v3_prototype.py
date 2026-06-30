@@ -129,6 +129,7 @@ class CompradorWizardDraft:
     documento_principal: str | None = None
     cuit_cuil: str | None = None
     datos_persona: dict[str, Any] | None = None
+    ficha_persona_contextual: dict[str, Any] | None = None
 
 
 @dataclass
@@ -7348,6 +7349,9 @@ class VentaCompletaWizardV3Prototype:
                 if doc_numero
                 else None
             ),
+        }
+        ficha_persona_contextual: dict[str, Any] = {
+            **datos_persona,
             "contactos": contactos,
             "domicilios": domicilios,
             "observaciones": observaciones or None,
@@ -7366,6 +7370,7 @@ class VentaCompletaWizardV3Prototype:
                 documento_principal=doc_numero or None,
                 cuit_cuil=cuit or None,
                 datos_persona=datos_persona,
+                ficha_persona_contextual=ficha_persona_contextual,
             )
         )
         self._mark_plan_preview_stale()

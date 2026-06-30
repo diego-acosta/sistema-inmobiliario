@@ -319,20 +319,34 @@ def test_guardar_ficha_contextual_completa_vuelve_agrega_comprador_y_marca_previ
     assert comprador.id_rol_participacion == "4"
     assert comprador.texto_visual == "Ana García (se creará en esta venta)"
     assert comprador.datos_persona is not None
-    assert comprador.datos_persona["contactos"] == [
+    assert comprador.datos_persona == {
+        "tipo_persona": "FISICA",
+        "nombre": "Ana",
+        "apellido": "García",
+        "razon_social": None,
+        "cuit_cuil": "27-12345678-9",
+        "documento_principal": {"tipo_documento": "DNI", "numero_documento": "12345678"},
+    }
+    assert "contactos" not in comprador.datos_persona
+    assert "domicilios" not in comprador.datos_persona
+    assert "observaciones" not in comprador.datos_persona
+    assert comprador.ficha_persona_contextual is not None
+    assert comprador.ficha_persona_contextual["contactos"] == [
         {"tipo_contacto": "EMAIL", "valor": "ana@example.com", "principal": True},
         {"tipo_contacto": "TELEFONO", "valor": "+54 11 5555-5555", "principal": False},
     ]
-    assert comprador.datos_persona["domicilios"][0]["calle"] == "Av. Siempre Viva"
-    assert comprador.datos_persona["observaciones"] == "Observación contextual"
+    assert comprador.ficha_persona_contextual["domicilios"][0]["calle"] == "Av. Siempre Viva"
+    assert comprador.ficha_persona_contextual["observaciones"] == "Observación contextual"
     assert wizard.state.preview_stale is True
     assert api.crear_persona_calls == []
 
     payload = wizard._build_confirm_sale_direct_payload()
     comprador_payload = payload["compradores"][0]
     assert "id_persona" not in comprador_payload
-    assert comprador_payload["datos_persona"]["contactos"][0]["valor"] == "ana@example.com"
-    assert comprador_payload["datos_persona"]["domicilios"][0]["numero"] == "742"
+    assert comprador_payload["datos_persona"] == comprador.datos_persona
+    assert "contactos" not in comprador_payload["datos_persona"]
+    assert "domicilios" not in comprador_payload["datos_persona"]
+    assert "observaciones" not in comprador_payload["datos_persona"]
 
 
 def test_comprador_existente_sigue_funcionando_con_ficha_contextual_disponible() -> None:
