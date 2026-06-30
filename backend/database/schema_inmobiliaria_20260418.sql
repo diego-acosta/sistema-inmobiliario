@@ -5449,6 +5449,13 @@ CREATE TABLE public.usuario_rol_seguridad (
     id_rol_seguridad bigint NOT NULL,
     fecha_desde timestamp without time zone NOT NULL,
     fecha_hasta timestamp without time zone,
+    version_registro integer DEFAULT 1 NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
     CONSTRAINT chk_usuario_rol_seguridad_vigencia CHECK (((fecha_hasta IS NULL) OR (fecha_hasta >= fecha_desde)))
 );
 
@@ -7930,6 +7937,13 @@ ALTER TABLE ONLY public.unidad_funcional
 --
 
 CREATE UNIQUE INDEX ux_usuario_op_id_alta ON public.usuario USING btree (op_id_alta) WHERE (op_id_alta IS NOT NULL);
+
+
+--
+-- Name: ux_usuario_rol_seguridad_op_id_alta; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_usuario_rol_seguridad_op_id_alta ON public.usuario_rol_seguridad USING btree (op_id_alta) WHERE (op_id_alta IS NOT NULL);
 
 
 --
