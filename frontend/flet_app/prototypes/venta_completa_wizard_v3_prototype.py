@@ -116,7 +116,7 @@ class ObjetoVentaWizardDraft:
 
 @dataclass
 class CompradorWizardDraft:
-    id_persona: int
+    id_persona: int | None
     texto_visual: str
     porcentaje_responsabilidad: str
     id_rol_participacion: str
@@ -127,6 +127,7 @@ class CompradorWizardDraft:
     tipo_persona: str | None = None
     documento_principal: str | None = None
     cuit_cuil: str | None = None
+    datos_persona: dict[str, Any] | None = None
 
 
 @dataclass
@@ -335,6 +336,14 @@ class VentaCompletaWizardV3Prototype:
             on_change=self._on_rol_comprador_change,
         )
         self.comprador_error: str | None = None
+        self.contextual_buyer_error: str | None = None
+        self.contextual_buyer_tipo_value = "FISICA"
+        self.contextual_buyer_nombre_field = ft.TextField(label="Nombre")
+        self.contextual_buyer_apellido_field = ft.TextField(label="Apellido")
+        self.contextual_buyer_razon_social_field = ft.TextField(label="Razón social")
+        self.contextual_buyer_cuit_field = ft.TextField(label="CUIT/CUIL")
+        self.contextual_buyer_doc_tipo_field = ft.TextField(label="Tipo documento", value="DNI")
+        self.contextual_buyer_doc_numero_field = ft.TextField(label="Número documento")
         self.manual_buyer_id_value = ""
         self.manual_buyer_text_value = ""
         self.manual_buyer_role_value = ""
@@ -1984,10 +1993,46 @@ class VentaCompletaWizardV3Prototype:
         controls: list[ft.Control] = []
         if self.comprador_seleccionado is not None:
             controls.append(self._build_selected_buyer_panel())
-        # No se ofrece carga manual/alta aislada de compradores: el comprador
-        # contextual de venta debe resolverse como Persona/Parte existente.
+        controls.append(self._build_contextual_buyer_panel())
         controls.extend([self._build_added_buyers_list(), self._build_buyers_summary()])
         return ft.Column(controls=controls, spacing=12)
+
+    def _build_contextual_buyer_panel(self) -> ft.Control:
+        controls: list[ft.Control] = [
+            ft.Text("Crear comprador en esta venta", size=18, weight=ft.FontWeight.W_700),
+            ft.Text(
+                "Usar solo si no existe una Persona reutilizable. Se creará y vinculará como COMPRADOR al confirmar esta venta.",
+                size=12,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            ft.Dropdown(
+                label="Tipo de persona",
+                value=self.contextual_buyer_tipo_value,
+                options=[
+                    ft.dropdown.Option("FISICA", "Física"),
+                    ft.dropdown.Option("JURIDICA", "Jurídica"),
+                ],
+                on_change=self._on_contextual_buyer_tipo_change,
+            ),
+        ]
+        if self.contextual_buyer_tipo_value == "JURIDICA":
+            controls.append(self.contextual_buyer_razon_social_field)
+        else:
+            controls.extend([self.contextual_buyer_nombre_field, self.contextual_buyer_apellido_field])
+        controls.extend([
+            self.contextual_buyer_cuit_field,
+            ft.Row(controls=[self.contextual_buyer_doc_tipo_field, self.contextual_buyer_doc_numero_field], spacing=8),
+        ])
+        if self.contextual_buyer_error:
+            controls.append(ft.Text(self.contextual_buyer_error, size=12, color=ft.Colors.RED_700))
+        controls.append(ft.Button("Agregar comprador contextual", icon=ft.Icons.PERSON_ADD_ALT_1, on_click=self._add_contextual_buyer))
+        return ft.Container(
+            padding=14,
+            border_radius=12,
+            bgcolor=ft.Colors.PURPLE_50,
+            border=_border_all(1, ft.Colors.PURPLE_200),
+            content=ft.Column(controls=controls, spacing=8),
+        )
 
     def _build_rol_comprador_status_card(self) -> ft.Control:
         if self.rol_comprador_data is not None:
@@ -3964,14 +4009,7 @@ class VentaCompletaWizardV3Prototype:
                 for objeto in self.state.objetos
             ],
             "compradores": [
-                {
-                    "id_persona": comprador.id_persona,
-                    "id_rol_participacion": int(comprador.id_rol_participacion),
-                    "porcentaje_responsabilidad": comprador.porcentaje_responsabilidad.strip() or "100.00",
-                    "fecha_desde": self.state.fecha_venta_iso,
-                    "fecha_hasta": None,
-                    "observaciones": comprador.texto_visual,
-                }
+                self._build_confirm_sale_buyer_payload(comprador)
                 for comprador in self.state.compradores
             ],
             "condiciones_comerciales": condiciones,
@@ -3980,6 +4018,20 @@ class VentaCompletaWizardV3Prototype:
                 "observaciones": self.state.observaciones_comerciales.strip() or None,
             },
         }
+
+    def _build_confirm_sale_buyer_payload(self, comprador: CompradorWizardDraft) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "id_rol_participacion": int(comprador.id_rol_participacion),
+            "porcentaje_responsabilidad": comprador.porcentaje_responsabilidad.strip() or "100.00",
+            "fecha_desde": self.state.fecha_venta_iso,
+            "fecha_hasta": None,
+            "observaciones": comprador.texto_visual,
+        }
+        if comprador.datos_persona is not None:
+            payload["datos_persona"] = comprador.datos_persona
+        else:
+            payload["id_persona"] = comprador.id_persona
+        return payload
 
     def _confirm_payload_signature(self, payload: dict[str, Any]) -> str:
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -4889,13 +4941,25 @@ class VentaCompletaWizardV3Prototype:
         non_persisted_objects = [objeto.texto_visual for objeto in self.state.objetos if not objeto.persisted]
         if non_persisted_objects:
             errors.append("Objetos no persistidos: " + ", ".join(non_persisted_objects))
-        non_persisted_buyers = [comprador.texto_visual for comprador in self.state.compradores if not comprador.persisted]
+        non_persisted_buyers = [
+            comprador.texto_visual
+            for comprador in self.state.compradores
+            if not comprador.persisted
+            and not self._is_confirmable_contextual_buyer(comprador)
+        ]
         if non_persisted_buyers:
             errors.append("Compradores no persistidos: " + ", ".join(non_persisted_buyers))
         return errors
 
     def _has_only_persisted_confirmation_records(self) -> bool:
         return not self._non_persisted_confirmation_errors()
+
+    @staticmethod
+    def _is_confirmable_contextual_buyer(comprador: CompradorWizardDraft) -> bool:
+        return (
+            comprador.source == "contextual_venta"
+            and comprador.datos_persona is not None
+        )
 
     @staticmethod
     def _record_source_label(source: str, persisted: bool) -> str:
@@ -7097,6 +7161,77 @@ class VentaCompletaWizardV3Prototype:
     def _on_rol_comprador_change(self, _: ft.ControlEvent) -> None:
         self.rol_comprador_value = str(self.rol_comprador_field.value or "")
 
+    def _on_contextual_buyer_tipo_change(self, event: ft.ControlEvent) -> None:
+        self.contextual_buyer_tipo_value = str(getattr(event.control, "value", None) or "FISICA")
+        self.contextual_buyer_error = None
+        self._render()
+
+    def _contextual_buyer_validation_message(self) -> str | None:
+        role_id = self._rol_comprador_id_resuelto()
+        if not role_id or not role_id.isdigit():
+            return self.rol_comprador_catalog_error or "No se encontró el rol comprador en el sistema."
+        tipo = self.contextual_buyer_tipo_value
+        nombre = str(self.contextual_buyer_nombre_field.value or "").strip()
+        apellido = str(self.contextual_buyer_apellido_field.value or "").strip()
+        razon_social = str(self.contextual_buyer_razon_social_field.value or "").strip()
+        cuit = str(self.contextual_buyer_cuit_field.value or "").strip()
+        doc_numero = str(self.contextual_buyer_doc_numero_field.value or "").strip()
+        if tipo == "FISICA" and (not nombre or not apellido):
+            return "Nombre y apellido son obligatorios para persona física."
+        if tipo == "JURIDICA" and not razon_social:
+            return "Razón social es obligatoria para persona jurídica."
+        if not cuit and not doc_numero:
+            return "Informá documento principal o CUIT/CUIL."
+        return None
+
+    def _add_contextual_buyer(self, _: ft.ControlEvent | None = None) -> None:
+        self.contextual_buyer_error = self._contextual_buyer_validation_message()
+        if self.contextual_buyer_error is not None:
+            self._render()
+            return
+        tipo = self.contextual_buyer_tipo_value
+        nombre = str(self.contextual_buyer_nombre_field.value or "").strip()
+        apellido = str(self.contextual_buyer_apellido_field.value or "").strip()
+        razon_social = str(self.contextual_buyer_razon_social_field.value or "").strip()
+        cuit = str(self.contextual_buyer_cuit_field.value or "").strip()
+        doc_tipo = str(self.contextual_buyer_doc_tipo_field.value or "").strip()
+        doc_numero = str(self.contextual_buyer_doc_numero_field.value or "").strip()
+        datos_persona: dict[str, Any] = {
+            "tipo_persona": tipo,
+            "nombre": nombre or None,
+            "apellido": apellido or None,
+            "razon_social": razon_social or None,
+            "cuit_cuil": cuit or None,
+            "documento_principal": (
+                {"tipo_documento": doc_tipo or "DNI", "numero_documento": doc_numero}
+                if doc_numero
+                else None
+            ),
+        }
+        texto = razon_social if tipo == "JURIDICA" else f"{nombre} {apellido}".strip()
+        self.state.compradores.append(
+            CompradorWizardDraft(
+                id_persona=None,
+                texto_visual=f"{texto} (se creará en esta venta)",
+                porcentaje_responsabilidad="",
+                id_rol_participacion=self._rol_comprador_id_resuelto(),
+                source="contextual_venta",
+                persisted=False,
+                display_name=texto,
+                tipo_persona=tipo,
+                documento_principal=doc_numero or None,
+                cuit_cuil=cuit or None,
+                datos_persona=datos_persona,
+            )
+        )
+        self._mark_plan_preview_stale()
+        self.contextual_buyer_nombre_field.value = ""
+        self.contextual_buyer_apellido_field.value = ""
+        self.contextual_buyer_razon_social_field.value = ""
+        self.contextual_buyer_cuit_field.value = ""
+        self.contextual_buyer_doc_numero_field.value = ""
+        self.contextual_buyer_error = None
+        self._render()
 
     @staticmethod
     def _selected_buyer_display(selected: dict[str, Any] | None) -> str:
@@ -7256,9 +7391,12 @@ class VentaCompletaWizardV3Prototype:
 
         seen_ids: set[int] = set()
         for comprador in self.state.compradores:
-            if comprador.id_persona in seen_ids:
-                return "No se puede duplicar id_persona entre compradores."
-            seen_ids.add(comprador.id_persona)
+            if comprador.id_persona is None and not self._is_confirmable_contextual_buyer(comprador):
+                return "Todos los compradores deben tener id_persona o datos_persona contextual."
+            if comprador.id_persona is not None:
+                if comprador.id_persona in seen_ids:
+                    return "No se puede duplicar id_persona entre compradores."
+                seen_ids.add(comprador.id_persona)
             if self.state.origen in {"DIRECTA", "RESERVA"} and not comprador.id_rol_participacion.strip():
                 return "Todos los compradores deben tener id_rol_participacion del rol COMPRADOR."
             percentage_raw = comprador.porcentaje_responsabilidad.strip()

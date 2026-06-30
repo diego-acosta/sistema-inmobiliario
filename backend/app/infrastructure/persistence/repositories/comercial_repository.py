@@ -2999,6 +2999,142 @@ class ComercialRepository:
             },
         }
 
+    def find_persona_duplicate_candidate(
+        self,
+        *,
+        tipo_persona: str,
+        nombre: str | None,
+        apellido: str | None,
+        razon_social: str | None,
+        cuit_cuil: str | None,
+        documento: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if cuit_cuil and cuit_cuil.strip():
+            row = self.db.execute(
+                text("""
+                    SELECT id_persona, op_id_alta
+                    FROM persona
+                    WHERE deleted_at IS NULL
+                      AND cuit_cuil = :cuit_cuil
+                    LIMIT 1
+                """),
+                {"cuit_cuil": cuit_cuil.strip()},
+            ).mappings().one_or_none()
+            if row is not None:
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "cuit_cuil",
+                    "op_id_alta": row["op_id_alta"],
+                }
+
+        if documento is not None and documento.get("numero_documento"):
+            row = self.db.execute(
+                text("""
+                    SELECT id_persona, op_id_alta
+                    FROM persona_documento
+                    WHERE deleted_at IS NULL
+                      AND UPPER(tipo_documento_persona) = :tipo_documento
+                      AND numero_documento = :numero_documento
+                    LIMIT 1
+                """),
+                {
+                    "tipo_documento": str(documento.get("tipo_documento") or "").strip().upper(),
+                    "numero_documento": str(documento.get("numero_documento") or "").strip(),
+                },
+            ).mappings().one_or_none()
+            if row is not None:
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "documento_principal",
+                    "op_id_alta": row["op_id_alta"],
+                }
+
+        tipo = (tipo_persona or "").strip().upper()
+        if tipo == "FISICA" and nombre and apellido:
+            row = self.db.execute(
+                text("""
+                    SELECT id_persona, op_id_alta
+                    FROM persona
+                    WHERE deleted_at IS NULL
+                      AND UPPER(tipo_persona) = 'FISICA'
+                      AND UPPER(nombre) = :nombre
+                      AND UPPER(apellido) = :apellido
+                    LIMIT 1
+                """),
+                {"nombre": nombre.strip().upper(), "apellido": apellido.strip().upper()},
+            ).mappings().one_or_none()
+            if row is not None:
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "nombre_apellido",
+                    "op_id_alta": row["op_id_alta"],
+                }
+        if tipo == "JURIDICA" and razon_social:
+            row = self.db.execute(
+                text("""
+                    SELECT id_persona, op_id_alta
+                    FROM persona
+                    WHERE deleted_at IS NULL
+                      AND UPPER(tipo_persona) = 'JURIDICA'
+                      AND UPPER(razon_social) = :razon_social
+                    LIMIT 1
+                """),
+                {"razon_social": razon_social.strip().upper()},
+            ).mappings().one_or_none()
+            if row is not None:
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "razon_social",
+                    "op_id_alta": row["op_id_alta"],
+                }
+        return None
+
+    def create_persona_contextual_tx(self, values: dict[str, Any]) -> dict[str, Any]:
+        row = self.db.execute(
+            text("""
+                INSERT INTO persona (
+                    uid_global, version_registro, tipo_persona, nombre, apellido,
+                    razon_social, fecha_nacimiento_constitucion, estado_persona,
+                    fecha_alta, cuit_cuil, observaciones, created_at, updated_at,
+                    id_instalacion_origen, id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion
+                )
+                VALUES (
+                    :uid_global, :version_registro, :tipo_persona, :nombre, :apellido,
+                    :razon_social, :fecha_nacimiento_constitucion, :estado_persona,
+                    :fecha_alta, :cuit_cuil, :observaciones, :created_at, :updated_at,
+                    :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                    :op_id_alta, :op_id_ultima_modificacion
+                )
+                RETURNING id_persona, uid_global, version_registro
+            """),
+            values,
+        ).mappings().one()
+        return {"id_persona": row["id_persona"], "uid_global": row["uid_global"], "version_registro": row["version_registro"]}
+
+    def create_persona_documento_contextual_tx(self, values: dict[str, Any]) -> dict[str, Any]:
+        row = self.db.execute(
+            text("""
+                INSERT INTO persona_documento (
+                    uid_global, version_registro, created_at, updated_at,
+                    id_instalacion_origen, id_instalacion_ultima_modificacion,
+                    op_id_alta, op_id_ultima_modificacion, id_persona,
+                    tipo_documento_persona, numero_documento, pais_emision,
+                    es_principal, fecha_desde, fecha_hasta, observaciones
+                )
+                VALUES (
+                    :uid_global, :version_registro, :created_at, :updated_at,
+                    :id_instalacion_origen, :id_instalacion_ultima_modificacion,
+                    :op_id_alta, :op_id_ultima_modificacion, :id_persona,
+                    :tipo_documento, :numero_documento, :pais_emision,
+                    :es_principal, :fecha_desde, :fecha_hasta, :observaciones
+                )
+                RETURNING id_persona_documento
+            """),
+            values,
+        ).mappings().one()
+        return {"id_persona_documento": row["id_persona_documento"]}
+
     def define_condiciones_comerciales_venta(
         self,
         payload: Any,

@@ -105,6 +105,12 @@ class ConfirmVentaDirectaCompletaService:
 
         try:
             with self._transaction():
+                resolve_error = self._resolve_compradores_contextuales(
+                    command, id_instalacion=id_instalacion
+                )
+                if resolve_error is not None:
+                    raise _StageFailed(resolve_error)
+
                 generated = self.comercial_repository._create_venta_directa_tx(
                     self._venta_payload(command, id_instalacion=id_instalacion),
                     self._objetos_payload(command, id_instalacion=id_instalacion),
@@ -423,6 +429,86 @@ class ConfirmVentaDirectaCompletaService:
             for comprador in command.compradores
         ]
 
+    def _resolve_compradores_contextuales(
+        self,
+        command: ConfirmVentaDirectaCompletaCommand,
+        *,
+        id_instalacion: int,
+    ) -> str | None:
+        now = datetime.now(UTC)
+        op_id = self._op_id(command)
+        for comprador in command.compradores:
+            if comprador.id_persona is not None:
+                continue
+            datos = comprador.datos_persona
+            if datos is None:
+                return "COMPRADOR_SIN_PERSONA"
+            duplicado = self.comercial_repository.find_persona_duplicate_candidate(
+                tipo_persona=datos.tipo_persona,
+                nombre=datos.nombre,
+                apellido=datos.apellido,
+                razon_social=datos.razon_social,
+                cuit_cuil=datos.cuit_cuil,
+                documento=(
+                    {
+                        "tipo_documento": datos.documento_principal.tipo_documento,
+                        "numero_documento": datos.documento_principal.numero_documento,
+                    }
+                    if datos.documento_principal is not None
+                    else None
+                ),
+            )
+            if duplicado is not None:
+                if self._same_op_id(duplicado.get("op_id_alta"), op_id):
+                    comprador.id_persona = duplicado["id_persona"]
+                    continue
+                return "PERSONA_DUPLICADA_REUTILIZAR_EXISTENTE"
+
+            persona = self.comercial_repository.create_persona_contextual_tx(
+                {
+                    "uid_global": str(self.uuid_generator()),
+                    "version_registro": 1,
+                    "tipo_persona": datos.tipo_persona.strip().upper(),
+                    "nombre": datos.nombre.strip() if datos.nombre else None,
+                    "apellido": datos.apellido.strip() if datos.apellido else None,
+                    "razon_social": datos.razon_social.strip() if datos.razon_social else None,
+                    "cuit_cuil": datos.cuit_cuil.strip() if datos.cuit_cuil else None,
+                    "fecha_nacimiento_constitucion": None,
+                    "estado_persona": "ACTIVA",
+                    "fecha_alta": now,
+                    "observaciones": "Alta contextual desde venta directa",
+                    "created_at": now,
+                    "updated_at": now,
+                    "id_instalacion_origen": id_instalacion,
+                    "id_instalacion_ultima_modificacion": id_instalacion,
+                    "op_id_alta": op_id,
+                    "op_id_ultima_modificacion": op_id,
+                }
+            )
+            comprador.id_persona = persona["id_persona"]
+            if datos.documento_principal is not None:
+                self.comercial_repository.create_persona_documento_contextual_tx(
+                    {
+                        "uid_global": str(self.uuid_generator()),
+                        "version_registro": 1,
+                        "created_at": now,
+                        "updated_at": now,
+                        "id_instalacion_origen": id_instalacion,
+                        "id_instalacion_ultima_modificacion": id_instalacion,
+                        "op_id_alta": op_id,
+                        "op_id_ultima_modificacion": op_id,
+                        "id_persona": comprador.id_persona,
+                        "tipo_documento": datos.documento_principal.tipo_documento.strip().upper(),
+                        "numero_documento": datos.documento_principal.numero_documento.strip(),
+                        "pais_emision": None,
+                        "es_principal": True,
+                        "fecha_desde": date.today(),
+                        "fecha_hasta": None,
+                        "observaciones": "Documento principal alta contextual venta",
+                    }
+                )
+        return None
+
     def _validate_compradores(
         self, command: ConfirmVentaDirectaCompletaCommand
     ) -> str | None:
@@ -434,9 +520,16 @@ class ConfirmVentaDirectaCompletaService:
         total_compradores = len(command.compradores)
 
         for comprador in command.compradores:
-            if comprador.id_persona in ids_persona:
+            if (comprador.id_persona is None) == (comprador.datos_persona is None):
+                return "COMPRADOR_DEBE_INFORMAR_ID_O_DATOS_PERSONA"
+            if comprador.datos_persona is not None:
+                datos_error = self._validate_datos_persona_contextual(comprador.datos_persona)
+                if datos_error is not None:
+                    return datos_error
+            if comprador.id_persona is not None and comprador.id_persona in ids_persona:
                 return "COMPRADOR_DUPLICADO"
-            ids_persona.add(comprador.id_persona)
+            if comprador.id_persona is not None:
+                ids_persona.add(comprador.id_persona)
 
             porcentaje = self._normalize_porcentaje_comprador(
                 comprador.porcentaje_responsabilidad,
@@ -454,6 +547,26 @@ class ConfirmVentaDirectaCompletaService:
         return None
 
     @staticmethod
+    def _validate_datos_persona_contextual(datos: Any) -> str | None:
+        tipo = (datos.tipo_persona or "").strip().upper()
+        if tipo == "FISICA":
+            if not (datos.nombre or "").strip() or not (datos.apellido or "").strip():
+                return "PERSONA_FISICA_NOMBRE_APELLIDO_REQUERIDOS"
+        elif tipo == "JURIDICA":
+            if not (datos.razon_social or "").strip():
+                return "PERSONA_JURIDICA_RAZON_SOCIAL_REQUERIDA"
+        else:
+            return "TIPO_PERSONA_INVALIDO"
+        if datos.documento_principal is not None:
+            if not (datos.documento_principal.tipo_documento or "").strip():
+                return "TIPO_DOCUMENTO_REQUERIDO"
+            if not (datos.documento_principal.numero_documento or "").strip():
+                return "NUMERO_DOCUMENTO_REQUERIDO"
+        if not (datos.cuit_cuil or "").strip() and datos.documento_principal is None:
+            return "IDENTIFICACION_PERSONA_REQUERIDA"
+        return None
+
+    @staticmethod
     def _normalize_porcentaje_comprador(
         porcentaje: Decimal | None, *, total_compradores: int
     ) -> Decimal | None:
@@ -465,3 +578,9 @@ class ConfirmVentaDirectaCompletaService:
 
     def _op_id(self, command: ConfirmVentaDirectaCompletaCommand) -> UUID | None:
         return getattr(command.context, "op_id", None)
+
+    @staticmethod
+    def _same_op_id(candidate_op_id: Any, current_op_id: UUID | None) -> bool:
+        if candidate_op_id is None or current_op_id is None:
+            return False
+        return str(candidate_op_id) == str(current_op_id)

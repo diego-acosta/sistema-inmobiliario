@@ -5,7 +5,11 @@ from typing import Any
 import flet as ft
 
 from app.api_client import ApiResult
-from prototypes.venta_completa_wizard_v3_prototype import VentaCompletaWizardV3Prototype
+from prototypes.venta_completa_wizard_v3_prototype import (
+    CompradorWizardDraft,
+    ObjetoVentaWizardDraft,
+    VentaCompletaWizardV3Prototype,
+)
 
 
 class FakePage:
@@ -161,3 +165,85 @@ def test_regresion_no_navega_ni_crea_persona() -> None:
     assert "persona_create" not in text
     assert "crear_persona" not in text
     assert api.crear_persona_calls == []
+
+
+def _prepare_review_ready_wizard(wizard: VentaCompletaWizardV3Prototype) -> None:
+    wizard.state.pantalla_actual = "REVISION_GENERAL"
+    wizard.state.codigo_venta = "VD-CTX-001"
+    wizard.state.fecha_venta_iso = "2026-05-22"
+    wizard.fecha_venta_error = None
+    wizard.state.moneda = "USD"
+    wizard.state.forma_pago = "CONTADO"
+    wizard.state.fecha_pago_contado_iso = "2026-05-22"
+    wizard.state.fecha_pago_contado_error = None
+    wizard.state.preview_data = {"ok": True}
+    wizard.state.preview_stale = False
+    wizard.state.objetos = [
+        ObjetoVentaWizardDraft(
+            tipo_objeto="INMUEBLE",
+            id_inmueble=10,
+            id_unidad_funcional=None,
+            texto_visual="Inmueble 10",
+            precio_asignado="1000.00",
+            persisted=True,
+        )
+    ]
+
+
+def _contextual_buyer() -> CompradorWizardDraft:
+    return CompradorWizardDraft(
+        id_persona=None,
+        texto_visual="Juan Pérez (se creará en esta venta)",
+        porcentaje_responsabilidad="",
+        id_rol_participacion="4",
+        source="contextual_venta",
+        persisted=False,
+        datos_persona={
+            "tipo_persona": "FISICA",
+            "nombre": "Juan",
+            "apellido": "Pérez",
+            "razon_social": None,
+            "cuit_cuil": None,
+            "documento_principal": {
+                "tipo_documento": "DNI",
+                "numero_documento": "12345678",
+            },
+        },
+    )
+
+
+def test_comprador_contextual_no_bloquea_confirmacion_y_payload_usa_datos_persona() -> None:
+    wizard, api = _wizard()
+    _prepare_review_ready_wizard(wizard)
+    wizard.state.compradores = [_contextual_buyer()]
+
+    assert wizard._non_persisted_confirmation_errors() == []
+    assert wizard._has_only_persisted_confirmation_records()
+    assert wizard._can_confirm_sale()
+
+    payload = wizard._build_confirm_sale_direct_payload()
+    comprador_payload = payload["compradores"][0]
+
+    assert "id_persona" not in comprador_payload
+    assert comprador_payload["datos_persona"]["documento_principal"]["numero_documento"] == "12345678"
+    assert api.crear_persona_calls == []
+
+
+def test_comprador_manual_no_persistido_sigue_bloqueando_confirmacion() -> None:
+    wizard, _ = _wizard()
+    _prepare_review_ready_wizard(wizard)
+    wizard.state.compradores = [
+        CompradorWizardDraft(
+            id_persona=None,
+            texto_visual="Comprador manual no soportado",
+            porcentaje_responsabilidad="",
+            id_rol_participacion="4",
+            source="manual",
+            persisted=False,
+        )
+    ]
+
+    assert wizard._non_persisted_confirmation_errors() == [
+        "Compradores no persistidos: Comprador manual no soportado"
+    ]
+    assert not wizard._can_confirm_sale()
