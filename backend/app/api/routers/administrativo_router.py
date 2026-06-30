@@ -3,10 +3,20 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.core_ef_headers import CoreEFHeaderValidationError, CoreEFHeaders, parse_core_ef_headers
+from app.api.core_ef_headers import (
+    CoreEFHeaderValidationError,
+    CoreEFHeaders,
+    parse_core_ef_headers,
+)
 from app.api.dependencies import get_db
 from app.api.schemas.administrativo import (
     ErrorResponse,
+    PermisoData,
+    PermisoListResponse,
+    RolSeguridadData,
+    RolSeguridadDetailResponse,
+    RolSeguridadListResponse,
+    RolSeguridadPermisosResponse,
     UsuarioSistemaBajaResponse,
     UsuarioSistemaCreateRequest,
     UsuarioSistemaCreateResponse,
@@ -14,17 +24,21 @@ from app.api.schemas.administrativo import (
     UsuarioSistemaDetailResponse,
     UsuarioSistemaListResponse,
 )
+from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
+    RolSeguridadRepository,
+)
 from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
     UsuarioConcurrencyError,
     UsuarioIdempotencyConflictError,
     UsuarioSistemaRepository,
 )
 
-
 router = APIRouter(tags=["Administrativo"])
 
 
-def _error(status_code: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
+def _error(
+    status_code: int, code: str, message: str, details: dict | None = None
+) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content=ErrorResponse(
@@ -58,6 +72,95 @@ def _parse_core_or_error(
         )
 
 
+@router.get(
+    "/api/v1/administrativo/roles-seguridad",
+    response_model=RolSeguridadListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_roles_seguridad(
+    db: Session = Depends(get_db),
+) -> RolSeguridadListResponse | JSONResponse:
+    try:
+        roles = RolSeguridadRepository(db).list_roles_seguridad()
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo listar roles de seguridad.",
+            {"error": str(exc)},
+        )
+    return RolSeguridadListResponse(data=[RolSeguridadData(**rol) for rol in roles])
+
+
+@router.get(
+    "/api/v1/administrativo/roles-seguridad/{id_rol_seguridad}",
+    response_model=RolSeguridadDetailResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_rol_seguridad(
+    id_rol_seguridad: int,
+    db: Session = Depends(get_db),
+) -> RolSeguridadDetailResponse | JSONResponse:
+    try:
+        rol = RolSeguridadRepository(db).get_rol_seguridad(id_rol_seguridad)
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo obtener el rol de seguridad.",
+            {"error": str(exc)},
+        )
+    if rol is None:
+        return _error(404, "NOT_FOUND", "Rol de seguridad no encontrado.")
+    return RolSeguridadDetailResponse(data=RolSeguridadData(**rol))
+
+
+@router.get(
+    "/api/v1/administrativo/permisos",
+    response_model=PermisoListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_permisos(
+    db: Session = Depends(get_db),
+) -> PermisoListResponse | JSONResponse:
+    try:
+        permisos = RolSeguridadRepository(db).list_permisos()
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo listar permisos.",
+            {"error": str(exc)},
+        )
+    return PermisoListResponse(data=[PermisoData(**permiso) for permiso in permisos])
+
+
+@router.get(
+    "/api/v1/administrativo/roles-seguridad/{id_rol_seguridad}/permisos",
+    response_model=RolSeguridadPermisosResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def list_permisos_by_rol_seguridad(
+    id_rol_seguridad: int,
+    db: Session = Depends(get_db),
+) -> RolSeguridadPermisosResponse | JSONResponse:
+    try:
+        permisos = RolSeguridadRepository(db).list_permisos_by_rol_seguridad(
+            id_rol_seguridad
+        )
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudieron listar permisos del rol de seguridad.",
+            {"error": str(exc)},
+        )
+    if permisos is None:
+        return _error(404, "NOT_FOUND", "Rol de seguridad no encontrado.")
+    return RolSeguridadPermisosResponse(
+        data=[PermisoData(**permiso) for permiso in permisos]
+    )
+
 
 @router.post(
     "/api/v1/administrativo/usuarios",
@@ -87,9 +190,18 @@ def create_usuario_sistema(
     except UsuarioIdempotencyConflictError as exc:
         return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
     except IntegrityError:
-        return _error(409, "TECHNICAL_INCONSISTENCY", "Ya existe un usuario con ese código o login.")
+        return _error(
+            409,
+            "TECHNICAL_INCONSISTENCY",
+            "Ya existe un usuario con ese código o login.",
+        )
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo crear el usuario del sistema.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo crear el usuario del sistema.",
+            {"error": str(exc)},
+        )
 
     return UsuarioSistemaCreateResponse(data=UsuarioSistemaData(**usuario))
 
@@ -106,8 +218,15 @@ def list_usuarios_sistema(
     try:
         usuarios = UsuarioSistemaRepository(db).list(incluir_bajas=incluir_bajas)
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo listar usuarios del sistema.", {"error": str(exc)})
-    return UsuarioSistemaListResponse(data=[UsuarioSistemaData(**usuario) for usuario in usuarios])
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo listar usuarios del sistema.",
+            {"error": str(exc)},
+        )
+    return UsuarioSistemaListResponse(
+        data=[UsuarioSistemaData(**usuario) for usuario in usuarios]
+    )
 
 
 @router.get(
@@ -122,7 +241,12 @@ def get_usuario_sistema(
     try:
         usuario = UsuarioSistemaRepository(db).get(id_usuario)
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo obtener el usuario del sistema.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo obtener el usuario del sistema.",
+            {"error": str(exc)},
+        )
     if usuario is None:
         return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
     return UsuarioSistemaDetailResponse(data=UsuarioSistemaData(**usuario))
@@ -131,7 +255,11 @@ def get_usuario_sistema(
 @router.patch(
     "/api/v1/administrativo/usuarios/{id_usuario}/baja",
     response_model=UsuarioSistemaBajaResponse,
-    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
 )
 def baja_usuario_sistema(
     id_usuario: int,
@@ -168,7 +296,12 @@ def baja_usuario_sistema(
     except UsuarioConcurrencyError as exc:
         return _error(409, "CONCURRENCY_ERROR", str(exc))
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo dar de baja el usuario del sistema.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo dar de baja el usuario del sistema.",
+            {"error": str(exc)},
+        )
     if usuario is None:
         return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
     return UsuarioSistemaBajaResponse(data=UsuarioSistemaData(**usuario))
