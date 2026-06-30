@@ -154,7 +154,7 @@ class ParteDetailPage:
                             status_badge(data.get("estado_persona")),
                             ft.OutlinedButton(
                                 "Editar datos básicos",
-                                on_click=lambda _: self._open_basic_edit(data),
+                                on_click=lambda _: self._open_basic_edit(),
                             ),
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -174,7 +174,8 @@ class ParteDetailPage:
         )
 
 
-    def _open_basic_edit(self, data: dict[str, Any]) -> None:
+    def _open_basic_edit(self) -> None:
+        data = self.data
         self.edit_message.visible = False
         self.edit_fields = {
             "tipo_persona": ft.TextField(
@@ -282,14 +283,15 @@ class ParteDetailPage:
                 self._show_edit_error(result.error_message or "No se pudo actualizar la persona.")
             return
         refreshed = self.api.get_persona_detalle_integral(self.id_persona)
-        if refreshed.success and isinstance(refreshed.data, dict):
-            self.data = refreshed.data
-        self.edit_panel.content = detail_section(
-            "Editar datos básicos",
-            [ft.Text("Datos básicos actualizados correctamente.", color=ft.Colors.GREEN_700)],
-        )
-        self.edit_panel.visible = True
-        self._safe_update(self.edit_panel)
+        if not refreshed.success or not isinstance(refreshed.data, dict):
+            self._show_edit_error(
+                "Los datos se guardaron, pero no se pudo recargar la ficha. "
+                "Volvé a abrirla desde el listado."
+            )
+            return
+
+        self.data = refreshed.data
+        self.on_navigate("parte_detail", id_persona=self.id_persona)
 
     def _clean_field(self, key: str) -> str:
         return (self.edit_fields[key].value or "").strip()

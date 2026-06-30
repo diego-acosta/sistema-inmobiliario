@@ -24,6 +24,7 @@ class FakeApi:
             data={"resumen": {"saldo_total": 0}, "grupos_deuda": []},
         )
         self.detalle_ids: list[int] = []
+        self.detalle_results = [self.detalle]
         self.update_calls: list[tuple[int, dict[str, Any], int, str | None]] = []
         self.update_result = ApiResult(True, data={"id_persona": 42, "version_registro": 8})
         self.crear_persona_calls: list[dict[str, Any]] = []
@@ -33,6 +34,10 @@ class FakeApi:
 
     def get_persona_detalle_integral(self, id_persona: int) -> ApiResult:
         self.detalle_ids.append(id_persona)
+        if self.detalle_results:
+            result = self.detalle_results.pop(0)
+            self.detalle = result
+            return result
         return self.detalle
 
     def get_estado_cuenta_persona(self, *_: Any, **__: Any) -> ApiResult:
@@ -198,31 +203,46 @@ def _find_button(control: ft.Control, text: str):
     raise AssertionError(f"No se encontro boton {text!r}")
 
 
-def test_ficha_permite_editar_datos_basicos_y_recarga() -> None:
-    api = FakeApi(
-        detalle=ApiResult(
-            True,
-            data={
-                "id_persona": 42,
-                "display_name": "Ada Lovelace",
-                "tipo_persona": "FISICA",
-                "nombre": "Ada",
-                "apellido": "Lovelace",
-                "razon_social": None,
-                "estado_persona": "ACTIVA",
-                "fecha_nacimiento": "1815-12-10",
-                "observaciones": "Original",
-                "version_registro": 7,
-                "documentos": [],
-                "contactos": [],
-                "domicilios": [],
-                "participaciones": [],
-                "obligaciones_financieras": [],
-                "usos_transversales": {},
-            },
-        )
+def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
+    initial = ApiResult(
+        True,
+        data={
+            "id_persona": 42,
+            "display_name": "Ada Lovelace",
+            "tipo_persona": "FISICA",
+            "nombre": "Ada",
+            "apellido": "Lovelace",
+            "razon_social": None,
+            "estado_persona": "ACTIVA",
+            "fecha_nacimiento": "1815-12-10",
+            "observaciones": "Original",
+            "version_registro": 7,
+            "documentos": [],
+            "contactos": [],
+            "domicilios": [],
+            "participaciones": [],
+            "obligaciones_financieras": [],
+            "usos_transversales": {},
+        },
     )
-    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None)
+    refreshed = ApiResult(
+        True,
+        data={
+            **initial.data,
+            "display_name": "Augusta Ada Lovelace",
+            "nombre": "Augusta Ada",
+            "observaciones": "Actualizada",
+            "version_registro": 8,
+        },
+    )
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    api = FakeApi(detalle=initial)
+    api.detalle_results = [initial, refreshed]
+    page = ParteDetailPage(
+        api,
+        id_persona=42,
+        on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)),
+    )
     control = page.build()
 
     button = _find_button(control, "Editar datos básicos")
@@ -253,8 +273,13 @@ def test_ficha_permite_editar_datos_basicos_y_recarga() -> None:
         "observaciones": "Actualizada",
     }
     assert api.detalle_ids == [42, 42]
+    assert page.data["nombre"] == "Augusta Ada"
+    assert page.data["version_registro"] == 8
+    assert navigations == [("parte_detail", {"id_persona": 42})]
     assert api.crear_persona_calls == []
 
+    page._open_basic_edit()
+    assert _find_field(page.edit_panel, "Nombre").value == "Augusta Ada"
 
 def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     api = FakeApi(
@@ -286,6 +311,48 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     assert page.edit_panel.visible is False
     assert api.update_calls == []
     assert api.crear_persona_calls == []
+
+
+
+def test_guardado_exitoso_con_fallo_de_recarga_muestra_error_y_no_navega() -> None:
+    initial = ApiResult(
+        True,
+        data={
+            "id_persona": 42,
+            "display_name": "Ada Lovelace",
+            "tipo_persona": "FISICA",
+            "nombre": "Ada",
+            "apellido": "Lovelace",
+            "estado_persona": "ACTIVA",
+            "version_registro": 7,
+            "documentos": [],
+            "contactos": [],
+            "domicilios": [],
+            "participaciones": [],
+            "obligaciones_financieras": [],
+            "usos_transversales": {},
+        },
+    )
+    api = FakeApi(detalle=initial)
+    api.detalle_results = [
+        initial,
+        ApiResult(False, error_message="No se pudo refrescar"),
+    ]
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    page = ParteDetailPage(
+        api,
+        id_persona=42,
+        on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)),
+    )
+    control = page.build()
+
+    _find_button(control, "Editar datos básicos").on_click(None)
+    _find_field(page.edit_panel, "Nombre").value = "Augusta Ada"
+    _find_button(page.edit_panel, "Guardar").on_click(None)
+
+    assert api.detalle_ids == [42, 42]
+    assert navigations == []
+    assert "Los datos se guardaron, pero no se pudo recargar la ficha" in page.edit_message.value
 
 
 def test_error_concurrencia_y_validacion_muestran_mensaje_claro() -> None:
