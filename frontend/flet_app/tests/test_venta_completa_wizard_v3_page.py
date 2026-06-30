@@ -247,3 +247,104 @@ def test_comprador_manual_no_persistido_sigue_bloqueando_confirmacion() -> None:
         "Compradores no persistidos: Comprador manual no soportado"
     ]
     assert not wizard._can_confirm_sale()
+
+
+def test_accion_crear_comprador_en_venta_abre_ficha_contextual_y_conserva_estado() -> None:
+    wizard, api = _wizard()
+    wizard.state.codigo_venta = "VD-293"
+    wizard.state.objetos = [
+        ObjetoVentaWizardDraft(
+            tipo_objeto="INMUEBLE",
+            id_inmueble=293,
+            id_unidad_funcional=None,
+            texto_visual="Inmueble 293",
+            precio_asignado="5000.00",
+            persisted=True,
+        )
+    ]
+
+    control = wizard._build_buyers_step()
+    _find_button(control, "Crear comprador en esta venta").on_click(None)
+
+    assert wizard.state.pantalla_actual == "COMPRADOR_CONTEXTUAL"
+    assert wizard.state.codigo_venta == "VD-293"
+    assert wizard.state.objetos[0].id_inmueble == 293
+    assert wizard.state.compradores == []
+    text = "\n".join(_texts(wizard._build_contextual_buyer_full_step()))
+    assert "Crear comprador para esta venta" in text
+    assert "Guardar y volver a la venta" in text
+    assert "Cancelar y volver" in text
+    assert "return_to=venta_completa_wizard_v3" in text
+    assert "persona_create" not in text
+    assert api.crear_persona_calls == []
+
+
+def test_cancelar_ficha_contextual_vuelve_sin_agregar_comprador() -> None:
+    wizard, _ = _wizard()
+    wizard.state.pantalla_actual = "COMPRADOR_CONTEXTUAL"
+    wizard.contextual_buyer_nombre_field.value = "Ana"
+
+    wizard._cancel_contextual_buyer_full_step(None)
+
+    assert wizard.state.pantalla_actual == "COMPRADORES"
+    assert wizard.state.compradores == []
+    assert wizard.contextual_buyer_nombre_field.value == "Ana"
+
+
+def test_guardar_ficha_contextual_completa_vuelve_agrega_comprador_y_marca_preview_stale() -> None:
+    wizard, api = _wizard()
+    wizard.state.pantalla_actual = "COMPRADOR_CONTEXTUAL"
+    wizard.state.preview_data = {"ok": True}
+    wizard.state.preview_stale = False
+    wizard.contextual_buyer_nombre_field.value = "Ana"
+    wizard.contextual_buyer_apellido_field.value = "García"
+    wizard.contextual_buyer_cuit_field.value = "27-12345678-9"
+    wizard.contextual_buyer_doc_numero_field.value = "12345678"
+    wizard.contextual_buyer_email_field.value = "ana@example.com"
+    wizard.contextual_buyer_telefono_field.value = "+54 11 5555-5555"
+    wizard.contextual_buyer_domicilio_calle_field.value = "Av. Siempre Viva"
+    wizard.contextual_buyer_domicilio_numero_field.value = "742"
+    wizard.contextual_buyer_domicilio_localidad_field.value = "CABA"
+    wizard.contextual_buyer_domicilio_provincia_field.value = "Buenos Aires"
+    wizard.contextual_buyer_observaciones_field.value = "Observación contextual"
+
+    wizard._add_contextual_buyer(None)
+
+    assert wizard.state.pantalla_actual == "COMPRADORES"
+    assert len(wizard.state.compradores) == 1
+    comprador = wizard.state.compradores[0]
+    assert comprador.source == "contextual_venta"
+    assert comprador.persisted is False
+    assert comprador.id_persona is None
+    assert comprador.id_rol_participacion == "4"
+    assert comprador.texto_visual == "Ana García (se creará en esta venta)"
+    assert comprador.datos_persona is not None
+    assert comprador.datos_persona["contactos"] == [
+        {"tipo_contacto": "EMAIL", "valor": "ana@example.com", "principal": True},
+        {"tipo_contacto": "TELEFONO", "valor": "+54 11 5555-5555", "principal": False},
+    ]
+    assert comprador.datos_persona["domicilios"][0]["calle"] == "Av. Siempre Viva"
+    assert comprador.datos_persona["observaciones"] == "Observación contextual"
+    assert wizard.state.preview_stale is True
+    assert api.crear_persona_calls == []
+
+    payload = wizard._build_confirm_sale_direct_payload()
+    comprador_payload = payload["compradores"][0]
+    assert "id_persona" not in comprador_payload
+    assert comprador_payload["datos_persona"]["contactos"][0]["valor"] == "ana@example.com"
+    assert comprador_payload["datos_persona"]["domicilios"][0]["numero"] == "742"
+
+
+def test_comprador_existente_sigue_funcionando_con_ficha_contextual_disponible() -> None:
+    wizard, api = _wizard()
+    control = wizard._build_buyers_step()
+    assert "Crear comprador en esta venta" in "\n".join(_texts(control))
+    wizard.comprador_selector.search.value = "Compradora"
+
+    _find_button(control, "Buscar").on_click(None)
+    _find_button(control, "Seleccionar").on_click(None)
+    wizard._add_selected_buyer(None)
+
+    assert wizard.state.compradores[0].id_persona == 281
+    assert wizard.state.compradores[0].datos_persona is None
+    assert api.crear_persona_calls == []
