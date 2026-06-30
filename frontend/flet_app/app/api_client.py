@@ -53,6 +53,21 @@ class ApiClient:
             json=payload,
         )
 
+    def actualizar_persona(
+        self,
+        id_persona: int,
+        payload: dict[str, Any],
+        if_match_version: int,
+        op_id: str | None = None,
+    ) -> ApiResult:
+        headers = self._core_ef_write_headers(op_id)
+        headers["If-Match-Version"] = str(if_match_version)
+        return self._put(
+            f"/api/v1/personas/{id_persona}",
+            headers=headers,
+            json=payload,
+        )
+
     def buscar_personas(
         self,
         *,
