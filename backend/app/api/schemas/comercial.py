@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ReservaVentaParticipacionCreateRequest(BaseModel):
@@ -315,13 +315,40 @@ class ConfirmVentaDirectaCompletaObjetoRequest(BaseModel):
     observaciones: str | None = None
 
 
+class ConfirmVentaDirectaCompletaDocumentoPersonaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tipo_documento: str
+    numero_documento: str
+
+
+class ConfirmVentaDirectaCompletaDatosPersonaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tipo_persona: str
+    nombre: str | None = None
+    apellido: str | None = None
+    razon_social: str | None = None
+    cuit_cuil: str | None = None
+    documento_principal: ConfirmVentaDirectaCompletaDocumentoPersonaRequest | None = None
+
+
 class ConfirmVentaDirectaCompletaCompradorRequest(BaseModel):
-    id_persona: int
+    model_config = ConfigDict(extra="forbid")
+
+    id_persona: int | None = None
+    datos_persona: ConfirmVentaDirectaCompletaDatosPersonaRequest | None = None
     id_rol_participacion: int
     porcentaje_responsabilidad: Decimal | None = None
     fecha_desde: date | None = None
     fecha_hasta: date | None = None
     observaciones: str | None = None
+
+    @model_validator(mode="after")
+    def validate_contextual_persona_alternative(self):
+        if (self.id_persona is None) == (self.datos_persona is None):
+            raise ValueError("Cada comprador debe informar exactamente id_persona o datos_persona.")
+        return self
 
 
 class ConfirmVentaDirectaCompletaCondicionesComercialesRequest(BaseModel):

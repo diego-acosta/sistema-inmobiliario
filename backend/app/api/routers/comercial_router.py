@@ -109,6 +109,8 @@ from app.application.comercial.commands.confirm_venta_completa_desde_reserva imp
 from app.application.comercial.commands.confirm_venta_directa_completa import (
     ConfirmVentaDirectaCompletaCommand,
     ConfirmVentaDirectaCompletaCompradorInput,
+    ConfirmVentaDirectaCompletaDatosPersonaInput,
+    ConfirmVentaDirectaCompletaDocumentoPersonaInput,
     ConfirmVentaDirectaCompletaCondicionCuotaInput,
     ConfirmVentaDirectaCompletaCondicionesComercialesInput,
     ConfirmVentaDirectaCompletaConfirmacionInput,
@@ -1654,6 +1656,25 @@ def confirmar_venta_directa_completa(
         compradores=[
             ConfirmVentaDirectaCompletaCompradorInput(
                 id_persona=item.id_persona,
+                datos_persona=(
+                    ConfirmVentaDirectaCompletaDatosPersonaInput(
+                        tipo_persona=item.datos_persona.tipo_persona,
+                        nombre=item.datos_persona.nombre,
+                        apellido=item.datos_persona.apellido,
+                        razon_social=item.datos_persona.razon_social,
+                        cuit_cuil=item.datos_persona.cuit_cuil,
+                        documento_principal=(
+                            ConfirmVentaDirectaCompletaDocumentoPersonaInput(
+                                tipo_documento=item.datos_persona.documento_principal.tipo_documento,
+                                numero_documento=item.datos_persona.documento_principal.numero_documento,
+                            )
+                            if item.datos_persona.documento_principal is not None
+                            else None
+                        ),
+                    )
+                    if item.datos_persona is not None
+                    else None
+                ),
                 id_rol_participacion=item.id_rol_participacion,
                 porcentaje_responsabilidad=item.porcentaje_responsabilidad,
                 fecha_desde=item.fecha_desde,

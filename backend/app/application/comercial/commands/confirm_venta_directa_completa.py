@@ -25,8 +25,25 @@ class ConfirmVentaDirectaCompletaObjetoInput:
 
 
 @dataclass(slots=True)
+class ConfirmVentaDirectaCompletaDocumentoPersonaInput:
+    tipo_documento: str
+    numero_documento: str
+
+
+@dataclass(slots=True)
+class ConfirmVentaDirectaCompletaDatosPersonaInput:
+    tipo_persona: str
+    nombre: str | None
+    apellido: str | None
+    razon_social: str | None
+    cuit_cuil: str | None
+    documento_principal: ConfirmVentaDirectaCompletaDocumentoPersonaInput | None
+
+
+@dataclass(slots=True)
 class ConfirmVentaDirectaCompletaCompradorInput:
-    id_persona: int
+    id_persona: int | None
+    datos_persona: ConfirmVentaDirectaCompletaDatosPersonaInput | None
     id_rol_participacion: int
     porcentaje_responsabilidad: Decimal | None
     fecha_desde: date | None
