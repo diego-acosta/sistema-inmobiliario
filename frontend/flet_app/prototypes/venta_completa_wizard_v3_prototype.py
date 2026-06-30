@@ -4941,13 +4941,25 @@ class VentaCompletaWizardV3Prototype:
         non_persisted_objects = [objeto.texto_visual for objeto in self.state.objetos if not objeto.persisted]
         if non_persisted_objects:
             errors.append("Objetos no persistidos: " + ", ".join(non_persisted_objects))
-        non_persisted_buyers = [comprador.texto_visual for comprador in self.state.compradores if not comprador.persisted]
+        non_persisted_buyers = [
+            comprador.texto_visual
+            for comprador in self.state.compradores
+            if not comprador.persisted
+            and not self._is_confirmable_contextual_buyer(comprador)
+        ]
         if non_persisted_buyers:
             errors.append("Compradores no persistidos: " + ", ".join(non_persisted_buyers))
         return errors
 
     def _has_only_persisted_confirmation_records(self) -> bool:
         return not self._non_persisted_confirmation_errors()
+
+    @staticmethod
+    def _is_confirmable_contextual_buyer(comprador: CompradorWizardDraft) -> bool:
+        return (
+            comprador.source == "contextual_venta"
+            and comprador.datos_persona is not None
+        )
 
     @staticmethod
     def _record_source_label(source: str, persisted: bool) -> str:
@@ -7379,9 +7391,12 @@ class VentaCompletaWizardV3Prototype:
 
         seen_ids: set[int] = set()
         for comprador in self.state.compradores:
-            if comprador.id_persona in seen_ids:
-                return "No se puede duplicar id_persona entre compradores."
-            seen_ids.add(comprador.id_persona)
+            if comprador.id_persona is None and not self._is_confirmable_contextual_buyer(comprador):
+                return "Todos los compradores deben tener id_persona o datos_persona contextual."
+            if comprador.id_persona is not None:
+                if comprador.id_persona in seen_ids:
+                    return "No se puede duplicar id_persona entre compradores."
+                seen_ids.add(comprador.id_persona)
             if self.state.origen in {"DIRECTA", "RESERVA"} and not comprador.id_rol_participacion.strip():
                 return "Todos los compradores deben tener id_rol_participacion del rol COMPRADOR."
             percentage_raw = comprador.porcentaje_responsabilidad.strip()

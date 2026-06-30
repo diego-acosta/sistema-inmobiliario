@@ -459,6 +459,9 @@ class ConfirmVentaDirectaCompletaService:
                 ),
             )
             if duplicado is not None:
+                if self._same_op_id(duplicado.get("op_id_alta"), op_id):
+                    comprador.id_persona = duplicado["id_persona"]
+                    continue
                 return "PERSONA_DUPLICADA_REUTILIZAR_EXISTENTE"
 
             persona = self.comercial_repository.create_persona_contextual_tx(
@@ -575,3 +578,9 @@ class ConfirmVentaDirectaCompletaService:
 
     def _op_id(self, command: ConfirmVentaDirectaCompletaCommand) -> UUID | None:
         return getattr(command.context, "op_id", None)
+
+    @staticmethod
+    def _same_op_id(candidate_op_id: Any, current_op_id: UUID | None) -> bool:
+        if candidate_op_id is None or current_op_id is None:
+            return False
+        return str(candidate_op_id) == str(current_op_id)

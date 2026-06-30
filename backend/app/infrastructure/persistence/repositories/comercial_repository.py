@@ -3012,7 +3012,7 @@ class ComercialRepository:
         if cuit_cuil and cuit_cuil.strip():
             row = self.db.execute(
                 text("""
-                    SELECT id_persona
+                    SELECT id_persona, op_id_alta
                     FROM persona
                     WHERE deleted_at IS NULL
                       AND cuit_cuil = :cuit_cuil
@@ -3021,12 +3021,16 @@ class ComercialRepository:
                 {"cuit_cuil": cuit_cuil.strip()},
             ).mappings().one_or_none()
             if row is not None:
-                return {"id_persona": row["id_persona"], "criterio": "cuit_cuil"}
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "cuit_cuil",
+                    "op_id_alta": row["op_id_alta"],
+                }
 
         if documento is not None and documento.get("numero_documento"):
             row = self.db.execute(
                 text("""
-                    SELECT id_persona
+                    SELECT id_persona, op_id_alta
                     FROM persona_documento
                     WHERE deleted_at IS NULL
                       AND UPPER(tipo_documento_persona) = :tipo_documento
@@ -3039,13 +3043,17 @@ class ComercialRepository:
                 },
             ).mappings().one_or_none()
             if row is not None:
-                return {"id_persona": row["id_persona"], "criterio": "documento_principal"}
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "documento_principal",
+                    "op_id_alta": row["op_id_alta"],
+                }
 
         tipo = (tipo_persona or "").strip().upper()
         if tipo == "FISICA" and nombre and apellido:
             row = self.db.execute(
                 text("""
-                    SELECT id_persona
+                    SELECT id_persona, op_id_alta
                     FROM persona
                     WHERE deleted_at IS NULL
                       AND UPPER(tipo_persona) = 'FISICA'
@@ -3056,11 +3064,15 @@ class ComercialRepository:
                 {"nombre": nombre.strip().upper(), "apellido": apellido.strip().upper()},
             ).mappings().one_or_none()
             if row is not None:
-                return {"id_persona": row["id_persona"], "criterio": "nombre_apellido"}
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "nombre_apellido",
+                    "op_id_alta": row["op_id_alta"],
+                }
         if tipo == "JURIDICA" and razon_social:
             row = self.db.execute(
                 text("""
-                    SELECT id_persona
+                    SELECT id_persona, op_id_alta
                     FROM persona
                     WHERE deleted_at IS NULL
                       AND UPPER(tipo_persona) = 'JURIDICA'
@@ -3070,7 +3082,11 @@ class ComercialRepository:
                 {"razon_social": razon_social.strip().upper()},
             ).mappings().one_or_none()
             if row is not None:
-                return {"id_persona": row["id_persona"], "criterio": "razon_social"}
+                return {
+                    "id_persona": row["id_persona"],
+                    "criterio": "razon_social",
+                    "op_id_alta": row["op_id_alta"],
+                }
         return None
 
     def create_persona_contextual_tx(self, values: dict[str, Any]) -> dict[str, Any]:
