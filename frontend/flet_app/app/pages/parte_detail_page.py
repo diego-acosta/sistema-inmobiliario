@@ -12,6 +12,10 @@ from app.components.error_state import error_state
 from app.components.status_badge import status_badge
 
 
+FISCAL_DOCUMENT_TYPES = {"CUIT", "CUIL", "CDI"}
+DEFAULT_DOMICILIO_TIPO = "REAL"
+
+
 class ParteDetailPage:
     def __init__(self, api: ApiClient, id_persona: int, on_navigate) -> None:
         self.api = api
@@ -92,14 +96,14 @@ class ParteDetailPage:
                                 detail_section(
                                     "Documentos",
                                     [
-                                        self._associated_actions("documento"),
+                                        self._documento_principal_action(data),
                                         self._documentos_table(data.get("documentos", [])),
                                     ],
                                 ),
                                 detail_section(
                                     "Contactos",
                                     [
-                                        self._associated_actions("contacto"),
+                                        self._contacto_actions(),
                                         self._contactos_table(data.get("contactos", [])),
                                     ],
                                 ),
@@ -310,11 +314,39 @@ class ParteDetailPage:
         self.on_navigate("parte_detail", id_persona=self.id_persona)
 
 
+    def _documento_principal_action(self, data: dict[str, Any]) -> ft.Control:
+        if self._documento_identidad_principal(data) is not None:
+            return ft.Text(
+                "El documento principal ya está cargado. "
+                "La edición queda para un PR posterior."
+            )
+        return ft.Row(
+            controls=[
+                ft.OutlinedButton(
+                    "Cargar documento principal",
+                    on_click=lambda _: self._show_associated_form("documento"),
+                )
+            ]
+        )
+
+    def _contacto_actions(self) -> ft.Control:
+        return ft.Row(
+            controls=[
+                ft.OutlinedButton(
+                    "Agregar email",
+                    on_click=lambda _: self._show_associated_form("email"),
+                ),
+                ft.OutlinedButton(
+                    "Agregar teléfono",
+                    on_click=lambda _: self._show_associated_form("telefono"),
+                ),
+            ],
+            spacing=8,
+        )
+
     def _associated_actions(self, kind: str) -> ft.Control:
         labels = {
-            "documento": "Agregar documento",
-            "contacto": "Agregar contacto",
-            "domicilio": "Agregar domicilio",
+            "domicilio": "Agregar dirección",
         }
         return ft.Row(
             controls=[
@@ -334,9 +366,10 @@ class ParteDetailPage:
         self.associated_op_id = str(uuid4())
         self.associated_kind = kind
         title = {
-            "documento": "Agregar documento",
-            "contacto": "Agregar contacto",
-            "domicilio": "Agregar domicilio",
+            "documento": "Cargar documento principal",
+            "email": "Agregar email",
+            "telefono": "Agregar teléfono",
+            "domicilio": "Agregar dirección",
         }[kind]
         self.associated_panel.content = ft.Card(
             content=ft.Container(
@@ -372,27 +405,24 @@ class ParteDetailPage:
                 "tipo_documento": ft.TextField(label="Tipo de documento"),
                 "numero_documento": ft.TextField(label="Número de documento"),
                 "pais_emision": ft.TextField(label="País de emisión"),
-                "fecha_desde": ft.TextField(label="Fecha desde"),
-                "fecha_hasta": ft.TextField(label="Fecha hasta"),
                 "observaciones": ft.TextField(label="Observaciones", multiline=True),
             }
-        if kind == "contacto":
+        if kind == "email":
             return {
-                "tipo_contacto": ft.TextField(label="Tipo de contacto"),
-                "valor_contacto": ft.TextField(label="Valor de contacto"),
-                "fecha_desde": ft.TextField(label="Fecha desde"),
-                "fecha_hasta": ft.TextField(label="Fecha hasta"),
+                "valor_contacto": ft.TextField(label="Email"),
+                "observaciones": ft.TextField(label="Observaciones", multiline=True),
+            }
+        if kind == "telefono":
+            return {
+                "valor_contacto": ft.TextField(label="Teléfono"),
                 "observaciones": ft.TextField(label="Observaciones", multiline=True),
             }
         return {
-            "tipo_domicilio": ft.TextField(label="Tipo de domicilio"),
             "direccion": ft.TextField(label="Dirección"),
             "localidad": ft.TextField(label="Localidad"),
             "provincia": ft.TextField(label="Provincia"),
             "pais": ft.TextField(label="País"),
             "codigo_postal": ft.TextField(label="Código postal"),
-            "fecha_desde": ft.TextField(label="Fecha desde"),
-            "fecha_hasta": ft.TextField(label="Fecha hasta"),
             "observaciones": ft.TextField(label="Observaciones", multiline=True),
         }
 
@@ -406,6 +436,15 @@ class ParteDetailPage:
             for key, field in self.associated_fields.items()
         }
         payload["es_principal"] = bool(self.associated_principal.value)
+        if kind == "documento":
+            payload["es_principal"] = True
+        elif kind == "email":
+            payload["tipo_contacto"] = "EMAIL"
+        elif kind == "telefono":
+            payload["tipo_contacto"] = "TELEFONO"
+        elif kind == "domicilio":
+            # Valor interno requerido por backend; no se expone como elección UX.
+            payload["tipo_domicilio"] = DEFAULT_DOMICILIO_TIPO
         if self.associated_op_id is None:
             self.associated_op_id = str(uuid4())
         op_id = self.associated_op_id
@@ -413,7 +452,7 @@ class ParteDetailPage:
             result = self.api.crear_persona_documento(
                 self.id_persona, payload, op_id=op_id
             )
-        elif kind == "contacto":
+        elif kind in {"email", "telefono"}:
             result = self.api.crear_persona_contacto(
                 self.id_persona, payload, op_id=op_id
             )
@@ -474,6 +513,9 @@ class ParteDetailPage:
         return self._filtered_key_value_grid(
             [
                 ("Razon social", razon_social_complementaria),
+                ("Tipo documento", self._tipo_documento_identidad(data)),
+                ("Número documento", self._numero_documento_identidad(data)),
+                ("CUIT/CUIL/CDI", self._identificacion_fiscal(data)),
                 ("Fecha nacimiento", data.get("fecha_nacimiento")),
                 ("Fecha alta", data.get("fecha_alta")),
                 ("Codigo", data.get("codigo_persona")),
@@ -2186,23 +2228,57 @@ class ParteDetailPage:
     def _join_secondary(self, *values: object) -> str:
         return " · ".join(str(value) for value in values if value not in (None, ""))
 
-    def _documento_principal(self, data: dict[str, Any]) -> object:
+
+    def _documento_identidad_principal(
+        self, data: dict[str, Any]
+    ) -> dict[str, Any] | None:
         documentos = self._dict_rows(data.get("documentos"))
-        if not documentos:
+        identidad = [
+            item
+            for item in documentos
+            if str(item.get("tipo_documento") or item.get("tipo_documento_persona") or "")
+            .strip()
+            .upper()
+            not in FISCAL_DOCUMENT_TYPES
+        ]
+        if not identidad:
             return None
-        principal = next(
-            (
-                item
-                for item in documentos
-                if item.get("es_principal") or item.get("principal")
-            ),
-            documentos[0],
-        )
+        return next((item for item in identidad if self._is_principal(item)), identidad[0])
+
+    def _tipo_documento_identidad(self, data: dict[str, Any]) -> object:
+        documento = self._documento_identidad_principal(data)
+        if documento is None:
+            return None
+        return documento.get("tipo_documento") or documento.get("tipo_documento_persona")
+
+    def _numero_documento_identidad(self, data: dict[str, Any]) -> object:
+        documento = self._documento_identidad_principal(data)
+        if documento is None:
+            return None
         return (
-            principal.get("numero_documento")
-            or principal.get("documento")
-            or principal.get("valor")
+            documento.get("numero_documento")
+            or documento.get("documento")
+            or documento.get("valor")
         )
+
+    def _identificacion_fiscal(self, data: dict[str, Any]) -> object:
+        direct = data.get("cuit_cuil") or data.get("cuit") or data.get("cuil") or data.get("cdi")
+        if direct not in (None, ""):
+            return direct
+        for documento in self._dict_rows(data.get("documentos")):
+            tipo = str(
+                documento.get("tipo_documento")
+                or documento.get("tipo_documento_persona")
+                or ""
+            ).strip().upper()
+            if tipo in FISCAL_DOCUMENT_TYPES:
+                numero = documento.get("numero_documento")
+                if numero not in (None, ""):
+                    return self._join_secondary(tipo, numero)
+        return None
+
+    def _documento_principal(self, data: dict[str, Any]) -> object:
+        return self._numero_documento_identidad(data)
 
     def _contacto_principal(self, data: dict[str, Any]) -> object:
         contactos = self._dict_rows(data.get("contactos"))
