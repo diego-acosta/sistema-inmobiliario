@@ -451,6 +451,9 @@ def test_ficha_renderiza_y_crea_documento_contacto_domicilio() -> None:
     assert "financiero" not in associated_text
 
     _find_button(control, "Agregar documento").on_click(None)
+    documento_op_id = page.associated_op_id
+    assert documento_op_id
+    assert page.associated_kind == "documento"
     _find_field(page.associated_panel, "Tipo de documento").value = "PASAPORTE"
     _find_field(page.associated_panel, "Número de documento").value = "ABC123"
     _find_field(page.associated_panel, "País de emisión").value = "AR"
@@ -461,21 +464,29 @@ def test_ficha_renderiza_y_crea_documento_contacto_domicilio() -> None:
     assert api.documento_calls[0][1]["numero_documento"] == "ABC123"
     assert api.documento_calls[0][1]["pais_emision"] == "AR"
     assert api.documento_calls[0][1]["es_principal"] is True
-    assert api.documento_calls[0][2]
+    assert api.documento_calls[0][2] == documento_op_id
+    assert page.associated_op_id is None
+    assert page.associated_kind is None
 
     _find_button(control, "Agregar contacto").on_click(None)
     _find_button(page.associated_panel, "Cancelar").on_click(None)
     assert api.contacto_calls == []
 
     _find_button(control, "Agregar contacto").on_click(None)
+    contacto_op_id = page.associated_op_id
+    assert contacto_op_id
+    assert contacto_op_id != documento_op_id
     _find_field(page.associated_panel, "Tipo de contacto").value = "EMAIL"
     _find_field(page.associated_panel, "Valor de contacto").value = "grace@example.com"
     _find_button(page.associated_panel, "Guardar").on_click(None)
     assert api.contacto_calls[0][1]["tipo_contacto"] == "EMAIL"
     assert api.contacto_calls[0][1]["valor_contacto"] == "grace@example.com"
-    assert api.contacto_calls[0][2]
+    assert api.contacto_calls[0][2] == contacto_op_id
 
     _find_button(control, "Agregar domicilio").on_click(None)
+    domicilio_op_id = page.associated_op_id
+    assert domicilio_op_id
+    assert domicilio_op_id not in {documento_op_id, contacto_op_id}
     _find_field(page.associated_panel, "Tipo de domicilio").value = "REAL"
     _find_field(page.associated_panel, "Dirección").value = "Av Siempre Viva 742"
     _find_field(page.associated_panel, "Localidad").value = "CABA"
@@ -483,7 +494,7 @@ def test_ficha_renderiza_y_crea_documento_contacto_domicilio() -> None:
     assert api.domicilio_calls[0][1]["tipo_domicilio"] == "REAL"
     assert api.domicilio_calls[0][1]["direccion"] == "Av Siempre Viva 742"
     assert api.domicilio_calls[0][1]["localidad"] == "CABA"
-    assert api.domicilio_calls[0][2]
+    assert api.domicilio_calls[0][2] == domicilio_op_id
     assert navigations == [("parte_detail", {"id_persona": 42})] * 3
     assert api.detalle_ids == [42, 42, 42, 42]
     assert api.crear_persona_calls == []
@@ -516,3 +527,92 @@ def test_recarga_fallida_post_alta_muestra_mensaje_claro() -> None:
 
     assert "El dato se guardó, pero no se pudo recargar la ficha" in page.associated_message.value
     assert api.contacto_calls
+
+
+def test_documento_reutiliza_op_id_si_create_falla_y_cancelar_limpia_estado() -> None:
+    api = FakeApi(detalle=ApiResult(True, data=_detalle_asociados()))
+    api.documento_result = ApiResult(False, error_message="Documento duplicado", status_code=400)
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
+    control = page.build()
+
+    _find_button(control, "Agregar documento").on_click(None)
+    first_op_id = page.associated_op_id
+    assert first_op_id
+    assert page.associated_kind == "documento"
+    _find_field(page.associated_panel, "Tipo de documento").value = "DNI"
+    _find_field(page.associated_panel, "Número de documento").value = "123"
+
+    _find_button(page.associated_panel, "Guardar").on_click(None)
+    _find_button(page.associated_panel, "Guardar").on_click(None)
+
+    assert [call[2] for call in api.documento_calls] == [first_op_id, first_op_id]
+    assert page.associated_op_id == first_op_id
+    assert page.associated_kind == "documento"
+
+    _find_button(page.associated_panel, "Cancelar").on_click(None)
+    assert page.associated_op_id is None
+    assert page.associated_kind is None
+    assert page.associated_fields == {}
+    assert page.associated_panel.visible is False
+
+    _find_button(control, "Agregar documento").on_click(None)
+    assert page.associated_op_id
+    assert page.associated_op_id != first_op_id
+    assert page.associated_kind == "documento"
+
+
+def test_documento_reutiliza_op_id_si_recarga_falla_y_exito_limpia_estado() -> None:
+    api = FakeApi(detalle=ApiResult(True, data=_detalle_asociados()))
+    api.detalle_results = [
+        ApiResult(True, data=_detalle_asociados()),
+        ApiResult(False, error_message="down"),
+        ApiResult(True, data={**_detalle_asociados(), "version_registro": 8}),
+    ]
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    page = ParteDetailPage(
+        api,
+        id_persona=42,
+        on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)),
+    )
+    control = page.build()
+
+    _find_button(control, "Agregar documento").on_click(None)
+    first_op_id = page.associated_op_id
+    assert first_op_id
+    _find_field(page.associated_panel, "Tipo de documento").value = "DNI"
+    _find_field(page.associated_panel, "Número de documento").value = "123"
+
+    _find_button(page.associated_panel, "Guardar").on_click(None)
+    assert "El dato se guardó, pero no se pudo recargar la ficha" in page.associated_message.value
+    assert page.associated_op_id == first_op_id
+
+    _find_button(page.associated_panel, "Guardar").on_click(None)
+
+    assert [call[2] for call in api.documento_calls] == [first_op_id, first_op_id]
+    assert page.associated_op_id is None
+    assert page.associated_kind is None
+    assert navigations == [("parte_detail", {"id_persona": 42})]
+
+
+def test_contacto_y_domicilio_reutilizan_op_id_en_retry_con_error() -> None:
+    for kind, button_text, field_label, calls_attr, result_attr in [
+        ("contacto", "Agregar contacto", "Valor de contacto", "contacto_calls", "contacto_result"),
+        ("domicilio", "Agregar domicilio", "Dirección", "domicilio_calls", "domicilio_result"),
+    ]:
+        api = FakeApi(detalle=ApiResult(True, data=_detalle_asociados()))
+        setattr(api, result_attr, ApiResult(False, error_message="error", status_code=400))
+        page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
+        control = page.build()
+
+        _find_button(control, button_text).on_click(None)
+        first_op_id = page.associated_op_id
+        assert first_op_id
+        assert page.associated_kind == kind
+        _find_field(page.associated_panel, field_label).value = "valor"
+
+        _find_button(page.associated_panel, "Guardar").on_click(None)
+        _find_button(page.associated_panel, "Guardar").on_click(None)
+
+        calls = getattr(api, calls_attr)
+        assert [call[2] for call in calls] == [first_op_id, first_op_id]
+        assert page.associated_op_id == first_op_id

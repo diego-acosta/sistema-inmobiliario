@@ -25,6 +25,8 @@ class ParteDetailPage:
         self.associated_message = ft.Text("", visible=False)
         self.associated_fields: dict[str, ft.TextField] = {}
         self.associated_principal = ft.Checkbox(label="Principal", value=False)
+        self.associated_op_id: str | None = None
+        self.associated_kind: str | None = None
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -329,6 +331,8 @@ class ParteDetailPage:
         self.associated_fields = self._associated_form_fields(kind)
         self.associated_principal = ft.Checkbox(label="Principal", value=False)
         self.associated_message = ft.Text("", visible=False)
+        self.associated_op_id = str(uuid4())
+        self.associated_kind = kind
         title = {
             "documento": "Agregar documento",
             "contacto": "Agregar contacto",
@@ -393,9 +397,7 @@ class ParteDetailPage:
         }
 
     def _cancel_associated(self, _) -> None:
-        self.associated_panel.visible = False
-        self.associated_panel.content = None
-        self.associated_fields = {}
+        self._clear_associated_form_state()
         self._safe_update(self.associated_panel)
 
     def _save_associated(self, kind: str) -> None:
@@ -404,17 +406,20 @@ class ParteDetailPage:
             for key, field in self.associated_fields.items()
         }
         payload["es_principal"] = bool(self.associated_principal.value)
+        if self.associated_op_id is None:
+            self.associated_op_id = str(uuid4())
+        op_id = self.associated_op_id
         if kind == "documento":
             result = self.api.crear_persona_documento(
-                self.id_persona, payload, op_id=str(uuid4())
+                self.id_persona, payload, op_id=op_id
             )
         elif kind == "contacto":
             result = self.api.crear_persona_contacto(
-                self.id_persona, payload, op_id=str(uuid4())
+                self.id_persona, payload, op_id=op_id
             )
         else:
             result = self.api.crear_persona_domicilio(
-                self.id_persona, payload, op_id=str(uuid4())
+                self.id_persona, payload, op_id=op_id
             )
         if not result.success:
             self._show_associated_error(
@@ -429,7 +434,15 @@ class ParteDetailPage:
             )
             return
         self.data = refreshed.data
+        self._clear_associated_form_state()
         self.on_navigate("parte_detail", id_persona=self.id_persona)
+
+    def _clear_associated_form_state(self) -> None:
+        self.associated_panel.visible = False
+        self.associated_panel.content = None
+        self.associated_fields = {}
+        self.associated_op_id = None
+        self.associated_kind = None
 
     def _show_associated_error(self, message: str) -> None:
         self.associated_message.value = message
