@@ -99,6 +99,44 @@ class RolSeguridadPermisosResponse(BaseModel):
     data: list[PermisoData]
 
 
+class UsuarioRolSeguridadCreateRequest(BaseModel):
+    id_rol_seguridad: int
+
+
+class UsuarioRolSeguridadData(BaseModel):
+    id_usuario_rol_seguridad: int
+    id_usuario: int
+    id_rol_seguridad: int
+    fecha_desde: datetime
+    fecha_hasta: datetime | None
+    version_registro: int
+    updated_at: datetime
+    deleted_at: datetime | None
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: str | None
+    op_id_ultima_modificacion: str | None
+    codigo_rol: str
+    nombre_rol: str
+    descripcion: str | None
+    estado_rol: str
+
+
+class UsuarioRolSeguridadListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[UsuarioRolSeguridadData]
+
+
+class UsuarioRolSeguridadCreateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: UsuarioRolSeguridadData
+
+
+class UsuarioRolSeguridadBajaResponse(BaseModel):
+    ok: Literal[True] = True
+    data: UsuarioRolSeguridadData
+
+
 class ErrorResponse(BaseModel):
     ok: Literal[False] = False
     error_code: str
