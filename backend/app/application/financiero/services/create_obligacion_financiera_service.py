@@ -103,9 +103,11 @@ class CreateObligacionFinancieraService:
 
         importe_total = sum(c.importe_componente for c in command.composiciones)
 
+        fecha_emision = min(now.date(), command.fecha_vencimiento)
+
         obligacion_payload = ObligacionCreatePayload(
             id_relacion_generadora=command.id_relacion_generadora,
-            fecha_emision=now.date(),
+            fecha_emision=fecha_emision,
             fecha_vencimiento=command.fecha_vencimiento,
             importe_total=importe_total,
             estado_obligacion="PROYECTADA",

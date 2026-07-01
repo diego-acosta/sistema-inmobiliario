@@ -22,7 +22,7 @@ def _crear_ob(client, *, id_relacion_generadora: int, fecha_vencimiento: str = "
             ],
         },
     )
-    assert response.status_code == 201
+    assert response.status_code == 201, response.json()
     return response.json()["data"]
 
 

@@ -30,7 +30,7 @@ def _crear_ob(
             ],
         },
     )
-    assert response.status_code == 201
+    assert response.status_code == 201, response.json()
     return response.json()["data"]
 
 

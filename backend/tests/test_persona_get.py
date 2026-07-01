@@ -229,6 +229,7 @@ def test_get_persona_devuelve_persona_y_subrecursos(client, db_session) -> None:
         "fecha_nacimiento": "1985-04-12",
         "estado_persona": "ACTIVA",
         "observaciones": "Alta inicial",
+        "version_registro": 1,
         "documentos": [
             {
                 "id_persona_documento": id_persona_documento,
