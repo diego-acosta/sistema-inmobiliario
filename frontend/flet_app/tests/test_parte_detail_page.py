@@ -28,6 +28,7 @@ class FakeApi:
         self.update_calls: list[tuple[int, dict[str, Any], int, str | None]] = []
         self.update_result = ApiResult(True, data={"id_persona": 42, "version_registro": 8})
         self.crear_persona_calls: list[dict[str, Any]] = []
+        self.registrar_pago_calls: list[dict[str, Any]] = []
 
     def get_personas(self, **_: Any) -> ApiResult:
         return self.personas
@@ -52,6 +53,10 @@ class FakeApi:
     def crear_persona(self, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
         self.crear_persona_calls.append(payload)
         return ApiResult(True, data={"id_persona": 999})
+
+    def registrar_pago_persona(self, id_persona: int, **kwargs: Any) -> ApiResult:
+        self.registrar_pago_calls.append({"id_persona": id_persona, **kwargs})
+        return ApiResult(True, data={"monto_aplicado": kwargs.get("monto", 0), "obligaciones_pagadas": []})
 
 
 def _walk(control: object):
@@ -477,6 +482,7 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "Ventas" in text
     assert "Comprador en Reserva #15 — Lote 12" in text
     assert "Estado financiero" in text
+    assert "Estado de cuenta" in text
     assert "Saldo pendiente" in text
     assert "Obligaciones activas" in text
     assert "Último pago" in text
@@ -487,3 +493,60 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert _find_button(control, "Editar datos principales") is not None
     assert api.crear_persona_calls == []
     assert api.update_calls == []
+    assert api.registrar_pago_calls == []
+
+
+def test_ficha_redisenada_preserva_estado_de_cuenta_y_panel_de_pago(monkeypatch) -> None:
+    monkeypatch.setattr(ft.Control, "update", lambda self: None)
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "estado_persona": "ACTIVA",
+                "version_registro": 7,
+                "documentos": [],
+                "contactos": [],
+                "domicilios": [],
+                "participaciones": [],
+                "resumen_financiero": {"saldo_pendiente_total": 1000, "cantidad_obligaciones": 1},
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        ),
+        estado_cuenta=ApiResult(
+            True,
+            data={
+                "resumen": {"saldo_total": 1000},
+                "grupos_deuda": [],
+                "obligaciones": [
+                    {
+                        "id_obligacion_financiera": 77,
+                        "tipo_origen": "venta",
+                        "fecha_vencimiento": "2026-07-10",
+                        "estado_obligacion": "PENDIENTE",
+                        "saldo_pendiente": 1000,
+                        "total_con_mora": 1100,
+                        "mora_calculada": 100,
+                    }
+                ],
+            },
+        ),
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    text = "\n".join(_texts(control))
+
+    assert "Estado de cuenta" in text
+    assert "Conceptos a pagar" in text
+    pagar = _find_button(control, "Pagar")
+    pagar.on_click(None)
+
+    updated_text = "\n".join(_texts(control))
+    assert "Registrar pago" in updated_text
+    assert "Confirmar pago" in updated_text
+    assert api.crear_persona_calls == []
+    assert api.update_calls == []
+    assert api.registrar_pago_calls == []

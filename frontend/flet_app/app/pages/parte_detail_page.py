@@ -70,6 +70,7 @@ class ParteDetailPage:
                 self._admin_card("Direcciones", [self._domicilios_resumen(data.get("domicilios", []))]),
                 self._admin_card("Participaciones", [self._participaciones_resumen(data.get("participaciones", []))]),
                 self._admin_card("Estado financiero", [self._estado_financiero(data)]),
+                self._admin_card("Estado de cuenta", self._estado_cuenta_tab(data, estado_cuenta_result)),
                 self._admin_card("Datos técnicos", [self._datos_tecnicos(data)], low_emphasis=True),
             ],
             spacing=14,
