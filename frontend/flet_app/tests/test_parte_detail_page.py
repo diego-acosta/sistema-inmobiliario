@@ -442,6 +442,10 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
                         "descripcion_origen": "Reserva #15",
                         "lote": "Lote 12",
                         "fecha_desde": "2022-01-01",
+                    },
+                    {
+                        "tipo_relacion": "reserva_venta",
+                        "codigo_rol": "COMPRADOR",
                     }
                 ],
                 "resumen_financiero": {
@@ -481,6 +485,8 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "Participaciones" in text
     assert "Ventas" in text
     assert "Comprador en Reserva #15 — Lote 12" in text
+    assert "Comprador en Reserva de venta" in text
+    assert "reserva_venta" not in text
     assert "Estado financiero" in text
     assert "Estado de cuenta" in text
     assert "Saldo pendiente" in text
@@ -550,3 +556,38 @@ def test_ficha_redisenada_preserva_estado_de_cuenta_y_panel_de_pago(monkeypatch)
     assert api.crear_persona_calls == []
     assert api.update_calls == []
     assert api.registrar_pago_calls == []
+
+
+def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None:
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "estado_persona": "ACTIVA",
+                "version_registro": 7,
+                "documentos": [],
+                "contactos": [],
+                "domicilios": [],
+                "participaciones": [],
+                "resumen_financiero": {},
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        )
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    rows = [item for item in _walk(control) if isinstance(item, ft.Row)]
+    balanced_rows = [row for row in rows if len(getattr(row, "controls", []) or []) == 2]
+
+    assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [3, 2] for row in balanced_rows)
+    assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [2, 3] for row in balanced_rows)
+
+    text = "\n".join(_texts(control))
+    assert "Sin contactos registrados." in text
+    assert "Sin domicilios registrados." in text
+    assert "tipo_contacto" not in text
+    assert "tipo_domicilio" not in text

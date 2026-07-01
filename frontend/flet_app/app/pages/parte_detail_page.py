@@ -65,10 +65,22 @@ class ParteDetailPage:
                 ),
                 self._header_card(data),
                 self.edit_panel,
-                self._admin_card("Datos principales", [self._datos_base(data)]),
-                self._admin_card("Contactos", [self._contactos_resumen(data.get("contactos", []))]),
-                self._admin_card("Direcciones", [self._domicilios_resumen(data.get("domicilios", []))]),
-                self._admin_card("Participaciones", [self._participaciones_resumen(data.get("participaciones", []))]),
+                ft.Row(
+                    controls=[
+                        self._admin_card("Datos principales", [self._datos_base(data)], expand=3),
+                        self._admin_card("Contactos", [self._contactos_resumen(data.get("contactos", []))], expand=2),
+                    ],
+                    spacing=14,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                ),
+                ft.Row(
+                    controls=[
+                        self._admin_card("Direcciones", [self._domicilios_resumen(data.get("domicilios", []))], expand=2),
+                        self._admin_card("Participaciones", [self._participaciones_resumen(data.get("participaciones", []))], expand=3),
+                    ],
+                    spacing=14,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                ),
                 self._admin_card("Estado financiero", [self._estado_financiero(data)]),
                 self._admin_card("Estado de cuenta", self._estado_cuenta_tab(data, estado_cuenta_result)),
                 self._admin_card("Datos técnicos", [self._datos_tecnicos(data)], low_emphasis=True),
@@ -250,7 +262,12 @@ class ParteDetailPage:
             pass
 
     def _admin_card(
-        self, title: str, controls: list[ft.Control], *, low_emphasis: bool = False
+        self,
+        title: str,
+        controls: list[ft.Control],
+        *,
+        expand: int | bool | None = None,
+        low_emphasis: bool = False,
     ) -> ft.Control:
         return ft.Container(
             content=ft.Column(
@@ -269,6 +286,7 @@ class ParteDetailPage:
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
             border_radius=10,
             bgcolor=ft.Colors.BLUE_GREY_50 if low_emphasis else ft.Colors.WHITE,
+            expand=expand,
         )
 
     def _datos_base(self, data: dict[str, Any]) -> ft.Control:
@@ -1723,12 +1741,33 @@ class ParteDetailPage:
 
     def _participacion_label(self, item: dict[str, Any]) -> str:
         rol = self._friendly_label(item.get("codigo_rol") or item.get("rol") or "Participación")
-        origen = (item.get("descripcion_origen") or item.get("codigo_venta") or item.get("codigo_contrato") or item.get("codigo") or item.get("tipo_relacion") or item.get("tipo_origen") or "origen asociado")
+        origen = self._participacion_origen_label(item)
         inmueble = item.get("lote") or item.get("unidad") or item.get("inmueble")
         label = f"{rol} en {origen}"
         if inmueble:
             label = f"{label} — {inmueble}"
         return label
+
+
+    def _participacion_origen_label(self, item: dict[str, Any]) -> str:
+        raw = (
+            item.get("descripcion_origen")
+            or item.get("codigo_venta")
+            or item.get("codigo_contrato")
+            or item.get("codigo")
+            or item.get("tipo_relacion")
+            or item.get("tipo_origen")
+            or "origen asociado"
+        )
+        normalized = str(raw).strip().lower()
+        labels = {
+            "reserva_venta": "Reserva de venta",
+            "venta": "Venta",
+            "contrato_alquiler": "Contrato de alquiler",
+            "solicitud_alquiler": "Solicitud de alquiler",
+            "reserva_locativa": "Reserva locativa",
+        }
+        return labels.get(normalized, self._friendly_label(raw))
 
     def _participaciones_table(self, rows: object) -> ft.Control:
         rows = self._dict_rows(rows)
