@@ -136,7 +136,7 @@ def test_ficha_renderiza_datos_reales_y_secciones_vacias_sin_crudos() -> None:
     assert api.detalle_ids == [42]
     assert "Ada Lovelace" in text
     assert "20-12345678-9" in text
-    assert "Sin documentos registrados." in text
+    assert "Datos principales" in text
     assert "Sin contactos registrados." in text
     assert "Sin domicilios registrados." in text
     assert "Sin roles ni participaciones." in text
@@ -245,7 +245,7 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     )
     control = page.build()
 
-    button = _find_button(control, "Editar datos básicos")
+    button = _find_button(control, "Editar datos principales")
     button.on_click(None)
     assert page.edit_panel.visible is True
     assert _find_field(page.edit_panel, "Nombre").value == "Ada"
@@ -304,7 +304,7 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     )
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None)
     control = page.build()
-    _find_button(control, "Editar datos básicos").on_click(None)
+    _find_button(control, "Editar datos principales").on_click(None)
     _find_field(page.edit_panel, "Nombre").value = "Cambio descartado"
     _find_button(page.edit_panel, "Cancelar").on_click(None)
 
@@ -346,7 +346,7 @@ def test_guardado_exitoso_con_fallo_de_recarga_muestra_error_y_no_navega() -> No
     )
     control = page.build()
 
-    _find_button(control, "Editar datos básicos").on_click(None)
+    _find_button(control, "Editar datos principales").on_click(None)
     _find_field(page.edit_panel, "Nombre").value = "Augusta Ada"
     _find_button(page.edit_panel, "Guardar").on_click(None)
 
@@ -379,10 +379,111 @@ def test_error_concurrencia_y_validacion_muestran_mensaje_claro() -> None:
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None)
     control = page.build()
     api.update_result = ApiResult(False, status_code=409, error_code="CONCURRENCY_ERROR")
-    _find_button(control, "Editar datos básicos").on_click(None)
+    _find_button(control, "Editar datos principales").on_click(None)
     _find_button(page.edit_panel, "Guardar").on_click(None)
     assert "La persona fue modificada por otro usuario" in page.edit_message.value
 
     api.update_result = ApiResult(False, status_code=422, error_message="nombre requerido")
     _find_button(page.edit_panel, "Guardar").on_click(None)
     assert "nombre requerido" in page.edit_message.value
+
+
+def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_crudos() -> None:
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "nombre": "Ada",
+                "apellido": "Lovelace",
+                "razon_social": None,
+                "estado_persona": "ACTIVA",
+                "cuit_cuil": "20-12345678-9",
+                "fecha_nacimiento": "1815-12-10",
+                "observaciones": "Matemática",
+                "version_registro": 7,
+                "uid_global": "uid-ada",
+                "updated_at": "2026-06-01T10:00:00",
+                "documentos": [
+                    {"tipo_documento": "DNI", "numero_documento": "12345678", "es_principal": True}
+                ],
+                "contactos": [
+                    {
+                        "tipo_contacto": "EMAIL",
+                        "valor_contacto": "ada@example.com",
+                        "es_principal": True,
+                        "fecha_desde": "2020-01-01",
+                        "fecha_hasta": "2021-01-01",
+                    },
+                    {"tipo_contacto": "TELEFONO", "valor_contacto": "+54 299 123", "es_principal": False},
+                ],
+                "domicilios": [
+                    {
+                        "tipo_domicilio": "REAL",
+                        "calle": "San Martín 123",
+                        "localidad": "Neuquén",
+                        "provincia": "Neuquén",
+                        "es_principal": True,
+                        "fecha_desde": "2020-01-01",
+                        "fecha_hasta": "2021-01-01",
+                    }
+                ],
+                "participaciones": [
+                    {
+                        "tipo_relacion": "venta",
+                        "codigo_rol": "COMPRADOR",
+                        "descripcion_origen": "Reserva #15",
+                        "lote": "Lote 12",
+                        "fecha_desde": "2022-01-01",
+                    }
+                ],
+                "resumen_financiero": {
+                    "saldo_pendiente_total": 1500,
+                    "cantidad_obligaciones": 2,
+                    "fecha_ultimo_pago": "2026-05-20",
+                    "mora_calculada": 100,
+                },
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        )
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    text = "\n".join(_texts(control))
+
+    assert "Ada Lovelace" in text
+    assert "ACTIVA" in text
+    assert "FISICA" in text
+    assert "12345678" in text
+    assert "Datos principales" in text
+    assert "Documento de identidad" in text
+    assert "CUIT/CUIL/CDI" in text
+    assert "20-12345678-9" in text
+    assert "Contactos" in text
+    assert "Emails" in text
+    assert "ada@example.com" in text
+    assert "Teléfonos" in text
+    assert "+54 299 123" in text
+    assert "tipo_contacto" not in text
+    assert "fecha_desde" not in text
+    assert "fecha_hasta" not in text
+    assert "Direcciones" in text
+    assert "San Martín 123, Neuquén, Neuquén" in text
+    assert "tipo_domicilio" not in text
+    assert "Participaciones" in text
+    assert "Ventas" in text
+    assert "Comprador en Reserva #15 — Lote 12" in text
+    assert "Estado financiero" in text
+    assert "Saldo pendiente" in text
+    assert "Obligaciones activas" in text
+    assert "Último pago" in text
+    assert "Mora" in text
+    assert text.rfind("Datos técnicos") > text.rfind("Estado financiero")
+    assert "id_persona" in text
+    assert "version_registro" in text
+    assert _find_button(control, "Editar datos principales") is not None
+    assert api.crear_persona_calls == []
+    assert api.update_calls == []
