@@ -53,7 +53,7 @@ class ParteDetailPage:
             )
 
         self.data = data
-        return ft.Column(
+        return ft.ListView(
             controls=[
                 ft.Row(
                     controls=[
@@ -87,7 +87,7 @@ class ParteDetailPage:
             ],
             spacing=14,
             expand=True,
-            scroll=ft.ScrollMode.AUTO,
+            auto_scroll=False,
         )
 
     def _header_card(self, data: dict[str, Any]) -> ft.Control:

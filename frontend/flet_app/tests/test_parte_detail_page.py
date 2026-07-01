@@ -489,6 +489,7 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "reserva_venta" not in text
     assert "Estado financiero" in text
     assert "Estado de cuenta" in text
+    assert "Sin deuda registrada" in text
     assert "Saldo pendiente" in text
     assert "Obligaciones activas" in text
     assert "Último pago" in text
@@ -580,6 +581,7 @@ def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None
     )
 
     control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    assert isinstance(control, ft.ListView)
     rows = [item for item in _walk(control) if isinstance(item, ft.Row)]
     balanced_rows = [row for row in rows if len(getattr(row, "controls", []) or []) == 2]
 
