@@ -49,7 +49,11 @@ class UsuarioRolSeguridadRepository(BaseRepository[Any]):
 
     @staticmethod
     def _map(row: Any) -> dict[str, Any]:
-        return dict(row)
+        mapped = dict(row)
+        for field in ("op_id_alta", "op_id_ultima_modificacion"):
+            if mapped.get(field) is not None:
+                mapped[field] = str(mapped[field])
+        return mapped
 
     @staticmethod
     def _payload_matches(row: dict[str, Any], payload: dict[str, Any]) -> bool:
