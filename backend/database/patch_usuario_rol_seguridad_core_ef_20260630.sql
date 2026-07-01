@@ -13,3 +13,8 @@ ALTER TABLE public.usuario_rol_seguridad
 CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_rol_seguridad_op_id_alta
     ON public.usuario_rol_seguridad (op_id_alta)
     WHERE op_id_alta IS NOT NULL;
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_rol_seguridad_activo
+    ON public.usuario_rol_seguridad (id_usuario, id_rol_seguridad)
+    WHERE deleted_at IS NULL AND fecha_hasta IS NULL;

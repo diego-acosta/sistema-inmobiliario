@@ -34,6 +34,7 @@ from app.infrastructure.persistence.repositories.rol_seguridad_repository import
 )
 from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (
     UsuarioRolSeguridadConcurrencyError,
+    UsuarioRolSeguridadDuplicateActiveError,
     UsuarioRolSeguridadIdempotencyConflictError,
     UsuarioRolSeguridadRepository,
 )
@@ -328,6 +329,8 @@ def assign_rol_seguridad_to_usuario(
         asignacion = repo.create(id_usuario, request.model_dump(), core)
     except UsuarioRolSeguridadIdempotencyConflictError as exc:
         return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except UsuarioRolSeguridadDuplicateActiveError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
     except Exception as exc:
         return _error(
             500,

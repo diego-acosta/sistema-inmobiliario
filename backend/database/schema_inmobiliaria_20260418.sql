@@ -7947,6 +7947,13 @@ CREATE UNIQUE INDEX ux_usuario_rol_seguridad_op_id_alta ON public.usuario_rol_se
 
 
 --
+-- Name: ux_usuario_rol_seguridad_activo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_usuario_rol_seguridad_activo ON public.usuario_rol_seguridad USING btree (id_usuario, id_rol_seguridad) WHERE ((deleted_at IS NULL) AND (fecha_hasta IS NULL));
+
+
+--
 -- Name: usuario uq_usuario_codigo; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
