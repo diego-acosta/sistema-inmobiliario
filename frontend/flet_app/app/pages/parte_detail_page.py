@@ -157,7 +157,7 @@ class ParteDetailPage:
         card = self._admin_card(
             "Datos principales",
             self._datos_principales_controls(data),
-            height=265,
+            height=self._datos_principales_height(),
             action=self._datos_principales_action(),
         )
         self.basic_data_card = card
@@ -167,6 +167,9 @@ class ParteDetailPage:
         if self.editing_basic_data:
             return [self._basic_edit_form()]
         return [self._datos_base(data)]
+
+    def _datos_principales_height(self) -> int:
+        return 360 if self.editing_basic_data else 265
 
     def _datos_principales_action(self) -> ft.Control | None:
         if self.editing_basic_data:
@@ -281,10 +284,11 @@ class ParteDetailPage:
         replacement = self._admin_card(
             "Datos principales",
             self._datos_principales_controls(self.data),
-            height=265,
+            height=self._datos_principales_height(),
             action=self._datos_principales_action(),
         )
         mounted_card.content = replacement.content
+        mounted_card.height = replacement.height
         self._safe_update(mounted_card)
 
     def _cancel_basic_edit(self, _) -> None:

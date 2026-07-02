@@ -256,6 +256,7 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     button.on_click(None)
     assert page.editing_basic_data is True
     assert page.basic_data_card is mounted_card
+    assert mounted_card.height >= 345
     assert _find_field(mounted_card, "Nombre").value == "Ada"
     assert _find_field(mounted_card, "Apellido").value == "Lovelace"
     assert _find_button(mounted_card, "Guardar") is not None
@@ -325,6 +326,7 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
 
     assert page.editing_basic_data is False
     assert page.basic_data_card is mounted_card
+    assert mounted_card.height == 265
     read_text = "\n".join(_texts(mounted_card))
     assert "Editar datos principales" in read_text
     assert "Guardar" not in read_text
@@ -673,6 +675,7 @@ def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
     _find_button(datos_card, "Editar datos principales").on_click(None)
     assert page.editing_basic_data is True
     assert page.basic_data_card is mounted_card
+    assert mounted_card.height >= 345
     assert _find_field(mounted_card, "Nombre") is not None
 
 
