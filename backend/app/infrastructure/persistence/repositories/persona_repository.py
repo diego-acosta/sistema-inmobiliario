@@ -1200,6 +1200,7 @@ class PersonaRepository(BaseRepository[Any]):
             """
             SELECT
                 id_persona_contacto,
+                version_registro,
                 tipo_contacto,
                 valor_contacto,
                 es_principal
@@ -1214,6 +1215,7 @@ class PersonaRepository(BaseRepository[Any]):
         return [
             {
                 "id_persona_contacto": row["id_persona_contacto"],
+                "version_registro": row["version_registro"],
                 "tipo_contacto": row["tipo_contacto"],
                 "valor_contacto": row["valor_contacto"],
                 "es_principal": row["es_principal"],
@@ -1292,6 +1294,7 @@ class PersonaRepository(BaseRepository[Any]):
             """
             SELECT
                 id_persona_domicilio,
+                version_registro,
                 tipo_domicilio,
                 direccion,
                 localidad,
@@ -1310,6 +1313,7 @@ class PersonaRepository(BaseRepository[Any]):
         return [
             {
                 "id_persona_domicilio": row["id_persona_domicilio"],
+                "version_registro": row["version_registro"],
                 "tipo_domicilio": row["tipo_domicilio"],
                 "direccion": row["direccion"],
                 "localidad": row["localidad"],

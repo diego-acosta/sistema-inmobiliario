@@ -113,6 +113,7 @@ def test_get_persona_domicilios_devuelve_solo_no_eliminados(client, db_session) 
     assert len(body["data"]) == 1
     assert body["data"][0] == {
         "id_persona_domicilio": id_persona_domicilio_visible,
+        "version_registro": domicilio_response.json()["data"]["version_registro"],
         "tipo_domicilio": "REAL",
         "direccion": "Calle 123",
         "localidad": "Neuquen",

@@ -23,6 +23,11 @@ class ParteDetailPage:
         self.edit_fields: dict[str, ft.TextField] = {}
         self.editing_basic_data = False
         self.basic_data_card: ft.Container | None = None
+        self.active_modal_kind: str | None = None
+        self.active_modal_row: dict[str, Any] = {}
+        self.modal_fields: dict[str, ft.TextField | ft.Checkbox] = {}
+        self.modal_message = ft.Text("", visible=False)
+        self.active_dialog: ft.AlertDialog | None = None
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -70,6 +75,7 @@ class ParteDetailPage:
                                         [self._domicilios_resumen(data.get("domicilios", []))],
                                         height=145,
                                         scroll_body=True,
+                                        action=ft.TextButton("Agregar dirección", on_click=lambda e: self._open_domicilio_dialog(e)),
                                     ),
                                     ft.Row(
                                         controls=[
@@ -79,6 +85,7 @@ class ParteDetailPage:
                                                 expand=1,
                                                 height=140,
                                                 scroll_body=True,
+                                                action=ft.TextButton("Agregar teléfono", on_click=lambda e: self._open_contacto_dialog("telefono", e)),
                                             ),
                                             self._admin_card(
                                                 "Mail",
@@ -86,6 +93,7 @@ class ParteDetailPage:
                                                 expand=1,
                                                 height=140,
                                                 scroll_body=True,
+                                                action=ft.TextButton("Agregar mail", on_click=lambda e: self._open_contacto_dialog("email", e)),
                                             ),
                                         ],
                                         spacing=14,
@@ -351,6 +359,7 @@ class ParteDetailPage:
             control.update()
         except AssertionError:
             pass
+
 
     def _admin_card(
         self,
@@ -1864,6 +1873,23 @@ class ParteDetailPage:
     def _sum_field(self, rows: list[dict[str, Any]], key: str) -> float:
         return sum(self._to_number(row.get(key)) for row in rows)
 
+
+
+    def _contacto_kind(self, contacto: dict[str, Any]) -> str:
+        value = str(contacto.get("tipo_contacto") or "").upper()
+        raw = str(self._contacto_value(contacto)).lower()
+        if "MAIL" in value or "EMAIL" in value or "@" in raw:
+            return "email"
+        if any(token in value for token in ("TEL", "WHATSAPP", "CEL")):
+            return "telefono"
+        return "otro"
+
+    def _contacto_value(self, contacto: dict[str, Any]) -> str:
+        return str(contacto.get("valor_contacto") or contacto.get("valor") or contacto.get("contacto") or "Sin contacto informado.")
+
+    def _principal_label(self, row: dict[str, Any]) -> str:
+        return "Principal" if self._is_principal(row) else "Secundario"
+
     def _contactos_resumen(self, rows: object) -> ft.Control:
         contactos = self._dict_rows(rows)
         if not contactos:
@@ -1898,37 +1924,192 @@ class ParteDetailPage:
     ) -> ft.Control:
         if not contactos:
             return ft.Text(empty_message)
-        return self._card_list(
-            [
-                self._info_card(
-                    title=self._principal_label(contacto),
-                    subtitle=self._contacto_value(contacto),
-                    principal=False,
-                )
-                for contacto in contactos
-            ]
+        return self._card_list([
+            self._info_card(
+                title=self._principal_label(contacto),
+                subtitle=self._contacto_value(contacto),
+                principal=False,
+                extra=contacto.get("observaciones"),
+                action=ft.TextButton("Editar", on_click=lambda e, row=contacto: self._open_contacto_dialog(self._contacto_kind(row), e, row)),
+            )
+            for contacto in contactos
+        ])
+
+    def _open_contacto_dialog(
+        self, kind: str, event: object = None, row: dict[str, Any] | None = None
+    ) -> None:
+        self.active_modal_kind = kind
+        self.active_modal_row = row or {}
+        self.modal_fields = {}
+        self.modal_message = ft.Text("", visible=False)
+        self.active_dialog = self._contacto_dialog(kind, self.active_modal_row)
+        self._open_modal(event)
+
+    def _open_domicilio_dialog(
+        self, event: object = None, row: dict[str, Any] | None = None
+    ) -> None:
+        self.active_modal_kind = "domicilio"
+        self.active_modal_row = row or {}
+        self.modal_fields = {}
+        self.modal_message = ft.Text("", visible=False)
+        self.active_dialog = self._domicilio_dialog(self.active_modal_row)
+        self._open_modal(event)
+
+    def _open_modal(self, event: object = None) -> None:
+        if self.active_dialog is None:
+            return
+        self.active_dialog.open = True
+        page = getattr(event, "page", None)
+        if page is None:
+            return
+        if hasattr(page, "open"):
+            try:
+                page.open(self.active_dialog)
+                return
+            except TypeError:
+                pass
+        page.dialog = self.active_dialog
+        self._safe_update(page)
+
+    def _close_modal(self, event: object = None) -> None:
+        if self.active_dialog is not None:
+            self.active_dialog.open = False
+        self.active_modal_kind = None
+        self.active_modal_row = {}
+        self.modal_fields = {}
+        page = getattr(event, "page", None)
+        if page is not None:
+            self._safe_update(page)
+
+    def _contacto_dialog(self, kind: str, row: dict[str, Any]) -> ft.AlertDialog:
+        title = "Editar mail" if row and kind == "email" else "Agregar mail" if kind == "email" else "Editar teléfono" if row else "Agregar teléfono"
+        self.modal_fields = {
+            "valor_contacto": ft.TextField(label="Mail" if kind == "email" else "Teléfono", value=self._contacto_value(row) if row else "", dense=True),
+            "observaciones": ft.TextField(label="Observaciones", value=str(row.get("observaciones") or ""), dense=True, multiline=True),
+            "es_principal": ft.Checkbox(label="Principal", value=self._is_principal(row)),
+        }
+        return ft.AlertDialog(
+            modal=True,
+            title=ft.Text(title),
+            content=ft.Column(
+                controls=[
+                    self.modal_fields["valor_contacto"],
+                    self.modal_fields["observaciones"],
+                    self.modal_fields["es_principal"],
+                    self.modal_message,
+                ],
+                spacing=8,
+                tight=True,
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._close_modal),
+                ft.ElevatedButton("Guardar", on_click=lambda _: self._save_contacto(kind)),
+            ],
         )
 
-    def _contacto_kind(self, contacto: dict[str, Any]) -> str:
-        value = str(contacto.get("tipo_contacto") or "").upper()
-        raw = str(self._contacto_value(contacto)).lower()
-        if "MAIL" in value or "@" in raw:
-            return "email"
-        if any(token in value for token in ("TEL", "WHATSAPP", "CEL")):
-            return "telefono"
-        return "otro"
+    def _domicilio_dialog(self, row: dict[str, Any]) -> ft.AlertDialog:
+        self.modal_fields = {
+            "direccion": ft.TextField(label="Calle / dirección", value=str(row.get("direccion") or row.get("calle") or ""), dense=True),
+            "localidad": ft.TextField(label="Localidad", value=str(row.get("localidad") or ""), dense=True),
+            "provincia": ft.TextField(label="Provincia", value=str(row.get("provincia") or ""), dense=True),
+            "pais": ft.TextField(label="País", value=str(row.get("pais") or ""), dense=True),
+            "codigo_postal": ft.TextField(label="Código postal", value=str(row.get("codigo_postal") or ""), dense=True),
+            "observaciones": ft.TextField(label="Observaciones", value=str(row.get("observaciones") or ""), dense=True, multiline=True),
+            "es_principal": ft.Checkbox(label="Principal", value=self._is_principal(row)),
+        }
+        return ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Editar dirección" if row else "Agregar dirección"),
+            content=ft.Column(
+                controls=[
+                    self.modal_fields["direccion"],
+                    self.modal_fields["localidad"],
+                    self.modal_fields["provincia"],
+                    self.modal_fields["pais"],
+                    self.modal_fields["codigo_postal"],
+                    self.modal_fields["observaciones"],
+                    self.modal_fields["es_principal"],
+                    self.modal_message,
+                ],
+                spacing=8,
+                tight=True,
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._close_modal),
+                ft.ElevatedButton("Guardar", on_click=self._save_domicilio),
+            ],
+        )
 
-    def _contacto_value(self, contacto: dict[str, Any]) -> str:
-        return str(contacto.get("valor_contacto") or contacto.get("valor") or contacto.get("contacto") or "Sin contacto informado.")
+    def _modal_value(self, key: str) -> str:
+        field = self.modal_fields[key]
+        return str(getattr(field, "value", "") or "").strip()
 
-    def _principal_label(self, row: dict[str, Any]) -> str:
-        return "Principal" if self._is_principal(row) else "Otro"
+    def _modal_bool(self, key: str) -> bool:
+        return bool(getattr(self.modal_fields[key], "value", False))
+
+    def _show_modal_error(self, message: str) -> None:
+        self.modal_message.value = message
+        self.modal_message.color = ft.Colors.RED_700
+        self.modal_message.visible = True
+        self._safe_update(self.modal_message)
+
+    def _save_contacto(self, kind: str) -> None:
+        valor = self._modal_value("valor_contacto")
+        if not valor or (kind == "email" and "@" not in valor):
+            self._show_modal_error("Ingresá un mail válido." if kind == "email" else "Ingresá un teléfono.")
+            return
+        row = self.active_modal_row or {}
+        payload = {"tipo_contacto": "EMAIL" if kind == "email" else "TELEFONO", "valor_contacto": valor, "es_principal": self._modal_bool("es_principal"), "observaciones": self._modal_value("observaciones") or None}
+        if row:
+            version = row.get("version_registro")
+            if version is None:
+                self._show_modal_error("No se pudo editar este dato. Recargá la ficha e intentá nuevamente.")
+                return
+            result = self.api.actualizar_persona_contacto(self.id_persona, int(row.get("id_persona_contacto")), payload, int(version), op_id=str(uuid4()))
+        else:
+            result = self.api.crear_persona_contacto(self.id_persona, payload, op_id=str(uuid4()))
+        self._finish_modal_save(result)
+
+    def _save_domicilio(self, _) -> None:
+        if not (self._modal_value("direccion") or self._modal_value("localidad")):
+            self._show_modal_error("Ingresá al menos calle/dirección o localidad.")
+            return
+        row = self.active_modal_row or {}
+        payload = {"tipo_domicilio": row.get("tipo_domicilio") or "REAL", "direccion": self._modal_value("direccion") or None, "localidad": self._modal_value("localidad") or None, "provincia": self._modal_value("provincia") or None, "pais": self._modal_value("pais") or None, "codigo_postal": self._modal_value("codigo_postal") or None, "es_principal": self._modal_bool("es_principal"), "observaciones": self._modal_value("observaciones") or None}
+        if row:
+            version = row.get("version_registro")
+            if version is None:
+                self._show_modal_error("No se pudo editar este dato. Recargá la ficha e intentá nuevamente.")
+                return
+            result = self.api.actualizar_persona_domicilio(self.id_persona, int(row.get("id_persona_domicilio")), payload, int(version), op_id=str(uuid4()))
+        else:
+            result = self.api.crear_persona_domicilio(self.id_persona, payload, op_id=str(uuid4()))
+        self._finish_modal_save(result)
+
+    def _finish_modal_save(self, result: Any) -> None:
+        if not result.success:
+            self._show_modal_error(result.error_message or "No se pudo guardar.")
+            return
+        refreshed = self.api.get_persona_detalle_integral(self.id_persona)
+        if refreshed.success and isinstance(refreshed.data, dict):
+            self.data = refreshed.data
+        self._close_modal()
+        self.on_navigate("parte_detail", id_persona=self.id_persona)
 
     def _domicilios_resumen(self, rows: object) -> ft.Control:
         domicilios = self._dict_rows(rows)
         if not domicilios:
             return ft.Text("Sin domicilios registrados.")
-        return self._card_list([self._info_card(title=self._principal_label(domicilio), subtitle=self._format_address(domicilio), principal=False, extra=domicilio.get("observaciones")) for domicilio in domicilios])
+        return self._card_list([
+            self._info_card(
+                title=self._principal_label(domicilio),
+                subtitle=self._format_address(domicilio),
+                principal=False,
+                extra=domicilio.get("observaciones"),
+                action=ft.TextButton("Editar", on_click=lambda e, row=domicilio: self._open_domicilio_dialog(e, row)),
+            )
+            for domicilio in domicilios
+        ])
 
     def _participaciones_resumen(self, rows: object) -> ft.Control:
         participaciones = self._dict_rows(rows)
@@ -2353,12 +2534,15 @@ class ParteDetailPage:
         subtitle: object,
         principal: bool = False,
         extra: object = None,
+        action: ft.Control | None = None,
     ) -> ft.Control:
         header_controls: list[ft.Control] = [
             ft.Text(str(title or "Sin tipo"), weight=ft.FontWeight.W_600)
         ]
         if principal:
             header_controls.append(self._principal_badge())
+        if action is not None:
+            header_controls.extend([ft.Container(expand=True), action])
 
         body_controls: list[ft.Control] = [
             ft.Row(
