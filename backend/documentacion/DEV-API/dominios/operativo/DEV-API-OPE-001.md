@@ -13,7 +13,7 @@
 
 ### POST `/api/v1/operativo/sucursales`
 
-Alta mínima de sucursal.
+Alta mínima de sucursal. La creación real devuelve `201 Created`.
 
 Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
 
@@ -29,7 +29,7 @@ Payload mínimo:
 - `codigo_sucursal` obligatorio.
 - `nombre_sucursal` obligatorio.
 - `descripcion_sucursal` opcional.
-- `estado_sucursal` opcional, default `ACTIVA`.
+- `estado_sucursal` opcional, default `ACTIVA`; valores permitidos: `ACTIVA`, `INACTIVA`, `DADA_DE_BAJA`.
 - `es_casa_central` opcional, default `false`.
 - `permite_operacion` opcional, default `true`.
 - `observaciones` opcional.
@@ -45,16 +45,19 @@ Persistencia CORE-EF:
 
 Idempotencia:
 
-- Mismo `X-Op-Id` con payload compatible devuelve la sucursal ya creada.
+- `op_id_alta` tiene unicidad estructural mediante índice único parcial `ux_sucursal_op_id_alta`.
+- Mismo `X-Op-Id` con payload compatible devuelve la sucursal ya creada, sin duplicar registro ni outbox.
+- Decisión actual: el replay idempotente compatible devuelve el mismo status del endpoint (`201`) aunque no cree una fila nueva.
 - Mismo `X-Op-Id` con payload incompatible devuelve `409 IDEMPOTENT_DUPLICATE`.
 
 Outbox:
 
-- Se registra `sucursal_creada` en `outbox_event` en la misma transacción del alta, alineado con `EVT-OPE-001`.
+- Se registra `sucursal_creada` en `outbox_event` en la misma transacción del alta real, alineado con `EVT-OPE-001`; el replay idempotente compatible no duplica outbox.
 
 Errores esperados:
 
 - `400 VALIDATION_ERROR` por headers CORE-EF faltantes o inválidos.
+- `422 Unprocessable Entity` por payload inválido, incluyendo `estado_sucursal` fuera del catálogo permitido.
 - `409 IDEMPOTENT_DUPLICATE` por reutilización incompatible de `X-Op-Id`.
 - `409 TECHNICAL_INCONSISTENCY` por duplicado activo de `codigo_sucursal` o restricción SQL.
 - `500 TECHNICAL_INCONSISTENCY` ante error técnico no controlado.
@@ -103,8 +106,10 @@ No se implementa todavía:
 
 - Naturaleza POST: `COMMAND_WRITE_NEGOCIO` sincronizable.
 - Headers POST: obligatorios mediante helper común CORE-EF.
-- Idempotencia: aplica por `op_id_alta`; mismo op/payload compatible retorna el registro, mismo op/payload incompatible devuelve conflicto.
-- Outbox: aplica; evento `sucursal_creada` en misma transacción.
+- Status POST: creación real devuelve `201 Created`; replay compatible mantiene `201` como decisión actual del endpoint.
+- Catálogo `estado_sucursal`: `ACTIVA`, `INACTIVA`, `DADA_DE_BAJA`; otros valores devuelven `422`.
+- Idempotencia: aplica por `op_id_alta` con unicidad estructural `ux_sucursal_op_id_alta`; mismo op/payload compatible retorna el registro sin duplicar fila ni outbox, mismo op/payload incompatible devuelve conflicto.
+- Outbox: aplica; evento `sucursal_creada` en misma transacción solo para creación real.
 - Lock lógico: NO APLICA en alta mínima porque no modifica una entidad existente ni orquesta recursos compartidos; queda para modificación/baja.
 - Versionado: alta crea entidad con `version_registro = 1`; `If-Match-Version` NO APLICA porque no modifica entidad existente.
 - Rollback/transacción: alta de `sucursal` y outbox comparten commit/rollback del repository.

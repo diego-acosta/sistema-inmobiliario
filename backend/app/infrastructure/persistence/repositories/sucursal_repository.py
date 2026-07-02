@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.api.core_ef_headers import CoreEFHeaders
 from app.infrastructure.persistence.base_repository import BaseRepository
@@ -99,6 +100,24 @@ class SucursalRepository(BaseRepository[Any]):
         ).mappings().one_or_none()
         return self._map(row) if row is not None else None
 
+    @staticmethod
+    def _constraint_name(exc: IntegrityError) -> str | None:
+        orig = getattr(exc, "orig", None)
+        diag = getattr(orig, "diag", None)
+        return getattr(diag, "constraint_name", None)
+
+    def _raise_or_return_idempotent_replay(
+        self, *, op_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        existing = self.get_by_op_id_alta(op_id)
+        if existing is None:
+            raise SucursalDuplicateActiveError("Ya existe una sucursal activa con ese código.")
+        if not self._payload_matches(existing, payload):
+            raise SucursalIdempotencyConflictError(
+                "El X-Op-Id ya fue usado con un payload incompatible."
+            )
+        return existing
+
     def create(self, payload: dict[str, Any], core: CoreEFHeaders) -> dict[str, Any]:
         op_id = str(core.x_op_id)
         existing = self.get_by_op_id_alta(op_id)
@@ -163,6 +182,14 @@ class SucursalRepository(BaseRepository[Any]):
             )
             self.db.commit()
             return created
+        except IntegrityError as exc:
+            self.db.rollback()
+            constraint_name = self._constraint_name(exc)
+            if constraint_name in {"ux_sucursal_op_id_alta", "uq_sucursal_codigo"}:
+                return self._raise_or_return_idempotent_replay(
+                    op_id=op_id, payload=payload
+                )
+            raise
         except Exception:
             self.db.rollback()
             raise

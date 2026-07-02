@@ -26,6 +26,14 @@ def payload(codigo: str = "SUC-OPE-250") -> dict[str, object]:
     }
 
 
+def test_existe_indice_unico_sucursal_op_id_alta(db_session):
+    index_exists = db_session.execute(
+        text("SELECT to_regclass('public.ux_sucursal_op_id_alta')")
+    ).scalar()
+
+    assert index_exists == "ux_sucursal_op_id_alta"
+
+
 def test_crear_sucursal_ok_incluye_version_y_metadata_core_ef(client, db_session):
     op_id = str(uuid4())
     response = client.post(
@@ -34,7 +42,7 @@ def test_crear_sucursal_ok_incluye_version_y_metadata_core_ef(client, db_session
         headers=headers(op_id),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     body = response.json()
     assert body["ok"] is True
     data = body["data"]
@@ -63,18 +71,18 @@ def test_crear_sucursal_ok_incluye_version_y_metadata_core_ef(client, db_session
     assert row["op_id_alta"] == op_id
     assert row["deleted_at"] is None
 
-    outbox = db_session.execute(
+    outbox_count = db_session.execute(
         text(
             """
-            SELECT event_type, aggregate_type, aggregate_id
+            SELECT COUNT(*)
             FROM outbox_event
             WHERE event_type = 'sucursal_creada'
               AND aggregate_id = :id_sucursal
             """
         ),
         {"id_sucursal": data["id_sucursal"]},
-    ).mappings().one()
-    assert outbox["aggregate_type"] == "sucursal"
+    ).scalar()
+    assert outbox_count == 1
 
 
 def test_alta_idempotente_mismo_op_id_payload_compatible_no_duplica(client, db_session):
@@ -84,14 +92,26 @@ def test_alta_idempotente_mismo_op_id_payload_compatible_no_duplica(client, db_s
     first = client.post("/api/v1/operativo/sucursales", json=body, headers=headers(op_id))
     second = client.post("/api/v1/operativo/sucursales", json=body, headers=headers(op_id))
 
-    assert first.status_code == 200
-    assert second.status_code == 200
+    assert first.status_code == 201
+    assert second.status_code == 201
     assert second.json()["data"]["id_sucursal"] == first.json()["data"]["id_sucursal"]
     count = db_session.execute(
         text("SELECT COUNT(*) FROM sucursal WHERE op_id_alta = :op_id"),
         {"op_id": op_id},
     ).scalar()
     assert count == 1
+    outbox_count = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM outbox_event
+            WHERE event_type = 'sucursal_creada'
+              AND aggregate_id = :id_sucursal
+            """
+        ),
+        {"id_sucursal": first.json()["data"]["id_sucursal"]},
+    ).scalar()
+    assert outbox_count == 1
 
 
 def test_alta_mismo_op_id_payload_incompatible_devuelve_409(client):
@@ -101,7 +121,7 @@ def test_alta_mismo_op_id_payload_incompatible_devuelve_409(client):
 
     assert client.post(
         "/api/v1/operativo/sucursales", json=first_payload, headers=headers(op_id)
-    ).status_code == 200
+    ).status_code == 201
     response = client.post(
         "/api/v1/operativo/sucursales", json=second_payload, headers=headers(op_id)
     )
@@ -110,19 +130,50 @@ def test_alta_mismo_op_id_payload_incompatible_devuelve_409(client):
     assert response.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
 
 
+def test_mismo_op_id_distinto_codigo_no_crea_dos_filas(client, db_session):
+    op_id = str(uuid4())
+    first_payload = payload("SUC-OPE-SAME-OP-A")
+    second_payload = payload("SUC-OPE-SAME-OP-B")
+
+    assert client.post(
+        "/api/v1/operativo/sucursales", json=first_payload, headers=headers(op_id)
+    ).status_code == 201
+    response = client.post(
+        "/api/v1/operativo/sucursales", json=second_payload, headers=headers(op_id)
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    count = db_session.execute(
+        text("SELECT COUNT(*) FROM sucursal WHERE op_id_alta = :op_id"),
+        {"op_id": op_id},
+    ).scalar()
+    assert count == 1
+
+
 def test_duplicado_activo_codigo_sucursal_devuelve_409(client):
     first_payload = payload("SUC-OPE-DUP")
     second_payload = {**first_payload, "nombre_sucursal": "Nombre distinto"}
 
     assert client.post(
         "/api/v1/operativo/sucursales", json=first_payload, headers=headers()
-    ).status_code == 200
+    ).status_code == 201
     response = client.post(
         "/api/v1/operativo/sucursales", json=second_payload, headers=headers()
     )
 
     assert response.status_code == 409
     assert response.json()["error_code"] == "TECHNICAL_INCONSISTENCY"
+
+
+def test_estado_sucursal_invalido_devuelve_422(client):
+    body = {**payload("SUC-OPE-EST-INV"), "estado_sucursal": "SUSPENDIDA"}
+
+    response = client.post(
+        "/api/v1/operativo/sucursales", json=body, headers=headers()
+    )
+
+    assert response.status_code == 422
 
 
 def test_listar_sucursales_excluye_bajas(client, db_session):

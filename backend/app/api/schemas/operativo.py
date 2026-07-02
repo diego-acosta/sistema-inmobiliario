@@ -4,6 +4,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+ESTADOS_SUCURSAL_VALIDOS = {"ACTIVA", "INACTIVA", "DADA_DE_BAJA"}
+
+
 class SucursalCreateRequest(BaseModel):
     codigo_sucursal: str
     nombre_sucursal: str
@@ -23,8 +26,15 @@ class SucursalCreateRequest(BaseModel):
 
     @field_validator("estado_sucursal")
     @classmethod
-    def _normalize_estado(cls, value: str) -> str:
-        return value.strip().upper()
+    def _valid_estado(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("El campo no puede estar vacío.")
+        if normalized not in ESTADOS_SUCURSAL_VALIDOS:
+            raise ValueError(
+                "estado_sucursal debe ser ACTIVA, INACTIVA o DADA_DE_BAJA."
+            )
+        return normalized
 
 
 class SucursalData(BaseModel):

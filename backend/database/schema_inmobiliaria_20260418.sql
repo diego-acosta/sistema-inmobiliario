@@ -9343,6 +9343,13 @@ CREATE INDEX idx_sucursal_uid_global ON public.sucursal USING btree (uid_global)
 
 
 --
+-- Name: ux_sucursal_op_id_alta; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_sucursal_op_id_alta ON public.sucursal USING btree (op_id_alta) WHERE (op_id_alta IS NOT NULL);
+
+
+--
 -- Name: idx_tipo_documental_uid_global; Type: INDEX; Schema: public; Owner: -
 --
 

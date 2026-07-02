@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -63,6 +63,7 @@ def _parse_core_or_error(
 @router.post(
     "/api/v1/operativo/sucursales",
     response_model=SucursalCreateResponse,
+    status_code=status.HTTP_201_CREATED,
     responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
 def create_sucursal(
