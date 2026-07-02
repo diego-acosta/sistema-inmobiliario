@@ -28,6 +28,12 @@ from app.api.schemas.administrativo import (
     UsuarioRolSeguridadCreateResponse,
     UsuarioRolSeguridadData,
     UsuarioRolSeguridadListResponse,
+    UsuarioSucursalCreateRequest,
+    UsuarioSucursalCreateResponse,
+    UsuarioSucursalData,
+    UsuarioSucursalListResponse,
+    UsuarioAlcanceOperativoData,
+    UsuarioAlcanceOperativoResponse,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
@@ -37,6 +43,11 @@ from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repositor
     UsuarioRolSeguridadDuplicateActiveError,
     UsuarioRolSeguridadIdempotencyConflictError,
     UsuarioRolSeguridadRepository,
+)
+from app.infrastructure.persistence.repositories.usuario_sucursal_repository import (
+    UsuarioSucursalDuplicateActiveError,
+    UsuarioSucursalIdempotencyConflictError,
+    UsuarioSucursalRepository,
 )
 from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
     UsuarioConcurrencyError,
@@ -397,6 +408,103 @@ def baja_rol_seguridad_usuario(
     if asignacion is None:
         return _error(404, "NOT_FOUND", "Asignación de rol de seguridad no encontrada.")
     return UsuarioRolSeguridadBajaResponse(data=UsuarioRolSeguridadData(**asignacion))
+
+
+def _validar_fecha_vigencia(request: UsuarioSucursalCreateRequest) -> JSONResponse | None:
+    if request.fecha_hasta is not None and request.fecha_desde is not None:
+        if request.fecha_hasta < request.fecha_desde:
+            return _error(400, "VALIDATION_ERROR", "fecha_hasta no puede ser menor que fecha_desde.")
+    return None
+
+
+@router.get(
+    "/api/v1/administrativo/usuarios/{id_usuario}/sucursales",
+    response_model=UsuarioSucursalListResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def list_sucursales_by_usuario(
+    id_usuario: int,
+    db: Session = Depends(get_db),
+) -> UsuarioSucursalListResponse | JSONResponse:
+    try:
+        sucursales = UsuarioSucursalRepository(db).list_by_usuario(id_usuario)
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudieron listar sucursales del usuario.", {"error": str(exc)})
+    if sucursales is None:
+        return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
+    return UsuarioSucursalListResponse(data=[UsuarioSucursalData(**item) for item in sucursales])
+
+
+@router.get(
+    "/api/v1/administrativo/usuarios/{id_usuario}/alcance-operativo",
+    response_model=UsuarioAlcanceOperativoResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_alcance_operativo_usuario(
+    id_usuario: int,
+    db: Session = Depends(get_db),
+) -> UsuarioAlcanceOperativoResponse | JSONResponse:
+    try:
+        usuario = UsuarioSistemaRepository(db).get(id_usuario)
+        if usuario is None:
+            return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
+        sucursales = UsuarioSucursalRepository(db).list_by_usuario(id_usuario) or []
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo obtener el alcance operativo del usuario.", {"error": str(exc)})
+    data_sucursales = [UsuarioSucursalData(**item) for item in sucursales]
+    predeterminada = next((item for item in data_sucursales if item.es_sucursal_predeterminada), None)
+    return UsuarioAlcanceOperativoResponse(data=UsuarioAlcanceOperativoData(
+        usuario=UsuarioSistemaData(**usuario),
+        sucursales_asignadas=data_sucursales,
+        sucursal_predeterminada=predeterminada,
+        puede_operar=any(item.puede_operar for item in data_sucursales),
+        puede_consultar=any(item.puede_consultar for item in data_sucursales),
+        puede_administrar=any(item.puede_administrar for item in data_sucursales),
+        estado_vigencia="ACTIVO" if data_sucursales else "SIN_ALCANCE",
+    ))
+
+
+@router.post(
+    "/api/v1/administrativo/usuarios/{id_usuario}/sucursales",
+    status_code=201,
+    response_model=UsuarioSucursalCreateResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def assign_sucursal_to_usuario(
+    id_usuario: int,
+    request: UsuarioSucursalCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> UsuarioSucursalCreateResponse | JSONResponse:
+    core = _parse_core_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id, x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id)
+    if isinstance(core, JSONResponse):
+        return core
+    fecha_error = _validar_fecha_vigencia(request)
+    if fecha_error is not None:
+        return fecha_error
+    payload = request.model_dump()
+    if payload["fecha_desde"] is None:
+        from datetime import datetime
+        payload["fecha_desde"] = datetime.utcnow()
+    repo = UsuarioSucursalRepository(db)
+    try:
+        if not repo.exists_usuario(id_usuario):
+            return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
+        if not repo.exists_sucursal(request.id_sucursal):
+            return _error(404, "NOT_FOUND", "Sucursal no encontrada.")
+        vinculo = repo.create(id_usuario, payload, core)
+    except UsuarioSucursalIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except UsuarioSucursalDuplicateActiveError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo asignar sucursal al usuario.", {"error": str(exc)})
+    if vinculo is None:
+        return _error(404, "NOT_FOUND", "Usuario o sucursal no encontrado.")
+    return UsuarioSucursalCreateResponse(data=UsuarioSucursalData(**vinculo))
 
 
 @router.get(

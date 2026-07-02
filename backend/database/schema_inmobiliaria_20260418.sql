@@ -5519,6 +5519,15 @@ ALTER SEQUENCE public.usuario_rol_sucursal_id_usuario_rol_sucursal_seq OWNED BY 
 
 CREATE TABLE public.usuario_sucursal (
     id_usuario_sucursal bigint NOT NULL,
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
     id_usuario bigint NOT NULL,
     id_sucursal bigint NOT NULL,
     tipo_habilitacion_sucursal character varying(50),
@@ -5530,6 +5539,7 @@ CREATE TABLE public.usuario_sucursal (
     fecha_hasta timestamp without time zone,
     estado_vinculo character varying(30) NOT NULL,
     observaciones text,
+    CONSTRAINT chk_usuario_sucursal_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at))),
     CONSTRAINT chk_usuario_sucursal_vigencia CHECK (((fecha_hasta IS NULL) OR (fecha_hasta >= fecha_desde)))
 );
 
@@ -10117,6 +10127,27 @@ CREATE INDEX ix_usuario_rol_sucursal_vigencia ON public.usuario_rol_sucursal USI
 --
 
 CREATE INDEX ix_usuario_sucursal_vigencia ON public.usuario_sucursal USING btree (id_usuario, id_sucursal, fecha_desde, fecha_hasta);
+
+
+--
+-- Name: ux_usuario_sucursal_op_id_alta; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_usuario_sucursal_op_id_alta ON public.usuario_sucursal USING btree (op_id_alta) WHERE (op_id_alta IS NOT NULL);
+
+
+--
+-- Name: ux_usuario_sucursal_activa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_usuario_sucursal_activa ON public.usuario_sucursal USING btree (id_usuario, id_sucursal) WHERE ((deleted_at IS NULL) AND ((estado_vinculo)::text = 'ACTIVO'::text) AND (fecha_hasta IS NULL));
+
+
+--
+-- Name: ux_usuario_sucursal_predeterminada_activa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_usuario_sucursal_predeterminada_activa ON public.usuario_sucursal USING btree (id_usuario) WHERE ((deleted_at IS NULL) AND ((estado_vinculo)::text = 'ACTIVO'::text) AND (fecha_hasta IS NULL) AND (es_sucursal_predeterminada = true));
 
 
 --
