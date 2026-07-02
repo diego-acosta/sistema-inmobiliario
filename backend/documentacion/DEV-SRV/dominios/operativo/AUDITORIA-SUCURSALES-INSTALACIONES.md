@@ -21,6 +21,7 @@ No se modificó código de aplicación ni tests. Esta nota no implementa endpoin
 
 ### DEV-SRV / DEV-API / decisiones / CORE-EF
 
+- `backend/documentacion/DEV-SRV/dominios/operativo/SRV-OPE-001-gestion-de-sucursales.md`.
 - `backend/documentacion/DEV-SRV/dominios/operativo/SRV-OPE-002-gestion-de-instalaciones.md`.
 - `backend/documentacion/DEV-SRV/dominios/administrativo/`.
 - `backend/documentacion/DEV-API/dominios/administrativo/DEV-API-ADM-001.md`.
@@ -189,7 +190,7 @@ No se encontraron endpoints implementados para:
 
 No se encontró router `/api/v1/operativo` implementado. Los routers existentes están agrupados como `Inmobiliario`, `Comercial`, `Locativo`, `Financiero`, `Personas`, `Administrativo` y `health`.
 
-La documentación `SRV-OPE-002` sí define gestión de instalaciones dentro del dominio operativo y declara explícitamente que no cubre gestión de sucursales. Por lo tanto, falta materializar API operativa para instalaciones y falta definir o confirmar el servicio operativo de sucursales referenciado como `SRV-OPE-001`.
+`SRV-OPE-001` ya existe y define la gestión de sucursales con alta, modificación, baja lógica y consulta. `SRV-OPE-002` ya existe y define la gestión de instalaciones dentro del dominio operativo. Por lo tanto, lo que falta es materializar la API operativa correspondiente bajo `/api/v1/operativo`, no definir nuevamente esos servicios DEV-SRV.
 
 ### Endpoints inmobiliarios y otros dominios
 
@@ -271,8 +272,8 @@ Justificación:
 
 ## Propuesta de issues siguientes
 
-1. **Operativo: contrato DEV-SRV/API de sucursales.** Crear o completar `SRV-OPE-001` y contrato DEV-API para read/CRUD base de sucursales.
-2. **Operativo: CRUD/read de sucursales.** Implementar router, schemas, repository, tests y CORE-EF para `sucursal`.
+1. **Operativo: contrato DEV-API de sucursales.** Derivar el contrato DEV-API desde `SRV-OPE-001` para read/CRUD base de sucursales.
+2. **Operativo: CRUD/read de sucursales.** Implementar API según `SRV-OPE-001` con router, schemas, repository, tests y CORE-EF para `sucursal`.
 3. **Operativo: contrato DEV-API de instalaciones.** Alinear `SRV-OPE-002` con endpoints, payloads, estados y errores.
 4. **Operativo: CRUD/read de instalaciones.** Implementar router, schemas, repository, tests y CORE-EF para `instalacion`.
 5. **Operativo: asociación instalación-sucursal.** Definir si la asociación se modifica solo como campo de instalación o con endpoint específico; documentar versionado y lock.
@@ -287,7 +288,7 @@ Justificación:
 - Ubicación recomendada: `/api/v1/operativo/sucursales`.
 - Lecturas: `QUERY_READLIKE`; no deberían exigir headers write.
 - Writes: `COMMAND_WRITE_NEGOCIO` o `COMMAND_WRITE_TECNICO` según se decida para gestión organizacional; deben exigir headers CORE-EF, idempotencia, outbox, versionado y tests mínimos.
-- Alcance: alta, listado, detalle, modificación y baja lógica de `sucursal`.
+- Alcance: implementar API según `SRV-OPE-001` para alta, listado, detalle, modificación y baja lógica de `sucursal`.
 
 ### Fase 2: CRUD/read base de instalaciones
 
