@@ -10130,6 +10130,13 @@ CREATE INDEX ix_usuario_sucursal_vigencia ON public.usuario_sucursal USING btree
 
 
 --
+-- Name: ux_usuario_sucursal_uid_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_usuario_sucursal_uid_global ON public.usuario_sucursal USING btree (uid_global);
+
+
+--
 -- Name: ux_usuario_sucursal_op_id_alta; Type: INDEX; Schema: public; Owner: -
 --
 

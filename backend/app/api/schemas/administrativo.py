@@ -150,7 +150,7 @@ class UsuarioSucursalCreateRequest(BaseModel):
     puede_operar: bool = True
     puede_consultar: bool = True
     puede_administrar: bool = False
-    fecha_desde: datetime | None = None
+    fecha_desde: datetime
     fecha_hasta: datetime | None = None
     observaciones: str | None = None
 

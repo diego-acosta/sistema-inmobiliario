@@ -23,6 +23,9 @@ BEGIN
     END IF;
 END $$;
 
+CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_sucursal_uid_global
+    ON public.usuario_sucursal (uid_global);
+
 CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_sucursal_op_id_alta
     ON public.usuario_sucursal (op_id_alta)
     WHERE op_id_alta IS NOT NULL;

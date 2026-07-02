@@ -513,21 +513,21 @@ Asigna alcance operativo básico de un usuario a una sucursal existente.
 - Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
 - Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` mediante helper común CORE-EF.
 - `If-Match-Version`: NO APLICA, porque crea un vínculo nuevo y no modifica entidad versionada existente.
-- Payload: `id_sucursal`, `tipo_habilitacion_sucursal`, `es_sucursal_predeterminada`, `puede_operar`, `puede_consultar`, `puede_administrar`, `fecha_desde`, `fecha_hasta`, `observaciones`.
+- Payload: `id_sucursal`, `tipo_habilitacion_sucursal`, `es_sucursal_predeterminada`, `puede_operar`, `puede_consultar`, `puede_administrar`, `fecha_desde` (obligatoria), `fecha_hasta`, `observaciones`. Si falta `fecha_desde`, la validación automática devuelve `422`.
 - Persistencia CORE-EF: `uid_global`, `version_registro = 1`, `created_at`, `updated_at`, `deleted_at = NULL`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta`, `op_id_ultima_modificacion`.
 - Idempotencia: aplica por `op_id_alta` (`ux_usuario_sucursal_op_id_alta`). Mismo `X-Op-Id` + payload compatible devuelve el vínculo existente sin duplicar outbox; mismo `X-Op-Id` + payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`.
 - Duplicado activo: no permite dos vínculos activos para `(id_usuario, id_sucursal)`; devuelve `409 TECHNICAL_INCONSISTENCY`.
-- Sucursal predeterminada: se eligió desmarcar la predeterminada activa anterior del mismo usuario dentro de la misma transacción, para garantizar que no queden dos activas.
+- Sucursal predeterminada: el POST es create-only y no desmarca automáticamente una predeterminada anterior. Si `es_sucursal_predeterminada = true` y ya existe otra predeterminada activa para el usuario, devuelve `409 TECHNICAL_INCONSISTENCY`. El cambio de predeterminada queda fuera de alcance de #262 y deberá nacer como endpoint versionado con `If-Match-Version` y outbox propio.
 - Outbox: aplica; usa evento formal `usuario_asociado_a_sucursal` (`EVT-ADM-008`) en la misma transacción que el alta real. El replay idempotente compatible no duplica outbox.
 - Lock lógico: NO APLICA en esta primera versión acotada; la consistencia se apoya en transacción e índices únicos parciales.
-- Versionado: `usuario_sucursal.version_registro` nace en `1`; si se desmarca una predeterminada anterior en la misma transacción, ese vínculo incrementa su versión.
-- Rollback/transacción: la validación de duplicado, eventual desmarcado de predeterminada anterior, alta de vínculo y outbox comparten la misma transacción.
+- Versionado: `usuario_sucursal.version_registro` nace en `1`; no se modifican vínculos existentes en este endpoint create-only.
+- Rollback/transacción: la validación de duplicado/predeterminada activa, alta de vínculo y outbox comparten la misma transacción.
 - Validaciones: usuario activo/no dado de baja, sucursal activa/no dada de baja, vigencia (`fecha_hasta >= fecha_desde`), no duplicado activo.
 - Errores: `400 VALIDATION_ERROR` para headers CORE-EF o validaciones manuales, `404 NOT_FOUND`, `409 IDEMPOTENT_DUPLICATE`, `409 TECHNICAL_INCONSISTENCY`, `422` para validación automática FastAPI/Pydantic.
 
 ### 7.5 SQL asociado
 
-`usuario_sucursal` se completa con bloque CORE-EF mediante `backend/database/patch_usuario_sucursal_core_ef_20260702.sql` y el dump principal actualizado. Se agregan índices únicos parciales para idempotencia por `op_id_alta`, duplicado activo `(id_usuario, id_sucursal)` y predeterminada activa por usuario.
+`usuario_sucursal` se completa con bloque CORE-EF mediante `backend/database/patch_usuario_sucursal_core_ef_20260702.sql` y el dump principal actualizado. Se agregan índices únicos para `uid_global` e idempotencia por `op_id_alta`, y parciales para duplicado activo `(id_usuario, id_sucursal)` y predeterminada activa por usuario.
 
 ### 7.6 Relación con issues
 

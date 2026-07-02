@@ -182,19 +182,49 @@ def test_get_lista_y_alcance_consolidado_incluyen_sucursales_y_flags(client):
     assert data["puede_administrar"] is True
 
 
-def test_no_quedan_dos_sucursales_predeterminadas_activas(client, db_session):
+def test_post_sin_fecha_desde_devuelve_422(client):
+    usuario = crear_usuario(client, "SIN-FECHA")
+    sucursal = crear_sucursal(client, "SIN-FECHA")
+    payload = alcance_payload(sucursal["id_sucursal"])
+    payload.pop("fecha_desde")
+
+    response = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=payload,
+        headers=headers(),
+    )
+
+    assert response.status_code == 422
+
+
+def test_segunda_sucursal_predeterminada_devuelve_409_y_preserva_primera(client, db_session):
     usuario = crear_usuario(client, "PRED")
     suc1 = crear_sucursal(client, "PRED1")
     suc2 = crear_sucursal(client, "PRED2")
-    assert client.post(f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales", json=alcance_payload(suc1["id_sucursal"], es_sucursal_predeterminada=True), headers=headers()).status_code == 201
-    assert client.post(f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales", json=alcance_payload(suc2["id_sucursal"], es_sucursal_predeterminada=True), headers=headers()).status_code == 201
-    count = db_session.execute(text("""
-        SELECT COUNT(*) FROM usuario_sucursal
-        WHERE id_usuario = :id AND es_sucursal_predeterminada = true
-          AND deleted_at IS NULL AND estado_vinculo = 'ACTIVO' AND fecha_hasta IS NULL
-    """), {"id": usuario["id_usuario"]}).scalar()
-    assert count == 1
+    first = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=alcance_payload(suc1["id_sucursal"], es_sucursal_predeterminada=True),
+        headers=headers(),
+    )
+    second = client.post(
+        f"/api/v1/administrativo/usuarios/{usuario['id_usuario']}/sucursales",
+        json=alcance_payload(suc2["id_sucursal"], es_sucursal_predeterminada=True),
+        headers=headers(),
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "TECHNICAL_INCONSISTENCY"
+    row = db_session.execute(text("""
+        SELECT es_sucursal_predeterminada, version_registro
+        FROM usuario_sucursal
+        WHERE id_usuario_sucursal = :id
+    """), {"id": first.json()["data"]["id_usuario_sucursal"]}).mappings().one()
+    assert row["es_sucursal_predeterminada"] is True
+    assert row["version_registro"] == 1
 
 
-def test_existe_indice_unico_usuario_sucursal_op_id_alta(db_session):
+def test_existen_indices_unicos_usuario_sucursal_core_ef(db_session):
     assert db_session.execute(text("SELECT to_regclass('public.ux_usuario_sucursal_op_id_alta')")).scalar() == "ux_usuario_sucursal_op_id_alta"
+    assert db_session.execute(text("SELECT to_regclass('public.ux_usuario_sucursal_uid_global')")).scalar() == "ux_usuario_sucursal_uid_global"
+    assert db_session.execute(text("SELECT to_regclass('public.ux_usuario_sucursal_predeterminada_activa')")).scalar() == "ux_usuario_sucursal_predeterminada_activa"

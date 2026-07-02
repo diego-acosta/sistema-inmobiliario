@@ -486,9 +486,6 @@ def assign_sucursal_to_usuario(
     if fecha_error is not None:
         return fecha_error
     payload = request.model_dump()
-    if payload["fecha_desde"] is None:
-        from datetime import datetime
-        payload["fecha_desde"] = datetime.utcnow()
     repo = UsuarioSucursalRepository(db)
     try:
         if not repo.exists_usuario(id_usuario):

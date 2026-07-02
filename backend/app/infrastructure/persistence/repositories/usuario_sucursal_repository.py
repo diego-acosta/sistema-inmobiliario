@@ -118,6 +118,20 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
         """), {"id_usuario": id_usuario, "id_sucursal": id_sucursal}).mappings().one_or_none()
         return self._map(row) if row is not None else None
 
+
+    def get_active_default_by_usuario(self, id_usuario: int) -> dict[str, Any] | None:
+        row = self.db.execute(text(f"""
+            SELECT {_COLUMNS}
+            FROM usuario_sucursal us
+            JOIN sucursal s ON s.id_sucursal = us.id_sucursal
+            WHERE us.id_usuario = :id_usuario
+              AND us.es_sucursal_predeterminada = true
+              AND us.deleted_at IS NULL
+              AND us.estado_vinculo = 'ACTIVO'
+              AND us.fecha_hasta IS NULL
+        """), {"id_usuario": id_usuario}).mappings().one_or_none()
+        return self._map(row) if row is not None else None
+
     def list_by_usuario(self, id_usuario: int, *, incluir_bajas: bool = False) -> list[dict[str, Any]] | None:
         if not self.exists_usuario(id_usuario):
             return None
@@ -181,21 +195,11 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
             raise UsuarioSucursalDuplicateActiveError(
                 "Ya existe un vínculo activo para el usuario y la sucursal."
             )
+        if payload.get("es_sucursal_predeterminada") and self.get_active_default_by_usuario(id_usuario) is not None:
+            raise UsuarioSucursalDuplicateActiveError(
+                "Ya existe una sucursal predeterminada activa para el usuario."
+            )
         try:
-            if payload.get("es_sucursal_predeterminada"):
-                self.db.execute(text("""
-                    UPDATE usuario_sucursal
-                    SET es_sucursal_predeterminada = false,
-                        updated_at = CURRENT_TIMESTAMP,
-                        id_instalacion_ultima_modificacion = :id_instalacion,
-                        op_id_ultima_modificacion = :op_id,
-                        version_registro = version_registro + 1
-                    WHERE id_usuario = :id_usuario
-                      AND deleted_at IS NULL
-                      AND estado_vinculo = 'ACTIVO'
-                      AND fecha_hasta IS NULL
-                      AND es_sucursal_predeterminada = true
-                """), {"id_usuario": id_usuario, "id_instalacion": core.x_instalacion_id, "op_id": op_id})
             row = self.db.execute(text(f"""
                 INSERT INTO usuario_sucursal (
                     id_usuario, id_sucursal, tipo_habilitacion_sucursal,
