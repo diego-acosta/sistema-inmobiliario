@@ -581,10 +581,20 @@ def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None
     )
 
     control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
-    assert isinstance(control, ft.ListView)
+    assert isinstance(control, ft.Container)
+    assert isinstance(control.content, ft.Column)
+    assert control.content.scroll == ft.ScrollMode.AUTO
     rows = [item for item in _walk(control) if isinstance(item, ft.Row)]
     balanced_rows = [row for row in rows if len(getattr(row, "controls", []) or []) == 2]
+    root_texts = ["\n".join(_texts(child)) for child in control.content.controls]
+    idx_financiero = next(i for i, value in enumerate(root_texts) if "Estado financiero" in value)
+    idx_cuenta = next(i for i, value in enumerate(root_texts) if "Estado de cuenta" in value)
+    idx_tecnicos = next(i for i, value in enumerate(root_texts) if "Datos técnicos" in value)
 
+    assert idx_financiero < idx_cuenta < idx_tecnicos
+    assert getattr(control.content.controls[idx_financiero], "expand", None) is None
+    assert getattr(control.content.controls[idx_cuenta], "expand", None) is None
+    assert getattr(control.content.controls[idx_tecnicos], "expand", None) is None
     assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [3, 2] for row in balanced_rows)
     assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [2, 3] for row in balanced_rows)
 

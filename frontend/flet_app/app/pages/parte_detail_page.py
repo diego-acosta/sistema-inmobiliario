@@ -53,41 +53,70 @@ class ParteDetailPage:
             )
 
         self.data = data
-        return ft.ListView(
-            controls=[
-                ft.Row(
-                    controls=[
-                        ft.TextButton(
-                            "Volver al listado",
-                            on_click=lambda _: self.on_navigate("partes"),
-                        ),
-                    ]
-                ),
-                self._header_card(data),
-                self.edit_panel,
-                ft.Row(
-                    controls=[
-                        self._admin_card("Datos principales", [self._datos_base(data)], expand=3),
-                        self._admin_card("Contactos", [self._contactos_resumen(data.get("contactos", []))], expand=2),
-                    ],
-                    spacing=14,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
-                ),
-                ft.Row(
-                    controls=[
-                        self._admin_card("Direcciones", [self._domicilios_resumen(data.get("domicilios", []))], expand=2),
-                        self._admin_card("Participaciones", [self._participaciones_resumen(data.get("participaciones", []))], expand=3),
-                    ],
-                    spacing=14,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
-                ),
-                self._admin_card("Estado financiero", [self._estado_financiero(data)]),
-                self._admin_card("Estado de cuenta", self._estado_cuenta_tab(data, estado_cuenta_result)),
-                self._admin_card("Datos técnicos", [self._datos_tecnicos(data)], low_emphasis=True),
-            ],
-            spacing=14,
+        return ft.Container(
             expand=True,
-            auto_scroll=False,
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.TextButton(
+                                "Volver al listado",
+                                on_click=lambda _: self.on_navigate("partes"),
+                            ),
+                        ]
+                    ),
+                    self._header_card(data),
+                    self.edit_panel,
+                    ft.Row(
+                        controls=[
+                            self._admin_card(
+                                "Datos principales", [self._datos_base(data)], expand=3
+                            ),
+                            self._admin_card(
+                                "Contactos",
+                                [self._contactos_resumen(data.get("contactos", []))],
+                                expand=2,
+                            ),
+                        ],
+                        spacing=14,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    ft.Row(
+                        controls=[
+                            self._admin_card(
+                                "Direcciones",
+                                [self._domicilios_resumen(data.get("domicilios", []))],
+                                expand=2,
+                            ),
+                            self._admin_card(
+                                "Participaciones",
+                                [
+                                    self._participaciones_resumen(
+                                        data.get("participaciones", [])
+                                    )
+                                ],
+                                expand=3,
+                            ),
+                        ],
+                        spacing=14,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self._admin_card("Estado financiero", [self._estado_financiero(data)]),
+                    self._admin_card(
+                        "Estado de cuenta",
+                        self._estado_cuenta_compact(estado_cuenta_result),
+                    ),
+                    self._admin_card(
+                        "Datos técnicos",
+                        [self._datos_tecnicos(data)],
+                        low_emphasis=True,
+                    ),
+                    ft.Container(height=1),
+                ],
+                spacing=14,
+                expand=True,
+                scroll=ft.ScrollMode.AUTO,
+            ),
         )
 
     def _header_card(self, data: dict[str, Any]) -> ft.Control:
@@ -387,6 +416,32 @@ class ParteDetailPage:
             ],
             rows=obligaciones,
         )
+
+    def _estado_cuenta_compact(self, result) -> list[ft.Control]:
+        estado_area = ft.Container()
+        notice_area = ft.Container()
+
+        def refresh_estado_cuenta(payment_payload: object | None = None) -> None:
+            refreshed = self.api.get_estado_cuenta_persona(self.id_persona)
+            estado_area.content = ft.Column(
+                controls=self._estado_cuenta_controls(
+                    refreshed, on_refresh=refresh_estado_cuenta
+                ),
+                spacing=12,
+            )
+            if payment_payload is not None:
+                notice_area.content = self._pago_result(payment_payload)
+                notice_area.visible = True
+                notice_area.update()
+            estado_area.update()
+
+        estado_area.content = ft.Column(
+            controls=self._estado_cuenta_controls(
+                result, on_refresh=refresh_estado_cuenta
+            ),
+            spacing=12,
+        )
+        return [notice_area, estado_area]
 
     def _estado_cuenta_tab(self, data: dict[str, Any], result) -> list[ft.Control]:
         estado_area = ft.Container()
