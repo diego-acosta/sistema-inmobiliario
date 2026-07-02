@@ -154,27 +154,27 @@ class ParteDetailPage:
 
 
     def _datos_principales_card(self, data: dict[str, Any]) -> ft.Container:
-        controls = (
-            [self._basic_edit_form()]
-            if self.editing_basic_data
-            else [self._datos_base(data)]
-        )
-        action = (
-            None
-            if self.editing_basic_data
-            else ft.ElevatedButton(
-                "Editar datos principales",
-                on_click=lambda _: self._open_basic_edit(),
-            )
-        )
         card = self._admin_card(
             "Datos principales",
-            controls,
+            self._datos_principales_controls(data),
             height=265,
-            action=action,
+            action=self._datos_principales_action(),
         )
         self.basic_data_card = card
         return card
+
+    def _datos_principales_controls(self, data: dict[str, Any]) -> list[ft.Control]:
+        if self.editing_basic_data:
+            return [self._basic_edit_form()]
+        return [self._datos_base(data)]
+
+    def _datos_principales_action(self) -> ft.Control | None:
+        if self.editing_basic_data:
+            return None
+        return ft.ElevatedButton(
+            "Editar datos principales",
+            on_click=lambda _: self._open_basic_edit(),
+        )
 
     def _open_basic_edit(self) -> None:
         self.editing_basic_data = True
@@ -275,11 +275,17 @@ class ParteDetailPage:
         )
 
     def _refresh_basic_data_card(self) -> None:
-        if self.basic_data_card is None:
+        mounted_card = self.basic_data_card
+        if mounted_card is None:
             return
-        replacement = self._datos_principales_card(self.data)
-        self.basic_data_card.content = replacement.content
-        self._safe_update(self.basic_data_card)
+        replacement = self._admin_card(
+            "Datos principales",
+            self._datos_principales_controls(self.data),
+            height=265,
+            action=self._datos_principales_action(),
+        )
+        mounted_card.content = replacement.content
+        self._safe_update(mounted_card)
 
     def _cancel_basic_edit(self, _) -> None:
         self.editing_basic_data = False
