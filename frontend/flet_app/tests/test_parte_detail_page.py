@@ -253,16 +253,19 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
 
     button = _find_button(control, "Editar datos principales")
     button.on_click(None)
-    assert page.edit_panel.visible is True
-    assert _find_field(page.edit_panel, "Nombre").value == "Ada"
-    assert _find_field(page.edit_panel, "Apellido").value == "Lovelace"
-    assert "Documentos" not in "\n".join(_texts(page.edit_panel))
-    assert "Contactos" not in "\n".join(_texts(page.edit_panel))
-    assert "Domicilios" not in "\n".join(_texts(page.edit_panel))
+    assert page.editing_basic_data is True
+    assert _find_field(page.basic_data_card, "Nombre").value == "Ada"
+    assert _find_field(page.basic_data_card, "Apellido").value == "Lovelace"
+    edit_text = "\n".join(_texts(page.basic_data_card))
+    assert "Documento de identidad" not in edit_text
+    assert "CUIT/CUIL/CDI" not in edit_text
+    assert "Documentos" not in edit_text
+    assert "Contactos" not in edit_text
+    assert "Domicilios" not in edit_text
 
-    _find_field(page.edit_panel, "Nombre").value = "Augusta Ada"
-    _find_field(page.edit_panel, "Observaciones").value = "Actualizada"
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    _find_field(page.basic_data_card, "Nombre").value = "Augusta Ada"
+    _find_field(page.basic_data_card, "Observaciones").value = "Actualizada"
+    _find_button(page.basic_data_card, "Guardar").on_click(None)
 
     assert len(api.update_calls) == 1
     id_persona, payload, if_match_version, op_id = api.update_calls[0]
@@ -285,7 +288,7 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     assert api.crear_persona_calls == []
 
     page._open_basic_edit()
-    assert _find_field(page.edit_panel, "Nombre").value == "Augusta Ada"
+    assert _find_field(page.basic_data_card, "Nombre").value == "Augusta Ada"
 
 def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     api = FakeApi(
@@ -311,10 +314,10 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None)
     control = page.build()
     _find_button(control, "Editar datos principales").on_click(None)
-    _find_field(page.edit_panel, "Nombre").value = "Cambio descartado"
-    _find_button(page.edit_panel, "Cancelar").on_click(None)
+    _find_field(page.basic_data_card, "Nombre").value = "Cambio descartado"
+    _find_button(page.basic_data_card, "Cancelar").on_click(None)
 
-    assert page.edit_panel.visible is False
+    assert page.editing_basic_data is False
     assert api.update_calls == []
     assert api.crear_persona_calls == []
 
@@ -353,8 +356,8 @@ def test_guardado_exitoso_con_fallo_de_recarga_muestra_error_y_no_navega() -> No
     control = page.build()
 
     _find_button(control, "Editar datos principales").on_click(None)
-    _find_field(page.edit_panel, "Nombre").value = "Augusta Ada"
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    _find_field(page.basic_data_card, "Nombre").value = "Augusta Ada"
+    _find_button(page.basic_data_card, "Guardar").on_click(None)
 
     assert api.detalle_ids == [42, 42]
     assert navigations == []
@@ -386,11 +389,11 @@ def test_error_concurrencia_y_validacion_muestran_mensaje_claro() -> None:
     control = page.build()
     api.update_result = ApiResult(False, status_code=409, error_code="CONCURRENCY_ERROR")
     _find_button(control, "Editar datos principales").on_click(None)
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    _find_button(page.basic_data_card, "Guardar").on_click(None)
     assert "La persona fue modificada por otro usuario" in page.edit_message.value
 
     api.update_result = ApiResult(False, status_code=422, error_message="nombre requerido")
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    _find_button(page.basic_data_card, "Guardar").on_click(None)
     assert "nombre requerido" in page.edit_message.value
 
 
@@ -491,8 +494,6 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "Participaciones" in text
     assert "Ventas" in text
     assert "Alquileres" in text
-    assert "Comprador" in text
-    assert "Locatario" in text
     assert "Reserva de venta" in text
     assert "Contrato de alquiler" in text
     assert "reserva_venta" not in text
@@ -645,7 +646,7 @@ def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
     )
     control = page.build()
     header = control.content.controls[0]
-    main_row = control.content.controls[2]
+    main_row = control.content.controls[1]
     left_column = main_row.controls[0]
     datos_card = left_column.controls[0]
 
@@ -653,13 +654,13 @@ def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
     assert "Editar datos principales" in "\n".join(_texts(datos_card))
 
     _find_button(datos_card, "Editar datos principales").on_click(None)
-    assert page.edit_panel.visible is True
-    assert _find_field(page.edit_panel, "Nombre") is not None
+    assert page.editing_basic_data is True
+    assert _find_field(page.basic_data_card, "Nombre") is not None
 
 
 def test_direccion_ocupa_columna_izquierda_y_contactos_quedan_debajo() -> None:
     control = ParteDetailPage(FakeApi(), id_persona=42, on_navigate=lambda *_: None).build()
-    main_row = control.content.controls[2]
+    main_row = control.content.controls[1]
     left_column = main_row.controls[0]
     participaciones = main_row.controls[1]
     datos_card = left_column.controls[0]
@@ -717,6 +718,11 @@ def test_participaciones_muestran_tablas_por_ventas_y_alquileres_con_accion_ver(
     assert "Contrato de alquiler" in text
     assert "reserva_venta" not in text
     assert "contrato_alquiler" not in text
+    participaciones_card = control.content.controls[1].controls[1]
+    participaciones_text = "\n".join(_texts(participaciones_card))
+    assert "Venta" in participaciones_text
+    assert "V-22" in participaciones_text
+    assert "Rol" not in participaciones_text
 
     ver_buttons = [item for item in _walk(control) if getattr(item, "text", None) == "Ver"]
     assert len(ver_buttons) >= 3

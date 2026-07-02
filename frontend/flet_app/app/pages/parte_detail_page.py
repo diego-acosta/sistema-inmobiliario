@@ -21,6 +21,8 @@ class ParteDetailPage:
         self.edit_panel = ft.Container(visible=False)
         self.edit_message = ft.Text("", visible=False)
         self.edit_fields: dict[str, ft.TextField] = {}
+        self.editing_basic_data = False
+        self.basic_data_card: ft.Container | None = None
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -58,20 +60,11 @@ class ParteDetailPage:
             content=ft.Column(
                 controls=[
                     self._header_card(data),
-                    self.edit_panel,
                     ft.Row(
                         controls=[
                             ft.Column(
                                 controls=[
-                                    self._admin_card(
-                                        "Datos principales",
-                                        [self._datos_base(data)],
-                                        height=265,
-                                        action=ft.ElevatedButton(
-                                            "Editar datos principales",
-                                            on_click=lambda _: self._open_basic_edit(),
-                                        ),
-                                    ),
+                                    self._datos_principales_card(data),
                                     self._admin_card(
                                         "Dirección",
                                         [self._domicilios_resumen(data.get("domicilios", []))],
@@ -160,84 +153,139 @@ class ParteDetailPage:
         )
 
 
+    def _datos_principales_card(self, data: dict[str, Any]) -> ft.Container:
+        controls = (
+            [self._basic_edit_form()]
+            if self.editing_basic_data
+            else [self._datos_base(data)]
+        )
+        action = (
+            None
+            if self.editing_basic_data
+            else ft.ElevatedButton(
+                "Editar datos principales",
+                on_click=lambda _: self._open_basic_edit(),
+            )
+        )
+        card = self._admin_card(
+            "Datos principales",
+            controls,
+            height=265,
+            action=action,
+        )
+        self.basic_data_card = card
+        return card
+
     def _open_basic_edit(self) -> None:
+        self.editing_basic_data = True
+        self._build_basic_edit_fields()
+        self._refresh_basic_data_card()
+
+    def _build_basic_edit_fields(self) -> None:
         data = self.data
         self.edit_message.visible = False
         self.edit_fields = {
             "tipo_persona": ft.TextField(
                 label="Tipo de persona",
                 value=str(data.get("tipo_persona") or ""),
-                width=180,
+                width=170,
+                dense=True,
+            ),
+            "estado_persona": ft.TextField(
+                label="Estado",
+                value=str(data.get("estado_persona") or ""),
+                width=150,
+                dense=True,
             ),
             "nombre": ft.TextField(
-                label="Nombre", value=str(data.get("nombre") or ""), width=220
+                label="Nombre",
+                value=str(data.get("nombre") or ""),
+                width=210,
+                dense=True,
             ),
             "apellido": ft.TextField(
-                label="Apellido", value=str(data.get("apellido") or ""), width=220
-            ),
-            "razon_social": ft.TextField(
-                label="Razón social",
-                value=str(data.get("razon_social") or ""),
-                width=280,
+                label="Apellido",
+                value=str(data.get("apellido") or ""),
+                width=210,
+                dense=True,
             ),
             "fecha_nacimiento": ft.TextField(
                 label="Fecha nacimiento/constitución",
                 value=str(data.get("fecha_nacimiento") or ""),
                 width=220,
+                dense=True,
             ),
-            "estado_persona": ft.TextField(
-                label="Estado",
-                value=str(data.get("estado_persona") or ""),
-                width=160,
+            "razon_social": ft.TextField(
+                label="Razón social",
+                value=str(data.get("razon_social") or ""),
+                width=260,
+                dense=True,
             ),
             "observaciones": ft.TextField(
                 label="Observaciones",
                 value=str(data.get("observaciones") or ""),
                 multiline=True,
                 min_lines=2,
-                max_lines=4,
-                width=560,
+                max_lines=3,
+                dense=True,
             ),
         }
-        self.edit_panel.content = detail_section(
-            "Editar datos principales",
-            [
-                ft.Column(
+
+    def _basic_edit_form(self) -> ft.Control:
+        if not self.edit_fields:
+            self._build_basic_edit_fields()
+        return ft.Column(
+            controls=[
+                ft.Row(
                     controls=[
-                        ft.Row(
-                            controls=[
-                                self.edit_fields["tipo_persona"],
-                                self.edit_fields["estado_persona"],
-                                self.edit_fields["nombre"],
-                                self.edit_fields["apellido"],
-                                self.edit_fields["fecha_nacimiento"],
-                            ],
-                            wrap=True,
-                            spacing=10,
-                        ),
-                        self.edit_fields["razon_social"],
-                        self.edit_fields["observaciones"],
-                        self.edit_message,
-                        ft.Row(
-                            controls=[
-                                ft.ElevatedButton("Guardar", on_click=self._save_basic_edit),
-                                ft.TextButton("Cancelar", on_click=self._cancel_basic_edit),
-                            ],
-                            spacing=10,
-                        ),
+                        self.edit_fields["tipo_persona"],
+                        self.edit_fields["estado_persona"],
                     ],
                     spacing=10,
-                )
+                    wrap=True,
+                ),
+                ft.Row(
+                    controls=[
+                        self.edit_fields["nombre"],
+                        self.edit_fields["apellido"],
+                    ],
+                    spacing=10,
+                    wrap=True,
+                ),
+                ft.Row(
+                    controls=[
+                        self.edit_fields["fecha_nacimiento"],
+                        self.edit_fields["razon_social"],
+                    ],
+                    spacing=10,
+                    wrap=True,
+                ),
+                self.edit_fields["observaciones"],
+                self.edit_message,
+                ft.Row(
+                    controls=[
+                        ft.ElevatedButton("Guardar", on_click=self._save_basic_edit),
+                        ft.TextButton("Cancelar", on_click=self._cancel_basic_edit),
+                    ],
+                    spacing=10,
+                ),
             ],
+            spacing=8,
+            scroll=ft.ScrollMode.AUTO,
         )
-        self.edit_panel.visible = True
-        self._safe_update(self.edit_panel)
+
+    def _refresh_basic_data_card(self) -> None:
+        if self.basic_data_card is None:
+            return
+        replacement = self._datos_principales_card(self.data)
+        self.basic_data_card.content = replacement.content
+        self._safe_update(self.basic_data_card)
 
     def _cancel_basic_edit(self, _) -> None:
-        self.edit_panel.visible = False
-        self.edit_panel.content = None
+        self.editing_basic_data = False
         self.edit_fields = {}
-        self._safe_update(self.edit_panel)
+        self.edit_message.visible = False
+        self._refresh_basic_data_card()
 
     def _save_basic_edit(self, _) -> None:
         version = self.data.get("version_registro")
@@ -1911,7 +1959,6 @@ class ParteDetailPage:
                 ft.Text(title, weight=ft.FontWeight.W_600),
                 entity_table(
                     columns=[
-                        ("Rol", "rol"),
                         ("Tipo", "tipo"),
                         ("Referencia", "referencia"),
                         ("Estado", "estado"),
@@ -1925,7 +1972,6 @@ class ParteDetailPage:
 
     def _participacion_table_row(self, item: dict[str, Any]) -> dict[str, Any]:
         return {
-            "rol": self._participacion_rol_label(item),
             "tipo": self._participacion_tipo_label(
                 item.get("tipo_relacion") or item.get("tipo_origen")
             ),
