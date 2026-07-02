@@ -142,7 +142,8 @@ def test_ficha_renderiza_datos_reales_y_secciones_vacias_sin_crudos() -> None:
     assert "Ada Lovelace" in text
     assert "20-12345678-9" in text
     assert "Datos principales" in text
-    assert "Sin contactos registrados." in text
+    assert "Sin teléfonos registrados." in text
+    assert "Sin mails registrados." in text
     assert "Sin domicilios registrados." in text
     assert "Sin roles ni participaciones." in text
     assert "{'" not in text
@@ -471,30 +472,28 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "Documento de identidad" in text
     assert "CUIT/CUIL/CDI" in text
     assert "20-12345678-9" in text
-    assert "Contactos" in text
-    assert "Emails" in text
+    assert "Mail" in text
     assert "ada@example.com" in text
     assert "Teléfonos" in text
     assert "+54 299 123" in text
     assert "tipo_contacto" not in text
     assert "fecha_desde" not in text
     assert "fecha_hasta" not in text
-    assert "Direcciones" in text
+    assert "Dirección" in text
     assert "San Martín 123, Neuquén, Neuquén" in text
     assert "tipo_domicilio" not in text
     assert "Participaciones" in text
     assert "Ventas" in text
     assert "Comprador en Reserva #15 — Lote 12" in text
-    assert "Comprador en Reserva de venta" in text
+    assert "Comprador en reserva de venta" in text
     assert "reserva_venta" not in text
-    assert "Estado financiero" in text
-    assert "Estado de cuenta" in text
+    assert "Estado de cuenta resumido" in text
     assert "Sin deuda registrada" in text
     assert "Saldo pendiente" in text
     assert "Obligaciones activas" in text
     assert "Último pago" in text
     assert "Mora" in text
-    assert text.rfind("Datos técnicos") > text.rfind("Estado financiero")
+    assert text.rfind("Datos técnicos") > text.rfind("Estado de cuenta resumido")
     assert "id_persona" in text
     assert "version_registro" in text
     assert _find_button(control, "Editar datos principales") is not None
@@ -546,8 +545,7 @@ def test_ficha_redisenada_preserva_estado_de_cuenta_y_panel_de_pago(monkeypatch)
     control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
     text = "\n".join(_texts(control))
 
-    assert "Estado de cuenta" in text
-    assert "Conceptos a pagar" in text
+    assert "Estado de cuenta resumido" in text
     pagar = _find_button(control, "Pagar")
     pagar.on_click(None)
 
@@ -587,19 +585,25 @@ def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None
     rows = [item for item in _walk(control) if isinstance(item, ft.Row)]
     balanced_rows = [row for row in rows if len(getattr(row, "controls", []) or []) == 2]
     root_texts = ["\n".join(_texts(child)) for child in control.content.controls]
-    idx_financiero = next(i for i, value in enumerate(root_texts) if "Estado financiero" in value)
-    idx_cuenta = next(i for i, value in enumerate(root_texts) if "Estado de cuenta" in value)
+    idx_resumen = next(i for i, value in enumerate(root_texts) if "Estado de cuenta resumido" in value)
     idx_tecnicos = next(i for i, value in enumerate(root_texts) if "Datos técnicos" in value)
 
-    assert idx_financiero < idx_cuenta < idx_tecnicos
-    assert getattr(control.content.controls[idx_financiero], "expand", None) is None
-    assert getattr(control.content.controls[idx_cuenta], "expand", None) is None
+    assert idx_resumen < idx_tecnicos
+    assert getattr(control.content.controls[idx_resumen], "expand", None) is None
     assert getattr(control.content.controls[idx_tecnicos], "expand", None) is None
-    assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [3, 2] for row in balanced_rows)
-    assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [2, 3] for row in balanced_rows)
+    assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [1, 1] for row in balanced_rows)
+
+    dashboard_cards = [
+        item
+        for item in _walk(control)
+        if isinstance(item, ft.Container) and getattr(item, "height", None)
+    ]
+    heights = {getattr(item, "height", None) for item in dashboard_cards}
+    assert {140, 145, 578}.issubset(heights)
 
     text = "\n".join(_texts(control))
-    assert "Sin contactos registrados." in text
+    assert "Sin teléfonos registrados." in text
+    assert "Sin mails registrados." in text
     assert "Sin domicilios registrados." in text
     assert "tipo_contacto" not in text
     assert "tipo_domicilio" not in text

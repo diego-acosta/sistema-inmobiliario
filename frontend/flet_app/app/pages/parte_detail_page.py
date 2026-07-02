@@ -57,36 +57,45 @@ class ParteDetailPage:
             expand=True,
             content=ft.Column(
                 controls=[
-                    ft.Row(
-                        controls=[
-                            ft.TextButton(
-                                "Volver al listado",
-                                on_click=lambda _: self.on_navigate("partes"),
-                            ),
-                        ]
-                    ),
                     self._header_card(data),
                     self.edit_panel,
                     ft.Row(
                         controls=[
-                            self._admin_card(
-                                "Datos principales", [self._datos_base(data)], expand=3
-                            ),
-                            self._admin_card(
-                                "Contactos",
-                                [self._contactos_resumen(data.get("contactos", []))],
-                                expand=2,
-                            ),
-                        ],
-                        spacing=14,
-                        vertical_alignment=ft.CrossAxisAlignment.START,
-                    ),
-                    ft.Row(
-                        controls=[
-                            self._admin_card(
-                                "Direcciones",
-                                [self._domicilios_resumen(data.get("domicilios", []))],
-                                expand=2,
+                            ft.Column(
+                                controls=[
+                                    self._admin_card(
+                                        "Datos principales",
+                                        [self._datos_base(data)],
+                                        height=265,
+                                    ),
+                                    self._admin_card(
+                                        "Dirección",
+                                        [self._domicilios_resumen(data.get("domicilios", []))],
+                                        height=145,
+                                        scroll_body=True,
+                                    ),
+                                    ft.Row(
+                                        controls=[
+                                            self._admin_card(
+                                                "Teléfonos",
+                                                [self._telefonos_resumen(data.get("contactos", []))],
+                                                expand=1,
+                                                height=140,
+                                                scroll_body=True,
+                                            ),
+                                            self._admin_card(
+                                                "Mail",
+                                                [self._mails_resumen(data.get("contactos", []))],
+                                                expand=1,
+                                                height=140,
+                                                scroll_body=True,
+                                            ),
+                                        ],
+                                        spacing=14,
+                                    ),
+                                ],
+                                spacing=14,
+                                expand=3,
                             ),
                             self._admin_card(
                                 "Participaciones",
@@ -95,23 +104,25 @@ class ParteDetailPage:
                                         data.get("participaciones", [])
                                     )
                                 ],
-                                expand=3,
+                                expand=2,
+                                height=578,
+                                scroll_body=True,
                             ),
                         ],
                         spacing=14,
                         vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
-                    self._admin_card("Estado financiero", [self._estado_financiero(data)]),
                     self._admin_card(
-                        "Estado de cuenta",
-                        self._estado_cuenta_compact(estado_cuenta_result),
+                        "Estado de cuenta resumido",
+                        [self._resumen_cuenta_dashboard(data, estado_cuenta_result)],
+                        height=172,
                     ),
                     self._admin_card(
                         "Datos técnicos",
                         [self._datos_tecnicos(data)],
+                        height=96,
                         low_emphasis=True,
                     ),
-                    ft.Container(height=1),
                 ],
                 spacing=14,
                 expand=True,
@@ -120,34 +131,26 @@ class ParteDetailPage:
         )
 
     def _header_card(self, data: dict[str, Any]) -> ft.Control:
-        secondary = self._join_secondary(
-            data.get("tipo_persona"),
-            self._documento_principal(data),
-            data.get("cuit_cuil"),
-            self._contacto_principal(data),
-        )
         return ft.Container(
-            content=ft.Column(
+            content=ft.Row(
                 controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Text(
-                                self._display_name(data),
-                                size=24,
-                                weight=ft.FontWeight.W_700,
-                            ),
-                            ft.Container(expand=True),
-                            status_badge(data.get("estado_persona")),
-                            ft.ElevatedButton(
-                                "Editar datos principales",
-                                on_click=lambda _: self._open_basic_edit(),
-                            ),
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ft.Text(
+                        self._display_name(data),
+                        size=24,
+                        weight=ft.FontWeight.W_700,
                     ),
-                    ft.Text(secondary or "Sin datos principales.", size=12, color=ft.Colors.BLUE_GREY_700),
+                    ft.Container(expand=True),
+                    status_badge(data.get("estado_persona")),
+                    ft.TextButton(
+                        "Volver al listado",
+                        on_click=lambda _: self.on_navigate("partes"),
+                    ),
+                    ft.ElevatedButton(
+                        "Editar datos principales",
+                        on_click=lambda _: self._open_basic_edit(),
+                    ),
                 ],
-                spacing=4,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.padding.symmetric(horizontal=18, vertical=14),
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
@@ -296,22 +299,30 @@ class ParteDetailPage:
         controls: list[ft.Control],
         *,
         expand: int | bool | None = None,
+        height: int | None = None,
+        scroll_body: bool = False,
         low_emphasis: bool = False,
     ) -> ft.Control:
+        body = (
+            ft.Column(controls=controls, spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
+            if scroll_body
+            else ft.Column(controls=controls, spacing=8)
+        )
         return ft.Container(
             content=ft.Column(
                 controls=[
                     ft.Text(
                         title,
-                        size=15 if low_emphasis else 18,
+                        size=14 if low_emphasis else 17,
                         weight=ft.FontWeight.W_700 if not low_emphasis else ft.FontWeight.W_600,
                         color=ft.Colors.BLUE_GREY_700 if low_emphasis else ft.Colors.BLUE_GREY_900,
                     ),
-                    *controls,
+                    body,
                 ],
                 spacing=10,
             ),
-            padding=14 if low_emphasis else 16,
+            height=height,
+            padding=12 if low_emphasis else 14,
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
             border_radius=10,
             bgcolor=ft.Colors.BLUE_GREY_50 if low_emphasis else ft.Colors.WHITE,
@@ -416,6 +427,53 @@ class ParteDetailPage:
             ],
             rows=obligaciones,
         )
+
+    def _resumen_cuenta_dashboard(self, data: dict[str, Any], result) -> ft.Control:
+        payload = result.data if result.success else None
+        resumen = self._as_dict(payload.get("resumen")) if isinstance(payload, dict) else {}
+        obligaciones = self._dashboard_obligaciones(payload)
+        pagable = next((item for item in obligaciones if self._deuda_pagable(item)), None)
+        saldo_total = self._first_present(
+            resumen, ["saldo_total", "saldo_pendiente_total", "saldo_pendiente"]
+        )
+        mora = self._first_present(resumen, ["mora_calculada", "mora", "total_mora"])
+        ultimo_pago = self._first_present(resumen, ["ultimo_pago", "fecha_ultimo_pago"])
+        metricas = ft.Row(
+            controls=[
+                self._summary_card("Saldo pendiente total", self._format_money(saldo_total)),
+                self._summary_card("Saldo vencido", self._format_money(resumen.get("saldo_vencido"))),
+                self._summary_card("Obligaciones activas", self._format_count(len(obligaciones))),
+                self._summary_card("Mora", self._format_money(mora)),
+                self._summary_card("Último pago", ultimo_pago or "-"),
+            ],
+            wrap=True,
+            spacing=10,
+            run_spacing=10,
+        )
+        action_panel = ft.Container()
+        controls: list[ft.Control] = [metricas]
+        if not obligaciones and self._estado_cuenta_sin_deuda(resumen, [], []):
+            controls.append(ft.Text("Sin deuda registrada", color=ft.Colors.BLUE_GREY_700))
+        if pagable is not None:
+            def show_payment(_) -> None:
+                action_panel.content = detail_section(
+                    "Registrar pago", [self._registrar_pago_panel(pagable)]
+                )
+                action_panel.visible = True
+                action_panel.update()
+
+            controls.append(ft.TextButton("Pagar", on_click=show_payment))
+        controls.append(action_panel)
+        return ft.Column(controls=controls, spacing=8)
+
+    def _dashboard_obligaciones(self, payload: object) -> list[dict[str, Any]]:
+        if isinstance(payload, list):
+            return self._dedupe_obligaciones(self._dict_rows(payload))
+        if not isinstance(payload, dict):
+            return []
+        grupos = self._dict_rows(payload.get("grupos_deuda"))
+        relaciones = self._flatten_relaciones(grupos)
+        return self._obligaciones_estado_cuenta(payload, relaciones)
 
     def _estado_cuenta_compact(self, result) -> list[ft.Control]:
         estado_area = ft.Container()
@@ -1268,6 +1326,7 @@ class ParteDetailPage:
                 value.startswith("$")
                 or value == "-"
                 or label.lower().startswith("cantidad")
+                or "obligaciones" in label.lower()
             )
             else self._format_money(value)
         )
@@ -1749,6 +1808,38 @@ class ParteDetailPage:
                 controls.extend([ft.Text(title, weight=ft.FontWeight.W_600), self._card_list([self._info_card(title=self._principal_label(item), subtitle=self._contacto_value(item), principal=False) for item in items])])
         return ft.Column(controls=controls, spacing=8)
 
+    def _telefonos_resumen(self, rows: object) -> ft.Control:
+        telefonos = [
+            contacto
+            for contacto in self._dict_rows(rows)
+            if self._contacto_kind(contacto) == "telefono"
+        ]
+        return self._contactos_lista(telefonos, "Sin teléfonos registrados.")
+
+    def _mails_resumen(self, rows: object) -> ft.Control:
+        mails = [
+            contacto
+            for contacto in self._dict_rows(rows)
+            if self._contacto_kind(contacto) == "email"
+        ]
+        return self._contactos_lista(mails, "Sin mails registrados.")
+
+    def _contactos_lista(
+        self, contactos: list[dict[str, Any]], empty_message: str
+    ) -> ft.Control:
+        if not contactos:
+            return ft.Text(empty_message)
+        return self._card_list(
+            [
+                self._info_card(
+                    title=self._principal_label(contacto),
+                    subtitle=self._contacto_value(contacto),
+                    principal=False,
+                )
+                for contacto in contactos
+            ]
+        )
+
     def _contacto_kind(self, contacto: dict[str, Any]) -> str:
         value = str(contacto.get("tipo_contacto") or "").upper()
         raw = str(self._contacto_value(contacto)).lower()
@@ -1816,11 +1907,11 @@ class ParteDetailPage:
         )
         normalized = str(raw).strip().lower()
         labels = {
-            "reserva_venta": "Reserva de venta",
-            "venta": "Venta",
-            "contrato_alquiler": "Contrato de alquiler",
-            "solicitud_alquiler": "Solicitud de alquiler",
-            "reserva_locativa": "Reserva locativa",
+            "reserva_venta": "reserva de venta",
+            "venta": "venta",
+            "contrato_alquiler": "contrato de alquiler",
+            "solicitud_alquiler": "solicitud de alquiler",
+            "reserva_locativa": "reserva locativa",
         }
         return labels.get(normalized, self._friendly_label(raw))
 
