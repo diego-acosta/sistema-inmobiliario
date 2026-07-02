@@ -21,6 +21,8 @@ class ParteDetailPage:
         self.edit_panel = ft.Container(visible=False)
         self.edit_message = ft.Text("", visible=False)
         self.edit_fields: dict[str, ft.TextField] = {}
+        self.editing_basic_data = False
+        self.basic_data_card: ft.Container | None = None
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -53,205 +55,247 @@ class ParteDetailPage:
             )
 
         self.data = data
-        return ft.Column(
-            controls=[
-                ft.Row(
-                    controls=[
-                        ft.TextButton(
-                            "Volver al listado",
-                            on_click=lambda _: self.on_navigate("partes"),
-                        ),
-                    ]
-                ),
-                self._header_card(data),
-                self.edit_panel,
-                detail_tabs(
-                    [
-                        (
-                            "Resumen",
-                            [
-                                detail_section(
-                                    "Informacion general", [self._datos_base(data)]
-                                ),
-                                detail_section(
-                                    "Resumen financiero de parte",
-                                    [self._estado_financiero(data)],
-                                ),
-                            ],
-                        ),
-                        (
-                            "Documentacion y contacto",
-                            [
-                                detail_section(
-                                    "Documentos",
-                                    [self._documentos_table(data.get("documentos", []))],
-                                ),
-                                detail_section(
-                                    "Contactos",
-                                    [self._contactos_table(data.get("contactos", []))],
-                                ),
-                                detail_section(
-                                    "Domicilios",
-                                    [self._domicilios_table(data.get("domicilios", []))],
-                                ),
-                            ],
-                        ),
-                        (
-                            "Roles / participaciones",
-                            [
-                                detail_section(
-                                    "Roles / participaciones",
-                                    [
-                                        self._participaciones_table(
-                                            data.get("participaciones", [])
-                                        )
-                                    ],
-                                )
-                            ],
-                        ),
-                        (
-                            "Estado de cuenta",
-                            self._estado_cuenta_tab(data, estado_cuenta_result),
-                        ),
-                        (
-                            "Usos transversales",
-                            [
-                                detail_section(
-                                    "Usos transversales",
-                                    [self._usos_transversales(data)],
-                                ),
-                                detail_section(
-                                    "Obligaciones del detalle integral",
-                                    [self._obligaciones_table(data)],
-                                ),
-                            ],
-                        ),
-                    ]
-                ),
-            ],
-            spacing=14,
+        return ft.Container(
             expand=True,
+            content=ft.Column(
+                controls=[
+                    self._header_card(data),
+                    ft.Row(
+                        controls=[
+                            ft.Column(
+                                controls=[
+                                    self._datos_principales_card(data),
+                                    self._admin_card(
+                                        "Dirección",
+                                        [self._domicilios_resumen(data.get("domicilios", []))],
+                                        height=145,
+                                        scroll_body=True,
+                                    ),
+                                    ft.Row(
+                                        controls=[
+                                            self._admin_card(
+                                                "Teléfonos",
+                                                [self._telefonos_resumen(data.get("contactos", []))],
+                                                expand=1,
+                                                height=140,
+                                                scroll_body=True,
+                                            ),
+                                            self._admin_card(
+                                                "Mail",
+                                                [self._mails_resumen(data.get("contactos", []))],
+                                                expand=1,
+                                                height=140,
+                                                scroll_body=True,
+                                            ),
+                                        ],
+                                        spacing=14,
+                                    ),
+                                ],
+                                spacing=14,
+                                expand=3,
+                                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                            ),
+                            self._admin_card(
+                                "Participaciones",
+                                [
+                                    self._participaciones_resumen(
+                                        data.get("participaciones", [])
+                                    )
+                                ],
+                                expand=2,
+                                height=578,
+                                scroll_body=True,
+                            ),
+                        ],
+                        spacing=14,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self._admin_card(
+                        "Estado de cuenta resumido",
+                        [self._resumen_cuenta_dashboard(data, estado_cuenta_result)],
+                        height=172,
+                    ),
+                    self._admin_card(
+                        "Datos técnicos",
+                        [self._datos_tecnicos(data)],
+                        height=96,
+                        low_emphasis=True,
+                    ),
+                ],
+                spacing=14,
+                expand=True,
+                scroll=ft.ScrollMode.AUTO,
+            ),
         )
 
     def _header_card(self, data: dict[str, Any]) -> ft.Control:
-        secondary = self._join_secondary(
-            data.get("tipo_persona"),
-            self._documento_principal(data),
-            data.get("cuit_cuil"),
-            self._contacto_principal(data),
-        )
         return ft.Container(
-            content=ft.Column(
+            content=ft.Row(
                 controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Text(
-                                self._display_name(data),
-                                size=24,
-                                weight=ft.FontWeight.W_700,
-                            ),
-                            ft.Container(expand=True),
-                            status_badge(data.get("estado_persona")),
-                            ft.OutlinedButton(
-                                "Editar datos básicos",
-                                on_click=lambda _: self._open_basic_edit(),
-                            ),
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    ft.Text(secondary or "Sin datos principales.", size=12, color=ft.Colors.BLUE_GREY_700),
                     ft.Text(
-                        f"version_registro: {data.get('version_registro')}",
-                        size=11,
-                        color=ft.Colors.BLUE_GREY_600,
-                    ) if data.get("version_registro") is not None else ft.Container(),
+                        self._display_name(data),
+                        size=24,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                    ft.Container(expand=True),
+                    status_badge(data.get("estado_persona")),
+                    ft.TextButton(
+                        "Volver al listado",
+                        on_click=lambda _: self.on_navigate("partes"),
+                    ),
                 ],
-                spacing=4,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+            padding=ft.padding.symmetric(horizontal=18, vertical=14),
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
-            border_radius=6,
+            border_radius=10,
+            bgcolor=ft.Colors.WHITE,
         )
 
+
+    def _datos_principales_card(self, data: dict[str, Any]) -> ft.Container:
+        card = self._admin_card(
+            "Datos principales",
+            self._datos_principales_controls(data),
+            height=self._datos_principales_height(),
+            action=self._datos_principales_action(),
+        )
+        self.basic_data_card = card
+        return card
+
+    def _datos_principales_controls(self, data: dict[str, Any]) -> list[ft.Control]:
+        if self.editing_basic_data:
+            return [self._basic_edit_form()]
+        return [self._datos_base(data)]
+
+    def _datos_principales_height(self) -> int:
+        return 360 if self.editing_basic_data else 265
+
+    def _datos_principales_action(self) -> ft.Control | None:
+        if self.editing_basic_data:
+            return None
+        return ft.ElevatedButton(
+            "Editar datos principales",
+            on_click=lambda _: self._open_basic_edit(),
+        )
 
     def _open_basic_edit(self) -> None:
+        self.editing_basic_data = True
+        self._build_basic_edit_fields()
+        self._refresh_basic_data_card()
+
+    def _build_basic_edit_fields(self) -> None:
         data = self.data
         self.edit_message.visible = False
         self.edit_fields = {
             "tipo_persona": ft.TextField(
                 label="Tipo de persona",
                 value=str(data.get("tipo_persona") or ""),
-                width=180,
+                width=170,
+                dense=True,
+            ),
+            "estado_persona": ft.TextField(
+                label="Estado",
+                value=str(data.get("estado_persona") or ""),
+                width=150,
+                dense=True,
             ),
             "nombre": ft.TextField(
-                label="Nombre", value=str(data.get("nombre") or ""), width=220
+                label="Nombre",
+                value=str(data.get("nombre") or ""),
+                width=210,
+                dense=True,
             ),
             "apellido": ft.TextField(
-                label="Apellido", value=str(data.get("apellido") or ""), width=220
-            ),
-            "razon_social": ft.TextField(
-                label="Razón social",
-                value=str(data.get("razon_social") or ""),
-                width=280,
+                label="Apellido",
+                value=str(data.get("apellido") or ""),
+                width=210,
+                dense=True,
             ),
             "fecha_nacimiento": ft.TextField(
                 label="Fecha nacimiento/constitución",
                 value=str(data.get("fecha_nacimiento") or ""),
                 width=220,
+                dense=True,
             ),
-            "estado_persona": ft.TextField(
-                label="Estado",
-                value=str(data.get("estado_persona") or ""),
-                width=160,
+            "razon_social": ft.TextField(
+                label="Razón social",
+                value=str(data.get("razon_social") or ""),
+                width=260,
+                dense=True,
             ),
             "observaciones": ft.TextField(
                 label="Observaciones",
                 value=str(data.get("observaciones") or ""),
                 multiline=True,
                 min_lines=2,
-                max_lines=4,
-                width=560,
+                max_lines=3,
+                dense=True,
             ),
         }
-        self.edit_panel.content = detail_section(
-            "Editar datos básicos",
-            [
-                ft.Column(
+
+    def _basic_edit_form(self) -> ft.Control:
+        if not self.edit_fields:
+            self._build_basic_edit_fields()
+        return ft.Column(
+            controls=[
+                ft.Row(
                     controls=[
-                        ft.Row(
-                            controls=[
-                                self.edit_fields["tipo_persona"],
-                                self.edit_fields["estado_persona"],
-                                self.edit_fields["nombre"],
-                                self.edit_fields["apellido"],
-                                self.edit_fields["fecha_nacimiento"],
-                            ],
-                            wrap=True,
-                            spacing=10,
-                        ),
-                        self.edit_fields["razon_social"],
-                        self.edit_fields["observaciones"],
-                        self.edit_message,
-                        ft.Row(
-                            controls=[
-                                ft.ElevatedButton("Guardar", on_click=self._save_basic_edit),
-                                ft.TextButton("Cancelar", on_click=self._cancel_basic_edit),
-                            ],
-                            spacing=10,
-                        ),
+                        self.edit_fields["tipo_persona"],
+                        self.edit_fields["estado_persona"],
                     ],
                     spacing=10,
-                )
+                    wrap=True,
+                ),
+                ft.Row(
+                    controls=[
+                        self.edit_fields["nombre"],
+                        self.edit_fields["apellido"],
+                    ],
+                    spacing=10,
+                    wrap=True,
+                ),
+                ft.Row(
+                    controls=[
+                        self.edit_fields["fecha_nacimiento"],
+                        self.edit_fields["razon_social"],
+                    ],
+                    spacing=10,
+                    wrap=True,
+                ),
+                self.edit_fields["observaciones"],
+                self.edit_message,
+                ft.Row(
+                    controls=[
+                        ft.ElevatedButton("Guardar", on_click=self._save_basic_edit),
+                        ft.TextButton("Cancelar", on_click=self._cancel_basic_edit),
+                    ],
+                    spacing=10,
+                ),
             ],
+            spacing=8,
+            scroll=ft.ScrollMode.AUTO,
         )
-        self.edit_panel.visible = True
-        self._safe_update(self.edit_panel)
+
+    def _refresh_basic_data_card(self) -> None:
+        mounted_card = self.basic_data_card
+        if mounted_card is None:
+            return
+        replacement = self._admin_card(
+            "Datos principales",
+            self._datos_principales_controls(self.data),
+            height=self._datos_principales_height(),
+            action=self._datos_principales_action(),
+        )
+        mounted_card.content = replacement.content
+        mounted_card.height = replacement.height
+        self._safe_update(mounted_card)
 
     def _cancel_basic_edit(self, _) -> None:
-        self.edit_panel.visible = False
-        self.edit_panel.content = None
+        self.editing_basic_data = False
         self.edit_fields = {}
-        self._safe_update(self.edit_panel)
+        self.edit_message.visible = False
+        self._refresh_basic_data_card()
 
     def _save_basic_edit(self, _) -> None:
         version = self.data.get("version_registro")
@@ -308,43 +352,100 @@ class ParteDetailPage:
         except AssertionError:
             pass
 
-    def _datos_base(self, data: dict[str, Any]) -> ft.Control:
-        razon_social = data.get("razon_social")
-        display_name = self._display_name(data)
-        razon_social_complementaria = (
-            razon_social if razon_social and str(razon_social) != display_name else None
+    def _admin_card(
+        self,
+        title: str,
+        controls: list[ft.Control],
+        *,
+        expand: int | bool | None = None,
+        height: int | None = None,
+        scroll_body: bool = False,
+        action: ft.Control | None = None,
+        low_emphasis: bool = False,
+    ) -> ft.Control:
+        body = (
+            ft.Column(controls=controls, spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
+            if scroll_body
+            else ft.Column(controls=controls, spacing=8)
         )
+        header_controls: list[ft.Control] = [
+            ft.Text(
+                title,
+                size=14 if low_emphasis else 17,
+                weight=ft.FontWeight.W_700 if not low_emphasis else ft.FontWeight.W_600,
+                color=ft.Colors.BLUE_GREY_700 if low_emphasis else ft.Colors.BLUE_GREY_900,
+            )
+        ]
+        if action is not None:
+            header_controls.extend([ft.Container(expand=True), action])
+
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=header_controls,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    body,
+                ],
+                spacing=10,
+            ),
+            height=height,
+            padding=12 if low_emphasis else 14,
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=10,
+            bgcolor=ft.Colors.BLUE_GREY_50 if low_emphasis else ft.Colors.WHITE,
+            expand=expand,
+        )
+
+    def _datos_base(self, data: dict[str, Any]) -> ft.Control:
         return self._filtered_key_value_grid(
             [
-                ("Razon social", razon_social_complementaria),
-                ("Fecha nacimiento", data.get("fecha_nacimiento")),
-                ("Fecha alta", data.get("fecha_alta")),
-                ("Codigo", data.get("codigo_persona")),
+                ("Tipo persona", data.get("tipo_persona")),
+                ("Nombre", data.get("nombre")),
+                ("Apellido", data.get("apellido")),
+                ("Razón social", data.get("razon_social")),
+                ("Documento de identidad", self._documento_principal(data)),
+                ("CUIT/CUIL/CDI", data.get("cuit_cuil") or data.get("cuit") or data.get("cuil") or data.get("cdi")),
+                ("Fecha de nacimiento", data.get("fecha_nacimiento")),
+                ("Estado", data.get("estado_persona")),
                 ("Observaciones", data.get("observaciones")),
+            ]
+        )
+
+    def _datos_tecnicos(self, data: dict[str, Any]) -> ft.Control:
+        return self._filtered_key_value_grid(
+            [
+                ("id_persona", data.get("id_persona") or self.id_persona),
+                ("version_registro", data.get("version_registro")),
+                ("uid_global", data.get("uid_global")),
+                ("Última modificación", data.get("updated_at") or data.get("fecha_modificacion")),
             ]
         )
 
     def _estado_financiero(self, data: dict[str, Any]) -> ft.Control:
         raw_resumen = data.get("resumen_financiero") or {}
         resumen = raw_resumen if isinstance(raw_resumen, dict) else {}
+        obligaciones_activas = (
+            resumen.get("obligaciones_activas")
+            or resumen.get("cantidad_obligaciones_activas")
+            or resumen.get("cantidad_obligaciones")
+        )
+        ultimo_pago = resumen.get("ultimo_pago") or resumen.get("fecha_ultimo_pago")
+        mora = resumen.get("mora") or resumen.get("mora_calculada") or resumen.get("total_mora")
         return ft.Row(
             controls=[
                 self._summary_card(
-                    "Cantidad de obligaciones",
-                    self._format_count(resumen.get("cantidad_obligaciones")),
-                ),
-                self._summary_card(
-                    "Saldo pendiente total",
+                    "Saldo pendiente",
                     self._format_money(resumen.get("saldo_pendiente_total")),
                     accent=True,
                 ),
                 self._summary_card(
-                    "Saldo pendiente responsabilidad",
-                    self._format_money(
-                        resumen.get("saldo_pendiente_responsabilidad")
-                    ),
-                    accent=True,
+                    "Obligaciones activas",
+                    self._format_count(obligaciones_activas),
                 ),
+                self._summary_card("Último pago", ultimo_pago or "-"),
+                self._summary_card("Mora", self._format_money(mora)),
             ],
             wrap=True,
             spacing=10,
@@ -395,6 +496,79 @@ class ParteDetailPage:
             ],
             rows=obligaciones,
         )
+
+    def _resumen_cuenta_dashboard(self, data: dict[str, Any], result) -> ft.Control:
+        payload = result.data if result.success else None
+        resumen = self._as_dict(payload.get("resumen")) if isinstance(payload, dict) else {}
+        obligaciones = self._dashboard_obligaciones(payload)
+        pagable = next((item for item in obligaciones if self._deuda_pagable(item)), None)
+        saldo_total = self._first_present(
+            resumen, ["saldo_total", "saldo_pendiente_total", "saldo_pendiente"]
+        )
+        mora = self._first_present(resumen, ["mora_calculada", "mora", "total_mora"])
+        ultimo_pago = self._first_present(resumen, ["ultimo_pago", "fecha_ultimo_pago"])
+        metricas = ft.Row(
+            controls=[
+                self._summary_card("Saldo pendiente total", self._format_money(saldo_total)),
+                self._summary_card("Saldo vencido", self._format_money(resumen.get("saldo_vencido"))),
+                self._summary_card("Obligaciones activas", self._format_count(len(obligaciones))),
+                self._summary_card("Mora", self._format_money(mora)),
+                self._summary_card("Último pago", ultimo_pago or "-"),
+            ],
+            wrap=True,
+            spacing=10,
+            run_spacing=10,
+        )
+        action_panel = ft.Container()
+        controls: list[ft.Control] = [metricas]
+        if not obligaciones and self._estado_cuenta_sin_deuda(resumen, [], []):
+            controls.append(ft.Text("Sin deuda registrada", color=ft.Colors.BLUE_GREY_700))
+        if pagable is not None:
+            def show_payment(_) -> None:
+                action_panel.content = detail_section(
+                    "Registrar pago", [self._registrar_pago_panel(pagable)]
+                )
+                action_panel.visible = True
+                action_panel.update()
+
+            controls.append(ft.TextButton("Pagar", on_click=show_payment))
+        controls.append(action_panel)
+        return ft.Column(controls=controls, spacing=8)
+
+    def _dashboard_obligaciones(self, payload: object) -> list[dict[str, Any]]:
+        if isinstance(payload, list):
+            return self._dedupe_obligaciones(self._dict_rows(payload))
+        if not isinstance(payload, dict):
+            return []
+        grupos = self._dict_rows(payload.get("grupos_deuda"))
+        relaciones = self._flatten_relaciones(grupos)
+        return self._obligaciones_estado_cuenta(payload, relaciones)
+
+    def _estado_cuenta_compact(self, result) -> list[ft.Control]:
+        estado_area = ft.Container()
+        notice_area = ft.Container()
+
+        def refresh_estado_cuenta(payment_payload: object | None = None) -> None:
+            refreshed = self.api.get_estado_cuenta_persona(self.id_persona)
+            estado_area.content = ft.Column(
+                controls=self._estado_cuenta_controls(
+                    refreshed, on_refresh=refresh_estado_cuenta
+                ),
+                spacing=12,
+            )
+            if payment_payload is not None:
+                notice_area.content = self._pago_result(payment_payload)
+                notice_area.visible = True
+                notice_area.update()
+            estado_area.update()
+
+        estado_area.content = ft.Column(
+            controls=self._estado_cuenta_controls(
+                result, on_refresh=refresh_estado_cuenta
+            ),
+            spacing=12,
+        )
+        return [notice_area, estado_area]
 
     def _estado_cuenta_tab(self, data: dict[str, Any], result) -> list[ft.Control]:
         estado_area = ft.Container()
@@ -1221,6 +1395,7 @@ class ParteDetailPage:
                 value.startswith("$")
                 or value == "-"
                 or label.lower().startswith("cantidad")
+                or "obligaciones" in label.lower()
             )
             else self._format_money(value)
         )
@@ -1689,6 +1864,271 @@ class ParteDetailPage:
     def _sum_field(self, rows: list[dict[str, Any]], key: str) -> float:
         return sum(self._to_number(row.get(key)) for row in rows)
 
+    def _contactos_resumen(self, rows: object) -> ft.Control:
+        contactos = self._dict_rows(rows)
+        if not contactos:
+            return ft.Text("Sin contactos registrados.")
+        emails = [c for c in contactos if self._contacto_kind(c) == "email"]
+        telefonos = [c for c in contactos if self._contacto_kind(c) == "telefono"]
+        otros = [c for c in contactos if c not in emails and c not in telefonos]
+        controls: list[ft.Control] = []
+        for title, items in (("Emails", emails), ("Teléfonos", telefonos), ("Otros contactos", otros)):
+            if items:
+                controls.extend([ft.Text(title, weight=ft.FontWeight.W_600), self._card_list([self._info_card(title=self._principal_label(item), subtitle=self._contacto_value(item), principal=False) for item in items])])
+        return ft.Column(controls=controls, spacing=8)
+
+    def _telefonos_resumen(self, rows: object) -> ft.Control:
+        telefonos = [
+            contacto
+            for contacto in self._dict_rows(rows)
+            if self._contacto_kind(contacto) == "telefono"
+        ]
+        return self._contactos_lista(telefonos, "Sin teléfonos registrados.")
+
+    def _mails_resumen(self, rows: object) -> ft.Control:
+        mails = [
+            contacto
+            for contacto in self._dict_rows(rows)
+            if self._contacto_kind(contacto) == "email"
+        ]
+        return self._contactos_lista(mails, "Sin mails registrados.")
+
+    def _contactos_lista(
+        self, contactos: list[dict[str, Any]], empty_message: str
+    ) -> ft.Control:
+        if not contactos:
+            return ft.Text(empty_message)
+        return self._card_list(
+            [
+                self._info_card(
+                    title=self._principal_label(contacto),
+                    subtitle=self._contacto_value(contacto),
+                    principal=False,
+                )
+                for contacto in contactos
+            ]
+        )
+
+    def _contacto_kind(self, contacto: dict[str, Any]) -> str:
+        value = str(contacto.get("tipo_contacto") or "").upper()
+        raw = str(self._contacto_value(contacto)).lower()
+        if "MAIL" in value or "@" in raw:
+            return "email"
+        if any(token in value for token in ("TEL", "WHATSAPP", "CEL")):
+            return "telefono"
+        return "otro"
+
+    def _contacto_value(self, contacto: dict[str, Any]) -> str:
+        return str(contacto.get("valor_contacto") or contacto.get("valor") or contacto.get("contacto") or "Sin contacto informado.")
+
+    def _principal_label(self, row: dict[str, Any]) -> str:
+        return "Principal" if self._is_principal(row) else "Otro"
+
+    def _domicilios_resumen(self, rows: object) -> ft.Control:
+        domicilios = self._dict_rows(rows)
+        if not domicilios:
+            return ft.Text("Sin domicilios registrados.")
+        return self._card_list([self._info_card(title=self._principal_label(domicilio), subtitle=self._format_address(domicilio), principal=False, extra=domicilio.get("observaciones")) for domicilio in domicilios])
+
+    def _participaciones_resumen(self, rows: object) -> ft.Control:
+        participaciones = self._dict_rows(rows)
+        if not participaciones:
+            return ft.Text("Sin roles ni participaciones.")
+
+        ventas = [
+            item
+            for item in participaciones
+            if self._participacion_bucket(item) == "Ventas"
+        ]
+        alquileres = [
+            item
+            for item in participaciones
+            if self._participacion_bucket(item) == "Alquileres"
+        ]
+        otros = [
+            item
+            for item in participaciones
+            if self._participacion_bucket(item) == "Otros"
+        ]
+
+        controls: list[ft.Control] = []
+        if ventas:
+            controls.append(self._participacion_table("Ventas", ventas))
+        if alquileres:
+            controls.append(self._participacion_table("Alquileres", alquileres))
+        if otros:
+            controls.append(self._participacion_table("Otros", otros))
+        return ft.Column(controls=controls, spacing=10)
+
+    def _participacion_table(
+        self, title: str, rows: list[dict[str, Any]]
+    ) -> ft.Control:
+        table_rows = [self._participacion_table_row(item) for item in rows]
+        return ft.Column(
+            controls=[
+                ft.Text(title, weight=ft.FontWeight.W_600),
+                entity_table(
+                    columns=[
+                        ("Tipo", "tipo"),
+                        ("Referencia", "referencia"),
+                        ("Estado", "estado"),
+                    ],
+                    rows=table_rows,
+                    actions=lambda row: [self._participacion_nav_action(row["_source"])],
+                ),
+            ],
+            spacing=6,
+        )
+
+    def _participacion_table_row(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "tipo": self._participacion_tipo_label(
+                item.get("tipo_relacion") or item.get("tipo_origen")
+            ),
+            "referencia": self._participacion_referencia(item),
+            "estado": self._participacion_estado(item),
+            "_source": item,
+        }
+
+    def _participacion_rol_label(self, item: dict[str, Any]) -> str:
+        return self._friendly_label(
+            item.get("nombre_rol")
+            or item.get("rol")
+            or item.get("codigo_rol")
+            or "Participación"
+        )
+
+    def _participacion_referencia(self, item: dict[str, Any]) -> str:
+        return str(
+            item.get("descripcion_origen")
+            or item.get("codigo_origen")
+            or item.get("codigo_venta")
+            or item.get("codigo_contrato")
+            or item.get("codigo")
+            or item.get("id_relacion")
+            or item.get("id_origen")
+            or "-"
+        )
+
+    def _participacion_estado(self, item: dict[str, Any]) -> str:
+        return str(
+            item.get("estado")
+            or item.get("estado_relacion")
+            or item.get("estado_origen")
+            or "-"
+        )
+
+    def _participacion_bucket(self, item: dict[str, Any]) -> str:
+        tipo = str(item.get("tipo_relacion") or item.get("tipo_origen") or "").lower()
+        text = " ".join(
+            str(item.get(key) or "").lower()
+            for key in ("tipo_relacion", "tipo_origen", "descripcion_origen", "codigo_rol")
+        )
+        if tipo in self._participacion_tipos_venta() or "venta" in text or "reserva" in text or "escritur" in text or "cesion" in text or "cesión" in text:
+            return "Ventas"
+        if tipo in self._participacion_tipos_alquiler() or "alquiler" in text or "locat" in text or "contrato" in text:
+            return "Alquileres"
+        return "Otros"
+
+    def _participacion_tipos_venta(self) -> set[str]:
+        return {
+            "venta",
+            "reserva_venta",
+            "cesion",
+            "escrituracion",
+            "rescision_venta",
+        }
+
+    def _participacion_tipos_alquiler(self) -> set[str]:
+        return {
+            "contrato_alquiler",
+            "solicitud_alquiler",
+            "reserva_locativa",
+            "rescision_finalizacion_alquiler",
+            "entrega_restitucion_inmueble",
+        }
+
+    def _participacion_tipo_label(self, value: object) -> str:
+        labels = {
+            "reserva_venta": "Reserva de venta",
+            "venta": "Venta",
+            "contrato_alquiler": "Contrato de alquiler",
+            "solicitud_alquiler": "Solicitud de alquiler",
+            "reserva_locativa": "Reserva locativa",
+            "cesion": "Cesión",
+            "escrituracion": "Escrituración",
+            "rescision_venta": "Rescisión de venta",
+            "rescision_finalizacion_alquiler": "Rescisión/finalización de alquiler",
+            "entrega_restitucion_inmueble": "Entrega/restitución",
+        }
+        normalized = str(value or "").strip().lower()
+        return labels.get(normalized, self._friendly_label(value))
+
+    def _participacion_nav_action(self, item: dict[str, Any]) -> ft.Control:
+        tipo = str(item.get("tipo_relacion") or item.get("tipo_origen") or "").lower()
+        route: str | None = None
+        params: dict[str, Any] = {}
+        if tipo == "venta":
+            id_venta = self._parse_optional_int(
+                item.get("id_venta") or item.get("id_origen") or item.get("id_relacion")
+            )
+            if id_venta is not None:
+                route = "venta_detail"
+                params = {"id_venta": id_venta}
+        elif tipo == "contrato_alquiler":
+            id_contrato = self._parse_optional_int(
+                item.get("id_contrato_alquiler")
+                or item.get("id_origen")
+                or item.get("id_relacion")
+            )
+            if id_contrato is not None:
+                route = "contrato_detail"
+                params = {"id_contrato_alquiler": id_contrato}
+
+        if route is None:
+            return ft.TextButton("Ver", disabled=True)
+        return ft.TextButton(
+            "Ver",
+            on_click=lambda _, route=route, params=params: self.on_navigate(
+                route, **params
+            ),
+        )
+
+    def _participacion_label(self, item: dict[str, Any]) -> str:
+        rol = self._participacion_rol_label(item)
+        origen = self._participacion_origen_label(item)
+        inmueble = item.get("lote") or item.get("unidad") or item.get("inmueble")
+        label = f"{rol} en {origen}"
+        if inmueble:
+            label = f"{label} — {inmueble}"
+        return label
+
+
+    def _participacion_origen_label(self, item: dict[str, Any]) -> str:
+        raw = (
+            item.get("descripcion_origen")
+            or item.get("codigo_venta")
+            or item.get("codigo_contrato")
+            or item.get("codigo")
+            or item.get("tipo_relacion")
+            or item.get("tipo_origen")
+            or "origen asociado"
+        )
+        normalized = str(raw).strip().lower()
+        labels = {
+            "reserva_venta": "reserva de venta",
+            "venta": "venta",
+            "contrato_alquiler": "contrato de alquiler",
+            "solicitud_alquiler": "solicitud de alquiler",
+            "reserva_locativa": "reserva locativa",
+            "cesion": "cesión",
+            "escrituracion": "escrituración",
+            "rescision_venta": "rescisión de venta",
+            "rescision_finalizacion_alquiler": "rescisión/finalización de alquiler",
+            "entrega_restitucion_inmueble": "entrega/restitución",
+        }
+        return labels.get(normalized, self._friendly_label(raw))
+
     def _participaciones_table(self, rows: object) -> ft.Control:
         rows = self._dict_rows(rows)
         if not rows:
@@ -1989,8 +2429,6 @@ class ParteDetailPage:
         text = str(value or "").strip()
         if not text:
             return "Sin tipo"
-        if text.isupper() and "_" not in text:
-            return text
         return text.replace("_", " ").capitalize()
 
     def _format_address(self, domicilio: dict[str, Any]) -> str:

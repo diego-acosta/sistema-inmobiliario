@@ -28,6 +28,7 @@ class FakeApi:
         self.update_calls: list[tuple[int, dict[str, Any], int, str | None]] = []
         self.update_result = ApiResult(True, data={"id_persona": 42, "version_registro": 8})
         self.crear_persona_calls: list[dict[str, Any]] = []
+        self.registrar_pago_calls: list[dict[str, Any]] = []
 
     def get_personas(self, **_: Any) -> ApiResult:
         return self.personas
@@ -52,6 +53,10 @@ class FakeApi:
     def crear_persona(self, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
         self.crear_persona_calls.append(payload)
         return ApiResult(True, data={"id_persona": 999})
+
+    def registrar_pago_persona(self, id_persona: int, **kwargs: Any) -> ApiResult:
+        self.registrar_pago_calls.append({"id_persona": id_persona, **kwargs})
+        return ApiResult(True, data={"monto_aplicado": kwargs.get("monto", 0), "obligaciones_pagadas": []})
 
 
 def _walk(control: object):
@@ -136,8 +141,9 @@ def test_ficha_renderiza_datos_reales_y_secciones_vacias_sin_crudos() -> None:
     assert api.detalle_ids == [42]
     assert "Ada Lovelace" in text
     assert "20-12345678-9" in text
-    assert "Sin documentos registrados." in text
-    assert "Sin contactos registrados." in text
+    assert "Datos principales" in text
+    assert "Sin teléfonos registrados." in text
+    assert "Sin mails registrados." in text
     assert "Sin domicilios registrados." in text
     assert "Sin roles ni participaciones." in text
     assert "{'" not in text
@@ -245,18 +251,26 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     )
     control = page.build()
 
-    button = _find_button(control, "Editar datos básicos")
+    button = _find_button(control, "Editar datos principales")
+    mounted_card = page.basic_data_card
     button.on_click(None)
-    assert page.edit_panel.visible is True
-    assert _find_field(page.edit_panel, "Nombre").value == "Ada"
-    assert _find_field(page.edit_panel, "Apellido").value == "Lovelace"
-    assert "Documentos" not in "\n".join(_texts(page.edit_panel))
-    assert "Contactos" not in "\n".join(_texts(page.edit_panel))
-    assert "Domicilios" not in "\n".join(_texts(page.edit_panel))
+    assert page.editing_basic_data is True
+    assert page.basic_data_card is mounted_card
+    assert mounted_card.height >= 345
+    assert _find_field(mounted_card, "Nombre").value == "Ada"
+    assert _find_field(mounted_card, "Apellido").value == "Lovelace"
+    assert _find_button(mounted_card, "Guardar") is not None
+    assert _find_button(mounted_card, "Cancelar") is not None
+    edit_text = "\n".join(_texts(mounted_card))
+    assert "Documento de identidad" not in edit_text
+    assert "CUIT/CUIL/CDI" not in edit_text
+    assert "Documentos" not in edit_text
+    assert "Contactos" not in edit_text
+    assert "Domicilios" not in edit_text
 
-    _find_field(page.edit_panel, "Nombre").value = "Augusta Ada"
-    _find_field(page.edit_panel, "Observaciones").value = "Actualizada"
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    _find_field(mounted_card, "Nombre").value = "Augusta Ada"
+    _find_field(mounted_card, "Observaciones").value = "Actualizada"
+    _find_button(mounted_card, "Guardar").on_click(None)
 
     assert len(api.update_calls) == 1
     id_persona, payload, if_match_version, op_id = api.update_calls[0]
@@ -279,7 +293,7 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     assert api.crear_persona_calls == []
 
     page._open_basic_edit()
-    assert _find_field(page.edit_panel, "Nombre").value == "Augusta Ada"
+    assert _find_field(page.basic_data_card, "Nombre").value == "Augusta Ada"
 
 def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     api = FakeApi(
@@ -304,11 +318,19 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     )
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None)
     control = page.build()
-    _find_button(control, "Editar datos básicos").on_click(None)
-    _find_field(page.edit_panel, "Nombre").value = "Cambio descartado"
-    _find_button(page.edit_panel, "Cancelar").on_click(None)
+    mounted_card = page.basic_data_card
+    _find_button(control, "Editar datos principales").on_click(None)
+    assert page.basic_data_card is mounted_card
+    _find_field(mounted_card, "Nombre").value = "Cambio descartado"
+    _find_button(mounted_card, "Cancelar").on_click(None)
 
-    assert page.edit_panel.visible is False
+    assert page.editing_basic_data is False
+    assert page.basic_data_card is mounted_card
+    assert mounted_card.height == 265
+    read_text = "\n".join(_texts(mounted_card))
+    assert "Editar datos principales" in read_text
+    assert "Guardar" not in read_text
+    assert "Cancelar" not in read_text
     assert api.update_calls == []
     assert api.crear_persona_calls == []
 
@@ -346,9 +368,11 @@ def test_guardado_exitoso_con_fallo_de_recarga_muestra_error_y_no_navega() -> No
     )
     control = page.build()
 
-    _find_button(control, "Editar datos básicos").on_click(None)
-    _find_field(page.edit_panel, "Nombre").value = "Augusta Ada"
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    mounted_card = page.basic_data_card
+    _find_button(control, "Editar datos principales").on_click(None)
+    assert page.basic_data_card is mounted_card
+    _find_field(mounted_card, "Nombre").value = "Augusta Ada"
+    _find_button(page.basic_data_card, "Guardar").on_click(None)
 
     assert api.detalle_ids == [42, 42]
     assert navigations == []
@@ -379,10 +403,399 @@ def test_error_concurrencia_y_validacion_muestran_mensaje_claro() -> None:
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None)
     control = page.build()
     api.update_result = ApiResult(False, status_code=409, error_code="CONCURRENCY_ERROR")
-    _find_button(control, "Editar datos básicos").on_click(None)
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    mounted_card = page.basic_data_card
+    _find_button(control, "Editar datos principales").on_click(None)
+    assert page.basic_data_card is mounted_card
+    _find_button(mounted_card, "Guardar").on_click(None)
     assert "La persona fue modificada por otro usuario" in page.edit_message.value
+    assert "La persona fue modificada por otro usuario" in "\n".join(_texts(mounted_card))
 
     api.update_result = ApiResult(False, status_code=422, error_message="nombre requerido")
-    _find_button(page.edit_panel, "Guardar").on_click(None)
+    _find_button(mounted_card, "Guardar").on_click(None)
     assert "nombre requerido" in page.edit_message.value
+
+
+def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_crudos() -> None:
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "nombre": "Ada",
+                "apellido": "Lovelace",
+                "razon_social": None,
+                "estado_persona": "ACTIVA",
+                "cuit_cuil": "20-12345678-9",
+                "fecha_nacimiento": "1815-12-10",
+                "observaciones": "Matemática",
+                "version_registro": 7,
+                "uid_global": "uid-ada",
+                "updated_at": "2026-06-01T10:00:00",
+                "documentos": [
+                    {"tipo_documento": "DNI", "numero_documento": "12345678", "es_principal": True}
+                ],
+                "contactos": [
+                    {
+                        "tipo_contacto": "EMAIL",
+                        "valor_contacto": "ada@example.com",
+                        "es_principal": True,
+                        "fecha_desde": "2020-01-01",
+                        "fecha_hasta": "2021-01-01",
+                    },
+                    {"tipo_contacto": "TELEFONO", "valor_contacto": "+54 299 123", "es_principal": False},
+                ],
+                "domicilios": [
+                    {
+                        "tipo_domicilio": "REAL",
+                        "calle": "San Martín 123",
+                        "localidad": "Neuquén",
+                        "provincia": "Neuquén",
+                        "es_principal": True,
+                        "fecha_desde": "2020-01-01",
+                        "fecha_hasta": "2021-01-01",
+                    }
+                ],
+                "participaciones": [
+                    {
+                        "tipo_relacion": "venta",
+                        "codigo_rol": "COMPRADOR",
+                        "descripcion_origen": "Venta #15",
+                        "id_venta": 15,
+                        "estado": "ACTIVA",
+                        "fecha_desde": "2022-01-01",
+                    },
+                    {
+                        "tipo_relacion": "reserva_venta",
+                        "codigo_rol": "COMPRADOR",
+                    },
+                    {
+                        "tipo_relacion": "contrato_alquiler",
+                        "codigo_rol": "LOCATARIO",
+                        "id_contrato_alquiler": 3,
+                    }
+                ],
+                "resumen_financiero": {
+                    "saldo_pendiente_total": 1500,
+                    "cantidad_obligaciones": 2,
+                    "fecha_ultimo_pago": "2026-05-20",
+                    "mora_calculada": 100,
+                },
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        )
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    text = "\n".join(_texts(control))
+
+    assert "Ada Lovelace" in text
+    assert "ACTIVA" in text
+    assert "FISICA" in text
+    assert "12345678" in text
+    assert "Datos principales" in text
+    assert "Documento de identidad" in text
+    assert "CUIT/CUIL/CDI" in text
+    assert "20-12345678-9" in text
+    assert "Mail" in text
+    assert "ada@example.com" in text
+    assert "Teléfonos" in text
+    assert "+54 299 123" in text
+    assert "tipo_contacto" not in text
+    assert "fecha_desde" not in text
+    assert "fecha_hasta" not in text
+    assert "Dirección" in text
+    assert "San Martín 123, Neuquén, Neuquén" in text
+    assert "tipo_domicilio" not in text
+    assert "Participaciones" in text
+    assert "Ventas" in text
+    assert "Alquileres" in text
+    assert "Reserva de venta" in text
+    assert "Contrato de alquiler" in text
+    assert "reserva_venta" not in text
+    assert "contrato_alquiler" not in text
+    assert "Estado de cuenta resumido" in text
+    assert "Sin deuda registrada" in text
+    assert "Saldo pendiente" in text
+    assert "Obligaciones activas" in text
+    assert "Último pago" in text
+    assert "Mora" in text
+    assert text.rfind("Datos técnicos") > text.rfind("Estado de cuenta resumido")
+    assert "id_persona" in text
+    assert "version_registro" in text
+    assert _find_button(control, "Editar datos principales") is not None
+    assert api.crear_persona_calls == []
+    assert api.update_calls == []
+    assert api.registrar_pago_calls == []
+
+
+def test_ficha_redisenada_preserva_estado_de_cuenta_y_panel_de_pago(monkeypatch) -> None:
+    monkeypatch.setattr(ft.Control, "update", lambda self: None)
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "estado_persona": "ACTIVA",
+                "version_registro": 7,
+                "documentos": [],
+                "contactos": [],
+                "domicilios": [],
+                "participaciones": [],
+                "resumen_financiero": {"saldo_pendiente_total": 1000, "cantidad_obligaciones": 1},
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        ),
+        estado_cuenta=ApiResult(
+            True,
+            data={
+                "resumen": {"saldo_total": 1000},
+                "grupos_deuda": [],
+                "obligaciones": [
+                    {
+                        "id_obligacion_financiera": 77,
+                        "tipo_origen": "venta",
+                        "fecha_vencimiento": "2026-07-10",
+                        "estado_obligacion": "PENDIENTE",
+                        "saldo_pendiente": 1000,
+                        "total_con_mora": 1100,
+                        "mora_calculada": 100,
+                    }
+                ],
+            },
+        ),
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    text = "\n".join(_texts(control))
+
+    assert "Estado de cuenta resumido" in text
+    pagar = _find_button(control, "Pagar")
+    pagar.on_click(None)
+
+    updated_text = "\n".join(_texts(control))
+    assert "Registrar pago" in updated_text
+    assert "Confirmar pago" in updated_text
+    assert api.crear_persona_calls == []
+    assert api.update_calls == []
+    assert api.registrar_pago_calls == []
+
+
+def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None:
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "estado_persona": "ACTIVA",
+                "version_registro": 7,
+                "documentos": [],
+                "contactos": [],
+                "domicilios": [],
+                "participaciones": [],
+                "resumen_financiero": {},
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        )
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    assert isinstance(control, ft.Container)
+    assert isinstance(control.content, ft.Column)
+    assert control.content.scroll == ft.ScrollMode.AUTO
+    rows = [item for item in _walk(control) if isinstance(item, ft.Row)]
+    balanced_rows = [row for row in rows if len(getattr(row, "controls", []) or []) == 2]
+    root_texts = ["\n".join(_texts(child)) for child in control.content.controls]
+    idx_resumen = next(i for i, value in enumerate(root_texts) if "Estado de cuenta resumido" in value)
+    idx_tecnicos = next(i for i, value in enumerate(root_texts) if "Datos técnicos" in value)
+
+    assert idx_resumen < idx_tecnicos
+    assert getattr(control.content.controls[idx_resumen], "expand", None) is None
+    assert getattr(control.content.controls[idx_tecnicos], "expand", None) is None
+    assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [1, 1] for row in balanced_rows)
+
+    dashboard_cards = [
+        item
+        for item in _walk(control)
+        if isinstance(item, ft.Container) and getattr(item, "height", None)
+    ]
+    heights = {getattr(item, "height", None) for item in dashboard_cards}
+    assert {140, 145, 578}.issubset(heights)
+
+    text = "\n".join(_texts(control))
+    assert "Sin teléfonos registrados." in text
+    assert "Sin mails registrados." in text
+    assert "Sin domicilios registrados." in text
+    assert "tipo_contacto" not in text
+    assert "tipo_domicilio" not in text
+
+
+def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
+    page = ParteDetailPage(
+        FakeApi(
+            detalle=ApiResult(
+                True,
+                data={
+                    "id_persona": 42,
+                    "display_name": "Ada Lovelace",
+                    "tipo_persona": "FISICA",
+                    "estado_persona": "ACTIVA",
+                    "version_registro": 7,
+                    "documentos": [],
+                    "contactos": [],
+                    "domicilios": [],
+                    "participaciones": [],
+                    "resumen_financiero": {},
+                    "obligaciones_financieras": [],
+                    "usos_transversales": {},
+                },
+            )
+        ),
+        id_persona=42,
+        on_navigate=lambda *_: None,
+    )
+    control = page.build()
+    header = control.content.controls[0]
+    main_row = control.content.controls[1]
+    left_column = main_row.controls[0]
+    datos_card = left_column.controls[0]
+
+    assert "Editar datos principales" not in "\n".join(_texts(header))
+    assert "Editar datos principales" in "\n".join(_texts(datos_card))
+
+    mounted_card = page.basic_data_card
+    _find_button(datos_card, "Editar datos principales").on_click(None)
+    assert page.editing_basic_data is True
+    assert page.basic_data_card is mounted_card
+    assert mounted_card.height >= 345
+    assert _find_field(mounted_card, "Nombre") is not None
+
+
+def test_direccion_ocupa_columna_izquierda_y_contactos_quedan_debajo() -> None:
+    control = ParteDetailPage(FakeApi(), id_persona=42, on_navigate=lambda *_: None).build()
+    main_row = control.content.controls[1]
+    left_column = main_row.controls[0]
+    participaciones = main_row.controls[1]
+    datos_card = left_column.controls[0]
+    direccion_card = left_column.controls[1]
+    contactos_row = left_column.controls[2]
+
+    assert left_column.expand == 3
+    assert left_column.horizontal_alignment == ft.CrossAxisAlignment.STRETCH
+    assert "Datos principales" in "\n".join(_texts(datos_card))
+    assert "Dirección" in "\n".join(_texts(direccion_card))
+    assert direccion_card.height == 145
+    assert "Teléfonos" in "\n".join(_texts(contactos_row.controls[0]))
+    assert "Mail" in "\n".join(_texts(contactos_row.controls[1]))
+    assert "Participaciones" in "\n".join(_texts(participaciones))
+    assert participaciones.expand == 2
+
+
+def test_participaciones_muestran_tablas_por_ventas_y_alquileres_con_accion_ver() -> None:
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "estado_persona": "ACTIVA",
+                "version_registro": 7,
+                "documentos": [],
+                "contactos": [],
+                "domicilios": [],
+                "participaciones": [
+                    {"tipo_relacion": "venta", "codigo_rol": "COMPRADOR", "id_venta": 22, "codigo_origen": "V-22"},
+                    {"tipo_relacion": "contrato_alquiler", "codigo_rol": "LOCATARIO", "id_contrato_alquiler": 33, "codigo_origen": "C-33"},
+                    {"tipo_relacion": "reserva_venta", "codigo_rol": "COMPRADOR", "codigo_origen": "R-1"},
+                ],
+                "resumen_financiero": {},
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        )
+    )
+
+    control = ParteDetailPage(
+        api,
+        id_persona=42,
+        on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)),
+    ).build()
+    text = "\n".join(_texts(control))
+
+    assert "Ventas" in text
+    assert "Alquileres" in text
+    assert "Venta" in text
+    assert "Reserva de venta" in text
+    assert "Contrato de alquiler" in text
+    assert "reserva_venta" not in text
+    assert "contrato_alquiler" not in text
+    participaciones_card = control.content.controls[1].controls[1]
+    participaciones_text = "\n".join(_texts(participaciones_card))
+    assert "Venta" in participaciones_text
+    assert "V-22" in participaciones_text
+    assert "Rol" not in participaciones_text
+
+    ver_buttons = [item for item in _walk(control) if getattr(item, "text", None) == "Ver"]
+    assert len(ver_buttons) >= 3
+    enabled = [button for button in ver_buttons if not getattr(button, "disabled", False)]
+    disabled = [button for button in ver_buttons if getattr(button, "disabled", False)]
+    assert disabled
+
+    enabled[0].on_click(None)
+    enabled[1].on_click(None)
+    assert ("venta_detail", {"id_venta": 22}) in navigations
+    assert ("contrato_detail", {"id_contrato_alquiler": 33}) in navigations
+    assert api.crear_persona_calls == []
+    assert api.update_calls == []
+    assert api.registrar_pago_calls == []
+
+
+def test_participaciones_ocultan_secciones_sin_datos_por_tipo() -> None:
+    ventas_only = ParteDetailPage(
+        FakeApi(
+            detalle=ApiResult(
+                True,
+                data={
+                    "display_name": "Ada Lovelace",
+                    "estado_persona": "ACTIVA",
+                    "participaciones": [{"tipo_relacion": "venta", "codigo_rol": "COMPRADOR", "id_venta": 1}],
+                },
+            )
+        ),
+        id_persona=42,
+        on_navigate=lambda *_: None,
+    ).build()
+    ventas_text = "\n".join(_texts(ventas_only))
+    assert "Ventas" in ventas_text
+    assert "Alquileres" not in ventas_text
+
+    alquileres_only = ParteDetailPage(
+        FakeApi(
+            detalle=ApiResult(
+                True,
+                data={
+                    "display_name": "Ada Lovelace",
+                    "estado_persona": "ACTIVA",
+                    "participaciones": [{"tipo_relacion": "contrato_alquiler", "codigo_rol": "LOCATARIO", "id_contrato_alquiler": 1}],
+                },
+            )
+        ),
+        id_persona=42,
+        on_navigate=lambda *_: None,
+    ).build()
+    alquileres_text = "\n".join(_texts(alquileres_only))
+    assert "Alquileres" in alquileres_text
+    assert "Ventas" not in alquileres_text
+
+    empty = ParteDetailPage(FakeApi(), id_persona=42, on_navigate=lambda *_: None).build()
+    assert "Sin roles ni participaciones." in "\n".join(_texts(empty))
