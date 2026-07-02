@@ -33,6 +33,8 @@ class FakeApi:
         self.actualizar_contacto_calls: list[tuple[int, int, dict[str, Any], int]] = []
         self.crear_domicilio_calls: list[tuple[int, dict[str, Any]]] = []
         self.actualizar_domicilio_calls: list[tuple[int, int, dict[str, Any], int]] = []
+        self.crear_documento_calls: list[tuple[int, dict[str, Any]]] = []
+        self.actualizar_documento_calls: list[tuple[int, int, dict[str, Any], int]] = []
 
     def get_personas(self, **_: Any) -> ApiResult:
         return self.personas
@@ -77,6 +79,14 @@ class FakeApi:
     def actualizar_persona_domicilio(self, id_persona: int, id_persona_domicilio: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None) -> ApiResult:
         self.actualizar_domicilio_calls.append((id_persona, id_persona_domicilio, payload, if_match_version))
         return ApiResult(True, data={"id_persona_domicilio": id_persona_domicilio})
+
+    def crear_persona_documento(self, id_persona: int, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
+        self.crear_documento_calls.append((id_persona, payload))
+        return ApiResult(True, data={"id_persona_documento": 1})
+
+    def actualizar_persona_documento(self, id_persona: int, id_persona_documento: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None) -> ApiResult:
+        self.actualizar_documento_calls.append((id_persona, id_persona_documento, payload, if_match_version))
+        return ApiResult(True, data={"id_persona_documento": id_persona_documento})
 
 
 def _walk(control: object):
@@ -274,23 +284,24 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     button = _find_button(control, "Editar datos principales")
     mounted_card = page.basic_data_card
     button.on_click(None)
-    assert page.editing_basic_data is True
+    dialog = page.active_dialog
+    assert dialog is not None and dialog.open is True
     assert page.basic_data_card is mounted_card
-    assert mounted_card.height >= 345
-    assert _find_field(mounted_card, "Nombre").value == "Ada"
-    assert _find_field(mounted_card, "Apellido").value == "Lovelace"
-    assert _find_button(mounted_card, "Guardar") is not None
-    assert _find_button(mounted_card, "Cancelar") is not None
-    edit_text = "\n".join(_texts(mounted_card))
-    assert "Documento de identidad" not in edit_text
-    assert "CUIT/CUIL/CDI" not in edit_text
+    assert mounted_card.height == 265
+    assert _find_field(dialog, "Nombre").value == "Ada"
+    assert _find_field(dialog, "Apellido").value == "Lovelace"
+    assert _find_button(dialog, "Guardar") is not None
+    assert _find_button(dialog, "Cancelar") is not None
+    edit_text = "\n".join(_texts(dialog))
+    assert "Documento de identidad" in edit_text
+    assert "Identificación fiscal" in edit_text
     assert "Documentos" not in edit_text
     assert "Contactos" not in edit_text
     assert "Domicilios" not in edit_text
 
-    _find_field(mounted_card, "Nombre").value = "Augusta Ada"
-    _find_field(mounted_card, "Observaciones").value = "Actualizada"
-    _find_button(mounted_card, "Guardar").on_click(None)
+    _find_field(dialog, "Nombre").value = "Augusta Ada"
+    _find_field(dialog, "Observaciones").value = "Actualizada"
+    _find_button(dialog, "Guardar").on_click(None)
 
     assert len(api.update_calls) == 1
     id_persona, payload, if_match_version, op_id = api.update_calls[0]
@@ -313,7 +324,7 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     assert api.crear_persona_calls == []
 
     page._open_basic_edit()
-    assert _find_field(page.basic_data_card, "Nombre").value == "Augusta Ada"
+    assert _find_field(page.active_dialog, "Nombre").value == "Augusta Ada"
 
 def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     api = FakeApi(
@@ -341,10 +352,11 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     mounted_card = page.basic_data_card
     _find_button(control, "Editar datos principales").on_click(None)
     assert page.basic_data_card is mounted_card
-    _find_field(mounted_card, "Nombre").value = "Cambio descartado"
-    _find_button(mounted_card, "Cancelar").on_click(None)
+    dialog = page.active_dialog
+    _find_field(dialog, "Nombre").value = "Cambio descartado"
+    _find_button(dialog, "Cancelar").on_click(None)
 
-    assert page.editing_basic_data is False
+    assert page.active_dialog is not None and page.active_dialog.open is False
     assert page.basic_data_card is mounted_card
     assert mounted_card.height == 265
     read_text = "\n".join(_texts(mounted_card))
@@ -391,12 +403,13 @@ def test_guardado_exitoso_con_fallo_de_recarga_muestra_error_y_no_navega() -> No
     mounted_card = page.basic_data_card
     _find_button(control, "Editar datos principales").on_click(None)
     assert page.basic_data_card is mounted_card
-    _find_field(mounted_card, "Nombre").value = "Augusta Ada"
-    _find_button(page.basic_data_card, "Guardar").on_click(None)
+    dialog = page.active_dialog
+    _find_field(dialog, "Nombre").value = "Augusta Ada"
+    _find_button(dialog, "Guardar").on_click(None)
 
     assert api.detalle_ids == [42, 42]
     assert navigations == []
-    assert "Los datos se guardaron, pero no se pudo recargar la ficha" in page.edit_message.value
+    assert "Los datos se guardaron, pero no se pudo recargar la ficha" in page.modal_message.value
 
 
 def test_error_concurrencia_y_validacion_muestran_mensaje_claro() -> None:
@@ -426,13 +439,14 @@ def test_error_concurrencia_y_validacion_muestran_mensaje_claro() -> None:
     mounted_card = page.basic_data_card
     _find_button(control, "Editar datos principales").on_click(None)
     assert page.basic_data_card is mounted_card
-    _find_button(mounted_card, "Guardar").on_click(None)
-    assert "La persona fue modificada por otro usuario" in page.edit_message.value
-    assert "La persona fue modificada por otro usuario" in "\n".join(_texts(mounted_card))
+    dialog = page.active_dialog
+    _find_button(dialog, "Guardar").on_click(None)
+    assert "Otro usuario modificó estos datos" in page.modal_message.value
+    assert "Otro usuario modificó estos datos" in "\n".join(_texts(dialog))
 
     api.update_result = ApiResult(False, status_code=422, error_message="nombre requerido")
-    _find_button(mounted_card, "Guardar").on_click(None)
-    assert "nombre requerido" in page.edit_message.value
+    _find_button(dialog, "Guardar").on_click(None)
+    assert "nombre requerido" in page.modal_message.value
 
 
 def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_crudos() -> None:
@@ -693,10 +707,10 @@ def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
 
     mounted_card = page.basic_data_card
     _find_button(datos_card, "Editar datos principales").on_click(None)
-    assert page.editing_basic_data is True
+    assert page.active_dialog is not None and page.active_dialog.open is True
     assert page.basic_data_card is mounted_card
-    assert mounted_card.height >= 345
-    assert _find_field(mounted_card, "Nombre") is not None
+    assert mounted_card.height == 265
+    assert _find_field(page.active_dialog, "Nombre") is not None
 
 
 def test_direccion_ocupa_columna_izquierda_y_contactos_quedan_debajo() -> None:

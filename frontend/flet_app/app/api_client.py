@@ -119,6 +119,31 @@ class ApiClient:
             json=payload,
         )
 
+    def crear_persona_documento(
+        self, id_persona: int, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        return self._post(
+            f"/api/v1/personas/{id_persona}/documentos",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
+    def actualizar_persona_documento(
+        self,
+        id_persona: int,
+        id_persona_documento: int,
+        payload: dict[str, Any],
+        if_match_version: int,
+        op_id: str | None = None,
+    ) -> ApiResult:
+        headers = self._core_ef_write_headers(op_id)
+        headers["If-Match-Version"] = str(if_match_version)
+        return self._put(
+            f"/api/v1/personas/{id_persona}/documentos/{id_persona_documento}",
+            headers=headers,
+            json=payload,
+        )
+
     def buscar_personas(
         self,
         *,

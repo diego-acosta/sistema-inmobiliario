@@ -1333,7 +1333,8 @@ class PersonaRepository(BaseRepository[Any]):
                 tipo_documento_persona,
                 numero_documento,
                 pais_emision,
-                es_principal
+                es_principal,
+                version_registro
             FROM persona_documento
             WHERE id_persona = :id_persona
               AND deleted_at IS NULL
@@ -1349,6 +1350,7 @@ class PersonaRepository(BaseRepository[Any]):
                 "numero_documento": row["numero_documento"],
                 "pais_emision": row["pais_emision"],
                 "es_principal": row["es_principal"],
+                "version_registro": row["version_registro"],
             }
             for row in rows
         ]

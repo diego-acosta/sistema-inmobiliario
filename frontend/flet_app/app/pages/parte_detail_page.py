@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import flet as ft
 
-from app.api_client import ApiClient
+from app.api_client import ApiClient, ApiResult
 from app.components.detail_section import detail_section, key_value_grid
 from app.components.detail_tabs import detail_tabs
 from app.components.entity_table import entity_table
@@ -172,25 +172,24 @@ class ParteDetailPage:
         return card
 
     def _datos_principales_controls(self, data: dict[str, Any]) -> list[ft.Control]:
-        if self.editing_basic_data:
-            return [self._basic_edit_form()]
         return [self._datos_base(data)]
 
     def _datos_principales_height(self) -> int:
-        return 360 if self.editing_basic_data else 265
+        return 265
 
     def _datos_principales_action(self) -> ft.Control | None:
-        if self.editing_basic_data:
-            return None
         return ft.ElevatedButton(
             "Editar datos principales",
-            on_click=lambda _: self._open_basic_edit(),
+            on_click=lambda event: self._open_basic_edit(event),
         )
 
-    def _open_basic_edit(self) -> None:
-        self.editing_basic_data = True
-        self._build_basic_edit_fields()
-        self._refresh_basic_data_card()
+    def _open_basic_edit(self, event: object = None) -> None:
+        self.active_modal_kind = "datos_principales"
+        self.active_modal_row = {}
+        self.modal_fields = {}
+        self.modal_message = ft.Text("", visible=False)
+        self.active_dialog = self._basic_data_dialog()
+        self._open_modal(event)
 
     def _build_basic_edit_fields(self) -> None:
         data = self.data
@@ -308,42 +307,33 @@ class ParteDetailPage:
     def _save_basic_edit(self, _) -> None:
         version = self.data.get("version_registro")
         if version is None:
-            self._show_edit_error(
-                "La ficha no informa version_registro. "
-                "Recargá la ficha e intentá nuevamente."
-            )
+            self._show_modal_error("No se pudo editar la ficha. Recargá e intentá nuevamente.")
             return
         payload = {
-            "tipo_persona": self._clean_field("tipo_persona"),
-            "nombre": self._clean_field("nombre") or None,
-            "apellido": self._clean_field("apellido") or None,
-            "razon_social": self._clean_field("razon_social") or None,
-            "fecha_nacimiento": self._clean_field("fecha_nacimiento") or None,
-            "estado_persona": self._clean_field("estado_persona"),
-            "observaciones": self._clean_field("observaciones") or None,
+            "tipo_persona": self._modal_value("tipo_persona"),
+            "nombre": self._modal_value("nombre") or None,
+            "apellido": self._modal_value("apellido") or None,
+            "razon_social": self._modal_value("razon_social") or None,
+            "fecha_nacimiento": self._modal_value("fecha_nacimiento") or None,
+            "estado_persona": self._modal_value("estado_persona"),
+            "observaciones": self._modal_value("observaciones") or None,
         }
-        result = self.api.actualizar_persona(
-            self.id_persona, payload, int(version), op_id=str(uuid4())
-        )
+        result = self.api.actualizar_persona(self.id_persona, payload, int(version), op_id=str(uuid4()))
         if not result.success:
-            if result.status_code in {409, 412} or result.error_code == "CONCURRENCY_ERROR":
-                self._show_edit_error(
-                    "La persona fue modificada por otro usuario. "
-                    "Recargá la ficha e intentá nuevamente."
-                )
-            else:
-                self._show_edit_error(result.error_message or "No se pudo actualizar la persona.")
+            self._show_modal_error(self._friendly_save_error(result, "No se pudieron guardar los datos principales."))
             return
-        refreshed = self.api.get_persona_detalle_integral(self.id_persona)
-        if not refreshed.success or not isinstance(refreshed.data, dict):
-            self._show_edit_error(
-                "Los datos se guardaron, pero no se pudo recargar la ficha. "
-                "Volvé a abrirla desde el listado."
-            )
-            return
-
-        self.data = refreshed.data
-        self.on_navigate("parte_detail", id_persona=self.id_persona)
+        for row, numero, tipo in (
+            (self._documento_identidad_row(self.data), self._modal_value("documento_identidad"), "DNI"),
+            (self._identificacion_fiscal_row(self.data), self._modal_value("identificacion_fiscal"), "CUIT"),
+        ):
+            current = self._documento_numero(row) if row else ""
+            if numero == current:
+                continue
+            doc_result = self._save_documento_principal(row, numero, tipo)
+            if not doc_result.success:
+                self._show_modal_error(self._friendly_save_error(doc_result, "Los datos base se guardaron, pero no se pudo guardar el documento."))
+                return
+        self._finish_modal_save(result)
 
     def _clean_field(self, key: str) -> str:
         return (self.edit_fields[key].value or "").strip()
@@ -2007,6 +1997,45 @@ class ParteDetailPage:
             ],
         )
 
+    def _basic_data_dialog(self) -> ft.AlertDialog:
+        data = self.data
+        self.modal_fields = {
+            "tipo_persona": ft.TextField(label="Tipo persona", value=str(data.get("tipo_persona") or ""), dense=True),
+            "estado_persona": ft.TextField(label="Estado", value=str(data.get("estado_persona") or ""), dense=True),
+            "nombre": ft.TextField(label="Nombre", value=str(data.get("nombre") or ""), dense=True),
+            "apellido": ft.TextField(label="Apellido", value=str(data.get("apellido") or ""), dense=True),
+            "razon_social": ft.TextField(label="Razón social", value=str(data.get("razon_social") or ""), dense=True),
+            "fecha_nacimiento": ft.TextField(label="Fecha nacimiento / constitución", value=str(data.get("fecha_nacimiento") or ""), dense=True),
+            "documento_identidad": ft.TextField(label="Documento de identidad", value=self._documento_numero(self._documento_identidad_row(data)), dense=True),
+            "identificacion_fiscal": ft.TextField(label="Identificación fiscal", value=self._documento_numero(self._identificacion_fiscal_row(data)) or str(data.get("cuit_cuil") or data.get("cuit") or data.get("cuil") or data.get("cdi") or ""), dense=True),
+            "observaciones": ft.TextField(label="Observaciones", value=str(data.get("observaciones") or ""), dense=True, multiline=True, min_lines=2),
+        }
+        return ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Editar datos principales"),
+            content=ft.Column(
+                controls=[
+                    self.modal_fields["tipo_persona"],
+                    self.modal_fields["estado_persona"],
+                    self.modal_fields["nombre"],
+                    self.modal_fields["apellido"],
+                    self.modal_fields["razon_social"],
+                    self.modal_fields["fecha_nacimiento"],
+                    self.modal_fields["documento_identidad"],
+                    self.modal_fields["identificacion_fiscal"],
+                    self.modal_fields["observaciones"],
+                    self.modal_message,
+                ],
+                spacing=8,
+                tight=True,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._close_modal),
+                ft.ElevatedButton("Guardar", on_click=self._save_basic_edit),
+            ],
+        )
+
     def _domicilio_dialog(self, row: dict[str, Any]) -> ft.AlertDialog:
         self.modal_fields = {
             "direccion": ft.TextField(label="Calle / dirección", value=str(row.get("direccion") or row.get("calle") or ""), dense=True),
@@ -2093,6 +2122,11 @@ class ParteDetailPage:
         refreshed = self.api.get_persona_detalle_integral(self.id_persona)
         if refreshed.success and isinstance(refreshed.data, dict):
             self.data = refreshed.data
+        else:
+            self._show_modal_error(
+                "Los datos se guardaron, pero no se pudo recargar la ficha. Volvé a abrirla desde el listado."
+            )
+            return
         self._close_modal()
         self.on_navigate("parte_detail", id_persona=self.id_persona)
 
@@ -2652,22 +2686,50 @@ class ParteDetailPage:
         return " · ".join(str(value) for value in values if value not in (None, ""))
 
     def _documento_principal(self, data: dict[str, Any]) -> object:
-        documentos = self._dict_rows(data.get("documentos"))
-        if not documentos:
-            return None
-        principal = next(
-            (
-                item
-                for item in documentos
-                if item.get("es_principal") or item.get("principal")
-            ),
-            documentos[0],
-        )
+        principal = self._documento_identidad_row(data)
         return (
             principal.get("numero_documento")
             or principal.get("documento")
             or principal.get("valor")
-        )
+        ) if principal else None
+
+    def _documento_identidad_row(self, data: dict[str, Any]) -> dict[str, Any] | None:
+        documentos = self._dict_rows(data.get("documentos"))
+        identidad = [doc for doc in documentos if str(doc.get("tipo_documento") or "").upper() not in {"CUIT", "CUIL", "CDI"}]
+        if not identidad:
+            return None
+        return next((item for item in identidad if item.get("es_principal") or item.get("principal")), identidad[0])
+
+    def _identificacion_fiscal_row(self, data: dict[str, Any]) -> dict[str, Any] | None:
+        documentos = self._dict_rows(data.get("documentos"))
+        return next((doc for doc in documentos if str(doc.get("tipo_documento") or "").upper() in {"CUIT", "CUIL", "CDI"}), None)
+
+    def _documento_numero(self, row: dict[str, Any] | None) -> str:
+        if not row:
+            return ""
+        return str(row.get("numero_documento") or row.get("documento") or row.get("valor") or "").strip()
+
+    def _save_documento_principal(self, row: dict[str, Any] | None, numero: str, tipo: str) -> Any:
+        if not numero and row is None:
+            return ApiResult(True)
+        payload = {
+            "tipo_documento": str((row or {}).get("tipo_documento") or tipo).upper(),
+            "numero_documento": numero,
+            "pais_emision": (row or {}).get("pais_emision"),
+            "es_principal": bool((row or {}).get("es_principal", tipo == "DNI")),
+            "observaciones": (row or {}).get("observaciones"),
+        }
+        if row:
+            version = row.get("version_registro")
+            if version is None:
+                return ApiResult(False, error_message="No se pudo editar el documento. Recargá la ficha e intentá nuevamente.")
+            return self.api.actualizar_persona_documento(self.id_persona, int(row.get("id_persona_documento")), payload, int(version), op_id=str(uuid4()))
+        return self.api.crear_persona_documento(self.id_persona, payload, op_id=str(uuid4()))
+
+    def _friendly_save_error(self, result: Any, fallback: str) -> str:
+        if getattr(result, "status_code", None) in {409, 412} or getattr(result, "error_code", None) == "CONCURRENCY_ERROR":
+            return "Otro usuario modificó estos datos. Recargá la ficha e intentá nuevamente."
+        return getattr(result, "error_message", None) or fallback
 
     def _contacto_principal(self, data: dict[str, Any]) -> object:
         contactos = self._dict_rows(data.get("contactos"))
