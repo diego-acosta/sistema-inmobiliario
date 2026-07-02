@@ -82,10 +82,10 @@ class FakeApi:
 def _walk(control: object):
     yield control
     if isinstance(control, ft.Control):
-        for attr in ("controls", "tabs", "rows", "cells", "columns"):
+        for attr in ("controls", "tabs", "rows", "cells", "columns", "actions"):
             for child in getattr(control, attr, None) or []:
                 yield from _walk(child)
-        for attr in ("content",):
+        for attr in ("content", "title"):
             child = getattr(control, attr, None)
             if child is not None:
                 yield from _walk(child)
@@ -94,7 +94,7 @@ def _walk(control: object):
 def _texts(control: ft.Control) -> list[str]:
     values: list[str] = []
     for item in _walk(control):
-        value = getattr(item, "value", None) or getattr(item, "text", None)
+        value = getattr(item, "value", None) or getattr(item, "text", None) or getattr(item, "label", None)
         if isinstance(value, str):
             values.append(value)
     return values
@@ -853,91 +853,109 @@ def test_ficha_contactos_domicilios_muestra_acciones_y_no_escribe_al_renderizar(
     assert api.crear_domicilio_calls == []
 
 
-def test_agregar_contactos_y_domicilio_actualiza_card_montada_sin_navegar() -> None:
+def test_agregar_contactos_y_domicilio_abre_modal_sin_navegar_y_guarda() -> None:
     navigations: list[tuple[str, dict[str, Any]]] = []
     api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
     api.detalle_results = [api.detalle, api.detalle, api.detalle, api.detalle]
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)))
     control = page.build()
 
-    telefono_card = page.inline_cards_by_kind["telefono"]
-    _find_button(telefono_card, "Agregar teléfono").on_click(None)
+    _find_button(control, "Agregar teléfono").on_click(None)
     assert navigations == []
-    assert page.inline_cards_by_kind["telefono"] is telefono_card
-    telefono_text = "\n".join(_texts(telefono_card))
+    assert page.active_dialog is not None
+    telefono_text = "\n".join(_texts(page.active_dialog))
     assert "Agregar teléfono" in telefono_text
+    assert "Teléfono" in telefono_text
+    assert "Observaciones" in telefono_text
+    assert "Principal" in telefono_text
     assert "Guardar" in telefono_text
     assert "Cancelar" in telefono_text
-    page.inline_fields["valor_contacto"].value = "+54 11 5555"
-    _find_button(telefono_card, "Guardar").on_click(None)
+    _find_button(page.active_dialog, "Guardar").on_click(None)
+    assert "Ingresá un teléfono." in "\n".join(_texts(page.active_dialog))
+    page.modal_fields["valor_contacto"].value = "+54 11 5555"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
     assert api.crear_contacto_calls[-1][1]["tipo_contacto"] == "TELEFONO"
     assert api.detalle_ids.count(42) >= 2
-    assert navigations == []
+    assert navigations[-1] == ("parte_detail", {"id_persona": 42})
 
-    mail_card = page.inline_cards_by_kind["email"]
-    _find_button(mail_card, "Agregar mail").on_click(None)
+    navigations.clear()
+    _find_button(control, "Agregar mail").on_click(None)
     assert navigations == []
-    mail_text = "\n".join(_texts(mail_card))
+    assert page.active_dialog is not None
+    mail_text = "\n".join(_texts(page.active_dialog))
     assert "Agregar mail" in mail_text
-    assert "Guardar" in mail_text
-    assert "Cancelar" in mail_text
-    page.inline_fields["valor_contacto"].value = "nueva@example.com"
-    _find_button(mail_card, "Guardar").on_click(None)
+    assert "Mail" in mail_text
+    page.modal_fields["valor_contacto"].value = "invalido"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
+    assert "Ingresá un mail válido." in "\n".join(_texts(page.active_dialog))
+    page.modal_fields["valor_contacto"].value = "nueva@example.com"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
     assert api.crear_contacto_calls[-1][1]["tipo_contacto"] == "EMAIL"
 
-    direccion_card = page.inline_cards_by_kind["domicilio"]
-    _find_button(direccion_card, "Agregar dirección").on_click(None)
+    navigations.clear()
+    _find_button(control, "Agregar dirección").on_click(None)
     assert navigations == []
-    direccion_text = "\n".join(_texts(direccion_card))
+    assert page.active_dialog is not None
+    direccion_text = "\n".join(_texts(page.active_dialog))
     assert "Agregar dirección" in direccion_text
-    assert "Guardar" in direccion_text
-    assert "Cancelar" in direccion_text
-    page.inline_fields["direccion"].value = "Belgrano 456"
-    _find_button(direccion_card, "Guardar").on_click(None)
+    assert "Calle / dirección" in direccion_text
+    assert "Localidad" in direccion_text
+    _find_button(page.active_dialog, "Guardar").on_click(None)
+    assert "Ingresá al menos calle/dirección o localidad." in "\n".join(_texts(page.active_dialog))
+    page.modal_fields["direccion"].value = "Belgrano 456"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
     assert api.crear_domicilio_calls[-1][1]["direccion"] == "Belgrano 456"
 
+
+def test_cancelar_modal_cierra_sin_api_ni_navegacion() -> None:
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)))
+    control = page.build()
+
     before = len(api.crear_contacto_calls) + len(api.crear_domicilio_calls)
-    _find_button(page.inline_cards_by_kind["telefono"], "Agregar teléfono").on_click(None)
-    _find_button(page.inline_cards_by_kind["telefono"], "Cancelar").on_click(None)
+    _find_button(control, "Agregar teléfono").on_click(None)
+    assert page.active_dialog is not None
+    _find_button(page.active_dialog, "Cancelar").on_click(None)
     after = len(api.crear_contacto_calls) + len(api.crear_domicilio_calls)
     assert after == before
-    assert "Guardar" not in "\n".join(_texts(page.inline_cards_by_kind["telefono"]))
+    assert page.active_modal_kind is None
     assert navigations == []
 
 
-def test_editar_contactos_y_domicilio_actualiza_card_montada_sin_navegar_y_guarda_version() -> None:
+def test_editar_contactos_y_domicilio_abre_modal_precarga_y_guarda_version() -> None:
     navigations: list[tuple[str, dict[str, Any]]] = []
     api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
     api.detalle_results = [api.detalle, api.detalle, api.detalle, api.detalle]
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)))
-    page.build()
+    control = page.build()
 
-    telefono_card = page.inline_cards_by_kind["telefono"]
-    _find_button(telefono_card, "Editar").on_click(None)
+    edit_buttons = [item for item in _walk(control) if getattr(item, "text", None) == "Editar"]
+    edit_buttons[1].on_click(None)
     assert navigations == []
-    assert page.inline_cards_by_kind["telefono"] is telefono_card
-    assert page.inline_fields["valor_contacto"].value == "+54 299"
-    assert "Editar teléfono" in "\n".join(_texts(telefono_card))
-    page.inline_fields["valor_contacto"].value = "+54 299 999"
-    _find_button(telefono_card, "Guardar").on_click(None)
+    assert page.active_dialog is not None
+    assert page.modal_fields["valor_contacto"].value == "+54 299"
+    assert "Editar teléfono" in "\n".join(_texts(page.active_dialog))
+    page.modal_fields["valor_contacto"].value = "+54 299 999"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
     assert api.actualizar_contacto_calls[-1] == (42, 10, {"tipo_contacto": "TELEFONO", "valor_contacto": "+54 299 999", "es_principal": True, "observaciones": "Laboral"}, 3)
 
-    mail_card = page.inline_cards_by_kind["email"]
-    _find_button(mail_card, "Editar").on_click(None)
+    navigations.clear()
+    edit_buttons[2].on_click(None)
     assert navigations == []
-    assert page.inline_fields["valor_contacto"].value == "ada@example.com"
-    assert "Editar mail" in "\n".join(_texts(mail_card))
-    _find_button(mail_card, "Guardar").on_click(None)
+    assert page.modal_fields["valor_contacto"].value == "ada@example.com"
+    assert "Editar mail" in "\n".join(_texts(page.active_dialog))
+    _find_button(page.active_dialog, "Guardar").on_click(None)
     assert api.actualizar_contacto_calls[-1][2]["tipo_contacto"] == "EMAIL"
     assert api.actualizar_contacto_calls[-1][3] == 4
 
-    direccion_card = page.inline_cards_by_kind["domicilio"]
-    _find_button(direccion_card, "Editar").on_click(None)
+    navigations.clear()
+    edit_buttons[0].on_click(None)
     assert navigations == []
-    assert page.inline_fields["direccion"].value == "San Martín 123"
-    assert "Editar dirección" in "\n".join(_texts(direccion_card))
-    page.inline_fields["localidad"].value = "Neuquén Capital"
-    _find_button(direccion_card, "Guardar").on_click(None)
+    assert page.modal_fields["direccion"].value == "San Martín 123"
+    assert page.modal_fields["localidad"].value == "Neuquén"
+    assert "Editar dirección" in "\n".join(_texts(page.active_dialog))
+    page.modal_fields["localidad"].value = "Neuquén Capital"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
     assert api.actualizar_domicilio_calls[-1][0:2] == (42, 20)
     assert api.actualizar_domicilio_calls[-1][3] == 5
-    assert navigations == []

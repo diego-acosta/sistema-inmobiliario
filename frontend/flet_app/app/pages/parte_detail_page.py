@@ -23,10 +23,11 @@ class ParteDetailPage:
         self.edit_fields: dict[str, ft.TextField] = {}
         self.editing_basic_data = False
         self.basic_data_card: ft.Container | None = None
-        self.inline_form: dict[str, Any] | None = None
-        self.inline_fields: dict[str, ft.TextField | ft.Checkbox] = {}
-        self.inline_message = ft.Text("", visible=False)
-        self.inline_cards_by_kind: dict[str, ft.Container] = {}
+        self.active_modal_kind: str | None = None
+        self.active_modal_row: dict[str, Any] = {}
+        self.modal_fields: dict[str, ft.TextField | ft.Checkbox] = {}
+        self.modal_message = ft.Text("", visible=False)
+        self.active_dialog: ft.AlertDialog | None = None
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -69,39 +70,30 @@ class ParteDetailPage:
                             ft.Column(
                                 controls=[
                                     self._datos_principales_card(data),
-                                    self._tracked_inline_card(
-                                        "domicilio",
-                                        self._admin_card(
-                                            "Dirección",
-                                            self._domicilios_controls(data.get("domicilios", [])),
-                                            height=145,
-                                            scroll_body=True,
-                                            action=ft.TextButton("Agregar dirección", on_click=lambda _: self._start_inline_form("domicilio")),
-                                        ),
+                                    self._admin_card(
+                                        "Dirección",
+                                        [self._domicilios_resumen(data.get("domicilios", []))],
+                                        height=145,
+                                        scroll_body=True,
+                                        action=ft.TextButton("Agregar dirección", on_click=lambda e: self._open_domicilio_dialog(e)),
                                     ),
                                     ft.Row(
                                         controls=[
-                                            self._tracked_inline_card(
-                                                "telefono",
-                                                self._admin_card(
-                                                    "Teléfonos",
-                                                    self._contactos_controls(data.get("contactos", []), "telefono"),
-                                                    expand=1,
-                                                    height=140,
-                                                    scroll_body=True,
-                                                    action=ft.TextButton("Agregar teléfono", on_click=lambda _: self._start_inline_form("telefono")),
-                                                ),
+                                            self._admin_card(
+                                                "Teléfonos",
+                                                [self._telefonos_resumen(data.get("contactos", []))],
+                                                expand=1,
+                                                height=140,
+                                                scroll_body=True,
+                                                action=ft.TextButton("Agregar teléfono", on_click=lambda e: self._open_contacto_dialog("telefono", e)),
                                             ),
-                                            self._tracked_inline_card(
-                                                "email",
-                                                self._admin_card(
-                                                    "Mail",
-                                                    self._contactos_controls(data.get("contactos", []), "email"),
-                                                    expand=1,
-                                                    height=140,
-                                                    scroll_body=True,
-                                                    action=ft.TextButton("Agregar mail", on_click=lambda _: self._start_inline_form("email")),
-                                                ),
+                                            self._admin_card(
+                                                "Mail",
+                                                [self._mails_resumen(data.get("contactos", []))],
+                                                expand=1,
+                                                height=140,
+                                                scroll_body=True,
+                                                action=ft.TextButton("Agregar mail", on_click=lambda e: self._open_contacto_dialog("email", e)),
                                             ),
                                         ],
                                         spacing=14,
@@ -368,51 +360,6 @@ class ParteDetailPage:
         except AssertionError:
             pass
 
-
-    def _tracked_inline_card(self, kind: str, card: ft.Control) -> ft.Control:
-        if isinstance(card, ft.Container):
-            self.inline_cards_by_kind[kind] = card
-        return card
-
-    def _refresh_inline_card(self, kind: str) -> None:
-        mounted_card = self.inline_cards_by_kind.get(kind)
-        if mounted_card is None:
-            return
-        replacement = self._build_inline_card(kind)
-        if not isinstance(replacement, ft.Container):
-            return
-        mounted_card.content = replacement.content
-        mounted_card.height = replacement.height
-        mounted_card.expand = replacement.expand
-        self.inline_cards_by_kind[kind] = mounted_card
-        self._safe_update(mounted_card)
-
-    def _build_inline_card(self, kind: str) -> ft.Control:
-        if kind == "domicilio":
-            return self._admin_card(
-                "Dirección",
-                self._domicilios_controls(self.data.get("domicilios", [])),
-                height=145,
-                scroll_body=True,
-                action=ft.TextButton("Agregar dirección", on_click=lambda _: self._start_inline_form("domicilio")),
-            )
-        if kind == "telefono":
-            return self._admin_card(
-                "Teléfonos",
-                self._contactos_controls(self.data.get("contactos", []), "telefono"),
-                expand=1,
-                height=140,
-                scroll_body=True,
-                action=ft.TextButton("Agregar teléfono", on_click=lambda _: self._start_inline_form("telefono")),
-            )
-        return self._admin_card(
-            "Mail",
-            self._contactos_controls(self.data.get("contactos", []), "email"),
-            expand=1,
-            height=140,
-            scroll_body=True,
-            action=ft.TextButton("Agregar mail", on_click=lambda _: self._start_inline_form("email")),
-        )
 
     def _admin_card(
         self,
@@ -1972,21 +1919,6 @@ class ParteDetailPage:
         ]
         return self._contactos_lista(mails, "Sin mails registrados.")
 
-    def _contactos_controls(self, rows: object, kind: str) -> list[ft.Control]:
-        contactos = [c for c in self._dict_rows(rows) if self._contacto_kind(c) == kind]
-        empty = "Sin teléfonos registrados." if kind == "telefono" else "Sin mails registrados."
-        controls = [self._contactos_lista(contactos, empty)]
-        if self.inline_form and self.inline_form.get("kind") == kind:
-            controls.append(self._inline_contacto_form(kind, self.inline_form.get("row")))
-        return controls
-
-    def _domicilios_controls(self, rows: object) -> list[ft.Control]:
-        domicilios = self._dict_rows(rows)
-        controls = [self._domicilios_resumen(domicilios)]
-        if self.inline_form and self.inline_form.get("kind") == "domicilio":
-            controls.append(self._inline_domicilio_form(self.inline_form.get("row")))
-        return controls
-
     def _contactos_lista(
         self, contactos: list[dict[str, Any]], empty_message: str
     ) -> ft.Control:
@@ -1998,115 +1930,171 @@ class ParteDetailPage:
                 subtitle=self._contacto_value(contacto),
                 principal=False,
                 extra=contacto.get("observaciones"),
-                action=ft.TextButton("Editar", on_click=lambda _, row=contacto: self._start_inline_form(self._contacto_kind(row), row)),
+                action=ft.TextButton("Editar", on_click=lambda e, row=contacto: self._open_contacto_dialog(self._contacto_kind(row), e, row)),
             )
             for contacto in contactos
         ])
 
-    def _start_inline_form(self, kind: str, row: dict[str, Any] | None = None) -> None:
-        self.inline_form = {"kind": kind, "row": row or {}}
-        self.inline_fields = {}
-        self.inline_message = ft.Text("", visible=False)
-        self._refresh_inline_card(kind)
+    def _open_contacto_dialog(
+        self, kind: str, event: object = None, row: dict[str, Any] | None = None
+    ) -> None:
+        self.active_modal_kind = kind
+        self.active_modal_row = row or {}
+        self.modal_fields = {}
+        self.modal_message = ft.Text("", visible=False)
+        self.active_dialog = self._contacto_dialog(kind, self.active_modal_row)
+        self._open_modal(event)
 
-    def _cancel_inline_form(self, _) -> None:
-        kind = (self.inline_form or {}).get("kind")
-        self.inline_form = None
-        self.inline_fields = {}
-        if isinstance(kind, str):
-            self._refresh_inline_card(kind)
+    def _open_domicilio_dialog(
+        self, event: object = None, row: dict[str, Any] | None = None
+    ) -> None:
+        self.active_modal_kind = "domicilio"
+        self.active_modal_row = row or {}
+        self.modal_fields = {}
+        self.modal_message = ft.Text("", visible=False)
+        self.active_dialog = self._domicilio_dialog(self.active_modal_row)
+        self._open_modal(event)
 
-    def _inline_contacto_form(self, kind: str, row: dict[str, Any] | None) -> ft.Control:
-        row = row or {}
-        self.inline_fields = {
+    def _open_modal(self, event: object = None) -> None:
+        if self.active_dialog is None:
+            return
+        self.active_dialog.open = True
+        page = getattr(event, "page", None)
+        if page is None:
+            return
+        if hasattr(page, "open"):
+            try:
+                page.open(self.active_dialog)
+                return
+            except TypeError:
+                pass
+        page.dialog = self.active_dialog
+        self._safe_update(page)
+
+    def _close_modal(self, event: object = None) -> None:
+        if self.active_dialog is not None:
+            self.active_dialog.open = False
+        self.active_modal_kind = None
+        self.active_modal_row = {}
+        self.modal_fields = {}
+        page = getattr(event, "page", None)
+        if page is not None:
+            self._safe_update(page)
+
+    def _contacto_dialog(self, kind: str, row: dict[str, Any]) -> ft.AlertDialog:
+        title = "Editar mail" if row and kind == "email" else "Agregar mail" if kind == "email" else "Editar teléfono" if row else "Agregar teléfono"
+        self.modal_fields = {
             "valor_contacto": ft.TextField(label="Mail" if kind == "email" else "Teléfono", value=self._contacto_value(row) if row else "", dense=True),
-            "observaciones": ft.TextField(label="Observaciones", value=str(row.get("observaciones") or ""), dense=True),
+            "observaciones": ft.TextField(label="Observaciones", value=str(row.get("observaciones") or ""), dense=True, multiline=True),
             "es_principal": ft.Checkbox(label="Principal", value=self._is_principal(row)),
         }
-        return ft.Container(content=ft.Column(controls=[
-            ft.Text("Editar mail" if row and kind == "email" else "Agregar mail" if kind == "email" else "Editar teléfono" if row else "Agregar teléfono", weight=ft.FontWeight.W_600),
-            self.inline_fields["valor_contacto"], self.inline_fields["observaciones"], self.inline_fields["es_principal"], self.inline_message,
-            ft.Row(controls=[ft.ElevatedButton("Guardar", on_click=lambda e: self._save_contacto(kind)), ft.TextButton("Cancelar", on_click=self._cancel_inline_form)], spacing=10),
-        ], spacing=8), padding=10, border=ft.border.all(1, ft.Colors.BLUE_GREY_100), border_radius=8)
+        return ft.AlertDialog(
+            modal=True,
+            title=ft.Text(title),
+            content=ft.Column(
+                controls=[
+                    self.modal_fields["valor_contacto"],
+                    self.modal_fields["observaciones"],
+                    self.modal_fields["es_principal"],
+                    self.modal_message,
+                ],
+                spacing=8,
+                tight=True,
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._close_modal),
+                ft.ElevatedButton("Guardar", on_click=lambda _: self._save_contacto(kind)),
+            ],
+        )
 
-    def _inline_domicilio_form(self, row: dict[str, Any] | None) -> ft.Control:
-        row = row or {}
-        self.inline_fields = {
+    def _domicilio_dialog(self, row: dict[str, Any]) -> ft.AlertDialog:
+        self.modal_fields = {
             "direccion": ft.TextField(label="Calle / dirección", value=str(row.get("direccion") or row.get("calle") or ""), dense=True),
             "localidad": ft.TextField(label="Localidad", value=str(row.get("localidad") or ""), dense=True),
             "provincia": ft.TextField(label="Provincia", value=str(row.get("provincia") or ""), dense=True),
             "pais": ft.TextField(label="País", value=str(row.get("pais") or ""), dense=True),
             "codigo_postal": ft.TextField(label="Código postal", value=str(row.get("codigo_postal") or ""), dense=True),
-            "observaciones": ft.TextField(label="Observaciones", value=str(row.get("observaciones") or ""), dense=True),
+            "observaciones": ft.TextField(label="Observaciones", value=str(row.get("observaciones") or ""), dense=True, multiline=True),
             "es_principal": ft.Checkbox(label="Principal", value=self._is_principal(row)),
         }
-        return ft.Container(content=ft.Column(controls=[
-            ft.Text("Editar dirección" if row else "Agregar dirección", weight=ft.FontWeight.W_600),
-            ft.Row(controls=[self.inline_fields["direccion"], self.inline_fields["localidad"]], spacing=8),
-            ft.Row(controls=[self.inline_fields["provincia"], self.inline_fields["pais"], self.inline_fields["codigo_postal"]], spacing=8),
-            self.inline_fields["observaciones"], self.inline_fields["es_principal"], self.inline_message,
-            ft.Row(controls=[ft.ElevatedButton("Guardar", on_click=self._save_domicilio), ft.TextButton("Cancelar", on_click=self._cancel_inline_form)], spacing=10),
-        ], spacing=8), padding=10, border=ft.border.all(1, ft.Colors.BLUE_GREY_100), border_radius=8)
+        return ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Editar dirección" if row else "Agregar dirección"),
+            content=ft.Column(
+                controls=[
+                    self.modal_fields["direccion"],
+                    self.modal_fields["localidad"],
+                    self.modal_fields["provincia"],
+                    self.modal_fields["pais"],
+                    self.modal_fields["codigo_postal"],
+                    self.modal_fields["observaciones"],
+                    self.modal_fields["es_principal"],
+                    self.modal_message,
+                ],
+                spacing=8,
+                tight=True,
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._close_modal),
+                ft.ElevatedButton("Guardar", on_click=self._save_domicilio),
+            ],
+        )
 
-    def _inline_value(self, key: str) -> str:
-        field = self.inline_fields[key]
+    def _modal_value(self, key: str) -> str:
+        field = self.modal_fields[key]
         return str(getattr(field, "value", "") or "").strip()
 
-    def _inline_bool(self, key: str) -> bool:
-        return bool(getattr(self.inline_fields[key], "value", False))
+    def _modal_bool(self, key: str) -> bool:
+        return bool(getattr(self.modal_fields[key], "value", False))
 
-    def _show_inline_error(self, message: str) -> None:
-        self.inline_message.value = message
-        self.inline_message.color = ft.Colors.RED_700
-        self.inline_message.visible = True
-        self._safe_update(self.inline_message)
+    def _show_modal_error(self, message: str) -> None:
+        self.modal_message.value = message
+        self.modal_message.color = ft.Colors.RED_700
+        self.modal_message.visible = True
+        self._safe_update(self.modal_message)
 
     def _save_contacto(self, kind: str) -> None:
-        valor = self._inline_value("valor_contacto")
+        valor = self._modal_value("valor_contacto")
         if not valor or (kind == "email" and "@" not in valor):
-            self._show_inline_error("Ingresá un mail válido." if kind == "email" else "Ingresá un teléfono.")
+            self._show_modal_error("Ingresá un mail válido." if kind == "email" else "Ingresá un teléfono.")
             return
-        row = (self.inline_form or {}).get("row") or {}
-        payload = {"tipo_contacto": "EMAIL" if kind == "email" else "TELEFONO", "valor_contacto": valor, "es_principal": self._inline_bool("es_principal"), "observaciones": self._inline_value("observaciones") or None}
+        row = self.active_modal_row or {}
+        payload = {"tipo_contacto": "EMAIL" if kind == "email" else "TELEFONO", "valor_contacto": valor, "es_principal": self._modal_bool("es_principal"), "observaciones": self._modal_value("observaciones") or None}
         if row:
             version = row.get("version_registro")
             if version is None:
-                self._show_inline_error("El contacto no informa version_registro.")
+                self._show_modal_error("El contacto no informa version_registro.")
                 return
             result = self.api.actualizar_persona_contacto(self.id_persona, int(row.get("id_persona_contacto")), payload, int(version), op_id=str(uuid4()))
         else:
             result = self.api.crear_persona_contacto(self.id_persona, payload, op_id=str(uuid4()))
-        self._finish_inline_save(result)
+        self._finish_modal_save(result)
 
     def _save_domicilio(self, _) -> None:
-        if not (self._inline_value("direccion") or self._inline_value("localidad")):
-            self._show_inline_error("Ingresá al menos calle/dirección o localidad.")
+        if not (self._modal_value("direccion") or self._modal_value("localidad")):
+            self._show_modal_error("Ingresá al menos calle/dirección o localidad.")
             return
-        row = (self.inline_form or {}).get("row") or {}
-        payload = {"tipo_domicilio": row.get("tipo_domicilio") or "REAL", "direccion": self._inline_value("direccion") or None, "localidad": self._inline_value("localidad") or None, "provincia": self._inline_value("provincia") or None, "pais": self._inline_value("pais") or None, "codigo_postal": self._inline_value("codigo_postal") or None, "es_principal": self._inline_bool("es_principal"), "observaciones": self._inline_value("observaciones") or None}
+        row = self.active_modal_row or {}
+        payload = {"tipo_domicilio": row.get("tipo_domicilio") or "REAL", "direccion": self._modal_value("direccion") or None, "localidad": self._modal_value("localidad") or None, "provincia": self._modal_value("provincia") or None, "pais": self._modal_value("pais") or None, "codigo_postal": self._modal_value("codigo_postal") or None, "es_principal": self._modal_bool("es_principal"), "observaciones": self._modal_value("observaciones") or None}
         if row:
             version = row.get("version_registro")
             if version is None:
-                self._show_inline_error("El domicilio no informa version_registro.")
+                self._show_modal_error("El domicilio no informa version_registro.")
                 return
             result = self.api.actualizar_persona_domicilio(self.id_persona, int(row.get("id_persona_domicilio")), payload, int(version), op_id=str(uuid4()))
         else:
             result = self.api.crear_persona_domicilio(self.id_persona, payload, op_id=str(uuid4()))
-        self._finish_inline_save(result)
+        self._finish_modal_save(result)
 
-    def _finish_inline_save(self, result: Any) -> None:
-        kind = (self.inline_form or {}).get("kind")
+    def _finish_modal_save(self, result: Any) -> None:
         if not result.success:
-            self._show_inline_error(result.error_message or "No se pudo guardar.")
+            self._show_modal_error(result.error_message or "No se pudo guardar.")
             return
         refreshed = self.api.get_persona_detalle_integral(self.id_persona)
         if refreshed.success and isinstance(refreshed.data, dict):
             self.data = refreshed.data
-        self.inline_form = None
-        self.inline_fields = {}
-        if isinstance(kind, str):
-            self._refresh_inline_card(kind)
-
+        self._close_modal()
+        self.on_navigate("parte_detail", id_persona=self.id_persona)
 
     def _domicilios_resumen(self, rows: object) -> ft.Control:
         domicilios = self._dict_rows(rows)
@@ -2118,7 +2106,7 @@ class ParteDetailPage:
                 subtitle=self._format_address(domicilio),
                 principal=False,
                 extra=domicilio.get("observaciones"),
-                action=ft.TextButton("Editar", on_click=lambda _, row=domicilio: self._start_inline_form("domicilio", row)),
+                action=ft.TextButton("Editar", on_click=lambda e, row=domicilio: self._open_domicilio_dialog(e, row)),
             )
             for domicilio in domicilios
         ])
