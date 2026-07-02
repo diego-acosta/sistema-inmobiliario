@@ -114,3 +114,86 @@ No se implementa todavía:
 - Versionado: alta crea entidad con `version_registro = 1`; `If-Match-Version` NO APLICA porque no modifica entidad existente.
 - Rollback/transacción: alta de `sucursal` y outbox comparten commit/rollback del repository.
 - GETs: `QUERY_READLIKE`; no fuerzan headers write.
+
+## Instalaciones
+
+### POST `/api/v1/operativo/instalaciones`
+
+Alta mínima de instalación como entidad base del dominio operativo. Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
+
+Headers CORE-EF obligatorios mediante helper común:
+
+- `X-Op-Id`
+- `X-Usuario-Id`
+- `X-Sucursal-Id`
+- `X-Instalacion-Id`
+
+Validaciones y persistencia:
+
+- `id_sucursal`, `codigo_instalacion` y `nombre_instalacion` son obligatorios.
+- `id_sucursal` debe referenciar una sucursal existente y activa (`deleted_at IS NULL`).
+- `estado_instalacion` admite `ACTIVA`, `INACTIVA` o `DADA_DE_BAJA`.
+- No se permite duplicado activo de `codigo_instalacion`.
+- Persiste `uid_global`, `version_registro = 1`, timestamps base, instalación de origen/última modificación y `op_id_alta`/`op_id_ultima_modificacion`.
+- Devuelve `201 Created` con envelope estándar y `version_registro`.
+
+Idempotencia:
+
+- Aplica por `instalacion.op_id_alta` con índice único parcial `ux_instalacion_op_id_alta`.
+- Mismo `X-Op-Id` con payload compatible devuelve la instalación existente sin duplicar fila ni outbox.
+- Mismo `X-Op-Id` con payload incompatible devuelve `409 IDEMPOTENT_DUPLICATE`.
+- Duplicado activo de `codigo_instalacion` con otro `X-Op-Id` devuelve `409 TECHNICAL_INCONSISTENCY`.
+
+Outbox:
+
+- Emite `instalacion_creada` (`EVT-OPE-004 — Instalación creada`) en `outbox_event` en la misma transacción del alta real.
+- Replay idempotente compatible no duplica outbox.
+
+Errores esperados:
+
+- `400 VALIDATION_ERROR` por headers CORE-EF faltantes o inválidos.
+- `404 NOT_FOUND` si la sucursal no existe o está dada de baja.
+- `409 IDEMPOTENT_DUPLICATE` por replay con payload incompatible.
+- `409 TECHNICAL_INCONSISTENCY` por duplicado activo u otra restricción técnica.
+- `422` por validaciones de schema, incluido estado inválido.
+
+### GET `/api/v1/operativo/instalaciones`
+
+Listado read-like de instalaciones activas, sin headers CORE-EF write.
+
+Clasificación CORE-EF: `QUERY_READLIKE`.
+
+Filtros opcionales:
+
+- `id_sucursal`
+- `estado_instalacion`
+
+Excluye registros con `deleted_at IS NOT NULL` y devuelve envelope estándar.
+
+### GET `/api/v1/operativo/instalaciones/{id_instalacion}`
+
+Ficha read-like de instalación, sin headers CORE-EF write.
+
+Clasificación CORE-EF: `QUERY_READLIKE`.
+
+Excluye registros con `deleted_at IS NOT NULL`. Si no existe, devuelve `404 NOT_FOUND`.
+
+### Fuera de alcance instalaciones
+
+- Modificación de instalación.
+- Baja lógica.
+- Sincronización avanzada.
+- `usuario_sucursal`, `usuario_rol_sucursal` y alcance operativo.
+- Autorización real.
+- Caja y jornada.
+
+### Decisión CORE-EF instalaciones
+
+- Naturaleza POST: `COMMAND_WRITE_NEGOCIO` sincronizable.
+- Headers POST: obligatorios mediante helper común CORE-EF; no aplica `If-Match-Version` porque es alta y no modifica entidad existente versionada.
+- Idempotencia: aplica por `op_id_alta`; mismo op/payload compatible retorna registro existente, mismo op/payload distinto devuelve conflicto.
+- Outbox: aplica, evento `instalacion_creada`, misma transacción que negocio.
+- Lock lógico: NO APLICA; no hay modificación concurrente de entidad existente.
+- Versionado: entidad `instalacion` nace con `version_registro = 1`.
+- Rollback/transacción: alta de `instalacion` y outbox comparten commit/rollback del repository.
+- Read-like: listados/fichas son `QUERY_READLIKE`, sin headers write.
