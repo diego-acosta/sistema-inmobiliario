@@ -29,6 +29,10 @@ class FakeApi:
         self.update_result = ApiResult(True, data={"id_persona": 42, "version_registro": 8})
         self.crear_persona_calls: list[dict[str, Any]] = []
         self.registrar_pago_calls: list[dict[str, Any]] = []
+        self.crear_contacto_calls: list[tuple[int, dict[str, Any]]] = []
+        self.actualizar_contacto_calls: list[tuple[int, int, dict[str, Any], int]] = []
+        self.crear_domicilio_calls: list[tuple[int, dict[str, Any]]] = []
+        self.actualizar_domicilio_calls: list[tuple[int, int, dict[str, Any], int]] = []
 
     def get_personas(self, **_: Any) -> ApiResult:
         return self.personas
@@ -57,6 +61,22 @@ class FakeApi:
     def registrar_pago_persona(self, id_persona: int, **kwargs: Any) -> ApiResult:
         self.registrar_pago_calls.append({"id_persona": id_persona, **kwargs})
         return ApiResult(True, data={"monto_aplicado": kwargs.get("monto", 0), "obligaciones_pagadas": []})
+
+    def crear_persona_contacto(self, id_persona: int, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
+        self.crear_contacto_calls.append((id_persona, payload))
+        return ApiResult(True, data={"id_persona_contacto": 1})
+
+    def actualizar_persona_contacto(self, id_persona: int, id_persona_contacto: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None) -> ApiResult:
+        self.actualizar_contacto_calls.append((id_persona, id_persona_contacto, payload, if_match_version))
+        return ApiResult(True, data={"id_persona_contacto": id_persona_contacto})
+
+    def crear_persona_domicilio(self, id_persona: int, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
+        self.crear_domicilio_calls.append((id_persona, payload))
+        return ApiResult(True, data={"id_persona_domicilio": 1})
+
+    def actualizar_persona_domicilio(self, id_persona: int, id_persona_domicilio: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None) -> ApiResult:
+        self.actualizar_domicilio_calls.append((id_persona, id_persona_domicilio, payload, if_match_version))
+        return ApiResult(True, data={"id_persona_domicilio": id_persona_domicilio})
 
 
 def _walk(control: object):
@@ -799,3 +819,106 @@ def test_participaciones_ocultan_secciones_sin_datos_por_tipo() -> None:
 
     empty = ParteDetailPage(FakeApi(), id_persona=42, on_navigate=lambda *_: None).build()
     assert "Sin roles ni participaciones." in "\n".join(_texts(empty))
+
+
+def _detalle_contactos_domicilios() -> dict[str, Any]:
+    return {
+        "display_name": "Ada Lovelace",
+        "estado_persona": "ACTIVA",
+        "contactos": [
+            {"id_persona_contacto": 10, "tipo_contacto": "TELEFONO", "valor_contacto": "+54 299", "es_principal": True, "observaciones": "Laboral", "version_registro": 3},
+            {"id_persona_contacto": 11, "tipo_contacto": "EMAIL", "valor_contacto": "ada@example.com", "es_principal": False, "observaciones": "Personal", "version_registro": 4},
+        ],
+        "domicilios": [
+            {"id_persona_domicilio": 20, "tipo_domicilio": "REAL", "direccion": "San Martín 123", "localidad": "Neuquén", "es_principal": True, "version_registro": 5},
+        ],
+        "participaciones": [],
+    }
+
+
+def test_ficha_contactos_domicilios_muestra_acciones_y_no_escribe_al_renderizar() -> None:
+    api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None).build()
+    text = "\n".join(_texts(control))
+    assert "Agregar teléfono" in text
+    assert "Agregar mail" in text
+    assert "Agregar dirección" in text
+    assert "Editar" in text
+    assert "tipo_contacto" not in text
+    assert "tipo_domicilio" not in text
+    assert "fecha_desde" not in text
+    assert "fecha_hasta" not in text
+    assert api.crear_contacto_calls == []
+    assert api.actualizar_contacto_calls == []
+    assert api.crear_domicilio_calls == []
+
+
+def test_agregar_contactos_y_domicilio_muestra_formulario_guarda_recarga_y_cancelar_no_llama_api() -> None:
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
+    api.detalle_results = [api.detalle, api.detalle, api.detalle, api.detalle]
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)))
+    control = page.build()
+
+    _find_button(control, "Agregar teléfono").on_click(None)
+    form = page.build()
+    assert "Agregar teléfono" in "\n".join(_texts(form))
+    page.inline_fields["valor_contacto"].value = "+54 11 5555"
+    _find_button(form, "Guardar").on_click(None)
+    assert api.crear_contacto_calls[-1][1]["tipo_contacto"] == "TELEFONO"
+    assert api.detalle_ids.count(42) >= 3
+
+    _find_button(page.build(), "Agregar mail").on_click(None)
+    form = page.build()
+    assert "Agregar mail" in "\n".join(_texts(form))
+    page.inline_fields["valor_contacto"].value = "nueva@example.com"
+    _find_button(form, "Guardar").on_click(None)
+    assert api.crear_contacto_calls[-1][1]["tipo_contacto"] == "EMAIL"
+
+    _find_button(page.build(), "Agregar dirección").on_click(None)
+    form = page.build()
+    assert "Agregar dirección" in "\n".join(_texts(form))
+    page.inline_fields["direccion"].value = "Belgrano 456"
+    _find_button(form, "Guardar").on_click(None)
+    assert api.crear_domicilio_calls[-1][1]["direccion"] == "Belgrano 456"
+
+    before = len(api.crear_contacto_calls) + len(api.crear_domicilio_calls)
+    _find_button(page.build(), "Agregar teléfono").on_click(None)
+    cancel_form = page.build()
+    _find_button(cancel_form, "Cancelar").on_click(None)
+    after = len(api.crear_contacto_calls) + len(api.crear_domicilio_calls)
+    assert after == before
+    assert navigations
+
+
+def test_editar_contactos_y_domicilio_precarga_y_llama_api_con_version() -> None:
+    api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
+    api.detalle_results = [api.detalle, api.detalle, api.detalle, api.detalle]
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
+    control = page.build()
+
+    edit_buttons = [item for item in _walk(control) if getattr(item, "text", None) == "Editar"]
+    edit_buttons[1].on_click(None)
+    page.build()
+    assert page.inline_fields["valor_contacto"].value == "+54 299"
+    page.inline_fields["valor_contacto"].value = "+54 299 999"
+    page._save_contacto("telefono")
+    assert api.actualizar_contacto_calls[-1] == (42, 10, {"tipo_contacto": "TELEFONO", "valor_contacto": "+54 299 999", "es_principal": True, "observaciones": "Laboral"}, 3)
+
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
+    control = page.build()
+    [item for item in _walk(control) if getattr(item, "text", None) == "Editar"][2].on_click(None)
+    page.build()
+    assert page.inline_fields["valor_contacto"].value == "ada@example.com"
+    page._save_contacto("email")
+    assert api.actualizar_contacto_calls[-1][2]["tipo_contacto"] == "EMAIL"
+
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
+    control = page.build()
+    [item for item in _walk(control) if getattr(item, "text", None) == "Editar"][0].on_click(None)
+    page.build()
+    assert page.inline_fields["direccion"].value == "San Martín 123"
+    page.inline_fields["localidad"].value = "Neuquén Capital"
+    page._save_domicilio(None)
+    assert api.actualizar_domicilio_calls[-1][0:2] == (42, 20)
+    assert api.actualizar_domicilio_calls[-1][3] == 5
