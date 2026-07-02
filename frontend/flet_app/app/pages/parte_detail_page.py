@@ -67,6 +67,10 @@ class ParteDetailPage:
                                         "Datos principales",
                                         [self._datos_base(data)],
                                         height=265,
+                                        action=ft.ElevatedButton(
+                                            "Editar datos principales",
+                                            on_click=lambda _: self._open_basic_edit(),
+                                        ),
                                     ),
                                     self._admin_card(
                                         "Dirección",
@@ -96,6 +100,7 @@ class ParteDetailPage:
                                 ],
                                 spacing=14,
                                 expand=3,
+                                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                             ),
                             self._admin_card(
                                 "Participaciones",
@@ -144,10 +149,6 @@ class ParteDetailPage:
                     ft.TextButton(
                         "Volver al listado",
                         on_click=lambda _: self.on_navigate("partes"),
-                    ),
-                    ft.ElevatedButton(
-                        "Editar datos principales",
-                        on_click=lambda _: self._open_basic_edit(),
                     ),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -301,6 +302,7 @@ class ParteDetailPage:
         expand: int | bool | None = None,
         height: int | None = None,
         scroll_body: bool = False,
+        action: ft.Control | None = None,
         low_emphasis: bool = False,
     ) -> ft.Control:
         body = (
@@ -308,14 +310,23 @@ class ParteDetailPage:
             if scroll_body
             else ft.Column(controls=controls, spacing=8)
         )
+        header_controls: list[ft.Control] = [
+            ft.Text(
+                title,
+                size=14 if low_emphasis else 17,
+                weight=ft.FontWeight.W_700 if not low_emphasis else ft.FontWeight.W_600,
+                color=ft.Colors.BLUE_GREY_700 if low_emphasis else ft.Colors.BLUE_GREY_900,
+            )
+        ]
+        if action is not None:
+            header_controls.extend([ft.Container(expand=True), action])
+
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(
-                        title,
-                        size=14 if low_emphasis else 17,
-                        weight=ft.FontWeight.W_700 if not low_emphasis else ft.FontWeight.W_600,
-                        color=ft.Colors.BLUE_GREY_700 if low_emphasis else ft.Colors.BLUE_GREY_900,
+                    ft.Row(
+                        controls=header_controls,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     body,
                 ],

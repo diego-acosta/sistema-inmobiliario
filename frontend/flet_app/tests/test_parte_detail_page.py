@@ -607,3 +607,61 @@ def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None
     assert "Sin domicilios registrados." in text
     assert "tipo_contacto" not in text
     assert "tipo_domicilio" not in text
+
+
+def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
+    page = ParteDetailPage(
+        FakeApi(
+            detalle=ApiResult(
+                True,
+                data={
+                    "id_persona": 42,
+                    "display_name": "Ada Lovelace",
+                    "tipo_persona": "FISICA",
+                    "estado_persona": "ACTIVA",
+                    "version_registro": 7,
+                    "documentos": [],
+                    "contactos": [],
+                    "domicilios": [],
+                    "participaciones": [],
+                    "resumen_financiero": {},
+                    "obligaciones_financieras": [],
+                    "usos_transversales": {},
+                },
+            )
+        ),
+        id_persona=42,
+        on_navigate=lambda *_: None,
+    )
+    control = page.build()
+    header = control.content.controls[0]
+    main_row = control.content.controls[2]
+    left_column = main_row.controls[0]
+    datos_card = left_column.controls[0]
+
+    assert "Editar datos principales" not in "\n".join(_texts(header))
+    assert "Editar datos principales" in "\n".join(_texts(datos_card))
+
+    _find_button(datos_card, "Editar datos principales").on_click(None)
+    assert page.edit_panel.visible is True
+    assert _find_field(page.edit_panel, "Nombre") is not None
+
+
+def test_direccion_ocupa_columna_izquierda_y_contactos_quedan_debajo() -> None:
+    control = ParteDetailPage(FakeApi(), id_persona=42, on_navigate=lambda *_: None).build()
+    main_row = control.content.controls[2]
+    left_column = main_row.controls[0]
+    participaciones = main_row.controls[1]
+    datos_card = left_column.controls[0]
+    direccion_card = left_column.controls[1]
+    contactos_row = left_column.controls[2]
+
+    assert left_column.expand == 3
+    assert left_column.horizontal_alignment == ft.CrossAxisAlignment.STRETCH
+    assert "Datos principales" in "\n".join(_texts(datos_card))
+    assert "Dirección" in "\n".join(_texts(direccion_card))
+    assert direccion_card.height == 145
+    assert "Teléfonos" in "\n".join(_texts(contactos_row.controls[0]))
+    assert "Mail" in "\n".join(_texts(contactos_row.controls[1]))
+    assert "Participaciones" in "\n".join(_texts(participaciones))
+    assert participaciones.expand == 2
