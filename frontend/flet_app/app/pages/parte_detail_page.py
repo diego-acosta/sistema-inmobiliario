@@ -26,6 +26,7 @@ class ParteDetailPage:
         self.inline_form: dict[str, Any] | None = None
         self.inline_fields: dict[str, ft.TextField | ft.Checkbox] = {}
         self.inline_message = ft.Text("", visible=False)
+        self.inline_cards_by_kind: dict[str, ft.Container] = {}
 
     def build(self) -> ft.Control:
         result = self.api.get_persona_detalle_integral(self.id_persona)
@@ -68,30 +69,39 @@ class ParteDetailPage:
                             ft.Column(
                                 controls=[
                                     self._datos_principales_card(data),
-                                    self._admin_card(
-                                        "Dirección",
-                                        self._domicilios_controls(data.get("domicilios", [])),
-                                        height=145,
-                                        scroll_body=True,
-                                        action=ft.TextButton("Agregar dirección", on_click=lambda _: self._start_inline_form("domicilio")),
+                                    self._tracked_inline_card(
+                                        "domicilio",
+                                        self._admin_card(
+                                            "Dirección",
+                                            self._domicilios_controls(data.get("domicilios", [])),
+                                            height=145,
+                                            scroll_body=True,
+                                            action=ft.TextButton("Agregar dirección", on_click=lambda _: self._start_inline_form("domicilio")),
+                                        ),
                                     ),
                                     ft.Row(
                                         controls=[
-                                            self._admin_card(
-                                                "Teléfonos",
-                                                self._contactos_controls(data.get("contactos", []), "telefono"),
-                                                expand=1,
-                                                height=140,
-                                                scroll_body=True,
-                                                action=ft.TextButton("Agregar teléfono", on_click=lambda _: self._start_inline_form("telefono")),
+                                            self._tracked_inline_card(
+                                                "telefono",
+                                                self._admin_card(
+                                                    "Teléfonos",
+                                                    self._contactos_controls(data.get("contactos", []), "telefono"),
+                                                    expand=1,
+                                                    height=140,
+                                                    scroll_body=True,
+                                                    action=ft.TextButton("Agregar teléfono", on_click=lambda _: self._start_inline_form("telefono")),
+                                                ),
                                             ),
-                                            self._admin_card(
-                                                "Mail",
-                                                self._contactos_controls(data.get("contactos", []), "email"),
-                                                expand=1,
-                                                height=140,
-                                                scroll_body=True,
-                                                action=ft.TextButton("Agregar mail", on_click=lambda _: self._start_inline_form("email")),
+                                            self._tracked_inline_card(
+                                                "email",
+                                                self._admin_card(
+                                                    "Mail",
+                                                    self._contactos_controls(data.get("contactos", []), "email"),
+                                                    expand=1,
+                                                    height=140,
+                                                    scroll_body=True,
+                                                    action=ft.TextButton("Agregar mail", on_click=lambda _: self._start_inline_form("email")),
+                                                ),
                                             ),
                                         ],
                                         spacing=14,
@@ -357,6 +367,52 @@ class ParteDetailPage:
             control.update()
         except AssertionError:
             pass
+
+
+    def _tracked_inline_card(self, kind: str, card: ft.Control) -> ft.Control:
+        if isinstance(card, ft.Container):
+            self.inline_cards_by_kind[kind] = card
+        return card
+
+    def _refresh_inline_card(self, kind: str) -> None:
+        mounted_card = self.inline_cards_by_kind.get(kind)
+        if mounted_card is None:
+            return
+        replacement = self._build_inline_card(kind)
+        if not isinstance(replacement, ft.Container):
+            return
+        mounted_card.content = replacement.content
+        mounted_card.height = replacement.height
+        mounted_card.expand = replacement.expand
+        self.inline_cards_by_kind[kind] = mounted_card
+        self._safe_update(mounted_card)
+
+    def _build_inline_card(self, kind: str) -> ft.Control:
+        if kind == "domicilio":
+            return self._admin_card(
+                "Dirección",
+                self._domicilios_controls(self.data.get("domicilios", [])),
+                height=145,
+                scroll_body=True,
+                action=ft.TextButton("Agregar dirección", on_click=lambda _: self._start_inline_form("domicilio")),
+            )
+        if kind == "telefono":
+            return self._admin_card(
+                "Teléfonos",
+                self._contactos_controls(self.data.get("contactos", []), "telefono"),
+                expand=1,
+                height=140,
+                scroll_body=True,
+                action=ft.TextButton("Agregar teléfono", on_click=lambda _: self._start_inline_form("telefono")),
+            )
+        return self._admin_card(
+            "Mail",
+            self._contactos_controls(self.data.get("contactos", []), "email"),
+            expand=1,
+            height=140,
+            scroll_body=True,
+            action=ft.TextButton("Agregar mail", on_click=lambda _: self._start_inline_form("email")),
+        )
 
     def _admin_card(
         self,
@@ -1951,12 +2007,14 @@ class ParteDetailPage:
         self.inline_form = {"kind": kind, "row": row or {}}
         self.inline_fields = {}
         self.inline_message = ft.Text("", visible=False)
-        self.on_navigate("parte_detail", id_persona=self.id_persona)
+        self._refresh_inline_card(kind)
 
     def _cancel_inline_form(self, _) -> None:
+        kind = (self.inline_form or {}).get("kind")
         self.inline_form = None
         self.inline_fields = {}
-        self.on_navigate("parte_detail", id_persona=self.id_persona)
+        if isinstance(kind, str):
+            self._refresh_inline_card(kind)
 
     def _inline_contacto_form(self, kind: str, row: dict[str, Any] | None) -> ft.Control:
         row = row or {}
@@ -2037,6 +2095,7 @@ class ParteDetailPage:
         self._finish_inline_save(result)
 
     def _finish_inline_save(self, result: Any) -> None:
+        kind = (self.inline_form or {}).get("kind")
         if not result.success:
             self._show_inline_error(result.error_message or "No se pudo guardar.")
             return
@@ -2044,7 +2103,9 @@ class ParteDetailPage:
         if refreshed.success and isinstance(refreshed.data, dict):
             self.data = refreshed.data
         self.inline_form = None
-        self.on_navigate("parte_detail", id_persona=self.id_persona)
+        self.inline_fields = {}
+        if isinstance(kind, str):
+            self._refresh_inline_card(kind)
 
 
     def _domicilios_resumen(self, rows: object) -> ft.Control:

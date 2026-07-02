@@ -853,72 +853,91 @@ def test_ficha_contactos_domicilios_muestra_acciones_y_no_escribe_al_renderizar(
     assert api.crear_domicilio_calls == []
 
 
-def test_agregar_contactos_y_domicilio_muestra_formulario_guarda_recarga_y_cancelar_no_llama_api() -> None:
+def test_agregar_contactos_y_domicilio_actualiza_card_montada_sin_navegar() -> None:
     navigations: list[tuple[str, dict[str, Any]]] = []
     api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
     api.detalle_results = [api.detalle, api.detalle, api.detalle, api.detalle]
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)))
     control = page.build()
 
-    _find_button(control, "Agregar teléfono").on_click(None)
-    form = page.build()
-    assert "Agregar teléfono" in "\n".join(_texts(form))
+    telefono_card = page.inline_cards_by_kind["telefono"]
+    _find_button(telefono_card, "Agregar teléfono").on_click(None)
+    assert navigations == []
+    assert page.inline_cards_by_kind["telefono"] is telefono_card
+    telefono_text = "\n".join(_texts(telefono_card))
+    assert "Agregar teléfono" in telefono_text
+    assert "Guardar" in telefono_text
+    assert "Cancelar" in telefono_text
     page.inline_fields["valor_contacto"].value = "+54 11 5555"
-    _find_button(form, "Guardar").on_click(None)
+    _find_button(telefono_card, "Guardar").on_click(None)
     assert api.crear_contacto_calls[-1][1]["tipo_contacto"] == "TELEFONO"
-    assert api.detalle_ids.count(42) >= 3
+    assert api.detalle_ids.count(42) >= 2
+    assert navigations == []
 
-    _find_button(page.build(), "Agregar mail").on_click(None)
-    form = page.build()
-    assert "Agregar mail" in "\n".join(_texts(form))
+    mail_card = page.inline_cards_by_kind["email"]
+    _find_button(mail_card, "Agregar mail").on_click(None)
+    assert navigations == []
+    mail_text = "\n".join(_texts(mail_card))
+    assert "Agregar mail" in mail_text
+    assert "Guardar" in mail_text
+    assert "Cancelar" in mail_text
     page.inline_fields["valor_contacto"].value = "nueva@example.com"
-    _find_button(form, "Guardar").on_click(None)
+    _find_button(mail_card, "Guardar").on_click(None)
     assert api.crear_contacto_calls[-1][1]["tipo_contacto"] == "EMAIL"
 
-    _find_button(page.build(), "Agregar dirección").on_click(None)
-    form = page.build()
-    assert "Agregar dirección" in "\n".join(_texts(form))
+    direccion_card = page.inline_cards_by_kind["domicilio"]
+    _find_button(direccion_card, "Agregar dirección").on_click(None)
+    assert navigations == []
+    direccion_text = "\n".join(_texts(direccion_card))
+    assert "Agregar dirección" in direccion_text
+    assert "Guardar" in direccion_text
+    assert "Cancelar" in direccion_text
     page.inline_fields["direccion"].value = "Belgrano 456"
-    _find_button(form, "Guardar").on_click(None)
+    _find_button(direccion_card, "Guardar").on_click(None)
     assert api.crear_domicilio_calls[-1][1]["direccion"] == "Belgrano 456"
 
     before = len(api.crear_contacto_calls) + len(api.crear_domicilio_calls)
-    _find_button(page.build(), "Agregar teléfono").on_click(None)
-    cancel_form = page.build()
-    _find_button(cancel_form, "Cancelar").on_click(None)
+    _find_button(page.inline_cards_by_kind["telefono"], "Agregar teléfono").on_click(None)
+    _find_button(page.inline_cards_by_kind["telefono"], "Cancelar").on_click(None)
     after = len(api.crear_contacto_calls) + len(api.crear_domicilio_calls)
     assert after == before
-    assert navigations
+    assert "Guardar" not in "\n".join(_texts(page.inline_cards_by_kind["telefono"]))
+    assert navigations == []
 
 
-def test_editar_contactos_y_domicilio_precarga_y_llama_api_con_version() -> None:
+def test_editar_contactos_y_domicilio_actualiza_card_montada_sin_navegar_y_guarda_version() -> None:
+    navigations: list[tuple[str, dict[str, Any]]] = []
     api = FakeApi(detalle=ApiResult(True, data=_detalle_contactos_domicilios()))
     api.detalle_results = [api.detalle, api.detalle, api.detalle, api.detalle]
-    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
-    control = page.build()
-
-    edit_buttons = [item for item in _walk(control) if getattr(item, "text", None) == "Editar"]
-    edit_buttons[1].on_click(None)
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)))
     page.build()
+
+    telefono_card = page.inline_cards_by_kind["telefono"]
+    _find_button(telefono_card, "Editar").on_click(None)
+    assert navigations == []
+    assert page.inline_cards_by_kind["telefono"] is telefono_card
     assert page.inline_fields["valor_contacto"].value == "+54 299"
+    assert "Editar teléfono" in "\n".join(_texts(telefono_card))
     page.inline_fields["valor_contacto"].value = "+54 299 999"
-    page._save_contacto("telefono")
+    _find_button(telefono_card, "Guardar").on_click(None)
     assert api.actualizar_contacto_calls[-1] == (42, 10, {"tipo_contacto": "TELEFONO", "valor_contacto": "+54 299 999", "es_principal": True, "observaciones": "Laboral"}, 3)
 
-    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
-    control = page.build()
-    [item for item in _walk(control) if getattr(item, "text", None) == "Editar"][2].on_click(None)
-    page.build()
+    mail_card = page.inline_cards_by_kind["email"]
+    _find_button(mail_card, "Editar").on_click(None)
+    assert navigations == []
     assert page.inline_fields["valor_contacto"].value == "ada@example.com"
-    page._save_contacto("email")
+    assert "Editar mail" in "\n".join(_texts(mail_card))
+    _find_button(mail_card, "Guardar").on_click(None)
     assert api.actualizar_contacto_calls[-1][2]["tipo_contacto"] == "EMAIL"
+    assert api.actualizar_contacto_calls[-1][3] == 4
 
-    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
-    control = page.build()
-    [item for item in _walk(control) if getattr(item, "text", None) == "Editar"][0].on_click(None)
-    page.build()
+    direccion_card = page.inline_cards_by_kind["domicilio"]
+    _find_button(direccion_card, "Editar").on_click(None)
+    assert navigations == []
     assert page.inline_fields["direccion"].value == "San Martín 123"
+    assert "Editar dirección" in "\n".join(_texts(direccion_card))
     page.inline_fields["localidad"].value = "Neuquén Capital"
-    page._save_domicilio(None)
+    _find_button(direccion_card, "Guardar").on_click(None)
     assert api.actualizar_domicilio_calls[-1][0:2] == (42, 20)
     assert api.actualizar_domicilio_calls[-1][3] == 5
+    assert navigations == []
