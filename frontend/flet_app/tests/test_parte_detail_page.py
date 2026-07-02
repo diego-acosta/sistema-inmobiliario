@@ -35,6 +35,8 @@ class FakeApi:
         self.actualizar_domicilio_calls: list[tuple[int, int, dict[str, Any], int]] = []
         self.crear_documento_calls: list[tuple[int, dict[str, Any]]] = []
         self.actualizar_documento_calls: list[tuple[int, int, dict[str, Any], int]] = []
+        self.crear_documento_result = ApiResult(True, data={"id_persona_documento": 1})
+        self.actualizar_documento_result = ApiResult(True, data={"id_persona_documento": 1})
 
     def get_personas(self, **_: Any) -> ApiResult:
         return self.personas
@@ -82,11 +84,11 @@ class FakeApi:
 
     def crear_persona_documento(self, id_persona: int, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
         self.crear_documento_calls.append((id_persona, payload))
-        return ApiResult(True, data={"id_persona_documento": 1})
+        return self.crear_documento_result
 
     def actualizar_persona_documento(self, id_persona: int, id_persona_documento: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None) -> ApiResult:
         self.actualizar_documento_calls.append((id_persona, id_persona_documento, payload, if_match_version))
-        return ApiResult(True, data={"id_persona_documento": id_persona_documento})
+        return self.actualizar_documento_result
 
 
 def _walk(control: object):
@@ -365,6 +367,84 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     assert "Cancelar" not in read_text
     assert api.update_calls == []
     assert api.crear_persona_calls == []
+
+
+def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar_modal() -> None:
+    initial = ApiResult(
+        True,
+        data={
+            "id_persona": 42,
+            "display_name": "Ada Lovelace",
+            "tipo_persona": "FISICA",
+            "nombre": "Ada",
+            "apellido": "Lovelace",
+            "estado_persona": "ACTIVA",
+            "version_registro": 7,
+            "documentos": [
+                {
+                    "id_persona_documento": 10,
+                    "tipo_documento": "DNI",
+                    "numero_documento": "12345678",
+                    "pais_emision": None,
+                    "es_principal": True,
+                    "version_registro": 3,
+                }
+            ],
+            "contactos": [],
+            "domicilios": [],
+            "participaciones": [],
+            "obligaciones_financieras": [],
+            "usos_transversales": {},
+        },
+    )
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    api = FakeApi(detalle=initial)
+    api.detalle_results = [initial]
+    api.actualizar_documento_result = ApiResult(
+        False,
+        status_code=500,
+        error_message="persona_documento.version_registro stack trace",
+    )
+    page = ParteDetailPage(
+        api,
+        id_persona=42,
+        on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)),
+    )
+    control = page.build()
+
+    _find_button(control, "Editar datos principales").on_click(None)
+    dialog = page.active_dialog
+    assert dialog is not None
+    _find_field(dialog, "Documento de identidad").value = "87654321"
+    _find_button(dialog, "Guardar").on_click(None)
+
+    assert len(api.update_calls) == 1
+    assert api.actualizar_documento_calls == [
+        (
+            42,
+            10,
+            {
+                "tipo_documento": "DNI",
+                "numero_documento": "87654321",
+                "pais_emision": None,
+                "es_principal": True,
+                "observaciones": None,
+            },
+            3,
+        )
+    ]
+    assert page.active_dialog is dialog
+    assert dialog.open is True
+    assert navigations == []
+    assert api.detalle_ids == [42]
+    message = page.modal_message.value
+    assert (
+        "Los datos principales se guardaron, pero no se pudo guardar el documento. "
+        "Revisá la ficha y volvé a intentar."
+    ) == message
+    assert "persona_documento" not in message
+    assert "version_registro" not in message
+    assert "stack trace" not in message
 
 
 

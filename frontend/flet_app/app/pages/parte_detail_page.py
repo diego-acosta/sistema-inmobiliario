@@ -322,6 +322,7 @@ class ParteDetailPage:
         if not result.success:
             self._show_modal_error(self._friendly_save_error(result, "No se pudieron guardar los datos principales."))
             return
+        # TODO: reemplazar este guardado compuesto por endpoint backend transaccional para datos principales + documentos.
         for row, numero, tipo in (
             (self._documento_identidad_row(self.data), self._modal_value("documento_identidad"), "DNI"),
             (self._identificacion_fiscal_row(self.data), self._modal_value("identificacion_fiscal"), "CUIT"),
@@ -331,7 +332,10 @@ class ParteDetailPage:
                 continue
             doc_result = self._save_documento_principal(row, numero, tipo)
             if not doc_result.success:
-                self._show_modal_error(self._friendly_save_error(doc_result, "Los datos base se guardaron, pero no se pudo guardar el documento."))
+                self._show_modal_error(
+                    "Los datos principales se guardaron, pero no se pudo guardar el documento. "
+                    "Revisá la ficha y volvé a intentar."
+                )
                 return
         self._finish_modal_save(result)
 
