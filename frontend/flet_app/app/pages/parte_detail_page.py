@@ -322,6 +322,7 @@ class ParteDetailPage:
         if not result.success:
             self._show_modal_error(self._friendly_save_error(result, "No se pudieron guardar los datos principales."))
             return
+        self._merge_persona_update_result(result)
         # TODO: reemplazar este guardado compuesto por endpoint backend transaccional para datos principales + documentos.
         for row, numero, tipo in (
             (self._documento_identidad_row(self.data), self._modal_value("documento_identidad"), "DNI"),
@@ -347,6 +348,22 @@ class ParteDetailPage:
         self.edit_message.color = ft.Colors.RED_700
         self.edit_message.visible = True
         self._safe_update(self.edit_message)
+
+    def _merge_persona_update_result(self, result: Any) -> None:
+        if not isinstance(getattr(result, "data", None), dict):
+            return
+        for key in (
+            "tipo_persona",
+            "nombre",
+            "apellido",
+            "razon_social",
+            "fecha_nacimiento",
+            "estado_persona",
+            "observaciones",
+            "version_registro",
+        ):
+            if key in result.data:
+                self.data[key] = result.data[key]
 
     def _safe_update(self, control: ft.Control) -> None:
         try:
@@ -409,7 +426,7 @@ class ParteDetailPage:
                 ("Apellido", data.get("apellido")),
                 ("Razón social", data.get("razon_social")),
                 ("Documento de identidad", self._documento_principal(data)),
-                ("CUIT/CUIL/CDI", data.get("cuit_cuil") or data.get("cuit") or data.get("cuil") or data.get("cdi")),
+                ("CUIT/CUIL/CDI", self._identificacion_fiscal_value(data)),
                 ("Fecha de nacimiento", data.get("fecha_nacimiento")),
                 ("Estado", data.get("estado_persona")),
                 ("Observaciones", data.get("observaciones")),
@@ -2707,6 +2724,15 @@ class ParteDetailPage:
     def _identificacion_fiscal_row(self, data: dict[str, Any]) -> dict[str, Any] | None:
         documentos = self._dict_rows(data.get("documentos"))
         return next((doc for doc in documentos if str(doc.get("tipo_documento") or "").upper() in {"CUIT", "CUIL", "CDI"}), None)
+
+    def _identificacion_fiscal_value(self, data: dict[str, Any]) -> object:
+        return (
+            self._documento_numero(self._identificacion_fiscal_row(data))
+            or data.get("cuit_cuil")
+            or data.get("cuit")
+            or data.get("cuil")
+            or data.get("cdi")
+        )
 
     def _documento_numero(self, row: dict[str, Any] | None) -> str:
         if not row:

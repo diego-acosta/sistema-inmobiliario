@@ -437,6 +437,7 @@ def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar
     assert dialog.open is True
     assert navigations == []
     assert api.detalle_ids == [42]
+    assert page.data["version_registro"] == 8
     message = page.modal_message.value
     assert (
         "Los datos principales se guardaron, pero no se pudo guardar el documento. "
@@ -445,6 +446,13 @@ def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar
     assert "persona_documento" not in message
     assert "version_registro" not in message
     assert "stack trace" not in message
+
+    _find_button(dialog, "Guardar").on_click(None)
+
+    assert [call[2] for call in api.update_calls] == [7, 8]
+    assert page.active_dialog is dialog
+    assert dialog.open is True
+    assert navigations == []
 
 
 
@@ -643,6 +651,131 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert api.crear_persona_calls == []
     assert api.update_calls == []
     assert api.registrar_pago_calls == []
+
+
+def test_datos_principales_muestra_identificacion_fiscal_desde_documentos() -> None:
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "nombre": "Ada",
+                "apellido": "Lovelace",
+                "estado_persona": "ACTIVA",
+                "version_registro": 7,
+                "documentos": [
+                    {
+                        "id_persona_documento": 10,
+                        "tipo_documento": "DNI",
+                        "numero_documento": "12345678",
+                        "es_principal": True,
+                        "version_registro": 3,
+                    },
+                    {
+                        "id_persona_documento": 11,
+                        "tipo_documento": "CUIT",
+                        "numero_documento": "20-12345678-9",
+                        "es_principal": False,
+                        "version_registro": 2,
+                    },
+                ],
+                "contactos": [],
+                "domicilios": [],
+                "participaciones": [],
+                "obligaciones_financieras": [],
+                "usos_transversales": {},
+            },
+        )
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    text = "\n".join(_texts(control))
+
+    assert "CUIT/CUIL/CDI" in text
+    assert "20-12345678-9" in text
+    assert "persona_documento" not in text
+
+
+def test_guardar_identificacion_fiscal_recarga_y_muestra_cuit_actualizado() -> None:
+    initial = ApiResult(
+        True,
+        data={
+            "id_persona": 42,
+            "display_name": "Ada Lovelace",
+            "tipo_persona": "FISICA",
+            "nombre": "Ada",
+            "apellido": "Lovelace",
+            "estado_persona": "ACTIVA",
+            "version_registro": 7,
+            "documentos": [
+                {
+                    "id_persona_documento": 11,
+                    "tipo_documento": "CUIT",
+                    "numero_documento": "20-12345678-9",
+                    "pais_emision": None,
+                    "es_principal": False,
+                    "version_registro": 2,
+                },
+            ],
+            "contactos": [],
+            "domicilios": [],
+            "participaciones": [],
+            "obligaciones_financieras": [],
+            "usos_transversales": {},
+        },
+    )
+    refreshed = ApiResult(
+        True,
+        data={
+            **initial.data,
+            "version_registro": 8,
+            "documentos": [
+                {
+                    "id_persona_documento": 11,
+                    "tipo_documento": "CUIT",
+                    "numero_documento": "20-87654321-0",
+                    "pais_emision": None,
+                    "es_principal": False,
+                    "version_registro": 3,
+                },
+            ],
+        },
+    )
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    api = FakeApi(detalle=initial)
+    api.detalle_results = [initial, refreshed]
+    page = ParteDetailPage(
+        api,
+        id_persona=42,
+        on_navigate=lambda route, **kwargs: navigations.append((route, kwargs)),
+    )
+    control = page.build()
+
+    _find_button(control, "Editar datos principales").on_click(None)
+    dialog = page.active_dialog
+    assert dialog is not None
+    _find_field(dialog, "Identificación fiscal").value = "20-87654321-0"
+    _find_button(dialog, "Guardar").on_click(None)
+
+    assert api.actualizar_documento_calls == [
+        (
+            42,
+            11,
+            {
+                "tipo_documento": "CUIT",
+                "numero_documento": "20-87654321-0",
+                "pais_emision": None,
+                "es_principal": False,
+                "observaciones": None,
+            },
+            2,
+        )
+    ]
+    assert page.data["documentos"][0]["numero_documento"] == "20-87654321-0"
+    assert "20-87654321-0" in "\n".join(_texts(page._datos_base(page.data)))
+    assert navigations == [("parte_detail", {"id_persona": 42})]
 
 
 def test_ficha_redisenada_preserva_estado_de_cuenta_y_panel_de_pago(monkeypatch) -> None:
