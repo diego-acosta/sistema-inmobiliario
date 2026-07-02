@@ -69,6 +69,8 @@ Criterios explícitos:
 - Las responses sincronizables exponen `version_registro` cuando la entidad persistida lo contiene.
 - La baja lógica usa `deleted_at`; en asignaciones de roles también usa `fecha_hasta`.
 - Outbox se registra en la misma transacción que el cambio de negocio cuando la operación sincronizable lo implementa.
+- Los errores generados dentro de handlers usan el envelope propio del sistema (`{ "ok": false, "error_code", "error_message", "details" }`). Esto incluye headers CORE-EF faltantes/inválidos, `If-Match-Version` faltante/inválido y validaciones manuales de aplicación.
+- Los errores de validación automática FastAPI/Pydantic que ocurren antes de entrar al handler responden actualmente HTTP `422 Unprocessable Entity` con el formato estándar de FastAPI (`{ "detail": [...] }`). Esto aplica a body, path y query inválidos, por ejemplo body mal tipado, campo requerido faltante o path/query con tipo incompatible.
 
 ## 4. Usuarios del sistema
 
@@ -128,7 +130,8 @@ Response principal (`201`):
 
 Errores esperados:
 
-- `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o payload inválido.
+- `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o validaciones manuales del handler.
+- `422 Unprocessable Entity`: request body/path/query inválido detectado automáticamente por FastAPI/Pydantic antes de entrar al handler.
 - `409 IDEMPOTENT_DUPLICATE`: mismo `X-Op-Id` con payload incompatible.
 - `409 TECHNICAL_INCONSISTENCY`: código o login duplicado, u otra inconsistencia técnica controlada.
 - `500 TECHNICAL_INCONSISTENCY`: fallo técnico no controlado.
@@ -349,7 +352,8 @@ Response principal (`201`):
 
 Errores esperados:
 
-- `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o payload inválido.
+- `400 VALIDATION_ERROR`: headers CORE-EF faltantes/inválidos o validaciones manuales del handler.
+- `422 Unprocessable Entity`: request body/path/query inválido detectado automáticamente por FastAPI/Pydantic antes de entrar al handler.
 - `404 NOT_FOUND`: usuario o rol inexistente.
 - `409 IDEMPOTENT_DUPLICATE`: mismo `X-Op-Id` con payload incompatible.
 - `409 TECHNICAL_INCONSISTENCY`: duplicado activo de `(id_usuario, id_rol_seguridad)` u otra inconsistencia técnica controlada.
@@ -409,7 +413,8 @@ Fuera de alcance de asignaciones:
 
 | Error code | HTTP habitual | Uso |
 | --- | ---: | --- |
-| `VALIDATION_ERROR` | 400 | Payload inválido, header CORE-EF faltante/inválido o `If-Match-Version` faltante/inválido. |
+| `VALIDATION_ERROR` | 400 | Header CORE-EF faltante/inválido, `If-Match-Version` faltante/inválido o validación manual de aplicación generada dentro del handler con envelope propio. |
+| Validación automática FastAPI/Pydantic | 422 | Body, path o query inválidos detectados antes de entrar al handler; usa formato estándar `{ "detail": [...] }`, no el envelope propio. |
 | `NOT_FOUND` | 404 | Usuario, rol o asignación inexistente según endpoint. |
 | `IDEMPOTENT_DUPLICATE` | 409 | Reuso de `X-Op-Id` con payload incompatible. |
 | `CONCURRENCY_ERROR` | 409 | `If-Match-Version` no coincide con `version_registro` vigente. |
@@ -456,7 +461,8 @@ Toda issue o PR futuro del dominio Administrativo debe cumplir:
 4. Si agrega una operación sincronizable, documentar evento/outbox, aggregate, payload mínimo y frontera transaccional.
 5. Si agrega write CORE-EF, documentar headers, versionado, idempotencia, baja lógica si aplica, rollback/transacción y tests mínimos.
 6. No declarar cumplimiento CORE-EF profundo sin evidencia verificable en router/service/repository/SQL/tests.
-7. No ampliar el alcance administrativo hacia autenticación, autorización real, sucursal o menú dinámico sin issue/documentación específica.
+7. Si se implementa un handler global para `RequestValidationError` o cambia el formato/status de validación automática, actualizar el DEV-API global y los documentos por dominio afectados.
+8. No ampliar el alcance administrativo hacia autenticación, autorización real, sucursal o menú dinámico sin issue/documentación específica.
 
 ## 10. Referencias internas
 
