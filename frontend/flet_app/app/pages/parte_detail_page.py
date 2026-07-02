@@ -1876,28 +1876,170 @@ class ParteDetailPage:
         participaciones = self._dict_rows(rows)
         if not participaciones:
             return ft.Text("Sin roles ni participaciones.")
-        grouped: dict[str, list[str]] = {"Ventas": [], "Alquileres": [], "Otros": []}
-        for item in participaciones:
-            label = self._participacion_label(item)
-            bucket = self._participacion_bucket(item)
-            grouped[bucket].append(label)
+
+        ventas = [
+            item
+            for item in participaciones
+            if self._participacion_bucket(item) == "Ventas"
+        ]
+        alquileres = [
+            item
+            for item in participaciones
+            if self._participacion_bucket(item) == "Alquileres"
+        ]
+        otros = [
+            item
+            for item in participaciones
+            if self._participacion_bucket(item) == "Otros"
+        ]
+
         controls: list[ft.Control] = []
-        for title, labels in grouped.items():
-            if labels:
-                controls.append(ft.Text(title, weight=ft.FontWeight.W_600))
-                controls.extend(ft.Text(f"• {label}") for label in labels)
-        return ft.Column(controls=controls, spacing=6)
+        if ventas:
+            controls.append(self._participacion_table("Ventas", ventas))
+        if alquileres:
+            controls.append(self._participacion_table("Alquileres", alquileres))
+        if otros:
+            controls.append(self._participacion_table("Otros", otros))
+        return ft.Column(controls=controls, spacing=10)
+
+    def _participacion_table(
+        self, title: str, rows: list[dict[str, Any]]
+    ) -> ft.Control:
+        table_rows = [self._participacion_table_row(item) for item in rows]
+        return ft.Column(
+            controls=[
+                ft.Text(title, weight=ft.FontWeight.W_600),
+                entity_table(
+                    columns=[
+                        ("Rol", "rol"),
+                        ("Tipo", "tipo"),
+                        ("Referencia", "referencia"),
+                        ("Estado", "estado"),
+                    ],
+                    rows=table_rows,
+                    actions=lambda row: [self._participacion_nav_action(row["_source"])],
+                ),
+            ],
+            spacing=6,
+        )
+
+    def _participacion_table_row(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "rol": self._participacion_rol_label(item),
+            "tipo": self._participacion_tipo_label(
+                item.get("tipo_relacion") or item.get("tipo_origen")
+            ),
+            "referencia": self._participacion_referencia(item),
+            "estado": self._participacion_estado(item),
+            "_source": item,
+        }
+
+    def _participacion_rol_label(self, item: dict[str, Any]) -> str:
+        return self._friendly_label(
+            item.get("nombre_rol")
+            or item.get("rol")
+            or item.get("codigo_rol")
+            or "Participación"
+        )
+
+    def _participacion_referencia(self, item: dict[str, Any]) -> str:
+        return str(
+            item.get("descripcion_origen")
+            or item.get("codigo_origen")
+            or item.get("codigo_venta")
+            or item.get("codigo_contrato")
+            or item.get("codigo")
+            or item.get("id_relacion")
+            or item.get("id_origen")
+            or "-"
+        )
+
+    def _participacion_estado(self, item: dict[str, Any]) -> str:
+        return str(
+            item.get("estado")
+            or item.get("estado_relacion")
+            or item.get("estado_origen")
+            or "-"
+        )
 
     def _participacion_bucket(self, item: dict[str, Any]) -> str:
-        text = " ".join(str(item.get(key) or "").lower() for key in ("tipo_relacion", "tipo_origen", "descripcion_origen", "codigo_rol"))
-        if "venta" in text or "reserva" in text:
+        tipo = str(item.get("tipo_relacion") or item.get("tipo_origen") or "").lower()
+        text = " ".join(
+            str(item.get(key) or "").lower()
+            for key in ("tipo_relacion", "tipo_origen", "descripcion_origen", "codigo_rol")
+        )
+        if tipo in self._participacion_tipos_venta() or "venta" in text or "reserva" in text or "escritur" in text or "cesion" in text or "cesión" in text:
             return "Ventas"
-        if "alquiler" in text or "locat" in text or "contrato" in text:
+        if tipo in self._participacion_tipos_alquiler() or "alquiler" in text or "locat" in text or "contrato" in text:
             return "Alquileres"
         return "Otros"
 
+    def _participacion_tipos_venta(self) -> set[str]:
+        return {
+            "venta",
+            "reserva_venta",
+            "cesion",
+            "escrituracion",
+            "rescision_venta",
+        }
+
+    def _participacion_tipos_alquiler(self) -> set[str]:
+        return {
+            "contrato_alquiler",
+            "solicitud_alquiler",
+            "reserva_locativa",
+            "rescision_finalizacion_alquiler",
+            "entrega_restitucion_inmueble",
+        }
+
+    def _participacion_tipo_label(self, value: object) -> str:
+        labels = {
+            "reserva_venta": "Reserva de venta",
+            "venta": "Venta",
+            "contrato_alquiler": "Contrato de alquiler",
+            "solicitud_alquiler": "Solicitud de alquiler",
+            "reserva_locativa": "Reserva locativa",
+            "cesion": "Cesión",
+            "escrituracion": "Escrituración",
+            "rescision_venta": "Rescisión de venta",
+            "rescision_finalizacion_alquiler": "Rescisión/finalización de alquiler",
+            "entrega_restitucion_inmueble": "Entrega/restitución",
+        }
+        normalized = str(value or "").strip().lower()
+        return labels.get(normalized, self._friendly_label(value))
+
+    def _participacion_nav_action(self, item: dict[str, Any]) -> ft.Control:
+        tipo = str(item.get("tipo_relacion") or item.get("tipo_origen") or "").lower()
+        route: str | None = None
+        params: dict[str, Any] = {}
+        if tipo == "venta":
+            id_venta = self._parse_optional_int(
+                item.get("id_venta") or item.get("id_origen") or item.get("id_relacion")
+            )
+            if id_venta is not None:
+                route = "venta_detail"
+                params = {"id_venta": id_venta}
+        elif tipo == "contrato_alquiler":
+            id_contrato = self._parse_optional_int(
+                item.get("id_contrato_alquiler")
+                or item.get("id_origen")
+                or item.get("id_relacion")
+            )
+            if id_contrato is not None:
+                route = "contrato_detail"
+                params = {"id_contrato_alquiler": id_contrato}
+
+        if route is None:
+            return ft.TextButton("Ver", disabled=True)
+        return ft.TextButton(
+            "Ver",
+            on_click=lambda _, route=route, params=params: self.on_navigate(
+                route, **params
+            ),
+        )
+
     def _participacion_label(self, item: dict[str, Any]) -> str:
-        rol = self._friendly_label(item.get("codigo_rol") or item.get("rol") or "Participación")
+        rol = self._participacion_rol_label(item)
         origen = self._participacion_origen_label(item)
         inmueble = item.get("lote") or item.get("unidad") or item.get("inmueble")
         label = f"{rol} en {origen}"
@@ -1923,6 +2065,11 @@ class ParteDetailPage:
             "contrato_alquiler": "contrato de alquiler",
             "solicitud_alquiler": "solicitud de alquiler",
             "reserva_locativa": "reserva locativa",
+            "cesion": "cesión",
+            "escrituracion": "escrituración",
+            "rescision_venta": "rescisión de venta",
+            "rescision_finalizacion_alquiler": "rescisión/finalización de alquiler",
+            "entrega_restitucion_inmueble": "entrega/restitución",
         }
         return labels.get(normalized, self._friendly_label(raw))
 
