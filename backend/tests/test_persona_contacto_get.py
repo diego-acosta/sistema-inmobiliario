@@ -101,6 +101,7 @@ def test_get_persona_contactos_devuelve_solo_no_eliminados(client, db_session) -
     assert len(body["data"]) == 1
     assert body["data"][0] == {
         "id_persona_contacto": id_persona_contacto_visible,
+        "version_registro": contacto_response.json()["data"]["version_registro"],
         "tipo_contacto": "EMAIL",
         "valor_contacto": "alan@example.com",
         "es_principal": True,

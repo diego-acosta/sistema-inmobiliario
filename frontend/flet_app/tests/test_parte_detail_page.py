@@ -959,3 +959,63 @@ def test_editar_contactos_y_domicilio_abre_modal_precarga_y_guarda_version() -> 
     _find_button(page.active_dialog, "Guardar").on_click(None)
     assert api.actualizar_domicilio_calls[-1][0:2] == (42, 20)
     assert api.actualizar_domicilio_calls[-1][3] == 5
+
+
+def test_editar_contacto_sin_version_muestra_mensaje_amigable_sin_api() -> None:
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "display_name": "Ada Lovelace",
+                "estado_persona": "ACTIVA",
+                "contactos": [
+                    {"id_persona_contacto": 10, "tipo_contacto": "TELEFONO", "valor_contacto": "+54 299", "es_principal": True},
+                ],
+                "domicilios": [],
+                "participaciones": [],
+            },
+        )
+    )
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
+    control = page.build()
+
+    _find_button(control, "Editar").on_click(None)
+    page.modal_fields["valor_contacto"].value = "+54 299 999"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
+
+    text = "\n".join(_texts(page.active_dialog))
+    assert "No se pudo editar este dato. Recargá la ficha e intentá nuevamente." in text
+    assert "version_registro" not in text
+    assert "If-Match-Version" not in text
+    assert "CORE-EF" not in text
+    assert api.actualizar_contacto_calls == []
+
+
+def test_editar_domicilio_sin_version_muestra_mensaje_amigable_sin_api() -> None:
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "display_name": "Ada Lovelace",
+                "estado_persona": "ACTIVA",
+                "contactos": [],
+                "domicilios": [
+                    {"id_persona_domicilio": 20, "tipo_domicilio": "REAL", "direccion": "San Martín 123", "localidad": "Neuquén", "es_principal": True},
+                ],
+                "participaciones": [],
+            },
+        )
+    )
+    page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_args, **_kwargs: None)
+    control = page.build()
+
+    _find_button(control, "Editar").on_click(None)
+    page.modal_fields["localidad"].value = "Neuquén Capital"
+    _find_button(page.active_dialog, "Guardar").on_click(None)
+
+    text = "\n".join(_texts(page.active_dialog))
+    assert "No se pudo editar este dato. Recargá la ficha e intentá nuevamente." in text
+    assert "version_registro" not in text
+    assert "If-Match-Version" not in text
+    assert "CORE-EF" not in text
+    assert api.actualizar_domicilio_calls == []

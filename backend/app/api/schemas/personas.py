@@ -447,6 +447,7 @@ class PersonaDomicilioBajaResponse(BaseModel):
 
 class PersonaDomicilioListItem(BaseModel):
     id_persona_domicilio: int
+    version_registro: int
     tipo_domicilio: str | None
     direccion: str | None
     localidad: str | None
@@ -669,6 +670,7 @@ class PersonaContactoBajaResponse(BaseModel):
 
 class PersonaContactoListItem(BaseModel):
     id_persona_contacto: int
+    version_registro: int
     tipo_contacto: str | None
     valor_contacto: str
     es_principal: bool

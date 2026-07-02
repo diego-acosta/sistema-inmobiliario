@@ -2063,7 +2063,7 @@ class ParteDetailPage:
         if row:
             version = row.get("version_registro")
             if version is None:
-                self._show_modal_error("El contacto no informa version_registro.")
+                self._show_modal_error("No se pudo editar este dato. Recargá la ficha e intentá nuevamente.")
                 return
             result = self.api.actualizar_persona_contacto(self.id_persona, int(row.get("id_persona_contacto")), payload, int(version), op_id=str(uuid4()))
         else:
@@ -2079,7 +2079,7 @@ class ParteDetailPage:
         if row:
             version = row.get("version_registro")
             if version is None:
-                self._show_modal_error("El domicilio no informa version_registro.")
+                self._show_modal_error("No se pudo editar este dato. Recargá la ficha e intentá nuevamente.")
                 return
             result = self.api.actualizar_persona_domicilio(self.id_persona, int(row.get("id_persona_domicilio")), payload, int(version), op_id=str(uuid4()))
         else:
