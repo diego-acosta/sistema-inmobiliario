@@ -367,6 +367,7 @@ class PersonaDocumentoListItem(BaseModel):
     numero_documento: str
     pais_emision: str | None
     es_principal: bool
+    version_registro: int
 
 
 class PersonaDocumentoListResponse(BaseModel):
