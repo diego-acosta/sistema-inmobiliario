@@ -542,32 +542,29 @@ class ParteDetailPage:
         )
         mora = self._first_present(resumen, ["mora_calculada", "mora", "total_mora"])
         ultimo_pago = self._first_present(resumen, ["ultimo_pago", "fecha_ultimo_pago"])
+        obligaciones_activas = self._first_present(
+            resumen, ["obligaciones_activas", "cantidad_obligaciones_activas", "cantidad_obligaciones"]
+        )
+        if obligaciones_activas is None and obligaciones:
+            obligaciones_activas = len(obligaciones)
         metricas = ft.Row(
             controls=[
-                self._summary_card("Saldo pendiente total", self._format_money(saldo_total)),
-                self._summary_card("Saldo vencido", self._format_money(resumen.get("saldo_vencido"))),
-                self._summary_card("Obligaciones activas", self._format_count(len(obligaciones))),
+                self._summary_card("Saldo pendiente", self._format_money(saldo_total), accent=True),
+                self._summary_card("Obligaciones activas", self._format_count(obligaciones_activas)),
+                self._summary_card("Último pago", ultimo_pago or "Sin datos"),
                 self._summary_card("Mora", self._format_money(mora)),
-                self._summary_card("Último pago", ultimo_pago or "-"),
             ],
             wrap=True,
             spacing=10,
             run_spacing=10,
         )
-        action_panel = ft.Container()
         controls: list[ft.Control] = [metricas]
-        if not obligaciones and self._estado_cuenta_sin_deuda(resumen, [], []):
-            controls.append(ft.Text("Sin deuda registrada", color=ft.Colors.BLUE_GREY_700))
-        if pagable is not None:
-            def show_payment(_) -> None:
-                action_panel.content = detail_section(
-                    "Registrar pago", [self._registrar_pago_panel(pagable)]
-                )
-                action_panel.visible = True
-                action_panel.update()
-
-            controls.append(ft.TextButton("Pagar", on_click=show_payment))
-        controls.append(action_panel)
+        if not result.success:
+            controls.append(ft.Text("No se pudo cargar el estado financiero resumido.", color=ft.Colors.AMBER_800))
+        elif not obligaciones and self._estado_cuenta_sin_deuda(resumen, [], []):
+            controls.append(ft.Text("Sin deuda registrada.", color=ft.Colors.BLUE_GREY_700))
+        elif not resumen and not obligaciones:
+            controls.append(ft.Text("Estado financiero sin datos disponibles.", color=ft.Colors.BLUE_GREY_700))
         return ft.Column(controls=controls, spacing=8)
 
     def _dashboard_obligaciones(self, payload: object) -> list[dict[str, Any]]:
@@ -2184,51 +2181,50 @@ class ParteDetailPage:
     def _participaciones_resumen(self, rows: object) -> ft.Control:
         participaciones = self._dict_rows(rows)
         if not participaciones:
-            return ft.Text("Sin roles ni participaciones.")
+            return ft.Text("Sin actividad ni participaciones registradas.")
 
-        ventas = [
-            item
-            for item in participaciones
-            if self._participacion_bucket(item) == "Ventas"
-        ]
-        alquileres = [
-            item
-            for item in participaciones
-            if self._participacion_bucket(item) == "Alquileres"
-        ]
-        otros = [
-            item
-            for item in participaciones
-            if self._participacion_bucket(item) == "Otros"
-        ]
+        grouped: dict[str, list[dict[str, Any]]] = {
+            "Ventas": [],
+            "Reservas": [],
+            "Contratos locativos": [],
+            "Otros roles": [],
+        }
+        for item in participaciones:
+            grouped[self._participacion_bucket(item)].append(item)
 
         controls: list[ft.Control] = []
-        if ventas:
-            controls.append(self._participacion_table("Ventas", ventas))
-        if alquileres:
-            controls.append(self._participacion_table("Alquileres", alquileres))
-        if otros:
-            controls.append(self._participacion_table("Otros", otros))
+        for title, items in grouped.items():
+            if items:
+                controls.append(self._participacion_group(title, items))
         return ft.Column(controls=controls, spacing=10)
 
-    def _participacion_table(
+    def _participacion_group(
         self, title: str, rows: list[dict[str, Any]]
     ) -> ft.Control:
-        table_rows = [self._participacion_table_row(item) for item in rows]
         return ft.Column(
             controls=[
-                ft.Text(title, weight=ft.FontWeight.W_600),
-                entity_table(
-                    columns=[
-                        ("Tipo", "tipo"),
-                        ("Referencia", "referencia"),
-                        ("Estado", "estado"),
-                    ],
-                    rows=table_rows,
-                    actions=lambda row: [self._participacion_nav_action(row["_source"])],
-                ),
+                ft.Text(f"{title} ({len(rows)})", weight=ft.FontWeight.W_600),
+                self._card_list([self._participacion_card(item) for item in rows]),
             ],
             spacing=6,
+        )
+
+    def _participacion_card(self, item: dict[str, Any]) -> ft.Control:
+        title = self._participacion_tipo_label(
+            item.get("tipo_relacion") or item.get("tipo_origen")
+        )
+        rol = self._participacion_rol_label(item)
+        referencia = self._participacion_referencia(item)
+        estado = self._participacion_estado(item)
+        subtitle_parts = [part for part in (rol, referencia) if part and part != "-"]
+        subtitle = " · ".join(subtitle_parts) or "Actividad asociada sin referencia completa"
+        extra = None if estado == "-" else f"Estado: {self._friendly_label(estado)}"
+        return self._info_card(
+            title=title or "Participación",
+            subtitle=subtitle,
+            principal=False,
+            extra=extra,
+            action=self._participacion_nav_action(item),
         )
 
     def _participacion_table_row(self, item: dict[str, Any]) -> dict[str, Any]:
@@ -2275,11 +2271,13 @@ class ParteDetailPage:
             str(item.get(key) or "").lower()
             for key in ("tipo_relacion", "tipo_origen", "descripcion_origen", "codigo_rol")
         )
-        if tipo in self._participacion_tipos_venta() or "venta" in text or "reserva" in text or "escritur" in text or "cesion" in text or "cesión" in text:
+        if "reserva" in text or tipo in {"reserva_venta", "reserva_locativa"}:
+            return "Reservas"
+        if tipo in self._participacion_tipos_venta() or "venta" in text or "escritur" in text or "cesion" in text or "cesión" in text:
             return "Ventas"
         if tipo in self._participacion_tipos_alquiler() or "alquiler" in text or "locat" in text or "contrato" in text:
-            return "Alquileres"
-        return "Otros"
+            return "Contratos locativos"
+        return "Otros roles"
 
     def _participacion_tipos_venta(self) -> set[str]:
         return {
@@ -2337,7 +2335,7 @@ class ParteDetailPage:
                 params = {"id_contrato_alquiler": id_contrato}
 
         if route is None:
-            return ft.TextButton("Ver", disabled=True)
+            return ft.TextButton("Sin ruta", disabled=True)
         return ft.TextButton(
             "Ver",
             on_click=lambda _, route=route, params=params: self.on_navigate(

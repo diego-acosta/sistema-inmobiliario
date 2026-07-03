@@ -185,10 +185,89 @@ def test_ficha_renderiza_datos_reales_y_secciones_vacias_sin_crudos() -> None:
     assert "Sin teléfonos registrados." in text
     assert "Sin mails registrados." in text
     assert "Sin domicilios registrados." in text
-    assert "Sin roles ni participaciones." in text
+    assert "Sin actividad ni participaciones registradas." in text
     assert "{'" not in text
     assert "[" not in text
     assert "Cliente" not in text
+
+
+def test_ficha_agrupa_actividad_y_resume_estado_financiero_sin_tabla_tecnica() -> None:
+    navigations: list[tuple[str, dict[str, Any]]] = []
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "estado_persona": "ACTIVA",
+                "documentos": [],
+                "contactos": [],
+                "domicilios": [],
+                "participaciones": [
+                    {
+                        "tipo_relacion": "venta",
+                        "codigo_rol": "comprador",
+                        "codigo_venta": "VTA-10",
+                        "estado_origen": "activa",
+                        "id_venta": 10,
+                    },
+                    {
+                        "tipo_relacion": "reserva_venta",
+                        "codigo_rol": "interesado",
+                        "descripcion_origen": "Reserva lote 4",
+                    },
+                    {
+                        "tipo_relacion": "contrato_alquiler",
+                        "codigo_rol": "garante",
+                        "codigo_contrato": "ALQ-7",
+                        "id_contrato_alquiler": 7,
+                    },
+                    {"codigo_rol": "referente"},
+                ],
+                "usos_transversales": {},
+            },
+        ),
+        estado_cuenta=ApiResult(
+            True,
+            data={
+                "resumen": {
+                    "saldo_total": 12500,
+                    "obligaciones_activas": 3,
+                    "fecha_ultimo_pago": "2026-06-20",
+                    "mora": 250,
+                    "saldo_vencido": 999,
+                },
+                "grupos_deuda": [],
+            },
+        ),
+    )
+
+    control = ParteDetailPage(
+        api, id_persona=42, on_navigate=lambda route, **kwargs: navigations.append((route, kwargs))
+    ).build()
+    text = "\n".join(_texts(control))
+
+    assert "Ventas (1)" in text
+    assert "Reservas (1)" in text
+    assert "Contratos locativos (1)" in text
+    assert "Otros roles (1)" in text
+    assert "VTA-10" in text
+    assert "Reserva lote 4" in text
+    assert "Referente" in text
+    assert "Saldo pendiente" in text
+    assert "$ 12.500,00" in text
+    assert "Obligaciones activas" in text
+    assert "2026-06-20" in text
+    assert "Saldo vencido" not in text
+    assert "saldo_vencido" not in text
+    assert "Pagar" not in text
+
+    buttons = [item for item in _walk(control) if isinstance(item, ft.TextButton)]
+    venta_button = next(button for button in buttons if button.text == "Ver" and button.disabled is False)
+    venta_button.on_click(None)
+    assert navigations == [("venta_detail", {"id_venta": 10})]
+    assert any(button.text == "Sin ruta" and button.disabled for button in buttons)
 
 
 def test_ficha_muestra_error_de_carga_amigable() -> None:
@@ -637,7 +716,7 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "tipo_domicilio" not in text
     assert "Participaciones" in text
     assert "Ventas" in text
-    assert "Alquileres" in text
+    assert "Contratos locativos" in text
     assert "Reserva de venta" in text
     assert "Contrato de alquiler" in text
     assert "reserva_venta" not in text
@@ -824,12 +903,11 @@ def test_ficha_redisenada_preserva_estado_de_cuenta_y_panel_de_pago(monkeypatch)
     text = "\n".join(_texts(control))
 
     assert "Estado de cuenta resumido" in text
-    pagar = _find_button(control, "Pagar")
-    pagar.on_click(None)
-
-    updated_text = "\n".join(_texts(control))
-    assert "Registrar pago" in updated_text
-    assert "Confirmar pago" in updated_text
+    assert "Saldo pendiente" in text
+    assert "$ 1.000,00" in text
+    assert "Pagar" not in text
+    assert "Registrar pago" not in text
+    assert "Confirmar pago" not in text
     assert api.crear_persona_calls == []
     assert api.update_calls == []
     assert api.registrar_pago_calls == []
@@ -982,7 +1060,7 @@ def test_participaciones_muestran_tablas_por_ventas_y_alquileres_con_accion_ver(
     text = "\n".join(_texts(control))
 
     assert "Ventas" in text
-    assert "Alquileres" in text
+    assert "Contratos locativos" in text
     assert "Venta" in text
     assert "Reserva de venta" in text
     assert "Contrato de alquiler" in text
@@ -995,13 +1073,12 @@ def test_participaciones_muestran_tablas_por_ventas_y_alquileres_con_accion_ver(
     assert "Rol" not in participaciones_text
 
     ver_buttons = [item for item in _walk(control) if getattr(item, "text", None) == "Ver"]
-    assert len(ver_buttons) >= 3
-    enabled = [button for button in ver_buttons if not getattr(button, "disabled", False)]
-    disabled = [button for button in ver_buttons if getattr(button, "disabled", False)]
-    assert disabled
+    assert len(ver_buttons) >= 2
+    disabled = [item for item in _walk(control) if getattr(item, "text", None) == "Sin ruta"]
+    assert disabled and all(getattr(button, "disabled", False) for button in disabled)
 
-    enabled[0].on_click(None)
-    enabled[1].on_click(None)
+    ver_buttons[0].on_click(None)
+    ver_buttons[1].on_click(None)
     assert ("venta_detail", {"id_venta": 22}) in navigations
     assert ("contrato_detail", {"id_contrato_alquiler": 33}) in navigations
     assert api.crear_persona_calls == []
@@ -1026,7 +1103,7 @@ def test_participaciones_ocultan_secciones_sin_datos_por_tipo() -> None:
     ).build()
     ventas_text = "\n".join(_texts(ventas_only))
     assert "Ventas" in ventas_text
-    assert "Alquileres" not in ventas_text
+    assert "Contratos locativos" not in ventas_text
 
     alquileres_only = ParteDetailPage(
         FakeApi(
@@ -1043,11 +1120,11 @@ def test_participaciones_ocultan_secciones_sin_datos_por_tipo() -> None:
         on_navigate=lambda *_: None,
     ).build()
     alquileres_text = "\n".join(_texts(alquileres_only))
-    assert "Alquileres" in alquileres_text
+    assert "Contratos locativos" in alquileres_text
     assert "Ventas" not in alquileres_text
 
     empty = ParteDetailPage(FakeApi(), id_persona=42, on_navigate=lambda *_: None).build()
-    assert "Sin roles ni participaciones." in "\n".join(_texts(empty))
+    assert "Sin actividad ni participaciones registradas." in "\n".join(_texts(empty))
 
 
 def _detalle_contactos_domicilios() -> dict[str, Any]:
