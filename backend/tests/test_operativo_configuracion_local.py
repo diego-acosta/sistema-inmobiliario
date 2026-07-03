@@ -199,3 +199,62 @@ def test_get_filtra_por_contexto_e_indices_core_ef_existen(client, db_session):
     assert "ux_configuracion_local_op_id_alta" in indexes
     assert "ux_configuracion_local_uid_global" in indexes
     assert "ux_configuracion_local_clave_activa" in indexes
+
+
+def test_update_con_duplicado_activo_devuelve_409(client):
+    assert _create(client).status_code == 201
+    second_payload = {**PAYLOAD, "clave_configuracion": "observaciones_locales"}
+    second = _create(
+        client,
+        op_id="750e8400-e29b-41d4-a716-446655440004",
+        payload=second_payload,
+    )
+    assert second.status_code == 201
+
+    response = client.put(
+        f"/api/v1/operativo/configuracion-local/{second.json()['data']['id_configuracion_local']}",
+        headers={
+            **HEADERS,
+            "X-Op-Id": "750e8400-e29b-41d4-a716-446655440005",
+            "If-Match-Version": "1",
+        },
+        json=PAYLOAD,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "TECHNICAL_INCONSISTENCY"
+
+
+def test_replay_idempotente_por_constraint_op_id_relee_fila_existente(monkeypatch):
+    from app.infrastructure.persistence.repositories.configuracion_local_repository import (
+        ConfiguracionLocalRepository,
+    )
+
+    existing = {**PAYLOAD, "id_configuracion_local": 1}
+    repository = object.__new__(ConfiguracionLocalRepository)
+    monkeypatch.setattr(repository, "get_by_op_id_alta", lambda op_id: existing)
+
+    result = repository._raise_or_return_idempotent_replay(
+        op_id=HEADERS["X-Op-Id"], payload=PAYLOAD
+    )
+
+    assert result == existing
+
+
+def test_replay_idempotente_por_constraint_op_id_payload_incompatible(monkeypatch):
+    import pytest
+
+    from app.infrastructure.persistence.repositories.configuracion_local_repository import (
+        ConfiguracionLocalIdempotencyConflictError,
+        ConfiguracionLocalRepository,
+    )
+
+    existing = {**PAYLOAD, "id_configuracion_local": 1, "valor_configuracion": "LOCAL"}
+    repository = object.__new__(ConfiguracionLocalRepository)
+    monkeypatch.setattr(repository, "get_by_op_id_alta", lambda op_id: existing)
+
+    with pytest.raises(ConfiguracionLocalIdempotencyConflictError):
+        repository._raise_or_return_idempotent_replay(
+            op_id=HEADERS["X-Op-Id"],
+            payload={**PAYLOAD, "valor_configuracion": "OTRO"},
+        )

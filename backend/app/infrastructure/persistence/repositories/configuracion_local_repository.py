@@ -156,6 +156,26 @@ class ConfiguracionLocalRepository(BaseRepository[Any]):
         )
         return self._map(row) if row is not None else None
 
+    @staticmethod
+    def _constraint_name(exc: IntegrityError) -> str | None:
+        orig = getattr(exc, "orig", None)
+        diag = getattr(orig, "diag", None)
+        return getattr(diag, "constraint_name", None)
+
+    def _raise_or_return_idempotent_replay(
+        self, *, op_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        existing = self.get_by_op_id_alta(op_id)
+        if existing is None:
+            raise ConfiguracionLocalDuplicateActiveError(
+                "Ya existe una configuración local activa para esa clave y contexto."
+            )
+        if not self._payload_matches(existing, payload):
+            raise ConfiguracionLocalIdempotencyConflictError(
+                "El X-Op-Id ya fue usado con un payload incompatible."
+            )
+        return existing
+
     def get_active_by_key(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         row = (
             self.db.execute(
@@ -243,11 +263,18 @@ class ConfiguracionLocalRepository(BaseRepository[Any]):
             )
             self.db.commit()
             return created
-        except IntegrityError:
+        except IntegrityError as exc:
             self.db.rollback()
-            raise ConfiguracionLocalDuplicateActiveError(
-                "Ya existe una configuración local activa para esa clave y contexto."
-            )
+            constraint_name = self._constraint_name(exc)
+            if constraint_name == "ux_configuracion_local_op_id_alta":
+                return self._raise_or_return_idempotent_replay(
+                    op_id=op_id, payload=payload
+                )
+            if constraint_name == "ux_configuracion_local_clave_activa":
+                raise ConfiguracionLocalDuplicateActiveError(
+                    "Ya existe una configuración local activa para esa clave y contexto."
+                )
+            raise
 
     def update(
         self,
@@ -272,37 +299,46 @@ class ConfiguracionLocalRepository(BaseRepository[Any]):
             raise ConfiguracionLocalDuplicateActiveError(
                 "Ya existe una configuración local activa para esa clave y contexto."
             )
-        row = (
-            self.db.execute(
-                text(f"""
-                UPDATE configuracion_local
-                SET id_sucursal = :id_sucursal,
-                    id_instalacion = :id_instalacion,
-                    clave_configuracion = :clave_configuracion,
-                    valor_configuracion = :valor_configuracion,
-                    tipo_valor = :tipo_valor,
-                    descripcion = :descripcion,
-                    estado_configuracion = :estado_configuracion,
-                    version_registro = version_registro + 1,
-                    updated_at = CURRENT_TIMESTAMP,
-                    id_instalacion_ultima_modificacion = :id_instalacion_contexto,
-                    op_id_ultima_modificacion = :op_id
-                WHERE id_configuracion_local = :id_configuracion_local
-                  AND version_registro = :if_match_version
-                  AND deleted_at IS NULL
-                RETURNING {_COLUMNS}
-            """),
-                {
-                    **payload,
-                    "id_configuracion_local": id_configuracion_local,
-                    "if_match_version": if_match_version,
-                    "id_instalacion_contexto": core.x_instalacion_id,
-                    "op_id": str(core.x_op_id),
-                },
+        try:
+            row = (
+                self.db.execute(
+                    text(f"""
+                    UPDATE configuracion_local
+                    SET id_sucursal = :id_sucursal,
+                        id_instalacion = :id_instalacion,
+                        clave_configuracion = :clave_configuracion,
+                        valor_configuracion = :valor_configuracion,
+                        tipo_valor = :tipo_valor,
+                        descripcion = :descripcion,
+                        estado_configuracion = :estado_configuracion,
+                        version_registro = version_registro + 1,
+                        updated_at = CURRENT_TIMESTAMP,
+                        id_instalacion_ultima_modificacion = :id_instalacion_contexto,
+                        op_id_ultima_modificacion = :op_id
+                    WHERE id_configuracion_local = :id_configuracion_local
+                      AND version_registro = :if_match_version
+                      AND deleted_at IS NULL
+                    RETURNING {_COLUMNS}
+                """),
+                    {
+                        **payload,
+                        "id_configuracion_local": id_configuracion_local,
+                        "if_match_version": if_match_version,
+                        "id_instalacion_contexto": core.x_instalacion_id,
+                        "op_id": str(core.x_op_id),
+                    },
+                )
+                .mappings()
+                .one_or_none()
             )
-            .mappings()
-            .one_or_none()
-        )
+        except IntegrityError as exc:
+            self.db.rollback()
+            constraint_name = self._constraint_name(exc)
+            if constraint_name == "ux_configuracion_local_clave_activa":
+                raise ConfiguracionLocalDuplicateActiveError(
+                    "Ya existe una configuración local activa para esa clave y contexto."
+                )
+            raise
         if row is None:
             raise ConfiguracionLocalConcurrencyError(
                 "If-Match-Version no coincide con version_registro."
