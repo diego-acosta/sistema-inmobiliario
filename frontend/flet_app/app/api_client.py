@@ -69,6 +69,16 @@ class ApiClient:
         )
 
 
+    def actualizar_persona_datos_principales(
+        self, id_persona: int, payload: dict[str, Any], op_id: str | None = None
+    ) -> ApiResult:
+        return self._put(
+            f"/api/v1/personas/{id_persona}/datos-principales",
+            headers=self._core_ef_write_headers(op_id),
+            json=payload,
+        )
+
+
     def crear_persona_contacto(
         self, id_persona: int, payload: dict[str, Any], op_id: str | None = None
     ) -> ApiResult:

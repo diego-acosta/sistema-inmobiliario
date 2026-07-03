@@ -2504,6 +2504,138 @@ class PersonaRepository(BaseRepository[Any]):
             self.db.rollback()
             raise
 
+    def update_datos_principales_tx(self, command: Any) -> dict[str, Any] | None:
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        fiscal_types = {"CUIT", "CUIL", "CDI"}
+        now = datetime.now(UTC)
+        id_instalacion = command.context.id_instalacion
+        op_id = command.context.op_id
+
+        def doc_to_payload(doc: Any) -> dict[str, Any] | None:
+            if doc is None:
+                return None
+            tipo = (doc.tipo_documento or "").strip().upper()
+            numero = (doc.numero_documento or "").strip()
+            if doc.id_persona_documento is not None and not numero:
+                raise ValueError("numero_documento es requerido para actualizar un documento existente.")
+            if doc.id_persona_documento is None and not numero:
+                return None
+            return {
+                "id_persona_documento": doc.id_persona_documento,
+                "tipo_documento": tipo,
+                "numero_documento": numero,
+                "pais_emision": doc.pais_emision,
+                "es_principal": doc.es_principal,
+                "version_registro": doc.version_registro,
+            }
+
+        identidad = doc_to_payload(command.documento_identidad)
+        fiscal = doc_to_payload(command.identificacion_fiscal)
+        try:
+            persona = self.get_persona_for_update(command.id_persona)
+            if persona is None:
+                raise ValueError("NOT_FOUND_PERSONA")
+            if persona["version_registro"] != command.persona.version_registro:
+                self.db.rollback()
+                return None
+
+            row = self.db.execute(text("""
+                UPDATE persona
+                SET tipo_persona=:tipo_persona, nombre=:nombre, apellido=:apellido,
+                    razon_social=:razon_social, fecha_nacimiento_constitucion=:fecha_nacimiento,
+                    estado_persona=:estado_persona, observaciones=:observaciones,
+                    version_registro=:version_nueva, updated_at=:updated_at,
+                    id_instalacion_ultima_modificacion=:id_instalacion,
+                    op_id_ultima_modificacion=:op_id
+                WHERE id_persona=:id_persona AND version_registro=:version_actual AND deleted_at IS NULL
+                RETURNING id_persona, version_registro, tipo_persona, nombre, apellido,
+                          razon_social, fecha_nacimiento_constitucion, estado_persona, observaciones
+            """), {
+                "id_persona": command.id_persona,
+                "tipo_persona": command.persona.tipo_persona,
+                "nombre": command.persona.nombre,
+                "apellido": command.persona.apellido,
+                "razon_social": command.persona.razon_social,
+                "fecha_nacimiento": command.persona.fecha_nacimiento,
+                "estado_persona": command.persona.estado_persona,
+                "observaciones": command.persona.observaciones,
+                "version_actual": command.persona.version_registro,
+                "version_nueva": command.persona.version_registro + 1,
+                "updated_at": now,
+                "id_instalacion": id_instalacion,
+                "op_id": op_id,
+            }).mappings().one_or_none()
+            if row is None:
+                self.db.rollback()
+                return None
+
+            def upsert_doc(doc: dict[str, Any] | None) -> None:
+                if doc is None:
+                    return True
+                if doc["tipo_documento"] in fiscal_types:
+                    dup_filter = "UPPER(tipo_documento_persona) IN ('CUIT','CUIL','CDI')"
+                else:
+                    dup_filter = "UPPER(tipo_documento_persona) NOT IN ('CUIT','CUIL','CDI') AND es_principal IS TRUE"
+                duplicate = self.db.execute(text(f"""
+                    SELECT id_persona_documento FROM persona_documento
+                    WHERE id_persona=:id_persona AND deleted_at IS NULL AND {dup_filter}
+                      AND (:id_doc IS NULL OR id_persona_documento <> :id_doc)
+                    LIMIT 1
+                """), {"id_persona": command.id_persona, "id_doc": doc["id_persona_documento"]}).scalar_one_or_none()
+                if duplicate is not None:
+                    raise ValueError("DUPLICATE_ACTIVE_DOCUMENT")
+                if doc["id_persona_documento"] is None:
+                    self.db.execute(text("""
+                        INSERT INTO persona_documento (
+                            uid_global, version_registro, created_at, updated_at,
+                            id_instalacion_origen, id_instalacion_ultima_modificacion,
+                            op_id_alta, op_id_ultima_modificacion, id_persona,
+                            tipo_documento_persona, numero_documento, pais_emision,
+                            es_principal, fecha_desde, fecha_hasta, observaciones
+                        ) VALUES (
+                            :uid_global, 1, :now, :now, :id_instalacion, :id_instalacion,
+                            :op_id, :op_id, :id_persona, :tipo, :numero, :pais,
+                            :principal, :now, NULL, NULL
+                        )
+                    """), {"uid_global": str(uuid4()), "now": now, "id_instalacion": id_instalacion, "op_id": op_id,
+                            "id_persona": command.id_persona, "tipo": doc["tipo_documento"], "numero": doc["numero_documento"],
+                            "pais": doc["pais_emision"], "principal": doc["es_principal"]})
+                    return True
+                current = self.db.execute(text("""
+                    SELECT id_persona, version_registro FROM persona_documento
+                    WHERE id_persona_documento=:id_doc AND deleted_at IS NULL
+                """), {"id_doc": doc["id_persona_documento"]}).mappings().one_or_none()
+                if current is None or current["id_persona"] != command.id_persona:
+                    raise ValueError("NOT_FOUND_DOCUMENTO")
+                if doc["version_registro"] is None or current["version_registro"] != doc["version_registro"]:
+                    return None
+                updated = self.db.execute(text("""
+                    UPDATE persona_documento
+                    SET tipo_documento_persona=:tipo, numero_documento=:numero, pais_emision=:pais,
+                        es_principal=:principal, version_registro=:version_nueva, updated_at=:now,
+                        id_instalacion_ultima_modificacion=:id_instalacion, op_id_ultima_modificacion=:op_id
+                    WHERE id_persona_documento=:id_doc AND version_registro=:version_actual AND deleted_at IS NULL
+                    RETURNING id_persona_documento
+                """), {"id_doc": doc["id_persona_documento"], "tipo": doc["tipo_documento"], "numero": doc["numero_documento"],
+                        "pais": doc["pais_emision"], "principal": doc["es_principal"], "version_actual": doc["version_registro"],
+                        "version_nueva": doc["version_registro"] + 1, "now": now, "id_instalacion": id_instalacion, "op_id": op_id}).scalar_one_or_none()
+                if updated is None:
+                    return None
+                return True
+
+            for doc in (identidad, fiscal):
+                result = upsert_doc(doc)
+                if result is None:
+                    self.db.rollback()
+                    return None
+            self.db.commit()
+            return {**self.get_persona(command.id_persona), "documentos": self.get_persona_documentos(command.id_persona)}
+        except Exception:
+            self.db.rollback()
+            raise
+
     def update_persona_domicilio(self, payload: Any) -> dict[str, Any] | None:
         if isinstance(payload, dict):
             values = payload

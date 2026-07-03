@@ -687,3 +687,33 @@ class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
     details: dict[str, Any] = Field(default_factory=dict)
+
+class DatosPrincipalesPersonaRequest(BaseModel):
+    tipo_persona: str
+    nombre: str | None
+    apellido: str | None
+    razon_social: str | None = None
+    fecha_nacimiento: date | None = None
+    estado_persona: str
+    observaciones: str | None = None
+    version_registro: int
+
+
+class DatosPrincipalesDocumentoRequest(BaseModel):
+    id_persona_documento: int | None = None
+    tipo_documento: str
+    numero_documento: str | None = None
+    pais_emision: str | None = None
+    es_principal: bool = False
+    version_registro: int | None = None
+
+
+class DatosPrincipalesUpdateRequest(BaseModel):
+    persona: DatosPrincipalesPersonaRequest
+    documento_identidad: DatosPrincipalesDocumentoRequest | None = None
+    identificacion_fiscal: DatosPrincipalesDocumentoRequest | None = None
+
+
+class DatosPrincipalesUpdateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: PersonaDetailData

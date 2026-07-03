@@ -309,35 +309,46 @@ class ParteDetailPage:
         if version is None:
             self._show_modal_error("No se pudo editar la ficha. Recargá e intentá nuevamente.")
             return
+
+        def _document_payload(row: dict[str, Any] | None, numero: str, tipo: str) -> dict[str, Any] | None:
+            if not numero and row is None:
+                return None
+            return {
+                "id_persona_documento": (row or {}).get("id_persona_documento"),
+                "tipo_documento": str((row or {}).get("tipo_documento") or tipo).upper(),
+                "numero_documento": numero or None,
+                "pais_emision": (row or {}).get("pais_emision"),
+                "es_principal": bool((row or {}).get("es_principal", tipo == "DNI")),
+                "version_registro": (row or {}).get("version_registro"),
+            }
+
         payload = {
-            "tipo_persona": self._modal_value("tipo_persona"),
-            "nombre": self._modal_value("nombre") or None,
-            "apellido": self._modal_value("apellido") or None,
-            "razon_social": self._modal_value("razon_social") or None,
-            "fecha_nacimiento": self._modal_value("fecha_nacimiento") or None,
-            "estado_persona": self._modal_value("estado_persona"),
-            "observaciones": self._modal_value("observaciones") or None,
+            "persona": {
+                "tipo_persona": self._modal_value("tipo_persona"),
+                "nombre": self._modal_value("nombre") or None,
+                "apellido": self._modal_value("apellido") or None,
+                "razon_social": self._modal_value("razon_social") or None,
+                "fecha_nacimiento": self._modal_value("fecha_nacimiento") or None,
+                "estado_persona": self._modal_value("estado_persona"),
+                "observaciones": self._modal_value("observaciones") or None,
+                "version_registro": int(version),
+            },
+            "documento_identidad": _document_payload(
+                self._documento_identidad_row(self.data),
+                self._modal_value("documento_identidad"),
+                "DNI",
+            ),
+            "identificacion_fiscal": _document_payload(
+                self._identificacion_fiscal_row(self.data),
+                self._modal_value("identificacion_fiscal"),
+                "CUIT",
+            ),
         }
-        result = self.api.actualizar_persona(self.id_persona, payload, int(version), op_id=str(uuid4()))
+        result = self.api.actualizar_persona_datos_principales(self.id_persona, payload, op_id=str(uuid4()))
         if not result.success:
             self._show_modal_error(self._friendly_save_error(result, "No se pudieron guardar los datos principales."))
             return
         self._merge_persona_update_result(result)
-        # TODO: reemplazar este guardado compuesto por endpoint backend transaccional para datos principales + documentos.
-        for row, numero, tipo in (
-            (self._documento_identidad_row(self.data), self._modal_value("documento_identidad"), "DNI"),
-            (self._identificacion_fiscal_row(self.data), self._modal_value("identificacion_fiscal"), "CUIT"),
-        ):
-            current = self._documento_numero(row) if row else ""
-            if numero == current:
-                continue
-            doc_result = self._save_documento_principal(row, numero, tipo)
-            if not doc_result.success:
-                self._show_modal_error(
-                    "Los datos principales se guardaron, pero no se pudo guardar el documento. "
-                    "Revisá la ficha y volvé a intentar."
-                )
-                return
         self._finish_modal_save(result)
 
     def _clean_field(self, key: str) -> str:
@@ -2759,7 +2770,10 @@ class ParteDetailPage:
     def _friendly_save_error(self, result: Any, fallback: str) -> str:
         if getattr(result, "status_code", None) in {409, 412} or getattr(result, "error_code", None) == "CONCURRENCY_ERROR":
             return "Otro usuario modificó estos datos. Recargá la ficha e intentá nuevamente."
-        return getattr(result, "error_message", None) or fallback
+        message = getattr(result, "error_message", None)
+        if message and ("persona_documento" in message or "version_registro" in message or "stack trace" in message):
+            return fallback
+        return message or fallback
 
     def _contacto_principal(self, data: dict[str, Any]) -> object:
         contactos = self._dict_rows(data.get("contactos"))
