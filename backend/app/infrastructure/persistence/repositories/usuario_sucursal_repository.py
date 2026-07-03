@@ -234,6 +234,10 @@ class UsuarioSucursalRepository(BaseRepository[Any]):
             constraint = getattr(getattr(getattr(exc, "orig", None), "diag", None), "constraint_name", None)
             if constraint in {"ux_usuario_sucursal_op_id_alta", "ux_usuario_sucursal_activa"}:
                 return self._raise_or_return_idempotent_replay(op_id=op_id, payload=full_payload)
+            if constraint == "ux_usuario_sucursal_predeterminada_activa":
+                raise UsuarioSucursalDuplicateActiveError(
+                    "Ya existe una sucursal predeterminada activa para el usuario."
+                ) from exc
             raise
         except Exception:
             self.db.rollback()
