@@ -2578,12 +2578,17 @@ class PersonaRepository(BaseRepository[Any]):
                     dup_filter = "UPPER(tipo_documento_persona) IN ('CUIT','CUIL','CDI')"
                 else:
                     dup_filter = "UPPER(tipo_documento_persona) NOT IN ('CUIT','CUIL','CDI') AND es_principal IS TRUE"
+                params = {"id_persona": command.id_persona}
+                exclude_current_filter = ""
+                if doc["id_persona_documento"] is not None:
+                    exclude_current_filter = "AND id_persona_documento <> :id_doc"
+                    params["id_doc"] = doc["id_persona_documento"]
                 duplicate = self.db.execute(text(f"""
                     SELECT id_persona_documento FROM persona_documento
                     WHERE id_persona=:id_persona AND deleted_at IS NULL AND {dup_filter}
-                      AND (:id_doc IS NULL OR id_persona_documento <> :id_doc)
+                      {exclude_current_filter}
                     LIMIT 1
-                """), {"id_persona": command.id_persona, "id_doc": doc["id_persona_documento"]}).scalar_one_or_none()
+                """), params).scalar_one_or_none()
                 if duplicate is not None:
                     raise ValueError("DUPLICATE_ACTIVE_DOCUMENT")
                 if doc["id_persona_documento"] is None:
@@ -2597,9 +2602,9 @@ class PersonaRepository(BaseRepository[Any]):
                         ) VALUES (
                             :uid_global, 1, :now, :now, :id_instalacion, :id_instalacion,
                             :op_id, :op_id, :id_persona, :tipo, :numero, :pais,
-                            :principal, :now, NULL, NULL
+                            :principal, :fecha_desde, NULL, NULL
                         )
-                    """), {"uid_global": str(uuid4()), "now": now, "id_instalacion": id_instalacion, "op_id": op_id,
+                    """), {"uid_global": str(uuid4()), "now": now, "fecha_desde": now.date(), "id_instalacion": id_instalacion, "op_id": op_id,
                             "id_persona": command.id_persona, "tipo": doc["tipo_documento"], "numero": doc["numero_documento"],
                             "pais": doc["pais_emision"], "principal": doc["es_principal"]})
                     return True
