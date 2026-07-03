@@ -473,3 +473,64 @@ Toda issue o PR futuro del dominio Administrativo debe cumplir:
 - `CORE-EF`: `backend/documentacion/CORE-EF/CORE-EF-001-infraestructura-transversal.md` y documentos complementarios en `backend/documentacion/CORE-EF/`.
 - Outbox: `backend/documentacion/DECISIONES/infraestructura/CORE-DEC-OUTBOX-001-transactional-outbox.md`.
 - Issues/PRs relacionados: #249, #259, #260, #261, #292, #297, #298.
+
+## 7. Alcance operativo administrativo por sucursal (#262)
+
+### 7.1 Clasificación y ownership
+
+- Concepto: `usuario_sucursal`.
+- Clasificación: soporte administrativo-operativo para habilitación contextual básica de usuarios por sucursal.
+- Dominio API: `administrativo`, porque el vínculo pertenece a administración/seguridad de usuarios.
+- Relación con operativo: consume `sucursal` existente sin redefinirla ni crear asignación directa a instalación.
+- Fuera de alcance: autorización efectiva por permiso, middleware de seguridad, login, menú dinámico, permisos complejos, `usuario_instalacion`, edición/baja del alcance y reglas por dominio.
+
+### 7.2 `GET /api/v1/administrativo/usuarios/{id_usuario}/alcance-operativo`
+
+Consulta read-like del alcance operativo consolidado de un usuario.
+
+- CORE-EF: `QUERY_READLIKE`; no requiere headers write.
+- Devuelve:
+  - `usuario`;
+  - `sucursales_asignadas` activas;
+  - `sucursal_predeterminada` si existe;
+  - flags consolidados `puede_operar`, `puede_consultar`, `puede_administrar`;
+  - `estado_vigencia` (`ACTIVO` o `SIN_ALCANCE`).
+- Excluye vínculos con `deleted_at`, `fecha_hasta` o `estado_vinculo` distinto de `ACTIVO`, y sucursales dadas de baja.
+- Errores: `404 NOT_FOUND` si el usuario no existe; `500 TECHNICAL_INCONSISTENCY` ante falla técnica controlada.
+
+### 7.3 `GET /api/v1/administrativo/usuarios/{id_usuario}/sucursales`
+
+Lista read-like de sucursales asignadas a un usuario.
+
+- CORE-EF: `QUERY_READLIKE`; no requiere headers write.
+- Excluye vínculos dados de baja o no activos y sucursales dadas de baja.
+- Errores: `404 NOT_FOUND` si el usuario no existe; `500 TECHNICAL_INCONSISTENCY` ante falla técnica controlada.
+
+### 7.4 `POST /api/v1/administrativo/usuarios/{id_usuario}/sucursales`
+
+Asigna alcance operativo básico de un usuario a una sucursal existente.
+
+- Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
+- Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` mediante helper común CORE-EF.
+- `If-Match-Version`: NO APLICA, porque crea un vínculo nuevo y no modifica entidad versionada existente.
+- Payload: `id_sucursal`, `tipo_habilitacion_sucursal`, `es_sucursal_predeterminada`, `puede_operar`, `puede_consultar`, `puede_administrar`, `fecha_desde` (obligatoria), `fecha_hasta`, `observaciones`. Si falta `fecha_desde`, la validación automática devuelve `422`.
+- Persistencia CORE-EF: `uid_global`, `version_registro = 1`, `created_at`, `updated_at`, `deleted_at = NULL`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta`, `op_id_ultima_modificacion`.
+- Idempotencia: aplica por `op_id_alta` (`ux_usuario_sucursal_op_id_alta`). Mismo `X-Op-Id` + payload compatible devuelve el vínculo existente sin duplicar outbox; mismo `X-Op-Id` + payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`.
+- Duplicado activo: no permite dos vínculos activos para `(id_usuario, id_sucursal)`; devuelve `409 TECHNICAL_INCONSISTENCY`.
+- Sucursal predeterminada: el POST es create-only y no desmarca automáticamente una predeterminada anterior. Si `es_sucursal_predeterminada = true` y ya existe otra predeterminada activa para el usuario, devuelve `409 TECHNICAL_INCONSISTENCY`. El cambio de predeterminada queda fuera de alcance de #262 y deberá nacer como endpoint versionado con `If-Match-Version` y outbox propio.
+- Outbox: aplica; usa evento formal `usuario_asociado_a_sucursal` (`EVT-ADM-008`) en la misma transacción que el alta real. El replay idempotente compatible no duplica outbox.
+- Lock lógico: NO APLICA en esta primera versión acotada; la consistencia se apoya en transacción e índices únicos parciales.
+- Versionado: `usuario_sucursal.version_registro` nace en `1`; no se modifican vínculos existentes en este endpoint create-only.
+- Rollback/transacción: la validación de duplicado/predeterminada activa, alta de vínculo y outbox comparten la misma transacción.
+- Validaciones: usuario activo/no dado de baja, sucursal activa/no dada de baja, vigencia (`fecha_hasta >= fecha_desde`), no duplicado activo.
+- Errores: `400 VALIDATION_ERROR` para headers CORE-EF o validaciones manuales, `404 NOT_FOUND`, `409 IDEMPOTENT_DUPLICATE`, `409 TECHNICAL_INCONSISTENCY`, `422` para validación automática FastAPI/Pydantic.
+
+### 7.5 SQL asociado
+
+`usuario_sucursal` se completa con bloque CORE-EF mediante `backend/database/patch_usuario_sucursal_core_ef_20260702.sql` y el dump principal actualizado. Se agregan índices únicos para `uid_global` e idempotencia por `op_id_alta`, y parciales para duplicado activo `(id_usuario, id_sucursal)` y predeterminada activa por usuario.
+
+### 7.6 Relación con issues
+
+- Closes #262.
+- Refs #249.
+- Refs #248.

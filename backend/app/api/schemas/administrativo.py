@@ -142,3 +142,74 @@ class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
     details: dict[str, Any] = Field(default_factory=dict)
+
+class UsuarioSucursalCreateRequest(BaseModel):
+    id_sucursal: int
+    tipo_habilitacion_sucursal: str | None = None
+    es_sucursal_predeterminada: bool = False
+    puede_operar: bool = True
+    puede_consultar: bool = True
+    puede_administrar: bool = False
+    fecha_desde: datetime
+    fecha_hasta: datetime | None = None
+    observaciones: str | None = None
+
+    @field_validator("tipo_habilitacion_sucursal")
+    @classmethod
+    def _empty_to_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class UsuarioSucursalData(BaseModel):
+    id_usuario_sucursal: int
+    uid_global: str
+    id_usuario: int
+    id_sucursal: int
+    tipo_habilitacion_sucursal: str | None
+    es_sucursal_predeterminada: bool
+    puede_operar: bool
+    puede_consultar: bool
+    puede_administrar: bool
+    fecha_desde: datetime
+    fecha_hasta: datetime | None
+    estado_vinculo: str
+    observaciones: str | None
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: str | None
+    op_id_ultima_modificacion: str | None
+    codigo_sucursal: str
+    nombre_sucursal: str
+    estado_sucursal: str
+
+
+class UsuarioSucursalCreateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: UsuarioSucursalData
+
+
+class UsuarioSucursalListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[UsuarioSucursalData]
+
+
+class UsuarioAlcanceOperativoData(BaseModel):
+    usuario: UsuarioSistemaData
+    sucursales_asignadas: list[UsuarioSucursalData]
+    sucursal_predeterminada: UsuarioSucursalData | None
+    puede_operar: bool
+    puede_consultar: bool
+    puede_administrar: bool
+    estado_vigencia: str
+
+
+class UsuarioAlcanceOperativoResponse(BaseModel):
+    ok: Literal[True] = True
+    data: UsuarioAlcanceOperativoData
