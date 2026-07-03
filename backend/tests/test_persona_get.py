@@ -235,6 +235,7 @@ def test_get_persona_devuelve_persona_y_subrecursos(client, db_session) -> None:
                 "id_persona_documento": id_persona_documento,
                 "tipo_documento": "DNI",
                 "numero_documento": f"{id_persona:08d}",
+                "version_registro": 1,
                 "pais_emision": "Argentina",
                 "es_principal": True,
             }
@@ -242,6 +243,7 @@ def test_get_persona_devuelve_persona_y_subrecursos(client, db_session) -> None:
         "domicilios": [
             {
                 "id_persona_domicilio": id_persona_domicilio,
+                "version_registro": 1,
                 "tipo_domicilio": "REAL",
                 "direccion": "Calle 123",
                 "localidad": "Neuquen",
@@ -254,6 +256,7 @@ def test_get_persona_devuelve_persona_y_subrecursos(client, db_session) -> None:
         "contactos": [
             {
                 "id_persona_contacto": id_persona_contacto,
+                "version_registro": 1,
                 "tipo_contacto": "EMAIL",
                 "valor_contacto": "juan@mail.com",
                 "es_principal": True,

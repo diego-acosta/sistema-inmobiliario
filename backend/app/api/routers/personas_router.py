@@ -89,6 +89,8 @@ from app.api.schemas.personas import (
     PersonaDocumentoUpdateData,
     PersonaDocumentoUpdateRequest,
     PersonaDocumentoUpdateResponse,
+    DatosPrincipalesUpdateRequest,
+    DatosPrincipalesUpdateResponse,
 )
 from app.application.common.commands import CommandContext
 from app.application.personas.commands.create_persona import CreatePersonaCommand
@@ -103,6 +105,11 @@ from app.application.personas.commands.update_relacion_persona_rol import (
 )
 from app.application.personas.commands.delete_persona import DeletePersonaCommand
 from app.application.personas.commands.update_persona import UpdatePersonaCommand
+from app.application.personas.commands.update_datos_principales import (
+    DatosPrincipalesDocumentoInput,
+    DatosPrincipalesPersonaInput,
+    UpdateDatosPrincipalesCommand,
+)
 from app.application.personas.commands.create_persona_contacto import (
     CreatePersonaContactoCommand,
 )
@@ -192,6 +199,9 @@ from app.application.personas.services.update_persona_documento_service import (
 )
 from app.application.personas.services.update_persona_service import (
     UpdatePersonaService,
+)
+from app.application.personas.services.update_datos_principales_service import (
+    UpdateDatosPrincipalesService,
 )
 from app.application.personas.services.delete_persona_service import (
     DeletePersonaService,
@@ -2365,6 +2375,74 @@ def update_persona_contacto(
     return PersonaContactoUpdateResponse(
         data=PersonaContactoUpdateData(**result.data)
     )
+
+
+
+
+@router.put(
+    "/api/v1/personas/{id_persona}/datos-principales",
+    response_model=DatosPrincipalesUpdateResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def update_datos_principales(
+    id_persona: int,
+    request: DatosPrincipalesUpdateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> DatosPrincipalesUpdateResponse | JSONResponse:
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
+    if isinstance(core_ef_headers, JSONResponse):
+        return core_ef_headers
+
+    if core_ef_headers.if_match_version != request.persona.version_registro:
+        error = ErrorResponse(
+            error_code="CONCURRENCY_ERROR",
+            error_message="If-Match-Version debe coincidir con persona.version_registro.",
+            details={"errors": ["CONCURRENCY_ERROR"]},
+        )
+        return JSONResponse(status_code=409, content=error.model_dump())
+
+    def _doc(value):
+        if value is None:
+            return None
+        return DatosPrincipalesDocumentoInput(**value.model_dump())
+
+    command = UpdateDatosPrincipalesCommand(
+        context=_build_persona_command_context(core_ef_headers),
+        id_persona=id_persona,
+        persona=DatosPrincipalesPersonaInput(**request.persona.model_dump()),
+        documento_identidad=_doc(request.documento_identidad),
+        identificacion_fiscal=_doc(request.identificacion_fiscal),
+    )
+    service = UpdateDatosPrincipalesService(repository=PersonaRepository(db))
+    try:
+        result = service.execute(command)
+    except Exception as exc:
+        error = ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc))
+        return JSONResponse(status_code=500, content=error.model_dump())
+
+    if not result.success or result.data is None:
+        if "NOT_FOUND_PERSONA" in result.errors or "NOT_FOUND_DOCUMENTO" in result.errors:
+            error = ErrorResponse(error_code="NOT_FOUND", error_message="La persona o documento indicado no existe.", details={"errors": result.errors})
+            return JSONResponse(status_code=404, content=error.model_dump())
+        if "CONCURRENCY_ERROR" in result.errors:
+            error = ErrorResponse(error_code="CONCURRENCY_ERROR", error_message="La versión de persona o documento no coincide con version_registro.", details={"errors": result.errors})
+            return JSONResponse(status_code=409, content=error.model_dump())
+        error = ErrorResponse(error_code="APPLICATION_ERROR", error_message="No se pudieron actualizar los datos principales.", details={"errors": result.errors})
+        return JSONResponse(status_code=400, content=error.model_dump())
+
+    return DatosPrincipalesUpdateResponse(data=result.data)
 
 
 @router.get(

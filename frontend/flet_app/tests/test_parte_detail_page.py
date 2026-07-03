@@ -27,6 +27,8 @@ class FakeApi:
         self.detalle_results = [self.detalle]
         self.update_calls: list[tuple[int, dict[str, Any], int, str | None]] = []
         self.update_result = ApiResult(True, data={"id_persona": 42, "version_registro": 8})
+        self.datos_principales_calls: list[tuple[int, dict[str, Any], int, str | None]] = []
+        self.datos_principales_result = self.update_result
         self.crear_persona_calls: list[dict[str, Any]] = []
         self.registrar_pago_calls: list[dict[str, Any]] = []
         self.crear_contacto_calls: list[tuple[int, dict[str, Any]]] = []
@@ -56,6 +58,12 @@ class FakeApi:
         self, id_persona: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None
     ) -> ApiResult:
         self.update_calls.append((id_persona, payload, if_match_version, op_id))
+        return self.update_result
+
+    def actualizar_persona_datos_principales(
+        self, id_persona: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None
+    ) -> ApiResult:
+        self.datos_principales_calls.append((id_persona, payload, if_match_version, op_id))
         return self.update_result
 
     def crear_persona(self, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
@@ -305,12 +313,12 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     _find_field(dialog, "Observaciones").value = "Actualizada"
     _find_button(dialog, "Guardar").on_click(None)
 
-    assert len(api.update_calls) == 1
-    id_persona, payload, if_match_version, op_id = api.update_calls[0]
+    assert len(api.datos_principales_calls) == 1
+    id_persona, payload, if_match_version, op_id = api.datos_principales_calls[0]
     assert id_persona == 42
     assert if_match_version == 7
     assert op_id
-    assert payload == {
+    assert payload["persona"] == {
         "tipo_persona": "FISICA",
         "nombre": "Augusta Ada",
         "apellido": "Lovelace",
@@ -318,7 +326,13 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
         "fecha_nacimiento": "1815-12-10",
         "estado_persona": "ACTIVA",
         "observaciones": "Actualizada",
+        "version_registro": 7,
     }
+    assert payload["documento_identidad"] is None
+    assert payload["identificacion_fiscal"] is None
+    assert api.update_calls == []
+    assert api.crear_documento_calls == []
+    assert api.actualizar_documento_calls == []
     assert api.detalle_ids == [42, 42]
     assert page.data["nombre"] == "Augusta Ada"
     assert page.data["version_registro"] == 8
@@ -366,7 +380,10 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     assert "Guardar" not in read_text
     assert "Cancelar" not in read_text
     assert api.update_calls == []
+    assert api.datos_principales_calls == []
     assert api.crear_persona_calls == []
+    assert api.crear_documento_calls == []
+    assert api.actualizar_documento_calls == []
 
 
 def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar_modal() -> None:
@@ -400,7 +417,7 @@ def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar
     navigations: list[tuple[str, dict[str, Any]]] = []
     api = FakeApi(detalle=initial)
     api.detalle_results = [initial]
-    api.actualizar_documento_result = ApiResult(
+    api.update_result = ApiResult(
         False,
         status_code=500,
         error_message="persona_documento.version_registro stack trace",
@@ -418,38 +435,25 @@ def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar
     _find_field(dialog, "Documento de identidad").value = "87654321"
     _find_button(dialog, "Guardar").on_click(None)
 
-    assert len(api.update_calls) == 1
-    assert api.actualizar_documento_calls == [
-        (
-            42,
-            10,
-            {
-                "tipo_documento": "DNI",
-                "numero_documento": "87654321",
-                "pais_emision": None,
-                "es_principal": True,
-                "observaciones": None,
-            },
-            3,
-        )
-    ]
+    assert len(api.datos_principales_calls) == 1
+    assert api.update_calls == []
+    assert api.crear_documento_calls == []
+    assert api.actualizar_documento_calls == []
+    assert api.datos_principales_calls[0][1]["documento_identidad"]["numero_documento"] == "87654321"
+    assert api.datos_principales_calls[0][1]["identificacion_fiscal"] is None
     assert page.active_dialog is dialog
     assert dialog.open is True
     assert navigations == []
     assert api.detalle_ids == [42]
-    assert page.data["version_registro"] == 8
+    assert page.data["version_registro"] == 7
     message = page.modal_message.value
-    assert (
-        "Los datos principales se guardaron, pero no se pudo guardar el documento. "
-        "Revisá la ficha y volvé a intentar."
-    ) == message
     assert "persona_documento" not in message
     assert "version_registro" not in message
     assert "stack trace" not in message
 
     _find_button(dialog, "Guardar").on_click(None)
 
-    assert [call[2] for call in api.update_calls] == [7, 8]
+    assert [call[1]["persona"]["version_registro"] for call in api.datos_principales_calls] == [7, 7]
     assert page.active_dialog is dialog
     assert dialog.open is True
     assert navigations == []
@@ -759,20 +763,18 @@ def test_guardar_identificacion_fiscal_recarga_y_muestra_cuit_actualizado() -> N
     _find_field(dialog, "Identificación fiscal").value = "20-87654321-0"
     _find_button(dialog, "Guardar").on_click(None)
 
-    assert api.actualizar_documento_calls == [
-        (
-            42,
-            11,
-            {
-                "tipo_documento": "CUIT",
-                "numero_documento": "20-87654321-0",
-                "pais_emision": None,
-                "es_principal": False,
-                "observaciones": None,
-            },
-            2,
-        )
-    ]
+    assert api.update_calls == []
+    assert api.crear_documento_calls == []
+    assert api.actualizar_documento_calls == []
+    assert api.datos_principales_calls[0][1]["documento_identidad"] is None
+    assert api.datos_principales_calls[0][1]["identificacion_fiscal"] == {
+        "id_persona_documento": 11,
+        "tipo_documento": "CUIT",
+        "numero_documento": "20-87654321-0",
+        "pais_emision": None,
+        "es_principal": False,
+        "version_registro": 2,
+    }
     assert page.data["documentos"][0]["numero_documento"] == "20-87654321-0"
     assert "20-87654321-0" in "\n".join(_texts(page._datos_base(page.data)))
     assert navigations == [("parte_detail", {"id_persona": 42})]
