@@ -536,7 +536,6 @@ class ParteDetailPage:
         payload = result.data if result.success else None
         resumen = self._as_dict(payload.get("resumen")) if isinstance(payload, dict) else {}
         obligaciones = self._dashboard_obligaciones(payload)
-        pagable = next((item for item in obligaciones if self._deuda_pagable(item)), None)
         saldo_total = self._first_present(
             resumen, ["saldo_total", "saldo_pendiente_total", "saldo_pendiente"]
         )
@@ -2226,16 +2225,6 @@ class ParteDetailPage:
             extra=extra,
             action=self._participacion_nav_action(item),
         )
-
-    def _participacion_table_row(self, item: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "tipo": self._participacion_tipo_label(
-                item.get("tipo_relacion") or item.get("tipo_origen")
-            ),
-            "referencia": self._participacion_referencia(item),
-            "estado": self._participacion_estado(item),
-            "_source": item,
-        }
 
     def _participacion_rol_label(self, item: dict[str, Any]) -> str:
         return self._friendly_label(
