@@ -197,3 +197,113 @@ Excluye registros con `deleted_at IS NOT NULL`. Si no existe, devuelve `404 NOT_
 - Versionado: entidad `instalacion` nace con `version_registro = 1`.
 - Rollback/transacción: alta de `instalacion` y outbox comparten commit/rollback del repository.
 - Read-like: listados/fichas son `QUERY_READLIKE`, sin headers write.
+
+## Configuración local operativa (#252)
+
+La configuración local pertenece al dominio `operativo` porque parametriza el comportamiento mínimo de una sucursal/instalación técnica. Es núcleo operativo acotado, no autorización, no sesión, no caja, no jornada y no permisos.
+
+### Modelo SQL auditado/usado
+
+Se auditó el modelo existente: `sucursal`, `instalacion`, `parametro_sistema` y `valor_parametro`. `valor_parametro` ya permite alcance por `id_sucursal`/`id_instalacion`, pero en el dump vigente no contiene metadata CORE-EF completa (`uid_global`, `version_registro`, `created_at`, `updated_at`, `deleted_at`, instalación origen/modificación, `op_id_alta`, `op_id_ultima_modificacion`) ni índices de idempotencia para writes sincronizables. Por eso se agrega el patch mínimo `backend/database/patch_configuracion_local_operativa_20260703.sql` con `configuracion_local`.
+
+### GET `/api/v1/operativo/configuracion-local`
+
+Consulta read-like (`QUERY_READLIKE`) por `id_sucursal` e `id_instalacion`. No requiere headers CORE-EF write.
+
+Reglas:
+
+- Valida que la sucursal exista, no tenga `deleted_at` y no esté `DADA_DE_BAJA`.
+- Valida que la instalación exista, no tenga `deleted_at` y no esté `DADA_DE_BAJA`.
+- Valida pertenencia de instalación a sucursal mediante `instalacion.id_sucursal`.
+- Si no hay configuración local activa para el contexto, devuelve `data: []`. Se elige lista vacía para no inventar valores efectivos no persistidos.
+
+Errores:
+
+- `404 NOT_FOUND` para sucursal o instalación inexistente/dada de baja.
+- `400 VALIDATION_ERROR` si la instalación no pertenece a la sucursal.
+
+### POST `/api/v1/operativo/configuracion-local`
+
+Crea configuración local. Clasificación CORE-EF: `COMMAND_WRITE_TECNICO` sincronizable.
+
+Payload:
+
+- `id_sucursal`
+- `id_instalacion`
+- `clave_configuracion`
+- `valor_configuracion`
+- `tipo_valor`: `TEXTO`, `NUMERO`, `DECIMAL`, `BOOLEANO`, `FECHA`, `JSON`
+- `descripcion`
+- `estado_configuracion`: `ACTIVA`, `INACTIVA`
+
+Claves mínimas permitidas en esta primera versión:
+
+- `modo_operacion_local`
+- `permite_operar_offline`
+- `requiere_jornada_abierta`
+- `requiere_caja_abierta`
+- `observaciones_locales`
+
+Headers CORE-EF obligatorios mediante helper común:
+
+- `X-Op-Id`
+- `X-Usuario-Id`
+- `X-Sucursal-Id`
+- `X-Instalacion-Id`
+
+Idempotencia:
+
+- Aplica por `op_id_alta` con índice único parcial `ux_configuracion_local_op_id_alta`.
+- Mismo `X-Op-Id` con payload compatible devuelve el registro existente sin duplicar fila ni outbox.
+- Mismo `X-Op-Id` con payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`.
+
+Outbox:
+
+- Aplica; emite `configuracion_local_creada` (`EVT-OPE-012`) en `outbox_event` en la misma transacción del alta real.
+
+Versionado:
+
+- El alta crea `version_registro = 1`.
+- `If-Match-Version` no aplica al POST porque no modifica una entidad existente/versionada.
+
+### PUT `/api/v1/operativo/configuracion-local/{id_configuracion_local}`
+
+Actualiza configuración local existente. Se elige POST para creación y PUT por identificador para actualización para mantener CORE-EF limpio y exigir concurrencia optimista en modificaciones versionadas.
+
+Clasificación CORE-EF: `COMMAND_WRITE_TECNICO` sincronizable.
+
+Headers:
+
+- Requiere los headers CORE-EF obligatorios.
+- Requiere `If-Match-Version`; debe coincidir con `version_registro` actual.
+
+Reglas:
+
+- Incrementa `version_registro`.
+- Actualiza `updated_at`, `id_instalacion_ultima_modificacion` y `op_id_ultima_modificacion`.
+- Mantiene unicidad activa por `(id_sucursal, id_instalacion, clave_configuracion)`.
+- Emite `configuracion_local_modificada` (`EVT-OPE-013`) en `outbox_event` en la misma transacción del update real.
+
+Errores:
+
+- `400 VALIDATION_ERROR` por headers CORE-EF faltantes/inválidos, `If-Match-Version` faltante/inválido o pertenencia inválida.
+- `404 NOT_FOUND` por configuración, sucursal o instalación inexistente/dada de baja.
+- `409 TECHNICAL_INCONSISTENCY` por duplicado activo de clave/contexto.
+- `412 CONCURRENCY_ERROR` por mismatch de `If-Match-Version`.
+- `422 Unprocessable Entity` por payload inválido (`clave_configuracion` vacía/no catalogada, `tipo_valor` inválido o estado inválido).
+
+### Decisión CORE-EF configuración local
+
+- Naturaleza endpoints: GET `QUERY_READLIKE`; POST/PUT `COMMAND_WRITE_TECNICO` sincronizable.
+- Headers: POST/PUT usan helper común CORE-EF; GET no requiere headers write.
+- Idempotencia: aplica en creación por `op_id_alta`; no aplica idempotencia profunda al update, que se protege con `If-Match-Version`.
+- Outbox: aplica para creación y modificación con eventos `configuracion_local_creada` y `configuracion_local_modificada`.
+- Lock lógico: NO APLICA en esta versión; no se bloquean caja, jornada ni operaciones de negocio.
+- Versionado: `configuracion_local.version_registro` nace en 1 y aumenta en cada PUT.
+- Rollback/transacción: escritura de `configuracion_local` y `outbox_event` comparten transacción del repository.
+
+### Fuera de alcance
+
+No implementa autorización real, middleware de seguridad, login, contexto de sesión, `usuario_instalacion`, permisos complejos, caja, jornada, movimientos, pagos, sincronización avanzada, frontend, configuración global administrativa (#263) ni catálogos maestros (#264).
+
+Closes #252. Refs #248.

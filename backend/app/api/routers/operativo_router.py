@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Path, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,11 +16,23 @@ from app.api.schemas.operativo import (
     InstalacionData,
     InstalacionDetailResponse,
     InstalacionListResponse,
+    ConfiguracionLocalRequest,
+    ConfiguracionLocalResponse,
+    ConfiguracionLocalData,
+    ConfiguracionLocalListResponse,
     SucursalCreateRequest,
     SucursalCreateResponse,
     SucursalData,
     SucursalDetailResponse,
     SucursalListResponse,
+)
+from app.infrastructure.persistence.repositories.configuracion_local_repository import (
+    ConfiguracionLocalConcurrencyError,
+    ConfiguracionLocalDuplicateActiveError,
+    ConfiguracionLocalIdempotencyConflictError,
+    ConfiguracionLocalNotFoundError,
+    ConfiguracionLocalRepository,
+    ConfiguracionLocalValidationError,
 )
 from app.infrastructure.persistence.repositories.instalacion_repository import (
     InstalacionDuplicateActiveError,
@@ -274,3 +286,154 @@ def get_instalacion(
     if instalacion is None:
         return _error(404, "NOT_FOUND", "Instalación no encontrada.")
     return InstalacionDetailResponse(data=InstalacionData(**instalacion))
+
+
+@router.get(
+    "/api/v1/operativo/configuracion-local",
+    response_model=ConfiguracionLocalListResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def list_configuracion_local(
+    id_sucursal: int = Query(...),
+    id_instalacion: int = Query(...),
+    db: Session = Depends(get_db),
+) -> ConfiguracionLocalListResponse | JSONResponse:
+    try:
+        configuraciones = ConfiguracionLocalRepository(db).list(
+            id_sucursal=id_sucursal,
+            id_instalacion=id_instalacion,
+        )
+    except ConfiguracionLocalNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ConfiguracionLocalValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", str(exc))
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo consultar la configuración local.",
+            {"error": str(exc)},
+        )
+    return ConfiguracionLocalListResponse(
+        data=[ConfiguracionLocalData(**item) for item in configuraciones]
+    )
+
+
+@router.post(
+    "/api/v1/operativo/configuracion-local",
+    response_model=ConfiguracionLocalResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_configuracion_local(
+    request: ConfiguracionLocalRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ConfiguracionLocalResponse | JSONResponse:
+    core = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        created = ConfiguracionLocalRepository(db).create(request.model_dump(), core)
+    except ConfiguracionLocalNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ConfiguracionLocalValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", str(exc))
+    except ConfiguracionLocalIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except ConfiguracionLocalDuplicateActiveError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo crear la configuración local.",
+            {"error": str(exc)},
+        )
+    return ConfiguracionLocalResponse(data=ConfiguracionLocalData(**created))
+
+
+@router.put(
+    "/api/v1/operativo/configuracion-local/{id_configuracion_local}",
+    response_model=ConfiguracionLocalResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        412: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def update_configuracion_local(
+    request: ConfiguracionLocalRequest,
+    id_configuracion_local: int = Path(...),
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ConfiguracionLocalResponse | JSONResponse:
+    core = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+    if if_match_version is None:
+        return _error(
+            400,
+            "VALIDATION_ERROR",
+            "If-Match-Version es requerido.",
+            {"header": "If-Match-Version"},
+        )
+    try:
+        version = int(if_match_version)
+    except ValueError:
+        return _error(
+            400,
+            "VALIDATION_ERROR",
+            "If-Match-Version inválido.",
+            {"header": "If-Match-Version"},
+        )
+    try:
+        updated = ConfiguracionLocalRepository(db).update(
+            id_configuracion_local, request.model_dump(), core, version
+        )
+    except ConfiguracionLocalNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ConfiguracionLocalValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", str(exc))
+    except ConfiguracionLocalConcurrencyError as exc:
+        return _error(
+            412, "CONCURRENCY_ERROR", str(exc), {"header": "If-Match-Version"}
+        )
+    except ConfiguracionLocalDuplicateActiveError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo actualizar la configuración local.",
+            {"error": str(exc)},
+        )
+    return ConfiguracionLocalResponse(data=ConfiguracionLocalData(**updated))

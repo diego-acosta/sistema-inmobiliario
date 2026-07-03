@@ -129,3 +129,11 @@ Incluye eventos de sucursales, instalaciones, caja operativa, movimientos de caj
 - No reemplaza al CAT-CU maestro.
 - Debe mantenerse alineado con CU-OPE y con los servicios SRV-OPE reales del dominio.
 - No debe contaminarse con semántica de workflow genérico ni con el dominio Técnico.
+
+### EVT-OPE-012 — Configuración local creada
+
+Evento emitido por el alta de `configuracion_local` para un contexto operativo `sucursal`/`instalacion`.
+
+### EVT-OPE-013 — Configuración local modificada
+
+Evento emitido por la modificación versionada de `configuracion_local` para un contexto operativo `sucursal`/`instalacion`.
