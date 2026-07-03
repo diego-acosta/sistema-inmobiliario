@@ -114,6 +114,7 @@ def test_get_persona_documentos_devuelve_solo_no_eliminados(client, db_session) 
         "id_persona_documento": id_persona_documento_visible,
         "tipo_documento": "DNI",
         "numero_documento": numero_documento,
+        "version_registro": 1,
         "pais_emision": "Argentina",
         "es_principal": True,
     }

@@ -235,6 +235,7 @@ def test_get_persona_devuelve_persona_y_subrecursos(client, db_session) -> None:
                 "id_persona_documento": id_persona_documento,
                 "tipo_documento": "DNI",
                 "numero_documento": f"{id_persona:08d}",
+                "version_registro": 1,
                 "pais_emision": "Argentina",
                 "es_principal": True,
             }
