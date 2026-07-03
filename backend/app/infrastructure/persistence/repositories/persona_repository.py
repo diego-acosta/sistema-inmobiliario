@@ -2631,7 +2631,17 @@ class PersonaRepository(BaseRepository[Any]):
                     self.db.rollback()
                     return None
             self.db.commit()
-            return {**self.get_persona(command.id_persona), "documentos": self.get_persona_documentos(command.id_persona)}
+            persona_actualizada = self.get_persona(command.id_persona)
+            if persona_actualizada is None:
+                raise ValueError("NOT_FOUND_PERSONA")
+            return {
+                **persona_actualizada,
+                "documentos": self.get_persona_documentos(command.id_persona),
+                "domicilios": self.get_persona_domicilios(command.id_persona),
+                "contactos": self.get_persona_contactos(command.id_persona),
+                "relaciones": self.get_persona_relaciones(command.id_persona),
+                "representaciones_poder": self.get_representaciones_poder(command.id_persona),
+            }
         except Exception:
             self.db.rollback()
             raise

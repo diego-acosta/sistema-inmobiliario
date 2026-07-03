@@ -311,12 +311,16 @@ class ParteDetailPage:
             return
 
         def _document_payload(row: dict[str, Any] | None, numero: str, tipo: str) -> dict[str, Any] | None:
-            if not numero and row is None:
+            numero_limpio = (numero or "").strip()
+            numero_actual = self._documento_numero(row).strip() if row else ""
+            if row is None and not numero_limpio:
+                return None
+            if row is not None and numero_limpio == numero_actual:
                 return None
             return {
                 "id_persona_documento": (row or {}).get("id_persona_documento"),
                 "tipo_documento": str((row or {}).get("tipo_documento") or tipo).upper(),
-                "numero_documento": numero or None,
+                "numero_documento": numero_limpio or None,
                 "pais_emision": (row or {}).get("pais_emision"),
                 "es_principal": bool((row or {}).get("es_principal", tipo == "DNI")),
                 "version_registro": (row or {}).get("version_registro"),
@@ -344,7 +348,7 @@ class ParteDetailPage:
                 "CUIT",
             ),
         }
-        result = self.api.actualizar_persona_datos_principales(self.id_persona, payload, op_id=str(uuid4()))
+        result = self.api.actualizar_persona_datos_principales(self.id_persona, payload, int(version), op_id=str(uuid4()))
         if not result.success:
             self._show_modal_error(self._friendly_save_error(result, "No se pudieron guardar los datos principales."))
             return

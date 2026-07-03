@@ -102,7 +102,7 @@ def test_actualizar_persona_documento_envia_headers_core_ef_e_if_match(monkeypat
     }
 
 
-def test_actualizar_persona_datos_principales_envia_headers_core_ef(monkeypatch) -> None:
+def test_actualizar_persona_datos_principales_envia_headers_core_ef_e_if_match(monkeypatch) -> None:
     captured = {}
 
     def fake_put(self, path, json=None, params=None, headers=None):
@@ -116,7 +116,7 @@ def test_actualizar_persona_datos_principales_envia_headers_core_ef(monkeypatch)
     payload = {"persona": {"version_registro": 7}, "documento_identidad": None, "identificacion_fiscal": None}
 
     result = client.actualizar_persona_datos_principales(
-        42, payload, op_id="550e8400-e29b-41d4-a716-446655440000"
+        42, payload, if_match_version=7, op_id="550e8400-e29b-41d4-a716-446655440000"
     )
 
     assert result.success is True
@@ -127,4 +127,5 @@ def test_actualizar_persona_datos_principales_envia_headers_core_ef(monkeypatch)
         "X-Usuario-Id": "1",
         "X-Sucursal-Id": "1",
         "X-Instalacion-Id": "1",
+        "If-Match-Version": "7",
     }

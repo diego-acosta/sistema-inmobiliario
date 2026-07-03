@@ -2392,15 +2392,26 @@ def update_datos_principales(
     x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> DatosPrincipalesUpdateResponse | JSONResponse:
-    core_ef_headers = _parse_core_ef_headers_or_error(
+    core_ef_headers = _parse_core_ef_headers_with_if_match_or_error(
         x_op_id=x_op_id,
         x_usuario_id=x_usuario_id,
         x_sucursal_id=x_sucursal_id,
         x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
     )
     if isinstance(core_ef_headers, JSONResponse):
         return core_ef_headers
+
+    if core_ef_headers.if_match_version != request.persona.version_registro:
+        error = ErrorResponse(
+            error_code="CONCURRENCY_ERROR",
+            error_message="If-Match-Version debe coincidir con persona.version_registro.",
+            details={"errors": ["CONCURRENCY_ERROR"]},
+        )
+        return JSONResponse(status_code=409, content=error.model_dump())
 
     def _doc(value):
         if value is None:

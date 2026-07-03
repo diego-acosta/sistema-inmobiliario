@@ -27,7 +27,7 @@ class FakeApi:
         self.detalle_results = [self.detalle]
         self.update_calls: list[tuple[int, dict[str, Any], int, str | None]] = []
         self.update_result = ApiResult(True, data={"id_persona": 42, "version_registro": 8})
-        self.datos_principales_calls: list[tuple[int, dict[str, Any], str | None]] = []
+        self.datos_principales_calls: list[tuple[int, dict[str, Any], int, str | None]] = []
         self.datos_principales_result = self.update_result
         self.crear_persona_calls: list[dict[str, Any]] = []
         self.registrar_pago_calls: list[dict[str, Any]] = []
@@ -60,8 +60,10 @@ class FakeApi:
         self.update_calls.append((id_persona, payload, if_match_version, op_id))
         return self.update_result
 
-    def actualizar_persona_datos_principales(self, id_persona: int, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
-        self.datos_principales_calls.append((id_persona, payload, op_id))
+    def actualizar_persona_datos_principales(
+        self, id_persona: int, payload: dict[str, Any], if_match_version: int, op_id: str | None = None
+    ) -> ApiResult:
+        self.datos_principales_calls.append((id_persona, payload, if_match_version, op_id))
         return self.update_result
 
     def crear_persona(self, payload: dict[str, Any], op_id: str | None = None) -> ApiResult:
@@ -312,8 +314,9 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     _find_button(dialog, "Guardar").on_click(None)
 
     assert len(api.datos_principales_calls) == 1
-    id_persona, payload, op_id = api.datos_principales_calls[0]
+    id_persona, payload, if_match_version, op_id = api.datos_principales_calls[0]
     assert id_persona == 42
+    assert if_match_version == 7
     assert op_id
     assert payload["persona"] == {
         "tipo_persona": "FISICA",
@@ -325,6 +328,11 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
         "observaciones": "Actualizada",
         "version_registro": 7,
     }
+    assert payload["documento_identidad"] is None
+    assert payload["identificacion_fiscal"] is None
+    assert api.update_calls == []
+    assert api.crear_documento_calls == []
+    assert api.actualizar_documento_calls == []
     assert api.detalle_ids == [42, 42]
     assert page.data["nombre"] == "Augusta Ada"
     assert page.data["version_registro"] == 8
@@ -372,7 +380,10 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     assert "Guardar" not in read_text
     assert "Cancelar" not in read_text
     assert api.update_calls == []
+    assert api.datos_principales_calls == []
     assert api.crear_persona_calls == []
+    assert api.crear_documento_calls == []
+    assert api.actualizar_documento_calls == []
 
 
 def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar_modal() -> None:
@@ -425,8 +436,11 @@ def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar
     _find_button(dialog, "Guardar").on_click(None)
 
     assert len(api.datos_principales_calls) == 1
+    assert api.update_calls == []
+    assert api.crear_documento_calls == []
     assert api.actualizar_documento_calls == []
     assert api.datos_principales_calls[0][1]["documento_identidad"]["numero_documento"] == "87654321"
+    assert api.datos_principales_calls[0][1]["identificacion_fiscal"] is None
     assert page.active_dialog is dialog
     assert dialog.open is True
     assert navigations == []
@@ -749,7 +763,10 @@ def test_guardar_identificacion_fiscal_recarga_y_muestra_cuit_actualizado() -> N
     _find_field(dialog, "Identificación fiscal").value = "20-87654321-0"
     _find_button(dialog, "Guardar").on_click(None)
 
+    assert api.update_calls == []
+    assert api.crear_documento_calls == []
     assert api.actualizar_documento_calls == []
+    assert api.datos_principales_calls[0][1]["documento_identidad"] is None
     assert api.datos_principales_calls[0][1]["identificacion_fiscal"] == {
         "id_persona_documento": 11,
         "tipo_documento": "CUIT",

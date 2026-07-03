@@ -70,11 +70,17 @@ class ApiClient:
 
 
     def actualizar_persona_datos_principales(
-        self, id_persona: int, payload: dict[str, Any], op_id: str | None = None
+        self,
+        id_persona: int,
+        payload: dict[str, Any],
+        if_match_version: int,
+        op_id: str | None = None,
     ) -> ApiResult:
+        headers = self._core_ef_write_headers(op_id)
+        headers["If-Match-Version"] = str(if_match_version)
         return self._put(
             f"/api/v1/personas/{id_persona}/datos-principales",
-            headers=self._core_ef_write_headers(op_id),
+            headers=headers,
             json=payload,
         )
 
