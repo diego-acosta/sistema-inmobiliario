@@ -1993,11 +1993,9 @@ class ParteDetailPage:
         if not contactos:
             return ft.Text(empty_message)
         return self._card_list([
-            self._info_card(
-                title=self._principal_label(contacto),
-                subtitle=self._contacto_value(contacto),
-                principal=False,
-                extra=contacto.get("observaciones"),
+            self._compact_item_row(
+                label=self._principal_label(contacto),
+                value=self._contacto_value(contacto),
                 action=self._section_action(
                     "Editar",
                     lambda e, row=contacto: self._open_contacto_dialog(
@@ -2218,11 +2216,9 @@ class ParteDetailPage:
         if not domicilios:
             return ft.Text("Sin domicilios registrados.")
         return self._card_list([
-            self._info_card(
-                title=self._principal_label(domicilio),
-                subtitle=self._format_address(domicilio),
-                principal=False,
-                extra=domicilio.get("observaciones"),
+            self._compact_item_row(
+                label=self._principal_label(domicilio),
+                value=self._format_address(domicilio),
                 action=self._section_action(
                     "Editar",
                     lambda e, row=domicilio: self._open_domicilio_dialog(e, row),
@@ -2282,7 +2278,7 @@ class ParteDetailPage:
                     self._participacion_icon(item),
                     ft.Text(
                         label,
-                        size=12,
+                        size=13,
                         color=ft.Colors.BLUE_GREY_900,
                         overflow=ft.TextOverflow.ELLIPSIS,
                         max_lines=2,
@@ -2670,6 +2666,36 @@ class ParteDetailPage:
 
     def _card_list(self, controls: list[ft.Control]) -> ft.Control:
         return ft.Column(controls=controls, spacing=8)
+
+    def _compact_item_row(
+        self,
+        *,
+        label: object,
+        value: object,
+        action: ft.Control,
+    ) -> ft.Control:
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Text(
+                        f"{label or 'Sin tipo'} · {value or '-'}",
+                        size=13,
+                        color=ft.Colors.BLUE_GREY_900,
+                        selectable=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        max_lines=2,
+                        expand=True,
+                    ),
+                    action,
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            bgcolor=ft.Colors.WHITE,
+        )
 
     def _info_card(
         self,
