@@ -2681,7 +2681,6 @@ class ParteDetailPage:
                         f"{label or 'Sin tipo'} · {value or '-'}",
                         size=13,
                         color=ft.Colors.BLUE_GREY_900,
-                        selectable=True,
                         overflow=ft.TextOverflow.ELLIPSIS,
                         max_lines=2,
                         expand=True,
