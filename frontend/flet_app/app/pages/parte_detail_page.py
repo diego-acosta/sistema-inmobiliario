@@ -73,6 +73,7 @@ class ParteDetailPage:
                                     self._admin_card(
                                         "Dirección",
                                         [self._domicilios_resumen(data.get("domicilios", []))],
+                                        icon=ft.Icons.HOME_OUTLINED,
                                         height=145,
                                         scroll_body=True,
                                         action=ft.TextButton("Agregar dirección", on_click=lambda e: self._open_domicilio_dialog(e)),
@@ -82,6 +83,7 @@ class ParteDetailPage:
                                             self._admin_card(
                                                 "Teléfonos",
                                                 [self._telefonos_resumen(data.get("contactos", []))],
+                                                icon=ft.Icons.PHONE_OUTLINED,
                                                 expand=1,
                                                 height=140,
                                                 scroll_body=True,
@@ -90,6 +92,7 @@ class ParteDetailPage:
                                             self._admin_card(
                                                 "Mail",
                                                 [self._mails_resumen(data.get("contactos", []))],
+                                                icon=ft.Icons.MAIL_OUTLINED,
                                                 expand=1,
                                                 height=140,
                                                 scroll_body=True,
@@ -113,6 +116,7 @@ class ParteDetailPage:
                                 expand=2,
                                 height=578,
                                 scroll_body=True,
+                                icon=ft.Icons.ACCOUNT_TREE_OUTLINED,
                             ),
                         ],
                         spacing=14,
@@ -121,11 +125,13 @@ class ParteDetailPage:
                     self._admin_card(
                         "Estado de cuenta resumido",
                         [self._resumen_cuenta_dashboard(data, estado_cuenta_result)],
+                        icon=ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED,
                         height=172,
                     ),
                     self._admin_card(
                         "Datos técnicos",
                         [self._datos_tecnicos(data)],
+                        icon=ft.Icons.SETTINGS_OUTLINED,
                         height=96,
                         low_emphasis=True,
                     ),
@@ -165,6 +171,7 @@ class ParteDetailPage:
         card = self._admin_card(
             "Datos principales",
             self._datos_principales_controls(data),
+            icon=ft.Icons.PERSON_OUTLINED,
             height=self._datos_principales_height(),
             action=self._datos_principales_action(),
         )
@@ -291,6 +298,7 @@ class ParteDetailPage:
         replacement = self._admin_card(
             "Datos principales",
             self._datos_principales_controls(self.data),
+            icon=ft.Icons.PERSON_OUTLINED,
             height=self._datos_principales_height(),
             action=self._datos_principales_action(),
         )
@@ -397,20 +405,30 @@ class ParteDetailPage:
         scroll_body: bool = False,
         action: ft.Control | None = None,
         low_emphasis: bool = False,
+        icon: str | None = None,
     ) -> ft.Control:
         body = (
             ft.Column(controls=controls, spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
             if scroll_body
             else ft.Column(controls=controls, spacing=8)
         )
-        header_controls: list[ft.Control] = [
+        header_controls: list[ft.Control] = []
+        if icon is not None:
+            header_controls.append(
+                ft.Icon(
+                    icon,
+                    size=16 if low_emphasis else 18,
+                    color=ft.Colors.BLUE_GREY_600 if low_emphasis else ft.Colors.BLUE_700,
+                )
+            )
+        header_controls.append(
             ft.Text(
                 title,
                 size=14 if low_emphasis else 17,
                 weight=ft.FontWeight.W_700 if not low_emphasis else ft.FontWeight.W_600,
                 color=ft.Colors.BLUE_GREY_700 if low_emphasis else ft.Colors.BLUE_GREY_900,
             )
-        ]
+        )
         if action is not None:
             header_controls.extend([ft.Container(expand=True), action])
 
@@ -451,9 +469,9 @@ class ParteDetailPage:
     def _datos_tecnicos(self, data: dict[str, Any]) -> ft.Control:
         return self._filtered_key_value_grid(
             [
-                ("id_persona", data.get("id_persona") or self.id_persona),
-                ("version_registro", data.get("version_registro")),
-                ("uid_global", data.get("uid_global")),
+                ("ID persona", data.get("id_persona") or self.id_persona),
+                ("Versión", data.get("version_registro")),
+                ("UID global", data.get("uid_global")),
                 ("Última modificación", data.get("updated_at") or data.get("fecha_modificacion")),
             ]
         )
@@ -2202,28 +2220,61 @@ class ParteDetailPage:
     ) -> ft.Control:
         return ft.Column(
             controls=[
-                ft.Text(f"{title} ({len(rows)})", weight=ft.FontWeight.W_600),
-                self._card_list([self._participacion_card(item) for item in rows]),
+                ft.Text(f"{title} ({len(rows)})", weight=ft.FontWeight.W_600, size=13),
+                ft.Column(
+                    controls=[self._participacion_card(item) for item in rows],
+                    spacing=4,
+                ),
             ],
-            spacing=6,
+            spacing=5,
         )
 
     def _participacion_card(self, item: dict[str, Any]) -> ft.Control:
         title = self._participacion_tipo_label(
             item.get("tipo_relacion") or item.get("tipo_origen")
-        )
+        ) or "Participación"
         rol = self._participacion_rol_label(item)
         referencia = self._participacion_referencia(item)
         estado = self._participacion_estado(item)
-        subtitle_parts = [part for part in (rol, referencia) if part and part != "-"]
-        subtitle = " · ".join(subtitle_parts) or "Actividad asociada sin referencia completa"
-        extra = None if estado == "-" else f"Estado: {self._friendly_label(estado)}"
-        return self._info_card(
-            title=title or "Participación",
-            subtitle=subtitle,
-            principal=False,
-            extra=extra,
-            action=self._participacion_nav_action(item),
+        details = [part for part in (title, rol, referencia) if part and part != "-"]
+        if estado != "-":
+            details.append(self._friendly_label(estado))
+        label = " · ".join(details) or "Actividad asociada sin referencia completa"
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    self._participacion_icon(item),
+                    ft.Text(
+                        label,
+                        size=12,
+                        color=ft.Colors.BLUE_GREY_900,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        max_lines=2,
+                        expand=True,
+                    ),
+                    self._participacion_nav_action(item),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+            border_radius=6,
+            bgcolor=ft.Colors.WHITE,
+        )
+
+    def _participacion_icon(self, item: dict[str, Any]) -> ft.Control:
+        bucket = self._participacion_bucket(item)
+        icons = {
+            "Ventas": ft.Icons.SELL_OUTLINED,
+            "Reservas": ft.Icons.BOOKMARK_BORDER,
+            "Contratos locativos": ft.Icons.KEY_OUTLINED,
+            "Otros roles": ft.Icons.LINK_OUTLINED,
+        }
+        return ft.Icon(
+            icons.get(bucket, ft.Icons.LINK_OUTLINED),
+            size=16,
+            color=ft.Colors.BLUE_GREY_600,
         )
 
     def _participacion_rol_label(self, item: dict[str, Any]) -> str:

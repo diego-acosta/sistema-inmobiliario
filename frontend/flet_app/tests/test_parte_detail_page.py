@@ -728,8 +728,12 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "Último pago" in text
     assert "Mora" in text
     assert text.rfind("Datos técnicos") > text.rfind("Estado de cuenta resumido")
-    assert "id_persona" in text
-    assert "version_registro" in text
+    assert "ID persona" in text
+    assert "Versión" in text
+    assert "UID global" in text
+    assert "id_persona" not in text
+    assert "version_registro" not in text
+    assert "uid_global" not in text
     assert _find_button(control, "Editar datos principales") is not None
     assert api.crear_persona_calls == []
     assert api.update_calls == []
@@ -1025,6 +1029,15 @@ def test_direccion_ocupa_columna_izquierda_y_contactos_quedan_debajo() -> None:
     assert "Participaciones" in "\n".join(_texts(participaciones))
     assert participaciones.expand == 2
 
+    icon_names = {getattr(item, "name", None) for item in _walk(control) if isinstance(item, ft.Icon)}
+    assert ft.Icons.PERSON_OUTLINED in icon_names
+    assert ft.Icons.HOME_OUTLINED in icon_names
+    assert ft.Icons.PHONE_OUTLINED in icon_names
+    assert ft.Icons.MAIL_OUTLINED in icon_names
+    assert ft.Icons.ACCOUNT_TREE_OUTLINED in icon_names
+    assert ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED in icon_names
+    assert ft.Icons.SETTINGS_OUTLINED in icon_names
+
 
 def test_participaciones_muestran_tablas_por_ventas_y_alquileres_con_accion_ver() -> None:
     navigations: list[tuple[str, dict[str, Any]]] = []
@@ -1071,6 +1084,17 @@ def test_participaciones_muestran_tablas_por_ventas_y_alquileres_con_accion_ver(
     assert "Venta" in participaciones_text
     assert "V-22" in participaciones_text
     assert "Rol" not in participaciones_text
+    assert "COMPRADOR" not in participaciones_text
+    assert ft.Icons.SELL_OUTLINED in {getattr(item, "name", None) for item in _walk(participaciones_card) if isinstance(item, ft.Icon)}
+    participacion_rows = [
+        item
+        for item in _walk(participaciones_card)
+        if isinstance(item, ft.Container)
+        and isinstance(getattr(item, "content", None), ft.Row)
+        and any(getattr(child, "text", None) in {"Ver", "Sin ruta"} for child in item.content.controls)
+    ]
+    assert len(participacion_rows) == 3
+    assert all(row.content.controls[-1].text in {"Ver", "Sin ruta"} for row in participacion_rows)
 
     ver_buttons = [item for item in _walk(control) if getattr(item, "text", None) == "Ver"]
     assert len(ver_buttons) >= 2
