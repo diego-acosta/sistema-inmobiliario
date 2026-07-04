@@ -23,3 +23,5 @@ Organizar los servicios y catálogos del dominio operativo en formato modular y 
 - Integra ejecución operativa con impacto directo en financiero.
 - Los servicios deben mantenerse breves y referenciales.
 - Reglas, errores y estados deben vivir en sus catálogos, no repetirse en cada servicio.
+
+- [[SRV-OPE-007-configuracion-local-operativa]]

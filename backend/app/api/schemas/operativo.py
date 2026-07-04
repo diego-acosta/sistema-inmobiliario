@@ -152,3 +152,94 @@ class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+TIPOS_VALOR_CONFIGURACION_LOCAL_VALIDOS = {
+    "TEXTO",
+    "NUMERO",
+    "DECIMAL",
+    "BOOLEANO",
+    "FECHA",
+    "JSON",
+}
+ESTADOS_CONFIGURACION_LOCAL_VALIDOS = {"ACTIVA", "INACTIVA"}
+
+
+class ConfiguracionLocalRequest(BaseModel):
+    id_sucursal: int
+    id_instalacion: int
+    clave_configuracion: str
+    valor_configuracion: str | None = None
+    tipo_valor: str = "TEXTO"
+    descripcion: str | None = None
+    estado_configuracion: str = "ACTIVA"
+
+    @field_validator("clave_configuracion", "tipo_valor", "estado_configuracion")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El campo no puede estar vacío.")
+        return normalized
+
+    @field_validator("clave_configuracion")
+    @classmethod
+    def _valid_clave(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized not in {
+            "modo_operacion_local",
+            "permite_operar_offline",
+            "requiere_jornada_abierta",
+            "requiere_caja_abierta",
+            "observaciones_locales",
+        }:
+            raise ValueError(
+                "clave_configuracion no pertenece al catálogo mínimo local."
+            )
+        return normalized
+
+    @field_validator("tipo_valor")
+    @classmethod
+    def _valid_tipo(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in TIPOS_VALOR_CONFIGURACION_LOCAL_VALIDOS:
+            raise ValueError("tipo_valor inválido.")
+        return normalized
+
+    @field_validator("estado_configuracion")
+    @classmethod
+    def _valid_estado_configuracion(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in ESTADOS_CONFIGURACION_LOCAL_VALIDOS:
+            raise ValueError("estado_configuracion debe ser ACTIVA o INACTIVA.")
+        return normalized
+
+
+class ConfiguracionLocalData(BaseModel):
+    id_configuracion_local: int
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: str | None
+    op_id_ultima_modificacion: str | None
+    id_sucursal: int
+    id_instalacion: int
+    clave_configuracion: str
+    valor_configuracion: str | None
+    tipo_valor: str
+    descripcion: str | None
+    estado_configuracion: str
+
+
+class ConfiguracionLocalResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ConfiguracionLocalData
+
+
+class ConfiguracionLocalListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[ConfiguracionLocalData]
