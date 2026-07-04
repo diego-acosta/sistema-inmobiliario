@@ -1996,6 +1996,7 @@ class ParteDetailPage:
             self._compact_item_row(
                 label=self._principal_label(contacto),
                 value=self._contacto_value(contacto),
+                extra=contacto.get("observaciones"),
                 action=self._section_action(
                     "Editar",
                     lambda e, row=contacto: self._open_contacto_dialog(
@@ -2219,6 +2220,7 @@ class ParteDetailPage:
             self._compact_item_row(
                 label=self._principal_label(domicilio),
                 value=self._format_address(domicilio),
+                extra=domicilio.get("observaciones"),
                 action=self._section_action(
                     "Editar",
                     lambda e, row=domicilio: self._open_domicilio_dialog(e, row),
@@ -2673,12 +2675,18 @@ class ParteDetailPage:
         label: object,
         value: object,
         action: ft.Control,
+        extra: object = None,
     ) -> ft.Control:
+        parts = [
+            str(part)
+            for part in (label or "Sin tipo", value or "-", extra)
+            if part not in (None, "")
+        ]
         return ft.Container(
             content=ft.Row(
                 controls=[
                     ft.Text(
-                        f"{label or 'Sin tipo'} · {value or '-'}",
+                        " · ".join(parts),
                         size=13,
                         color=ft.Colors.BLUE_GREY_900,
                         overflow=ft.TextOverflow.ELLIPSIS,

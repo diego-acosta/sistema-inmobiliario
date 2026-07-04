@@ -1163,7 +1163,7 @@ def _detalle_contactos_domicilios() -> dict[str, Any]:
             {"id_persona_contacto": 11, "tipo_contacto": "EMAIL", "valor_contacto": "ada@example.com", "es_principal": False, "observaciones": "Personal", "version_registro": 4},
         ],
         "domicilios": [
-            {"id_persona_domicilio": 20, "tipo_domicilio": "REAL", "direccion": "San Martín 123", "localidad": "Neuquén", "es_principal": True, "version_registro": 5},
+            {"id_persona_domicilio": 20, "tipo_domicilio": "REAL", "direccion": "San Martín 123", "localidad": "Neuquén", "es_principal": True, "observaciones": "Casa familiar", "version_registro": 5},
         ],
         "participaciones": [],
     }
@@ -1180,6 +1180,9 @@ def test_ficha_contactos_domicilios_muestra_acciones_y_no_escribe_al_renderizar(
     assert "Principal · San Martín 123, Neuquén" in text
     assert "Principal · +54 299" in text
     assert "Secundario · ada@example.com" in text
+    assert "Principal · San Martín 123, Neuquén · Casa familiar" in text
+    assert "Principal · +54 299 · Laboral" in text
+    assert "Secundario · ada@example.com · Personal" in text
     assert "tipo_contacto" not in text
     assert "tipo_domicilio" not in text
     assert "fecha_desde" not in text
