@@ -370,7 +370,7 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     )
     control = page.build()
 
-    button = _find_button(control, "Editar datos principales")
+    button = _find_button(control, "Editar datos")
     mounted_card = page.basic_data_card
     button.on_click(None)
     dialog = page.active_dialog
@@ -445,7 +445,7 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     page = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None)
     control = page.build()
     mounted_card = page.basic_data_card
-    _find_button(control, "Editar datos principales").on_click(None)
+    _find_button(control, "Editar datos").on_click(None)
     assert page.basic_data_card is mounted_card
     dialog = page.active_dialog
     _find_field(dialog, "Nombre").value = "Cambio descartado"
@@ -455,7 +455,8 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
     assert page.basic_data_card is mounted_card
     assert mounted_card.height == 265
     read_text = "\n".join(_texts(mounted_card))
-    assert "Editar datos principales" in read_text
+    assert "Editar datos principales" not in read_text
+    assert "Editar datos" in read_text
     assert "Guardar" not in read_text
     assert "Cancelar" not in read_text
     assert api.update_calls == []
@@ -508,7 +509,7 @@ def test_fallo_documento_tras_guardar_persona_muestra_mensaje_parcial_sin_cerrar
     )
     control = page.build()
 
-    _find_button(control, "Editar datos principales").on_click(None)
+    _find_button(control, "Editar datos").on_click(None)
     dialog = page.active_dialog
     assert dialog is not None
     _find_field(dialog, "Documento de identidad").value = "87654321"
@@ -572,7 +573,7 @@ def test_guardado_exitoso_con_fallo_de_recarga_muestra_error_y_no_navega() -> No
     control = page.build()
 
     mounted_card = page.basic_data_card
-    _find_button(control, "Editar datos principales").on_click(None)
+    _find_button(control, "Editar datos").on_click(None)
     assert page.basic_data_card is mounted_card
     dialog = page.active_dialog
     _find_field(dialog, "Nombre").value = "Augusta Ada"
@@ -608,7 +609,7 @@ def test_error_concurrencia_y_validacion_muestran_mensaje_claro() -> None:
     control = page.build()
     api.update_result = ApiResult(False, status_code=409, error_code="CONCURRENCY_ERROR")
     mounted_card = page.basic_data_card
-    _find_button(control, "Editar datos principales").on_click(None)
+    _find_button(control, "Editar datos").on_click(None)
     assert page.basic_data_card is mounted_card
     dialog = page.active_dialog
     _find_button(dialog, "Guardar").on_click(None)
@@ -734,7 +735,7 @@ def test_ficha_redisenada_renderiza_bloques_administrativos_sin_campos_tecnicos_
     assert "id_persona" not in text
     assert "version_registro" not in text
     assert "uid_global" not in text
-    assert _find_button(control, "Editar datos principales") is not None
+    assert _find_button(control, "Editar datos") is not None
     assert api.crear_persona_calls == []
     assert api.update_calls == []
     assert api.registrar_pago_calls == []
@@ -840,7 +841,7 @@ def test_guardar_identificacion_fiscal_recarga_y_muestra_cuit_actualizado() -> N
     )
     control = page.build()
 
-    _find_button(control, "Editar datos principales").on_click(None)
+    _find_button(control, "Editar datos").on_click(None)
     dialog = page.active_dialog
     assert dialog is not None
     _find_field(dialog, "Identificación fiscal").value = "20-87654321-0"
@@ -1000,10 +1001,12 @@ def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
     datos_card = left_column.controls[0]
 
     assert "Editar datos principales" not in "\n".join(_texts(header))
-    assert "Editar datos principales" in "\n".join(_texts(datos_card))
+    assert "Editar datos" not in "\n".join(_texts(header))
+    assert "Editar datos principales" not in "\n".join(_texts(datos_card))
+    assert "Editar datos" in "\n".join(_texts(datos_card))
 
     mounted_card = page.basic_data_card
-    _find_button(datos_card, "Editar datos principales").on_click(None)
+    _find_button(datos_card, "Editar datos").on_click(None)
     assert page.active_dialog is not None and page.active_dialog.open is True
     assert page.basic_data_card is mounted_card
     assert mounted_card.height == 265
