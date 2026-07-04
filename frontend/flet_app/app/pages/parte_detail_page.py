@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
@@ -76,7 +77,10 @@ class ParteDetailPage:
                                         icon=ft.Icons.HOME_OUTLINED,
                                         height=145,
                                         scroll_body=True,
-                                        action=ft.TextButton("Agregar dirección", on_click=lambda e: self._open_domicilio_dialog(e)),
+                                        action=self._section_action(
+                                            "Agregar dirección",
+                                            lambda e: self._open_domicilio_dialog(e),
+                                        ),
                                     ),
                                     ft.Row(
                                         controls=[
@@ -87,7 +91,10 @@ class ParteDetailPage:
                                                 expand=1,
                                                 height=140,
                                                 scroll_body=True,
-                                                action=ft.TextButton("Agregar teléfono", on_click=lambda e: self._open_contacto_dialog("telefono", e)),
+                                                action=self._section_action(
+                                                    "Agregar teléfono",
+                                                    lambda e: self._open_contacto_dialog("telefono", e),
+                                                ),
                                             ),
                                             self._admin_card(
                                                 "Mail",
@@ -96,7 +103,10 @@ class ParteDetailPage:
                                                 expand=1,
                                                 height=140,
                                                 scroll_body=True,
-                                                action=ft.TextButton("Agregar mail", on_click=lambda e: self._open_contacto_dialog("email", e)),
+                                                action=self._section_action(
+                                                    "Agregar mail",
+                                                    lambda e: self._open_contacto_dialog("email", e),
+                                                ),
                                             ),
                                         ],
                                         spacing=14,
@@ -185,9 +195,27 @@ class ParteDetailPage:
         return 265
 
     def _datos_principales_action(self) -> ft.Control | None:
-        return ft.ElevatedButton(
-            "Editar datos principales",
-            on_click=lambda event: self._open_basic_edit(event),
+        return self._section_action(
+            "Editar datos",
+            lambda event: self._open_basic_edit(event),
+        )
+
+    def _section_action(
+        self,
+        label: str,
+        on_click: Callable[[object], None],
+        *,
+        disabled: bool = False,
+    ) -> ft.TextButton:
+        return ft.TextButton(
+            label,
+            on_click=None if disabled else on_click,
+            disabled=disabled,
+            style=ft.ButtonStyle(
+                padding=ft.padding.symmetric(horizontal=4, vertical=2),
+                color=ft.Colors.BLUE_700,
+                overlay_color=ft.Colors.BLUE_50,
+            ),
         )
 
     def _open_basic_edit(self, event: object = None) -> None:
@@ -1970,7 +1998,12 @@ class ParteDetailPage:
                 subtitle=self._contacto_value(contacto),
                 principal=False,
                 extra=contacto.get("observaciones"),
-                action=ft.TextButton("Editar", on_click=lambda e, row=contacto: self._open_contacto_dialog(self._contacto_kind(row), e, row)),
+                action=self._section_action(
+                    "Editar",
+                    lambda e, row=contacto: self._open_contacto_dialog(
+                        self._contacto_kind(row), e, row
+                    ),
+                ),
             )
             for contacto in contactos
         ])
@@ -2190,7 +2223,10 @@ class ParteDetailPage:
                 subtitle=self._format_address(domicilio),
                 principal=False,
                 extra=domicilio.get("observaciones"),
-                action=ft.TextButton("Editar", on_click=lambda e, row=domicilio: self._open_domicilio_dialog(e, row)),
+                action=self._section_action(
+                    "Editar",
+                    lambda e, row=domicilio: self._open_domicilio_dialog(e, row),
+                ),
             )
             for domicilio in domicilios
         ])
@@ -2375,10 +2411,10 @@ class ParteDetailPage:
                 params = {"id_contrato_alquiler": id_contrato}
 
         if route is None:
-            return ft.TextButton("Sin ruta", disabled=True)
-        return ft.TextButton(
+            return self._section_action("Sin ruta", lambda _: None, disabled=True)
+        return self._section_action(
             "Ver",
-            on_click=lambda _, route=route, params=params: self.on_navigate(
+            lambda _, route=route, params=params: self.on_navigate(
                 route, **params
             ),
         )
