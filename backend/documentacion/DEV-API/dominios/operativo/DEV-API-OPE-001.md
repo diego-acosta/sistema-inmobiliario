@@ -307,3 +307,39 @@ Errores:
 No implementa autorización real, middleware de seguridad, login, contexto de sesión, `usuario_instalacion`, permisos complejos, caja, jornada, movimientos, pagos, sincronización avanzada, frontend, configuración global administrativa (#263) ni catálogos maestros (#264).
 
 Closes #252. Refs #248.
+
+## Caja operativa base (#253 / Refs #248)
+
+### Modelo SQL auditado/usado
+
+Se auditó el modelo SQL existente para `caja`, `caja_operativa`, `cuenta_financiera`, `movimiento_tesoreria`, `jornada_operativa`, `sucursal`, `instalacion`, `configuracion_local` y tablas relacionadas con caja/tesorería/efectivo. No se encontró una tabla formal `caja`/`caja_operativa` suficiente en el dump vigente. Se crea `caja_operativa` con `backend/database/patch_caja_operativa_base_20260704.sql` porque `cuenta_financiera` y `movimiento_tesoreria` corresponden a tesorería/finanzas y no deben usarse como núcleo de caja operativa.
+
+### POST `/api/v1/operativo/cajas`
+
+Crea una caja operativa base. Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
+
+Payload: `id_sucursal`, `id_instalacion`, `codigo_caja`, `nombre_caja`, `tipo_caja`, `moneda_base`, `estado_caja`, `permite_efectivo`, `permite_transferencia`, `permite_cheque`, `descripcion`, `observaciones`.
+
+Reglas:
+- Requiere `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` mediante helper CORE-EF.
+- Valida que sucursal e instalación existan, no estén dadas de baja y pertenezcan entre sí.
+- `codigo_caja` activo es único por `(id_sucursal, id_instalacion)`.
+- Persiste `uid_global`, `version_registro = 1`, timestamps, instalación origen/modificación y op_ids.
+- Idempotencia por `op_id_alta`: mismo op/payload devuelve la caja existente; mismo op/payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`.
+- Outbox: emite `caja_operativa_creada` (`EVT-OPE-014`) en la misma transacción del alta real; replay compatible no duplica outbox.
+- Lock lógico: NO APLICA en #253.
+- `If-Match-Version`: NO APLICA porque es alta y no modifica entidad existente versionada.
+
+Errores: `400 VALIDATION_ERROR` para headers o pertenencia inválida, `404 NOT_FOUND` para sucursal/instalación inexistente o dada de baja, `409 TECHNICAL_INCONSISTENCY` para duplicado activo, `409 IDEMPOTENT_DUPLICATE` para replay incompatible y `422` para validación de payload.
+
+### GET `/api/v1/operativo/cajas`
+
+Listado read-like (`QUERY_READLIKE`), sin headers CORE-EF write. Filtros opcionales: `id_sucursal`, `id_instalacion`, `estado_caja`, `tipo_caja`. Excluye `deleted_at IS NOT NULL` y devuelve lista vacía si no hay resultados.
+
+### GET `/api/v1/operativo/cajas/{id_caja}`
+
+Ficha read-like (`QUERY_READLIKE`), sin headers CORE-EF write. Excluye `deleted_at IS NOT NULL`; si no existe devuelve `404 NOT_FOUND`.
+
+### Fuera de alcance explícito
+
+Apertura/cierre de caja, caja abierta/cerrada, saldos, movimientos, arqueo, observaciones de control, pagos, imputaciones, lectura financiera, jornada operativa, reportes, autorización real, usuario_instalacion y frontend.

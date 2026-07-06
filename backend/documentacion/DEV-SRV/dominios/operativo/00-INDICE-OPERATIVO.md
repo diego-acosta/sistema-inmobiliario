@@ -25,3 +25,5 @@ Organizar los servicios y catálogos del dominio operativo en formato modular y 
 - Reglas, errores y estados deben vivir en sus catálogos, no repetirse en cada servicio.
 
 - [[SRV-OPE-007-configuracion-local-operativa]]
+
+- [SRV-OPE-008 — Caja operativa base](SRV-OPE-008-caja-operativa-base.md)
