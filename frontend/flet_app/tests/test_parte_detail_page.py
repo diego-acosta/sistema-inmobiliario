@@ -376,7 +376,7 @@ def test_ficha_permite_editar_datos_basicos_y_recarga_visualmente() -> None:
     dialog = page.active_dialog
     assert dialog is not None and dialog.open is True
     assert page.basic_data_card is mounted_card
-    assert mounted_card.height == 265
+    assert mounted_card.height == 305
     assert _find_field(dialog, "Nombre").value == "Ada"
     assert _find_field(dialog, "Apellido").value == "Lovelace"
     assert _find_button(dialog, "Guardar") is not None
@@ -453,7 +453,7 @@ def test_cancelar_edicion_no_llama_api_ni_cambia_estado() -> None:
 
     assert page.active_dialog is not None and page.active_dialog.open is False
     assert page.basic_data_card is mounted_card
-    assert mounted_card.height == 265
+    assert mounted_card.height == 305
     read_text = "\n".join(_texts(mounted_card))
     assert "Editar datos principales" not in read_text
     assert "Editar datos" in read_text
@@ -1021,6 +1021,26 @@ def test_ficha_pulido_controla_textos_largos_y_acciones_unificadas() -> None:
     )
 
     control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+    datos_card = control.content.controls[1].controls[0].controls[0]
+    datos_values = [
+        item
+        for item in _walk(datos_card)
+        if isinstance(item, ft.Text) and getattr(item, "selectable", False)
+    ]
+    observaciones = [
+        item
+        for item in datos_values
+        if isinstance(getattr(item, "value", None), str)
+        and item.value.startswith("Texto largo")
+    ]
+    assert getattr(datos_card, "height", None) == 305
+    assert observaciones
+    assert all(item.max_lines == 2 for item in observaciones)
+    assert all(
+        item.max_lines == 1
+        for item in datos_values
+        if item not in observaciones
+    )
 
     compact_texts = [
         item
@@ -1100,7 +1120,7 @@ def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:
     _find_button(datos_card, "Editar datos").on_click(None)
     assert page.active_dialog is not None and page.active_dialog.open is True
     assert page.basic_data_card is mounted_card
-    assert mounted_card.height == 265
+    assert mounted_card.height == 305
     assert _find_field(page.active_dialog, "Nombre") is not None
 
 

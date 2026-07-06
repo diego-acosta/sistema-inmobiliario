@@ -192,7 +192,7 @@ class ParteDetailPage:
         return [self._datos_base(data)]
 
     def _datos_principales_height(self) -> int:
-        return 265
+        return 305
 
     def _datos_principales_action(self) -> ft.Control | None:
         return self._section_action(
@@ -549,6 +549,7 @@ class ParteDetailPage:
             return ft.Text("Sin informacion complementaria.")
         rows: list[ft.Control] = []
         for label, value in visible:
+            value_max_lines = 2 if label == "Observaciones" else 1
             rows.append(
                 ft.Row(
                     controls=[
@@ -566,7 +567,7 @@ class ParteDetailPage:
                             expand=True,
                             size=12,
                             overflow=ft.TextOverflow.ELLIPSIS,
-                            max_lines=2,
+                            max_lines=value_max_lines,
                         ),
                     ],
                     spacing=8,
