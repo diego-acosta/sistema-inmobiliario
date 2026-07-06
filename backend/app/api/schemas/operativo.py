@@ -337,3 +337,71 @@ class CajaOperativaListResponse(BaseModel):
 class CajaOperativaDetailResponse(BaseModel):
     ok: Literal[True] = True
     data: CajaOperativaData
+
+ESTADOS_APERTURA_CAJA_VALIDOS = {"ABIERTA", "CERRADA", "ANULADA"}
+
+
+class CajaAperturaCreateRequest(BaseModel):
+    id_sucursal: int
+    id_instalacion: int
+    fecha_hora_apertura: datetime | None = None
+    saldo_inicial: float = Field(default=0, ge=0)
+    moneda: str = "ARS"
+    observaciones_apertura: str | None = None
+
+    @field_validator("moneda")
+    @classmethod
+    def _valid_moneda(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in MONEDAS_CAJA_VALIDAS:
+            raise ValueError("moneda inválida.")
+        return normalized
+
+
+class CajaAperturaCerrarRequest(BaseModel):
+    fecha_hora_cierre: datetime | None = None
+    saldo_declarado_cierre: float = Field(ge=0)
+    observaciones_cierre: str | None = None
+
+
+class CajaAperturaData(BaseModel):
+    id_apertura_caja: int
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: str | None
+    op_id_ultima_modificacion: str | None
+    id_caja: int
+    id_sucursal: int
+    id_instalacion: int
+    id_usuario_apertura: int | None
+    id_usuario_cierre: int | None
+    fecha_hora_apertura: datetime
+    fecha_hora_cierre: datetime | None
+    saldo_inicial: float
+    saldo_declarado_cierre: float | None
+    moneda: str
+    estado_apertura: str
+    observaciones_apertura: str | None
+    observaciones_cierre: str | None
+    codigo_caja: str | None = None
+    nombre_caja: str | None = None
+
+
+class CajaAperturaResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CajaAperturaData
+
+
+class CajaAperturaVigenteResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CajaAperturaData | None
+
+
+class CajaAperturaListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[CajaAperturaData]

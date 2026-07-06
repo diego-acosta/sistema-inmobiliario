@@ -27,3 +27,5 @@ Organizar los servicios y catálogos del dominio operativo en formato modular y 
 - [[SRV-OPE-007-configuracion-local-operativa]]
 
 - [SRV-OPE-008 — Caja operativa base](SRV-OPE-008-caja-operativa-base.md)
+
+- [SRV-OPE-009 — Apertura y cierre de caja operativa](SRV-OPE-009-apertura-cierre-caja.md)
