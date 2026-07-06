@@ -137,3 +137,13 @@ Evento emitido por el alta de `configuracion_local` para un contexto operativo `
 ### EVT-OPE-013 — Configuración local modificada
 
 Evento emitido por la modificación versionada de `configuracion_local` para un contexto operativo `sucursal`/`instalacion`.
+
+### EVT-OPE-014 — Caja operativa creada
+
+- codigo: caja_operativa_creada
+- descripcion: se registró una caja operativa base vinculada a sucursal e instalación, sin apertura, cierre, movimientos ni integración financiera.
+- origen_principal: SRV-OPE-008
+- entidad_principal: caja_operativa
+- tipo_evento: negocio
+- sincronizable: sí
+- genera_trazabilidad: sí

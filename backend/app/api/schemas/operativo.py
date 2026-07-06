@@ -243,3 +243,97 @@ class ConfiguracionLocalResponse(BaseModel):
 class ConfiguracionLocalListResponse(BaseModel):
     ok: Literal[True] = True
     data: list[ConfiguracionLocalData]
+
+
+ESTADOS_CAJA_VALIDOS = {"ACTIVA", "INACTIVA", "DADA_DE_BAJA"}
+TIPOS_CAJA_VALIDOS = {"GENERAL", "EFECTIVO", "TESORERIA", "ADMINISTRATIVA"}
+MONEDAS_CAJA_VALIDAS = {"ARS", "USD"}
+
+
+class CajaOperativaCreateRequest(BaseModel):
+    id_sucursal: int
+    id_instalacion: int
+    codigo_caja: str
+    nombre_caja: str
+    tipo_caja: str = "GENERAL"
+    moneda_base: str = "ARS"
+    estado_caja: str = "ACTIVA"
+    permite_efectivo: bool = True
+    permite_transferencia: bool = False
+    permite_cheque: bool = False
+    descripcion: str | None = None
+    observaciones: str | None = None
+
+    @field_validator(
+        "codigo_caja", "nombre_caja", "tipo_caja", "moneda_base", "estado_caja"
+    )
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El campo no puede estar vacío.")
+        return normalized
+
+    @field_validator("tipo_caja")
+    @classmethod
+    def _valid_tipo_caja(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in TIPOS_CAJA_VALIDOS:
+            raise ValueError("tipo_caja inválido.")
+        return normalized
+
+    @field_validator("moneda_base")
+    @classmethod
+    def _valid_moneda_base(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in MONEDAS_CAJA_VALIDAS:
+            raise ValueError("moneda_base inválida.")
+        return normalized
+
+    @field_validator("estado_caja")
+    @classmethod
+    def _valid_estado_caja(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in ESTADOS_CAJA_VALIDOS:
+            raise ValueError("estado_caja debe ser ACTIVA, INACTIVA o DADA_DE_BAJA.")
+        return normalized
+
+
+class CajaOperativaData(BaseModel):
+    id_caja: int
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: str | None
+    op_id_ultima_modificacion: str | None
+    id_sucursal: int
+    id_instalacion: int
+    codigo_caja: str
+    nombre_caja: str
+    tipo_caja: str
+    moneda_base: str
+    estado_caja: str
+    permite_efectivo: bool
+    permite_transferencia: bool
+    permite_cheque: bool
+    descripcion: str | None
+    observaciones: str | None
+
+
+class CajaOperativaCreateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CajaOperativaData
+
+
+class CajaOperativaListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[CajaOperativaData]
+
+
+class CajaOperativaDetailResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CajaOperativaData

@@ -10,6 +10,11 @@ from app.api.core_ef_headers import (
 )
 from app.api.dependencies import get_db
 from app.api.schemas.operativo import (
+    CajaOperativaCreateRequest,
+    CajaOperativaCreateResponse,
+    CajaOperativaData,
+    CajaOperativaDetailResponse,
+    CajaOperativaListResponse,
     ErrorResponse,
     InstalacionCreateRequest,
     InstalacionCreateResponse,
@@ -25,6 +30,13 @@ from app.api.schemas.operativo import (
     SucursalData,
     SucursalDetailResponse,
     SucursalListResponse,
+)
+from app.infrastructure.persistence.repositories.caja_operativa_repository import (
+    CajaOperativaDuplicateActiveError,
+    CajaOperativaIdempotencyConflictError,
+    CajaOperativaNotFoundError,
+    CajaOperativaRepository,
+    CajaOperativaValidationError,
 )
 from app.infrastructure.persistence.repositories.configuracion_local_repository import (
     ConfiguracionLocalConcurrencyError,
@@ -437,3 +449,102 @@ def update_configuracion_local(
             {"error": str(exc)},
         )
     return ConfiguracionLocalResponse(data=ConfiguracionLocalData(**updated))
+
+
+@router.post(
+    "/api/v1/operativo/cajas",
+    response_model=CajaOperativaCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def create_caja_operativa(
+    request: CajaOperativaCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> CajaOperativaCreateResponse | JSONResponse:
+    core = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        caja = CajaOperativaRepository(db).create(request.model_dump(), core)
+    except CajaOperativaNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except CajaOperativaValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", str(exc))
+    except CajaOperativaIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except CajaOperativaDuplicateActiveError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo crear la caja operativa.",
+            {"error": str(exc)},
+        )
+    return CajaOperativaCreateResponse(data=CajaOperativaData(**caja))
+
+
+@router.get(
+    "/api/v1/operativo/cajas",
+    response_model=CajaOperativaListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_cajas_operativas(
+    id_sucursal: int | None = Query(default=None),
+    id_instalacion: int | None = Query(default=None),
+    estado_caja: str | None = Query(default=None),
+    tipo_caja: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> CajaOperativaListResponse | JSONResponse:
+    try:
+        cajas = CajaOperativaRepository(db).list(
+            id_sucursal=id_sucursal,
+            id_instalacion=id_instalacion,
+            estado_caja=estado_caja.strip().upper() if estado_caja else None,
+            tipo_caja=tipo_caja.strip().upper() if tipo_caja else None,
+        )
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo listar cajas operativas.",
+            {"error": str(exc)},
+        )
+    return CajaOperativaListResponse(data=[CajaOperativaData(**caja) for caja in cajas])
+
+
+@router.get(
+    "/api/v1/operativo/cajas/{id_caja}",
+    response_model=CajaOperativaDetailResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_caja_operativa(
+    id_caja: int,
+    db: Session = Depends(get_db),
+) -> CajaOperativaDetailResponse | JSONResponse:
+    try:
+        caja = CajaOperativaRepository(db).get(id_caja)
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo obtener la caja operativa.",
+            {"error": str(exc)},
+        )
+    if caja is None:
+        return _error(404, "NOT_FOUND", "Caja operativa no encontrada.")
+    return CajaOperativaDetailResponse(data=CajaOperativaData(**caja))
