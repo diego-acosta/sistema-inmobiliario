@@ -1163,7 +1163,7 @@ def _detalle_contactos_domicilios() -> dict[str, Any]:
             {"id_persona_contacto": 11, "tipo_contacto": "EMAIL", "valor_contacto": "ada@example.com", "es_principal": False, "observaciones": "Personal", "version_registro": 4},
         ],
         "domicilios": [
-            {"id_persona_domicilio": 20, "tipo_domicilio": "REAL", "direccion": "San Martín 123", "localidad": "Neuquén", "es_principal": True, "version_registro": 5},
+            {"id_persona_domicilio": 20, "tipo_domicilio": "REAL", "direccion": "San Martín 123", "localidad": "Neuquén", "es_principal": True, "observaciones": "Casa familiar", "version_registro": 5},
         ],
         "participaciones": [],
     }
@@ -1177,6 +1177,12 @@ def test_ficha_contactos_domicilios_muestra_acciones_y_no_escribe_al_renderizar(
     assert "Agregar mail" in text
     assert "Agregar dirección" in text
     assert "Editar" in text
+    assert "Principal · San Martín 123, Neuquén" in text
+    assert "Principal · +54 299" in text
+    assert "Secundario · ada@example.com" in text
+    assert "Principal · San Martín 123, Neuquén · Casa familiar" in text
+    assert "Principal · +54 299 · Laboral" in text
+    assert "Secundario · ada@example.com · Personal" in text
     assert "tipo_contacto" not in text
     assert "tipo_domicilio" not in text
     assert "fecha_desde" not in text
@@ -1184,6 +1190,22 @@ def test_ficha_contactos_domicilios_muestra_acciones_y_no_escribe_al_renderizar(
     assert api.crear_contacto_calls == []
     assert api.actualizar_contacto_calls == []
     assert api.crear_domicilio_calls == []
+
+    compact_rows = [
+        item
+        for item in _walk(control)
+        if isinstance(item, ft.Container)
+        and isinstance(getattr(item, "content", None), ft.Row)
+        and any(
+            (getattr(child, "value", None) or getattr(child, "text", "")).startswith(
+                ("Principal ·", "Secundario ·")
+            )
+            for child in item.content.controls
+        )
+        and any(getattr(child, "text", None) == "Editar" for child in item.content.controls)
+    ]
+    assert len(compact_rows) == 3
+    assert all(row.content.controls[-1].text == "Editar" for row in compact_rows)
 
 
 def test_agregar_contactos_y_domicilio_abre_modal_sin_navegar_y_guarda() -> None:
