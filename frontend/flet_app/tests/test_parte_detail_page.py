@@ -952,6 +952,7 @@ def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None
     assert idx_resumen < idx_tecnicos
     assert getattr(control.content.controls[idx_resumen], "expand", None) is None
     assert getattr(control.content.controls[idx_tecnicos], "expand", None) is None
+    assert getattr(control.content.controls[idx_tecnicos], "height", None) == 118
     assert any([getattr(row.controls[0], "expand", None), getattr(row.controls[1], "expand", None)] == [1, 1] for row in balanced_rows)
 
     dashboard_cards = [
@@ -968,6 +969,96 @@ def test_ficha_redisenada_usa_grilla_balanceada_para_cards_principales() -> None
     assert "Sin domicilios registrados." in text
     assert "tipo_contacto" not in text
     assert "tipo_domicilio" not in text
+
+
+def test_ficha_pulido_controla_textos_largos_y_acciones_unificadas() -> None:
+    long_text = "Texto largo " * 40
+    api = FakeApi(
+        detalle=ApiResult(
+            True,
+            data={
+                "id_persona": 42,
+                "display_name": "Ada Lovelace",
+                "tipo_persona": "FISICA",
+                "estado_persona": "ACTIVA",
+                "observaciones": long_text,
+                "version_registro": 7,
+                "documentos": [],
+                "contactos": [
+                    {
+                        "tipo_contacto": "EMAIL",
+                        "valor_contacto": f"ada.{long_text.replace(' ', '.')}@example.com",
+                        "observaciones": long_text,
+                        "version_registro": 1,
+                    }
+                ],
+                "domicilios": [
+                    {
+                        "direccion": long_text,
+                        "localidad": "Neuquén",
+                        "observaciones": long_text,
+                        "version_registro": 1,
+                    }
+                ],
+                "participaciones": [
+                    {
+                        "tipo_relacion": "venta",
+                        "codigo_rol": "COMPRADOR",
+                        "descripcion_origen": long_text,
+                        "id_venta": 22,
+                    },
+                ],
+                "usos_transversales": {},
+            },
+        ),
+        estado_cuenta=ApiResult(
+            True,
+            data={
+                "resumen": {"saldo_total": 1234567890, "fecha_ultimo_pago": long_text},
+                "grupos_deuda": [],
+            },
+        ),
+    )
+
+    control = ParteDetailPage(api, id_persona=42, on_navigate=lambda *_: None).build()
+
+    compact_texts = [
+        item
+        for item in _walk(control)
+        if isinstance(item, ft.Text)
+        and getattr(item, "value", "").startswith(("Secundario ·", "Sin tipo ·", "Venta ·"))
+    ]
+    assert compact_texts
+    assert all(item.overflow == ft.TextOverflow.ELLIPSIS for item in compact_texts)
+    assert all(item.max_lines == 2 for item in compact_texts)
+
+    action_buttons = [
+        item
+        for item in _walk(control)
+        if isinstance(item, ft.TextButton)
+        and item.text in {"Editar datos", "Agregar dirección", "Agregar mail", "Editar", "Ver"}
+    ]
+    assert action_buttons
+
+    def _padding_tuple(button: ft.TextButton) -> tuple[int, int, int, int]:
+        padding = button.style.padding
+        if isinstance(padding, dict):
+            padding = next(iter(padding.values()))
+        return (padding.left, padding.top, padding.right, padding.bottom)
+
+    assert all(
+        _padding_tuple(button) == (6, 2, 6, 2)
+        for button in action_buttons
+    )
+    assert all(button.style.color == ft.Colors.BLUE_700 for button in action_buttons)
+
+    summary_values = [
+        item
+        for item in _walk(control)
+        if isinstance(item, ft.Text) and getattr(item, "value", "").startswith("$")
+    ]
+    assert summary_values
+    assert all(item.overflow == ft.TextOverflow.ELLIPSIS for item in summary_values)
 
 
 def test_header_no_contiene_editar_y_accion_esta_en_datos_principales() -> None:

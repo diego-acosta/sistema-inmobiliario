@@ -142,7 +142,7 @@ class ParteDetailPage:
                         "Datos técnicos",
                         [self._datos_tecnicos(data)],
                         icon=ft.Icons.SETTINGS_OUTLINED,
-                        height=96,
+                        height=118,
                         low_emphasis=True,
                     ),
                 ],
@@ -212,8 +212,8 @@ class ParteDetailPage:
             on_click=None if disabled else on_click,
             disabled=disabled,
             style=ft.ButtonStyle(
-                padding=ft.padding.symmetric(horizontal=4, vertical=2),
-                color=ft.Colors.BLUE_700,
+                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                color=ft.Colors.BLUE_GREY_500 if disabled else ft.Colors.BLUE_700,
                 overlay_color=ft.Colors.BLUE_50,
             ),
         )
@@ -455,10 +455,13 @@ class ParteDetailPage:
                 size=14 if low_emphasis else 17,
                 weight=ft.FontWeight.W_700 if not low_emphasis else ft.FontWeight.W_600,
                 color=ft.Colors.BLUE_GREY_700 if low_emphasis else ft.Colors.BLUE_GREY_900,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                max_lines=1,
+                expand=True,
             )
         )
         if action is not None:
-            header_controls.extend([ft.Container(expand=True), action])
+            header_controls.append(action)
 
         return ft.Container(
             content=ft.Column(
@@ -472,7 +475,10 @@ class ParteDetailPage:
                 spacing=10,
             ),
             height=height,
-            padding=12 if low_emphasis else 14,
+            padding=ft.padding.symmetric(
+                horizontal=12 if low_emphasis else 14,
+                vertical=10 if low_emphasis else 14,
+            ),
             border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
             border_radius=10,
             bgcolor=ft.Colors.BLUE_GREY_50 if low_emphasis else ft.Colors.WHITE,
@@ -541,7 +547,33 @@ class ParteDetailPage:
         ]
         if not visible:
             return ft.Text("Sin informacion complementaria.")
-        return key_value_grid(visible)
+        rows: list[ft.Control] = []
+        for label, value in visible:
+            rows.append(
+                ft.Row(
+                    controls=[
+                        ft.Text(
+                            label,
+                            width=160,
+                            color=ft.Colors.BLUE_GREY_700,
+                            size=12,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                            max_lines=1,
+                        ),
+                        ft.Text(
+                            str(value),
+                            selectable=True,
+                            expand=True,
+                            size=12,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                            max_lines=2,
+                        ),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                )
+            )
+        return ft.Column(controls=rows, spacing=5)
 
     def _is_empty_value(self, value: object) -> bool:
         if value is None:
@@ -1485,6 +1517,8 @@ class ParteDetailPage:
                         size=16 if not accent else 20,
                         weight=ft.FontWeight.W_700,
                         color=ft.Colors.BLUE_900 if accent else ft.Colors.BLUE_GREY_900,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        max_lines=1,
                     ),
                 ],
                 spacing=2,
@@ -1991,7 +2025,7 @@ class ParteDetailPage:
         self, contactos: list[dict[str, Any]], empty_message: str
     ) -> ft.Control:
         if not contactos:
-            return ft.Text(empty_message)
+            return ft.Text(empty_message, color=ft.Colors.BLUE_GREY_700, size=13)
         return self._card_list([
             self._compact_item_row(
                 label=self._principal_label(contacto),
@@ -2215,7 +2249,7 @@ class ParteDetailPage:
     def _domicilios_resumen(self, rows: object) -> ft.Control:
         domicilios = self._dict_rows(rows)
         if not domicilios:
-            return ft.Text("Sin domicilios registrados.")
+            return ft.Text("Sin domicilios registrados.", color=ft.Colors.BLUE_GREY_700, size=13)
         return self._card_list([
             self._compact_item_row(
                 label=self._principal_label(domicilio),
@@ -2232,7 +2266,11 @@ class ParteDetailPage:
     def _participaciones_resumen(self, rows: object) -> ft.Control:
         participaciones = self._dict_rows(rows)
         if not participaciones:
-            return ft.Text("Sin actividad ni participaciones registradas.")
+            return ft.Text(
+                "Sin actividad ni participaciones registradas.",
+                color=ft.Colors.BLUE_GREY_700,
+                size=13,
+            )
 
         grouped: dict[str, list[dict[str, Any]]] = {
             "Ventas": [],
