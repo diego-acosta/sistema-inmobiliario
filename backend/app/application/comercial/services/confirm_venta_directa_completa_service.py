@@ -26,6 +26,7 @@ from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_
     GeneratePlanPagoVentaV2PorBloquesService,
 )
 from app.application.common.results import AppResult
+from app.application.personas.duplicados import TipoDuplicadoPersona
 
 
 class _TransactionalComercialRepository:
@@ -459,10 +460,16 @@ class ConfirmVentaDirectaCompletaService:
                 ),
             )
             if duplicado is not None:
-                if self._same_op_id(duplicado.get("op_id_alta"), op_id):
-                    comprador.id_persona = duplicado["id_persona"]
-                    continue
-                return "PERSONA_DUPLICADA_REUTILIZAR_EXISTENTE"
+                tipo_duplicado = duplicado.get("tipo_duplicado")
+                if tipo_duplicado == TipoDuplicadoPersona.FUERTE.value:
+                    if self._same_op_id(duplicado.get("op_id_alta"), op_id):
+                        comprador.id_persona = duplicado["id_persona"]
+                        continue
+                    return "PERSONA_DUPLICADA_REUTILIZAR_EXISTENTE"
+                # El contrato actual de confirmación no tiene canal de warnings
+                # no bloqueantes; los posibles duplicados quedan detectados en el
+                # helper/repository sin impedir el alta contextual ni reutilizar
+                # automáticamente una persona existente.
 
             persona = self.comercial_repository.create_persona_contextual_tx(
                 {
