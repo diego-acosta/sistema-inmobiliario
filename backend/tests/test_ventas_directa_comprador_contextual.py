@@ -191,7 +191,29 @@ def test_resolucion_contextual_reutiliza_duplicado_del_mismo_op_id() -> None:
     assert repo.created_documentos == []
 
 
-def test_resolucion_contextual_no_bloquea_posible_duplicado_sin_warning_contract() -> None:
+def test_resolucion_contextual_no_reutiliza_posible_duplicado_del_mismo_op_id() -> None:
+    repo = FakeRepo(
+        duplicate={
+            "id_persona": 800,
+            "criterio": "nombre_apellido",
+            "tipo_duplicado": "POSIBLE",
+            "op_id_alta": OP_ID,
+        }
+    )
+    comprador = _comprador_contextual()
+
+    error = _service(repo)._resolve_compradores_contextuales(
+        _command(comprador),
+        id_instalacion=1,
+    )
+
+    assert error is None
+    assert comprador.id_persona == 901
+    assert repo.created_personas != []
+    assert repo.created_documentos != []
+
+
+def test_resolucion_contextual_no_bloquea_posible_duplicado_externo_sin_warning_contract() -> None:
     repo = FakeRepo(
         duplicate={
             "id_persona": 800,
@@ -210,6 +232,7 @@ def test_resolucion_contextual_no_bloquea_posible_duplicado_sin_warning_contract
     assert error is None
     assert comprador.id_persona == 901
     assert repo.created_personas != []
+    assert repo.created_documentos != []
 
 
 def test_resolucion_contextual_crea_persona_y_documento_si_no_hay_duplicado() -> None:

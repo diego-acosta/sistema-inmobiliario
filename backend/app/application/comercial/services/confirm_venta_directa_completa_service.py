@@ -460,14 +460,16 @@ class ConfirmVentaDirectaCompletaService:
                 ),
             )
             if duplicado is not None:
-                if self._same_op_id(duplicado.get("op_id_alta"), op_id):
-                    comprador.id_persona = duplicado["id_persona"]
-                    continue
-                if duplicado.get("tipo_duplicado") == TipoDuplicadoPersona.FUERTE.value:
+                tipo_duplicado = duplicado.get("tipo_duplicado")
+                if tipo_duplicado == TipoDuplicadoPersona.FUERTE.value:
+                    if self._same_op_id(duplicado.get("op_id_alta"), op_id):
+                        comprador.id_persona = duplicado["id_persona"]
+                        continue
                     return "PERSONA_DUPLICADA_REUTILIZAR_EXISTENTE"
                 # El contrato actual de confirmación no tiene canal de warnings
                 # no bloqueantes; los posibles duplicados quedan detectados en el
-                # helper/repository sin impedir el alta contextual.
+                # helper/repository sin impedir el alta contextual ni reutilizar
+                # automáticamente una persona existente.
 
             persona = self.comercial_repository.create_persona_contextual_tx(
                 {
