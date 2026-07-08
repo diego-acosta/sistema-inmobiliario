@@ -6,6 +6,10 @@ from typing import Any
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
+from app.application.personas.duplicados import (
+    TipoDuplicadoPersona,
+    normalizar_persona_para_duplicados,
+)
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
 )
@@ -3009,82 +3013,95 @@ class ComercialRepository:
         cuit_cuil: str | None,
         documento: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
-        if cuit_cuil and cuit_cuil.strip():
+        normalizada = normalizar_persona_para_duplicados(
+            tipo_persona=tipo_persona,
+            nombre=nombre,
+            apellido=apellido,
+            razon_social=razon_social,
+            cuit_cuil=cuit_cuil,
+            tipo_documento=(documento or {}).get("tipo_documento"),
+            numero_documento=(documento or {}).get("numero_documento"),
+        )
+
+        if normalizada.cuit_cuil:
             row = self.db.execute(
                 text("""
                     SELECT id_persona, op_id_alta
                     FROM persona
                     WHERE deleted_at IS NULL
-                      AND cuit_cuil = :cuit_cuil
+                      AND LOWER(regexp_replace(BTRIM(cuit_cuil), '[\\s.\\-]+', '', 'g')) = :cuit_cuil
                     LIMIT 1
                 """),
-                {"cuit_cuil": cuit_cuil.strip()},
+                {"cuit_cuil": normalizada.cuit_cuil},
             ).mappings().one_or_none()
             if row is not None:
                 return {
                     "id_persona": row["id_persona"],
                     "criterio": "cuit_cuil",
+                    "tipo_duplicado": TipoDuplicadoPersona.FUERTE.value,
                     "op_id_alta": row["op_id_alta"],
                 }
 
-        if documento is not None and documento.get("numero_documento"):
+        if normalizada.tipo_documento and normalizada.numero_documento:
             row = self.db.execute(
                 text("""
                     SELECT id_persona, op_id_alta
                     FROM persona_documento
                     WHERE deleted_at IS NULL
-                      AND UPPER(tipo_documento_persona) = :tipo_documento
-                      AND numero_documento = :numero_documento
+                      AND LOWER(BTRIM(tipo_documento_persona)) = :tipo_documento
+                      AND LOWER(regexp_replace(BTRIM(numero_documento), '[\\s.\\-_/]+', '', 'g')) = :numero_documento
                     LIMIT 1
                 """),
                 {
-                    "tipo_documento": str(documento.get("tipo_documento") or "").strip().upper(),
-                    "numero_documento": str(documento.get("numero_documento") or "").strip(),
+                    "tipo_documento": normalizada.tipo_documento,
+                    "numero_documento": normalizada.numero_documento,
                 },
             ).mappings().one_or_none()
             if row is not None:
                 return {
                     "id_persona": row["id_persona"],
                     "criterio": "documento_principal",
+                    "tipo_duplicado": TipoDuplicadoPersona.FUERTE.value,
                     "op_id_alta": row["op_id_alta"],
                 }
 
-        tipo = (tipo_persona or "").strip().upper()
-        if tipo == "FISICA" and nombre and apellido:
+        if normalizada.tipo_persona == "fisica" and normalizada.nombre and normalizada.apellido:
             row = self.db.execute(
                 text("""
                     SELECT id_persona, op_id_alta
                     FROM persona
                     WHERE deleted_at IS NULL
-                      AND UPPER(tipo_persona) = 'FISICA'
-                      AND UPPER(nombre) = :nombre
-                      AND UPPER(apellido) = :apellido
+                      AND LOWER(BTRIM(tipo_persona)) = 'fisica'
+                      AND LOWER(regexp_replace(BTRIM(nombre), '\\s+', ' ', 'g')) = :nombre
+                      AND LOWER(regexp_replace(BTRIM(apellido), '\\s+', ' ', 'g')) = :apellido
                     LIMIT 1
                 """),
-                {"nombre": nombre.strip().upper(), "apellido": apellido.strip().upper()},
+                {"nombre": normalizada.nombre, "apellido": normalizada.apellido},
             ).mappings().one_or_none()
             if row is not None:
                 return {
                     "id_persona": row["id_persona"],
                     "criterio": "nombre_apellido",
+                    "tipo_duplicado": TipoDuplicadoPersona.POSIBLE.value,
                     "op_id_alta": row["op_id_alta"],
                 }
-        if tipo == "JURIDICA" and razon_social:
+        if normalizada.tipo_persona == "juridica" and normalizada.razon_social:
             row = self.db.execute(
                 text("""
                     SELECT id_persona, op_id_alta
                     FROM persona
                     WHERE deleted_at IS NULL
-                      AND UPPER(tipo_persona) = 'JURIDICA'
-                      AND UPPER(razon_social) = :razon_social
+                      AND LOWER(BTRIM(tipo_persona)) = 'juridica'
+                      AND LOWER(regexp_replace(BTRIM(razon_social), '\\s+', ' ', 'g')) = :razon_social
                     LIMIT 1
                 """),
-                {"razon_social": razon_social.strip().upper()},
+                {"razon_social": normalizada.razon_social},
             ).mappings().one_or_none()
             if row is not None:
                 return {
                     "id_persona": row["id_persona"],
                     "criterio": "razon_social",
+                    "tipo_duplicado": TipoDuplicadoPersona.POSIBLE.value,
                     "op_id_alta": row["op_id_alta"],
                 }
         return None
