@@ -147,3 +147,23 @@ Evento emitido por la modificación versionada de `configuracion_local` para un 
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad: sí
+
+### EVT-OPE-015 — Caja operativa abierta
+
+- codigo: caja_operativa_abierta
+- descripcion: se registró una apertura vigente de caja operativa dentro de una sucursal e instalación válidas.
+- origen_principal: SRV-OPE-009
+- entidad_principal: caja_operativa_apertura
+- tipo_evento: negocio
+- sincronizable: sí
+- genera_trazabilidad: sí
+
+### EVT-OPE-016 — Caja operativa cerrada
+
+- codigo: caja_operativa_cerrada
+- descripcion: se cerró una apertura vigente de caja operativa con saldo declarado y control de versión.
+- origen_principal: SRV-OPE-009
+- entidad_principal: caja_operativa_apertura
+- tipo_evento: negocio
+- sincronizable: sí
+- genera_trazabilidad: sí

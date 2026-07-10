@@ -343,3 +343,48 @@ Ficha read-like (`QUERY_READLIKE`), sin headers CORE-EF write. Excluye `deleted_
 ### Fuera de alcance explícito
 
 Apertura/cierre de caja, caja abierta/cerrada, saldos, movimientos, arqueo, observaciones de control, pagos, imputaciones, lectura financiera, jornada operativa, reportes, autorización real, usuario_instalacion y frontend.
+
+## Apertura y cierre de caja operativa (#254 / Refs #248)
+
+### Modelo SQL auditado/usado
+Se auditaron tablas previas o equivalentes (`apertura_caja`, `caja_apertura`, `caja_sesion`, `caja_operativa_apertura`, `jornada_caja`). Al no existir modelo suficiente se crea `caja_operativa_apertura` con `backend/database/patch_apertura_cierre_caja_operativa_20260706.sql` y se actualiza `backend/database/schema_inmobiliaria_20260418.sql`.
+
+### POST `/api/v1/operativo/cajas/{id_caja}/aperturas`
+Abre una caja operativa. Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
+
+Payload: `id_sucursal`, `id_instalacion`, `fecha_hora_apertura` obligatoria, `saldo_inicial`, `moneda`, `observaciones_apertura`.
+
+Reglas: valida caja existente y `ACTIVA`, sucursal/instalación activas, pertenencia caja-sucursal-instalación, y ausencia de apertura vigente. `fecha_hora_apertura` es obligatoria para preservar idempotencia en replays; el backend solo normaliza la fecha informada. Devuelve `201 Created`.
+
+### PATCH `/api/v1/operativo/cajas/aperturas/{id_apertura_caja}/cerrar`
+Cierra una apertura vigente. Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
+
+Payload: `fecha_hora_cierre` opcional, `saldo_declarado_cierre`, `observaciones_cierre`.
+
+Headers: CORE-EF obligatorios e `If-Match-Version` obligatorio. Incrementa `version_registro`; setea `fecha_hora_cierre`, `saldo_declarado_cierre`, `observaciones_cierre`, `id_usuario_cierre`, `estado_apertura = 'CERRADA'`, `updated_at`, `id_instalacion_ultima_modificacion` y `op_id_ultima_modificacion`. Devuelve `200 OK`.
+
+### GET `/api/v1/operativo/cajas/{id_caja}/apertura-vigente`
+Consulta read-like (`QUERY_READLIKE`), sin headers CORE-EF write. Devuelve `data: null` cuando no hay apertura vigente.
+
+### GET `/api/v1/operativo/cajas/aperturas-vigentes`
+Consulta read-like (`QUERY_READLIKE`) para advertencias por contexto al iniciar sistema o entrar al módulo caja. Filtros: `id_sucursal`, `id_instalacion`, `abiertas_desde_antes_de`, `solo_abiertas_de_dias_anteriores`. Devuelve lista vacía si no hay vigentes e incluye datos de caja suficientes para avisos.
+
+### Regla de apertura vigente
+Una caja tiene como máximo una apertura vigente: `estado_apertura = 'ABIERTA'`, `fecha_hora_cierre IS NULL`, `deleted_at IS NULL`. La apertura puede ser de un día y cerrarse otro; no se obliga cierre en el mismo día.
+
+### Decisión CORE-EF apertura/cierre
+- Naturaleza: POST/PATCH `COMMAND_WRITE_NEGOCIO` sincronizables; GETs `QUERY_READLIKE`.
+- Headers: writes usan helper común CORE-EF; reads no requieren headers write.
+- Idempotencia: aplica en apertura por `op_id_alta`; mismo op/payload compatible retorna la apertura existente sin duplicar outbox; mismo op/payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`. En cierre no aplica idempotencia profunda; se protege con `If-Match-Version`.
+- Outbox: apertura real emite `caja_operativa_abierta` (`EVT-OPE-015`) y cierre real emite `caja_operativa_cerrada` (`EVT-OPE-016`) en la misma transacción; el outbox de cierre solo se emite cuando el `UPDATE` condicional modifica la fila.
+- Lock lógico: NO APLICA en esta versión; se usa índice único parcial para apertura vigente por caja.
+- Versionado: apertura nace con `version_registro = 1`; cierre exige `If-Match-Version` e incrementa versión mediante `UPDATE` condicional atómico.
+- Rollback/transacción: apertura/cierre y outbox comparten transacción del repository.
+
+### Errores
+`400 VALIDATION_ERROR` por headers faltantes/inválidos, contexto inválido, `If-Match-Version` faltante/inválido o fecha de cierre anterior a apertura; `404 NOT_FOUND` por caja, sucursal, instalación o apertura inexistente; `409 TECHNICAL_INCONSISTENCY` por apertura vigente duplicada o cierre no vigente; `409 IDEMPOTENT_DUPLICATE` por replay incompatible; `412 CONCURRENCY_ERROR` por mismatch de versión; `422` por payload inválido.
+
+### Fuera de alcance explícito
+Movimientos de caja, ingresos/egresos manuales, pagos, imputaciones, arqueo avanzado, diferencias automáticas, reportes, jornada operativa completa, permisos avanzados y UI frontend.
+
+Closes #254. Refs #248.

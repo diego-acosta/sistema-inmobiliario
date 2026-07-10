@@ -10,6 +10,12 @@ from app.api.core_ef_headers import (
 )
 from app.api.dependencies import get_db
 from app.api.schemas.operativo import (
+    CajaAperturaCreateRequest,
+    CajaAperturaCerrarRequest,
+    CajaAperturaData,
+    CajaAperturaListResponse,
+    CajaAperturaResponse,
+    CajaAperturaVigenteResponse,
     CajaOperativaCreateRequest,
     CajaOperativaCreateResponse,
     CajaOperativaData,
@@ -30,6 +36,14 @@ from app.api.schemas.operativo import (
     SucursalData,
     SucursalDetailResponse,
     SucursalListResponse,
+)
+from app.infrastructure.persistence.repositories.caja_apertura_repository import (
+    CajaAperturaConcurrencyError,
+    CajaAperturaDuplicateOpenError,
+    CajaAperturaIdempotencyConflictError,
+    CajaAperturaNotFoundError,
+    CajaAperturaRepository,
+    CajaAperturaValidationError,
 )
 from app.infrastructure.persistence.repositories.caja_operativa_repository import (
     CajaOperativaDuplicateActiveError,
@@ -525,6 +539,130 @@ def list_cajas_operativas(
             {"error": str(exc)},
         )
     return CajaOperativaListResponse(data=[CajaOperativaData(**caja) for caja in cajas])
+
+
+@router.post(
+    "/api/v1/operativo/cajas/{id_caja}/aperturas",
+    response_model=CajaAperturaResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def abrir_caja_operativa(
+    request: CajaAperturaCreateRequest,
+    id_caja: int = Path(...),
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> CajaAperturaResponse | JSONResponse:
+    core = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        apertura = CajaAperturaRepository(db).create(id_caja, request.model_dump(), core)
+    except CajaAperturaNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except CajaAperturaValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", str(exc))
+    except CajaAperturaIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except CajaAperturaDuplicateOpenError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo abrir la caja operativa.", {"error": str(exc)})
+    return CajaAperturaResponse(data=CajaAperturaData(**apertura))
+
+
+@router.patch(
+    "/api/v1/operativo/cajas/aperturas/{id_apertura_caja}/cerrar",
+    response_model=CajaAperturaResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 412: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def cerrar_caja_operativa(
+    request: CajaAperturaCerrarRequest,
+    id_apertura_caja: int = Path(...),
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> CajaAperturaResponse | JSONResponse:
+    core = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+    if if_match_version is None:
+        return _error(400, "VALIDATION_ERROR", "If-Match-Version es requerido.", {"header": "If-Match-Version"})
+    try:
+        version = int(if_match_version)
+    except ValueError:
+        return _error(400, "VALIDATION_ERROR", "If-Match-Version inválido.", {"header": "If-Match-Version"})
+    try:
+        cierre = CajaAperturaRepository(db).cerrar(id_apertura_caja, request.model_dump(), core, version)
+    except CajaAperturaNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except CajaAperturaValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", str(exc))
+    except CajaAperturaConcurrencyError as exc:
+        return _error(412, "CONCURRENCY_ERROR", str(exc), {"header": "If-Match-Version"})
+    except CajaAperturaDuplicateOpenError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo cerrar la caja operativa.", {"error": str(exc)})
+    return CajaAperturaResponse(data=CajaAperturaData(**cierre))
+
+
+@router.get(
+    "/api/v1/operativo/cajas/{id_caja}/apertura-vigente",
+    response_model=CajaAperturaVigenteResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def get_apertura_vigente_caja(
+    id_caja: int,
+    db: Session = Depends(get_db),
+) -> CajaAperturaVigenteResponse | JSONResponse:
+    try:
+        apertura = CajaAperturaRepository(db).get_vigente_by_caja(id_caja)
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo consultar la apertura vigente.", {"error": str(exc)})
+    return CajaAperturaVigenteResponse(data=CajaAperturaData(**apertura) if apertura else None)
+
+
+@router.get(
+    "/api/v1/operativo/cajas/aperturas-vigentes",
+    response_model=CajaAperturaListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_aperturas_vigentes(
+    id_sucursal: int | None = Query(default=None),
+    id_instalacion: int | None = Query(default=None),
+    abiertas_desde_antes_de: str | None = Query(default=None),
+    solo_abiertas_de_dias_anteriores: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> CajaAperturaListResponse | JSONResponse:
+    from datetime import datetime
+    try:
+        desde = datetime.fromisoformat(abiertas_desde_antes_de.replace("Z", "+00:00")) if abiertas_desde_antes_de else None
+        aperturas = CajaAperturaRepository(db).list_vigentes(
+            id_sucursal=id_sucursal,
+            id_instalacion=id_instalacion,
+            abiertas_desde_antes_de=desde,
+            solo_abiertas_de_dias_anteriores=solo_abiertas_de_dias_anteriores,
+        )
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo listar aperturas vigentes.", {"error": str(exc)})
+    return CajaAperturaListResponse(data=[CajaAperturaData(**apertura) for apertura in aperturas])
 
 
 @router.get(
