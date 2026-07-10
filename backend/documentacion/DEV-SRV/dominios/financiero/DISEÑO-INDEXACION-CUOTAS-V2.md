@@ -45,7 +45,7 @@ Relación de dominios:
 | --- | --- | --- | --- |
 | `plan_pago_venta` | núcleo | comercial | Define la forma de pago pactada; no calcula deuda. |
 | `plan_pago_venta_bloque` | núcleo | comercial | Define tramos/bloques; no recibe pagos ni saldos. |
-| `plan_pago_venta_bloque_indexacion` | soporte transversal | comercial + financiero | Configura el índice del bloque sin trasladar ownership financiero a Comercial. |
+| `plan_pago_venta_bloque_indexacion` | soporte transversal | comercial | Representa la cláusula de indexación pactada en el bloque; Financiero la consume funcionalmente para calcular y aplicar. |
 | `generacion_cronograma_financiero` | núcleo | financiero | Materializa el cronograma inicial; no reemplaza la corrida posterior. |
 | `obligacion_financiera` | núcleo | financiero | Fuente de verdad de deuda, importe, saldo y estado financiero. |
 | `composicion_obligacion` | núcleo/soporte financiero | financiero | Explica capital, interés, ajuste y saldos por componente. |
@@ -53,7 +53,7 @@ Relación de dominios:
 | `indice_financiero` / `indice_financiero_valor` | núcleo | financiero | Fuente de valores publicados. |
 | Corrida de indexación | núcleo | financiero | Orquesta cálculo, aplicación, auditoría, idempotencia y rollback. |
 
-Comercial no debe duplicar la fórmula financiera: Comercial puede solicitar preview/confirmación de una venta o importación, pero el cálculo de fecha base, fecha de corte, índice, coeficiente, ajuste y composición pertenece a Financiero. Financiero debe ser fuente única porque ya posee índices, obligaciones, saldos, composiciones, pagos, imputaciones, mora, trazabilidad e invariantes CORE-EF.
+Comercial es dueño semántico de la cláusula de indexación pactada en el bloque. Financiero consume esa configuración y es dueño exclusivo del cálculo, aplicación, deuda y trazabilidad financiera. Comercial no debe duplicar la fórmula financiera: puede solicitar preview/confirmación de una venta o importación, pero el cálculo de fecha base, fecha de corte, índice, coeficiente, ajuste y composición pertenece a Financiero. Financiero debe ser fuente única porque ya posee índices, obligaciones, saldos, composiciones, pagos, imputaciones, mora, trazabilidad e invariantes CORE-EF.
 
 ## 2. Glosario
 
@@ -67,12 +67,12 @@ Comercial no debe duplicar la fórmula financiera: Comercial puede solicitar pre
 - **Índice aplicado:** valor publicado seleccionado para la fecha objetivo de la cuota/corte.
 - **Coeficiente:** `indice_aplicado / indice_base`, con escala de 8 decimales.
 - **Capital base:** componente original `CAPITAL_VENTA` de la obligación; para generación inicial indexada deriva del capital de la cuota calculada desde el bloque.
-- **Ajuste:** diferencia `capital_base * coeficiente - capital_base`, materializada como `AJUSTE_INDEXACION`.
+- **Ajuste:** diferencia no negativa `capital_base * coeficiente - capital_base`, materializable como `AJUSTE_INDEXACION` solo si `>= 0` por las restricciones vigentes de `composicion_obligacion`.
 - **Corrida:** unidad auditada de cálculo/aplicación para un `plan_pago_venta + plan_pago_venta_bloque`.
 - **Detalle de corrida:** resultado por obligación analizada, elegible o excluida.
-- **Obligación elegible:** obligación que puede ser indexada en V2 inicial: `PROYECTADA`, `PROYECTADA_SIN_INDICE` o `PENDIENTE`, sin pagos, imputaciones, recibos congelantes, mora/punitorios persistidos ni lock incompatible.
+- **Obligación elegible:** obligación que puede ser indexada en V2 inicial: `PROYECTADA`, `EMITIDA`, `EXIGIBLE` o `VENCIDA`, sin pagos, imputaciones, recibos congelantes, mora/punitorios incompatibles ni lock incompatible.
 - **Obligación excluida:** obligación analizada que no se modifica y registra motivo.
-- **Obligación proyectada sin índice:** obligación generada con capital base porque todavía no existe valor publicado aplicable; mantiene trazabilidad de espera y estado financiero `PROYECTADA` más estado de indexación `PROYECTADA_SIN_INDICE`.
+- **Obligación proyectada sin índice:** obligación generada con capital base porque todavía no existe valor publicado aplicable. `PROYECTADA_SIN_INDICE` no es un valor de `estado_obligacion`; es estado de indexación/trazabilidad y convive con un estado financiero real, normalmente `PROYECTADA`.
 - **Corrida automática:** corrida propuesta por publicación de índice o job, sin intervención manual en detección.
 - **Corrida manual:** corrida solicitada por usuario autorizado.
 - **Corrida reemplazante:** corrida que corrige/reemplaza una aplicada anterior, con motivo y vínculo explícito.
@@ -108,7 +108,7 @@ Decisión cerrada:
 
 - Base de cálculo posterior: componente original `CAPITAL_VENTA` de `composicion_obligacion` por obligación.
 - No se reescribe `CAPITAL_VENTA`.
-- La diferencia se materializa con `AJUSTE_INDEXACION`.
+- La diferencia se materializa con `AJUSTE_INDEXACION` solo cuando el importe calculado es `>= 0`; además, el SQL vigente de `composicion_obligacion` exige importes y saldos `>= 0`.
 - El cálculo debe persistir snapshot de valores utilizados en cabecera/detalle para reproducibilidad, aunque `CAPITAL_VENTA` siga siendo fuente primaria.
 
 Fórmula vigente a respetar según calculadora/auditorías:
@@ -117,7 +117,7 @@ Fórmula vigente a respetar según calculadora/auditorías:
 coeficiente_indexacion = valor_aplicado_indice / valor_base_indice
 importe_indexado = capital_base * coeficiente_indexacion
 ajuste_indexacion = importe_indexado - capital_base
-importe_total_nuevo = capital_base + ajuste_indexacion + otros_componentes_compatibles_no_indexables
+importe_total_vigente_nuevo = capital_base + ajuste_indexacion_valido + otros_componentes_compatibles_no_indexables
 ```
 
 Reglas:
@@ -126,9 +126,9 @@ Reglas:
 - `valor_aplicado_indice` debe ser publicado/computable; si falta, la obligación queda `PROYECTADA_SIN_INDICE` o la confirmación se bloquea según origen.
 - `coeficiente_indexacion` se redondea a 8 decimales con criterio `ROUND_HALF_UP`, alineado al helper actual.
 - Importes monetarios se redondean a 2 decimales con `ROUND_HALF_UP`.
-- Si existe `AJUSTE_INDEXACION` previo, la corrida no acumula ciegamente: calcula el ajuste objetivo desde capital original y reemplaza/actualiza el componente al importe objetivo, registrando ajuste anterior y nuevo.
+- Si existe `AJUSTE_INDEXACION` previo, la corrida no acumula ciegamente: calcula el ajuste objetivo desde capital original y reemplaza/actualiza el componente al importe objetivo `>= 0`, registrando ajuste anterior y nuevo.
 - Duplicidad: una obligación no puede recibir dos ajustes para el mismo índice/período/corrida efectiva. Si ya existe `obligacion_financiera_indexacion` para el mismo valor aplicado y la misma versión/base, el reintento idéntico es idempotente; si difiere, es conflicto o corrida reemplazante autorizada.
-- Diferencias negativas: permitidas matemáticamente solo si la política del bloque/índice lo habilita explícitamente. En V2 inicial, si el ajuste negativo reduce saldo por debajo de cero o existe pago/imputación, es bloqueante; sin pagos puede generar `AJUSTE_INDEXACION` negativo hasta importe total no negativo. Si negocio no habilita bajas, debe bloquearse por configuración.
+- Diferencias negativas: V2 inicial no permite persistir componentes de indexación por debajo de cero ni asume cambios SQL. Si `valor_aplicado_indice < valor_base_indice` y el cálculo produce diferencia negativa, la corrida no modifica la obligación y devuelve `AJUSTE_NEGATIVO_NO_SOPORTADO`. El tratamiento queda reservado para una evolución futura mediante bonificación de indexación, crédito financiero, ajuste compensatorio, nota de crédito o modificación explícita del modelo físico.
 - Múltiples períodos: la corrida aplica el valor correspondiente a cada obligación según fecha objetivo; no encadena coeficientes acumulativos. Siempre recalcula contra índice base y capital original para evitar drift.
 
 ## 5. Elegibilidad de obligaciones
@@ -138,14 +138,14 @@ Matriz inicial:
 | Estado/condición | Decisión V2 inicial | Motivo |
 | --- | --- | --- |
 | `PROYECTADA` sin pagos/imputaciones | Elegible | No hay efectos financieros externos. |
-| `PROYECTADA_SIN_INDICE` | Elegible si ya existe índice publicado aplicable | Representa espera de índice futuro. |
-| `PENDIENTE` sin pagos/imputaciones/recibos/mora | Elegible | Deuda abierta sin aplicaciones. |
-| `VENCIDA` sin pagos ni mora persistida | Elegible con advertencia | La fecha vencida no impide indexar si no hay efectos posteriores. |
-| `VENCIDA` con mora calculada/persistida | Excluida/bloqueante según alcance | Evita desalinear base moratoria. |
-| `PAGADA` | Fuera de alcance | No alterar conciliación/recibos. |
-| Parcialmente pagada | Fuera de alcance | Requiere regla de saldo aplicado/reimputación. |
+| `EMITIDA` sin pagos/imputaciones/recibos incompatibles | Elegible | Estado financiero vigente sin aplicaciones. |
+| `EXIGIBLE` sin pagos/imputaciones/recibos incompatibles | Elegible | Estado financiero exigible sin aplicaciones. |
+| `VENCIDA` sin aplicaciones ni mora incompatible | Elegible con advertencia | La fecha vencida no impide indexar si no hay efectos posteriores. |
+| `PARCIALMENTE_CANCELADA` | Fuera de alcance | Requiere regla de saldo aplicado/reimputación. |
+| `CANCELADA` | Fuera de alcance | No alterar conciliación, aplicaciones ni recibos. |
 | `ANULADA` | Excluida | No se modifica deuda anulada. |
 | `REEMPLAZADA` | Excluida | La obligación vigente es otra. |
+| `PENDIENTE_AJUSTE` | No elegible automáticamente | Debe resolverse según causa antes de indexar. |
 | Refinanciada | Excluida/bloqueante | Requiere flujo de refinanciación. |
 | Con punitorios | Excluida | Evita alterar cálculo accesorio. |
 | Con recibos/documentos que congelan importe | Excluida | No modificar importes documentados. |
@@ -156,7 +156,7 @@ Matriz inicial:
 | Con corrida previa aplicada distinta | Excluida salvo reemplazante autorizada | Trazabilidad y motivo obligatorios. |
 | Con lock activo incompatible | Bloqueante | No se aplica la corrida completa. |
 
-Si una corrida contiene al menos una obligación elegible y otras excluidas, el preview puede mostrar ambas. Para aplicar, V2 inicial exige que el payload declare la política: aplicar solo elegibles conocidas o bloquear si existen excluidas. Decisión inicial: para `PUBLICACION_INDICE` y `REINDEXACION_MANUAL`, se permite aplicar elegibles y dejar excluidas reportadas sin efectos; para `ALTA_MANUAL_VENTA_HISTORICA` e `IMPORTACION_VENTA_HISTORICA`, una cuota no calculable por falta de índice bloquea confirmación de esa venta/fila salvo borrador.
+`PROYECTADA_SIN_INDICE` no es estado financiero de `obligacion_financiera`; es trazabilidad de indexación asociada a una obligación con estado real, normalmente `PROYECTADA`. Si una corrida contiene al menos una obligación elegible y otras excluidas, el preview puede mostrar ambas. Para aplicar, V2 inicial exige que el payload declare la política: aplicar solo elegibles conocidas o bloquear si existen excluidas. Decisión inicial: para `PUBLICACION_INDICE` y `REINDEXACION_MANUAL`, se permite aplicar elegibles y dejar excluidas reportadas sin efectos; para `ALTA_MANUAL_VENTA_HISTORICA` e `IMPORTACION_VENTA_HISTORICA`, una cuota no calculable por falta de índice bloquea confirmación de esa venta/fila salvo borrador.
 
 ## 6. Modelo conceptual de corrida
 
@@ -203,10 +203,9 @@ Estados persistibles V2 inicial:
 
 - `BORRADOR`: corrida creada por importación/alta o preparación, no validada.
 - `PREVISUALIZADA`: snapshot calculado y hash emitido.
-- `PENDIENTE_APLICACION`: preview persistido listo para command.
-- `APLICANDO`: lock adquirido y transacción en curso.
+- `PENDIENTE_APLICACION`: preview persistido listo para command; último estado persistido antes de comenzar la aplicación.
 - `APLICADA`: todos los detalles elegibles declarados fueron aplicados atómicamente.
-- `FALLIDA`: no hubo efectos financieros o se revirtió la transacción; conserva error.
+- `FALLIDA`: estado persistido en una transacción técnica separada después de rollback financiero; conserva error, etapa y diagnóstico.
 - `ANULADA`: corrida no aplicada descartada.
 - `REEMPLAZADA`: corrida aplicada que queda superada por una reemplazante.
 
@@ -214,18 +213,19 @@ Reservados:
 
 - `REVERSADA`: futuro, cuando exista reversión completa.
 - `APLICADA_PARCIAL`: no se usa en V2 inicial; se prefiere rollback total. Solo podría existir en futuro para lotes masivos técnicamente particionados, nunca para una misma corrida plan+bloque.
+- `APLICANDO`: no es estado persistible en V2 inicial; es un estado operativo en memoria/ejecución indicado por locks lógicos activos.
 
 Transiciones permitidas:
 
 ```text
-BORRADOR -> PREVISUALIZADA -> PENDIENTE_APLICACION -> APLICANDO -> APLICADA
+BORRADOR -> PREVISUALIZADA -> PENDIENTE_APLICACION -> APLICADA
 BORRADOR/PREVISUALIZADA/PENDIENTE_APLICACION -> ANULADA
-APLICANDO -> FALLIDA (sin efectos por rollback)
+PENDIENTE_APLICACION -> FALLIDA (solo luego de rollback financiero y en transacción técnica separada)
 APLICADA -> REEMPLAZADA (solo por corrección/reproceso autorizado)
 APLICADA -> REVERSADA (futuro)
 ```
 
-Prohibido: `APLICADA -> APLICANDO` sobre la misma corrida; `FALLIDA -> APLICADA` sin nueva corrida/reintento idempotente controlado; aplicar sin preview válido; reemplazar sin motivo.
+Prohibido: persistir `APLICANDO`; `FALLIDA -> APLICADA` sin nueva corrida/reintento idempotente controlado; aplicar sin preview válido; reemplazar sin motivo. El lock lógico, no un estado persistido, indica ejecución en curso.
 
 ## 8. Preview
 
@@ -251,17 +251,17 @@ Command conceptual de aplicación:
 - Entrada: `id_corrida_indexacion_financiera` o payload completo + `preview_hash`, plan, bloque, índice, fecha de corte, versiones esperadas de obligaciones, política de exclusiones, motivo si reproceso/corrección.
 - Validaciones: idempotencia, corrida no aplicada/reemplazada, hash vigente, versiones, elegibilidad, índice publicado, locks, ausencia de pagos/imputaciones/recibos/mora incompatibles.
 - Lock: plan+bloque y obligaciones elegibles, adquirido antes de modificar y liberado al commit/rollback.
-- Transacción: una sola frontera para la corrida plan+bloque. Ante cualquier fallo de aplicación, rollback total.
-- Modificaciones: crear/actualizar componente `AJUSTE_INDEXACION`; actualizar `obligacion_financiera.importe_total`; actualizar `saldo_pendiente`; crear/actualizar trazabilidad `obligacion_financiera_indexacion`; incrementar `version_registro`; registrar detalle/snapshots; outbox/auditoría.
+- Transacción: una sola frontera financiera para la corrida plan+bloque. Ante cualquier fallo de aplicación, rollback total; luego se persiste `FALLIDA` en una transacción técnica separada con error, etapa y diagnóstico.
+- Modificaciones futuras conceptuales: crear/actualizar componente `AJUSTE_INDEXACION` con importe `>= 0`; actualizar el importe vigente de la obligación (`importe_total` conceptual o campo físico equivalente definido por el issue SQL/API posterior); actualizar `saldo_pendiente`; crear/actualizar trazabilidad `obligacion_financiera_indexacion`; incrementar `version_registro`; registrar detalle/snapshots; outbox/auditoría.
 
 Regla de saldo:
 
-- Si no existen pagos ni aplicaciones, `saldo_pendiente` acompaña `importe_total_nuevo`.
+- Si no existen pagos ni aplicaciones, `saldo_pendiente` acompaña el importe vigente nuevo calculado.
 - Si existen efectos previos, queda fuera de alcance inicial y se bloquea.
 - Nunca generar saldo negativo.
 - Nunca borrar aplicaciones existentes.
 
-Idempotencia del command: mismo `op_id` + mismo hash + mismo plan/bloque/índice/fecha/versiones devuelve resultado anterior. Mismo `op_id` con payload distinto devuelve `IDEMPOTENT_DUPLICATE` o `SYNC_CONFLICT`.
+Idempotencia del command: mismo `op_id` + mismo hash + mismo plan/bloque/índice/fecha/versiones devuelve resultado anterior con `200`. Mismo `op_id` con payload distinto devuelve `IDEMPOTENT_PAYLOAD_CONFLICT` con `409`.
 
 ## 10. Automatización por publicación de índice
 
@@ -269,7 +269,7 @@ Proceso completo:
 
 1. Alta técnica de `indice_financiero_valor`: registra valor, aún no necesariamente computable.
 2. Publicación del valor: cambia estado a publicado/computable y emite evento técnico/financiero.
-3. Detección de impacto: job identifica bloques `INDEXACION` con ese índice y obligaciones `PROYECTADA_SIN_INDICE`, `PROYECTADA` o `PENDIENTE` que pasan a ser calculables.
+3. Detección de impacto: job identifica bloques `INDEXACION` con ese índice y obligaciones con estado financiero real elegible (`PROYECTADA`, `EMITIDA`, `EXIGIBLE` o `VENCIDA`) y/o trazabilidad `PROYECTADA_SIN_INDICE` que pasan a ser calculables.
 4. Agrupamiento por `plan_pago_venta + plan_pago_venta_bloque`.
 5. Creación de propuestas/previews persistidos; no modificar obligaciones en esta transacción masiva.
 6. Validación de elegibilidad y errores por grupo.
@@ -292,7 +292,7 @@ Regla única: todo canal (alta manual, Excel, migración, reproceso) debe invoca
 - Fecha base: la configurada en `plan_pago_venta_bloque_indexacion` al generar el bloque.
 - Si todavía no corresponde valor posterior o no existe índice publicado para la fecha objetivo, la cuota se genera con `CAPITAL_VENTA`, sin `AJUSTE_INDEXACION`, y trazabilidad/estado de indexación `PROYECTADA_SIN_INDICE`.
 - `AJUSTE_INDEXACION` se materializa solo cuando existe índice aplicado publicado y una generación/corrida válida.
-- La obligación no calculable mantiene estado financiero `PROYECTADA` o `PENDIENTE` según ciclo vigente, más estado de indexación `PROYECTADA_SIN_INDICE` en trazabilidad/consulta.
+- La obligación no calculable mantiene un estado financiero real vigente, normalmente `PROYECTADA`, más estado de indexación `PROYECTADA_SIN_INDICE` en trazabilidad/consulta.
 
 ### Alta manual de venta histórica
 
@@ -322,8 +322,8 @@ Política conceptual:
 | --- | --- |
 | Valor corregido antes de publicarse/usarse | Se puede modificar con versionado y auditoría técnica. |
 | Valor corregido después de generar preview no aplicado | Invalida preview/corrida pendiente. |
-| Valor corregido después de generar obligaciones sin pagos | Requiere `CORRECCION_INDICE` con corrida reemplazante. |
-| Valor corregido después de corrida aplicada | No editar destructivamente; crear nueva versión de valor o marca de corrección y corrida reemplazante/compensatoria. |
+| Valor corregido después de generar obligaciones sin pagos | Requiere `CORRECCION_INDICE` con corrida reemplazante; si la nueva diferencia queda por debajo de cero, bloquea con `AJUSTE_NEGATIVO_NO_SOPORTADO`. |
+| Valor corregido después de corrida aplicada | No editar destructivamente; crear nueva versión de valor o marca de corrección y corrida reemplazante/compensatoria. Si exige disminuir la deuda, V2 inicial no persiste componente menor a cero y deriva a evolución futura. |
 | Valor corregido después de pagos/recibos | Fuera de alcance inicial; requiere issue avanzado de compensación/reversión. |
 | Valor cargado retroactivamente/fuera de orden | Detecta impactos y propone corridas; no aplica automáticamente sobre ya aplicadas. |
 
@@ -347,9 +347,9 @@ Lock lógico:
 - Granularidad primaria: recurso `INDEXACION_PLAN_BLOQUE:{id_plan_pago_venta}:{id_plan_pago_venta_bloque}`.
 - Granularidad secundaria: cada `OBLIGACION_FINANCIERA:{id}` elegible.
 - Orden: adquirir primero plan+bloque, luego obligaciones ordenadas por id ascendente, luego componentes/trazabilidad si aplica.
-- Momento: antes de pasar a `APLICANDO` y antes de validar versiones finales.
+- Momento: después de `PENDIENTE_APLICACION` y antes de validar versiones finales; `APLICANDO` solo puede existir como estado operativo no persistido.
 - Liberación: commit/rollback; expiración configurable; renovación para lotes largos.
-- Si una obligación no puede bloquearse: no se aplica la corrida; rollback total y estado `FALLIDA`/error `LOCK_ACTIVE`.
+- Si una obligación no puede bloquearse: no se aplica la corrida; rollback total de la transacción financiera y persistencia posterior de `FALLIDA` con error `LOCK_ACTIVE` en transacción técnica separada.
 
 ## 14. Idempotencia
 
@@ -391,7 +391,7 @@ Entidades financieras críticas deben tener `uid_global`, `version_registro`, op
 
 ## 16. API conceptual
 
-No se crean endpoints en este PR. Contratos futuros propuestos, bajo `/api/v1`, kebab-case y separación read/write:
+No se crean endpoints en este PR; todos los endpoints y campos mencionados son diseño futuro hasta que un issue posterior implemente SQL/API. Contratos futuros propuestos, bajo `/api/v1`, kebab-case y separación read/write:
 
 - `POST /api/v1/financiero/indexacion-cuotas-v2/preview`: preview efímero o persistido según flag. Read-like si no persiste.
 - `POST /api/v1/financiero/indexacion-cuotas-v2/corridas/{id_corrida}/aplicar`: command write con headers CORE-EF e `If-Match-Version`.
@@ -411,24 +411,27 @@ Respuesta exitosa: envelope `{ "ok": true, "data": ... }`. Error: `{ "ok": false
 | `VALIDATION_ERROR` | 422 | Parámetros inválidos. |
 | `NOT_FOUND` | 404 | Plan, bloque, índice, corrida u obligación inexistente. |
 | `CONCURRENCY_ERROR` | 409 | Versión modificada / optimistic lock. |
-| `LOCK_ACTIVE` | 423/409 | Recurso bloqueado. |
-| `IDEMPOTENT_DUPLICATE` | 409 o 200 si idéntico | Reintento/payload duplicado. |
+| `LOCK_ACTIVE` | 409 | Recurso bloqueado. |
+| `IDEMPOTENT_DUPLICATE` | 200 | Reintento idéntico exitoso: devuelve resultado previo. |
+| `IDEMPOTENT_PAYLOAD_CONFLICT` | 409 | Mismo `op_id` con payload distinto. |
 | `SYNC_CONFLICT` | 409 | Conflicto distribuido/op_id. |
-| `TECHNICAL_INCONSISTENCY` | 500/409 | Datos incompatibles imposibles. |
+| `TECHNICAL_INCONSISTENCY` | 409 | Datos incompatibles detectados antes de aplicar; fallas inesperadas quedan como error interno estándar fuera del contrato funcional. |
 | `INDICE_FALTANTE` | 422 | No hay valor para fecha requerida. |
 | `INDICE_NO_PUBLICADO` | 422 | Valor existe pero no computable. |
 | `FECHA_BASE_INVALIDA` | 422 | Base nula/posterior/inconsistente. |
 | `FECHA_CORTE_INVALIDA` | 422 | Corte fuera de rango. |
-| `OBLIGACION_NO_ELEGIBLE` | 422/409 | Estado/condición no permitida. |
+| `OBLIGACION_NO_ELEGIBLE` | 422 | Estado/condición no permitida. |
 | `PREVIEW_VENCIDO` | 409 | Cambió información desde preview. |
 | `HASH_NO_COINCIDENTE` | 409 | Hash de aplicación difiere. |
 | `VERSION_MODIFICADA` | 409 | Versión esperada no coincide. |
-| `CORRIDA_YA_APLICADA` | 409/200 idempotente | Aplicación repetida. |
+| `CORRIDA_YA_APLICADA` | 409 | Aplicación repetida no idempotente; el reintento idéntico se resuelve con `IDEMPOTENT_DUPLICATE` 200. |
 | `CORRIDA_REEMPLAZADA` | 409 | No operar corrida superada. |
 | `AJUSTE_INDEXACION_DUPLICADO` | 409 | Componente duplicado no idempotente. |
+| `AJUSTE_NEGATIVO_NO_SOPORTADO` | 422 | El cálculo produce diferencia menor a cero y V2 inicial no puede persistir componentes de indexación por debajo de cero. |
 | `CONFIG_INDEXACION_INCOMPLETA` | 422 | Falta configuración de bloque. |
 | `VALOR_INDICE_AMBIGUO` | 409 | Más de un valor aplicable. |
-| `IMPORTACION_PARCIALMENTE_INVALIDA` | 422/207 conceptual | Lote con filas rechazadas. |
+| `IMPORTACION_PARCIALMENTE_INVALIDA` | 200 | Request procesado con resultado detallado por fila y filas válidas/rechazadas. |
+| `IMPORTACION_COMPLETAMENTE_INVALIDA` | 422 | Ninguna fila puede procesarse por errores de validación. |
 
 ## 18. Casos de borde
 
@@ -439,7 +442,7 @@ Respuesta exitosa: envelope `{ "ok": true, "data": ... }`. Error: `{ "ok": false
 - Venta histórica anterior al primer valor disponible: bloquear confirmación salvo borrador.
 - Múltiples índices válidos para una fecha: `VALOR_INDICE_AMBIGUO`.
 - Redondeos: coeficiente 8 decimales, dinero 2 decimales, snapshot de residuos si aplica.
-- Ajuste negativo: permitido solo sin pagos y con política habilitada; nunca saldo negativo.
+- Ajuste negativo: bloqueante con `AJUSTE_NEGATIVO_NO_SOPORTADO`; no se modifica la obligación y el tratamiento queda fuera de alcance inicial.
 - Obligación con ajuste previo: recalcular objetivo, no acumular.
 - Importación parcialmente válida: confirmar solo filas válidas con idempotencia por fila; inválidas no persisten venta definitiva.
 - Publicación duplicada: idempotente si mismo valor/hash; conflicto si difiere.
@@ -454,7 +457,7 @@ Respuesta exitosa: envelope `{ "ok": true, "data": ... }`. Error: `{ "ok": false
 - Corrección de índice luego de corrida: corrida reemplazante/correctiva.
 - Corrida creada no aplicada: puede anularse o invalidarse.
 - Reintento tras timeout: idempotencia por op_id/hash.
-- Pérdida de lock: rollback y `FALLIDA`.
+- Pérdida de lock: rollback financiero total, liberación/expiración de locks y persistencia técnica posterior de `FALLIDA`.
 - Obligación modificada entre preview y command: `PREVIEW_VENCIDO`/`CONCURRENCY_ERROR`.
 - Publicación masiva de varios índices: detección por lotes; aplicación separada.
 
@@ -465,6 +468,7 @@ Quedan para versiones futuras:
 - Cuotas pagadas y parcialmente pagadas.
 - Reapertura de obligaciones.
 - Compensaciones, notas de crédito o saldo a favor.
+- Bonificación de indexación, crédito financiero, ajuste compensatorio o modificación física para tratar diferencias negativas.
 - Reversión completa implementada.
 - Rectificación posterior con recibos emitidos.
 - Ajuste sobre saldo aplicado.
