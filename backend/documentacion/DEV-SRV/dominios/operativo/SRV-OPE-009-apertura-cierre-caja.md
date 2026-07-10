@@ -22,7 +22,7 @@ La apertura puede ocurrir un día y cerrarse otro. No se fuerza cierre diario. L
 ## Endpoints
 
 ### POST `/api/v1/operativo/cajas/{id_caja}/aperturas`
-Abre una caja activa en sucursal/instalación activas y pertenecientes entre sí. Si no se informa `fecha_hora_apertura`, usa hora actual UTC según patrón backend.
+Abre una caja activa en sucursal/instalación activas y pertenecientes entre sí. `fecha_hora_apertura` es obligatoria para preservar idempotencia en replays; el backend solo normaliza la fecha informada.
 
 ### PATCH `/api/v1/operativo/cajas/aperturas/{id_apertura_caja}/cerrar`
 Cierra una apertura vigente. Requiere `If-Match-Version`, incrementa `version_registro`, setea cierre declarado y marca `estado_apertura = 'CERRADA'`. Permite cierre en día posterior; rechaza fecha de cierre anterior a apertura.
@@ -35,7 +35,7 @@ Consulta read-like por contexto con filtros `id_sucursal`, `id_instalacion`, `ab
 
 ## CORE-EF
 - Apertura: headers `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; idempotencia por `op_id_alta`; replay compatible no duplica apertura ni outbox; replay incompatible devuelve `409 IDEMPOTENT_DUPLICATE`.
-- Cierre: mismos headers y `If-Match-Version` obligatorio; mismatch devuelve `412 CONCURRENCY_ERROR`.
+- Cierre: mismos headers y `If-Match-Version` obligatorio; mismatch devuelve `412 CONCURRENCY_ERROR`; el cierre usa `UPDATE` condicional por versión, estado abierto y `fecha_hora_cierre IS NULL`, y el outbox se emite solo si el `UPDATE` modificó la fila.
 - Outbox: apertura real emite `EVT-OPE-015` (`caja_operativa_abierta`); cierre real emite `EVT-OPE-016` (`caja_operativa_cerrada`) en la misma transacción.
 - Lock lógico: NO APLICA en este alcance; la unicidad parcial de apertura vigente cubre la regla crítica.
 - Rollback: operación de negocio y outbox comparten transacción del repository.

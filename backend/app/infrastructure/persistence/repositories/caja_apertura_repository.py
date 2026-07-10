@@ -69,11 +69,14 @@ _PAYLOAD_FIELDS = (
 )
 
 
-def _naive_utc(value: datetime | None) -> datetime:
-    current = value or datetime.now(UTC)
-    if current.tzinfo is not None:
-        current = current.astimezone(UTC).replace(tzinfo=None)
-    return current
+def _naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
+
+
+def _now_naive_utc() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class CajaAperturaRepository(BaseRepository[Any]):
@@ -137,6 +140,16 @@ class CajaAperturaRepository(BaseRepository[Any]):
     def _payload_matches(self, row: dict[str, Any], payload: dict[str, Any]) -> bool:
         return all(row.get(field) == payload.get(field) for field in _PAYLOAD_FIELDS)
 
+    def _get_by_id(self, id_apertura_caja: int) -> dict[str, Any] | None:
+        row = self.db.execute(text(f"""
+            SELECT {_COLUMNS}
+            FROM caja_operativa_apertura a
+            JOIN caja_operativa c ON c.id_caja = a.id_caja
+            WHERE a.id_apertura_caja = :id_apertura_caja
+              AND a.deleted_at IS NULL
+        """), {"id_apertura_caja": id_apertura_caja}).mappings().one_or_none()
+        return self._map(row) if row else None
+
     def get_vigente_by_caja(self, id_caja: int) -> dict[str, Any] | None:
         row = self.db.execute(text(f"""
             SELECT {_COLUMNS}
@@ -149,7 +162,7 @@ class CajaAperturaRepository(BaseRepository[Any]):
 
     def create(self, id_caja: int, payload: dict[str, Any], core: CoreEFHeaders) -> dict[str, Any]:
         op_id = str(core.x_op_id)
-        normalized = {**payload, "id_caja": id_caja, "fecha_hora_apertura": _naive_utc(payload.get("fecha_hora_apertura"))}
+        normalized = {**payload, "id_caja": id_caja, "fecha_hora_apertura": _naive_utc(payload["fecha_hora_apertura"])}
         existing_op = self.get_by_op_id_alta(op_id)
         if existing_op:
             if not self._payload_matches(existing_op, normalized):
@@ -201,15 +214,14 @@ class CajaAperturaRepository(BaseRepository[Any]):
             raise
 
     def cerrar(self, id_apertura_caja: int, payload: dict[str, Any], core: CoreEFHeaders, if_match_version: int) -> dict[str, Any]:
-        cierre = _naive_utc(payload.get("fecha_hora_cierre"))
-        actual = self.db.execute(text(f"""
-            SELECT {_COLUMNS}
-            FROM caja_operativa_apertura a JOIN caja_operativa c ON c.id_caja = a.id_caja
-            WHERE a.id_apertura_caja = :id_apertura_caja AND a.deleted_at IS NULL
-        """), {"id_apertura_caja": id_apertura_caja}).mappings().one_or_none()
+        cierre = (
+            _naive_utc(payload["fecha_hora_cierre"])
+            if payload.get("fecha_hora_cierre") is not None
+            else _now_naive_utc()
+        )
+        actual = self._get_by_id(id_apertura_caja)
         if actual is None:
             raise CajaAperturaNotFoundError("Apertura de caja no encontrada.")
-        actual = self._map(actual)
         if actual["estado_apertura"] != "ABIERTA" or actual["fecha_hora_cierre"] is not None:
             raise CajaAperturaDuplicateOpenError("La apertura de caja ya está cerrada o no está vigente.")
         if int(actual["version_registro"]) != int(if_match_version):
@@ -217,25 +229,74 @@ class CajaAperturaRepository(BaseRepository[Any]):
         if cierre < actual["fecha_hora_apertura"]:
             raise CajaAperturaValidationError("fecha_hora_cierre no puede ser anterior a fecha_hora_apertura.")
         try:
-            self.db.execute(text("""
-                UPDATE caja_operativa_apertura
-                SET fecha_hora_cierre = :fecha_hora_cierre,
-                    saldo_declarado_cierre = :saldo_declarado_cierre,
-                    observaciones_cierre = :observaciones_cierre,
-                    id_usuario_cierre = :id_usuario_cierre,
-                    estado_apertura = 'CERRADA',
-                    updated_at = CURRENT_TIMESTAMP,
-                    version_registro = version_registro + 1,
-                    id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
-                    op_id_ultima_modificacion = :op_id
-                WHERE id_apertura_caja = :id_apertura_caja
-            """), {"id_apertura_caja": id_apertura_caja, "fecha_hora_cierre": cierre, "saldo_declarado_cierre": payload["saldo_declarado_cierre"], "observaciones_cierre": payload.get("observaciones_cierre"), "id_usuario_cierre": core.x_usuario_id, "id_instalacion_ultima_modificacion": core.x_instalacion_id, "op_id": str(core.x_op_id)})
-            updated = self.db.execute(text(f"""
-                SELECT {_COLUMNS}
-                FROM caja_operativa_apertura a JOIN caja_operativa c ON c.id_caja = a.id_caja
-                WHERE a.id_apertura_caja = :id_apertura_caja
-            """), {"id_apertura_caja": id_apertura_caja}).mappings().one()
-            updated = self._map(updated)
+            updated_row = self.db.execute(text(f"""
+                WITH updated AS (
+                    UPDATE caja_operativa_apertura
+                    SET fecha_hora_cierre = :fecha_hora_cierre,
+                        saldo_declarado_cierre = :saldo_declarado_cierre,
+                        observaciones_cierre = :observaciones_cierre,
+                        id_usuario_cierre = :id_usuario_cierre,
+                        estado_apertura = 'CERRADA',
+                        updated_at = CURRENT_TIMESTAMP,
+                        version_registro = version_registro + 1,
+                        id_instalacion_ultima_modificacion = :id_instalacion_ultima_modificacion,
+                        op_id_ultima_modificacion = :op_id
+                    WHERE id_apertura_caja = :id_apertura_caja
+                      AND version_registro = :if_match_version
+                      AND deleted_at IS NULL
+                      AND estado_apertura = 'ABIERTA'
+                      AND fecha_hora_cierre IS NULL
+                    RETURNING *
+                )
+                SELECT
+                    a.id_apertura_caja,
+                    a.uid_global::text AS uid_global,
+                    a.version_registro,
+                    a.created_at,
+                    a.updated_at,
+                    a.deleted_at,
+                    a.id_instalacion_origen,
+                    a.id_instalacion_ultima_modificacion,
+                    a.op_id_alta::text AS op_id_alta,
+                    a.op_id_ultima_modificacion::text AS op_id_ultima_modificacion,
+                    a.id_caja,
+                    a.id_sucursal,
+                    a.id_instalacion,
+                    a.id_usuario_apertura,
+                    a.id_usuario_cierre,
+                    a.fecha_hora_apertura,
+                    a.fecha_hora_cierre,
+                    a.saldo_inicial,
+                    a.saldo_declarado_cierre,
+                    a.moneda,
+                    a.estado_apertura,
+                    a.observaciones_apertura,
+                    a.observaciones_cierre,
+                    c.codigo_caja,
+                    c.nombre_caja
+                FROM updated a
+                JOIN caja_operativa c ON c.id_caja = a.id_caja
+            """), {
+                "id_apertura_caja": id_apertura_caja,
+                "if_match_version": if_match_version,
+                "fecha_hora_cierre": cierre,
+                "saldo_declarado_cierre": payload["saldo_declarado_cierre"],
+                "observaciones_cierre": payload.get("observaciones_cierre"),
+                "id_usuario_cierre": core.x_usuario_id,
+                "id_instalacion_ultima_modificacion": core.x_instalacion_id,
+                "op_id": str(core.x_op_id),
+            }).mappings().one_or_none()
+            if updated_row is None:
+                self.db.rollback()
+                current = self._get_by_id(id_apertura_caja)
+                if current is None:
+                    raise CajaAperturaNotFoundError("Apertura de caja no encontrada.")
+                if current["estado_apertura"] != "ABIERTA" or current["fecha_hora_cierre"] is not None:
+                    raise CajaAperturaDuplicateOpenError("La apertura de caja ya está cerrada o no está vigente.")
+                if int(current["version_registro"]) != int(if_match_version):
+                    raise CajaAperturaConcurrencyError("If-Match-Version no coincide con version_registro.")
+                raise CajaAperturaValidationError("No se pudo cerrar la apertura de caja por estado inconsistente.")
+            updated = self._map(updated_row)
             OutboxRepository(self.db).add_event(
                 event_type="caja_operativa_cerrada",
                 aggregate_type="caja_operativa_apertura",

@@ -352,9 +352,9 @@ Se auditaron tablas previas o equivalentes (`apertura_caja`, `caja_apertura`, `c
 ### POST `/api/v1/operativo/cajas/{id_caja}/aperturas`
 Abre una caja operativa. Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
 
-Payload: `id_sucursal`, `id_instalacion`, `fecha_hora_apertura` opcional, `saldo_inicial`, `moneda`, `observaciones_apertura`.
+Payload: `id_sucursal`, `id_instalacion`, `fecha_hora_apertura` obligatoria, `saldo_inicial`, `moneda`, `observaciones_apertura`.
 
-Reglas: valida caja existente y `ACTIVA`, sucursal/instalación activas, pertenencia caja-sucursal-instalación, y ausencia de apertura vigente. Si no se informa fecha usa hora actual UTC/patrón backend. Devuelve `201 Created`.
+Reglas: valida caja existente y `ACTIVA`, sucursal/instalación activas, pertenencia caja-sucursal-instalación, y ausencia de apertura vigente. `fecha_hora_apertura` es obligatoria para preservar idempotencia en replays; el backend solo normaliza la fecha informada. Devuelve `201 Created`.
 
 ### PATCH `/api/v1/operativo/cajas/aperturas/{id_apertura_caja}/cerrar`
 Cierra una apertura vigente. Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO` sincronizable.
@@ -376,9 +376,9 @@ Una caja tiene como máximo una apertura vigente: `estado_apertura = 'ABIERTA'`,
 - Naturaleza: POST/PATCH `COMMAND_WRITE_NEGOCIO` sincronizables; GETs `QUERY_READLIKE`.
 - Headers: writes usan helper común CORE-EF; reads no requieren headers write.
 - Idempotencia: aplica en apertura por `op_id_alta`; mismo op/payload compatible retorna la apertura existente sin duplicar outbox; mismo op/payload distinto devuelve `409 IDEMPOTENT_DUPLICATE`. En cierre no aplica idempotencia profunda; se protege con `If-Match-Version`.
-- Outbox: apertura real emite `caja_operativa_abierta` (`EVT-OPE-015`) y cierre real emite `caja_operativa_cerrada` (`EVT-OPE-016`) en la misma transacción.
+- Outbox: apertura real emite `caja_operativa_abierta` (`EVT-OPE-015`) y cierre real emite `caja_operativa_cerrada` (`EVT-OPE-016`) en la misma transacción; el outbox de cierre solo se emite cuando el `UPDATE` condicional modifica la fila.
 - Lock lógico: NO APLICA en esta versión; se usa índice único parcial para apertura vigente por caja.
-- Versionado: apertura nace con `version_registro = 1`; cierre exige `If-Match-Version` e incrementa versión.
+- Versionado: apertura nace con `version_registro = 1`; cierre exige `If-Match-Version` e incrementa versión mediante `UPDATE` condicional atómico.
 - Rollback/transacción: apertura/cierre y outbox comparten transacción del repository.
 
 ### Errores

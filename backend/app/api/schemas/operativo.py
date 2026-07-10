@@ -344,7 +344,7 @@ ESTADOS_APERTURA_CAJA_VALIDOS = {"ABIERTA", "CERRADA", "ANULADA"}
 class CajaAperturaCreateRequest(BaseModel):
     id_sucursal: int
     id_instalacion: int
-    fecha_hora_apertura: datetime | None = None
+    fecha_hora_apertura: datetime
     saldo_inicial: float = Field(default=0, ge=0)
     moneda: str = "ARS"
     observaciones_apertura: str | None = None

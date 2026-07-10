@@ -71,6 +71,21 @@ def test_abrir_caja_ok_metadata_y_outbox(client, db_session):
     assert db_session.execute(text("SELECT COUNT(*) FROM outbox_event WHERE event_type='caja_operativa_abierta'")).scalar() == 1
 
 
+def test_apertura_sin_fecha_hora_apertura_devuelve_422(client, db_session):
+    _apply_patch(db_session)
+    caja = _crear_caja(client)
+    payload = _apertura_payload()
+    payload.pop("fecha_hora_apertura")
+
+    response = client.post(
+        f"/api/v1/operativo/cajas/{caja['id_caja']}/aperturas",
+        json=payload,
+        headers={**HEADERS, "X-Op-Id": str(uuid4())},
+    )
+
+    assert response.status_code == 422
+
+
 def test_replay_idempotente_compatible_no_duplica_apertura_ni_outbox(client, db_session):
     _apply_patch(db_session)
     caja = _crear_caja(client)
@@ -174,8 +189,9 @@ def test_cierre_validaciones_concurrencia_y_estado(client, db_session):
     assert before.status_code == 400
     ok = client.patch(url, json=payload, headers={**HEADERS, "X-Op-Id": str(uuid4()), "If-Match-Version": "1"})
     assert ok.status_code == 200
-    again = client.patch(url, json=payload, headers={**HEADERS, "X-Op-Id": str(uuid4()), "If-Match-Version": "2"})
+    again = client.patch(url, json=payload, headers={**HEADERS, "X-Op-Id": str(uuid4()), "If-Match-Version": "1"})
     assert again.status_code == 409
+    assert db_session.execute(text("SELECT COUNT(*) FROM outbox_event WHERE event_type='caja_operativa_cerrada'")).scalar() == 1
 
 
 def test_validaciones_contexto_headers_422_e_indices(client, db_session):
