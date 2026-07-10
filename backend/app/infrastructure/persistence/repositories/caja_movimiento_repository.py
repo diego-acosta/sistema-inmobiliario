@@ -40,7 +40,9 @@ _COLUMNS = """
 _PAYLOAD_FIELDS = ("id_apertura_caja", "id_caja", "id_sucursal", "id_instalacion", "id_usuario_movimiento", "fecha_hora_movimiento", "tipo_movimiento", "concepto_movimiento", "descripcion", "monto", "moneda", "sentido", "observaciones")
 
 
-def _naive_utc(value: datetime) -> datetime:
+def _naive_utc(value: datetime | str) -> datetime:
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo else value
 
 
@@ -157,22 +159,36 @@ class CajaMovimientoRepository(BaseRepository[Any]):
                     op_id_alta, op_id_ultima_modificacion
                 )
                 SELECT
-                    a.id_apertura_caja, a.id_caja, a.id_sucursal, a.id_instalacion,
-                    :id_usuario_movimiento, :fecha_hora_movimiento, :tipo_movimiento,
-                    :concepto_movimiento, :descripcion, :monto, :moneda, :sentido,
-                    'REGISTRADO', :observaciones, 1,
-                    :id_instalacion_contexto, :id_instalacion_contexto, :op_id, :op_id
+                    a.id_apertura_caja,
+                    a.id_caja,
+                    a.id_sucursal,
+                    a.id_instalacion,
+                    CAST(:id_usuario_movimiento AS bigint),
+                    CAST(:fecha_hora_movimiento AS timestamp),
+                    CAST(:tipo_movimiento AS varchar),
+                    CAST(:concepto_movimiento AS varchar),
+                    CAST(:descripcion AS text),
+                    CAST(:monto AS numeric),
+                    CAST(:moneda AS varchar),
+                    CAST(:sentido AS varchar),
+                    'REGISTRADO',
+                    CAST(:observaciones AS text),
+                    1,
+                    CAST(:id_instalacion_contexto AS bigint),
+                    CAST(:id_instalacion_contexto AS bigint),
+                    CAST(:op_id AS uuid),
+                    CAST(:op_id AS uuid)
                 FROM caja_operativa_apertura a
                 JOIN caja_operativa c ON c.id_caja = a.id_caja
-                WHERE a.id_apertura_caja = :id_apertura_caja
+                WHERE a.id_apertura_caja = CAST(:id_apertura_caja AS bigint)
                   AND a.deleted_at IS NULL
                   AND a.estado_apertura = 'ABIERTA'
                   AND a.fecha_hora_cierre IS NULL
                   AND c.estado_caja = 'ACTIVA'
-                  AND a.id_sucursal = :x_sucursal_id
-                  AND a.id_instalacion = :x_instalacion_id
-                  AND a.moneda = :moneda
-                  AND :fecha_hora_movimiento >= a.fecha_hora_apertura
+                  AND a.id_sucursal = CAST(:x_sucursal_id AS bigint)
+                  AND a.id_instalacion = CAST(:x_instalacion_id AS bigint)
+                  AND a.moneda = CAST(:moneda AS varchar)
+                  AND CAST(:fecha_hora_movimiento AS timestamp) >= a.fecha_hora_apertura
                 RETURNING id_movimiento_caja
             """), values).mappings().one_or_none()
             if row is None:
