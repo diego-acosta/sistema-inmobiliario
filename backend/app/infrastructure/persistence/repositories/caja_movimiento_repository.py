@@ -69,6 +69,36 @@ class CajaMovimientoRepository(BaseRepository[Any]):
     def _payload_matches(self, row: dict[str, Any], payload: dict[str, Any]) -> bool:
         return all(row.get(k) == payload.get(k) for k in _PAYLOAD_FIELDS)
 
+    def _comparable_payload_for_existing(
+        self, existing: dict[str, Any], normalized: dict[str, Any], core: CoreEFHeaders
+    ) -> dict[str, Any] | None:
+        apertura_existing = self._get_apertura(existing["id_apertura_caja"])
+        if apertura_existing is None:
+            return None
+        return {
+            **normalized,
+            "id_caja": apertura_existing["id_caja"],
+            "id_sucursal": apertura_existing["id_sucursal"],
+            "id_instalacion": apertura_existing["id_instalacion"],
+            "id_usuario_movimiento": core.x_usuario_id,
+        }
+
+    def _raise_for_atomic_insert_no_row(self, payload: dict[str, Any], core: CoreEFHeaders) -> None:
+        apertura = self._get_apertura(payload["id_apertura_caja"])
+        if apertura is None or apertura["deleted_at"] is not None:
+            raise CajaMovimientoNotFoundError("Apertura de caja no encontrada.")
+        if apertura["estado_apertura"] != "ABIERTA" or apertura["fecha_hora_cierre"] is not None:
+            raise CajaMovimientoStateError("La apertura de caja no está vigente.")
+        if apertura["estado_caja"] != "ACTIVA":
+            raise CajaMovimientoStateError("Caja operativa inactiva o dada de baja.")
+        if int(apertura["id_sucursal"]) != core.x_sucursal_id or int(apertura["id_instalacion"]) != core.x_instalacion_id:
+            raise CajaMovimientoValidationError("La apertura no pertenece al contexto sucursal/instalación informado.")
+        if payload["moneda"] != apertura["moneda"]:
+            raise CajaMovimientoValidationError("La moneda del movimiento debe coincidir con la moneda de la apertura.")
+        if payload["fecha_hora_movimiento"] < apertura["fecha_hora_apertura"]:
+            raise CajaMovimientoValidationError("fecha_hora_movimiento no puede ser anterior a fecha_hora_apertura.")
+        raise CajaMovimientoValidationError("No se pudo registrar el movimiento por estado inconsistente de la apertura.")
+
     def _get_apertura(self, id_apertura_caja: int) -> dict[str, Any] | None:
         row = self.db.execute(text("""
             SELECT a.id_apertura_caja, a.id_caja, a.id_sucursal, a.id_instalacion,
@@ -103,13 +133,19 @@ class CajaMovimientoRepository(BaseRepository[Any]):
         normalized = {**payload, "id_apertura_caja": id_apertura_caja, "fecha_hora_movimiento": _naive_utc(payload["fecha_hora_movimiento"])}
         existing = self.get_by_op_id_alta(op_id)
         if existing:
-            apertura_existing = self._get_apertura(existing["id_apertura_caja"])
-            compare = {**normalized, "id_caja": apertura_existing["id_caja"], "id_sucursal": apertura_existing["id_sucursal"], "id_instalacion": apertura_existing["id_instalacion"], "id_usuario_movimiento": core.x_usuario_id}
-            if not self._payload_matches(existing, compare):
+            compare = self._comparable_payload_for_existing(existing, normalized, core)
+            if compare is None or not self._payload_matches(existing, compare):
                 raise CajaMovimientoIdempotencyConflictError("El X-Op-Id ya fue usado con un payload incompatible.")
             return existing
-        apertura = self._validate(normalized, core)
-        values = {**normalized, "id_caja": apertura["id_caja"], "id_sucursal": apertura["id_sucursal"], "id_instalacion": apertura["id_instalacion"], "id_usuario_movimiento": core.x_usuario_id, "id_instalacion_contexto": core.x_instalacion_id, "op_id": op_id}
+        self._validate(normalized, core)
+        values = {
+            **normalized,
+            "id_usuario_movimiento": core.x_usuario_id,
+            "id_instalacion_contexto": core.x_instalacion_id,
+            "x_sucursal_id": core.x_sucursal_id,
+            "x_instalacion_id": core.x_instalacion_id,
+            "op_id": op_id,
+        }
         try:
             row = self.db.execute(text(f"""
                 INSERT INTO caja_operativa_movimiento (
@@ -119,14 +155,29 @@ class CajaMovimientoRepository(BaseRepository[Any]):
                     estado_movimiento, observaciones, version_registro,
                     id_instalacion_origen, id_instalacion_ultima_modificacion,
                     op_id_alta, op_id_ultima_modificacion
-                ) VALUES (
-                    :id_apertura_caja, :id_caja, :id_sucursal, :id_instalacion,
+                )
+                SELECT
+                    a.id_apertura_caja, a.id_caja, a.id_sucursal, a.id_instalacion,
                     :id_usuario_movimiento, :fecha_hora_movimiento, :tipo_movimiento,
                     :concepto_movimiento, :descripcion, :monto, :moneda, :sentido,
                     'REGISTRADO', :observaciones, 1,
                     :id_instalacion_contexto, :id_instalacion_contexto, :op_id, :op_id
-                ) RETURNING id_movimiento_caja
-            """), values).mappings().one()
+                FROM caja_operativa_apertura a
+                JOIN caja_operativa c ON c.id_caja = a.id_caja
+                WHERE a.id_apertura_caja = :id_apertura_caja
+                  AND a.deleted_at IS NULL
+                  AND a.estado_apertura = 'ABIERTA'
+                  AND a.fecha_hora_cierre IS NULL
+                  AND c.estado_caja = 'ACTIVA'
+                  AND a.id_sucursal = :x_sucursal_id
+                  AND a.id_instalacion = :x_instalacion_id
+                  AND a.moneda = :moneda
+                  AND :fecha_hora_movimiento >= a.fecha_hora_apertura
+                RETURNING id_movimiento_caja
+            """), values).mappings().one_or_none()
+            if row is None:
+                self.db.rollback()
+                self._raise_for_atomic_insert_no_row(normalized, core)
             created = self.get(row["id_movimiento_caja"])
             OutboxRepository(self.db).add_event(event_type="caja_operativa_movimiento_registrado", aggregate_type="caja_operativa_movimiento", aggregate_id=created["id_movimiento_caja"], payload={**created, "op_id": op_id}, occurred_at=datetime.now(UTC), status="PENDING", processing_reason={"source": "SRV-OPE-010", "issue": "#255"}, processing_metadata={"refs": ["#248"], "evt": "EVT-OPE-017"})
             self.db.commit()
@@ -136,7 +187,9 @@ class CajaMovimientoRepository(BaseRepository[Any]):
             if self._constraint_name(exc) == "ux_caja_operativa_movimiento_op_id_alta":
                 existing = self.get_by_op_id_alta(op_id)
                 if existing:
-                    return existing
+                    compare = self._comparable_payload_for_existing(existing, normalized, core)
+                    if compare is not None and self._payload_matches(existing, compare):
+                        return existing
                 raise CajaMovimientoIdempotencyConflictError("El X-Op-Id ya fue usado con un payload incompatible.")
             raise
         except Exception:
