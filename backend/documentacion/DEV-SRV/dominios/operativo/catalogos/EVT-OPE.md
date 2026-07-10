@@ -167,3 +167,13 @@ Evento emitido por la modificación versionada de `configuracion_local` para un 
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad: sí
+
+### EVT-OPE-017 — Movimiento de caja registrado
+
+- codigo: caja_operativa_movimiento_registrado
+- descripcion: se registró un movimiento manual básico sobre una apertura vigente de caja operativa.
+- origen_principal: SRV-OPE-010
+- entidad_principal: caja_operativa_movimiento
+- tipo_evento: negocio
+- sincronizable: sí
+- genera_trazabilidad: sí

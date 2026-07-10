@@ -405,3 +405,88 @@ class CajaAperturaVigenteResponse(BaseModel):
 class CajaAperturaListResponse(BaseModel):
     ok: Literal[True] = True
     data: list[CajaAperturaData]
+
+TIPOS_MOVIMIENTO_CAJA_VALIDOS = {"INGRESO", "EGRESO", "AJUSTE"}
+SENTIDOS_MOVIMIENTO_CAJA_VALIDOS = {"ENTRADA", "SALIDA"}
+ESTADOS_MOVIMIENTO_CAJA_VALIDOS = {"REGISTRADO", "ANULADO"}
+CONCEPTOS_MOVIMIENTO_CAJA_VALIDOS = {"INGRESO_MANUAL", "EGRESO_MANUAL", "REPOSICION", "RETIRO", "AJUSTE_POSITIVO", "AJUSTE_NEGATIVO"}
+
+
+class CajaMovimientoCreateRequest(BaseModel):
+    fecha_hora_movimiento: datetime
+    tipo_movimiento: str
+    concepto_movimiento: str
+    descripcion: str | None = None
+    monto: float = Field(gt=0)
+    moneda: str = "ARS"
+    sentido: str
+    observaciones: str | None = None
+
+    @field_validator("tipo_movimiento")
+    @classmethod
+    def _valid_tipo_movimiento(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in TIPOS_MOVIMIENTO_CAJA_VALIDOS:
+            raise ValueError("tipo_movimiento inválido.")
+        return normalized
+
+    @field_validator("sentido")
+    @classmethod
+    def _valid_sentido(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in SENTIDOS_MOVIMIENTO_CAJA_VALIDOS:
+            raise ValueError("sentido inválido.")
+        return normalized
+
+    @field_validator("moneda")
+    @classmethod
+    def _valid_moneda_movimiento(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in MONEDAS_CAJA_VALIDAS:
+            raise ValueError("moneda inválida.")
+        return normalized
+
+    @field_validator("concepto_movimiento")
+    @classmethod
+    def _valid_concepto(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in CONCEPTOS_MOVIMIENTO_CAJA_VALIDOS:
+            raise ValueError("concepto_movimiento no pertenece al catálogo mínimo.")
+        return normalized
+
+
+class CajaMovimientoData(BaseModel):
+    id_movimiento_caja: int
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+    id_instalacion_origen: int | None
+    id_instalacion_ultima_modificacion: int | None
+    op_id_alta: str | None
+    op_id_ultima_modificacion: str | None
+    id_apertura_caja: int
+    id_caja: int
+    id_sucursal: int
+    id_instalacion: int
+    id_usuario_movimiento: int | None
+    fecha_hora_movimiento: datetime
+    tipo_movimiento: str
+    concepto_movimiento: str
+    descripcion: str | None
+    monto: float
+    moneda: str
+    sentido: str
+    estado_movimiento: str
+    observaciones: str | None
+
+
+class CajaMovimientoResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CajaMovimientoData
+
+
+class CajaMovimientoListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: list[CajaMovimientoData]

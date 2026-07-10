@@ -388,3 +388,34 @@ Una caja tiene como máximo una apertura vigente: `estado_apertura = 'ABIERTA'`,
 Movimientos de caja, ingresos/egresos manuales, pagos, imputaciones, arqueo avanzado, diferencias automáticas, reportes, jornada operativa completa, permisos avanzados y UI frontend.
 
 Closes #254. Refs #248.
+
+## Movimientos manuales de caja operativa (#255 / Refs #248)
+
+### Modelo SQL auditado/usado
+Se auditó `movimiento_caja`, `caja_movimiento`, `caja_operativa_movimiento`, `movimiento_tesoreria` y equivalentes. No se reutiliza `movimiento_tesoreria` por pertenecer a tesorería/finanzas; se crea `caja_operativa_movimiento` acotada al dominio operativo.
+
+### Endpoints implementados
+- `POST /api/v1/operativo/cajas/aperturas/{id_apertura_caja}/movimientos`
+- `GET /api/v1/operativo/cajas/aperturas/{id_apertura_caja}/movimientos`
+- `GET /api/v1/operativo/cajas/movimientos`
+- `GET /api/v1/operativo/cajas/movimientos/{id_movimiento_caja}`
+
+### Regla de apertura vigente obligatoria
+El POST exige apertura vigente (`ABIERTA`, sin cierre y sin baja lógica) y caja `ACTIVA`. El movimiento hereda `id_caja`, `id_sucursal` e `id_instalacion` desde la apertura.
+
+### Decisión de moneda
+La moneda del movimiento debe coincidir con la moneda de la apertura. No se habilita caja multimoneda en #255.
+
+### Decisión CORE-EF
+POST es `COMMAND_WRITE_NEGOCIO` sincronizable: requiere `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; persiste metadata CORE-EF; `If-Match-Version` NO APLICA porque no hay update. GETs son `QUERY_READLIKE` y no fuerzan headers write.
+
+### Decisión de idempotencia
+Aplica por `op_id_alta`: replay compatible retorna el movimiento existente sin duplicar outbox; replay incompatible devuelve `409 IDEMPOTENT_DUPLICATE`.
+
+### Decisión de outbox/evento
+Alta real registra `caja_operativa_movimiento_registrado` (`EVT-OPE-017`) en la misma transacción que el movimiento.
+
+### Fuera de alcance explícito
+Pagos, imputaciones financieras, cobros, cuotas, motor financiero, arqueo avanzado, diferencias, reportes analíticos, jornada operativa completa, anulación/update y frontend.
+
+Closes #255. Refs #248.
