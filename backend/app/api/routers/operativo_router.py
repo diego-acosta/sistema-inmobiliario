@@ -15,6 +15,10 @@ from app.api.schemas.operativo import (
     CajaAperturaData,
     CajaAperturaListResponse,
     CajaAperturaResponse,
+    CajaMovimientoCreateRequest,
+    CajaMovimientoData,
+    CajaMovimientoListResponse,
+    CajaMovimientoResponse,
     CajaAperturaVigenteResponse,
     CajaOperativaCreateRequest,
     CajaOperativaCreateResponse,
@@ -44,6 +48,13 @@ from app.infrastructure.persistence.repositories.caja_apertura_repository import
     CajaAperturaNotFoundError,
     CajaAperturaRepository,
     CajaAperturaValidationError,
+)
+from app.infrastructure.persistence.repositories.caja_movimiento_repository import (
+    CajaMovimientoIdempotencyConflictError,
+    CajaMovimientoNotFoundError,
+    CajaMovimientoRepository,
+    CajaMovimientoStateError,
+    CajaMovimientoValidationError,
 )
 from app.infrastructure.persistence.repositories.caja_operativa_repository import (
     CajaOperativaDuplicateActiveError,
@@ -663,6 +674,115 @@ def list_aperturas_vigentes(
     except Exception as exc:
         return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo listar aperturas vigentes.", {"error": str(exc)})
     return CajaAperturaListResponse(data=[CajaAperturaData(**apertura) for apertura in aperturas])
+
+
+@router.post(
+    "/api/v1/operativo/cajas/aperturas/{id_apertura_caja}/movimientos",
+    response_model=CajaMovimientoResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def registrar_movimiento_caja(
+    request: CajaMovimientoCreateRequest,
+    id_apertura_caja: int = Path(...),
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> CajaMovimientoResponse | JSONResponse:
+    core = _parse_core_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id, x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id)
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        movimiento = CajaMovimientoRepository(db).create(id_apertura_caja, request.model_dump(), core)
+    except CajaMovimientoNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except CajaMovimientoValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", str(exc))
+    except CajaMovimientoIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except CajaMovimientoStateError as exc:
+        return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo registrar el movimiento de caja.", {"error": str(exc)})
+    return CajaMovimientoResponse(data=CajaMovimientoData(**movimiento))
+
+
+@router.get(
+    "/api/v1/operativo/cajas/aperturas/{id_apertura_caja}/movimientos",
+    response_model=CajaMovimientoListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def listar_movimientos_apertura(
+    id_apertura_caja: int,
+    tipo_movimiento: str | None = Query(default=None),
+    sentido: str | None = Query(default=None),
+    estado_movimiento: str | None = Query(default=None),
+    fecha_desde: str | None = Query(default=None),
+    fecha_hasta: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> CajaMovimientoListResponse | JSONResponse:
+    from datetime import datetime
+    try:
+        movimientos = CajaMovimientoRepository(db).list_by_apertura(
+            id_apertura_caja,
+            tipo_movimiento=tipo_movimiento.strip().upper() if tipo_movimiento else None,
+            sentido=sentido.strip().upper() if sentido else None,
+            estado_movimiento=estado_movimiento.strip().upper() if estado_movimiento else None,
+            fecha_desde=datetime.fromisoformat(fecha_desde.replace("Z", "+00:00")) if fecha_desde else None,
+            fecha_hasta=datetime.fromisoformat(fecha_hasta.replace("Z", "+00:00")) if fecha_hasta else None,
+        )
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo listar movimientos de caja.", {"error": str(exc)})
+    return CajaMovimientoListResponse(data=[CajaMovimientoData(**m) for m in movimientos])
+
+
+@router.get(
+    "/api/v1/operativo/cajas/movimientos",
+    response_model=CajaMovimientoListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def listar_movimientos_caja(
+    id_sucursal: int | None = Query(default=None),
+    id_instalacion: int | None = Query(default=None),
+    id_caja: int | None = Query(default=None),
+    id_apertura_caja: int | None = Query(default=None),
+    tipo_movimiento: str | None = Query(default=None),
+    sentido: str | None = Query(default=None),
+    estado_movimiento: str | None = Query(default=None),
+    fecha_desde: str | None = Query(default=None),
+    fecha_hasta: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> CajaMovimientoListResponse | JSONResponse:
+    from datetime import datetime
+    try:
+        movimientos = CajaMovimientoRepository(db).list_general(
+            id_sucursal=id_sucursal, id_instalacion=id_instalacion, id_caja=id_caja, id_apertura_caja=id_apertura_caja,
+            tipo_movimiento=tipo_movimiento.strip().upper() if tipo_movimiento else None,
+            sentido=sentido.strip().upper() if sentido else None,
+            estado_movimiento=estado_movimiento.strip().upper() if estado_movimiento else None,
+            fecha_desde=datetime.fromisoformat(fecha_desde.replace("Z", "+00:00")) if fecha_desde else None,
+            fecha_hasta=datetime.fromisoformat(fecha_hasta.replace("Z", "+00:00")) if fecha_hasta else None,
+        )
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo listar movimientos de caja.", {"error": str(exc)})
+    return CajaMovimientoListResponse(data=[CajaMovimientoData(**m) for m in movimientos])
+
+
+@router.get(
+    "/api/v1/operativo/cajas/movimientos/{id_movimiento_caja}",
+    response_model=CajaMovimientoResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_movimiento_caja(id_movimiento_caja: int, db: Session = Depends(get_db)) -> CajaMovimientoResponse | JSONResponse:
+    try:
+        movimiento = CajaMovimientoRepository(db).get(id_movimiento_caja)
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo obtener el movimiento de caja.", {"error": str(exc)})
+    if movimiento is None:
+        return _error(404, "NOT_FOUND", "Movimiento de caja no encontrado.")
+    return CajaMovimientoResponse(data=CajaMovimientoData(**movimiento))
 
 
 @router.get(
