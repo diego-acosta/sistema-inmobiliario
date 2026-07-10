@@ -535,3 +535,82 @@ Quedan para versiones futuras:
    - Alcance: modelos correctivos, notas/compensaciones, reimputación si se decide.
    - Fuera de alcance: V2 inicial.
    - Resultado: política completa para escenarios posteriores.
+
+## 16. Implementación física SQL base (#340)
+
+El issue `#340` materializa la infraestructura SQL inicial mediante `backend/database/patch_corridas_indexacion_cuotas_v2_20260710.sql`.
+
+Tablas físicas creadas:
+
+- `corrida_indexacion_financiera`: cabecera de corrida para una única combinación `plan_pago_venta + plan_pago_venta_bloque`.
+- `corrida_indexacion_financiera_detalle`: detalle por `obligacion_financiera` analizada, incluyendo elegibles y excluidas.
+
+Estados persistibles de cabecera implementados por `CHECK`:
+
+- `BORRADOR`
+- `PREVISUALIZADA`
+- `PENDIENTE_APLICACION`
+- `APLICADA`
+- `FALLIDA`
+- `ANULADA`
+- `REEMPLAZADA`
+
+No se persisten `APLICANDO`, `APLICADA_PARCIAL` ni `REVERSADA` en esta etapa.
+
+Orígenes implementados por `CHECK`:
+
+- `IMPORTACION_VENTA_HISTORICA`
+- `ALTA_MANUAL_VENTA_HISTORICA`
+- `PUBLICACION_INDICE`
+- `REINDEXACION_MANUAL`
+- `CORRECCION_INDICE`
+- `REPROCESO_CONTROLADO`
+
+Elegibilidad de detalle implementada por `CHECK`:
+
+- `ELEGIBLE`
+- `EXCLUIDA`
+- `BLOQUEANTE`
+- `RESERVADA_FUTURA`
+
+Columnas principales de cabecera:
+
+- CORE-EF: `uid_global`, `version_registro`, `created_at`, `updated_at`, `deleted_at`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta`, `op_id_ultima_modificacion`.
+- Alcance: `id_plan_pago_venta`, `id_plan_pago_venta_bloque`, `id_plan_pago_venta_bloque_indexacion`, `id_generacion_cronograma_financiero`.
+- Índice: `id_indice_financiero`, `id_indice_financiero_valor_base`, `id_indice_financiero_valor_aplicado`, `periodo_base`, `periodo_aplicado`, `fecha_corte`, `fecha_calculo`, `fecha_publicacion_indice`.
+- Idempotencia/auditoría: `op_id`, `hash_corrida`, `payload_hash`, snapshots JSONB, usuario, sucursal, referencias de lote/importación/job, motivo, observaciones y error controlado.
+- Totales: cantidades analizadas/elegibles/excluidas/aplicadas e importes, ajustes y saldos anteriores/nuevos.
+- Reemplazo: `id_corrida_anterior`, `id_corrida_reemplazante` con FKs autorreferenciales y `CHECK` anti-autorreferencia simple.
+
+Columnas principales de detalle:
+
+- CORE-EF equivalente a cabecera.
+- Relaciones: `id_corrida_indexacion_financiera`, `id_obligacion_financiera`, componentes opcionales de capital/ajuste e `id_obligacion_financiera_indexacion`.
+- Versionado: `version_esperada`, `version_resultante`.
+- Cálculo: `capital_base`, valores de índice, coeficiente, ajuste anterior/nuevo, diferencia neta, importes y saldos anteriores/nuevos.
+- Elegibilidad y auditoría controlada: estado, motivo, código de error, detalle, advertencias JSONB y snapshots antes/después.
+
+Constraints e integridad relevantes:
+
+- FKs `ON DELETE RESTRICT` hacia plan, bloque, configuración de indexación, generación de cronograma, índice, valores de índice, obligación, composiciones y trazabilidad de indexación.
+- FKs compuestas para validar que el bloque pertenece al plan, que la configuración pertenece al bloque, que la generación opcional pertenece al plan y que los valores base/aplicado pertenecen al índice informado.
+- Unicidad de detalle por `(id_corrida_indexacion_financiera, id_obligacion_financiera)`.
+- Checks de cantidades/importes no negativos, versiones positivas, fechas coherentes, `fecha_aplicacion` solo en `APLICADA`, errores solo en `FALLIDA` y motivo para excluidas.
+
+Índices principales:
+
+- CORE-EF por UID, versión, timestamps y op_ids.
+- Cabecera por plan, bloque, plan+bloque, índice, valor aplicado, estado, origen, fecha de corte, hash, corrida anterior/reemplazante.
+- Parciales para pendientes de aplicación y corridas activas.
+- Detalle por obligación, corrida+obligación, elegibilidad, código de error y parcial de elegibles.
+
+Decisión de idempotencia física:
+
+- La unicidad funcional activa usa `(id_plan_pago_venta, id_plan_pago_venta_bloque, id_indice_financiero, id_indice_financiero_valor_aplicado, fecha_corte, origen_corrida, hash_corrida)`.
+- La restricción parcial excluye `deleted_at IS NOT NULL`, `ANULADA` y `REEMPLAZADA` para permitir corridas correctivas, reemplazantes o reprocesos controlados con otro origen, período/valor aplicado, fecha de corte o hash.
+- `payload_hash` queda persistido como soporte de diagnóstico/idempotencia de API futura, sin formar parte de la clave única para no duplicar el hash funcional cerrado de la corrida.
+
+Desviaciones respecto del diseño conceptual:
+
+- Se usa `periodo_base` / `periodo_aplicado` en lugar de columnas separadas de valor base/aplicado en cabecera porque los valores normalizados quedan referenciados por `indice_financiero_valor` y el detalle conserva los valores numéricos auditables usados en cada obligación.
+- `id_generacion_cronograma_financiero` queda opcional y validado contra el plan cuando se informe, porque el esquema real permite la relación por `id_plan_pago_venta` pero no todos los orígenes de corrida nacen necesariamente desde una generación nueva.
