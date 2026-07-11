@@ -640,3 +640,7 @@ Pruebas incorporadas/reforzadas:
 - Estados, orígenes, idempotencia activa, corrida correctiva, detalle duplicado, importes/versiones inválidas, exclusión sin motivo y reemplazos.
 
 Se mantiene la decisión de que `diferencia_neta` pueda ser negativa como diferencia matemática/auditable, mientras `ajuste_nuevo`, importes y saldos siguen restringidos a valores no negativos.
+
+### Alineación de nombres físicos de `concepto_financiero`
+
+La validación estructural de composiciones queda alineada con los nombres físicos usados por el esquema de ejecución de tests para `concepto_financiero`: `codigo_concepto`, `nombre_concepto`, `tipo_concepto` y `estado_concepto`. El trigger `trg_cifd_validar_composiciones()` valida contra `cf.codigo_concepto` para `CAPITAL_VENTA` y `AJUSTE_INDEXACION`, manteniendo la misma semántica sin calcular ni modificar composiciones u obligaciones.

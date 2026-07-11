@@ -52,22 +52,20 @@ def corrida_schema(db_session):
     return db_session
 
 
-def _ensure_concept(db, codigo: str, tipo="CAPITAL", naturaleza="DEBITO") -> int:
+def _ensure_concept(db, codigo: str, tipo="CAPITAL") -> int:
     return _scalar(
         db,
         """
         INSERT INTO public.concepto_financiero (
-            codigo_concepto_financiero, nombre_concepto_financiero,
-            tipo_concepto_financiero, naturaleza_concepto,
-            estado_concepto_financiero
-        ) VALUES (:codigo, :codigo, :tipo, :naturaleza, 'ACTIVO')
-        ON CONFLICT (codigo_concepto_financiero) DO UPDATE SET
-            nombre_concepto_financiero = EXCLUDED.nombre_concepto_financiero
+            codigo_concepto, nombre_concepto,
+            tipo_concepto, estado_concepto
+        ) VALUES (:codigo, :codigo, :tipo, 'ACTIVO')
+        ON CONFLICT (codigo_concepto) DO UPDATE SET
+            nombre_concepto = EXCLUDED.nombre_concepto
         RETURNING id_concepto_financiero
         """,
         codigo=codigo,
         tipo=tipo,
-        naturaleza=naturaleza,
     )
 
 
@@ -144,9 +142,9 @@ def _create_plan_bloque(db, codigo: str):
 
 
 def _create_context(db):
-    capital = _ensure_concept(db, "CAPITAL_VENTA", "CAPITAL", "DEBITO")
-    ajuste = _ensure_concept(db, "AJUSTE_INDEXACION", "AJUSTE", "DEBITO")
-    otro = _ensure_concept(db, "OTRO_TEST_INDEXACION", "AJUSTE", "DEBITO")
+    capital = _ensure_concept(db, "CAPITAL_VENTA", "CAPITAL")
+    ajuste = _ensure_concept(db, "AJUSTE_INDEXACION", "AJUSTE")
+    otro = _ensure_concept(db, "OTRO_TEST_INDEXACION", "AJUSTE")
 
     indice = _create_indice(db, "IDX-CIF-1")
     otro_indice = _create_indice(db, "IDX-CIF-2")
