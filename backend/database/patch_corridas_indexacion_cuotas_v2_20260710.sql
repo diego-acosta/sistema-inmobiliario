@@ -270,7 +270,7 @@ BEGIN
             ON cf.id_concepto_financiero = co.id_concepto_financiero
          WHERE co.id_composicion_obligacion = NEW.id_composicion_capital_venta
            AND co.id_obligacion_financiera = NEW.id_obligacion_financiera
-           AND cf.codigo_concepto = 'CAPITAL_VENTA'
+           AND cf.codigo_concepto_financiero = 'CAPITAL_VENTA'
     ) THEN
         RAISE EXCEPTION 'corrida_indexacion_financiera_detalle: id_composicion_capital_venta debe pertenecer a la obligacion y usar concepto CAPITAL_VENTA';
     END IF;
@@ -282,7 +282,7 @@ BEGIN
             ON cf.id_concepto_financiero = co.id_concepto_financiero
          WHERE co.id_composicion_obligacion = NEW.id_composicion_ajuste_indexacion
            AND co.id_obligacion_financiera = NEW.id_obligacion_financiera
-           AND cf.codigo_concepto = 'AJUSTE_INDEXACION'
+           AND cf.codigo_concepto_financiero = 'AJUSTE_INDEXACION'
     ) THEN
         RAISE EXCEPTION 'corrida_indexacion_financiera_detalle: id_composicion_ajuste_indexacion debe pertenecer a la obligacion y usar concepto AJUSTE_INDEXACION';
     END IF;

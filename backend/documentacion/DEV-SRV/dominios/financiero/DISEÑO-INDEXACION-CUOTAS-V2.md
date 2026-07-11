@@ -641,6 +641,12 @@ Pruebas incorporadas/reforzadas:
 
 Se mantiene la decisión de que `diferencia_neta` pueda ser negativa como diferencia matemática/auditable, mientras `ajuste_nuevo`, importes y saldos siguen restringidos a valores no negativos.
 
-### Alineación de nombres físicos de `concepto_financiero`
+### Alineación con nombres físicos de `concepto_financiero` y reset oficial
 
-La validación estructural de composiciones queda alineada con los nombres físicos usados por el esquema de ejecución de tests para `concepto_financiero`: `codigo_concepto`, `nombre_concepto`, `tipo_concepto` y `estado_concepto`. El trigger `trg_cifd_validar_composiciones()` valida contra `cf.codigo_concepto` para `CAPITAL_VENTA` y `AJUSTE_INDEXACION`, manteniendo la misma semántica sin calcular ni modificar composiciones u obligaciones.
+El drift documental detectado queda corregido: el esquema físico de `concepto_financiero`, creado por `schema_inmobiliaria_20260418.sql` y poblado por `seed_minimo.sql` / `seed_test_baseline.sql`, usa `codigo_concepto_financiero`, `nombre_concepto_financiero`, `tipo_concepto_financiero`, `naturaleza_concepto` y `estado_concepto_financiero`; la clave única vigente es `uq_concepto_codigo` sobre `codigo_concepto_financiero`. No se crean columnas abreviadas ni aliases sobre `concepto_financiero`.
+
+El trigger `trg_cifd_validar_composiciones()` valida contra `cf.codigo_concepto_financiero` para `CAPITAL_VENTA` y `AJUSTE_INDEXACION`, manteniendo la misma semántica: comprobar que las composiciones opcionales pertenezcan a la misma obligación del detalle y correspondan al concepto esperado, sin calcular importes, crear composiciones ni modificar obligaciones.
+
+El patch `backend/database/patch_corridas_indexacion_cuotas_v2_20260710.sql` queda integrado en `backend/scripts/reset_db.bat` después de `patch_plan_pago_venta_bloque_indexacion_20260528.sql` y antes de `patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql`. Esa posición respeta que ya existan el esquema base, CORE-EF, planes/bloques V2, índices financieros, configuración de indexación por bloque, obligaciones, composiciones y trazabilidad de indexación antes de crear las tablas de corrida.
+
+La validación operativa de `reset_db.bat` y de los tests debe ejecutarse en un entorno Windows/PostgreSQL con el `PGBIN` configurado por el script; en entornos sin ese runtime, la comprobación queda limitada a validaciones estáticas y de compilación Python.

@@ -52,20 +52,35 @@ def corrida_schema(db_session):
     return db_session
 
 
-def _ensure_concept(db, codigo: str, tipo="CAPITAL") -> int:
+def _ensure_concept(
+    db,
+    codigo: str,
+    tipo: str = "CAPITAL",
+    naturaleza: str = "DEBITO",
+) -> int:
     return _scalar(
         db,
         """
         INSERT INTO public.concepto_financiero (
-            codigo_concepto, nombre_concepto,
-            tipo_concepto, estado_concepto
-        ) VALUES (:codigo, :codigo, :tipo, 'ACTIVO')
-        ON CONFLICT (codigo_concepto) DO UPDATE SET
-            nombre_concepto = EXCLUDED.nombre_concepto
+            codigo_concepto_financiero,
+            nombre_concepto_financiero,
+            tipo_concepto_financiero,
+            naturaleza_concepto,
+            estado_concepto_financiero
+        ) VALUES (
+            :codigo,
+            :codigo,
+            :tipo,
+            :naturaleza,
+            'ACTIVO'
+        )
+        ON CONFLICT (codigo_concepto_financiero) DO UPDATE SET
+            nombre_concepto_financiero = EXCLUDED.nombre_concepto_financiero
         RETURNING id_concepto_financiero
         """,
         codigo=codigo,
         tipo=tipo,
+        naturaleza=naturaleza,
     )
 
 
