@@ -111,8 +111,17 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_ppvb_id_plan_pair' AND conrelid = 'public.plan_pago_venta_bloque'::regclass) THEN
         ALTER TABLE public.plan_pago_venta_bloque ADD CONSTRAINT uq_ppvb_id_plan_pair UNIQUE (id_plan_pago_venta_bloque, id_plan_pago_venta);
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_ppvbi_id_bloque_pair' AND conrelid = 'public.plan_pago_venta_bloque_indexacion'::regclass) THEN
-        ALTER TABLE public.plan_pago_venta_bloque_indexacion ADD CONSTRAINT uq_ppvbi_id_bloque_pair UNIQUE (id_plan_pago_venta_bloque_indexacion, id_plan_pago_venta_bloque);
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_ifv_id_indice_pair' AND conrelid = 'public.indice_financiero_valor'::regclass) THEN
+        ALTER TABLE public.indice_financiero_valor ADD CONSTRAINT uq_ifv_id_indice_pair UNIQUE (id_indice_financiero_valor, id_indice_financiero);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_ppvbi_id_bloque_indice_pair' AND conrelid = 'public.plan_pago_venta_bloque_indexacion'::regclass) THEN
+        ALTER TABLE public.plan_pago_venta_bloque_indexacion ADD CONSTRAINT uq_ppvbi_id_bloque_indice_pair UNIQUE (id_plan_pago_venta_bloque_indexacion, id_plan_pago_venta_bloque, id_indice_financiero);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_composicion_obligacion_id_obligacion_pair' AND conrelid = 'public.composicion_obligacion'::regclass) THEN
+        ALTER TABLE public.composicion_obligacion ADD CONSTRAINT uq_composicion_obligacion_id_obligacion_pair UNIQUE (id_composicion_obligacion, id_obligacion_financiera);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_ofi_id_obligacion_pair' AND conrelid = 'public.obligacion_financiera_indexacion'::regclass) THEN
+        ALTER TABLE public.obligacion_financiera_indexacion ADD CONSTRAINT uq_ofi_id_obligacion_pair UNIQUE (id_obligacion_financiera_indexacion, id_obligacion_financiera);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_gcf_id_plan_pair' AND conrelid = 'public.generacion_cronograma_financiero'::regclass) THEN
         ALTER TABLE public.generacion_cronograma_financiero ADD CONSTRAINT uq_gcf_id_plan_pair UNIQUE (id_generacion_cronograma_financiero, id_plan_pago_venta);
@@ -133,8 +142,8 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cif_bloque_mismo_plan' AND conrelid = 'public.corrida_indexacion_financiera'::regclass) THEN
         ALTER TABLE public.corrida_indexacion_financiera ADD CONSTRAINT fk_cif_bloque_mismo_plan FOREIGN KEY (id_plan_pago_venta_bloque, id_plan_pago_venta) REFERENCES public.plan_pago_venta_bloque(id_plan_pago_venta_bloque, id_plan_pago_venta) ON DELETE RESTRICT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cif_bloque_indexacion_mismo_bloque' AND conrelid = 'public.corrida_indexacion_financiera'::regclass) THEN
-        ALTER TABLE public.corrida_indexacion_financiera ADD CONSTRAINT fk_cif_bloque_indexacion_mismo_bloque FOREIGN KEY (id_plan_pago_venta_bloque_indexacion, id_plan_pago_venta_bloque) REFERENCES public.plan_pago_venta_bloque_indexacion(id_plan_pago_venta_bloque_indexacion, id_plan_pago_venta_bloque) ON DELETE RESTRICT;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cif_bloque_indexacion_mismo_bloque_indice' AND conrelid = 'public.corrida_indexacion_financiera'::regclass) THEN
+        ALTER TABLE public.corrida_indexacion_financiera ADD CONSTRAINT fk_cif_bloque_indexacion_mismo_bloque_indice FOREIGN KEY (id_plan_pago_venta_bloque_indexacion, id_plan_pago_venta_bloque, id_indice_financiero) REFERENCES public.plan_pago_venta_bloque_indexacion(id_plan_pago_venta_bloque_indexacion, id_plan_pago_venta_bloque, id_indice_financiero) ON DELETE RESTRICT;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cif_generacion_mismo_plan' AND conrelid = 'public.corrida_indexacion_financiera'::regclass) THEN
         ALTER TABLE public.corrida_indexacion_financiera ADD CONSTRAINT fk_cif_generacion_mismo_plan FOREIGN KEY (id_generacion_cronograma_financiero, id_plan_pago_venta) REFERENCES public.generacion_cronograma_financiero(id_generacion_cronograma_financiero, id_plan_pago_venta) ON DELETE RESTRICT;
@@ -160,14 +169,23 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_obligacion' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
         ALTER TABLE public.corrida_indexacion_financiera_detalle ADD CONSTRAINT fk_cifd_obligacion FOREIGN KEY (id_obligacion_financiera) REFERENCES public.obligacion_financiera(id_obligacion_financiera) ON DELETE RESTRICT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_composicion_capital' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
-        ALTER TABLE public.corrida_indexacion_financiera_detalle ADD CONSTRAINT fk_cifd_composicion_capital FOREIGN KEY (id_composicion_capital_venta) REFERENCES public.composicion_obligacion(id_composicion_obligacion) ON DELETE RESTRICT;
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_composicion_capital' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
+        ALTER TABLE public.corrida_indexacion_financiera_detalle DROP CONSTRAINT fk_cifd_composicion_capital;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_composicion_ajuste' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
-        ALTER TABLE public.corrida_indexacion_financiera_detalle ADD CONSTRAINT fk_cifd_composicion_ajuste FOREIGN KEY (id_composicion_ajuste_indexacion) REFERENCES public.composicion_obligacion(id_composicion_obligacion) ON DELETE RESTRICT;
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_composicion_ajuste' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
+        ALTER TABLE public.corrida_indexacion_financiera_detalle DROP CONSTRAINT fk_cifd_composicion_ajuste;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_obligacion_indexacion' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
-        ALTER TABLE public.corrida_indexacion_financiera_detalle ADD CONSTRAINT fk_cifd_obligacion_indexacion FOREIGN KEY (id_obligacion_financiera_indexacion) REFERENCES public.obligacion_financiera_indexacion(id_obligacion_financiera_indexacion) ON DELETE RESTRICT;
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_obligacion_indexacion' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
+        ALTER TABLE public.corrida_indexacion_financiera_detalle DROP CONSTRAINT fk_cifd_obligacion_indexacion;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_composicion_capital_obligacion' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
+        ALTER TABLE public.corrida_indexacion_financiera_detalle ADD CONSTRAINT fk_cifd_composicion_capital_obligacion FOREIGN KEY (id_composicion_capital_venta, id_obligacion_financiera) REFERENCES public.composicion_obligacion(id_composicion_obligacion, id_obligacion_financiera) ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_composicion_ajuste_obligacion' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
+        ALTER TABLE public.corrida_indexacion_financiera_detalle ADD CONSTRAINT fk_cifd_composicion_ajuste_obligacion FOREIGN KEY (id_composicion_ajuste_indexacion, id_obligacion_financiera) REFERENCES public.composicion_obligacion(id_composicion_obligacion, id_obligacion_financiera) ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cifd_obligacion_indexacion_obligacion' AND conrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
+        ALTER TABLE public.corrida_indexacion_financiera_detalle ADD CONSTRAINT fk_cifd_obligacion_indexacion_obligacion FOREIGN KEY (id_obligacion_financiera_indexacion, id_obligacion_financiera) REFERENCES public.obligacion_financiera_indexacion(id_obligacion_financiera_indexacion, id_obligacion_financiera) ON DELETE RESTRICT;
     END IF;
 END $$;
 
@@ -217,7 +235,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_cif_idempotencia_funcional_activa
 CREATE UNIQUE INDEX IF NOT EXISTS ux_cifd_corrida_obligacion
     ON public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera);
 
-CREATE INDEX IF NOT EXISTS idx_cif_uid_global ON public.corrida_indexacion_financiera (uid_global);
 CREATE INDEX IF NOT EXISTS idx_cif_version_registro ON public.corrida_indexacion_financiera (version_registro);
 CREATE INDEX IF NOT EXISTS idx_cif_timestamps ON public.corrida_indexacion_financiera (created_at, updated_at, deleted_at);
 CREATE INDEX IF NOT EXISTS idx_cif_op_ids ON public.corrida_indexacion_financiera (op_id_alta, op_id_ultima_modificacion, op_id);
@@ -235,14 +252,44 @@ CREATE INDEX IF NOT EXISTS idx_cif_corrida_reemplazante ON public.corrida_indexa
 CREATE INDEX IF NOT EXISTS idx_cif_pendientes ON public.corrida_indexacion_financiera (fecha_corte, id_plan_pago_venta_bloque) WHERE deleted_at IS NULL AND estado_corrida = 'PENDIENTE_APLICACION';
 CREATE INDEX IF NOT EXISTS idx_cif_activas ON public.corrida_indexacion_financiera (id_plan_pago_venta, id_plan_pago_venta_bloque, estado_corrida) WHERE deleted_at IS NULL AND estado_corrida NOT IN ('ANULADA','REEMPLAZADA');
 
-CREATE INDEX IF NOT EXISTS idx_cifd_uid_global ON public.corrida_indexacion_financiera_detalle (uid_global);
 CREATE INDEX IF NOT EXISTS idx_cifd_version_registro ON public.corrida_indexacion_financiera_detalle (version_registro);
 CREATE INDEX IF NOT EXISTS idx_cifd_timestamps ON public.corrida_indexacion_financiera_detalle (created_at, updated_at, deleted_at);
 CREATE INDEX IF NOT EXISTS idx_cifd_op_ids ON public.corrida_indexacion_financiera_detalle (op_id_alta, op_id_ultima_modificacion);
 CREATE INDEX IF NOT EXISTS idx_cifd_obligacion ON public.corrida_indexacion_financiera_detalle (id_obligacion_financiera);
 CREATE INDEX IF NOT EXISTS idx_cifd_elegibilidad ON public.corrida_indexacion_financiera_detalle (estado_elegibilidad);
 CREATE INDEX IF NOT EXISTS idx_cifd_codigo_error ON public.corrida_indexacion_financiera_detalle (codigo_error);
-CREATE INDEX IF NOT EXISTS idx_cifd_elegibles ON public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera) WHERE estado_elegibilidad = 'ELEGIBLE' AND deleted_at IS NULL;
+
+CREATE OR REPLACE FUNCTION public.trg_cifd_validar_composiciones() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.id_composicion_capital_venta IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+          FROM public.composicion_obligacion co
+          JOIN public.concepto_financiero cf
+            ON cf.id_concepto_financiero = co.id_concepto_financiero
+         WHERE co.id_composicion_obligacion = NEW.id_composicion_capital_venta
+           AND co.id_obligacion_financiera = NEW.id_obligacion_financiera
+           AND cf.codigo_concepto_financiero = 'CAPITAL_VENTA'
+    ) THEN
+        RAISE EXCEPTION 'corrida_indexacion_financiera_detalle: id_composicion_capital_venta debe pertenecer a la obligacion y usar concepto CAPITAL_VENTA';
+    END IF;
+
+    IF NEW.id_composicion_ajuste_indexacion IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+          FROM public.composicion_obligacion co
+          JOIN public.concepto_financiero cf
+            ON cf.id_concepto_financiero = co.id_concepto_financiero
+         WHERE co.id_composicion_obligacion = NEW.id_composicion_ajuste_indexacion
+           AND co.id_obligacion_financiera = NEW.id_obligacion_financiera
+           AND cf.codigo_concepto_financiero = 'AJUSTE_INDEXACION'
+    ) THEN
+        RAISE EXCEPTION 'corrida_indexacion_financiera_detalle: id_composicion_ajuste_indexacion debe pertenecer a la obligacion y usar concepto AJUSTE_INDEXACION';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
 
 DO $$
 BEGIN
@@ -251,6 +298,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_bu_cif_core_ef' AND tgrelid = 'public.corrida_indexacion_financiera'::regclass) THEN
         CREATE TRIGGER trg_bu_cif_core_ef BEFORE UPDATE ON public.corrida_indexacion_financiera FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_biu_cifd_validar_composiciones' AND tgrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
+        CREATE TRIGGER trg_biu_cifd_validar_composiciones BEFORE INSERT OR UPDATE ON public.corrida_indexacion_financiera_detalle FOR EACH ROW EXECUTE FUNCTION public.trg_cifd_validar_composiciones();
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_bi_cifd_core_ef' AND tgrelid = 'public.corrida_indexacion_financiera_detalle'::regclass) THEN
         CREATE TRIGGER trg_bi_cifd_core_ef BEFORE INSERT ON public.corrida_indexacion_financiera_detalle FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
@@ -263,3 +313,4 @@ END $$;
 COMMENT ON TABLE public.corrida_indexacion_financiera IS 'Cabecera auditable de corrida de indexacion financiera V2 sobre una combinacion plan_pago_venta + plan_pago_venta_bloque.';
 COMMENT ON TABLE public.corrida_indexacion_financiera_detalle IS 'Detalle por obligacion analizada en una corrida de indexacion financiera V2; incluye elegibles y excluidas.';
 COMMENT ON INDEX public.ux_cif_idempotencia_funcional_activa IS 'Clave idempotente activa: plan+bloque+indice+valor aplicado+fecha de corte+origen+hash, excluyendo anuladas/reemplazadas y soft-deleted.';
+COMMENT ON FUNCTION public.trg_cifd_validar_composiciones() IS 'Validacion estructural: las composiciones opcionales del detalle deben pertenecer a la obligacion y usar CAPITAL_VENTA/AJUSTE_INDEXACION segun corresponda.';

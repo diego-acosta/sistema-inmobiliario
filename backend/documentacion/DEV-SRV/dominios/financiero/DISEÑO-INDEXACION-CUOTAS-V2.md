@@ -614,3 +614,29 @@ Desviaciones respecto del diseño conceptual:
 
 - Se usa `periodo_base` / `periodo_aplicado` en lugar de columnas separadas de valor base/aplicado en cabecera porque los valores normalizados quedan referenciados por `indice_financiero_valor` y el detalle conserva los valores numéricos auditables usados en cada obligación.
 - `id_generacion_cronograma_financiero` queda opcional y validado contra el plan cuando se informe, porque el esquema real permite la relación por `id_plan_pago_venta` pero no todos los orígenes de corrida nacen necesariamente desde una generación nueva.
+
+### Ajustes de integridad posteriores a revisión del PR #350
+
+La revisión del PR `#350` reforzó la implementación física sin cambiar el alcance funcional cerrado:
+
+- Se agregó la clave candidata `uq_ifv_id_indice_pair` en `indice_financiero_valor (id_indice_financiero_valor, id_indice_financiero)` para respaldar las FKs compuestas de valor base y valor aplicado contra el índice informado por la corrida.
+- Se agregó la clave candidata `uq_ppvbi_id_bloque_indice_pair` en `plan_pago_venta_bloque_indexacion (id_plan_pago_venta_bloque_indexacion, id_plan_pago_venta_bloque, id_indice_financiero)` y la FK compuesta `fk_cif_bloque_indexacion_mismo_bloque_indice`, de modo que una corrida no pueda usar una configuración comercial de indexación de otro bloque o de otro índice.
+- Se agregó la clave candidata `uq_composicion_obligacion_id_obligacion_pair` en `composicion_obligacion (id_composicion_obligacion, id_obligacion_financiera)` y las FKs compuestas `fk_cifd_composicion_capital_obligacion` y `fk_cifd_composicion_ajuste_obligacion`, para impedir que el detalle apunte a composiciones de otra obligación.
+- Se agregó la clave candidata `uq_ofi_id_obligacion_pair` en `obligacion_financiera_indexacion (id_obligacion_financiera_indexacion, id_obligacion_financiera)` y la FK compuesta `fk_cifd_obligacion_indexacion_obligacion`, para impedir trazabilidad cruzada entre obligaciones.
+- Se incorporó el trigger estructural `trg_biu_cifd_validar_composiciones`, respaldado por `trg_cifd_validar_composiciones()`, que valida que `id_composicion_capital_venta` use el concepto `CAPITAL_VENTA` y que `id_composicion_ajuste_indexacion` use `AJUSTE_INDEXACION`, siempre dentro de la misma obligación del detalle.
+
+Índices revisados:
+
+- Se eliminaron los índices simples adicionales sobre `uid_global` de las dos tablas nuevas porque ya existe una constraint `UNIQUE` sobre cada UID.
+- Se eliminó el índice parcial `idx_cifd_elegibles` porque la unicidad `(id_corrida_indexacion_financiera, id_obligacion_financiera)` ya cubre el acceso principal corrida+obligación; se mantienen índices por elegibilidad y por obligación para consultas futuras no redundantes.
+
+Pruebas incorporadas/reforzadas:
+
+- Aplicación idempotente del patch.
+- Inserción válida de cabecera y detalle con defaults CORE-EF.
+- Rechazo de bloque de otro plan, configuración con otro índice, generación de otro plan y valores de índice ajenos.
+- Rechazo de composiciones cruzadas o con concepto incorrecto.
+- Rechazo de trazabilidad de indexación perteneciente a otra obligación.
+- Estados, orígenes, idempotencia activa, corrida correctiva, detalle duplicado, importes/versiones inválidas, exclusión sin motivo y reemplazos.
+
+Se mantiene la decisión de que `diferencia_neta` pueda ser negativa como diferencia matemática/auditable, mientras `ajuste_nuevo`, importes y saldos siguen restringidos a valores no negativos.
