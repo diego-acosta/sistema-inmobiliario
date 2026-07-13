@@ -23,8 +23,10 @@ SQL_FILES=(
   "patch_plan_pago_venta_bloque_metodo_liquidacion_20260527.sql"
   "patch_indices_financieros_20260527.sql"
   "patch_plan_pago_venta_bloque_indexacion_20260528.sql"
+  "patch_corridas_indexacion_cuotas_v2_20260710.sql"
   "patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql"
 )
+
 DEV_SEEDS=(
   "seed_minimo.sql"
   "seed_indices_financieros_demo.sql"
@@ -46,8 +48,10 @@ audit_against_bat() {
   require_file "${BAT_FILE}"
   local bat_list sh_list missing extra
   bat_list="$(python - "${BAT_FILE}" <<'PY'
-import re, sys
+import re
+import sys
 from pathlib import Path
+
 text = Path(sys.argv[1]).read_text(encoding='utf-8', errors='ignore')
 seen = []
 for match in re.finditer(r'database\\([^%\n\r"]+\.sql)', text, flags=re.IGNORECASE):
@@ -74,12 +78,15 @@ PY
 }
 
 run_sql() {
-  local db="$1" label="$2" filename="$3" path
+  local db="$1"
+  local label="$2"
+  local filename="$3"
+  local path psql_file tmp_file
   path="${DATABASE_DIR}/${filename}"
   require_file "${path}"
   log "Aplicando ${label} en ${db}: ${filename}"
-  local psql_file="${path}"
-  local tmp_file=""
+  psql_file="${path}"
+  tmp_file=""
   if [[ "${filename}" == "schema_inmobiliaria_20260418.sql" ]]; then
     local server_version
     server_version="$(psql -v ON_ERROR_STOP=1 -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${db}" -Atc "SHOW server_version_num;")"
@@ -125,6 +132,7 @@ apply_common_files() {
   run_sql "${db}" "patch metodo_liquidacion por bloque" "patch_plan_pago_venta_bloque_metodo_liquidacion_20260527.sql"
   run_sql "${db}" "patch indices financieros" "patch_indices_financieros_20260527.sql"
   run_sql "${db}" "patch indexacion por bloque" "patch_plan_pago_venta_bloque_indexacion_20260528.sql"
+  run_sql "${db}" "patch corridas indexacion cuotas V2" "patch_corridas_indexacion_cuotas_v2_20260710.sql"
   run_sql "${db}" "patch porcentaje responsabilidad comprador" "patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql"
 }
 
@@ -150,11 +158,12 @@ log "Reset DEV finalizado correctamente: ${DEV_DB}"
 
 recreate_db "${TEST_DB}"
 apply_common_files "${TEST_DB}"
-log "NOTA: no se aplica seed de negocio en ${TEST_DB}. Los tests deben crear sus propios datos de dominio."
+log "NOTA: no se aplica seed de negocio en ${TEST_DB}."
+log "Los tests deben crear sus propios datos de dominio."
 log "Reset TEST finalizado correctamente: ${TEST_DB}"
 
 log "============================"
 log "Bases reseteadas correctamente"
-log "- ${DEV_DB}  (baseline tecnico + seed + indices financieros demo)"
+log "- ${DEV_DB} (baseline tecnico + seed + indices financieros demo)"
 log "- ${TEST_DB} (solo baseline tecnico)"
 log "============================"
