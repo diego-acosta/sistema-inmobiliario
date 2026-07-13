@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -1468,3 +1469,78 @@ class RegenerarCronogramaData(BaseModel):
 class RegenerarCronogramaResponse(BaseModel):
     ok: bool = True
     data: RegenerarCronogramaData
+
+# ── preview indexacion cuotas V2 ─────────────────────────────────────────────
+
+class PreviewIndexacionCuotasV2Request(BaseModel):
+    id_plan_pago_venta: int
+    id_plan_pago_venta_bloque: int
+    id_plan_pago_venta_bloque_indexacion: int
+    id_indice_financiero: int
+    id_indice_financiero_valor_aplicado: int
+    fecha_corte: date
+    periodo_aplicado: date
+    persistir: bool = False
+    motivo: str | None = None
+
+
+class PreviewIndexacionCuotasV2Detalle(BaseModel):
+    id_obligacion_financiera: int
+    id_composicion_capital_venta: int | None = None
+    id_composicion_ajuste_indexacion: int | None = None
+    id_obligacion_financiera_indexacion: int | None = None
+    version_esperada: int
+    capital_base: Decimal
+    valor_indice_base: Decimal
+    valor_indice_aplicado: Decimal
+    coeficiente_indexacion: Decimal
+    ajuste_anterior: Decimal
+    ajuste_nuevo: Decimal
+    diferencia_neta: Decimal
+    importe_anterior: Decimal
+    importe_nuevo: Decimal
+    saldo_anterior: Decimal
+    saldo_nuevo: Decimal
+    estado_elegibilidad: str
+    motivo_exclusion: str | None = None
+    advertencias: list[str] = Field(default_factory=list)
+
+
+class PreviewIndexacionCuotasV2Resumen(BaseModel):
+    cantidad_analizada: int
+    cantidad_elegible: int
+    cantidad_excluida: int
+    cantidad_aplicada: int
+    importe_total_anterior: Decimal
+    importe_total_nuevo: Decimal
+    ajuste_anterior_total: Decimal
+    ajuste_nuevo_total: Decimal
+    saldo_anterior_total: Decimal
+    saldo_nuevo_total: Decimal
+
+
+class PreviewIndexacionCuotasV2Data(BaseModel):
+    modo: str
+    id_corrida_indexacion_financiera: int | None = None
+    id_plan_pago_venta: int
+    id_plan_pago_venta_bloque: int
+    id_plan_pago_venta_bloque_indexacion: int
+    id_indice_financiero: int
+    id_indice_financiero_valor_aplicado: int
+    periodo_base: date
+    periodo_aplicado: date
+    fecha_corte: date
+    fecha_publicacion_indice: date | None = None
+    valor_indice_base: Decimal
+    valor_indice_aplicado: Decimal
+    coeficiente_indexacion: Decimal
+    hash_corrida: str
+    resumen: PreviewIndexacionCuotasV2Resumen
+    snapshot_alcance: dict[str, Any]
+    snapshot_versiones: dict[str, int]
+    detalles: list[PreviewIndexacionCuotasV2Detalle]
+
+
+class PreviewIndexacionCuotasV2Response(BaseModel):
+    ok: bool = True
+    data: PreviewIndexacionCuotasV2Data
