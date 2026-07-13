@@ -199,7 +199,7 @@ def _create_context(db):
         db,
         """
         INSERT INTO public.relacion_generadora (tipo_origen, id_origen, estado_relacion_generadora)
-        VALUES ('VENTA', :venta, 'ACTIVA')
+        VALUES ('venta', :venta, 'ACTIVA')
         RETURNING id_relacion_generadora
         """,
         venta=plan["venta"],
