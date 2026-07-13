@@ -120,6 +120,8 @@ from app.api.schemas.financiero import (
     RelacionGeneradoraListData,
     RelacionGeneradoraListResponse,
     RelacionGeneradoraResponse,
+    PreviewIndexacionCuotasV2Request,
+    PreviewIndexacionCuotasV2Response,
 )
 from app.application.common.commands import CommandContext
 from app.api.core_ef_headers import (
@@ -214,6 +216,13 @@ from app.application.financiero.services.inbox_event_dispatcher import (
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
+)
+from app.application.financiero.services.preview_indexacion_cuotas_v2_service import (
+    PreviewIndexacionCuotasV2Command,
+    PreviewIndexacionCuotasV2Service,
+)
+from app.infrastructure.persistence.repositories.preview_indexacion_cuotas_v2_repository import (
+    PreviewIndexacionCuotasV2SqlAlchemyRepository,
 )
 from app.application.financiero.services.materializar_factura_servicio_service import (
     MaterializarFacturaServicioService,
@@ -3069,6 +3078,75 @@ def revertir_pago_agrupado(
         data=RevertirPagoAgrupadoData(**result.data)
     )
 
+
+_PREVIEW_INDEXACION_STATUS_BY_ERROR = {
+    "ALCANCE_INDEXACION_INVALIDO": 404,
+    "VALOR_INDICE_APLICADO_INEXISTENTE": 404,
+    "VALOR_INDICE_APLICADO_INCOMPATIBLE": 409,
+    "IDEMPOTENCIA_PAYLOAD_INCOMPATIBLE": 409,
+    "CORE_EF_HEADERS_REQUERIDOS": 400,
+    "VALOR_INDICE_INVALIDO": 400,
+    "SIN_OBLIGACIONES_ANALIZABLES": 400,
+}
+
+@router.post(
+    "/api/v1/financiero/indexacion-cuotas-v2/preview",
+    response_model=PreviewIndexacionCuotasV2Response,
+    responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def preview_indexacion_cuotas_v2(
+    request: PreviewIndexacionCuotasV2Request,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> PreviewIndexacionCuotasV2Response | JSONResponse:
+    core_ef = None
+    if request.persistir:
+        try:
+            core_ef = parse_core_ef_headers(
+                x_op_id=x_op_id,
+                x_usuario_id=x_usuario_id,
+                x_sucursal_id=x_sucursal_id,
+                x_instalacion_id=x_instalacion_id,
+            )
+        except CoreEFHeaderValidationError as exc:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    error_code="VALIDATION_ERROR",
+                    error_message=exc.message,
+                    details={"header": exc.header_name},
+                ).model_dump(),
+            )
+    service = PreviewIndexacionCuotasV2Service(
+        PreviewIndexacionCuotasV2SqlAlchemyRepository(db)
+    )
+    result = service.execute(
+        PreviewIndexacionCuotasV2Command(
+            id_plan_pago_venta=request.id_plan_pago_venta,
+            id_plan_pago_venta_bloque=request.id_plan_pago_venta_bloque,
+            id_plan_pago_venta_bloque_indexacion=request.id_plan_pago_venta_bloque_indexacion,
+            id_indice_financiero=request.id_indice_financiero,
+            id_indice_financiero_valor_aplicado=request.id_indice_financiero_valor_aplicado,
+            fecha_corte=request.fecha_corte,
+            periodo_aplicado=request.periodo_aplicado,
+            persistir=request.persistir,
+            motivo=request.motivo,
+        ),
+        core_ef,
+    )
+    if not result.success:
+        error_code = result.errors[0]
+        return JSONResponse(
+            status_code=_PREVIEW_INDEXACION_STATUS_BY_ERROR.get(error_code, 400),
+            content=ErrorResponse(
+                error_code=error_code,
+                error_message=error_code,
+            ).model_dump(),
+        )
+    return PreviewIndexacionCuotasV2Response(data=result.data)
 
 @router.post("/api/v1/financiero/inbox", status_code=204)
 def financiero_inbox(
