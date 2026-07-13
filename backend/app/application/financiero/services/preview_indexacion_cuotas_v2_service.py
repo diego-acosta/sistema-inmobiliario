@@ -17,6 +17,7 @@ ESTADO_ELEGIBLE = "ELEGIBLE"
 ESTADO_EXCLUIDA = "EXCLUIDA"
 ESTADO_PREVIEW_PERSISTIDO = "PREVISUALIZADA"
 ORIGEN_REINDEXACION_MANUAL = "REINDEXACION_MANUAL"
+ESTADOS_ELEGIBLES = {"PROYECTADA", "EMITIDA", "EXIGIBLE", "VENCIDA"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +37,7 @@ class PreviewIndexacionCuotasV2Command:
 class PreviewIndexacionCuotasV2Repository(Protocol):
     def get_scope(self, command: PreviewIndexacionCuotasV2Command) -> dict[str, Any] | None: ...
     def get_valor_indice(self, id_valor: int) -> dict[str, Any] | None: ...
-    def list_obligaciones_bloque(self, id_bloque: int) -> list[dict[str, Any]]: ...
+    def list_obligaciones_bloque(self, id_bloque: int, fecha_corte: date) -> list[dict[str, Any]]: ...
     def get_corrida_by_op_id(self, op_id: UUID) -> dict[str, Any] | None: ...
     def create_corrida_preview(self, payload: dict[str, Any], detalles: list[dict[str, Any]]) -> dict[str, Any]: ...
 
@@ -70,7 +71,7 @@ class PreviewIndexacionCuotasV2Service:
             return AppResult.fail("VALOR_INDICE_INVALIDO")
         coeficiente = (valor_aplicado / valor_base).quantize(Q8, rounding=ROUND_HALF_UP)
 
-        obligaciones = self.repository.list_obligaciones_bloque(command.id_plan_pago_venta_bloque)
+        obligaciones = self.repository.list_obligaciones_bloque(command.id_plan_pago_venta_bloque, command.fecha_corte)
         if not obligaciones:
             return AppResult.fail("SIN_OBLIGACIONES_ANALIZABLES")
 
@@ -108,7 +109,16 @@ class PreviewIndexacionCuotasV2Service:
         if command.persistir:
             assert core_ef is not None
             payload_hash = hashlib.sha256(
-                json.dumps(snapshot_alcance, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                json.dumps(
+                    {
+                        **snapshot_alcance,
+                        "origen_corrida": command.origen_corrida,
+                        "motivo": command.motivo,
+                        "persistir": command.persistir,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
             ).hexdigest()
             existing = self.repository.get_corrida_by_op_id(core_ef.x_op_id)
             if existing is not None:
@@ -121,6 +131,11 @@ class PreviewIndexacionCuotasV2Service:
                 {
                     **snapshot_alcance,
                     "periodo_base": scope["fecha_base_indice"].isoformat(),
+                    "fecha_publicacion_indice": (
+                        valor_aplicado_row.get("fecha_publicacion").isoformat()
+                        if valor_aplicado_row.get("fecha_publicacion") is not None
+                        else None
+                    ),
                     "id_indice_financiero_valor_base": None,
                     "origen_corrida": command.origen_corrida,
                     "estado_corrida": ESTADO_PREVIEW_PERSISTIDO,
@@ -132,6 +147,9 @@ class PreviewIndexacionCuotasV2Service:
                     "id_usuario": core_ef.x_usuario_id,
                     "id_sucursal": core_ef.x_sucursal_id,
                     "id_instalacion_origen": core_ef.x_instalacion_id,
+                    "id_instalacion_ultima_modificacion": core_ef.x_instalacion_id,
+                    "op_id_alta": str(core_ef.x_op_id),
+                    "op_id_ultima_modificacion": str(core_ef.x_op_id),
                     "motivo": command.motivo,
                     **data["resumen"],
                 },
@@ -145,21 +163,63 @@ class PreviewIndexacionCuotasV2Service:
         capital = _dec(row.get("capital_base") or 0).quantize(Q2)
         ajuste_anterior = _dec(row.get("ajuste_anterior") or 0).quantize(Q2)
         ajuste_nuevo = (capital * (coeficiente - Decimal("1"))).quantize(Q2, rounding=ROUND_HALF_UP)
+        ajuste_objetivo_calculado = ajuste_nuevo
         estado = ESTADO_ELEGIBLE
         motivo = None
-        if row["estado_obligacion"] != "ACTIVA":
-            estado, motivo = ESTADO_EXCLUIDA, "OBLIGACION_NO_ACTIVA"
+        if row["estado_obligacion"] not in ESTADOS_ELEGIBLES:
+            estado, motivo = ESTADO_EXCLUIDA, "ESTADO_OBLIGACION_NO_ELEGIBLE"
         elif capital <= 0:
             estado, motivo = ESTADO_EXCLUIDA, "SIN_CAPITAL_INDEXABLE"
+        elif row.get("tiene_imputaciones"):
+            estado, motivo = ESTADO_EXCLUIDA, "OBLIGACION_CON_IMPUTACIONES_ACTIVAS"
+        elif row.get("tiene_pagos"):
+            estado, motivo = ESTADO_EXCLUIDA, "OBLIGACION_CON_PAGOS_ACTIVOS"
+        elif row.get("tiene_punitorios"):
+            estado, motivo = ESTADO_EXCLUIDA, "OBLIGACION_CON_MORA_INCOMPATIBLE"
         elif ajuste_nuevo < 0:
-            estado, motivo = ESTADO_EXCLUIDA, "AJUSTE_INDEXACION_NEGATIVO"
+            estado, motivo = ESTADO_EXCLUIDA, "AJUSTE_NEGATIVO_NO_SOPORTADO"
         advertencias = []
-        for flag, msg in (("tiene_imputaciones", "OBLIGACION_CON_IMPUTACIONES"), ("tiene_pagos", "OBLIGACION_CON_PAGOS"), ("tiene_mora", "OBLIGACION_CON_MORA")):
-            if row.get(flag):
-                advertencias.append(msg)
+        if row.get("tiene_mora") and not row.get("tiene_punitorios"):
+            advertencias.append("OBLIGACION_VENCIDA_SIN_EFECTOS_POSTERIORES")
+        if row.get("tiene_recibos"):
+            estado, motivo = ESTADO_EXCLUIDA, "OBLIGACION_CON_RECIBOS_CONGELANTES"
         importe_anterior = _dec(row["importe_total"]).quantize(Q2)
         saldo_anterior = _dec(row["saldo_pendiente"]).quantize(Q2)
-        diferencia = (ajuste_nuevo - ajuste_anterior).quantize(Q2)
+        if estado != ESTADO_ELEGIBLE:
+            ajuste_nuevo = max(ajuste_nuevo, Decimal("0.00")).quantize(Q2)
+            diferencia = Decimal("0.00")
+        else:
+            diferencia = (ajuste_nuevo - ajuste_anterior).quantize(Q2)
+        snapshot_antes = {
+            "id_obligacion_financiera": row["id_obligacion_financiera"],
+            "estado_obligacion": row["estado_obligacion"],
+            "version_registro": row["version_registro"],
+            "capital_base": _canon_decimal(capital, Q2),
+            "ajuste_anterior": _canon_decimal(ajuste_anterior, Q2),
+            "importe_total": _canon_decimal(importe_anterior, Q2),
+            "saldo_pendiente": _canon_decimal(saldo_anterior, Q2),
+            "id_composicion_capital_venta": row.get("id_composicion_capital_venta"),
+            "id_composicion_ajuste_indexacion": row.get("id_composicion_ajuste_indexacion"),
+            "id_obligacion_financiera_indexacion": row.get("id_obligacion_financiera_indexacion"),
+            "flags": {
+                "tiene_imputaciones": bool(row.get("tiene_imputaciones")),
+                "tiene_pagos": bool(row.get("tiene_pagos")),
+                "tiene_mora": bool(row.get("tiene_mora")),
+                "tiene_punitorios": bool(row.get("tiene_punitorios")),
+                "tiene_recibos": bool(row.get("tiene_recibos")),
+            },
+        }
+        snapshot_despues = {
+            "estado_elegibilidad": estado,
+            "motivo_exclusion": motivo,
+            "ajuste_objetivo_calculado": _canon_decimal(ajuste_objetivo_calculado, Q2),
+            "ajuste_nuevo_persistible": _canon_decimal(ajuste_nuevo, Q2),
+            "diferencia_neta": _canon_decimal(diferencia, Q2),
+            "importe_nuevo": _canon_decimal((importe_anterior + diferencia).quantize(Q2), Q2),
+            "saldo_nuevo": _canon_decimal((saldo_anterior + diferencia).quantize(Q2), Q2),
+            "advertencias": advertencias,
+            "version_esperada": row["version_registro"],
+        }
         return {
             "id_obligacion_financiera": row["id_obligacion_financiera"],
             "id_composicion_capital_venta": row.get("id_composicion_capital_venta"),
@@ -180,11 +240,13 @@ class PreviewIndexacionCuotasV2Service:
             "estado_elegibilidad": estado,
             "motivo_exclusion": motivo,
             "advertencias": advertencias,
+            "snapshot_antes": snapshot_antes,
+            "snapshot_despues": snapshot_despues,
         }
 
     @staticmethod
     def _canonical_detalle(d: dict[str, Any]) -> dict[str, Any]:
-        keys = ["id_obligacion_financiera", "version_esperada", "capital_base", "ajuste_anterior", "ajuste_nuevo", "diferencia_neta", "importe_anterior", "importe_nuevo", "saldo_anterior", "saldo_nuevo", "estado_elegibilidad", "motivo_exclusion"]
+        keys = ["id_obligacion_financiera", "id_composicion_capital_venta", "id_composicion_ajuste_indexacion", "id_obligacion_financiera_indexacion", "version_esperada", "capital_base", "ajuste_anterior", "ajuste_nuevo", "diferencia_neta", "importe_anterior", "importe_nuevo", "saldo_anterior", "saldo_nuevo", "estado_elegibilidad", "motivo_exclusion", "advertencias", "snapshot_antes", "snapshot_despues"]
         return {k: _canon(d[k]) for k in keys}
 
     def _response(self, command, scope, valor_aplicado_row, valor_base, valor_aplicado, coeficiente, detalles, hash_corrida, snapshot_alcance, snapshot_versiones):

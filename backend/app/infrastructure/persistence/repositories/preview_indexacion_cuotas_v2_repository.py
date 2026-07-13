@@ -38,7 +38,7 @@ class PreviewIndexacionCuotasV2SqlAlchemyRepository:
         """), {"id": id_valor}).mappings().first()
         return dict(row) if row else None
 
-    def list_obligaciones_bloque(self, id_bloque: int) -> list[dict[str, Any]]:
+    def list_obligaciones_bloque(self, id_bloque: int, fecha_corte: Any) -> list[dict[str, Any]]:
         rows = self.db.execute(text("""
             SELECT o.id_obligacion_financiera, o.version_registro, o.estado_obligacion,
                    o.importe_total, o.saldo_pendiente, o.fecha_vencimiento,
@@ -52,7 +52,13 @@ class PreviewIndexacionCuotasV2SqlAlchemyRepository:
                        SELECT 1 FROM aplicacion_financiera a JOIN movimiento_financiero m ON m.id_movimiento_financiero = a.id_movimiento_financiero
                        WHERE a.id_obligacion_financiera = o.id_obligacion_financiera AND a.deleted_at IS NULL AND m.deleted_at IS NULL AND m.estado_movimiento = 'APLICADO'
                    ) AS tiene_pagos,
-                   (o.fecha_vencimiento < CURRENT_DATE AND o.saldo_pendiente > 0) AS tiene_mora
+                   (o.fecha_vencimiento < :fecha_corte AND o.saldo_pendiente > 0) AS tiene_mora,
+                   EXISTS (
+                       SELECT 1 FROM composicion_obligacion cp JOIN concepto_financiero cfp ON cfp.id_concepto_financiero = cp.id_concepto_financiero
+                       WHERE cp.id_obligacion_financiera = o.id_obligacion_financiera AND cp.deleted_at IS NULL AND cp.estado_composicion_obligacion = 'ACTIVA'
+                         AND cfp.codigo_concepto_financiero = 'PUNITORIO' AND cp.saldo_componente > 0
+                   ) AS tiene_punitorios,
+                   false AS tiene_recibos
             FROM obligacion_financiera o
             LEFT JOIN composicion_obligacion cap ON cap.id_obligacion_financiera = o.id_obligacion_financiera AND cap.deleted_at IS NULL AND cap.estado_composicion_obligacion = 'ACTIVA'
               AND cap.id_concepto_financiero = (SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero = 'CAPITAL_VENTA' LIMIT 1)
@@ -61,7 +67,7 @@ class PreviewIndexacionCuotasV2SqlAlchemyRepository:
             LEFT JOIN obligacion_financiera_indexacion ofi ON ofi.id_obligacion_financiera = o.id_obligacion_financiera AND ofi.deleted_at IS NULL
             WHERE o.id_plan_pago_venta_bloque = :id_bloque AND o.deleted_at IS NULL
             ORDER BY o.id_obligacion_financiera
-        """), {"id_bloque": id_bloque}).mappings().all()
+        """), {"id_bloque": id_bloque, "fecha_corte": fecha_corte}).mappings().all()
         return [dict(r) for r in rows]
 
     def get_corrida_by_op_id(self, op_id: Any) -> dict[str, Any] | None:
@@ -78,25 +84,27 @@ class PreviewIndexacionCuotasV2SqlAlchemyRepository:
                 id_plan_pago_venta,id_plan_pago_venta_bloque,id_plan_pago_venta_bloque_indexacion,
                 id_indice_financiero,id_indice_financiero_valor_base,id_indice_financiero_valor_aplicado,
                 periodo_base,periodo_aplicado,fecha_corte,fecha_publicacion_indice,origen_corrida,estado_corrida,op_id,hash_corrida,payload_hash,
-                snapshot_alcance,snapshot_versiones,id_usuario,id_sucursal,id_instalacion_origen,motivo,
+                snapshot_alcance,snapshot_versiones,id_usuario,id_sucursal,id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion,motivo,
                 cantidad_analizada,cantidad_elegible,cantidad_excluida,cantidad_aplicada,importe_total_anterior,importe_total_nuevo,ajuste_anterior_total,ajuste_nuevo_total,saldo_anterior_total,saldo_nuevo_total)
             VALUES (:id_plan_pago_venta,:id_plan_pago_venta_bloque,:id_plan_pago_venta_bloque_indexacion,
                 :id_indice_financiero,:id_indice_financiero_valor_base,:id_indice_financiero_valor_aplicado,
                 :periodo_base,:periodo_aplicado,:fecha_corte,:fecha_publicacion_indice,:origen_corrida,:estado_corrida,:op_id,:hash_corrida,:payload_hash,
-                CAST(:snapshot_alcance AS jsonb),CAST(:snapshot_versiones AS jsonb),:id_usuario,:id_sucursal,:id_instalacion_origen,:motivo,
+                CAST(:snapshot_alcance AS jsonb),CAST(:snapshot_versiones AS jsonb),:id_usuario,:id_sucursal,:id_instalacion_origen,:id_instalacion_ultima_modificacion,CAST(:op_id_alta AS uuid),CAST(:op_id_ultima_modificacion AS uuid),:motivo,
                 :cantidad_analizada,:cantidad_elegible,:cantidad_excluida,:cantidad_aplicada,:importe_total_anterior,:importe_total_nuevo,:ajuste_anterior_total,:ajuste_nuevo_total,:saldo_anterior_total,:saldo_nuevo_total)
             RETURNING id_corrida_indexacion_financiera
-        """), {**payload, "snapshot_alcance": json.dumps(payload["snapshot_alcance"]), "snapshot_versiones": json.dumps(payload["snapshot_versiones"]), "fecha_publicacion_indice": None}).mappings().one()
+        """), {**payload, "snapshot_alcance": json.dumps(payload["snapshot_alcance"]), "snapshot_versiones": json.dumps(payload["snapshot_versiones"])}).mappings().one()
         id_corrida = row["id_corrida_indexacion_financiera"]
         for d in detalles:
             self.db.execute(text("""
                 INSERT INTO corrida_indexacion_financiera_detalle (
                     id_corrida_indexacion_financiera,id_obligacion_financiera,id_composicion_capital_venta,id_composicion_ajuste_indexacion,id_obligacion_financiera_indexacion,
+                    id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion,
                     version_esperada,capital_base,valor_indice_base,valor_indice_aplicado,coeficiente_indexacion,ajuste_anterior,ajuste_nuevo,diferencia_neta,importe_anterior,importe_nuevo,saldo_anterior,saldo_nuevo,
                     estado_elegibilidad,motivo_exclusion,advertencias,snapshot_antes,snapshot_despues)
                 VALUES (:id_corrida,:id_obligacion_financiera,:id_composicion_capital_venta,:id_composicion_ajuste_indexacion,:id_obligacion_financiera_indexacion,
+                    :id_instalacion_origen,:id_instalacion_ultima_modificacion,CAST(:op_id_alta AS uuid),CAST(:op_id_ultima_modificacion AS uuid),
                     :version_esperada,:capital_base,:valor_indice_base,:valor_indice_aplicado,:coeficiente_indexacion,:ajuste_anterior,:ajuste_nuevo,:diferencia_neta,:importe_anterior,:importe_nuevo,:saldo_anterior,:saldo_nuevo,
                     :estado_elegibilidad,:motivo_exclusion,CAST(:advertencias AS jsonb),CAST(:snapshot_antes AS jsonb),CAST(:snapshot_despues AS jsonb))
-            """), {**d, "id_corrida": id_corrida, "advertencias": json.dumps(d["advertencias"]), "snapshot_antes": json.dumps({}), "snapshot_despues": json.dumps({})})
+            """), {**d, "id_corrida": id_corrida, "id_instalacion_origen": payload["id_instalacion_origen"], "id_instalacion_ultima_modificacion": payload["id_instalacion_ultima_modificacion"], "op_id_alta": payload["op_id_alta"], "op_id_ultima_modificacion": payload["op_id_ultima_modificacion"], "advertencias": json.dumps(d["advertencias"]), "snapshot_antes": json.dumps(d["snapshot_antes"], sort_keys=True), "snapshot_despues": json.dumps(d["snapshot_despues"], sort_keys=True)})
         self.db.commit()
         return {"id_corrida_indexacion_financiera": id_corrida}

@@ -1504,6 +1504,8 @@ class PreviewIndexacionCuotasV2Detalle(BaseModel):
     estado_elegibilidad: str
     motivo_exclusion: str | None = None
     advertencias: list[str] = Field(default_factory=list)
+    snapshot_antes: dict[str, Any] | None = None
+    snapshot_despues: dict[str, Any] | None = None
 
 
 class PreviewIndexacionCuotasV2Resumen(BaseModel):

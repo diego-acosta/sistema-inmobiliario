@@ -3079,6 +3079,15 @@ def revertir_pago_agrupado(
     )
 
 
+_PREVIEW_INDEXACION_STATUS_BY_ERROR = {
+    "ALCANCE_INDEXACION_INVALIDO": 404,
+    "VALOR_INDICE_APLICADO_INEXISTENTE": 404,
+    "VALOR_INDICE_APLICADO_INCOMPATIBLE": 409,
+    "IDEMPOTENCIA_PAYLOAD_INCOMPATIBLE": 409,
+    "CORE_EF_HEADERS_REQUERIDOS": 400,
+    "VALOR_INDICE_INVALIDO": 400,
+    "SIN_OBLIGACIONES_ANALIZABLES": 400,
+}
 
 @router.post(
     "/api/v1/financiero/indexacion-cuotas-v2/preview",
@@ -3129,11 +3138,12 @@ def preview_indexacion_cuotas_v2(
         core_ef,
     )
     if not result.success:
+        error_code = result.errors[0]
         return JSONResponse(
-            status_code=409 if "INCOMPATIBLE" in result.errors[0] else 400,
+            status_code=_PREVIEW_INDEXACION_STATUS_BY_ERROR.get(error_code, 400),
             content=ErrorResponse(
-                error_code=result.errors[0],
-                error_message=result.errors[0],
+                error_code=error_code,
+                error_message=error_code,
             ).model_dump(),
         )
     return PreviewIndexacionCuotasV2Response(data=result.data)

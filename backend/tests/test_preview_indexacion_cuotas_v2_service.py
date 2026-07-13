@@ -17,7 +17,7 @@ class Repo:
             {
                 "id_obligacion_financiera": 10,
                 "version_registro": 1,
-                "estado_obligacion": "ACTIVA",
+                "estado_obligacion": "EMITIDA",
                 "importe_total": Decimal("1000.00"),
                 "saldo_pendiente": Decimal("1000.00"),
                 "capital_base": Decimal("1000.00"),
@@ -28,6 +28,8 @@ class Repo:
                 "tiene_imputaciones": False,
                 "tiene_pagos": False,
                 "tiene_mora": False,
+                "tiene_punitorios": False,
+                "tiene_recibos": False,
             }
         ]
 
@@ -40,7 +42,7 @@ class Repo:
     def get_valor_indice(self, id_valor):
         return {"id_indice_financiero": 1, "valor_indice": Decimal("125.00000000"), "fecha_publicacion": date(2026, 2, 1)}
 
-    def list_obligaciones_bloque(self, id_bloque):
+    def list_obligaciones_bloque(self, id_bloque, fecha_corte):
         return list(self.rows)
 
     def get_corrida_by_op_id(self, op_id):
@@ -74,6 +76,7 @@ def test_preview_efimero_calcula_coeficiente_ajustes_y_hash_estable():
     assert r1.data["coeficiente_indexacion"] == Decimal("1.25000000")
     det = r1.data["detalles"][0]
     assert det["ajuste_nuevo"] == Decimal("250.00")
+    assert det["snapshot_antes"]["estado_obligacion"] == "EMITIDA"
     assert det["diferencia_neta"] == Decimal("250.00")
     assert det["importe_nuevo"] == Decimal("1250.00")
     assert det["saldo_nuevo"] == Decimal("1250.00")
@@ -96,7 +99,9 @@ def test_ajuste_negativo_excluye_obligacion():
     result = PreviewIndexacionCuotasV2Service(repo).execute(cmd())
     det = result.data["detalles"][0]
     assert det["estado_elegibilidad"] == "EXCLUIDA"
-    assert det["motivo_exclusion"] == "AJUSTE_INDEXACION_NEGATIVO"
+    assert det["motivo_exclusion"] == "AJUSTE_NEGATIVO_NO_SOPORTADO"
+    assert det["ajuste_nuevo"] == Decimal("0.00")
+    assert det["snapshot_despues"]["ajuste_objetivo_calculado"] == "-200.00"
 
 
 def test_preview_persistido_requiere_headers_y_persiste():
