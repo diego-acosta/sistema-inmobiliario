@@ -71,3 +71,69 @@ La cabecera persistida conserva `fecha_publicacion_indice` desde `indice_financi
 ## Límite respecto de #343
 
 No aplica indexación, no crea ni actualiza `AJUSTE_INDEXACION`, no incrementa versiones y no valida aplicación final. La aplicación posterior debe validar los snapshots guardados antes de modificar deuda.
+
+---
+
+# Aplicación de corridas de indexación de cuotas V2 — Issue #343
+
+Endpoint implementado: `POST /api/v1/financiero/indexacion-cuotas-v2/corridas/{id_corrida_indexacion_financiera}/aplicar`.
+
+## Decisión CORE-EF
+
+- Clasificación: `COMMAND_WRITE_NEGOCIO`.
+- Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` e `If-Match-Version`; se parsean con el helper común de CORE-EF.
+- Idempotencia: aplica por `X-Op-Id` de aplicación. Mismo `op_id` sobre la misma corrida ya `APLICADA` devuelve `modo=IDEMPOTENTE`; mismo `op_id` sobre otra corrida se rechaza con conflicto.
+- Outbox: aplica dentro de la transacción funcional con `outbox_event.event_type = financiero.indexacion_cuotas_v2.corrida_aplicada` y `aggregate_type = corrida_indexacion_financiera`.
+- Lock lógico: aplica por obligación usando `lock_logico` con `tipo_entidad = OBLIGACION_FINANCIERA`, orden estable por `id_obligacion_financiera`, `op_id` como owner y liberación al finalizar la aplicación.
+- Versionado: aplica optimistic locking sobre `corrida_indexacion_financiera.version_registro` vía `If-Match-Version` y sobre cada `obligacion_financiera.version_registro` persistida en el detalle del preview.
+- Rollback/transacción: obligación, composición, trazabilidad, detalle, corrida y outbox se modifican en una transacción funcional. Ante drift funcional se revierte y se marca la corrida `FALLIDA` en transacción técnica separada si la corrida no fue aplicada.
+
+## Contrato
+
+Request body:
+
+```json
+{
+  "hash_corrida": "sha256 opcional esperado por el cliente"
+}
+```
+
+Response exitosa:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "modo": "APLICADA | IDEMPOTENTE",
+    "id_corrida_indexacion_financiera": 123,
+    "estado_corrida": "APLICADA",
+    "cantidad_aplicada": 2,
+    "hash_corrida": "...",
+    "idempotente": false
+  }
+}
+```
+
+## Precondiciones y límites
+
+- Solo aplica corridas persistidas no borradas en estados físicos `PREVISUALIZADA` o `PENDIENTE_APLICACION`.
+- No confía en importes enviados por cliente; usa cabecera y detalles persistidos.
+- Rechaza hash esperado incompatible, corrida reemplazada, corrida no aplicable, versión de corrida incompatible, versión de obligación incompatible, drift de capital, drift de ajuste previo, pagos/imputaciones activos, punitorios incompatibles y locks lógicos activos de otro owner.
+- Las excluidas del preview no modifican obligaciones ni se cuentan como aplicadas.
+- No implementa reversión, corrección avanzada, cuotas pagadas/parcialmente canceladas, reimputación, notas de crédito, bonificación por ajuste negativo, jobs ni publicación automática; esos límites quedan fuera del alcance de #343 y de #349.
+
+## Persistencia aplicada
+
+Para cada detalle elegible confirmado:
+
+- valida `CAPITAL_VENTA` real por composición persistida;
+- crea o actualiza la composición activa `AJUSTE_INDEXACION` con el importe objetivo del detalle, sin acumular ciegamente;
+- actualiza `obligacion_financiera.importe_total`, `saldo_pendiente`, `op_id_ultima_modificacion`, `id_instalacion_ultima_modificacion` y el versionado por triggers CORE-EF;
+- registra/actualiza `obligacion_financiera_indexacion` con índice, valor aplicado, coeficiente y referencia técnica a la corrida;
+- completa el detalle con `version_resultante`, ids finales de ajuste/trazabilidad y snapshot posterior;
+- actualiza la cabecera a `APLICADA`, `fecha_aplicacion`, `cantidad_aplicada`, metadata CORE-EF y limpia campos de error;
+- inserta el evento transaccional en `outbox_event`.
+
+## FALLIDA
+
+Si una validación de aplicación falla después de iniciar la transacción funcional, la transacción se revierte y se abre una transacción técnica separada para persistir `estado_corrida = FALLIDA`, `codigo_error`, `etapa_error`, `diagnostico_tecnico`, `op_id_ultima_modificacion` e `id_instalacion_ultima_modificacion`. No se sobrescribe una corrida ya `APLICADA`.

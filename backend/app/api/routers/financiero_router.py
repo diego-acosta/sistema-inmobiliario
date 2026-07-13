@@ -122,6 +122,8 @@ from app.api.schemas.financiero import (
     RelacionGeneradoraResponse,
     PreviewIndexacionCuotasV2Request,
     PreviewIndexacionCuotasV2Response,
+    AplicarIndexacionCuotasV2Request,
+    AplicarIndexacionCuotasV2Response,
 )
 from app.application.common.commands import CommandContext
 from app.api.core_ef_headers import (
@@ -221,8 +223,15 @@ from app.application.financiero.services.preview_indexacion_cuotas_v2_service im
     PreviewIndexacionCuotasV2Command,
     PreviewIndexacionCuotasV2Service,
 )
+from app.application.financiero.services.aplicar_indexacion_cuotas_v2_service import (
+    AplicarIndexacionCuotasV2Command,
+    AplicarIndexacionCuotasV2Service,
+)
 from app.infrastructure.persistence.repositories.preview_indexacion_cuotas_v2_repository import (
     PreviewIndexacionCuotasV2SqlAlchemyRepository,
+)
+from app.infrastructure.persistence.repositories.aplicar_indexacion_cuotas_v2_repository import (
+    AplicarIndexacionCuotasV2SqlAlchemyRepository,
 )
 from app.application.financiero.services.materializar_factura_servicio_service import (
     MaterializarFacturaServicioService,
@@ -3147,6 +3156,75 @@ def preview_indexacion_cuotas_v2(
             ).model_dump(),
         )
     return PreviewIndexacionCuotasV2Response(data=result.data)
+
+_APLICAR_INDEXACION_STATUS_BY_ERROR = {
+    "CORRIDA_INDEXACION_INEXISTENTE": 404,
+    "IF_MATCH_VERSION_REQUERIDO": 400,
+    "HASH_CORRIDA_INVALIDO": 409,
+    "VERSION_CORRIDA_INCOMPATIBLE": 409,
+    "VERSION_OBLIGACION_INCOMPATIBLE": 409,
+    "CORRIDA_INDEXACION_NO_APLICABLE": 409,
+    "CORRIDA_INDEXACION_REEMPLAZADA": 409,
+    "CORRIDA_SIN_DETALLES_ELEGIBLES": 400,
+    "OBLIGACION_NO_ELEGIBLE": 409,
+    "OBLIGACION_CON_IMPUTACIONES_ACTIVAS": 409,
+    "OBLIGACION_CON_MORA_INCOMPATIBLE": 409,
+    "LOCK_LOGICO_OCUPADO": 409,
+    "COMPOSICION_CAPITAL_INCOMPATIBLE": 409,
+    "AJUSTE_INDEXACION_INCOMPATIBLE": 409,
+    "AJUSTE_NEGATIVO_NO_SOPORTADO": 409,
+    "IDEMPOTENCIA_OP_ID_EN_OTRA_CORRIDA": 409,
+    "ERROR_TRANSACCIONAL_INDEXACION": 500,
+}
+
+@router.post(
+    "/api/v1/financiero/indexacion-cuotas-v2/corridas/{id_corrida_indexacion_financiera}/aplicar",
+    response_model=AplicarIndexacionCuotasV2Response,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def aplicar_indexacion_cuotas_v2(
+    id_corrida_indexacion_financiera: int,
+    request: AplicarIndexacionCuotasV2Request,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> AplicarIndexacionCuotasV2Response | JSONResponse:
+    try:
+        core_ef = parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=if_match_version,
+            require_if_match_version=True,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message=exc.message,
+                details={"header": exc.header_name},
+            ).model_dump(),
+        )
+    service = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db))
+    result = service.execute(
+        AplicarIndexacionCuotasV2Command(
+            id_corrida_indexacion_financiera=id_corrida_indexacion_financiera,
+            hash_corrida=request.hash_corrida,
+        ),
+        core_ef,
+    )
+    if not result.success:
+        error_code = result.errors[0]
+        return JSONResponse(
+            status_code=_APLICAR_INDEXACION_STATUS_BY_ERROR.get(error_code, 400),
+            content=ErrorResponse(error_code=error_code, error_message=error_code).model_dump(),
+        )
+    return AplicarIndexacionCuotasV2Response(data=result.data)
 
 @router.post("/api/v1/financiero/inbox", status_code=204)
 def financiero_inbox(

@@ -1546,3 +1546,23 @@ class PreviewIndexacionCuotasV2Data(BaseModel):
 class PreviewIndexacionCuotasV2Response(BaseModel):
     ok: bool = True
     data: PreviewIndexacionCuotasV2Data
+
+
+# ── aplicar indexacion cuotas V2 ─────────────────────────────────────────────
+
+class AplicarIndexacionCuotasV2Request(BaseModel):
+    hash_corrida: str | None = None
+
+
+class AplicarIndexacionCuotasV2Data(BaseModel):
+    modo: str
+    id_corrida_indexacion_financiera: int
+    estado_corrida: str
+    cantidad_aplicada: int
+    hash_corrida: str
+    idempotente: bool = False
+
+
+class AplicarIndexacionCuotasV2Response(BaseModel):
+    ok: bool = True
+    data: AplicarIndexacionCuotasV2Data
