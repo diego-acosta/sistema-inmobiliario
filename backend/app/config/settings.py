@@ -15,7 +15,7 @@ def _get_env_file() -> Path:
     return BASE_DIR / ".env"
 
 
-load_dotenv(_get_env_file(), override=True)
+load_dotenv(_get_env_file(), override=False)
 
 
 class Settings:
