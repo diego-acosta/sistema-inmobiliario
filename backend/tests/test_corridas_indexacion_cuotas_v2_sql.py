@@ -191,7 +191,7 @@ def _create_context(db):
                   'POR_COEFICIENTE', 'CAPITAL_INICIAL_BLOQUE', 'DEFINITIVA', 'ERROR_SI_NO_EXISTE')
         RETURNING id_plan_pago_venta_bloque_indexacion
         """,
-        bloque=plan["bloque"],
+        bloque=otro_plan["bloque"],
         indice=otro_indice["id"],
     )
 
