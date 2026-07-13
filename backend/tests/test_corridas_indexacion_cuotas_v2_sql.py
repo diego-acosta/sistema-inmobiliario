@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 PATCH = Path("backend/database/patch_corridas_indexacion_cuotas_v2_20260710.sql")
 
@@ -43,6 +43,19 @@ def _integrity_error(db_session, sql: str, **params) -> None:
         with db_session.begin_nested():
             db_session.execute(text(sql), params)
             db_session.flush()
+
+
+def _trigger_rejection(
+    db_session,
+    sql: str,
+    expected_message: str,
+    **params,
+) -> None:
+    with pytest.raises(ProgrammingError) as exc_info:
+        with db_session.begin_nested():
+            db_session.execute(text(sql), params)
+            db_session.flush()
+    assert expected_message in str(exc_info.value)
 
 
 @pytest.fixture
@@ -518,13 +531,13 @@ def test_composiciones_y_trazabilidad_pertenecen_a_la_obligacion_y_concepto(corr
     _insert_detalle(db, ctx, corrida)
 
     corrida_2 = _insert_corrida(db, ctx, hash="hash-cif-comp-2")
-    _integrity_error(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_capital_venta, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :capital_otra, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", corrida=corrida_2, obligacion=ctx["obligacion"], capital_otra=ctx["comp_capital_otra_obl"])
+    _trigger_rejection(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_capital_venta, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :capital_otra, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", "id_composicion_capital_venta debe pertenecer a la obligacion y usar concepto CAPITAL_VENTA", corrida=corrida_2, obligacion=ctx["obligacion"], capital_otra=ctx["comp_capital_otra_obl"])
 
-    _integrity_error(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_capital_venta, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :otro_concepto, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", corrida=corrida_2, obligacion=ctx["obligacion"], otro_concepto=ctx["comp_otro_concepto"])
+    _trigger_rejection(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_capital_venta, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :otro_concepto, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", "id_composicion_capital_venta debe pertenecer a la obligacion y usar concepto CAPITAL_VENTA", corrida=corrida_2, obligacion=ctx["obligacion"], otro_concepto=ctx["comp_otro_concepto"])
 
-    _integrity_error(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_ajuste_indexacion, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :ajuste_otra, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", corrida=corrida_2, obligacion=ctx["obligacion"], ajuste_otra=ctx["comp_ajuste_otra_obl"])
+    _trigger_rejection(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_ajuste_indexacion, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :ajuste_otra, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", "id_composicion_ajuste_indexacion debe pertenecer a la obligacion y usar concepto AJUSTE_INDEXACION", corrida=corrida_2, obligacion=ctx["obligacion"], ajuste_otra=ctx["comp_ajuste_otra_obl"])
 
-    _integrity_error(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_ajuste_indexacion, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :capital, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", corrida=corrida_2, obligacion=ctx["obligacion"], capital=ctx["comp_capital"])
+    _trigger_rejection(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_composicion_ajuste_indexacion, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :capital, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", "id_composicion_ajuste_indexacion debe pertenecer a la obligacion y usar concepto AJUSTE_INDEXACION", corrida=corrida_2, obligacion=ctx["obligacion"], capital=ctx["comp_capital"])
 
     _integrity_error(db, "INSERT INTO public.corrida_indexacion_financiera_detalle (id_corrida_indexacion_financiera, id_obligacion_financiera, id_obligacion_financiera_indexacion, version_esperada, capital_base, valor_indice_base, valor_indice_aplicado, coeficiente_indexacion, estado_elegibilidad) VALUES (:corrida, :obligacion, :ofi_otra, 1, 100, 100, 125, 1.25, 'ELEGIBLE')", corrida=corrida_2, obligacion=ctx["obligacion"], ofi_otra=ctx["ofi_otra"])
 
