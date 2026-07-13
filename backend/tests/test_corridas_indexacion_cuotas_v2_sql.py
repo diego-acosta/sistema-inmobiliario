@@ -558,7 +558,7 @@ def test_estados_origenes_e_idempotencia(corrida_schema):
     _insert_corrida(db, ctx, hash="hash-idem")
     _integrity_error(db, "INSERT INTO public.corrida_indexacion_financiera (id_plan_pago_venta, id_plan_pago_venta_bloque, id_plan_pago_venta_bloque_indexacion, id_indice_financiero, id_indice_financiero_valor_aplicado, periodo_aplicado, fecha_corte, origen_corrida, estado_corrida, op_id, hash_corrida) VALUES (:plan, :bloque, :config, :indice, :valor, DATE '2026-06-01', DATE '2026-06-30', 'PUBLICACION_INDICE', 'BORRADOR', gen_random_uuid(), 'hash-idem')", plan=ctx["plan"]["plan"], bloque=ctx["plan"]["bloque"], config=ctx["config"], indice=ctx["indice"]["id"], valor=ctx["indice"]["aplicado"])
     _insert_corrida(db, ctx, hash="hash-idem-distinto")
-    _insert_corrida(db, ctx, hash="hash-idem", fecha_corte="2026-07-31", periodo_aplicado="2026-07-01")
+    _insert_corrida(db, ctx, hash="hash-idem", fecha_corte="2026-07-13", periodo_aplicado="2026-07-01")
     _insert_corrida(db, ctx, hash="hash-idem", origen="CORRECCION_INDICE")
     _insert_corrida(db, ctx, hash="hash-idem-anulada", estado="ANULADA")
     _insert_corrida(db, ctx, hash="hash-idem-anulada", estado="BORRADOR")
