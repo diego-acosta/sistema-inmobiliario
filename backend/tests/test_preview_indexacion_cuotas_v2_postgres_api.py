@@ -34,7 +34,7 @@ def _cmd(ctx, **overrides):
         id_plan_pago_venta_bloque_indexacion=ctx["config"],
         id_indice_financiero=ctx["indice"]["id"],
         id_indice_financiero_valor_aplicado=ctx["indice"]["aplicado"],
-        fecha_corte=date(2026, 6, 30),
+        fecha_corte=date(2026, 7, 10),
         periodo_aplicado=date(2026, 6, 1),
     )
     data.update(overrides)
@@ -141,9 +141,11 @@ def test_postgres_ajuste_negativo_persistido_no_viola_checks(db_session):
     """, i=ctx["indice"]["id"])
     result = _service(db_session).execute(_cmd(ctx, id_indice_financiero_valor_aplicado=neg, persistir=True), CoreEFHeaders(UUID("550e8400-e29b-41d4-a716-446655440001"), 1, 1, 1))
     assert result.success
-    row = db_session.execute(text("SELECT ajuste_nuevo, diferencia_neta, motivo_exclusion, snapshot_despues FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=:id LIMIT 1"), {"id": result.data["id_corrida_indexacion_financiera"]}).mappings().one()
-    assert row["ajuste_nuevo"] == 0
+    row = db_session.execute(text("SELECT ajuste_nuevo, diferencia_neta, importe_anterior, importe_nuevo, saldo_anterior, saldo_nuevo, motivo_exclusion, snapshot_despues FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=:id LIMIT 1"), {"id": result.data["id_corrida_indexacion_financiera"]}).mappings().one()
+    assert row["ajuste_nuevo"] == 250
     assert row["diferencia_neta"] == 0
+    assert row["importe_nuevo"] == row["importe_anterior"]
+    assert row["saldo_nuevo"] == row["saldo_anterior"]
     assert row["motivo_exclusion"] == "AJUSTE_NEGATIVO_NO_SOPORTADO"
     assert row["snapshot_despues"]["ajuste_objetivo_calculado"] == "-200.00"
 
@@ -154,6 +156,73 @@ def test_postgres_hash_mutaciones_relevantes_y_orden_estable(db_session):
     h1 = service.execute(_cmd(ctx)).data["hash_corrida"]
     db_session.execute(text("UPDATE obligacion_financiera SET version_registro=version_registro+1 WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]})
     assert service.execute(_cmd(ctx)).data["hash_corrida"] != h1
+
+
+def test_postgres_fecha_corte_filtra_alcance_y_hash_ignora_fuera_de_corte(db_session):
+    ctx = _create_context(db_session)
+    db_session.execute(text("UPDATE obligacion_financiera SET fecha_emision=DATE '2026-05-01', fecha_vencimiento=DATE '2026-06-30' WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]})
+    db_session.execute(text("UPDATE obligacion_financiera SET fecha_emision=DATE '2026-05-01', fecha_vencimiento=DATE '2026-08-01' WHERE id_obligacion_financiera=:id"), {"id": ctx["otra_obligacion"]})
+
+    result = _service(db_session).execute(_cmd(ctx, fecha_corte=date(2026, 6, 30)))
+    detalles = result.data["detalles"]
+    assert [d["id_obligacion_financiera"] for d in detalles] == [ctx["obligacion"]]
+    assert result.data["resumen"]["cantidad_analizada"] == 1
+    assert result.data["resumen"]["cantidad_elegible"] == 1
+    assert result.data["resumen"]["cantidad_excluida"] == 0
+    assert result.data["resumen"]["importe_total_anterior"] == detalles[0]["importe_anterior"]
+    assert result.data["resumen"]["importe_total_nuevo"] == detalles[0]["importe_nuevo"]
+    assert str(ctx["otra_obligacion"]) not in result.data["snapshot_versiones"]
+    h1 = result.data["hash_corrida"]
+
+    db_session.execute(text("UPDATE obligacion_financiera SET version_registro=version_registro+1 WHERE id_obligacion_financiera=:id"), {"id": ctx["otra_obligacion"]})
+    assert _service(db_session).execute(_cmd(ctx, fecha_corte=date(2026, 6, 30))).data["hash_corrida"] == h1
+
+    extended = _service(db_session).execute(_cmd(ctx, fecha_corte=date(2026, 8, 1))).data
+    assert {d["id_obligacion_financiera"] for d in extended["detalles"]} == {ctx["obligacion"], ctx["otra_obligacion"]}
+    assert extended["resumen"]["cantidad_analizada"] == 2
+    assert extended["hash_corrida"] != h1
+
+
+def test_postgres_excluida_con_ajuste_positivo_teorico_no_contamina_totales(db_session):
+    ctx = _create_context(db_session)
+    mov = _scalar(db_session, """
+        INSERT INTO movimiento_financiero (fecha_movimiento,tipo_movimiento,importe,signo,estado_movimiento)
+        VALUES (DATE '2026-06-15','PAGO',10.00,'CREDITO','APLICADO') RETURNING id_movimiento_financiero
+    """)
+    _scalar(db_session, """
+        INSERT INTO aplicacion_financiera (id_movimiento_financiero,id_obligacion_financiera,fecha_aplicacion,tipo_aplicacion,orden_aplicacion,importe_aplicado)
+        VALUES (:mov,:obl,DATE '2026-06-15','MANUAL',1,10.00) RETURNING id_aplicacion_financiera
+    """, mov=mov, obl=ctx["otra_obligacion"])
+
+    data = _service(db_session).execute(_cmd(ctx)).data
+    detalle = next(d for d in data["detalles"] if d["id_obligacion_financiera"] == ctx["otra_obligacion"])
+    assert detalle["estado_elegibilidad"] == "EXCLUIDA"
+    assert detalle["motivo_exclusion"] == "OBLIGACION_CON_IMPUTACIONES_ACTIVAS"
+    assert detalle["ajuste_nuevo"] == detalle["ajuste_anterior"]
+    assert detalle["diferencia_neta"] == 0
+    assert detalle["importe_nuevo"] == detalle["importe_anterior"]
+    assert detalle["saldo_nuevo"] == detalle["saldo_anterior"]
+    assert detalle["snapshot_despues"]["ajuste_objetivo_calculado"] > str(detalle["ajuste_anterior"])
+    assert data["resumen"]["ajuste_nuevo_total"] == data["resumen"]["ajuste_anterior_total"]
+    assert data["resumen"]["importe_total_nuevo"] == data["resumen"]["importe_total_anterior"]
+    assert data["resumen"]["saldo_nuevo_total"] == data["resumen"]["saldo_anterior_total"]
+
+
+def test_postgres_hash_cambia_si_cambia_motivo_exclusion_y_estable_mismo_estado(db_session):
+    ctx = _create_context(db_session)
+    db_session.execute(text("UPDATE obligacion_financiera SET estado_obligacion='CANCELADA' WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]})
+    h_estado = _service(db_session).execute(_cmd(ctx)).data["hash_corrida"]
+    assert _service(db_session).execute(_cmd(ctx)).data["hash_corrida"] == h_estado
+    db_session.execute(text("UPDATE obligacion_financiera SET estado_obligacion='EMITIDA' WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]})
+    mov = _scalar(db_session, """
+        INSERT INTO movimiento_financiero (fecha_movimiento,tipo_movimiento,importe,signo,estado_movimiento)
+        VALUES (DATE '2026-06-15','PAGO',10.00,'CREDITO','APLICADO') RETURNING id_movimiento_financiero
+    """)
+    _scalar(db_session, """
+        INSERT INTO aplicacion_financiera (id_movimiento_financiero,id_obligacion_financiera,fecha_aplicacion,tipo_aplicacion,orden_aplicacion,importe_aplicado)
+        VALUES (:mov,:obl,DATE '2026-06-15','MANUAL',1,10.00) RETURNING id_aplicacion_financiera
+    """, mov=mov, obl=ctx["obligacion"])
+    assert _service(db_session).execute(_cmd(ctx)).data["hash_corrida"] != h_estado
 
 
 def test_postgres_rollback_si_falla_detalle(db_session):

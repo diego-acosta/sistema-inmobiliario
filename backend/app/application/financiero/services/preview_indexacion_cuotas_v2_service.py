@@ -186,7 +186,7 @@ class PreviewIndexacionCuotasV2Service:
         importe_anterior = _dec(row["importe_total"]).quantize(Q2)
         saldo_anterior = _dec(row["saldo_pendiente"]).quantize(Q2)
         if estado != ESTADO_ELEGIBLE:
-            ajuste_nuevo = max(ajuste_nuevo, Decimal("0.00")).quantize(Q2)
+            ajuste_nuevo = ajuste_anterior
             diferencia = Decimal("0.00")
         else:
             diferencia = (ajuste_nuevo - ajuste_anterior).quantize(Q2)

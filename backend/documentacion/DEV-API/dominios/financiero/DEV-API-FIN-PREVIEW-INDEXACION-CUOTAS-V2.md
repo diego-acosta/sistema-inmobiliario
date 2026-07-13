@@ -25,7 +25,7 @@ Matriz de efectos posteriores:
 - Recibos/documentos congelantes: si existe evidencia física futura, `EXCLUIDA` con `OBLIGACION_CON_RECIBOS_CONGELANTES`; en el schema reconstruido actual no existe tabla física de recibos internos vinculables al preview.
 - `VENCIDA` sin efectos posteriores: elegible con advertencia `OBLIGACION_VENCIDA_SIN_EFECTOS_POSTERIORES`.
 
-La mora reproducible se evalúa con `fecha_vencimiento < fecha_corte`, no con `CURRENT_DATE`.
+El alcance temporal del preview incluye únicamente obligaciones del bloque con `fecha_vencimiento IS NULL OR fecha_vencimiento <= fecha_corte`; las obligaciones posteriores al corte no forman parte de `detalles`, cantidades, totales, `snapshot_versiones` ni `hash_corrida`. La mora reproducible se evalúa con `fecha_vencimiento < fecha_corte`, no con `CURRENT_DATE`.
 
 ## Cálculo
 
@@ -33,12 +33,12 @@ La mora reproducible se evalúa con `fecha_vencimiento < fecha_corte`, no con `C
 - Ajuste anterior: composición activa con concepto financiero físico `AJUSTE_INDEXACION`, si existe.
 - Coeficiente: `valor_indice_aplicado / valor_base_indice`, cuantizado a 8 decimales.
 - Ajuste objetivo: `capital_base * (coeficiente - 1)`, cuantizado a 2 decimales.
-- Diferencia neta para elegibles: `ajuste_nuevo - ajuste_anterior`.
+- Diferencia neta para elegibles: `ajuste_nuevo - ajuste_anterior`. Para excluidas siempre es `0` y los totales se calculan desde los valores persistibles sin efecto.
 - Importes y saldos nuevos para elegibles: importes y saldos actuales más diferencia neta.
 
 ## Ajuste negativo
 
-La V2 inicial no soporta componentes negativos. Si el ajuste objetivo resulta negativo, el detalle queda `EXCLUIDA` con `AJUSTE_NEGATIVO_NO_SOPORTADO`; las columnas físicas restringidas (`ajuste_nuevo`, `diferencia_neta`, `importe_nuevo`, `saldo_nuevo`) conservan valores no negativos/sin efecto y el ajuste negativo calculado se preserva en `snapshot_despues.ajuste_objetivo_calculado`.
+La V2 inicial no soporta componentes negativos. Si el ajuste objetivo resulta negativo, el detalle queda `EXCLUIDA` con `AJUSTE_NEGATIVO_NO_SOPORTADO`; las columnas físicas restringidas/persistibles conservan ausencia de modificación (`ajuste_nuevo = ajuste_anterior`, `diferencia_neta = 0`, `importe_nuevo = importe_anterior`, `saldo_nuevo = saldo_anterior`) y el ajuste negativo calculado se preserva en `snapshot_despues.ajuste_objetivo_calculado`.
 
 ## Snapshots
 

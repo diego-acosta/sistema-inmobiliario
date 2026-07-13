@@ -66,6 +66,7 @@ class PreviewIndexacionCuotasV2SqlAlchemyRepository:
               AND aj.id_concepto_financiero = (SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero = 'AJUSTE_INDEXACION' LIMIT 1)
             LEFT JOIN obligacion_financiera_indexacion ofi ON ofi.id_obligacion_financiera = o.id_obligacion_financiera AND ofi.deleted_at IS NULL
             WHERE o.id_plan_pago_venta_bloque = :id_bloque AND o.deleted_at IS NULL
+              AND (o.fecha_vencimiento IS NULL OR o.fecha_vencimiento <= :fecha_corte)
             ORDER BY o.id_obligacion_financiera
         """), {"id_bloque": id_bloque, "fecha_corte": fecha_corte}).mappings().all()
         return [dict(r) for r in rows]
