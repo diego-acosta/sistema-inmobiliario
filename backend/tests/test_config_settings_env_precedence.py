@@ -17,6 +17,7 @@ def _reload_settings(monkeypatch, *, env: str, database_url: str | None):
 
 def test_database_url_del_entorno_prevalece_sobre_env_test(monkeypatch) -> None:
     database_url = "postgresql+psycopg://env_user:env_pass@localhost:5432/env_db"
+
     settings_module = _reload_settings(
         monkeypatch,
         env="test",

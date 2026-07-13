@@ -191,7 +191,6 @@ Para todo endpoint write nuevo o modificado, el PR debe incluir decisión CORE-E
 7. **Read-like/simulación/preview:** dejar explícita la condición para no forzar headers write.
 8. **Cuando una regla no aplique:** indicar `NO APLICA` con justificación breve.
 9. **Prohibición de cumplimiento sin evidencia:** no declarar cumplimiento CORE-EF profundo sin respaldo verificable en router/service/repository/SQL/tests.
-
 ---
 
 ## 15. Reset PostgreSQL local / Codex Cloud
