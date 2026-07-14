@@ -71,3 +71,71 @@ La cabecera persistida conserva `fecha_publicacion_indice` desde `indice_financi
 ## Límite respecto de #343
 
 No aplica indexación, no crea ni actualiza `AJUSTE_INDEXACION`, no incrementa versiones y no valida aplicación final. La aplicación posterior debe validar los snapshots guardados antes de modificar deuda.
+
+---
+
+# Aplicación de corridas de indexación de cuotas V2 — Issue #343
+
+Endpoint implementado: `POST /api/v1/financiero/indexacion-cuotas-v2/corridas/{id_corrida_indexacion_financiera}/aplicar`.
+
+## Decisión CORE-EF
+
+- Clasificación: `COMMAND_WRITE_NEGOCIO`.
+- Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` e `If-Match-Version`; se parsean con el helper común de CORE-EF.
+- Idempotencia: aplica por `X-Op-Id` de aplicación y por el body real. Mismo `op_id` sobre la misma corrida ya `APLICADA` exige el mismo `hash_corrida` y devuelve `modo=IDEMPOTENTE` con `cantidad_aplicada` persistida; mismo `op_id` con otro hash o sobre otra corrida se rechaza con conflicto.
+- Outbox: aplica dentro de la transacción funcional con `outbox_event.event_type = financiero.indexacion_cuotas_v2.corrida_aplicada` y `aggregate_type = corrida_indexacion_financiera`.
+- Lock lógico: aplica por obligación usando `lock_logico` con `tipo_entidad = OBLIGACION_FINANCIERA`, orden estable por `id_obligacion_financiera`, `op_id` como owner y liberación al finalizar la aplicación.
+- Versionado: aplica optimistic locking sobre `corrida_indexacion_financiera.version_registro` vía `If-Match-Version` y sobre cada `obligacion_financiera.version_registro` persistida en el detalle del preview.
+- Rollback/transacción: obligación, composición, trazabilidad, detalle, corrida y outbox se modifican en una transacción funcional. Ante drift funcional se revierte y se marca la corrida `FALLIDA` en transacción técnica separada si la corrida no fue aplicada.
+
+## Contrato
+
+Request body:
+
+```json
+{
+  "hash_corrida": "sha256 obligatorio esperado por el cliente"
+}
+```
+
+Response exitosa:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "modo": "APLICADA | IDEMPOTENTE",
+    "id_corrida_indexacion_financiera": 123,
+    "estado_corrida": "APLICADA",
+    "cantidad_aplicada": 2,
+    "hash_corrida": "...",
+    "idempotente": false
+  }
+}
+```
+
+## Precondiciones y límites
+
+- `hash_corrida` es obligatorio en primer apply y replay; un body sin hash falla por validación del schema API.
+- Antes de aplicar se recompone el hash canónico con el helper compartido del preview desde cabecera/detalles persistidos; si no coincide con `corrida_indexacion_financiera.hash_corrida`, se rechaza con `CORRIDA_HASH_PERSISTIDO_INCONSISTENTE` sin marcar `FALLIDA`. El hash representa únicamente el preview aprobado e inmutable: no incluye IDs técnicos que pueda completar la aplicación (`id_composicion_ajuste_indexacion`, `id_obligacion_financiera_indexacion`), `version_resultante`, estado `APLICADA`, fecha de aplicación, locks, outbox ni metadata CORE-EF de aplicación.
+- Solo aplica corridas persistidas no borradas en estados físicos `PREVISUALIZADA` o `PENDIENTE_APLICACION`.
+- No confía en importes enviados por cliente; usa cabecera y detalles persistidos.
+- Rechaza hash esperado incompatible, corrida reemplazada, corrida no aplicable, versión de corrida incompatible, versión de obligación incompatible, detalle matemáticamente inconsistente, drift de capital, drift de ajuste previo, cambios concurrentes de `AJUSTE_INDEXACION`, trazabilidad incompatible, pagos/imputaciones activos, punitorios incompatibles y locks lógicos activos de otro owner.
+- Las excluidas del preview no modifican obligaciones ni se cuentan como aplicadas.
+- No implementa reversión, corrección avanzada, cuotas pagadas/parcialmente canceladas, reimputación, notas de crédito, bonificación por ajuste negativo, jobs ni publicación automática; esos límites quedan fuera del alcance de #343 y de #349.
+
+## Persistencia aplicada
+
+Para cada detalle elegible confirmado:
+
+- valida `CAPITAL_VENTA` real por composición persistida;
+- crea o actualiza la composición activa `AJUSTE_INDEXACION` con el importe objetivo del detalle, sin acumular ciegamente y con control de `version_registro` cuando la composición ya existe;
+- actualiza `obligacion_financiera.importe_total`, `saldo_pendiente`, `op_id_ultima_modificacion`, `id_instalacion_ultima_modificacion` y el versionado por triggers CORE-EF;
+- registra/actualiza `obligacion_financiera_indexacion` con índice, valor aplicado, coeficiente y referencia técnica a la corrida, validando la trazabilidad existente antes de actualizar;
+- completa el detalle con `version_resultante` e ids finales de ajuste/trazabilidad en columnas físicas; `snapshot_antes` y `snapshot_despues` permanecen exactamente como fueron persistidos por el preview;
+- actualiza la cabecera a `APLICADA`, `fecha_aplicacion`, `cantidad_aplicada`, metadata CORE-EF y limpia campos de error sin alterar el hash del preview aprobado;
+- inserta el evento transaccional en `outbox_event`.
+
+## FALLIDA
+
+Errores de request o prevalidación, como hash enviado incorrecto, hash persistido inconsistente o detalle matemáticamente inconsistente, no marcan `FALLIDA`. Si una validación transaccional o mutación falla después de iniciar la aplicación funcional, la transacción se revierte y se abre una transacción técnica separada para persistir `estado_corrida = FALLIDA`, `codigo_error`, `etapa_error`, `diagnostico_tecnico`, `op_id_ultima_modificacion` e `id_instalacion_ultima_modificacion`. No se sobrescribe una corrida ya `APLICADA`.
