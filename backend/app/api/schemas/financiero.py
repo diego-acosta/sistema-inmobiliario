@@ -1548,6 +1548,47 @@ class PreviewIndexacionCuotasV2Response(BaseModel):
     data: PreviewIndexacionCuotasV2Data
 
 
+# ── preparar corridas indexacion cuotas V2 ───────────────────────────────────
+
+class PrepararCorridasIndexacionCuotasV2Request(BaseModel):
+    fecha_corte: date | None = None
+    motivo: str | None = None
+
+
+class PrepararCorridasIndexacionCuotasV2Resultado(BaseModel):
+    id_plan_pago_venta: int
+    id_plan_pago_venta_bloque: int
+    id_plan_pago_venta_bloque_indexacion: int
+    id_indice_financiero: int
+    id_indice_financiero_valor_aplicado: int
+    periodo_aplicado: date
+    id_corrida_indexacion_financiera: int | None = None
+    hash_corrida: str | None = None
+    estado_corrida: str
+    cantidad_analizada: int
+    cantidad_elegible: int
+    resultado: str
+    error: str | None = None
+
+
+class PrepararCorridasIndexacionCuotasV2Data(BaseModel):
+    id_indice_financiero_valor: int
+    id_indice_financiero: int
+    periodo_aplicado: date
+    fecha_corte: date
+    cantidad_configuraciones_analizadas: int
+    cantidad_corridas_creadas: int
+    cantidad_corridas_existentes: int
+    cantidad_sin_obligaciones: int
+    cantidad_errores: int
+    resultados: list[PrepararCorridasIndexacionCuotasV2Resultado]
+
+
+class PrepararCorridasIndexacionCuotasV2Response(BaseModel):
+    ok: bool = True
+    data: PrepararCorridasIndexacionCuotasV2Data
+
+
 # ── aplicar indexacion cuotas V2 ─────────────────────────────────────────────
 
 class AplicarIndexacionCuotasV2Request(BaseModel):

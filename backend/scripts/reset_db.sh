@@ -24,6 +24,7 @@ SQL_FILES=(
   "patch_indices_financieros_20260527.sql"
   "patch_plan_pago_venta_bloque_indexacion_20260528.sql"
   "patch_corridas_indexacion_cuotas_v2_20260710.sql"
+  "patch_preparar_corridas_indexacion_cuotas_v2_20260714.sql"
   "patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql"
 )
 
@@ -133,6 +134,7 @@ apply_common_files() {
   run_sql "${db}" "patch indices financieros" "patch_indices_financieros_20260527.sql"
   run_sql "${db}" "patch indexacion por bloque" "patch_plan_pago_venta_bloque_indexacion_20260528.sql"
   run_sql "${db}" "patch corridas indexacion cuotas V2" "patch_corridas_indexacion_cuotas_v2_20260710.sql"
+  run_sql "${db}" "patch preparar corridas indexacion cuotas V2" "patch_preparar_corridas_indexacion_cuotas_v2_20260714.sql"
   run_sql "${db}" "patch porcentaje responsabilidad comprador" "patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql"
 }
 
