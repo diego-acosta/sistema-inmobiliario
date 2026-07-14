@@ -1,7 +1,9 @@
 from datetime import date
 from uuid import UUID
 
+import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.api.core_ef_headers import CoreEFHeaders
 from app.application.financiero.services.preparar_corridas_indexacion_cuotas_v2_service import (
@@ -118,8 +120,123 @@ def test_api_rechaza_fecha_corte_headers_y_valores_invalidos(client, db_session)
         VALUES (:i, DATE '2026-07-01', 130, 'BORRADOR') RETURNING id_indice_financiero_valor
     """, i=ctx["indice"]["id"])
     assert client.post(URL.format(borrador), headers=HEADERS, json={}).status_code == 404
+    incompleto = _scalar(db_session, """
+        INSERT INTO indice_financiero_valor (id_indice_financiero, fecha_valor, valor_indice, fecha_publicacion, estado_valor_indice)
+        VALUES (:i, DATE '2026-08-15', 135, NULL, 'PUBLICADO') RETURNING id_indice_financiero_valor
+    """, i=ctx["indice"]["id"])
+    assert client.post(URL.format(incompleto), headers=HEADERS, json={}).status_code == 404
+    assert _scalar(db_session, "SELECT COUNT(*) FROM corrida_indexacion_financiera WHERE id_indice_financiero_valor_aplicado=:v", v=incompleto) == 0
     resp = client.post(URL.format(ctx["indice"]["aplicado"]), headers=HEADERS, json={"fecha_corte": "2026-07-31"})
     assert resp.status_code == 422
+
+
+def test_api_otro_valor_mismo_mes_requiere_correccion(client, db_session):
+    ctx = _create_context(db_session)
+    _hacer_vencidas(db_session, ctx["obligacion"], ctx["otra_obligacion"])
+    first = client.post(URL.format(ctx["indice"]["aplicado"]), headers=HEADERS, json={})
+    assert first.status_code == 200
+    corrida = first.json()["data"]["resultados"][0]["id_corrida_indexacion_financiera"]
+    snapshot = dict(db_session.execute(text("SELECT hash_corrida, id_indice_financiero_valor_aplicado FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id"), {"id": corrida}).mappings().one())
+    detalles = _scalar(db_session, "SELECT COUNT(*) FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=:id", id=corrida)
+    otro_valor = _scalar(db_session, """
+        INSERT INTO indice_financiero_valor (id_indice_financiero, fecha_valor, valor_indice, fecha_publicacion, estado_valor_indice)
+        VALUES (:i, DATE '2026-06-15', 130, DATE '2026-06-16', 'PUBLICADO') RETURNING id_indice_financiero_valor
+    """, i=ctx["indice"]["id"])
+    with pytest.raises(IntegrityError) as exc_info:
+        with db_session.begin_nested():
+            db_session.execute(text("""
+                INSERT INTO corrida_indexacion_financiera (
+                    id_plan_pago_venta, id_plan_pago_venta_bloque,
+                    id_plan_pago_venta_bloque_indexacion, id_indice_financiero,
+                    id_indice_financiero_valor_aplicado, periodo_aplicado,
+                    fecha_corte, origen_corrida, estado_corrida, op_id, hash_corrida
+                ) VALUES (
+                    :plan, :bloque, :config, :indice, :valor,
+                    DATE '2026-06-15', DATE '2026-06-30',
+                    'PUBLICACION_INDICE', 'PREVISUALIZADA', gen_random_uuid(), 'manual-dia-15'
+                )
+            """), {
+                "plan": ctx["plan"]["plan"],
+                "bloque": ctx["plan"]["bloque"],
+                "config": ctx["config"],
+                "indice": ctx["indice"]["id"],
+                "valor": otro_valor,
+            })
+            db_session.flush()
+    assert "ux_cif_publicacion_indice_grupo_activo" in str(exc_info.value)
+    second = client.post(URL.format(otro_valor), headers={**HEADERS, "X-Op-Id": "550e8400-e29b-41d4-a716-446655440020"}, json={})
+    assert second.status_code == 200
+    data = second.json()["data"]
+    assert data["periodo_aplicado"] == "2026-06-01"
+    assert data["cantidad_corridas_creadas"] == 0
+    assert data["cantidad_requiere_correccion"] == 1
+    assert data["resultados"][0]["resultado"] == "REQUIERE_CORRECCION"
+    assert data["resultados"][0]["id_indice_financiero_valor_solicitado"] == otro_valor
+    assert data["resultados"][0]["id_indice_financiero_valor_existente"] == ctx["indice"]["aplicado"]
+    assert dict(db_session.execute(text("SELECT hash_corrida, id_indice_financiero_valor_aplicado FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id"), {"id": corrida}).mappings().one()) == snapshot
+    assert _scalar(db_session, "SELECT COUNT(*) FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=:id", id=corrida) == detalles
+
+
+def test_api_encuentra_corrida_historica_con_dia_intermedio_del_mismo_mes(client, db_session):
+    ctx = _create_context(db_session)
+    before = _snapshot_deuda(db_session, ctx["obligacion"])
+    corrida = _scalar(db_session, """
+        INSERT INTO corrida_indexacion_financiera (
+            id_plan_pago_venta, id_plan_pago_venta_bloque,
+            id_plan_pago_venta_bloque_indexacion, id_indice_financiero,
+            id_indice_financiero_valor_aplicado, periodo_aplicado,
+            fecha_corte, origen_corrida, estado_corrida, op_id, hash_corrida
+        ) VALUES (
+            :plan, :bloque, :config, :indice, :valor,
+            DATE '2026-06-15', DATE '2026-06-30',
+            'PUBLICACION_INDICE', 'PREVISUALIZADA', gen_random_uuid(), 'historica-junio-15'
+        ) RETURNING id_corrida_indexacion_financiera
+    """, plan=ctx["plan"]["plan"], bloque=ctx["plan"]["bloque"], config=ctx["config"],
+        indice=ctx["indice"]["id"], valor=ctx["indice"]["aplicado"])
+    repo = PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository(db_session)
+    key = {
+        "id_plan_pago_venta": ctx["plan"]["plan"],
+        "id_plan_pago_venta_bloque": ctx["plan"]["bloque"],
+        "id_plan_pago_venta_bloque_indexacion": ctx["config"],
+        "id_indice_financiero": ctx["indice"]["id"],
+    }
+    assert repo.get_corrida_existente(**key, periodo_aplicado=date(2026, 6, 1))["id_corrida_indexacion_financiera"] == corrida
+    assert repo.get_corrida_existente(**key, periodo_aplicado=date(2026, 7, 1)) is None
+
+    same = client.post(URL.format(ctx["indice"]["aplicado"]), headers=HEADERS, json={})
+    assert same.status_code == 200
+    same_data = same.json()["data"]
+    assert same_data["periodo_aplicado"] == "2026-06-01"
+    assert same_data["cantidad_corridas_creadas"] == 0
+    assert same_data["cantidad_corridas_existentes"] == 1
+    assert same_data["resultados"][0]["resultado"] == "EXISTENTE"
+    assert same_data["resultados"][0]["id_corrida_indexacion_financiera"] == corrida
+
+    otro_valor = _scalar(db_session, """
+        INSERT INTO indice_financiero_valor (
+            id_indice_financiero, fecha_valor, valor_indice,
+            fecha_publicacion, estado_valor_indice
+        ) VALUES (:indice, DATE '2026-06-20', 131, DATE '2026-06-21', 'PUBLICADO')
+        RETURNING id_indice_financiero_valor
+    """, indice=ctx["indice"]["id"])
+    other = client.post(URL.format(otro_valor), headers={**HEADERS, "X-Op-Id": "550e8400-e29b-41d4-a716-446655440030"}, json={})
+    assert other.status_code == 200
+    other_data = other.json()["data"]
+    assert other_data["cantidad_corridas_creadas"] == 0
+    assert other_data["cantidad_requiere_correccion"] == 1
+    assert other_data["resultados"][0]["resultado"] == "REQUIERE_CORRECCION"
+    assert other_data["resultados"][0]["id_indice_financiero_valor_existente"] == ctx["indice"]["aplicado"]
+    row = db_session.execute(text("""
+        SELECT periodo_aplicado, hash_corrida, id_indice_financiero_valor_aplicado
+        FROM corrida_indexacion_financiera
+        WHERE id_corrida_indexacion_financiera=:id
+    """), {"id": corrida}).mappings().one()
+    assert str(row["periodo_aplicado"]) == "2026-06-15"
+    assert row["hash_corrida"] == "historica-junio-15"
+    assert row["id_indice_financiero_valor_aplicado"] == ctx["indice"]["aplicado"]
+    assert _scalar(db_session, "SELECT COUNT(*) FROM corrida_indexacion_financiera WHERE id_plan_pago_venta_bloque_indexacion=:config AND origen_corrida='PUBLICACION_INDICE' AND date_trunc('month', periodo_aplicado::timestamp)=TIMESTAMP '2026-06-01'", config=ctx["config"]) == 1
+    assert _scalar(db_session, "SELECT COUNT(*) FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=:id", id=corrida) == 0
+    assert _snapshot_deuda(db_session, ctx["obligacion"]) == before
 
 
 def test_service_sin_obligaciones_otro_indice_aplicada_y_recuperacion_concurrente(db_session):

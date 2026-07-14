@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 PATCH = Path("backend/database/patch_corridas_indexacion_cuotas_v2_20260710.sql")
+PATCH_PREPARACION = Path("backend/database/patch_preparar_corridas_indexacion_cuotas_v2_20260714.sql")
 
 ESTADOS = (
     "BORRADOR",
@@ -62,6 +63,8 @@ def _trigger_rejection(
 def corrida_schema(db_session):
     _apply_patch(db_session)
     _apply_patch(db_session)
+    db_session.execute(text(PATCH_PREPARACION.read_text(encoding="utf-8")))
+    db_session.flush()
     return db_session
 
 
@@ -564,6 +567,25 @@ def test_estados_origenes_e_idempotencia(corrida_schema):
     _insert_corrida(db, ctx, hash="hash-idem-anulada", estado="BORRADOR")
     _insert_corrida(db, ctx, hash="hash-idem-reemplazada", estado="REEMPLAZADA")
     _insert_corrida(db, ctx, hash="hash-idem-reemplazada", estado="BORRADOR")
+
+
+def test_identidad_publicacion_indice_es_mensual_y_no_incluye_valor(corrida_schema):
+    db = corrida_schema
+    ctx = _create_context(db)
+    otro_valor = _scalar(db, """
+        INSERT INTO indice_financiero_valor (
+            id_indice_financiero, fecha_valor, valor_indice,
+            fecha_publicacion, estado_valor_indice
+        ) VALUES (:indice, DATE '2026-06-15', 130, DATE '2026-06-16', 'PUBLICADO')
+        RETURNING id_indice_financiero_valor
+    """, indice=ctx["indice"]["id"])
+    _insert_corrida(db, ctx, origen="PUBLICACION_INDICE", estado="APLICADA", aplicacion="2026-07-01", hash="mensual-a")
+    with pytest.raises(IntegrityError) as exc_info:
+        with db.begin_nested():
+            _insert_corrida(db, ctx, valor_aplicado=otro_valor, periodo_aplicado="2026-06-15", origen="PUBLICACION_INDICE", estado="PREVISUALIZADA", hash="mensual-b")
+    assert "ux_cif_publicacion_indice_grupo_activo" in str(exc_info.value)
+    _insert_corrida(db, ctx, valor_aplicado=otro_valor, periodo_aplicado="2026-07-01", fecha_corte="2026-07-14", origen="PUBLICACION_INDICE", estado="PREVISUALIZADA", hash="mes-siguiente")
+    _insert_corrida(db, ctx, valor_aplicado=otro_valor, origen="REINDEXACION_MANUAL", estado="PREVISUALIZADA", hash="manual")
 
 
 def test_detalle_constraints_y_reemplazo(corrida_schema):

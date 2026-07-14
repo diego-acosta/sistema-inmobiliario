@@ -1562,6 +1562,8 @@ class PrepararCorridasIndexacionCuotasV2Resultado(BaseModel):
     id_plan_pago_venta_bloque_indexacion: int
     id_indice_financiero: int
     id_indice_financiero_valor_aplicado: int
+    id_indice_financiero_valor_solicitado: int
+    id_indice_financiero_valor_existente: int | None = None
     periodo_aplicado: date
     id_corrida_indexacion_financiera: int | None = None
     hash_corrida: str | None = None
@@ -1580,6 +1582,7 @@ class PrepararCorridasIndexacionCuotasV2Data(BaseModel):
     cantidad_configuraciones_analizadas: int
     cantidad_corridas_creadas: int
     cantidad_corridas_existentes: int
+    cantidad_requiere_correccion: int
     cantidad_sin_obligaciones: int
     cantidad_errores: int
     resultados: list[PrepararCorridasIndexacionCuotasV2Resultado]
