@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 
@@ -1546,6 +1546,51 @@ class PreviewIndexacionCuotasV2Data(BaseModel):
 class PreviewIndexacionCuotasV2Response(BaseModel):
     ok: bool = True
     data: PreviewIndexacionCuotasV2Data
+
+
+# ── preparar corridas indexacion cuotas V2 ───────────────────────────────────
+
+class PrepararCorridasIndexacionCuotasV2Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    motivo: str | None = None
+
+
+class PrepararCorridasIndexacionCuotasV2Resultado(BaseModel):
+    id_plan_pago_venta: int
+    id_plan_pago_venta_bloque: int
+    id_plan_pago_venta_bloque_indexacion: int
+    id_indice_financiero: int
+    id_indice_financiero_valor_aplicado: int
+    id_indice_financiero_valor_solicitado: int
+    id_indice_financiero_valor_existente: int | None = None
+    periodo_aplicado: date
+    id_corrida_indexacion_financiera: int | None = None
+    hash_corrida: str | None = None
+    estado_corrida: str
+    cantidad_analizada: int
+    cantidad_elegible: int
+    resultado: str
+    error: str | None = None
+
+
+class PrepararCorridasIndexacionCuotasV2Data(BaseModel):
+    id_indice_financiero_valor: int
+    id_indice_financiero: int
+    periodo_aplicado: date
+    fecha_corte: date
+    cantidad_configuraciones_analizadas: int
+    cantidad_corridas_creadas: int
+    cantidad_corridas_existentes: int
+    cantidad_requiere_correccion: int
+    cantidad_sin_obligaciones: int
+    cantidad_errores: int
+    resultados: list[PrepararCorridasIndexacionCuotasV2Resultado]
+
+
+class PrepararCorridasIndexacionCuotasV2Response(BaseModel):
+    ok: bool = True
+    data: PrepararCorridasIndexacionCuotasV2Data
 
 
 # ── aplicar indexacion cuotas V2 ─────────────────────────────────────────────

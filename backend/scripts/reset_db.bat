@@ -22,6 +22,7 @@ set PATCH_PLAN_PAGO_VENTA_BLOQUE_METODO_LIQUIDACION_FILE=%BACKEND_DIR%\database\
 set PATCH_INDICES_FINANCIEROS_FILE=%BACKEND_DIR%\database\patch_indices_financieros_20260527.sql
 set PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE=%BACKEND_DIR%\database\patch_plan_pago_venta_bloque_indexacion_20260528.sql
 set PATCH_CORRIDAS_INDEXACION_CUOTAS_V2_FILE=%BACKEND_DIR%\database\patch_corridas_indexacion_cuotas_v2_20260710.sql
+set PATCH_PREPARAR_CORRIDAS_INDEXACION_CUOTAS_V2_FILE=%BACKEND_DIR%\database\patch_preparar_corridas_indexacion_cuotas_v2_20260714.sql
 set PATCH_RELACION_PERSONA_ROL_PORCENTAJE_FILE=%BACKEND_DIR%\database\patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
@@ -41,6 +42,7 @@ echo Patch plan pago venta bloque metodo liquidacion: %PATCH_PLAN_PAGO_VENTA_BLO
 echo Patch indices financieros: %PATCH_INDICES_FINANCIEROS_FILE%
 echo Patch plan pago venta bloque indexacion: %PATCH_PLAN_PAGO_VENTA_BLOQUE_INDEXACION_FILE%
 echo Patch corridas indexacion cuotas V2: %PATCH_CORRIDAS_INDEXACION_CUOTAS_V2_FILE%
+echo Patch preparar corridas indexacion cuotas V2: %PATCH_PREPARAR_CORRIDAS_INDEXACION_CUOTAS_V2_FILE%
 echo Seed indices financieros demo: %SEED_INDICES_FINANCIEROS_DEMO_FILE%
 
 if not exist "%SCHEMA_FILE%" (
@@ -202,6 +204,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo Aplicando patch preparar corridas indexacion cuotas V2 en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_PREPARAR_CORRIDAS_INDEXACION_CUOTAS_V2_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch preparar corridas indexacion cuotas V2 en %DEV_DB%
+  pause
+  exit /b 1
+)
+
 echo.
 echo Aplicando patch porcentaje responsabilidad comprador en %DEV_DB%...
 %PGBIN%\psql -d %DEV_DB% -f "%PATCH_RELACION_PERSONA_ROL_PORCENTAJE_FILE%"
@@ -318,6 +328,14 @@ echo Aplicando patch corridas indexacion cuotas V2 en %TEST_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_CORRIDAS_INDEXACION_CUOTAS_V2_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch corridas indexacion cuotas V2 en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo Aplicando patch preparar corridas indexacion cuotas V2 en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_PREPARAR_CORRIDAS_INDEXACION_CUOTAS_V2_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch preparar corridas indexacion cuotas V2 en %TEST_DB%
   pause
   exit /b 1
 )

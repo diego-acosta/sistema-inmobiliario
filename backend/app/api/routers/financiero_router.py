@@ -122,6 +122,8 @@ from app.api.schemas.financiero import (
     RelacionGeneradoraResponse,
     PreviewIndexacionCuotasV2Request,
     PreviewIndexacionCuotasV2Response,
+    PrepararCorridasIndexacionCuotasV2Request,
+    PrepararCorridasIndexacionCuotasV2Response,
     AplicarIndexacionCuotasV2Request,
     AplicarIndexacionCuotasV2Response,
 )
@@ -227,11 +229,18 @@ from app.application.financiero.services.aplicar_indexacion_cuotas_v2_service im
     AplicarIndexacionCuotasV2Command,
     AplicarIndexacionCuotasV2Service,
 )
+from app.application.financiero.services.preparar_corridas_indexacion_cuotas_v2_service import (
+    PrepararCorridasIndexacionCuotasV2Command,
+    PrepararCorridasIndexacionCuotasV2Service,
+)
 from app.infrastructure.persistence.repositories.preview_indexacion_cuotas_v2_repository import (
     PreviewIndexacionCuotasV2SqlAlchemyRepository,
 )
 from app.infrastructure.persistence.repositories.aplicar_indexacion_cuotas_v2_repository import (
     AplicarIndexacionCuotasV2SqlAlchemyRepository,
+)
+from app.infrastructure.persistence.repositories.preparar_corridas_indexacion_cuotas_v2_repository import (
+    PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository,
 )
 from app.application.financiero.services.materializar_factura_servicio_service import (
     MaterializarFacturaServicioService,
@@ -3156,6 +3165,61 @@ def preview_indexacion_cuotas_v2(
             ).model_dump(),
         )
     return PreviewIndexacionCuotasV2Response(data=result.data)
+
+_PREPARAR_INDEXACION_STATUS_BY_ERROR = {
+    "VALOR_INDICE_PUBLICADO_INEXISTENTE": 404,
+    "ERROR_INTEGRIDAD_PREPARACION_CORRIDA": 409,
+}
+
+@router.post(
+    "/api/v1/financiero/indexacion-cuotas-v2/valores-indice/{id_indice_financiero_valor}/preparar-corridas",
+    response_model=PrepararCorridasIndexacionCuotasV2Response,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def preparar_corridas_indexacion_cuotas_v2(
+    id_indice_financiero_valor: int,
+    request: PrepararCorridasIndexacionCuotasV2Request,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> PrepararCorridasIndexacionCuotasV2Response | JSONResponse:
+    try:
+        core_ef = parse_core_ef_headers(
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message=exc.message,
+                details={"header": exc.header_name},
+            ).model_dump(),
+        )
+    preview_repo = PreviewIndexacionCuotasV2SqlAlchemyRepository(db)
+    service = PrepararCorridasIndexacionCuotasV2Service(
+        PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository(db),
+        PreviewIndexacionCuotasV2Service(preview_repo),
+    )
+    result = service.execute(
+        PrepararCorridasIndexacionCuotasV2Command(
+            id_indice_financiero_valor=id_indice_financiero_valor,
+            motivo=request.motivo,
+        ),
+        core_ef,
+    )
+    if not result.success:
+        error_code = result.errors[0]
+        return JSONResponse(
+            status_code=_PREPARAR_INDEXACION_STATUS_BY_ERROR.get(error_code, 400),
+            content=ErrorResponse(error_code=error_code, error_message=error_code).model_dump(),
+        )
+    return PrepararCorridasIndexacionCuotasV2Response(data=result.data)
 
 _APLICAR_INDEXACION_STATUS_BY_ERROR = {
     "CORRIDA_INDEXACION_INEXISTENTE": 404,
