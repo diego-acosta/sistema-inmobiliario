@@ -1,5 +1,6 @@
 -- Patch idempotente: idempotencia física de preparación automática de corridas V2 por publicación de índice.
 -- No modifica deuda ni aplica corridas.
+-- Regla: una sola corrida ordinaria automática activa por configuración, valor publicado y período.
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_cif_publicacion_indice_grupo_activo
     ON public.corrida_indexacion_financiera (
@@ -13,5 +14,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_cif_publicacion_indice_grupo_activo
     )
     WHERE deleted_at IS NULL
       AND origen_corrida = 'PUBLICACION_INDICE'
-      AND estado_corrida NOT IN ('ANULADA','REEMPLAZADA')
-      AND payload_hash IS NOT NULL;
+      AND estado_corrida NOT IN ('ANULADA','REEMPLAZADA');

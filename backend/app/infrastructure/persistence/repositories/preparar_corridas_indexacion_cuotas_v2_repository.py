@@ -4,6 +4,7 @@ from datetime import date
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 
@@ -80,3 +81,15 @@ class PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository:
             "periodo_aplicado": periodo_aplicado,
         }).mappings().first()
         return dict(row) if row else None
+
+
+    def rollback(self) -> None:
+        self.db.rollback()
+
+    def is_conflicto_unico_publicacion(self, exc: IntegrityError) -> bool:
+        orig = getattr(exc, "orig", None)
+        diag = getattr(orig, "diag", None)
+        return (
+            getattr(diag, "constraint_name", None) in {"ux_cif_publicacion_indice_grupo_activo", "ux_cif_idempotencia_funcional_activa"}
+            or ("ux_cif_publicacion_indice_grupo_activo" in str(exc) or "ux_cif_idempotencia_funcional_activa" in str(exc))
+        )

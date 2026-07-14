@@ -362,7 +362,7 @@ def _insert_corrida(db, ctx, **overrides) -> int:
         "valor_aplicado": ctx["indice"]["aplicado"],
         "periodo_aplicado": "2026-06-01",
         "fecha_corte": "2026-06-30",
-        "origen": "PUBLICACION_INDICE",
+        "origen": "REINDEXACION_MANUAL",
         "estado": "BORRADOR",
         "hash": "hash-cif-1",
         "aplicacion": None,
@@ -595,3 +595,26 @@ def test_detalle_constraints_y_reemplazo(corrida_schema):
     db.execute(text("UPDATE public.corrida_indexacion_financiera SET id_corrida_reemplazante = :reemplazante WHERE id_corrida_indexacion_financiera = :anterior"), {"reemplazante": reemplazante, "anterior": anterior})
     db.flush()
     _integrity_error(db, "UPDATE public.corrida_indexacion_financiera SET id_corrida_anterior = :x, id_corrida_reemplazante = :x WHERE id_corrida_indexacion_financiera = :id", x=anterior, id=corrida)
+
+
+def test_idempotencia_publicacion_indice_ordinaria_por_periodo(corrida_schema):
+    db = corrida_schema
+    ctx = _create_context(db)
+    corrida = _insert_corrida(db, ctx, origen="PUBLICACION_INDICE", estado="PREVISUALIZADA", hash="hash-pub-1")
+    db.execute(text("UPDATE corrida_indexacion_financiera SET payload_hash='payload-1' WHERE id_corrida_indexacion_financiera=:id"), {"id": corrida})
+    db.flush()
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            otra = _insert_corrida(db, ctx, origen="PUBLICACION_INDICE", estado="PREVISUALIZADA", hash="hash-pub-2")
+            db.execute(text("UPDATE corrida_indexacion_financiera SET payload_hash='payload-2' WHERE id_corrida_indexacion_financiera=:id"), {"id": otra})
+            db.flush()
+
+    db.execute(text("UPDATE corrida_indexacion_financiera SET estado_corrida='ANULADA' WHERE id_corrida_indexacion_financiera=:id"), {"id": corrida})
+    db.flush()
+    anulada_recreada = _insert_corrida(db, ctx, origen="PUBLICACION_INDICE", estado="PREVISUALIZADA", hash="hash-pub-anulada")
+    db.execute(text("UPDATE corrida_indexacion_financiera SET payload_hash='payload-anulada' WHERE id_corrida_indexacion_financiera=:id"), {"id": anulada_recreada})
+    db.flush()
+
+    manual_1 = _insert_corrida(db, ctx, origen="REINDEXACION_MANUAL", hash="hash-manual-1")
+    manual_2 = _insert_corrida(db, ctx, origen="REINDEXACION_MANUAL", hash="hash-manual-2")
+    assert manual_1 != manual_2

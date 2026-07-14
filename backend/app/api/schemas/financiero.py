@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.financiero.parametros_mora import TASA_DIARIA_MORA_DEFAULT
 
@@ -1551,7 +1551,8 @@ class PreviewIndexacionCuotasV2Response(BaseModel):
 # ── preparar corridas indexacion cuotas V2 ───────────────────────────────────
 
 class PrepararCorridasIndexacionCuotasV2Request(BaseModel):
-    fecha_corte: date | None = None
+    model_config = ConfigDict(extra="forbid")
+
     motivo: str | None = None
 
 

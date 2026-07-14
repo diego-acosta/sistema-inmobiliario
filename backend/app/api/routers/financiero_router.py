@@ -3168,6 +3168,7 @@ def preview_indexacion_cuotas_v2(
 
 _PREPARAR_INDEXACION_STATUS_BY_ERROR = {
     "VALOR_INDICE_PUBLICADO_INEXISTENTE": 404,
+    "ERROR_INTEGRIDAD_PREPARACION_CORRIDA": 409,
 }
 
 @router.post(
@@ -3208,7 +3209,6 @@ def preparar_corridas_indexacion_cuotas_v2(
     result = service.execute(
         PrepararCorridasIndexacionCuotasV2Command(
             id_indice_financiero_valor=id_indice_financiero_valor,
-            fecha_corte=request.fecha_corte,
             motivo=request.motivo,
         ),
         core_ef,
