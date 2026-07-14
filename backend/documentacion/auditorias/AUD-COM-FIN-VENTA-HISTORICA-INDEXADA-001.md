@@ -124,7 +124,7 @@ La fecha efectiva más sólida para detectar que una venta es histórica es `ven
 
 La `fecha_base_indice` del bloque no define que la venta sea histórica; define la base de cálculo de cada bloque indexado. La `fecha_primer_vencimiento`/`fecha_vencimiento` define exigibilidad de cuotas. La fecha de confirmación no está persistida como campo dedicado en `venta`; solo hay `updated_at`, que no debe reinterpretarse como fecha comercial.
 
-Propuesta: detectar venta histórica cuando `fecha_venta::date` sea anterior a la fecha operativa de confirmación/alta y existan cuotas/bloques con vencimientos o períodos exigibles entre `fecha_venta` y la fecha de corte. La fecha de corte exacta debe definirse en #345-A1; por defecto debería ser la fecha operativa recibida por CORE-EF o `current_date` del backend si no hay fecha operativa formal.
+Propuesta: detectar venta histórica cuando `fecha_venta::date` sea anterior a una fecha de corte de negocio aún no definida formalmente y existan cuotas/bloques con vencimientos o períodos exigibles entre `fecha_venta` y esa fecha de corte. La fecha de corte histórica no surge actualmente de CORE-EF: los headers transversales transportan `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` y eventualmente `If-Match-Version`, pero no una fecha operativa de negocio. Debe definirse como dato de negocio explícito del request o, en su defecto, derivarse de una regla formal del backend, por ejemplo `current_date`, una fecha de confirmación persistida si se incorpora formalmente u otra fecha comercial definida por contrato. No debe inferirse de `created_at`, `updated_at` ni de headers transversales.
 
 ## 7. Estados relevantes
 
@@ -144,9 +144,9 @@ Compatibilidad con obligaciones futuras: compatible si se conserva como estado d
 
 1. No hay detección formal de venta histórica.
 2. No hay prevalidación específica de índices antes de confirmar una venta histórica.
-3. El preview/generate de Plan Pago V2 puede calcular cuotas con valor publicado si existe, pero eso no equivale a una corrida V2 histórica trazable.
+3. El preview/generate de Plan Pago V2 ya puede calcular y materializar cuotas indexadas si existe valor publicado aplicable; eso no debe duplicarse con una corrida inmediata sobre la misma obligación.
 4. `PreviewIndexacionCuotasV2Service` requiere plan/bloque/configuración/obligaciones ya persistidos; por eso no sirve tal cual antes de generar cronograma.
-5. La aplicación V2 modifica obligaciones existentes y exige corrida persistida, versión, lock e idempotencia; no está integrada al orquestador de venta completa.
+5. La aplicación V2 modifica obligaciones existentes y exige corrida persistida, versión, lock e idempotencia; debe reservarse para hechos posteriores a la generación o correcciones, no para reindexar inmediatamente obligaciones ya creadas con ajuste.
 6. La preparación por publicación solo usa `origen_corrida = 'PUBLICACION_INDICE'`; para venta histórica existe origen SQL permitido `ALTA_MANUAL_VENTA_HISTORICA`, pero no se observó servicio orquestador que lo use.
 7. Falta definir fecha de corte funcional de venta histórica.
 8. Falta definir si confirmar debe bloquear ante índice faltante o permitir cuotas futuras proyectadas.
@@ -154,11 +154,11 @@ Compatibilidad con obligaciones futuras: compatible si se conserva como estado d
 
 ## 9. Decisiones pendientes
 
-- Fecha de corte: fecha operativa, fecha actual del sistema, fecha de confirmación o parámetro explícito.
+- Fecha de corte: parámetro de negocio explícito en el request, `current_date` del backend, fecha de confirmación persistida si se incorpora formalmente u otra fecha comercial definida por contrato. CORE-EF no transporta esta fecha.
 - Umbral de historicidad: `fecha_venta < fecha_corte`, existencia de cuotas vencidas, o ambas.
 - Política por mes de la cuota: qué hacer con cuota del mismo mes de alta histórica.
 - Si `fecha_publicacion IS NULL` debe bloquear siempre para cuotas exigibles históricas. Recomendación: sí.
-- Si la confirmación crea corrida en `PREVISUALIZADA` y aplica en el mismo comando o si queda pendiente de aplicación manual.
+- Si una corrida posterior debe generarse solo para obligaciones no indexadas en generación, publicaciones futuras o correcciones; no debe aplicarse una segunda vez sobre obligaciones ya indexadas por el generador.
 - Cómo exponer preview histórico sin crear deuda: endpoint existente extendido vs nuevo endpoint futuro.
 - Si las cuotas futuras deben persistir un estado de indexación más allá de `obligacion_financiera_indexacion` ausente.
 - Política para moneda no ARS: hoy la aplicación V2 bloquea obligaciones cuya moneda no sea `ARS`.
@@ -167,112 +167,107 @@ Compatibilidad con obligaciones futuras: compatible si se conserva como estado d
 
 ### A. Crear obligaciones ya indexadas
 
-La confirmación calcula capital, ajuste y total directamente al materializar obligaciones.
+La confirmación/generación materializa capital, ajuste y total directamente cuando ya existe valor publicado aplicable.
 
 Ventajas:
 
-- Menos pasos de ejecución.
-- Una sola transacción de venta/plan/obligaciones.
-- Menor dependencia del motor de corridas.
+- Evita una mutación inmediata posterior sobre la misma obligación.
+- Reduce riesgo de doble aplicación si se apoya en una única fuente de cálculo.
+- Es coherente con el comportamiento vigente del generador V2: el preview resuelve el valor publicado, la generación persiste el `importe_total` indexado, agrega `AJUSTE_INDEXACION` en `composicion_obligacion` y crea `obligacion_financiera_indexacion` cuando corresponde.
 
 Riesgos:
 
-- Duplica lógica financiera de indexación.
-- Pierde trazabilidad de corrida V2 o fuerza una corrida artificial posterior.
-- Aumenta acoplamiento de `comercial` con deuda.
-- Dificulta rollback y auditoría de diferencias.
-- Riesgo de incompatibilidad con #343/#344 si esos issues esperan identidad mensual de corridas y tratamiento de correcciones.
+- Sería inválido reimplementar esta lógica dentro de `comercial`; el cálculo financiero debe seguir concentrado en los servicios V2 existentes.
+- Si se omite trazabilidad financiera, se perdería evidencia del índice aplicado. El generador vigente ya mitiga esto mediante `obligacion_financiera_indexacion`.
+- No cubre por sí sola publicaciones posteriores, rectificaciones o obligaciones futuras que pasan a ser alcanzadas.
 
-Trazabilidad: baja/media, salvo que se replique `corrida_indexacion_financiera`.
+Trazabilidad: alta si se conserva la persistencia vigente de `AJUSTE_INDEXACION` y `obligacion_financiera_indexacion`.
 
-Atomicidad: alta para alta inicial, baja para controles financieros posteriores.
+Atomicidad: alta durante generación del Plan Pago V2, porque la obligación nace ya con el importe calculado y su trazabilidad asociada.
 
-Sincronización: riesgosa si no se emiten eventos financieros equivalentes.
+Sincronización: compatible si no se duplica el ajuste con corridas inmediatas.
 
-### B. Crear obligaciones base y luego aplicar corrida V2
+### B. Forzar deuda sin ajuste inicial y mutarla con corrida V2
 
-La confirmación crea obligaciones base, genera preview/corrida V2 para períodos históricos exigibles y aplica la corrida.
+La confirmación fuerza deuda inicial sin ajuste y luego genera/aplica una corrida V2 inmediata para períodos históricos exigibles.
 
 Ventajas:
 
-- Reutiliza servicios V2 existentes.
-- Conserva trazabilidad de corrida y detalle por obligación.
-- Respeta ownership financiero.
-- Es compatible con identidad mensual por plan+bloque+configuración+índice+mes y con corrección posterior.
+- Concentraría toda indexación aplicada en corridas formales.
+- Podría ser viable solo si se rediseñara deliberadamente el generador para no aplicar índices durante la generación.
 
 Riesgos:
 
-- Requiere orquestación transaccional compleja entre alta de venta y aplicación V2.
-- Si la corrida se aplica dentro de la misma transacción, los servicios actuales pueden necesitar modo `execute_in_existing_transaction` porque `PreviewIndexacionCuotasV2Repository.create_corrida_preview()` y `AplicarIndexacionCuotasV2Service` hacen `commit()`.
-- Si se separa en dos transacciones, hay ventana con deuda base sin ajuste.
-- Necesita diseño de rollback y locks.
+- No es recomendable para el alta inicial con el diseño vigente, porque el generador ya materializa el ajuste cuando encuentra valor publicado aplicable.
+- Implicaría generar deuda base artificial para mutarla inmediatamente.
+- Puede aplicar dos veces el ajuste si se corre sobre obligaciones ya indexadas por generación.
+- Puede crear una corrida correctiva innecesaria y duplicar trazabilidad.
+- Aumenta complejidad transaccional y contradice el diseño documentado vigente.
 
-Trazabilidad: alta.
+Trazabilidad: alta en la corrida, pero riesgosa por duplicación si convive con indexación en generación.
 
-Atomicidad: viable pero requiere adaptar repositorios/servicios para no commitear internamente en modo orquestado.
+Atomicidad: más compleja que la generación directa vigente.
 
-Sincronización: buena si se preserva outbox de venta confirmada y outbox financiero de aplicación.
+Sincronización: no recomendada salvo rediseño explícito fuera de este PR.
 
-### C. Flujo híbrido
+### C. Flujo híbrido con indexación en generación y corridas posteriores
 
-- Se crean obligaciones base con Plan Pago V2.
-- Para cuotas históricas exigibles, se genera y aplica corrida V2 con origen `ALTA_MANUAL_VENTA_HISTORICA`.
-- Para cuotas futuras, se mantienen como base/proyectadas sin aplicación inmediata; si no tienen valor se conserva `PROYECTADA_SIN_INDICE` como estado de indexación/preview, no como estado financiero.
-- Las publicaciones futuras siguen el flujo mensual normal de preparación y aplicación.
+- Durante la generación del Plan Pago V2, para cada cuota con valor publicado aplicable se conserva el cálculo del preview y se materializa directamente la obligación con capital + ajuste.
+- La generación persiste `AJUSTE_INDEXACION` en `composicion_obligacion` y `obligacion_financiera_indexacion` cuando corresponde.
+- Para cuota histórica exigible con índice obligatorio sin valor válido, se bloquea la confirmación; no se crea una obligación base desactualizada como solución silenciosa.
+- Para cuota futura donde todavía no corresponde aplicar índice, se mantiene la proyección vigente; `PROYECTADA_SIN_INDICE` queda solo como estado de cálculo/preview, no como `estado_obligacion`.
+- Las corridas V2 quedan reservadas para valores publicados después de la generación, obligaciones futuras que pasan a ser alcanzadas, reintentos idempotentes del flujo mensual, actualizaciones posteriores permitidas y correcciones/rectificaciones futuras según #349.
 
 Ventajas:
 
-- Reutiliza el motor V2 donde corresponde.
-- Evita aplicar cuotas futuras antes de que exista índice exigible.
-- Conserva trazabilidad para ajustes históricos.
-- Minimiza duplicación y respeta límites comercial/financiero.
-- Encaja con preparación automática de corridas y correcciones mensuales ya existentes.
+- Respeta el comportamiento real de `GeneratePlanPagoVentaV2PorBloquesService`.
+- Evita doble aplicación sobre obligaciones que ya nacen indexadas.
+- Reutiliza el preview/generador V2 y mantiene el cálculo financiero fuera de `comercial`.
+- Bloquea faltantes exigibles históricos en vez de crear deuda base silenciosamente desactualizada.
+- Mantiene el flujo mensual de corridas para hechos posteriores a la generación.
+- Encaja con preparación automática de corridas y `REQUIERE_CORRECCION` para otro valor del mismo mes.
 
 Riesgos:
 
-- Requiere resolver con precisión el corte histórico y la clasificación de cuota del mes.
-- Requiere prevalidar índices antes de crear deuda si se quiere rollback completo.
-- Requiere adaptar servicios para modo transaccional orquestado o aceptar un flujo en etapas controladas.
+- Requiere definir formalmente fecha de corte y clasificación de cuotas históricas/futuras.
+- Requiere distinguir con precisión obligación ya indexada durante generación vs obligación futura alcanzada posteriormente.
+- Requiere tests para evitar doble aplicación de corridas sobre obligaciones con `obligacion_financiera_indexacion` vigente.
 
-Trazabilidad: alta.
+Trazabilidad: alta; generación conserva trazabilidad por obligación y corridas posteriores conservan trazabilidad mensual/correctiva.
 
-Atomicidad: recomendable en confirmación funcional, siempre que la aplicación de corridas históricas pueda participar de la misma frontera transaccional o que la confirmación se bloquee antes si falta índice.
+Atomicidad: recomendable dentro de la generación/confirmación para el alta inicial, sin aplicación inmediata obligatoria de corrida sobre cuotas ya indexadas.
 
-Sincronización: buena; no necesita inventar eventos nuevos para #345-A1 y puede reutilizar outbox financiero al aplicar.
+Sincronización: buena; las corridas conservan semántica propia para hechos posteriores y correcciones.
 
 ## 11. Alternativa recomendada
 
-Recomendada: **C. Flujo híbrido**.
+Recomendada: **C. Flujo híbrido con indexación en generación y corridas posteriores**.
 
 Justificación:
 
-- Mantiene el alta comercial como origen, pero deja deuda/indexación en servicios financieros.
-- Usa Plan Pago V2 como fuente del cronograma base.
-- Usa corridas V2 para cuotas históricas exigibles y deja cuotas futuras al flujo mensual normal.
-- Evita duplicar cálculo financiero.
-- Es la opción más compatible con #343/#344: identidad mensual de corridas, publicación de índices y `REQUIERE_CORRECCION` cuando aparece otro valor del mismo mes.
-- Permite un primer PR funcional pequeño de prevalidación/preview sin modificar deuda.
+- Mantiene el alta comercial como origen, pero deja cálculo y trazabilidad financiera en servicios V2.
+- Usa el preview de Plan Pago V2 para resolver valores publicados aplicables.
+- Si existe valor publicado aplicable, la obligación nace con `importe_total` indexado, composición `AJUSTE_INDEXACION` y `obligacion_financiera_indexacion`.
+- Si una cuota histórica exigible no tiene valor válido, la confirmación debe bloquearse.
+- Si una cuota es futura, queda proyectada según comportamiento vigente y será alcanzada por corridas mensuales posteriores cuando corresponda.
+- No ejecuta inmediatamente una corrida V2 sobre obligaciones ya indexadas por generación.
+- Es la opción más compatible con #343/#344 y mantiene #349 como alcance de corrección avanzada.
 
 ## 12. Propuesta transaccional
 
 Objetivo final recomendado para confirmación histórica:
 
-1. Prevalidar antes de persistir o antes de confirmar:
-   - venta histórica detectada por `fecha_venta`;
-   - bloques indexados existentes;
-   - índice activo;
-   - valor base válido;
-   - valores publicados exigibles hasta fecha de corte;
-   - moneda compatible;
-   - ausencia de corrida activa incompatible por plan+bloque+config+índice+mes.
-2. En una frontera transaccional única:
-   - crear/actualizar venta en borrador;
-   - definir condiciones;
-   - generar Plan Pago V2, bloques, cronograma, obligaciones base y relación generadora;
-   - persistir corridas históricas con origen `ALTA_MANUAL_VENTA_HISTORICA`;
-   - aplicar ajustes históricos a obligaciones elegibles;
-   - confirmar venta;
-   - emitir outbox correspondiente.
+1. Crear venta en borrador.
+2. Definir condiciones comerciales.
+3. Ejecutar preview del Plan Pago V2.
+4. Prevalidar valores de índice requeridos según fecha de corte de negocio definida formalmente.
+5. Bloquear si una cuota histórica exigible carece de valor válido publicado.
+6. Generar plan, bloques, cronograma, relación generadora y obligaciones.
+7. Persistir, durante la generación, `AJUSTE_INDEXACION` y `obligacion_financiera_indexacion` cuando el preview ya resolvió un valor publicado aplicable.
+8. Confirmar venta.
+9. Commit.
+
+La transacción recomendada no incluye una aplicación inmediata obligatoria de corrida V2 sobre cuotas ya indexadas por generación. Las corridas posteriores deben conservar su propia semántica, hash, idempotencia, locks, estados y trazabilidad para publicaciones posteriores, obligaciones futuras alcanzadas o correcciones permitidas.
 
 Si falta un índice exigible o un valor publicado exigible:
 
@@ -280,22 +275,25 @@ Si falta un índice exigible o un valor publicado exigible:
 - rollback completo del intento si el endpoint es completo;
 - mantener venta en borrador solo si el flujo granular ya había persistido la venta antes de la prevalidación;
 - no dejar obligaciones parciales ni plan incompleto;
-- no aplicar corridas automáticamente fuera de la frontera definida.
+- no crear obligaciones base desactualizadas como fallback silencioso;
+- no aplicar corridas automáticamente para compensar un faltante de índice obligatorio durante el alta.
 
 ## 13. Bloqueos funcionales propuestos
 
 Bloquear confirmación/prevalidación histórica cuando:
 
+- cuota histórica exigible + índice requerido sin valor válido;
 - falta configuración de índice en bloque indexado exigible;
 - índice no existe, está inactivo, eliminado o anulado;
-- `valor_base_indice <= 0` o `fecha_base_indice` inválida;
-- no existe valor publicado para un período exigible;
+- `estado_valor_indice != 'PUBLICADO'` para el valor requerido;
 - `fecha_publicacion IS NULL` para valor exigible;
+- `valor_base_indice <= 0` o `fecha_base_indice` inválida;
 - el valor aplicable no pertenece al índice configurado;
-- ya existe corrida activa del mismo plan+bloque+configuración+índice+mes con otro valor aplicado;
-- moneda de obligación/bloque no es compatible con el motor V2 actual (`ARS`);
+- moneda de obligación/bloque incompatible con indexación vigente;
 - ya existen obligaciones activas duplicadas para la misma relación generadora y clave funcional;
-- hay obligación con pagos, imputaciones, mora incompatible o punitorios donde el motor V2 no pueda aplicar;
+- hay obligación con pagos, imputaciones, mora incompatible o punitorios donde el motor V2 no pueda aplicar una corrida posterior;
+- obligación ya indexada durante generación y se intenta volver a aplicar una corrida inmediata sobre esa misma obligación;
+- corrida mensual posterior del mismo plan+bloque+configuración+índice+mes con otro valor: clasificar como `REQUIERE_CORRECCION`, no como alta ordinaria adicional;
 - el replay por `op_id` trae payload distinto.
 
 ## 14. Errores funcionales sugeridos
@@ -322,33 +320,35 @@ Bloquear confirmación/prevalidación histórica cuando:
 
 ## 16. Plan incremental
 
-### PR 1 — Prevalidación y preview histórico
+### PR 1 — Prevalidación histórica
 
-- Detectar venta histórica por `fecha_venta` y fecha de corte definida.
-- Resolver bloques indexados desde el payload/preview de Plan Pago V2.
-- Resolver índices y valores publicados exigibles.
-- Devolver preview histórico sin modificar deuda.
+- Detectar historicidad.
+- Definir fecha de corte de negocio.
+- Clasificar cuotas históricas/futuras.
+- Validar valores publicados requeridos.
+- Devolver preview sin cambios de deuda.
 - Documentar decisión CORE-EF como `PREVIEW_READLIKE` si no persiste.
 
-### PR 2 — Confirmación transaccional histórica
+### PR 2 — Integración con generación vigente
 
-- Integrar prevalidación al orquestador completo.
-- Generar venta, plan, cronograma y obligaciones base.
-- Persistir corridas con `origen_corrida = 'ALTA_MANUAL_VENTA_HISTORICA'`.
-- Aplicar ajustes históricos dentro de una frontera transaccional controlada.
-- Evitar commits internos de servicios financieros en modo orquestado.
+- Reutilizar el preview de Plan Pago V2.
+- Confirmar que las obligaciones se materializan con ajuste cuando hay índice publicado aplicable.
+- Persistir `AJUSTE_INDEXACION` y `obligacion_financiera_indexacion` mediante el generador vigente.
+- Bloquear faltantes exigibles.
+- No ejecutar una segunda indexación ni una corrida inmediata sobre obligaciones ya indexadas.
 
-### PR 3 — Cuotas futuras e integración mensual
+### PR 3 — Integración con corridas posteriores
 
-- Confirmar cómo persistir/exponer `PROYECTADA_SIN_INDICE` para cuotas futuras sin usarlo como `estado_obligacion`.
-- Validar que publicaciones futuras encuentren las configuraciones y obligaciones alcanzadas.
-- Agregar tests de preparación/aplicación posteriores al alta histórica.
+- Asegurar que obligaciones futuras entren al flujo mensual normal.
+- Verificar compatibilidad con preparación por publicación.
+- Evitar doble aplicación sobre obligaciones ya indexadas durante generación.
+- Mantener `REQUIERE_CORRECCION` para otro valor del mismo mes.
 
-### PR 4 — Importación masiva
+### PR 4 — Importación
 
 Fuera de #345. Corresponde a #346.
 
-### PR posterior — Corrección/reversión avanzada
+### Corrección avanzada
 
 Fuera de #345. Corresponde a #349.
 
@@ -371,7 +371,7 @@ Probables archivos a tocar en #345-A1/#345-A2:
 
 ## 18. Riesgos
 
-- Alto riesgo de deuda base sin ajuste si se confirma en una transacción y se aplica corrida en otra.
+- Riesgo de doble ajuste si se aplica una corrida inmediata sobre obligaciones ya indexadas durante generación.
 - Riesgo de duplicación si se intenta recrear obligaciones ante retry sin una clave funcional completa.
 - Riesgo de violar dominio si `comercial` calcula ajustes financieros directamente.
 - Riesgo de confundir `PROYECTADA_SIN_INDICE` con `estado_obligacion`.
@@ -386,4 +386,4 @@ Probables archivos a tocar en #345-A1/#345-A2:
 
 ## 20. Conclusión
 
-El flujo real de alta manual completa es `POST /api/v1/ventas/directa/confirmar-venta-completa`. La fecha histórica efectiva hoy es `fecha_venta`; no existe un campo específico de venta histórica. Plan Pago Venta V2 ya genera obligaciones y soporta configuración de indexación por bloque, pero la corrida V2 histórica no está integrada al alta/confirmación. La alternativa recomendada es un flujo híbrido: obligaciones base + corridas V2 para cuotas históricas exigibles + cuotas futuras proyectadas para el flujo mensual normal. Este PR no cierra #345 como funcionalidad completa; deja la propuesta técnica para los PRs siguientes.
+El flujo real de alta manual completa es `POST /api/v1/ventas/directa/confirmar-venta-completa`. La fecha histórica efectiva hoy es `fecha_venta`; no existe un campo específico de venta histórica y la fecha de corte histórica no surge de CORE-EF. Plan Pago Venta V2 ya puede generar obligaciones indexadas cuando el preview encuentra valor publicado aplicable, persistiendo `AJUSTE_INDEXACION` y `obligacion_financiera_indexacion`. La alternativa recomendada es un flujo híbrido con indexación en generación, bloqueo de faltantes exigibles y corridas V2 reservadas para hechos posteriores, obligaciones futuras alcanzadas y correcciones fuera de alcance de #345 inicial. Este PR no cierra #345 como funcionalidad completa; deja la propuesta técnica para los PRs siguientes.
