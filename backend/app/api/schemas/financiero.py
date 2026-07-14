@@ -1551,7 +1551,7 @@ class PreviewIndexacionCuotasV2Response(BaseModel):
 # ── aplicar indexacion cuotas V2 ─────────────────────────────────────────────
 
 class AplicarIndexacionCuotasV2Request(BaseModel):
-    hash_corrida: str | None = None
+    hash_corrida: str
 
 
 class AplicarIndexacionCuotasV2Data(BaseModel):

@@ -10,6 +10,9 @@ from uuid import UUID
 
 from app.api.core_ef_headers import CoreEFHeaders
 from app.application.common.results import AppResult
+from app.application.financiero.services.indexacion_cuotas_v2_hash import (
+    build_indexacion_cuotas_v2_hash,
+)
 
 Q2 = Decimal("0.01")
 Q8 = Decimal("0.00000001")
@@ -91,16 +94,13 @@ class PreviewIndexacionCuotasV2Service:
         snapshot_versiones = {
             str(d["id_obligacion_financiera"]): d["version_esperada"] for d in detalles
         }
-        canonical = {
-            "alcance": snapshot_alcance,
-            "valor_base_indice": _canon_decimal(valor_base, Q8),
-            "valor_aplicado_indice": _canon_decimal(valor_aplicado, Q8),
-            "coeficiente_indexacion": _canon_decimal(coeficiente, Q8),
-            "detalles": [self._canonical_detalle(d) for d in detalles],
-        }
-        hash_corrida = hashlib.sha256(
-            json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        hash_corrida = build_indexacion_cuotas_v2_hash(
+            snapshot_alcance=snapshot_alcance,
+            valor_base_indice=valor_base,
+            valor_aplicado_indice=valor_aplicado,
+            coeficiente_indexacion=coeficiente,
+            detalles=detalles,
+        )
         data = self._response(
             command, scope, valor_aplicado_row, valor_base, valor_aplicado,
             coeficiente, detalles, hash_corrida, snapshot_alcance, snapshot_versiones,
@@ -243,11 +243,6 @@ class PreviewIndexacionCuotasV2Service:
             "snapshot_antes": snapshot_antes,
             "snapshot_despues": snapshot_despues,
         }
-
-    @staticmethod
-    def _canonical_detalle(d: dict[str, Any]) -> dict[str, Any]:
-        keys = ["id_obligacion_financiera", "id_composicion_capital_venta", "id_composicion_ajuste_indexacion", "id_obligacion_financiera_indexacion", "version_esperada", "capital_base", "ajuste_anterior", "ajuste_nuevo", "diferencia_neta", "importe_anterior", "importe_nuevo", "saldo_anterior", "saldo_nuevo", "estado_elegibilidad", "motivo_exclusion", "advertencias", "snapshot_antes", "snapshot_despues"]
-        return {k: _canon(d[k]) for k in keys}
 
     def _response(self, command, scope, valor_aplicado_row, valor_base, valor_aplicado, coeficiente, detalles, hash_corrida, snapshot_alcance, snapshot_versiones):
         resumen = {

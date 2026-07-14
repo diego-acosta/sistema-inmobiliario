@@ -24,9 +24,9 @@ APPLY_HEADERS = {
 }
 
 
-def _persist_preview(db_session, ctx):
+def _persist_preview(db_session, ctx, core=PREVIEW_CORE):
     result = PreviewIndexacionCuotasV2Service(PreviewIndexacionCuotasV2SqlAlchemyRepository(db_session)).execute(
-        _cmd(ctx, persistir=True, motivo="aplicar"), PREVIEW_CORE
+        _cmd(ctx, persistir=True, motivo="aplicar"), core
     )
     assert result.success
     return result.data
@@ -103,3 +103,121 @@ def test_api_aplicar_headers_exito_conflictos(client, db_session):
     response = client.post(f"/api/v1/financiero/indexacion-cuotas-v2/corridas/{corrida}/aplicar", headers=APPLY_HEADERS, json={"hash_corrida": preview["hash_corrida"]})
     assert response.status_code == 200, response.text
     assert response.json()["data"]["estado_corrida"] == "APLICADA"
+
+
+def _recompute_hash_from_db(db_session, corrida: int) -> str:
+    repo = AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session)
+    service = AplicarIndexacionCuotasV2Service(repo)
+    cab = repo.get_corrida_for_update(corrida)
+    detalles = repo.list_detalles_for_update(corrida)
+    assert cab is not None
+    return service._recomputar_hash(cab, detalles)
+
+
+def test_postgres_replay_devuelve_cantidad_real_y_no_duplica(db_session):
+    ctx = _create_context(db_session)
+    preview = _persist_preview(db_session, ctx)
+    corrida = preview["id_corrida_indexacion_financiera"]
+    service = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session))
+    first = service.execute(AplicarIndexacionCuotasV2Command(corrida, preview["hash_corrida"]), APPLY_CORE)
+    assert first.success
+    versions = dict(db_session.execute(text("SELECT id_obligacion_financiera, version_registro FROM obligacion_financiera WHERE id_obligacion_financiera IN (:a,:b)"), {"a": ctx["obligacion"], "b": ctx["otra_obligacion"]}).all())
+    outbox_count = _scalar(db_session, "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id=:id", id=corrida)
+    ajuste_count = _scalar(db_session, "SELECT COUNT(*) FROM composicion_obligacion co JOIN concepto_financiero cf ON cf.id_concepto_financiero=co.id_concepto_financiero WHERE co.id_obligacion_financiera=:id AND cf.codigo_concepto_financiero='AJUSTE_INDEXACION' AND co.deleted_at IS NULL", id=ctx["obligacion"])
+
+    replay = service.execute(AplicarIndexacionCuotasV2Command(corrida, preview["hash_corrida"]), APPLY_CORE)
+    assert replay.success
+    assert replay.data["idempotente"] is True
+    assert replay.data["cantidad_aplicada"] == 2
+    assert _scalar(db_session, "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id=:id", id=corrida) == outbox_count
+    assert _scalar(db_session, "SELECT COUNT(*) FROM composicion_obligacion co JOIN concepto_financiero cf ON cf.id_concepto_financiero=co.id_concepto_financiero WHERE co.id_obligacion_financiera=:id AND cf.codigo_concepto_financiero='AJUSTE_INDEXACION' AND co.deleted_at IS NULL", id=ctx["obligacion"]) == ajuste_count
+    assert dict(db_session.execute(text("SELECT id_obligacion_financiera, version_registro FROM obligacion_financiera WHERE id_obligacion_financiera IN (:a,:b)"), {"a": ctx["obligacion"], "b": ctx["otra_obligacion"]}).all()) == versions
+
+    bad = service.execute(AplicarIndexacionCuotasV2Command(corrida, "0" * 64), APPLY_CORE)
+    assert not bad.success
+    assert bad.errors == ["IDEMPOTENCIA_PAYLOAD_INCOMPATIBLE"]
+
+
+def test_postgres_hash_persistido_inconsistente_no_marca_fallida_ni_muta(db_session):
+    ctx = _create_context(db_session)
+    preview = _persist_preview(db_session, ctx)
+    corrida = preview["id_corrida_indexacion_financiera"]
+    db_session.execute(text("UPDATE corrida_indexacion_financiera_detalle SET importe_nuevo = importe_nuevo + 1 WHERE id_corrida_indexacion_financiera_detalle = (SELECT id_corrida_indexacion_financiera_detalle FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=:id LIMIT 1)"), {"id": corrida})
+    db_session.commit()
+    result = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session)).execute(
+        AplicarIndexacionCuotasV2Command(corrida, preview["hash_corrida"]), APPLY_CORE
+    )
+    assert not result.success
+    assert result.errors == ["CORRIDA_HASH_PERSISTIDO_INCONSISTENTE"]
+    assert _scalar(db_session, "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id=:id", id=corrida) == 0
+    assert _scalar(db_session, "SELECT estado_corrida FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id", id=corrida) == "PREVISUALIZADA"
+
+
+def test_postgres_formula_inconsistente_error_controlado_sin_fallida(db_session):
+    ctx = _create_context(db_session)
+    preview = _persist_preview(db_session, ctx)
+    corrida = preview["id_corrida_indexacion_financiera"]
+    db_session.execute(text("UPDATE corrida_indexacion_financiera_detalle SET diferencia_neta = diferencia_neta + 1 WHERE id_corrida_indexacion_financiera=:id"), {"id": corrida})
+    new_hash = _recompute_hash_from_db(db_session, corrida)
+    db_session.execute(text("UPDATE corrida_indexacion_financiera SET hash_corrida=:h WHERE id_corrida_indexacion_financiera=:id"), {"h": new_hash, "id": corrida})
+    db_session.commit()
+    version_corrida = _scalar(db_session, "SELECT version_registro FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id", id=corrida)
+    result = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session)).execute(
+        AplicarIndexacionCuotasV2Command(corrida, new_hash), CoreEFHeaders(UUID("550e8400-e29b-41d4-a716-446655441021"), 1, 1, 1, version_corrida)
+    )
+    assert not result.success
+    assert result.errors == ["DETALLE_CORRIDA_INCONSISTENTE"]
+    assert _scalar(db_session, "SELECT estado_corrida FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id", id=corrida) == "PREVISUALIZADA"
+
+
+def test_postgres_conflicto_ajuste_y_trazabilidad_marcan_fallida(db_session):
+    ctx = _create_context(db_session)
+    preview = _persist_preview(db_session, ctx)
+    corrida = preview["id_corrida_indexacion_financiera"]
+    db_session.execute(text("UPDATE composicion_obligacion SET importe_componente=importe_componente+1, saldo_componente=saldo_componente+1 WHERE id_composicion_obligacion=:id"), {"id": ctx["comp_ajuste"]})
+    version_obl = _scalar(db_session, "SELECT version_registro FROM obligacion_financiera WHERE id_obligacion_financiera=:id", id=ctx["obligacion"])
+    db_session.execute(text("UPDATE corrida_indexacion_financiera_detalle SET version_esperada=:v WHERE id_corrida_indexacion_financiera=:id AND id_obligacion_financiera=:obl"), {"v": version_obl, "id": corrida, "obl": ctx["obligacion"]})
+    new_hash_ajuste = _recompute_hash_from_db(db_session, corrida)
+    db_session.execute(text("UPDATE corrida_indexacion_financiera SET hash_corrida=:h WHERE id_corrida_indexacion_financiera=:id"), {"h": new_hash_ajuste, "id": corrida})
+    db_session.commit()
+    version_corrida = _scalar(db_session, "SELECT version_registro FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id", id=corrida)
+    result = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session)).execute(
+        AplicarIndexacionCuotasV2Command(corrida, new_hash_ajuste), CoreEFHeaders(UUID("550e8400-e29b-41d4-a716-446655441020"), 1, 1, 1, version_corrida)
+    )
+    assert not result.success
+    assert result.errors == ["AJUSTE_INDEXACION_INCOMPATIBLE"]
+    assert _scalar(db_session, "SELECT estado_corrida FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id", id=corrida) == "FALLIDA"
+
+
+
+def test_api_hash_obligatorio_replay_y_body_distinto(client, db_session):
+    ctx = _create_context(db_session)
+    preview = _persist_preview(db_session, ctx)
+    corrida = preview["id_corrida_indexacion_financiera"]
+    no_body_hash = client.post(f"/api/v1/financiero/indexacion-cuotas-v2/corridas/{corrida}/aplicar", headers=APPLY_HEADERS, json={})
+    assert no_body_hash.status_code == 422
+
+    ok = client.post(f"/api/v1/financiero/indexacion-cuotas-v2/corridas/{corrida}/aplicar", headers=APPLY_HEADERS, json={"hash_corrida": preview["hash_corrida"]})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["data"]["cantidad_aplicada"] == 2
+    replay = client.post(f"/api/v1/financiero/indexacion-cuotas-v2/corridas/{corrida}/aplicar", headers=APPLY_HEADERS, json={"hash_corrida": preview["hash_corrida"]})
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"]["idempotente"] is True
+    assert replay.json()["data"]["cantidad_aplicada"] == 2
+    changed = client.post(f"/api/v1/financiero/indexacion-cuotas-v2/corridas/{corrida}/aplicar", headers=APPLY_HEADERS, json={"hash_corrida": "0" * 64})
+    assert changed.status_code == 409
+    assert changed.json()["error_code"] == "IDEMPOTENCIA_PAYLOAD_INCOMPATIBLE"
+
+
+def test_postgres_trazabilidad_concurrente_marca_fallida(db_session):
+    ctx2 = _create_context(db_session)
+    preview2 = _persist_preview(db_session, ctx2, CoreEFHeaders(UUID("550e8400-e29b-41d4-a716-446655441010"), 1, 1, 1))
+    corrida2 = preview2["id_corrida_indexacion_financiera"]
+    db_session.execute(text("UPDATE obligacion_financiera_indexacion SET valor_aplicado_indice=valor_aplicado_indice+1 WHERE id_obligacion_financiera_indexacion=:id"), {"id": ctx2["ofi"]})
+    db_session.commit()
+    result2 = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session)).execute(
+        AplicarIndexacionCuotasV2Command(corrida2, preview2["hash_corrida"]), CoreEFHeaders(UUID("550e8400-e29b-41d4-a716-446655441011"), 1, 1, 1, 1)
+    )
+    assert not result2.success
+    assert result2.errors == ["TRAZABILIDAD_INDEXACION_INCOMPATIBLE"]
+    assert _scalar(db_session, "SELECT estado_corrida FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id", id=corrida2) == "FALLIDA"
