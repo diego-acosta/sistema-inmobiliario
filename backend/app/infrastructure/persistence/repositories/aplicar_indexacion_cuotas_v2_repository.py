@@ -162,14 +162,14 @@ class AplicarIndexacionCuotasV2SqlAlchemyRepository:
         """), {"importe": detalle["importe_nuevo"], "saldo": detalle["saldo_nuevo"], "op_id": str(core_ef.x_op_id), "inst": core_ef.x_instalacion_id, "id": detalle["id_obligacion_financiera"], "version": detalle["version_esperada"]})
         return res.rowcount == 1
 
-    def update_detalle_aplicado(self, detalle_id: int, version_resultante: int, ajuste_id: int, ofi_id: int, snapshot_despues: dict[str, Any], core_ef: Any) -> None:
+    def update_detalle_aplicado(self, detalle_id: int, version_resultante: int, ajuste_id: int, ofi_id: int, core_ef: Any) -> None:
         self.db.execute(text("""
             UPDATE corrida_indexacion_financiera_detalle SET version_resultante=:version_resultante,
                 id_composicion_ajuste_indexacion=:ajuste_id, id_obligacion_financiera_indexacion=:ofi_id,
-                snapshot_despues=CAST(:snapshot AS jsonb), codigo_error=NULL, detalle_controlado=NULL,
+                codigo_error=NULL, detalle_controlado=NULL,
                 op_id_ultima_modificacion=CAST(:op_id AS uuid), id_instalacion_ultima_modificacion=:inst
             WHERE id_corrida_indexacion_financiera_detalle=:id
-        """), {"version_resultante": version_resultante, "ajuste_id": ajuste_id, "ofi_id": ofi_id, "snapshot": json.dumps(snapshot_despues, sort_keys=True), "op_id": str(core_ef.x_op_id), "inst": core_ef.x_instalacion_id, "id": detalle_id})
+        """), {"version_resultante": version_resultante, "ajuste_id": ajuste_id, "ofi_id": ofi_id, "op_id": str(core_ef.x_op_id), "inst": core_ef.x_instalacion_id, "id": detalle_id})
 
     def update_corrida_aplicada(self, corrida_id: int, version: int, cantidad: int, core_ef: Any) -> bool:
         res = self.db.execute(text("""

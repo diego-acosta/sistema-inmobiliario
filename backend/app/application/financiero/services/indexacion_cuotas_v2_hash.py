@@ -12,8 +12,6 @@ Q8 = Decimal("0.00000001")
 DETALLE_HASH_KEYS = [
     "id_obligacion_financiera",
     "id_composicion_capital_venta",
-    "id_composicion_ajuste_indexacion",
-    "id_obligacion_financiera_indexacion",
     "version_esperada",
     "capital_base",
     "ajuste_anterior",

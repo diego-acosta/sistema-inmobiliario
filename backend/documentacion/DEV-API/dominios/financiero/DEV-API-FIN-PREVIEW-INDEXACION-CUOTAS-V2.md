@@ -117,7 +117,7 @@ Response exitosa:
 ## Precondiciones y límites
 
 - `hash_corrida` es obligatorio en primer apply y replay; un body sin hash falla por validación del schema API.
-- Antes de aplicar se recompone el hash canónico con el helper compartido del preview desde cabecera/detalles persistidos; si no coincide con `corrida_indexacion_financiera.hash_corrida`, se rechaza con `CORRIDA_HASH_PERSISTIDO_INCONSISTENTE` sin marcar `FALLIDA`.
+- Antes de aplicar se recompone el hash canónico con el helper compartido del preview desde cabecera/detalles persistidos; si no coincide con `corrida_indexacion_financiera.hash_corrida`, se rechaza con `CORRIDA_HASH_PERSISTIDO_INCONSISTENTE` sin marcar `FALLIDA`. El hash representa únicamente el preview aprobado e inmutable: no incluye IDs técnicos que pueda completar la aplicación (`id_composicion_ajuste_indexacion`, `id_obligacion_financiera_indexacion`), `version_resultante`, estado `APLICADA`, fecha de aplicación, locks, outbox ni metadata CORE-EF de aplicación.
 - Solo aplica corridas persistidas no borradas en estados físicos `PREVISUALIZADA` o `PENDIENTE_APLICACION`.
 - No confía en importes enviados por cliente; usa cabecera y detalles persistidos.
 - Rechaza hash esperado incompatible, corrida reemplazada, corrida no aplicable, versión de corrida incompatible, versión de obligación incompatible, detalle matemáticamente inconsistente, drift de capital, drift de ajuste previo, cambios concurrentes de `AJUSTE_INDEXACION`, trazabilidad incompatible, pagos/imputaciones activos, punitorios incompatibles y locks lógicos activos de otro owner.
@@ -132,8 +132,8 @@ Para cada detalle elegible confirmado:
 - crea o actualiza la composición activa `AJUSTE_INDEXACION` con el importe objetivo del detalle, sin acumular ciegamente y con control de `version_registro` cuando la composición ya existe;
 - actualiza `obligacion_financiera.importe_total`, `saldo_pendiente`, `op_id_ultima_modificacion`, `id_instalacion_ultima_modificacion` y el versionado por triggers CORE-EF;
 - registra/actualiza `obligacion_financiera_indexacion` con índice, valor aplicado, coeficiente y referencia técnica a la corrida, validando la trazabilidad existente antes de actualizar;
-- completa el detalle con `version_resultante`, ids finales de ajuste/trazabilidad y snapshot posterior;
-- actualiza la cabecera a `APLICADA`, `fecha_aplicacion`, `cantidad_aplicada`, metadata CORE-EF y limpia campos de error;
+- completa el detalle con `version_resultante` e ids finales de ajuste/trazabilidad en columnas físicas; `snapshot_antes` y `snapshot_despues` permanecen exactamente como fueron persistidos por el preview;
+- actualiza la cabecera a `APLICADA`, `fecha_aplicacion`, `cantidad_aplicada`, metadata CORE-EF y limpia campos de error sin alterar el hash del preview aprobado;
 - inserta el evento transaccional en `outbox_event`.
 
 ## FALLIDA

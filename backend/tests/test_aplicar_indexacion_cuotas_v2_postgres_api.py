@@ -114,6 +114,51 @@ def _recompute_hash_from_db(db_session, corrida: int) -> str:
     return service._recomputar_hash(cab, detalles)
 
 
+def test_postgres_hash_de_preview_permanece_estable_despues_de_aplicar(db_session):
+    ctx = _create_context(db_session)
+    preview = _persist_preview(db_session, ctx)
+    corrida = preview["id_corrida_indexacion_financiera"]
+    hash_original = preview["hash_corrida"]
+    snapshots = {
+        row["id_corrida_indexacion_financiera_detalle"]: (row["snapshot_antes"], row["snapshot_despues"])
+        for row in db_session.execute(text("""
+            SELECT id_corrida_indexacion_financiera_detalle, snapshot_antes, snapshot_despues
+            FROM corrida_indexacion_financiera_detalle
+            WHERE id_corrida_indexacion_financiera=:id
+        """), {"id": corrida}).mappings()
+    }
+
+    service = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session))
+    result = service.execute(AplicarIndexacionCuotasV2Command(corrida, hash_original), APPLY_CORE)
+    assert result.success, result.errors
+
+    hash_recomputado = _recompute_hash_from_db(db_session, corrida)
+    assert hash_recomputado == hash_original
+
+    detalles = db_session.execute(text("""
+        SELECT id_corrida_indexacion_financiera_detalle, id_composicion_ajuste_indexacion,
+               id_obligacion_financiera_indexacion, version_resultante, snapshot_antes, snapshot_despues
+        FROM corrida_indexacion_financiera_detalle
+        WHERE id_corrida_indexacion_financiera=:id
+    """), {"id": corrida}).mappings().all()
+    assert detalles
+    for detalle in detalles:
+        assert detalle["id_composicion_ajuste_indexacion"] is not None
+        assert detalle["id_obligacion_financiera_indexacion"] is not None
+        assert detalle["version_resultante"] is not None
+        before, after = snapshots[detalle["id_corrida_indexacion_financiera_detalle"]]
+        assert detalle["snapshot_antes"] == before
+        assert detalle["snapshot_despues"] == after
+        assert "aplicada" not in detalle["snapshot_despues"]
+
+    outbox_count = _scalar(db_session, "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id=:id", id=corrida)
+    replay = service.execute(AplicarIndexacionCuotasV2Command(corrida, hash_original), APPLY_CORE)
+    assert replay.success
+    assert replay.data["idempotente"] is True
+    assert _scalar(db_session, "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id=:id", id=corrida) == outbox_count
+    assert _recompute_hash_from_db(db_session, corrida) == hash_original
+
+
 def test_postgres_replay_devuelve_cantidad_real_y_no_duplica(db_session):
     ctx = _create_context(db_session)
     preview = _persist_preview(db_session, ctx)
