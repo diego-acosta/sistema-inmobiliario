@@ -250,6 +250,10 @@ class GeneratePlanPagoVentaV2PorBloquesRequest(BaseModel):
 
 
 class PreviewPlanPagoVentaV2PorBloquesRequest(GeneratePlanPagoVentaV2PorBloquesRequest):
+    pass
+
+
+class PreviewPlanPagoVentaV2SinVentaRequest(PreviewPlanPagoVentaV2PorBloquesRequest):
     fecha_venta: date | None = None
     fecha_corte: date | None = None
 

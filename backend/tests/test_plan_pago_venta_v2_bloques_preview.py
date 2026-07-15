@@ -745,6 +745,7 @@ def _crear_valor_indice_preview(
     id_indice_financiero: int,
     fecha_valor: str,
     valor_indice: str,
+    fecha_publicacion: str | None = "__FECHA_VALOR__",
 ) -> int:
     row = db_session.execute(
         text("""
@@ -760,7 +761,7 @@ def _crear_valor_indice_preview(
                 :id_indice_financiero,
                 :fecha_valor,
                 :valor_indice,
-                :fecha_valor,
+                :fecha_publicacion,
                 'TEST',
                 'PUBLICADO'
             )
@@ -770,6 +771,7 @@ def _crear_valor_indice_preview(
             "id_indice_financiero": id_indice_financiero,
             "fecha_valor": fecha_valor,
             "valor_indice": valor_indice,
+            "fecha_publicacion": fecha_valor if fecha_publicacion == "__FECHA_VALOR__" else fecha_publicacion,
         },
     ).one()
     return row[0]
@@ -1390,3 +1392,58 @@ def test_endpoint_preview_prevalidacion_fecha_venta_posterior_rechaza(client) ->
     response = client.post(URL_SIN_VENTA, json=payload)
 
     assert response.status_code == 422
+
+
+def test_endpoint_preview_prevalidacion_publicacion_incompleta_bloquea_con_motivo_especifico(db_session, client) -> None:
+    id_indice = _crear_indice_preview(db_session, "IPC_PREVALIDA_INCOMPLETA")
+    _crear_valor_indice_preview(
+        db_session, id_indice, "2026-02-01", "120.00000000", fecha_publicacion=None
+    )
+
+    response = client.post(URL_SIN_VENTA, json=_payload_prevalidacion_historica_indexada(id_indice))
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert {cuota["estado_preview_indexacion"] for cuota in data["obligaciones"]} == {"PROYECTADA_SIN_INDICE"}
+    prevalidacion = data["prevalidacion_historica"]
+    assert prevalidacion["puede_confirmar"] is False
+    assert prevalidacion["motivos_bloqueo"] == ["FECHA_PUBLICACION_INDICE_INCOMPLETA"]
+    assert prevalidacion["cuotas"][0]["estado_indexacion"] == "BLOQUEADA"
+    assert prevalidacion["cuotas"][0]["motivo_bloqueo"] == "FECHA_PUBLICACION_INDICE_INCOMPLETA"
+
+
+def test_endpoint_preview_prevalidacion_indice_inactivo_bloquea_con_motivo_especifico(db_session, client) -> None:
+    id_indice = _crear_indice_preview(db_session, "IPC_PREVALIDA_INACTIVO")
+    db_session.execute(
+        text("UPDATE indice_financiero SET estado_indice_financiero = 'INACTIVO' WHERE id_indice_financiero = :id"),
+        {"id": id_indice},
+    )
+
+    response = client.post(URL_SIN_VENTA, json=_payload_prevalidacion_historica_indexada(id_indice))
+
+    assert response.status_code == 200, response.text
+    prevalidacion = response.json()["data"]["prevalidacion_historica"]
+    assert prevalidacion["puede_confirmar"] is False
+    assert prevalidacion["motivos_bloqueo"] == ["INDICE_FINANCIERO_INACTIVO"]
+
+
+def test_endpoint_preview_sin_venta_rechaza_fecha_corte_sin_fecha_venta(client) -> None:
+    payload = _payload_financiado_sin_interes()
+    payload["fecha_corte"] = "2026-02-01"
+
+    response = client.post(URL_SIN_VENTA, json=payload)
+
+    assert response.status_code == 422
+
+
+def test_endpoint_preview_con_id_venta_rechaza_fechas_prevalidacion(client) -> None:
+    for extra in (
+        {"fecha_venta": "2026-01-01"},
+        {"fecha_corte": "2026-02-01"},
+        {"fecha_venta": "2026-01-01", "fecha_corte": "2026-02-01"},
+    ):
+        payload = {**_payload_contado(), **extra}
+
+        response = client.post(URL.format(id_venta=1), json=payload)
+
+        assert response.status_code == 422

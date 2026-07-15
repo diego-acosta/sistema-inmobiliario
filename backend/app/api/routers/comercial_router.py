@@ -49,6 +49,7 @@ from app.api.schemas.comercial import (
     GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
     PreviewPlanPagoVentaV2PorBloquesRequest,
     PreviewPlanPagoVentaV2PorBloquesResponse,
+    PreviewPlanPagoVentaV2SinVentaRequest,
     PreviewPlanPagoVentaV2SinVentaResponse,
     InstrumentoCompraventaData,
     InstrumentoCompraventaListData,
@@ -2407,7 +2408,7 @@ def _clasificacion_temporal_cuota(fecha_vencimiento: date, fecha_corte: date) ->
     return "FUTURA"
 
 
-def _motivo_bloqueo_prevalidacion_historica(obligacion, clasificacion: str) -> str | None:
+def _motivo_bloqueo_prevalidacion_historica(obligacion, clasificacion: str, indice_financiero_query=None) -> str | None:
     if clasificacion != "HISTORICA_EXIGIBLE":
         return None
     bloque = obligacion.bloque.input
@@ -2420,12 +2421,16 @@ def _motivo_bloqueo_prevalidacion_historica(obligacion, clasificacion: str) -> s
         if obligacion.fecha_publicacion_indice is None:
             return "FECHA_PUBLICACION_INDICE_INCOMPLETA"
         return None
+    if indice_financiero_query is not None and hasattr(indice_financiero_query, "diagnosticar_valor_publicado_no_aplicable"):
+        return indice_financiero_query.diagnosticar_valor_publicado_no_aplicable(
+            bloque.id_indice_financiero or 0, obligacion.fecha_vencimiento
+        )
     if obligacion.id_indice_financiero is None and bloque.id_indice_financiero:
         return "INDICE_FINANCIERO_INACTIVO"
     return "VALOR_INDICE_PUBLICADO_INEXISTENTE"
 
 
-def _prevalidacion_historica_response_data(*, request: PreviewPlanPagoVentaV2PorBloquesRequest, command: GeneratePlanPagoVentaV2PorBloquesCommand, preview: dict) -> dict | None:
+def _prevalidacion_historica_response_data(*, request: PreviewPlanPagoVentaV2SinVentaRequest, command: GeneratePlanPagoVentaV2PorBloquesCommand, preview: dict, indice_financiero_query=None) -> dict | None:
     if request.fecha_venta is None or request.fecha_corte is None:
         return None
     cuotas = []
@@ -2434,7 +2439,7 @@ def _prevalidacion_historica_response_data(*, request: PreviewPlanPagoVentaV2Por
         clasificacion = _clasificacion_temporal_cuota(obligacion.fecha_vencimiento, request.fecha_corte)
         requiere_indice = (obligacion.bloque.input.metodo_liquidacion or "").strip().upper() == "INDEXACION"
         estado = obligacion.estado_preview_indexacion or "NO_REQUIERE_INDICE"
-        motivo = _motivo_bloqueo_prevalidacion_historica(obligacion, clasificacion)
+        motivo = _motivo_bloqueo_prevalidacion_historica(obligacion, clasificacion, indice_financiero_query)
         bloquea = motivo is not None
         if bloquea:
             estado = "BLOQUEADA"
@@ -2623,7 +2628,7 @@ def get_plan_pago_venta_v2_integral(
     },
 )
 def preview_plan_pago_venta_v2_por_bloques_sin_venta(
-    request: PreviewPlanPagoVentaV2PorBloquesRequest,
+    request: PreviewPlanPagoVentaV2SinVentaRequest,
     db: Session = Depends(get_db),
 ) -> PreviewPlanPagoVentaV2SinVentaResponse | JSONResponse:
     command = _build_plan_pago_v2_por_bloques_command(
@@ -2631,8 +2636,9 @@ def preview_plan_pago_venta_v2_por_bloques_sin_venta(
         request=request,
         context=CommandContext(),
     )
+    indice_financiero_repository = IndiceFinancieroRepository(db)
     service = BuildPlanPagoVentaV2PorBloquesPreviewService(
-        indice_financiero_query=IndiceFinancieroRepository(db)
+        indice_financiero_query=indice_financiero_repository
     )
 
     try:
@@ -2655,7 +2661,7 @@ def preview_plan_pago_venta_v2_por_bloques_sin_venta(
     return PreviewPlanPagoVentaV2SinVentaResponse(
         data={**_plan_pago_v2_preview_response_data(
             command=command, preview=result.data, include_id_venta=False
-        ), "prevalidacion_historica": _prevalidacion_historica_response_data(request=request, command=command, preview=result.data)}
+        ), "prevalidacion_historica": _prevalidacion_historica_response_data(request=request, command=command, preview=result.data, indice_financiero_query=indice_financiero_repository)}
     )
 
 

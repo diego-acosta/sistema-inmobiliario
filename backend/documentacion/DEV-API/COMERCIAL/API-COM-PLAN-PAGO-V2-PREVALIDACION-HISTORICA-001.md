@@ -49,7 +49,7 @@ Las cuotas se clasifican por `fecha_vencimiento` contra la fecha de corte exacta
 - `PERIODO_CORTE`: `fecha_vencimiento == fecha_corte`.
 - `FUTURA`: `fecha_vencimiento > fecha_corte`.
 
-El preview vigente selecciona el valor de índice aplicable con `fecha_valor <= fecha_vencimiento`; esta prevalidación no cambia esa política ni usa una fecha mensual alternativa.
+El preview vigente selecciona el valor de índice aplicable con `fecha_valor <= fecha_vencimiento`; esta prevalidación no cambia esa política ni usa una fecha mensual alternativa. `fecha_corte` solo clasifica exigibilidad para decidir bloqueos de prevalidación: no participa en la selección del índice, el período del índice, el coeficiente ni el importe de cuota.
 
 ## Response
 
@@ -84,14 +84,14 @@ Estados de preview:
 
 Una cuota histórica exigible bloquea la futura confirmación si requiere indexación y no puede calcularse un importe final confiable.
 
-Códigos funcionales estables:
+Códigos funcionales estables por cuota:
 
 - `VALOR_INDICE_PUBLICADO_INEXISTENTE`
 - `FECHA_PUBLICACION_INDICE_INCOMPLETA`
 - `INDICE_FINANCIERO_INACTIVO`
-- `CONFIGURACION_INDEXACION_INVALIDA`
-- `MONEDA_NO_COMPATIBLE_INDEXACION`
 - `VALOR_BASE_INDICE_INVALIDO`
+
+Las inconsistencias de configuración de indexación o moneda se mantienen como errores globales del preview normal (`APPLICATION_ERROR`/422 según validación de schema) antes de construir `prevalidacion_historica`; por eso `CONFIGURACION_INDEXACION_INVALIDA` y `MONEDA_NO_COMPATIBLE_INDEXACION` no se documentan como motivos por cuota en este contrato.
 
 Las cuotas futuras sin valor aplicable permanecen `PROYECTADA_SIN_INDICE` y no bloquean automáticamente.
 
