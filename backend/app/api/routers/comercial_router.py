@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -49,6 +49,7 @@ from app.api.schemas.comercial import (
     GeneratePlanPagoVentaCuotasIgualesSimpleResponse,
     PreviewPlanPagoVentaV2PorBloquesRequest,
     PreviewPlanPagoVentaV2PorBloquesResponse,
+    PreviewPlanPagoVentaV2SinVentaRequest,
     PreviewPlanPagoVentaV2SinVentaResponse,
     InstrumentoCompraventaData,
     InstrumentoCompraventaListData,
@@ -2399,6 +2400,91 @@ def _build_plan_pago_v2_por_bloques_command(
     )
 
 
+def _clasificacion_temporal_cuota(fecha_vencimiento: date, fecha_corte: date) -> str:
+    if fecha_vencimiento < fecha_corte:
+        return "HISTORICA_EXIGIBLE"
+    if fecha_vencimiento == fecha_corte:
+        return "PERIODO_CORTE"
+    return "FUTURA"
+
+
+def _motivo_bloqueo_prevalidacion_historica(obligacion, clasificacion: str, indice_financiero_query=None) -> str | None:
+    if clasificacion != "HISTORICA_EXIGIBLE":
+        return None
+    bloque = obligacion.bloque.input
+    usa_indexacion = (bloque.metodo_liquidacion or "").strip().upper() == "INDEXACION"
+    if not usa_indexacion:
+        return None
+    if (bloque.valor_base_indice or 0) <= 0:
+        return "VALOR_BASE_INDICE_INVALIDO"
+    if obligacion.estado_preview_indexacion == "CON_INDICE_APLICADO":
+        if obligacion.fecha_publicacion_indice is None:
+            return "FECHA_PUBLICACION_INDICE_INCOMPLETA"
+        return None
+    if indice_financiero_query is not None and hasattr(indice_financiero_query, "diagnosticar_valor_publicado_no_aplicable"):
+        return indice_financiero_query.diagnosticar_valor_publicado_no_aplicable(
+            bloque.id_indice_financiero or 0, obligacion.fecha_vencimiento
+        )
+    if obligacion.id_indice_financiero is None and bloque.id_indice_financiero:
+        return "INDICE_FINANCIERO_INACTIVO"
+    return "VALOR_INDICE_PUBLICADO_INEXISTENTE"
+
+
+def _prevalidacion_historica_response_data(*, request: PreviewPlanPagoVentaV2SinVentaRequest, command: GeneratePlanPagoVentaV2PorBloquesCommand, preview: dict, indice_financiero_query=None) -> dict | None:
+    if request.fecha_venta is None or request.fecha_corte is None:
+        return None
+    cuotas = []
+    motivos: set[str] = set()
+    for obligacion in preview["obligaciones"]:
+        clasificacion = _clasificacion_temporal_cuota(obligacion.fecha_vencimiento, request.fecha_corte)
+        requiere_indice = (obligacion.bloque.input.metodo_liquidacion or "").strip().upper() == "INDEXACION"
+        estado = obligacion.estado_preview_indexacion or "NO_REQUIERE_INDICE"
+        motivo = _motivo_bloqueo_prevalidacion_historica(obligacion, clasificacion, indice_financiero_query)
+        bloquea = motivo is not None
+        if bloquea:
+            estado = "BLOQUEADA"
+            motivos.add(motivo)
+        cuotas.append({
+            "numero_cuota": obligacion.item_numero,
+            "numero_bloque": obligacion.bloque.numero_bloque,
+            "clave_bloque": obligacion.bloque.clave_bloque,
+            "fecha_vencimiento": obligacion.fecha_vencimiento,
+            "clasificacion_temporal": clasificacion,
+            "capital": obligacion.capital_cuota or obligacion.importe_total,
+            "ajuste": obligacion.ajuste_indexacion_cuota,
+            "total": obligacion.importe_total,
+            "moneda": command.moneda.strip().upper(),
+            "estado_indexacion": estado,
+            "bloquea_confirmacion": bloquea,
+            "motivo_bloqueo": motivo,
+            "id_indice_financiero": obligacion.id_indice_financiero or (obligacion.bloque.input.id_indice_financiero if requiere_indice else None),
+            "codigo_indice_financiero": obligacion.codigo_indice_financiero,
+            "nombre_indice_financiero": obligacion.nombre_indice_financiero,
+            "fecha_base_indice": obligacion.bloque.input.fecha_base_indice if requiere_indice else None,
+            "valor_base_indice": obligacion.valor_base_indice,
+            "id_indice_financiero_valor_aplicado": obligacion.id_indice_financiero_valor,
+            "fecha_valor": obligacion.fecha_valor_indice,
+            "fecha_publicacion": obligacion.fecha_publicacion_indice,
+            "valor_indice": obligacion.valor_aplicado_indice,
+            "coeficiente": obligacion.coeficiente_indexacion,
+        })
+    return {
+        "es_venta_historica": request.fecha_venta < request.fecha_corte,
+        "fecha_venta": request.fecha_venta,
+        "fecha_corte": request.fecha_corte,
+        "puede_confirmar": not motivos,
+        "cantidad_cuotas": len(cuotas),
+        "cantidad_historicas_exigibles": sum(1 for c in cuotas if c["clasificacion_temporal"] == "HISTORICA_EXIGIBLE"),
+        "cantidad_periodo_corte": sum(1 for c in cuotas if c["clasificacion_temporal"] == "PERIODO_CORTE"),
+        "cantidad_futuras": sum(1 for c in cuotas if c["clasificacion_temporal"] == "FUTURA"),
+        "cantidad_con_indice": sum(1 for c in cuotas if c["estado_indexacion"] == "CON_INDICE_APLICADO"),
+        "cantidad_sin_indice": sum(1 for c in cuotas if c["estado_indexacion"] == "PROYECTADA_SIN_INDICE"),
+        "cantidad_bloqueadas": sum(1 for c in cuotas if c["bloquea_confirmacion"]),
+        "motivos_bloqueo": sorted(motivos),
+        "cuotas": cuotas,
+    }
+
+
 def _plan_pago_v2_preview_response_data(
     *,
     command: GeneratePlanPagoVentaV2PorBloquesCommand,
@@ -2467,6 +2553,9 @@ def _plan_pago_v2_preview_response_data(
                 "fecha_valor_indice": obligacion.fecha_valor_indice,
                 "valor_base_indice": obligacion.valor_base_indice,
                 "valor_aplicado_indice": obligacion.valor_aplicado_indice,
+                "fecha_publicacion_indice": obligacion.fecha_publicacion_indice,
+                "codigo_indice_financiero": obligacion.codigo_indice_financiero,
+                "nombre_indice_financiero": obligacion.nombre_indice_financiero,
                 "coeficiente_indexacion": obligacion.coeficiente_indexacion,
                 "capital_cuota": obligacion.capital_cuota,
                 "ajuste_indexacion_cuota": obligacion.ajuste_indexacion_cuota,
@@ -2539,7 +2628,7 @@ def get_plan_pago_venta_v2_integral(
     },
 )
 def preview_plan_pago_venta_v2_por_bloques_sin_venta(
-    request: PreviewPlanPagoVentaV2PorBloquesRequest,
+    request: PreviewPlanPagoVentaV2SinVentaRequest,
     db: Session = Depends(get_db),
 ) -> PreviewPlanPagoVentaV2SinVentaResponse | JSONResponse:
     command = _build_plan_pago_v2_por_bloques_command(
@@ -2547,8 +2636,9 @@ def preview_plan_pago_venta_v2_por_bloques_sin_venta(
         request=request,
         context=CommandContext(),
     )
+    indice_financiero_repository = IndiceFinancieroRepository(db)
     service = BuildPlanPagoVentaV2PorBloquesPreviewService(
-        indice_financiero_query=IndiceFinancieroRepository(db)
+        indice_financiero_query=indice_financiero_repository
     )
 
     try:
@@ -2569,9 +2659,9 @@ def preview_plan_pago_venta_v2_por_bloques_sin_venta(
         return JSONResponse(status_code=400, content=error.model_dump())
 
     return PreviewPlanPagoVentaV2SinVentaResponse(
-        data=_plan_pago_v2_preview_response_data(
+        data={**_plan_pago_v2_preview_response_data(
             command=command, preview=result.data, include_id_venta=False
-        )
+        ), "prevalidacion_historica": _prevalidacion_historica_response_data(request=request, command=command, preview=result.data, indice_financiero_query=indice_financiero_repository)}
     )
 
 

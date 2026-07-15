@@ -29,6 +29,9 @@ class ResultadoCalculoCuotaIndexada:
     fecha_valor_indice: date | None
     valor_base_indice: Decimal
     valor_aplicado_indice: Decimal | None
+    fecha_publicacion_indice: date | None
+    codigo_indice_financiero: str | None
+    nombre_indice_financiero: str | None
     coeficiente_indexacion: Decimal | None
     capital_cuota: Decimal
     ajuste_indexacion_cuota: Decimal | None
@@ -70,13 +73,19 @@ class IndexacionCuotaCalculator:
             )
 
         if valor is None:
+            indice_activo = None
+            if self.indice_financiero_query is not None and hasattr(self.indice_financiero_query, "get_indice_financiero_activo"):
+                indice_activo = self.indice_financiero_query.get_indice_financiero_activo(id_indice_financiero)
             return ResultadoCalculoCuotaIndexada(
                 estado_indexacion=ESTADO_INDEXACION_PROYECTADA,
-                id_indice_financiero=id_indice_financiero,
+                id_indice_financiero=id_indice_financiero if (indice_activo is not None or self.indice_financiero_query is None or not hasattr(self.indice_financiero_query, "get_indice_financiero_activo")) else None,
                 id_indice_financiero_valor=None,
                 fecha_valor_indice=None,
                 valor_base_indice=valor_base_indice,
                 valor_aplicado_indice=None,
+                fecha_publicacion_indice=None,
+                codigo_indice_financiero=None,
+                nombre_indice_financiero=None,
                 coeficiente_indexacion=None,
                 capital_cuota=capital_cuota,
                 ajuste_indexacion_cuota=None,
@@ -101,6 +110,9 @@ class IndexacionCuotaCalculator:
             fecha_valor_indice=valor["fecha_valor"],
             valor_base_indice=valor_base_indice,
             valor_aplicado_indice=valor_aplicado,
+            fecha_publicacion_indice=valor.get("fecha_publicacion"),
+            codigo_indice_financiero=valor.get("codigo_indice_financiero"),
+            nombre_indice_financiero=valor.get("nombre_indice_financiero"),
             coeficiente_indexacion=coeficiente,
             capital_cuota=capital_cuota,
             ajuste_indexacion_cuota=ajuste,

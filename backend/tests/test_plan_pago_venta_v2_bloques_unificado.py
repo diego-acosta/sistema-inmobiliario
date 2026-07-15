@@ -12,12 +12,18 @@ from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques 
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
 )
+from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    BuildPlanPagoVentaV2PorBloquesPreviewService,
+)
 from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
     PlanPagoVentaBloqueUpsertPayload,
 )
 from app.application.common.commands import CommandContext
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import (
     PlanPagoVentaV2Repository,
+)
+from app.infrastructure.persistence.repositories.indice_financiero_repository import (
+    IndiceFinancieroRepository,
 )
 from tests.test_fin_event_venta_confirmada import (
     _crear_persona_minima,
@@ -1161,6 +1167,7 @@ def _insertar_indice_financiero_valor(
     id_indice_financiero: int,
     fecha_valor: date,
     valor_indice: Decimal,
+    fecha_publicacion: date | None | str = "__FECHA_VALOR__",
 ) -> int:
     return db_session.execute(
         text("""
@@ -1176,7 +1183,7 @@ def _insertar_indice_financiero_valor(
                 :id_indice_financiero,
                 :fecha_valor,
                 :valor_indice,
-                :fecha_valor,
+                :fecha_publicacion,
                 'TEST',
                 'PUBLICADO'
             )
@@ -1186,6 +1193,7 @@ def _insertar_indice_financiero_valor(
             "id_indice_financiero": id_indice_financiero,
             "fecha_valor": fecha_valor,
             "valor_indice": valor_indice,
+            "fecha_publicacion": fecha_valor if fecha_publicacion == "__FECHA_VALOR__" else fecha_publicacion,
         },
     ).scalar_one()
 
@@ -1881,3 +1889,102 @@ def test_generate_reintento_con_configuracion_refuerzos_distinta_falla_controlad
     )
     assert not second.success
     assert second.errors == ["PLAN_PAGO_VENTA_VIVO_INCOMPATIBLE"]
+
+
+def test_preview_y_generacion_ignoran_publicacion_incompleta_alineados(db_session) -> None:
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-ALIGN-INCOMPLETA"
+    )
+    _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("110.00000000"),
+        fecha_publicacion=None,
+    )
+    command_preview = _command(
+        id_venta=1,
+        monto_total_plan=Decimal("3000000.00"),
+        bloques=[_bloque_indexado_generate(id_indice)],
+    )
+
+    preview = BuildPlanPagoVentaV2PorBloquesPreviewService(
+        IndiceFinancieroRepository(db_session)
+    ).execute(command_preview)
+
+    assert preview.success, preview.errors
+    assert {
+        obligacion.estado_preview_indexacion
+        for obligacion in preview.data["obligaciones"]
+    } == {"PROYECTADA_SIN_INDICE"}
+    assert {
+        obligacion.importe_total for obligacion in preview.data["obligaciones"]
+    } == {Decimal("1000000.00")}
+
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-ALIGN-INCOMP")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    generated = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+
+    assert generated.success, generated.errors
+    assert {obligacion["estado_obligacion"] for obligacion in generated.data["obligaciones"]} == {"PROYECTADA"}
+    assert {Decimal(str(obligacion["importe_total"])) for obligacion in generated.data["obligaciones"]} == {Decimal("1000000.00")}
+    assert _obligaciones_indexacion(
+        db_session, id_relacion_generadora=generated.data["id_relacion_generadora"]
+    ) == []
+
+
+def test_preview_y_generacion_aplican_publicacion_valida_alineados(db_session) -> None:
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-ALIGN-OK"
+    )
+    id_valor = _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 6, 1),
+        valor_indice=Decimal("110.00000000"),
+    )
+    command_preview = _command(
+        id_venta=1,
+        monto_total_plan=Decimal("3000000.00"),
+        bloques=[_bloque_indexado_generate(id_indice)],
+    )
+
+    preview = BuildPlanPagoVentaV2PorBloquesPreviewService(
+        IndiceFinancieroRepository(db_session)
+    ).execute(command_preview)
+
+    assert preview.success, preview.errors
+    assert {
+        obligacion.estado_preview_indexacion
+        for obligacion in preview.data["obligaciones"]
+    } == {"CON_INDICE_APLICADO"}
+    assert {
+        obligacion.coeficiente_indexacion for obligacion in preview.data["obligaciones"]
+    } == {Decimal("1.09864365")}
+    assert {
+        obligacion.importe_total for obligacion in preview.data["obligaciones"]
+    } == {Decimal("1098643.65")}
+
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-BLQ-IX-ALIGN-OK")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    generated = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+
+    assert generated.success, generated.errors
+    assert {Decimal(str(obligacion["importe_total"])) for obligacion in generated.data["obligaciones"]} == {Decimal("1098643.65")}
+    indexaciones = _obligaciones_indexacion(
+        db_session, id_relacion_generadora=generated.data["id_relacion_generadora"]
+    )
+    assert {row["id_indice_financiero_valor"] for row in indexaciones} == {id_valor}
+    assert {row["coeficiente_indexacion"] for row in indexaciones} == {Decimal("1.09864365")}
