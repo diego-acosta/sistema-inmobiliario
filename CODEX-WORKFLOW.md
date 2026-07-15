@@ -11,14 +11,16 @@ Estandarizar cómo preparar, ejecutar y cerrar tareas con Codex en este reposito
 Orden operativo de verdad:
 
 1. `AGENTS.md`.
-2. `PROJECT-STATUS.md`.
-3. Este `CODEX-WORKFLOW.md`.
-4. DEV-ARCH formal.
-5. DEV-SRV / DEV-API.
-6. SQL real.
-7. Backend real.
-8. Tests reales.
-9. Issues y PRs vigentes.
+2. Arquitectura formal en `backend/documentacion/DEV-ARCH/`.
+3. SQL real.
+4. Implementación real: routers, schemas, services y repositories.
+5. Tests reales.
+6. Issues y PR vigentes.
+7. `PROJECT-STATUS.md`, como orientación operativa.
+8. `CODEX-WORKFLOW.md`, como procedimiento de trabajo.
+9. Documentación histórica o de diseño no validada.
+
+`PROJECT-STATUS.md` orienta qué frente revisar primero, pero no puede contradecir arquitectura, SQL, implementación ni tests.
 
 ## 3. Lectura obligatoria antes de trabajar
 
