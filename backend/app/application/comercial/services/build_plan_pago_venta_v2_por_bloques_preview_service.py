@@ -97,6 +97,9 @@ class PlanPagoVentaV2ObligacionPreview:
     fecha_valor_indice: Any | None = None
     valor_base_indice: Decimal | None = None
     valor_aplicado_indice: Decimal | None = None
+    fecha_publicacion_indice: Any | None = None
+    codigo_indice_financiero: str | None = None
+    nombre_indice_financiero: str | None = None
     coeficiente_indexacion: Decimal | None = None
     capital_cuota: Decimal | None = None
     ajuste_indexacion_cuota: Decimal | None = None
@@ -561,6 +564,9 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             fecha_valor_indice=indexacion.get("fecha_valor_indice"),
             valor_base_indice=indexacion.get("valor_base_indice"),
             valor_aplicado_indice=indexacion.get("valor_aplicado_indice"),
+            fecha_publicacion_indice=indexacion.get("fecha_publicacion_indice"),
+            codigo_indice_financiero=indexacion.get("codigo_indice_financiero"),
+            nombre_indice_financiero=indexacion.get("nombre_indice_financiero"),
             coeficiente_indexacion=indexacion.get("coeficiente_indexacion"),
             capital_cuota=indexacion.get("capital_cuota"),
             ajuste_indexacion_cuota=indexacion.get("ajuste_indexacion_cuota"),
@@ -640,6 +646,9 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             "fecha_valor_indice": resultado.fecha_valor_indice,
             "valor_base_indice": resultado.valor_base_indice,
             "valor_aplicado_indice": resultado.valor_aplicado_indice,
+            "fecha_publicacion_indice": resultado.fecha_publicacion_indice,
+            "codigo_indice_financiero": resultado.codigo_indice_financiero,
+            "nombre_indice_financiero": resultado.nombre_indice_financiero,
             "coeficiente_indexacion": resultado.coeficiente_indexacion,
             "capital_cuota": resultado.capital_cuota,
             "ajuste_indexacion_cuota": resultado.ajuste_indexacion_cuota,

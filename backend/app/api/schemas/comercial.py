@@ -250,7 +250,16 @@ class GeneratePlanPagoVentaV2PorBloquesRequest(BaseModel):
 
 
 class PreviewPlanPagoVentaV2PorBloquesRequest(GeneratePlanPagoVentaV2PorBloquesRequest):
-    pass
+    fecha_venta: date | None = None
+    fecha_corte: date | None = None
+
+    @model_validator(mode="after")
+    def validate_prevalidacion_historica(self):
+        if (self.fecha_venta is None) != (self.fecha_corte is None):
+            raise ValueError("fecha_venta y fecha_corte deben informarse juntas para prevalidacion historica.")
+        if self.fecha_venta is not None and self.fecha_corte is not None and self.fecha_venta > self.fecha_corte:
+            raise ValueError("fecha_venta debe ser menor o igual a fecha_corte.")
+        return self
 
 
 class ConfirmVentaRequest(BaseModel):
@@ -731,6 +740,9 @@ class ObligacionPlanPagoVentaV2PreviewData(BaseModel):
     fecha_valor_indice: date | None = None
     valor_base_indice: Decimal | None = None
     valor_aplicado_indice: Decimal | None = None
+    fecha_publicacion_indice: date | None = None
+    codigo_indice_financiero: str | None = None
+    nombre_indice_financiero: str | None = None
     coeficiente_indexacion: Decimal | None = None
     capital_cuota: Decimal | None = None
     ajuste_indexacion_cuota: Decimal | None = None
@@ -758,12 +770,53 @@ class PreviewPlanPagoVentaV2PorBloquesBaseData(BaseModel):
     redondeos: list[RedondeoPlanPagoVentaV2PreviewData]
 
 
+class PrevalidacionHistoricaCuotaPlanPagoVentaV2Data(BaseModel):
+    numero_cuota: int
+    numero_bloque: int
+    clave_bloque: str
+    fecha_vencimiento: date
+    clasificacion_temporal: str
+    capital: Decimal
+    ajuste: Decimal | None
+    total: Decimal
+    moneda: str
+    estado_indexacion: str
+    bloquea_confirmacion: bool
+    motivo_bloqueo: str | None = None
+    id_indice_financiero: int | None = None
+    codigo_indice_financiero: str | None = None
+    nombre_indice_financiero: str | None = None
+    fecha_base_indice: date | None = None
+    valor_base_indice: Decimal | None = None
+    id_indice_financiero_valor_aplicado: int | None = None
+    fecha_valor: date | None = None
+    fecha_publicacion: date | None = None
+    valor_indice: Decimal | None = None
+    coeficiente: Decimal | None = None
+
+
+class PrevalidacionHistoricaPlanPagoVentaV2Data(BaseModel):
+    es_venta_historica: bool
+    fecha_venta: date
+    fecha_corte: date
+    puede_confirmar: bool
+    cantidad_cuotas: int
+    cantidad_historicas_exigibles: int
+    cantidad_periodo_corte: int
+    cantidad_futuras: int
+    cantidad_con_indice: int
+    cantidad_sin_indice: int
+    cantidad_bloqueadas: int
+    motivos_bloqueo: list[str]
+    cuotas: list[PrevalidacionHistoricaCuotaPlanPagoVentaV2Data]
+
+
 class PreviewPlanPagoVentaV2PorBloquesData(PreviewPlanPagoVentaV2PorBloquesBaseData):
     id_venta: int
 
 
 class PreviewPlanPagoVentaV2SinVentaData(PreviewPlanPagoVentaV2PorBloquesBaseData):
-    pass
+    prevalidacion_historica: PrevalidacionHistoricaPlanPagoVentaV2Data | None = None
 
 
 class PreviewPlanPagoVentaV2PorBloquesResponse(BaseModel):

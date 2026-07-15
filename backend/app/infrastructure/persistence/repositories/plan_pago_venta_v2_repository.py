@@ -1226,6 +1226,7 @@ class PlanPagoVentaV2Repository:
               AND i.estado_indice_financiero = 'ACTIVO'
               AND i.deleted_at IS NULL
               AND iv.estado_valor_indice = 'PUBLICADO'
+              AND iv.fecha_publicacion IS NOT NULL
               AND iv.deleted_at IS NULL
               AND iv.fecha_valor <= :fecha_objetivo
             ORDER BY iv.fecha_valor DESC
