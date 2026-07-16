@@ -137,6 +137,51 @@ class UsuarioRolSeguridadBajaResponse(BaseModel):
     data: UsuarioRolSeguridadData
 
 
+class CatalogoMaestroData(BaseModel):
+    id_catalogo_maestro: int
+    codigo_catalogo_maestro: str
+    nombre_catalogo_maestro: str
+    descripcion: str | None
+
+
+class CatalogoMaestroListData(BaseModel):
+    items: list[CatalogoMaestroData]
+    total: int
+    page: int
+    page_size: int
+
+
+class CatalogoMaestroListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CatalogoMaestroListData
+
+
+class CatalogoMaestroDetailResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CatalogoMaestroData
+
+
+class ItemCatalogoData(BaseModel):
+    id_item_catalogo: int
+    id_catalogo_maestro: int
+    codigo_item_catalogo: str
+    nombre_item_catalogo: str
+    descripcion: str | None
+    estado_item_catalogo: str | None
+
+
+class ItemCatalogoListData(BaseModel):
+    items: list[ItemCatalogoData]
+    total: int
+    page: int
+    page_size: int
+
+
+class ItemCatalogoListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ItemCatalogoListData
+
+
 class ErrorResponse(BaseModel):
     ok: Literal[False] = False
     error_code: str

@@ -162,3 +162,43 @@ Permite visualizar parámetros configurados.
 - reglas de override por alcance
 - estrategia de cacheo de configuración
 - control de impacto de cambios en caliente
+
+## Incremento #360 — Consulta read-only de catálogos maestros e ítems
+
+### Estado implementado
+- Se implementan consultas puras sobre las tablas reales `catalogo_maestro` e `item_catalogo`.
+- `item_catalogo` se expone como subrecurso de `catalogo_maestro`.
+- Endpoints implementados:
+  - `GET /api/v1/administrativo/catalogos`.
+  - `GET /api/v1/administrativo/catalogos/{id_catalogo_maestro}`.
+  - `GET /api/v1/administrativo/catalogos/{id_catalogo_maestro}/items`.
+- La búsqueda `q` se aplica por código o nombre.
+- La paginación devuelve `items`, `total`, `page` y `page_size`.
+- `estado_item_catalogo` se filtra de forma literal contra el valor persistido.
+- `NULL` en `estado_item_catalogo` se preserva en la respuesta.
+
+### Decisión CORE-EF
+- Clasificación: `QUERY_READLIKE`.
+- Headers write: `NO APLICA` porque no hay comando sincronizable.
+- `If-Match-Version`: `NO APLICA`.
+- Idempotencia write: `NO APLICA`.
+- Outbox: `NO APLICA`.
+- Lock lógico: `NO APLICA`.
+- Versionado: `NO APLICA`.
+- Transacción write / rollback de negocio: `NO APLICA`.
+- Efectos persistentes: ninguno.
+
+### Fuera de alcance vigente
+- Writes de catálogos o ítems.
+- Migraciones SQL y migración CORE-EF de writes.
+- Jerarquías de ítems.
+- Historial de catálogos.
+- Defaults, orden configurable, vigencias, configuración por sucursal o instalación.
+- Migración de enums existentes o redefinición de reglas estructurales de otros dominios.
+
+### NO CONFIRMADO
+- Valores válidos formales de `estado_item_catalogo`.
+- Semántica funcional de `estado_item_catalogo = NULL`.
+- Política futura de activación, baja o desactivación.
+- Contrato futuro de jerarquías.
+- Uso futuro de `historial_catalogo`.

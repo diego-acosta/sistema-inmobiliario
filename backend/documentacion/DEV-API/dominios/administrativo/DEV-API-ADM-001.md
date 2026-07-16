@@ -534,3 +534,92 @@ Asigna alcance operativo básico de un usuario a una sucursal existente.
 - Closes #262.
 - Refs #249.
 - Refs #248.
+
+## 8. Catálogos maestros e ítems read-only (#360)
+
+### 8.1 Alcance implementado
+
+Primera capa read-only de #264 para consultar `catalogo_maestro` e `item_catalogo`. No anticipa writes, migraciones SQL ni migración CORE-EF de comandos administrativos.
+
+### 8.2 `GET /api/v1/administrativo/catalogos`
+
+- Clasificación CORE-EF: `QUERY_READLIKE`.
+- Headers write: `NO APLICA`.
+- Query params:
+  - `q`: búsqueda por `codigo_catalogo_maestro` o `nombre_catalogo_maestro`.
+  - `page`: entero `>= 1`.
+  - `page_size`: entero `>= 1` y `<= 200`.
+- Orden determinista: `codigo_catalogo_maestro`, `id_catalogo_maestro`.
+- Respuesta exitosa:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "id_catalogo_maestro": 1,
+        "codigo_catalogo_maestro": "TIPO_DOCUMENTO",
+        "nombre_catalogo_maestro": "Tipo de documento",
+        "descripcion": null
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 50
+  }
+}
+```
+
+### 8.3 `GET /api/v1/administrativo/catalogos/{id_catalogo_maestro}`
+
+- Clasificación CORE-EF: `QUERY_READLIKE`.
+- Headers write: `NO APLICA`.
+- `404 NOT_FOUND` si el catálogo no existe.
+- Respuesta exitosa: `CatalogoMaestroDetailResponse` con `id_catalogo_maestro`, `codigo_catalogo_maestro`, `nombre_catalogo_maestro` y `descripcion`.
+
+### 8.4 `GET /api/v1/administrativo/catalogos/{id_catalogo_maestro}/items`
+
+- Clasificación CORE-EF: `QUERY_READLIKE`.
+- Headers write: `NO APLICA`.
+- Query params:
+  - `q`: búsqueda por `codigo_item_catalogo` o `nombre_item_catalogo`.
+  - `estado_item_catalogo`: filtro literal sobre el valor persistido; no es enum cerrado.
+  - `page`: entero `>= 1`.
+  - `page_size`: entero `>= 1` y `<= 200`.
+- Orden determinista: `codigo_item_catalogo`, `id_item_catalogo`.
+- La consulta queda acotada al `id_catalogo_maestro` del path y no mezcla ítems de otros catálogos.
+- `404 NOT_FOUND` si el catálogo no existe.
+- `NULL` en `estado_item_catalogo` se preserva como `null`.
+
+### 8.5 Schemas agregados
+
+- `CatalogoMaestroData`.
+- `CatalogoMaestroListData`.
+- `CatalogoMaestroListResponse`.
+- `CatalogoMaestroDetailResponse`.
+- `ItemCatalogoData`.
+- `ItemCatalogoListData`.
+- `ItemCatalogoListResponse`.
+
+### 8.6 Decisión CORE-EF
+
+- Clasificación: `QUERY_READLIKE`.
+- Headers: `NO APLICA`.
+- `If-Match-Version`: `NO APLICA`.
+- Idempotencia: `NO APLICA`.
+- Outbox: `NO APLICA`.
+- Lock lógico: `NO APLICA`.
+- Versionado: `NO APLICA`.
+- Transacción/Rollback: `NO APLICA`.
+- Efectos persistentes: ninguno.
+
+### 8.7 Pendiente / fuera de alcance
+
+- Alta, modificación, baja, activación o desactivación de catálogos e ítems.
+- Migraciones SQL.
+- Jerarquías e historial.
+- Defaults, orden configurable, vigencias, configuración por sucursal o instalación.
+- Migración de enums existentes.
+- Estados formales de `estado_item_catalogo`: `NO CONFIRMADOS`.
+- Semántica del estado nulo: `NO CONFIRMADA`.
