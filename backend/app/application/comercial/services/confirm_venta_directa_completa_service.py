@@ -25,6 +25,14 @@ from app.application.comercial.services.define_condiciones_comerciales_venta_ser
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
 )
+from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_preview_service import (
+    BuildPlanPagoVentaV2PorBloquesPreviewService,
+)
+from app.application.comercial.services.prevalidate_venta_historica_indexacion_service import (
+    ERROR_VENTA_HISTORICA_INDEXACION_NO_RESUELTA,
+    PrevalidateVentaHistoricaIndexacionInput,
+    PrevalidateVentaHistoricaIndexacionService,
+)
 from app.application.common.results import AppResult
 from app.application.personas.duplicados import TipoDuplicadoPersona
 
@@ -102,6 +110,30 @@ class ConfirmVentaDirectaCompletaService:
         if compradores_error is not None:
             return AppResult.fail(compradores_error)
 
+        prevalidacion_historica: dict[str, Any] | None = None
+        fecha_venta_date = command.generar_venta.fecha_venta.date()
+        if command.fecha_corte is not None:
+            if fecha_venta_date > command.fecha_corte:
+                return AppResult.fail("FECHA_VENTA_POSTERIOR_FECHA_CORTE")
+            preview_command = self._plan_pago_v2_command(command, id_venta=None)
+            preview_result = BuildPlanPagoVentaV2PorBloquesPreviewService(
+                indice_financiero_query=self.plan_pago_v2_service.repository
+            ).execute(preview_command)
+            if not preview_result.success or preview_result.data is None:
+                return AppResult.fail(preview_result.errors[0])
+            prevalidacion_historica = PrevalidateVentaHistoricaIndexacionService(
+                self.plan_pago_v2_service.repository
+            ).execute(
+                PrevalidateVentaHistoricaIndexacionInput(
+                    fecha_venta=fecha_venta_date,
+                    fecha_corte=command.fecha_corte,
+                    command=preview_command,
+                    preview=preview_result.data,
+                )
+            )
+            if not prevalidacion_historica["puede_confirmar"]:
+                return AppResult.fail(ERROR_VENTA_HISTORICA_INDEXACION_NO_RESUELTA, prevalidacion_historica)
+
         tx_repository = _TransactionalComercialRepository(self.comercial_repository)
 
         try:
@@ -159,51 +191,7 @@ class ConfirmVentaDirectaCompletaService:
                     raise _StageFailed(condiciones.errors[0])
 
                 plan = self.plan_pago_v2_service.execute_in_existing_transaction(
-                    GeneratePlanPagoVentaV2PorBloquesCommand(
-                        context=command.context,
-                        id_venta=id_venta,
-                        tipo_pago=command.plan_pago_v2.tipo_pago,
-                        monto_total_plan=command.plan_pago_v2.monto_total_plan,
-                        moneda=command.plan_pago_v2.moneda,
-                        bloques=[
-                            PlanPagoVentaBloqueInput(
-                                tipo_bloque=bloque.tipo_bloque,
-                                etiqueta_bloque=bloque.etiqueta_bloque,
-                                importe_total_bloque=bloque.importe_total_bloque,
-                                fecha_vencimiento=bloque.fecha_vencimiento,
-                                cantidad_cuotas=bloque.cantidad_cuotas,
-                                importe_cuota=bloque.importe_cuota,
-                                fecha_primer_vencimiento=bloque.fecha_primer_vencimiento,
-                                periodicidad=bloque.periodicidad,
-                                regla_redondeo=bloque.regla_redondeo,
-                                metodo_liquidacion=bloque.metodo_liquidacion,
-                                tasa_interes_directo_periodica=bloque.tasa_interes_directo_periodica,
-                                cantidad_periodos=bloque.cantidad_periodos,
-                                base_calculo_interes=bloque.base_calculo_interes,
-                                id_indice_financiero=bloque.id_indice_financiero,
-                                fecha_base_indice=bloque.fecha_base_indice,
-                                valor_base_indice=bloque.valor_base_indice,
-                                modo_indexacion=bloque.modo_indexacion,
-                                base_calculo_indexacion=bloque.base_calculo_indexacion,
-                                tipo_generacion_indexada=bloque.tipo_generacion_indexada,
-                                politica_valor_no_disponible=bloque.politica_valor_no_disponible,
-                                conserva_capital_original=bloque.conserva_capital_original,
-                                genera_ajuste_por_diferencia=bloque.genera_ajuste_por_diferencia,
-                                cuotas_refuerzo=[
-                                    CuotaRefuerzoInput(
-                                        numero_cuota=cuota_refuerzo.numero_cuota,
-                                        etiqueta=cuota_refuerzo.etiqueta,
-                                        unidades_refuerzo=cuota_refuerzo.unidades_refuerzo,
-                                    )
-                                    for cuota_refuerzo in (bloque.cuotas_refuerzo or [])
-                                ]
-                                or None,
-                                observaciones=bloque.observaciones,
-                            )
-                            for bloque in command.plan_pago_v2.bloques
-                        ],
-                        observaciones=command.plan_pago_v2.observaciones,
-                    )
+                    self._plan_pago_v2_command(command, id_venta=id_venta)
                 )
                 if not plan.success or plan.data is None:
                     raise _StageFailed(plan.errors[0])
@@ -251,6 +239,17 @@ class ConfirmVentaDirectaCompletaService:
                                     for obligacion in plan.data["obligaciones"]
                                 ],
                             },
+                            "es_venta_historica": (
+                                prevalidacion_historica["es_venta_historica"]
+                                if prevalidacion_historica is not None
+                                else None
+                            ),
+                            "fecha_corte": command.fecha_corte,
+                            "prevalidacion_historica": (
+                                self._prevalidacion_resumen(prevalidacion_historica)
+                                if prevalidacion_historica is not None
+                                else None
+                            ),
                         },
                     }
                 )
@@ -336,6 +335,64 @@ class ConfirmVentaDirectaCompletaService:
             if id_inmueble_padre in ids_inmueble_payload:
                 return True
         return False
+
+    @staticmethod
+    def _prevalidacion_resumen(prevalidacion: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "puede_confirmar": prevalidacion["puede_confirmar"],
+            "cantidad_historicas_exigibles": prevalidacion["cantidad_historicas_exigibles"],
+            "cantidad_con_indice": prevalidacion["cantidad_con_indice"],
+            "cantidad_futuras": prevalidacion["cantidad_futuras"],
+            "cantidad_bloqueadas": prevalidacion["cantidad_bloqueadas"],
+        }
+
+    def _plan_pago_v2_command(
+        self, command: ConfirmVentaDirectaCompletaCommand, *, id_venta: int | None
+    ) -> GeneratePlanPagoVentaV2PorBloquesCommand:
+        return GeneratePlanPagoVentaV2PorBloquesCommand(
+            context=command.context,
+            id_venta=id_venta,
+            tipo_pago=command.plan_pago_v2.tipo_pago,
+            monto_total_plan=command.plan_pago_v2.monto_total_plan,
+            moneda=command.plan_pago_v2.moneda,
+            bloques=[
+                PlanPagoVentaBloqueInput(
+                    tipo_bloque=bloque.tipo_bloque,
+                    etiqueta_bloque=bloque.etiqueta_bloque,
+                    importe_total_bloque=bloque.importe_total_bloque,
+                    fecha_vencimiento=bloque.fecha_vencimiento,
+                    cantidad_cuotas=bloque.cantidad_cuotas,
+                    importe_cuota=bloque.importe_cuota,
+                    fecha_primer_vencimiento=bloque.fecha_primer_vencimiento,
+                    periodicidad=bloque.periodicidad,
+                    regla_redondeo=bloque.regla_redondeo,
+                    metodo_liquidacion=bloque.metodo_liquidacion,
+                    tasa_interes_directo_periodica=bloque.tasa_interes_directo_periodica,
+                    cantidad_periodos=bloque.cantidad_periodos,
+                    base_calculo_interes=bloque.base_calculo_interes,
+                    id_indice_financiero=bloque.id_indice_financiero,
+                    fecha_base_indice=bloque.fecha_base_indice,
+                    valor_base_indice=bloque.valor_base_indice,
+                    modo_indexacion=bloque.modo_indexacion,
+                    base_calculo_indexacion=bloque.base_calculo_indexacion,
+                    tipo_generacion_indexada=bloque.tipo_generacion_indexada,
+                    politica_valor_no_disponible=bloque.politica_valor_no_disponible,
+                    conserva_capital_original=bloque.conserva_capital_original,
+                    genera_ajuste_por_diferencia=bloque.genera_ajuste_por_diferencia,
+                    cuotas_refuerzo=[
+                        CuotaRefuerzoInput(
+                            numero_cuota=cuota_refuerzo.numero_cuota,
+                            etiqueta=cuota_refuerzo.etiqueta,
+                            unidades_refuerzo=cuota_refuerzo.unidades_refuerzo,
+                        )
+                        for cuota_refuerzo in (bloque.cuotas_refuerzo or [])
+                    ] or None,
+                    observaciones=bloque.observaciones,
+                )
+                for bloque in command.plan_pago_v2.bloques
+            ],
+            observaciones=command.plan_pago_v2.observaciones,
+        )
 
     @staticmethod
     def _total_objetos(command: ConfirmVentaDirectaCompletaCommand) -> Decimal:

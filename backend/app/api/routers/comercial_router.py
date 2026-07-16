@@ -215,6 +215,10 @@ from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_pre
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import (
     GeneratePlanPagoVentaV2PorBloquesService,
 )
+from app.application.comercial.services.prevalidate_venta_historica_indexacion_service import (
+    PrevalidateVentaHistoricaIndexacionInput,
+    PrevalidateVentaHistoricaIndexacionService,
+)
 from app.application.comercial.services.get_reserva_venta_service import (
     GetReservaVentaService,
 )
@@ -1639,6 +1643,7 @@ def confirmar_venta_directa_completa(
 
     command = ConfirmVentaDirectaCompletaCommand(
         context=context,
+        fecha_corte=request.fecha_corte,
         generar_venta=ConfirmVentaDirectaCompletaGenerarVentaInput(
             codigo_venta=request.generar_venta.codigo_venta,
             fecha_venta=request.generar_venta.fecha_venta,
@@ -1768,6 +1773,31 @@ def confirmar_venta_directa_completa(
         return JSONResponse(status_code=500, content=error.model_dump())
 
     if not result.success or result.data is None:
+        if result.errors and result.errors[0] == "VENTA_HISTORICA_INDEXACION_NO_RESUELTA":
+            detalle = result.errors[1] if len(result.errors) > 1 and isinstance(result.errors[1], dict) else {"errors": result.errors}
+            cuotas_bloqueadas = [
+                {
+                    "numero_cuota": cuota["numero_cuota"],
+                    "clave_bloque": cuota["clave_bloque"],
+                    "fecha_vencimiento": cuota["fecha_vencimiento"].isoformat(),
+                    "motivo_bloqueo": cuota["motivo_bloqueo"],
+                    "id_indice_financiero": cuota["id_indice_financiero"],
+                }
+                for cuota in detalle.get("cuotas", [])
+                if cuota.get("bloquea_confirmacion")
+            ]
+            error = ErrorResponse(
+                error_code="VENTA_HISTORICA_INDEXACION_NO_RESUELTA",
+                error_message="La venta histórica tiene cuotas exigibles con indexación no resuelta.",
+                details={
+                    "puede_confirmar": False,
+                    "cantidad_bloqueadas": detalle.get("cantidad_bloqueadas", 0),
+                    "motivos_bloqueo": detalle.get("motivos_bloqueo", []),
+                    "cuotas_bloqueadas": cuotas_bloqueadas,
+                },
+            )
+            return JSONResponse(status_code=400, content=error.model_dump())
+
         if "MONTO_TOTAL_PLAN_MISMATCH" in result.errors:
             error = ErrorResponse(
                 error_code="APPLICATION_ERROR",
@@ -2661,7 +2691,7 @@ def preview_plan_pago_venta_v2_por_bloques_sin_venta(
     return PreviewPlanPagoVentaV2SinVentaResponse(
         data={**_plan_pago_v2_preview_response_data(
             command=command, preview=result.data, include_id_venta=False
-        ), "prevalidacion_historica": _prevalidacion_historica_response_data(request=request, command=command, preview=result.data, indice_financiero_query=indice_financiero_repository)}
+        ), "prevalidacion_historica": (PrevalidateVentaHistoricaIndexacionService(indice_financiero_repository).execute(PrevalidateVentaHistoricaIndexacionInput(fecha_venta=request.fecha_venta, fecha_corte=request.fecha_corte, command=command, preview=result.data)) if request.fecha_venta is not None and request.fecha_corte is not None else None)}
     )
 
 

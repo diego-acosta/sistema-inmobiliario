@@ -112,3 +112,9 @@ Si no existe valor publicado para una cuota futura, la cuota queda `PROYECTADA_S
 ### Venta actual
 
 Con `fecha_venta == fecha_corte`, `es_venta_historica=false`; la respuesta mantiene el preview normal y puede incluir `cantidad_historicas_exigibles=0`.
+
+## Reutilización en confirmación real
+
+Desde #358 la misma prevalidación read-like se reutiliza en `POST /api/v1/ventas/directa/confirmar-venta-completa` antes de persistir venta, plan o deuda. El componente de aplicación no persiste, no emite outbox, no toma locks y no modifica versiones; la confirmación consume el resumen para decidir si puede continuar dentro de la frontera transaccional real.
+
+Si una cuota `HISTORICA_EXIGIBLE` de un bloque `INDEXACION` queda bloqueada, la confirmación devuelve error funcional `VENTA_HISTORICA_INDEXACION_NO_RESUELTA` con `cantidad_bloqueadas`, `motivos_bloqueo` y `cuotas_bloqueadas`, y no crea filas parciales ni corridas V2.
