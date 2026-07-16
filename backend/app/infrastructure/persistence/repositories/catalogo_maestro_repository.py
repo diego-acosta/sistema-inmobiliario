@@ -43,7 +43,7 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
     def list_catalogos(
         self, q: str | None, page: int, page_size: int
     ) -> dict[str, Any]:
-        where_clauses: list[str] = []
+        where_clauses: list[str] = ["deleted_at IS NULL"]
         params: dict[str, Any] = self._pagination(page, page_size)
         if q:
             where_clauses.append(
@@ -75,6 +75,7 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
             SELECT {_CATALOGO_COLUMNS}
             FROM catalogo_maestro
             WHERE id_catalogo_maestro = :id_catalogo_maestro
+              AND deleted_at IS NULL
             """)
         row = (
             self.db.execute(statement, {"id_catalogo_maestro": id_catalogo_maestro})
@@ -94,7 +95,7 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
         if self.get_catalogo(id_catalogo_maestro) is None:
             return None
 
-        where_clauses = ["id_catalogo_maestro = :id_catalogo_maestro"]
+        where_clauses = ["id_catalogo_maestro = :id_catalogo_maestro", "deleted_at IS NULL"]
         params: dict[str, Any] = {
             "id_catalogo_maestro": id_catalogo_maestro,
             **self._pagination(page, page_size),
