@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-07-15
+**Actualizado:** 2026-07-16
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -25,9 +25,9 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. Hay integración reciente de indexación V2 con ventas históricas y confirmación completa pendiente. | #358 abierto; #346 y #345 abiertos; #59 abierto. | #357 mergeado el 2026-07-15. | Integrar prevalidación histórica en confirmar venta completa sin mezclar ownership Comercial/Financiero. |
-| B — Administrativo | Activo incremental. CRUD/base de usuarios, roles/permisos, asignaciones y alcance operativo tienen partes implementadas; configuración, catálogos y auditoría siguen abiertos. | #249 abierto. | #315 mergeado el 2026-07-03 para alcance operativo por sucursal. | Auditar modelo e implementación real antes de continuar configuración, catálogos o auditoría. |
-| Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del nuevo trabajo administrativo. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
+| A — Comercial / Financiero | Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó completado. | #346, #348, #349 y #365 abiertos; #345 y #358 cerrados. | #361 mergeado el 2026-07-16. | Auditar y dividir #348 para una primera visualización read-only de indexación V2 en la ficha de venta. |
+| B — Administrativo | Activo incremental. Usuarios, roles/permisos, asignaciones, alcance operativo y catálogos básicos tienen incrementos completados; configuración y auditoría siguen abiertas. | #249 abierto; #263 y #265 abiertos; #264 cerrado. | Estado posterior a #264 debe verificarse antes del próximo incremento. | Continuar en el frente administrativo separado, auditando #263 o #265 antes de implementar. |
+| Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -42,65 +42,102 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 ### 5.1 Estado
 
-Activo. Verificado contra GitHub y git local:
+Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó completado:
 
-- #357 `feat(comercial): prevalidar indexación de ventas históricas` fue mergeado el 2026-07-15.
-- #355 `docs(auditoria): diseñar indexación de ventas históricas` fue mergeado el 2026-07-14.
-- #354, #353, #352 y #350 completaron incrementos de corridas de indexación V2.
-- #358 está abierto para integrar la prevalidación histórica en confirmar venta completa.
+- #338, #342, #343 y #344 están cerrados/completados.
+- #345 está cerrado/completado después de auditoría integral.
 - #356 está cerrado/completado.
-- #346, #345 y #349 están abiertos y deben revisarse antes de nuevos cambios financieros.
+- #358 está cerrado/completado.
+- PR #350 agregó la base SQL de corridas V2.
+- PR #352 implementó preview efímero y persistido.
+- PR #353 implementó aplicación de corridas V2.
+- PR #354 implementó preparación por publicación de índice.
+- PR #355 documentó la estrategia de ventas históricas.
+- PR #357 implementó la prevalidación histórica read-like.
+- PR #361 integró la prevalidación en la confirmación completa de venta.
+- #346, #348, #349 y #365 permanecen abiertos.
 
-Implementación local relevante verificada:
+Implementación relevante verificada:
 
 - Routers: `backend/app/api/routers/comercial_router.py`, `backend/app/api/routers/financiero_router.py`.
 - Schemas: `backend/app/api/schemas/comercial.py`, `backend/app/api/schemas/financiero.py`.
 - Services: `backend/app/application/comercial/services/`, `backend/app/application/financiero/services/`.
 - Repositories: `backend/app/infrastructure/persistence/repositories/`.
-- SQL: patches de Plan Pago Venta V2, bloques, indexación y corridas en `backend/database/`.
-- Tests: suites de venta completa, Plan Pago Venta V2, preview/preparación/aplicación de indexación V2 y E2E comercial-financiero en `backend/tests/`.
+- SQL: Plan Pago Venta V2, bloques, indexación y corridas en `backend/database/`.
+- Tests: venta completa, Plan Pago Venta V2, preview, preparación, aplicación de indexación V2 y E2E comercial-financiero en `backend/tests/`.
 
-### 5.2 Epic o issue principal
+### 5.2 Issues activos
 
-- #59 `Diseñar endpoint confirmar venta completa desde reserva`: abierto; histórico y amplio.
-- #358 `[Comercial/Financiero] Integrar prevalidación histórica en confirmar venta completa`: abierto y más inmediato.
+- #346 — integración con importación de ventas históricas.
+- #348 — frontend de indexación y corridas.
+- #349 — corrección y reversión avanzada.
+- #365 — definición transversal de fecha operativa.
+- #59 continúa abierto como issue histórico y amplio de confirmación desde reserva; revisar su vigencia antes de usarlo como próximo incremento.
 
 ### 5.3 Últimos PR relevantes
 
+- #361 `feat(comercial): integrar prevalidación histórica al confirmar venta` — mergeado 2026-07-16.
 - #357 `feat(comercial): prevalidar indexación de ventas históricas` — mergeado 2026-07-15.
 - #355 `docs(auditoria): diseñar indexación de ventas históricas` — mergeado 2026-07-14.
 - #354 `feat(financiero): preparar corridas V2 al publicar un índice` — mergeado 2026-07-14.
 - #353 `feat(financiero): aplicar corridas de indexación V2` — mergeado 2026-07-14.
 - #352 `feat(financiero): implementar preview de indexación V2` — mergeado 2026-07-13.
 - #350 `feat(financiero): agregar SQL base de corridas de indexación V2` — mergeado 2026-07-13.
-- #339 y #337 son diseño/auditoría previos de indexación V2.
 
-### 5.4 Issue activo
+### 5.4 Próximo foco recomendado
 
-Prioridad operativa actual: #358. También revisar #346, #345 y #349 para no duplicar ni contradecir trabajos pendientes.
+Auditar y dividir #348 para implementar primero una visualización read-only de indexación V2 en la ficha de venta.
 
-### 5.5 Objetivo inmediato
+El primer incremento tentativo debe mostrar, usando datos reales del backend:
 
-Integrar la prevalidación histórica en el flujo de confirmación completa de venta, validando contra SQL, servicios, repositories y tests existentes. Debe conservarse la separación:
+- capital original;
+- ajuste de indexación;
+- importe vigente;
+- saldo;
+- índice y valores aplicados;
+- coeficiente;
+- estado de indexación;
+- corrida relacionada, si existe.
 
-- Comercial decide y persiste la operación de compraventa.
-- Financiero calcula/gobierna obligaciones, corridas, índices e indexación.
+Antes de implementar se debe confirmar si el backend ya ofrece una query suficiente o si hace falta un contrato read-like mínimo. No duplicar cálculo financiero en Comercial ni en frontend.
+
+### 5.5 Decisiones vigentes
+
+- Comercial conserva ownership de la venta.
+- Financiero conserva ownership de obligaciones, índices, ajustes, saldos y corridas.
 - La orquestación no traslada ownership financiero al dominio Comercial.
-
-### 5.6 Decisiones vigentes
-
+- Una venta histórica puede generar obligaciones directamente indexadas si el valor aplicable ya está publicado.
+- No se aplica una corrida inmediata sobre obligaciones que ya nacieron indexadas.
+- Las cuotas históricas exigibles sin índice válido bloquean toda la confirmación.
+- Las cuotas futuras pueden persistirse como `PROYECTADA` sin ajuste materializado.
+- `PROYECTADA_SIN_INDICE` es una clasificación de cálculo/preview, no un estado físico de `obligacion_financiera`.
+- `fecha_corte` es un dato de negocio explícito.
+- El uso de `date.today()` para detectar historicidad es provisional hasta resolver #365.
+- Publicación, preparación y aplicación de una corrida son operaciones separadas.
 - `cliente_comprador` es semántica funcional comercial aunque tenga persistencia heredada.
 - `persona` es identidad base; no define condición de cliente ni comprador.
-- Plan Pago Venta V2 está respaldado por SQL, servicios y tests específicos; no asumir cobertura fuera de lo existente.
-- Indexación V2 tiene SQL y endpoints/servicios recientes para preview, preparación y aplicación de corridas.
 - `analitico` es read-only y no debe recalcular ni persistir lógica financiera.
 
-### 5.7 Fuera de alcance
+### 5.6 Pendientes y orden sugerido
 
+- #348: mejor candidato inmediato, comenzando por lectura y visualización.
+- #365: deuda transversal que debe avanzar antes de ampliar importaciones históricas, procesos batch o escenarios multiinstalación.
+- #346: pendiente vigente, pero requiere auditoría específica del importador y posible relación con #365.
+- #349: pendiente vigente de alto riesgo; debe auditarse y dividirse antes de implementar.
+
+### 5.7 Fuera de alcance del próximo incremento
+
+- Importación masiva.
+- Preparar o aplicar corridas desde la UI.
+- Publicar o editar índices.
+- Reversión y corrección avanzada.
+- Cuotas pagadas o parcialmente pagadas.
+- Ajustes negativos.
+- Rediseñar pagos, imputaciones, recibos o mora.
+- Resolver #365 dentro del PR de frontend.
 - Rediseñar el dominio Financiero.
 - Crear caja operativa, recibos fiscales persistidos o documental real como parte de este frente.
-- Mover lógica de cálculo financiero a Comercial.
-- Tratar documentos históricos como implementación si no aparecen en SQL/backend/tests.
+- Mover lógica de cálculo financiero a Comercial o al frontend.
 
 ### 5.8 Documentos relevantes
 
@@ -116,49 +153,43 @@ Integrar la prevalidación histórica en el flujo de confirmación completa de v
 
 ### 5.9 Regla de continuidad
 
-Antes de tocar código, abrir #358 y los issues #346/#345/#349, leer el diff de #357 y validar qué quedó implementado contra SQL/backend/tests. Si falta evidencia, marcar `NO CONFIRMADO` en el PR.
+Antes de tocar código para #348:
+
+1. abrir #348 y los PR #350, #352, #353, #354, #357 y #361;
+2. revisar frontend real de ficha de venta;
+3. verificar queries existentes;
+4. validar SQL, routers, schemas, services, repositories y tests;
+5. dividir #348 en incrementos pequeños;
+6. no invadir #346, #349 ni #365;
+7. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
 
 ## 6. Frente B — Administrativo
 
 ### 6.1 Estado
 
-Activo incremental. GitHub muestra el epic #249 abierto: `[Epic] Administrativo: usuarios, roles, permisos y configuración`. Sub-issues verificados:
+Activo incremental. GitHub muestra el epic #249 abierto: `[Epic] Administrativo: usuarios, roles, permisos y configuración`.
+
+Sub-issues conocidos:
 
 - #259 `Administrativo: usuarios del sistema — modelo y CRUD base` cerrado/completado.
 - #260 `Administrativo: roles de seguridad y permisos base` cerrado/completado.
 - #261 `Administrativo: asignación de roles a usuarios` cerrado/completado.
 - #262 `Administrativo: alcance operativo por sucursal/instalación` cerrado/completado.
 - #263 `Administrativo: configuración general del sistema` abierto.
-- #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
+- #264 `Administrativo: catálogos maestros e ítems configurables` cerrado/completado.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 
-Implementación local relevante verificada:
-
-- Router: `backend/app/api/routers/administrativo_router.py`.
-- Schema: `backend/app/api/schemas/administrativo.py`.
-- Documentación API vigente: `backend/documentacion/DEV-API/dominios/administrativo/DEV-API-ADM-001.md`.
-- Documentación SRV: `backend/documentacion/DEV-SRV/dominios/administrativo/`.
-- SQL: patches `patch_usuario_core_ef_20260630.sql`, `patch_usuario_rol_seguridad_core_ef_20260630.sql`, `patch_usuario_sucursal_core_ef_20260702.sql`.
-- Tests: `test_administrativo_usuarios.py`, `test_administrativo_roles_permisos.py`, `test_administrativo_usuario_roles_seguridad.py`, `test_administrativo_alcance_operativo.py`.
+El frente Administrativo se trabaja en paralelo en otro chat. Antes de continuar, verificar en GitHub los PRs y sub-issues que cerraron #264 y el estado operativo más reciente.
 
 ### 6.2 Epic o issue principal
 
 - #249 `[Epic] Administrativo: usuarios, roles, permisos y configuración`: abierto.
 
-### 6.3 Últimos PR relevantes
+### 6.3 Issue activo
 
-- #315 `Administrativo: alcance operativo por sucursal` — mergeado 2026-07-03.
-- PRs asociados a #259/#260/#261 no se listan con número en este documento porque no fueron identificados de forma inequívoca en la primera página reciente de PRs; revisar GitHub antes de citarlos en un PR funcional.
+Los candidatos verificables para continuar son #263 y #265. Elegir uno por incremento y auditar primero SQL, implementación y tests reales.
 
-### 6.4 Issue activo
-
-El próximo trabajo debe partir de una auditoría del estado real. Issues abiertos verificables: #263, #264 y #265. Elegir uno por incremento.
-
-### 6.5 Objetivo inmediato
-
-Continuar Administrativo de forma incremental, auditando primero modelo e implementación real para configuración, catálogos o auditoría. No iniciar funcionalidades nuevas de seguridad sin validar SQL, router, schema, service/repository y tests existentes.
-
-### 6.6 Decisiones vigentes
+### 6.4 Decisiones vigentes
 
 - `usuario` pertenece a Administrativo y no es `persona`.
 - El vínculo usuario-persona, si se implementa, es asociación explícita; no fusiona identidades.
@@ -167,25 +198,25 @@ Continuar Administrativo de forma incremental, auditando primero modelo e implem
 - La documentación API vigente indica que todavía no hay login real, passwords, OAuth/SSO, middleware de autorización real ni menú dinámico salvo evidencia posterior.
 - Todo write administrativo nuevo debe cumplir CORE-EF desde el inicio.
 
-### 6.7 Fuera de alcance
+### 6.5 Fuera de alcance
 
 - Redefinir Personas.
 - Implementar Operativo dentro de Administrativo.
 - Usar `sucursal` e `instalacion` como si fueran entidades administrativas.
 - Crear autenticación real, sesiones o credenciales persistidas sin issue y auditoría previa.
-- Declarar outbox, locks o autorización real si no hay evidencia en repository/SQL/tests.
+- Declarar outbox, locks o autorización real si no hay evidencia en repository, SQL y tests.
 
-### 6.8 Documentos relevantes
+### 6.6 Documentos relevantes
 
 - `backend/documentacion/DEV-API/dominios/administrativo/DEV-API-ADM-001.md`.
 - `backend/documentacion/DEV-SRV/dominios/administrativo/`.
 - `backend/documentacion/CORE-EF/CORE-EF-001.md` y matriz de cumplimiento.
-- `backend/documentacion/DEV-ARCH/dominios/personas/DEV-ARCH-PER-001.md` para separar `usuario` de `persona`.
-- `backend/documentacion/DEV-ARCH/dominios/operativo/DEV-ARCH-OPE-001.md` para separar alcance operativo de ownership operativo.
+- `backend/documentacion/DEV-ARCH/dominios/personas/DEV-ARCH-PER-001.md`.
+- `backend/documentacion/DEV-ARCH/dominios/operativo/DEV-ARCH-OPE-001.md`.
 
-### 6.9 Regla de continuidad
+### 6.7 Regla de continuidad
 
-Antes de tocar código administrativo, seleccionar un issue abierto (#263, #264 o #265), auditar SQL/backend/tests y documentar explícitamente lo implementado, pendiente y `NO CONFIRMADO`.
+Antes de tocar código administrativo, seleccionar un issue abierto (#263 o #265), auditar SQL/backend/tests y documentar explícitamente lo implementado, pendiente y `NO CONFIRMADO`.
 
 ## 7. Dependencias entre frentes
 
@@ -197,8 +228,10 @@ Antes de tocar código administrativo, seleccionar un issue abierto (#263, #264 
 ## 8. Frentes en espera
 
 - Operativo: existen trabajos recientes de caja operativa (#325, #327, #331) y epic #248 abierto. No mezclar con Administrativo.
-- Frontend de indexación V2: #348 está abierto; revisar antes de cambios de UI.
-- Reversión/corrección avanzada de indexación V2: #349 abierto; no implementarlo incidentalmente dentro de #358.
+- Importación histórica: #346 abierto; auditar antes de implementar y revisar relación con #365.
+- Frontend de indexación V2: #348 abierto; próximo candidato, comenzando por lectura.
+- Reversión/corrección avanzada de indexación V2: #349 abierto; requiere auditoría y división.
+- Fecha operativa transversal: #365 abierto; no reabre #345 ni #358.
 
 ## 9. Instrucción para nuevos chats y agentes
 
