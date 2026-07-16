@@ -221,3 +221,15 @@ def test_catalogos_readlike_sin_headers_ni_efectos_laterales(client, db_session)
     assert db_session.execute(text("SELECT COUNT(*) FROM outbox_event")).scalar_one() == outbox_before
     assert db_session.execute(text("SELECT COUNT(*) FROM catalogo_maestro WHERE id_catalogo_maestro = :id"), {"id": catalogo_id}).scalar_one() == 1
     assert db_session.execute(text("SELECT COUNT(*) FROM item_catalogo WHERE id_item_catalogo = :id"), {"id": item_id}).scalar_one() == 1
+
+
+def test_catalogos_readonly_excluyen_bajas_logicas(client, db_session):
+    catalogo_id = _seed_catalogo(db_session, "ADM363_BAJA", "Baja")
+    item_id = _seed_item(db_session, catalogo_id, "BAJA", "Baja")
+    db_session.execute(text("UPDATE item_catalogo SET deleted_at = CURRENT_TIMESTAMP WHERE id_item_catalogo = :id"), {"id": item_id})
+    db_session.execute(text("UPDATE catalogo_maestro SET deleted_at = CURRENT_TIMESTAMP WHERE id_catalogo_maestro = :id"), {"id": catalogo_id})
+    db_session.commit()
+
+    assert client.get("/api/v1/administrativo/catalogos?q=ADM363_BAJA").json()["data"]["items"] == []
+    assert client.get(f"/api/v1/administrativo/catalogos/{catalogo_id}").status_code == 404
+    assert client.get(f"/api/v1/administrativo/catalogos/{catalogo_id}/items").status_code == 404

@@ -1358,9 +1358,20 @@ ALTER SEQUENCE public.cartera_locativa_id_cartera_locativa_seq OWNED BY public.c
 
 CREATE TABLE public.catalogo_maestro (
     id_catalogo_maestro bigint NOT NULL,
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
     codigo_catalogo_maestro character varying(50) NOT NULL,
     nombre_catalogo_maestro character varying(150) NOT NULL,
-    descripcion text
+    descripcion text,
+    CONSTRAINT chk_catalogo_maestro_version_registro CHECK ((version_registro >= 1)),
+    CONSTRAINT chk_catalogo_maestro_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at)))
 );
 
 
@@ -3304,11 +3315,22 @@ ALTER SEQUENCE public.instrumento_objeto_inmobiliario_id_instrumento_objeto_seq 
 
 CREATE TABLE public.item_catalogo (
     id_item_catalogo bigint NOT NULL,
+    uid_global uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_registro integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp without time zone,
+    id_instalacion_origen bigint,
+    id_instalacion_ultima_modificacion bigint,
+    op_id_alta uuid,
+    op_id_ultima_modificacion uuid,
     id_catalogo_maestro bigint NOT NULL,
     codigo_item_catalogo character varying(50) NOT NULL,
     nombre_item_catalogo character varying(150) NOT NULL,
     descripcion text,
-    estado_item_catalogo character varying(30)
+    estado_item_catalogo character varying(30),
+    CONSTRAINT chk_item_catalogo_version_registro CHECK ((version_registro >= 1)),
+    CONSTRAINT chk_item_catalogo_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at)))
 );
 
 
@@ -6453,6 +6475,12 @@ ALTER TABLE ONLY public.cartera_locativa
 ALTER TABLE ONLY public.catalogo_maestro
     ADD CONSTRAINT catalogo_maestro_pkey PRIMARY KEY (id_catalogo_maestro);
 
+ALTER TABLE ONLY public.catalogo_maestro
+    ADD CONSTRAINT uq_catalogo_maestro_uid_global UNIQUE (uid_global);
+
+ALTER TABLE ONLY public.catalogo_maestro
+    ADD CONSTRAINT uq_catalogo_maestro_codigo UNIQUE (codigo_catalogo_maestro);
+
 
 --
 -- Name: cesion cesion_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -6788,6 +6816,9 @@ ALTER TABLE ONLY public.instrumento_objeto_inmobiliario
 
 ALTER TABLE ONLY public.item_catalogo
     ADD CONSTRAINT item_catalogo_pkey PRIMARY KEY (id_item_catalogo);
+
+ALTER TABLE ONLY public.item_catalogo
+    ADD CONSTRAINT uq_item_catalogo_uid_global UNIQUE (uid_global);
 
 
 --
@@ -8695,6 +8726,36 @@ CREATE UNIQUE INDEX uq_outbox_event_id ON public.outbox_event (event_id);
 
 
 --
+-- Name: idx_catalogo_maestro_uid_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_catalogo_maestro_uid_global ON public.catalogo_maestro USING btree (uid_global);
+
+-- Name: idx_item_catalogo_catalogo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_item_catalogo_catalogo ON public.item_catalogo USING btree (id_catalogo_maestro);
+
+-- Name: idx_item_catalogo_catalogo_estado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_item_catalogo_catalogo_estado ON public.item_catalogo USING btree (id_catalogo_maestro, estado_item_catalogo);
+
+-- Name: idx_item_catalogo_uid_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_item_catalogo_uid_global ON public.item_catalogo USING btree (uid_global);
+
+-- Name: ux_catalogo_maestro_op_id_alta; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_catalogo_maestro_op_id_alta ON public.catalogo_maestro USING btree (op_id_alta) WHERE (op_id_alta IS NOT NULL);
+
+-- Name: ux_item_catalogo_op_id_alta; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_item_catalogo_op_id_alta ON public.item_catalogo USING btree (op_id_alta) WHERE (op_id_alta IS NOT NULL);
+
 -- Name: idx_ev_num; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10277,6 +10338,16 @@ CREATE TRIGGER trg_bi_aplicacion_financiera_core_ef BEFORE INSERT ON public.apli
 
 
 --
+-- Name: catalogo_maestro trg_bi_catalogo_maestro_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_catalogo_maestro_core_ef BEFORE INSERT ON public.catalogo_maestro FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
+-- Name: item_catalogo trg_bi_item_catalogo_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bi_item_catalogo_core_ef BEFORE INSERT ON public.item_catalogo FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_insert();
+
 -- Name: cliente_comprador trg_bi_cliente_comprador_core_ef; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -10710,6 +10781,16 @@ CREATE TRIGGER trg_bu_aplicacion_financiera_core_ef BEFORE UPDATE ON public.apli
 
 
 --
+-- Name: catalogo_maestro trg_bu_catalogo_maestro_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_catalogo_maestro_core_ef BEFORE UPDATE ON public.catalogo_maestro FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
+-- Name: item_catalogo trg_bu_item_catalogo_core_ef; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bu_item_catalogo_core_ef BEFORE UPDATE ON public.item_catalogo FOR EACH ROW EXECUTE FUNCTION public.trg_core_ef_sync_defaults_update();
+
 -- Name: cliente_comprador trg_bu_cliente_comprador_core_ef; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -11671,6 +11752,18 @@ ALTER TABLE ONLY public.instrumento_objeto_inmobiliario
 
 ALTER TABLE ONLY public.item_catalogo
     ADD CONSTRAINT fk_item_catalogo_catalogo FOREIGN KEY (id_catalogo_maestro) REFERENCES public.catalogo_maestro(id_catalogo_maestro) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.catalogo_maestro
+    ADD CONSTRAINT fk_catalogo_maestro_instalacion_origen FOREIGN KEY (id_instalacion_origen) REFERENCES public.instalacion(id_instalacion) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.catalogo_maestro
+    ADD CONSTRAINT fk_catalogo_maestro_instalacion_ultima_modificacion FOREIGN KEY (id_instalacion_ultima_modificacion) REFERENCES public.instalacion(id_instalacion) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_catalogo
+    ADD CONSTRAINT fk_item_catalogo_instalacion_origen FOREIGN KEY (id_instalacion_origen) REFERENCES public.instalacion(id_instalacion) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_catalogo
+    ADD CONSTRAINT fk_item_catalogo_instalacion_ultima_modificacion FOREIGN KEY (id_instalacion_ultima_modificacion) REFERENCES public.instalacion(id_instalacion) ON DELETE RESTRICT;
 
 
 --
