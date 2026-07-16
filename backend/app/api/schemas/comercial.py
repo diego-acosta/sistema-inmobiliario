@@ -389,6 +389,14 @@ class ConfirmVentaDirectaCompletaRequest(BaseModel):
     confirmacion: ConfirmVentaRequest
 
 
+class ConfirmVentaDirectaCompletaPrevalidacionHistoricaResumenData(BaseModel):
+    puede_confirmar: bool
+    cantidad_historicas_exigibles: int
+    cantidad_con_indice: int
+    cantidad_futuras: int
+    cantidad_bloqueadas: int
+
+
 class ConfirmVentaDirectaCompletaData(BaseModel):
     venta: ConfirmVentaCompletaVentaResumenData
     plan_pago_v2: ConfirmVentaCompletaPlanPagoV2ResumenData
@@ -398,7 +406,7 @@ class ConfirmVentaDirectaCompletaData(BaseModel):
     obligaciones: ConfirmVentaCompletaObligacionesResumenData
     es_venta_historica: bool | None = None
     fecha_corte: date | None = None
-    prevalidacion_historica: dict[str, Any] | None = None
+    prevalidacion_historica: ConfirmVentaDirectaCompletaPrevalidacionHistoricaResumenData | None = None
 
 
 class ConfirmVentaDirectaCompletaResponse(BaseModel):

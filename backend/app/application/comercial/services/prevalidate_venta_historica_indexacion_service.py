@@ -10,6 +10,7 @@ CLASIFICACION_HISTORICA_EXIGIBLE = "HISTORICA_EXIGIBLE"
 CLASIFICACION_PERIODO_CORTE = "PERIODO_CORTE"
 CLASIFICACION_FUTURA = "FUTURA"
 ERROR_VENTA_HISTORICA_INDEXACION_NO_RESUELTA = "VENTA_HISTORICA_INDEXACION_NO_RESUELTA"
+ERROR_FECHA_CORTE_REQUERIDA_VENTA_HISTORICA = "FECHA_CORTE_REQUERIDA_VENTA_HISTORICA"
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,3 +111,32 @@ def clasificar_cuota_historica(fecha_vencimiento: date, fecha_corte: date) -> st
     if fecha_vencimiento == fecha_corte:
         return CLASIFICACION_PERIODO_CORTE
     return CLASIFICACION_FUTURA
+
+
+def resumen_confirmacion_prevalidacion(prevalidacion: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "puede_confirmar": prevalidacion["puede_confirmar"],
+        "cantidad_historicas_exigibles": prevalidacion["cantidad_historicas_exigibles"],
+        "cantidad_con_indice": prevalidacion["cantidad_con_indice"],
+        "cantidad_futuras": prevalidacion["cantidad_futuras"],
+        "cantidad_bloqueadas": prevalidacion["cantidad_bloqueadas"],
+    }
+
+
+def detalle_bloqueo_prevalidacion(prevalidacion: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "puede_confirmar": False,
+        "cantidad_bloqueadas": prevalidacion["cantidad_bloqueadas"],
+        "motivos_bloqueo": prevalidacion["motivos_bloqueo"],
+        "cuotas_bloqueadas": [
+            {
+                "numero_cuota": cuota["numero_cuota"],
+                "clave_bloque": cuota["clave_bloque"],
+                "fecha_vencimiento": cuota["fecha_vencimiento"].isoformat() if hasattr(cuota["fecha_vencimiento"], "isoformat") else cuota["fecha_vencimiento"],
+                "motivo_bloqueo": cuota["motivo_bloqueo"],
+                "id_indice_financiero": cuota["id_indice_financiero"],
+            }
+            for cuota in prevalidacion["cuotas"]
+            if cuota["bloquea_confirmacion"]
+        ],
+    }

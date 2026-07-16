@@ -117,10 +117,10 @@ class ConfirmVentaDirectaCompletaConfirmacionInput:
 @dataclass(slots=True)
 class ConfirmVentaDirectaCompletaCommand:
     context: CommandContext
-    fecha_corte: date | None
     generar_venta: ConfirmVentaDirectaCompletaGenerarVentaInput
     objetos: list[ConfirmVentaDirectaCompletaObjetoInput]
     compradores: list[ConfirmVentaDirectaCompletaCompradorInput]
     condiciones_comerciales: ConfirmVentaDirectaCompletaCondicionesComercialesInput
     plan_pago_v2: ConfirmVentaDirectaCompletaPlanPagoV2Input
     confirmacion: ConfirmVentaDirectaCompletaConfirmacionInput
+    fecha_corte: date | None = None

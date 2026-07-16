@@ -115,6 +115,6 @@ Con `fecha_venta == fecha_corte`, `es_venta_historica=false`; la respuesta manti
 
 ## Reutilización en confirmación real
 
-Desde #358 la misma prevalidación read-like se reutiliza en `POST /api/v1/ventas/directa/confirmar-venta-completa` antes de persistir venta, plan o deuda. El componente de aplicación no persiste, no emite outbox, no toma locks y no modifica versiones; la confirmación consume el resumen para decidir si puede continuar dentro de la frontera transaccional real.
+Desde #358 la misma prevalidación read-like se reutiliza en `POST /api/v1/ventas/directa/confirmar-venta-completa` antes de persistir venta, plan o deuda cuando `fecha_corte` está presente. El componente de aplicación no persiste, no crea corridas, no emite outbox, no toma locks y no modifica versiones; tampoco reemplaza la transacción de confirmación, que sigue siendo la frontera atómica real del caso de uso.
 
 Si una cuota `HISTORICA_EXIGIBLE` de un bloque `INDEXACION` queda bloqueada, la confirmación devuelve error funcional `VENTA_HISTORICA_INDEXACION_NO_RESUELTA` con `cantidad_bloqueadas`, `motivos_bloqueo` y `cuotas_bloqueadas`, y no crea filas parciales ni corridas V2.

@@ -29,9 +29,12 @@ from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_pre
     BuildPlanPagoVentaV2PorBloquesPreviewService,
 )
 from app.application.comercial.services.prevalidate_venta_historica_indexacion_service import (
+    ERROR_FECHA_CORTE_REQUERIDA_VENTA_HISTORICA,
     ERROR_VENTA_HISTORICA_INDEXACION_NO_RESUELTA,
     PrevalidateVentaHistoricaIndexacionInput,
     PrevalidateVentaHistoricaIndexacionService,
+    detalle_bloqueo_prevalidacion,
+    resumen_confirmacion_prevalidacion,
 )
 from app.application.common.results import AppResult
 from app.application.personas.duplicados import TipoDuplicadoPersona
@@ -112,6 +115,14 @@ class ConfirmVentaDirectaCompletaService:
 
         prevalidacion_historica: dict[str, Any] | None = None
         fecha_venta_date = command.generar_venta.fecha_venta.date()
+        if command.fecha_corte is None and self._requiere_fecha_corte_historica(command):
+            return AppResult.fail_with_details(
+                ERROR_FECHA_CORTE_REQUERIDA_VENTA_HISTORICA,
+                {
+                    "fecha_venta": fecha_venta_date.isoformat(),
+                    "motivo": "PLAN_INDEXADO_CON_CUOTAS_POSTERIORES_A_FECHA_VENTA",
+                },
+            )
         if command.fecha_corte is not None:
             if fecha_venta_date > command.fecha_corte:
                 return AppResult.fail("FECHA_VENTA_POSTERIOR_FECHA_CORTE")
@@ -132,7 +143,10 @@ class ConfirmVentaDirectaCompletaService:
                 )
             )
             if not prevalidacion_historica["puede_confirmar"]:
-                return AppResult.fail(ERROR_VENTA_HISTORICA_INDEXACION_NO_RESUELTA, prevalidacion_historica)
+                return AppResult.fail_with_details(
+                    ERROR_VENTA_HISTORICA_INDEXACION_NO_RESUELTA,
+                    detalle_bloqueo_prevalidacion(prevalidacion_historica),
+                )
 
         tx_repository = _TransactionalComercialRepository(self.comercial_repository)
 
@@ -246,7 +260,7 @@ class ConfirmVentaDirectaCompletaService:
                             ),
                             "fecha_corte": command.fecha_corte,
                             "prevalidacion_historica": (
-                                self._prevalidacion_resumen(prevalidacion_historica)
+                                resumen_confirmacion_prevalidacion(prevalidacion_historica)
                                 if prevalidacion_historica is not None
                                 else None
                             ),
@@ -337,14 +351,17 @@ class ConfirmVentaDirectaCompletaService:
         return False
 
     @staticmethod
-    def _prevalidacion_resumen(prevalidacion: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "puede_confirmar": prevalidacion["puede_confirmar"],
-            "cantidad_historicas_exigibles": prevalidacion["cantidad_historicas_exigibles"],
-            "cantidad_con_indice": prevalidacion["cantidad_con_indice"],
-            "cantidad_futuras": prevalidacion["cantidad_futuras"],
-            "cantidad_bloqueadas": prevalidacion["cantidad_bloqueadas"],
-        }
+    def _requiere_fecha_corte_historica(
+        command: ConfirmVentaDirectaCompletaCommand,
+    ) -> bool:
+        fecha_venta = command.generar_venta.fecha_venta.date()
+        for bloque in command.plan_pago_v2.bloques:
+            if (bloque.metodo_liquidacion or "").strip().upper() != "INDEXACION":
+                continue
+            primera_fecha = bloque.fecha_primer_vencimiento or bloque.fecha_vencimiento
+            if primera_fecha is not None and fecha_venta < primera_fecha:
+                return True
+        return False
 
     def _plan_pago_v2_command(
         self, command: ConfirmVentaDirectaCompletaCommand, *, id_venta: int | None
