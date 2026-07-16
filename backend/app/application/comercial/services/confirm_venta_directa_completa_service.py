@@ -120,7 +120,8 @@ class ConfirmVentaDirectaCompletaService:
                 ERROR_FECHA_CORTE_REQUERIDA_VENTA_HISTORICA,
                 {
                     "fecha_venta": fecha_venta_date.isoformat(),
-                    "motivo": "PLAN_INDEXADO_CON_CUOTAS_POSTERIORES_A_FECHA_VENTA",
+                    "fecha_operativa_confirmacion": date.today().isoformat(),
+                    "motivo": "VENTA_INDEXADA_ANTERIOR_A_FECHA_OPERATIVA",
                 },
             )
         if command.fecha_corte is not None:
@@ -355,13 +356,15 @@ class ConfirmVentaDirectaCompletaService:
         command: ConfirmVentaDirectaCompletaCommand,
     ) -> bool:
         fecha_venta = command.generar_venta.fecha_venta.date()
-        for bloque in command.plan_pago_v2.bloques:
-            if (bloque.metodo_liquidacion or "").strip().upper() != "INDEXACION":
-                continue
-            primera_fecha = bloque.fecha_primer_vencimiento or bloque.fecha_vencimiento
-            if primera_fecha is not None and fecha_venta < primera_fecha:
-                return True
-        return False
+        tiene_bloque_indexado = any(
+            (bloque.metodo_liquidacion or "").strip().upper() == "INDEXACION"
+            for bloque in command.plan_pago_v2.bloques
+        )
+        # El sistema no cuenta aún con una fecha operativa persistida o enviada por
+        # CORE-EF. Para este contrato, la fecha operativa de confirmación es el día
+        # de ejecución de la aplicación; se usa exclusivamente para detectar una
+        # venta histórica y nunca como sustituto de fecha_corte.
+        return tiene_bloque_indexado and fecha_venta < date.today()
 
     def _plan_pago_v2_command(
         self, command: ConfirmVentaDirectaCompletaCommand, *, id_venta: int | None

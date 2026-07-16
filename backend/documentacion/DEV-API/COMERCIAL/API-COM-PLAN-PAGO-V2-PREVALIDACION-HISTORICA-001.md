@@ -15,7 +15,7 @@ Se extiende la ruta existente `POST /api/v1/ventas/plan-pago-v2/preview` porque 
 - Clasificación: `PREVIEW_READLIKE`.
 - `If-Match-Version`: NO APLICA; no modifica entidades versionadas.
 - Outbox: NO APLICA; no persiste eventos.
-- Fecha de corte: dato de negocio explícito del request; CORE-EF no transporta la fecha operativa de negocio.
+- Fecha de corte: dato de negocio explícito del request; CORE-EF no transporta la fecha operativa de negocio. En la confirmación directa, mientras no exista una fecha operativa persistida o transportada formalmente, el día de ejecución de la aplicación se usa solo para detectar que `fecha_venta` es histórica y exigir `fecha_corte` para bloques `INDEXACION`; nunca reemplaza el corte explícito ni selecciona valores de índice.
 
 ## Request
 

@@ -1779,7 +1779,7 @@ Observacion:
 
 ## POST /api/v1/ventas/directa/confirmar-venta-completa — venta histórica con Plan Pago V2
 
-El request acepta `fecha_corte` opcional a nivel raíz para ventas actuales y planes no indexados. Es obligatoria cuando el Plan Pago Venta V2 contiene un bloque `INDEXACION` cuya primera cuota indexada es posterior a `generar_venta.fecha_venta`; en ese caso omitirla devuelve `FECHA_CORTE_REQUERIDA_VENTA_HISTORICA`. Si se informa, debe cumplir `fecha_venta <= fecha_corte`.
+El request acepta `fecha_corte` opcional a nivel raíz para ventas actuales y planes no indexados. Es obligatoria únicamente si `generar_venta.fecha_venta::date` es anterior a la fecha operativa de confirmación y el Plan Pago Venta V2 contiene al menos un bloque `INDEXACION`; en ese caso omitirla devuelve `FECHA_CORTE_REQUERIDA_VENTA_HISTORICA`. La fecha operativa no está formalizada como dato persistido ni es transportada por CORE-EF en este caso de uso; por contrato vigente se usa el día de ejecución de la aplicación **solo para detectar historicidad**. No reemplaza `fecha_corte` ni se usa para clasificar cuotas. Por lo tanto, una venta actual indexada con primera cuota futura puede omitir `fecha_corte`. Si se informa, debe cumplir `fecha_venta <= fecha_corte`.
 
 `fecha_corte` solo clasifica exigibilidad histórica de las cuotas (`HISTORICA_EXIGIBLE`, `PERIODO_CORTE`, `FUTURA`). No modifica vencimientos ni selecciona índices: la selección vigente de índice continúa usando la fecha objetivo de cada cuota y valores `PUBLICADO` con `fecha_publicacion` no nula.
 

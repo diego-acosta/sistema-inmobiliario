@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -1040,6 +1040,37 @@ def _payload_historico_indexado(codigo_venta: str, base: dict[str, int], id_indi
     return payload
 
 
+def _payload_actual_indexado_sin_corte(
+    codigo_venta: str,
+    base: dict[str, int],
+    id_indice: int,
+) -> dict[str, object]:
+    fecha_venta = date.today()
+    payload = _payload(codigo_venta=codigo_venta, **base)
+    payload["generar_venta"]["fecha_venta"] = f"{fecha_venta.isoformat()}T10:00:00"
+    payload["plan_pago_v2"]["bloques"] = [
+        {
+            "tipo_bloque": "TRAMO_CUOTAS",
+            "etiqueta_bloque": "Tramo actual indexado",
+            "importe_total_bloque": "150000.00",
+            "cantidad_cuotas": 3,
+            "fecha_primer_vencimiento": (fecha_venta + timedelta(days=30)).isoformat(),
+            "periodicidad": "MENSUAL",
+            "metodo_liquidacion": "INDEXACION",
+            "id_indice_financiero": id_indice,
+            "fecha_base_indice": fecha_venta.replace(day=1).isoformat(),
+            "valor_base_indice": "100.00000000",
+            "modo_indexacion": "POR_COEFICIENTE",
+            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+            "tipo_generacion_indexada": "DEFINITIVA",
+            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    ]
+    return payload
+
+
 def test_confirmar_venta_directa_command_legacy_sin_fecha_corte_ejecuta_resolucion_contextual() -> None:
     from tests.test_ventas_directa_comprador_contextual import FakeRepo, _comprador_contextual, _command, _service
 
@@ -1050,6 +1081,23 @@ def test_confirmar_venta_directa_command_legacy_sin_fecha_corte_ejecuta_resoluci
     assert command.fecha_corte is None
     assert _service(repo)._resolve_compradores_contextuales(command, id_instalacion=1) is None
     assert comprador.id_persona == 901
+
+
+def test_confirmar_venta_directa_actual_indexada_sin_fecha_corte_confirma(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="ACTUAL-INDEXADA-SIN-CORTE")
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-VD-ACTUAL-SIN-CORTE"
+    )
+    payload = _payload_actual_indexado_sin_corte(
+        "VD-ACTUAL-INDEXADA-SIN-CORTE", base, id_indice
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["es_venta_historica"] is None
+    assert response.json()["data"]["fecha_corte"] is None
+    assert _venta_by_codigo(db_session, "VD-ACTUAL-INDEXADA-SIN-CORTE") is not None
 
 
 def test_confirmar_venta_directa_historica_indexada_sin_fecha_corte_rechaza_sin_persistir(client, db_session) -> None:
