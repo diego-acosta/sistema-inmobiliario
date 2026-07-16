@@ -10,7 +10,14 @@ from app.api.core_ef_headers import (
 )
 from app.api.dependencies import get_db
 from app.api.schemas.administrativo import (
+    CatalogoMaestroData,
+    CatalogoMaestroDetailResponse,
+    CatalogoMaestroListData,
+    CatalogoMaestroListResponse,
     ErrorResponse,
+    ItemCatalogoData,
+    ItemCatalogoListData,
+    ItemCatalogoListResponse,
     PermisoData,
     PermisoListResponse,
     RolSeguridadData,
@@ -34,6 +41,9 @@ from app.api.schemas.administrativo import (
     UsuarioSucursalListResponse,
     UsuarioAlcanceOperativoData,
     UsuarioAlcanceOperativoResponse,
+)
+from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
+    CatalogoMaestroRepository,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
@@ -92,6 +102,112 @@ def _parse_core_or_error(
             exc.message,
             {"header": exc.header_name, "reason": exc.reason},
         )
+
+
+def _normalize_query(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+@router.get(
+    "/api/v1/administrativo/catalogos",
+    response_model=CatalogoMaestroListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_catalogos_maestros(
+    q: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> CatalogoMaestroListResponse | JSONResponse:
+    # CORE-EF: QUERY_READLIKE. Headers write, If-Match-Version, idempotencia,
+    # outbox, lock, versionado y transacción write: NO APLICA.
+    try:
+        result = CatalogoMaestroRepository(db).list_catalogos(
+            q=_normalize_query(q), page=page, page_size=page_size
+        )
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudieron listar catálogos maestros.",
+            {"error": str(exc)},
+        )
+    return CatalogoMaestroListResponse(
+        data=CatalogoMaestroListData(
+            items=[CatalogoMaestroData(**item) for item in result["items"]],
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"],
+        )
+    )
+
+
+@router.get(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}",
+    response_model=CatalogoMaestroDetailResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_catalogo_maestro(
+    id_catalogo_maestro: int,
+    db: Session = Depends(get_db),
+) -> CatalogoMaestroDetailResponse | JSONResponse:
+    # CORE-EF: QUERY_READLIKE sin efectos persistentes ni headers write.
+    try:
+        catalogo = CatalogoMaestroRepository(db).get_catalogo(id_catalogo_maestro)
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo obtener el catálogo maestro.",
+            {"error": str(exc)},
+        )
+    if catalogo is None:
+        return _error(404, "NOT_FOUND", "Catálogo maestro no encontrado.")
+    return CatalogoMaestroDetailResponse(data=CatalogoMaestroData(**catalogo))
+
+
+@router.get(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}/items",
+    response_model=ItemCatalogoListResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def list_items_catalogo(
+    id_catalogo_maestro: int,
+    q: str | None = Query(default=None),
+    estado_item_catalogo: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> ItemCatalogoListResponse | JSONResponse:
+    # CORE-EF: QUERY_READLIKE. Filtro estado_item_catalogo literal; NULL se preserva.
+    try:
+        result = CatalogoMaestroRepository(db).list_items(
+            id_catalogo_maestro=id_catalogo_maestro,
+            q=_normalize_query(q),
+            estado_item_catalogo=estado_item_catalogo,
+            page=page,
+            page_size=page_size,
+        )
+    except Exception as exc:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudieron listar ítems del catálogo maestro.",
+            {"error": str(exc)},
+        )
+    if result is None:
+        return _error(404, "NOT_FOUND", "Catálogo maestro no encontrado.")
+    return ItemCatalogoListResponse(
+        data=ItemCatalogoListData(
+            items=[ItemCatalogoData(**item) for item in result["items"]],
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"],
+        )
+    )
 
 
 @router.get(
