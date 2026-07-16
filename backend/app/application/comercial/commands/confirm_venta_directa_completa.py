@@ -123,3 +123,4 @@ class ConfirmVentaDirectaCompletaCommand:
     condiciones_comerciales: ConfirmVentaDirectaCompletaCondicionesComercialesInput
     plan_pago_v2: ConfirmVentaDirectaCompletaPlanPagoV2Input
     confirmacion: ConfirmVentaDirectaCompletaConfirmacionInput
+    fecha_corte: date | None = None

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -884,6 +884,7 @@ def test_confirmar_venta_directa_completa_indexacion_propaga_bloque(
     )
     payload = _payload(codigo_venta="VD-COMP-IX", **base)
     _usar_plan_indexado(payload, id_indice)
+    payload["fecha_corte"] = "2026-06-01"
 
     response = client.post(ENDPOINT, headers=HEADERS, json=payload)
 
@@ -923,6 +924,7 @@ def test_confirmar_venta_directa_completa_indexacion_invalida_rollback(
     )
     payload = _payload(codigo_venta="VD-COMP-IX-NEG", **base)
     _usar_plan_indexado(payload, id_indice)
+    payload["fecha_corte"] = "2026-06-01"
 
     response = client.post(ENDPOINT, headers=HEADERS, json=payload)
 
@@ -970,3 +972,292 @@ def test_confirmar_venta_directa_completa_refuerzo_numero_invalido_error_control
     assert response.status_code == 400, response.text
     assert "CUOTA_REFUERZO_NUMERO_INVALIDO" in response.json()["details"]["errors"]
     assert _venta_by_codigo(db_session, "VD-COMP-REF-INV") is None
+
+# --- #358 venta histórica indexada en confirmación directa ---
+
+def _count_table(db_session, table: str) -> int:
+    return db_session.execute(text(f"SELECT COUNT(*) FROM {table} WHERE deleted_at IS NULL")).scalar_one()
+
+
+def _count_corridas(db_session) -> int:
+    return db_session.execute(text("SELECT COUNT(*) FROM corrida_indexacion_financiera WHERE deleted_at IS NULL")).scalar_one()
+
+
+def _count_outbox(db_session) -> int:
+    return db_session.execute(text("SELECT COUNT(*) FROM outbox_event")).scalar_one()
+
+
+def _count_ajustes_indexacion_by_venta(db_session, id_venta: int) -> int:
+    return db_session.execute(text("""
+        SELECT COUNT(*)
+        FROM relacion_generadora rg
+        JOIN obligacion_financiera o ON o.id_relacion_generadora = rg.id_relacion_generadora AND o.deleted_at IS NULL
+        JOIN composicion_obligacion co ON co.id_obligacion_financiera = o.id_obligacion_financiera AND co.deleted_at IS NULL
+        JOIN concepto_financiero cf ON cf.id_concepto_financiero = co.id_concepto_financiero AND cf.deleted_at IS NULL
+        WHERE rg.tipo_origen = 'venta'
+          AND rg.id_origen = :id_venta
+          AND rg.deleted_at IS NULL
+          AND cf.codigo_concepto_financiero = 'AJUSTE_INDEXACION'
+    """), {"id_venta": id_venta}).scalar_one()
+
+
+
+def _hacer_disponibilidad_historica(db_session, id_inmueble: int) -> None:
+    db_session.execute(
+        text("""
+            UPDATE disponibilidad
+            SET fecha_desde = TIMESTAMP '2026-01-01 00:00:00'
+            WHERE id_inmueble = :id_inmueble
+              AND deleted_at IS NULL
+        """),
+        {"id_inmueble": id_inmueble},
+    )
+
+def _payload_historico_indexado(codigo_venta: str, base: dict[str, int], id_indice: int) -> dict[str, object]:
+    payload = _payload(codigo_venta=codigo_venta, **base)
+    payload["fecha_corte"] = "2026-03-15"
+    payload["generar_venta"]["fecha_venta"] = "2026-01-10T10:00:00"
+    payload["plan_pago_v2"]["bloques"] = [
+        {
+            "tipo_bloque": "TRAMO_CUOTAS",
+            "etiqueta_bloque": "Tramo histórico indexado",
+            "importe_total_bloque": "150000.00",
+            "cantidad_cuotas": 3,
+            "fecha_primer_vencimiento": "2026-02-10",
+            "periodicidad": "MENSUAL",
+            "metodo_liquidacion": "INDEXACION",
+            "id_indice_financiero": id_indice,
+            "fecha_base_indice": "2026-01-01",
+            "valor_base_indice": "100.00000000",
+            "modo_indexacion": "POR_COEFICIENTE",
+            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+            "tipo_generacion_indexada": "DEFINITIVA",
+            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    ]
+    return payload
+
+
+def _payload_actual_indexado_sin_corte(
+    codigo_venta: str,
+    base: dict[str, int],
+    id_indice: int,
+) -> dict[str, object]:
+    fecha_venta = date.today()
+    payload = _payload(codigo_venta=codigo_venta, **base)
+    payload["generar_venta"]["fecha_venta"] = f"{fecha_venta.isoformat()}T10:00:00"
+    payload["plan_pago_v2"]["bloques"] = [
+        {
+            "tipo_bloque": "TRAMO_CUOTAS",
+            "etiqueta_bloque": "Tramo actual indexado",
+            "importe_total_bloque": "150000.00",
+            "cantidad_cuotas": 3,
+            "fecha_primer_vencimiento": (fecha_venta + timedelta(days=30)).isoformat(),
+            "periodicidad": "MENSUAL",
+            "metodo_liquidacion": "INDEXACION",
+            "id_indice_financiero": id_indice,
+            "fecha_base_indice": fecha_venta.replace(day=1).isoformat(),
+            "valor_base_indice": "100.00000000",
+            "modo_indexacion": "POR_COEFICIENTE",
+            "base_calculo_indexacion": "CAPITAL_INICIAL_BLOQUE",
+            "tipo_generacion_indexada": "DEFINITIVA",
+            "politica_valor_no_disponible": "ERROR_SI_NO_EXISTE",
+            "conserva_capital_original": True,
+            "genera_ajuste_por_diferencia": True,
+        }
+    ]
+    return payload
+
+
+def test_confirmar_venta_directa_command_legacy_sin_fecha_corte_ejecuta_resolucion_contextual() -> None:
+    from tests.test_ventas_directa_comprador_contextual import FakeRepo, _comprador_contextual, _command, _service
+
+    repo = FakeRepo()
+    comprador = _comprador_contextual()
+    command = _command(comprador)
+
+    assert command.fecha_corte is None
+    assert _service(repo)._resolve_compradores_contextuales(command, id_instalacion=1) is None
+    assert comprador.id_persona == 901
+
+
+def test_confirmar_venta_directa_actual_indexada_sin_fecha_corte_confirma(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="ACTUAL-INDEXADA-SIN-CORTE")
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-VD-ACTUAL-SIN-CORTE"
+    )
+    payload = _payload_actual_indexado_sin_corte(
+        "VD-ACTUAL-INDEXADA-SIN-CORTE", base, id_indice
+    )
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["es_venta_historica"] is None
+    assert response.json()["data"]["fecha_corte"] is None
+    assert _venta_by_codigo(db_session, "VD-ACTUAL-INDEXADA-SIN-CORTE") is not None
+
+
+def test_confirmar_venta_directa_historica_indexada_sin_fecha_corte_rechaza_sin_persistir(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="HIST-SIN-CORTE")
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-VD-HIST-SIN-CORTE")
+    payload = _payload_historico_indexado("VD-HIST-SIN-CORTE", base, id_indice)
+    del payload["fecha_corte"]
+    before = {t: _count_table(db_session, t) for t in ["venta", "plan_pago_venta", "plan_pago_venta_bloque", "obligacion_financiera", "composicion_obligacion", "obligacion_financiera_indexacion"]}
+    before_corridas = _count_corridas(db_session)
+    before_outbox = _count_outbox(db_session)
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["error_code"] == "FECHA_CORTE_REQUERIDA_VENTA_HISTORICA"
+    assert _venta_by_codigo(db_session, "VD-HIST-SIN-CORTE") is None
+    assert {t: _count_table(db_session, t) for t in before} == before
+    assert _count_corridas(db_session) == before_corridas
+    assert _count_outbox(db_session) == before_outbox
+
+
+def test_confirmar_venta_directa_historica_indexada_valida_nace_indexada_sin_corrida(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="HIST-OK")
+    _hacer_disponibilidad_historica(db_session, base["id_inmueble"])
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-VD-HIST-OK")
+    _insertar_indice_financiero_valor(db_session, id_indice_financiero=id_indice, fecha_valor=date(2026, 2, 1), valor_indice=Decimal("120.00000000"))
+    payload = _payload_historico_indexado("VD-HIST-OK", base, id_indice)
+    before_corridas = _count_corridas(db_session)
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["es_venta_historica"] is True
+    assert data["fecha_corte"] == "2026-03-15"
+    assert data["prevalidacion_historica"] == {
+        "puede_confirmar": True,
+        "cantidad_historicas_exigibles": 2,
+        "cantidad_con_indice": 3,
+        "cantidad_futuras": 1,
+        "cantidad_bloqueadas": 0,
+    }
+    venta = _venta_by_codigo(db_session, "VD-HIST-OK")
+    assert venta is not None
+    assert _count_obligacion_indexacion_by_venta(db_session, venta["id_venta"]) == 3
+    assert _count_ajustes_indexacion_by_venta(db_session, venta["id_venta"]) == 3
+    assert _count_corridas(db_session) == before_corridas
+
+
+def test_confirmar_venta_directa_historica_sin_valor_bloquea_payload_y_rollback(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="HIST-BLOCK")
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-VD-HIST-BLOCK")
+    payload = _payload_historico_indexado("VD-HIST-BLOCK", base, id_indice)
+    before_obligaciones = _count_obligaciones(db_session)
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error_code"] == "VENTA_HISTORICA_INDEXACION_NO_RESUELTA"
+    assert body["details"]["puede_confirmar"] is False
+    assert body["details"]["cantidad_bloqueadas"] == 2
+    assert body["details"]["motivos_bloqueo"] == ["VALOR_INDICE_PUBLICADO_INEXISTENTE"]
+    assert body["details"]["cuotas_bloqueadas"][0].keys() == {"numero_cuota", "clave_bloque", "fecha_vencimiento", "motivo_bloqueo", "id_indice_financiero"}
+    assert _venta_by_codigo(db_session, "VD-HIST-BLOCK") is None
+    assert _count_obligaciones(db_session) == before_obligaciones
+
+
+def test_confirmar_venta_directa_historica_publicacion_incompleta_e_indice_inactivo_bloquean(client, db_session) -> None:
+    for suffix, expected in [("INCOMPLETA", "FECHA_PUBLICACION_INDICE_INCOMPLETA"), ("INACTIVO", "INDICE_FINANCIERO_INACTIVO")]:
+        base = _crear_base_directa(client, db_session, codigo=f"HIST-{suffix}")
+        id_indice = _insertar_indice_financiero_minimo(db_session, codigo=f"RIPTE-VD-HIST-{suffix}")
+        if suffix == "INCOMPLETA":
+            db_session.execute(
+                text("""
+                    INSERT INTO indice_financiero_valor (
+                        id_indice_financiero, fecha_valor, valor_indice,
+                        fecha_publicacion, fuente_valor, estado_valor_indice
+                    )
+                    VALUES (:id, DATE '2026-02-01', 120.00000000, NULL, 'TEST', 'PUBLICADO')
+                    """),
+                {"id": id_indice},
+            )
+        else:
+            db_session.execute(text("UPDATE indice_financiero SET estado_indice_financiero = 'INACTIVO' WHERE id_indice_financiero = :id"), {"id": id_indice})
+        codigo = f"VD-HIST-{suffix}"
+        response = client.post(ENDPOINT, headers=HEADERS, json=_payload_historico_indexado(codigo, base, id_indice))
+        assert response.status_code == 400, response.text
+        assert response.json()["details"]["motivos_bloqueo"] == [expected]
+        assert _venta_by_codigo(db_session, codigo) is None
+
+
+def test_confirmar_venta_directa_indexada_futura_sin_valor_confirma_proyectada_sin_indexacion(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="FUT-SIN-VALOR")
+    _hacer_disponibilidad_historica(db_session, base["id_inmueble"])
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-VD-FUT-SIN-VALOR")
+    payload = _payload_historico_indexado("VD-FUT-SIN-VALOR", base, id_indice)
+    payload["fecha_corte"] = "2026-01-15"
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-FUT-SIN-VALOR")
+    assert venta is not None
+    assert _count_obligacion_indexacion_by_venta(db_session, venta["id_venta"]) == 0
+    assert _count_ajustes_indexacion_by_venta(db_session, venta["id_venta"]) == 0
+    estados = {row["estado_obligacion"] for row in _composiciones_by_venta(db_session, venta["id_venta"])}
+    assert estados == {"PROYECTADA"}
+
+
+def test_confirmar_venta_directa_historica_plan_sin_indexacion_no_exige_indice(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="HIST-SIN-INDEX")
+    _hacer_disponibilidad_historica(db_session, base["id_inmueble"])
+    payload = _payload(codigo_venta="VD-HIST-SIN-INDEX", **base)
+    payload["generar_venta"]["fecha_venta"] = "2026-01-10T10:00:00"
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-HIST-SIN-INDEX")
+    assert venta is not None
+    assert _count_obligacion_indexacion_by_venta(db_session, venta["id_venta"]) == 0
+
+
+def test_confirmar_venta_directa_fecha_venta_posterior_fecha_corte_sin_persistencia(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="FECHA-MAL")
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-VD-FECHA-MAL")
+    payload = _payload_historico_indexado("VD-FECHA-MAL", base, id_indice)
+    payload["fecha_corte"] = "2025-12-31"
+
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["details"]["errors"] == ["FECHA_VENTA_POSTERIOR_FECHA_CORTE"]
+    assert _venta_by_codigo(db_session, "VD-FECHA-MAL") is None
+
+
+def test_confirmar_venta_directa_indexada_replay_no_duplica_deuda_y_payload_distinto_rechaza(client, db_session) -> None:
+    base = _crear_base_directa(client, db_session, codigo="IDEMP")
+    _hacer_disponibilidad_historica(db_session, base["id_inmueble"])
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-VD-IDEMP")
+    _insertar_indice_financiero_valor(db_session, id_indice_financiero=id_indice, fecha_valor=date(2026, 2, 1), valor_indice=Decimal("120.00000000"))
+    payload = _payload_historico_indexado("VD-IDEMP", base, id_indice)
+    response = client.post(ENDPOINT, headers=HEADERS, json=payload)
+    assert response.status_code == 200, response.text
+    venta = _venta_by_codigo(db_session, "VD-IDEMP")
+    assert venta is not None
+    counts = {
+        "plan": _count_table(db_session, "plan_pago_venta"),
+        "obligaciones": _count_obligaciones(db_session),
+        "indexacion": _count_obligacion_indexacion_by_venta(db_session, venta["id_venta"]),
+    }
+
+    replay = client.post(ENDPOINT, headers=HEADERS, json=payload)
+    assert replay.status_code == 400
+    assert _count_table(db_session, "plan_pago_venta") == counts["plan"]
+    assert _count_obligaciones(db_session) == counts["obligaciones"]
+    assert _count_obligacion_indexacion_by_venta(db_session, venta["id_venta"]) == counts["indexacion"]
+
+    distinto = _payload_historico_indexado("VD-IDEMP-DISTINTO", base, id_indice)
+    distinto["fecha_corte"] = "2026-03-16"
+    conflict = client.post(ENDPOINT, headers=HEADERS, json=distinto)
+    assert conflict.status_code in {400, 409}

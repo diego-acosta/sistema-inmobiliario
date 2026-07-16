@@ -380,12 +380,21 @@ class ConfirmVentaDirectaCompletaCondicionesComercialesRequest(BaseModel):
 class ConfirmVentaDirectaCompletaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    fecha_corte: date | None = None
     generar_venta: GenerateVentaFromReservaVentaRequest
     objetos: list[ConfirmVentaDirectaCompletaObjetoRequest]
     compradores: list[ConfirmVentaDirectaCompletaCompradorRequest]
     condiciones_comerciales: ConfirmVentaDirectaCompletaCondicionesComercialesRequest
     plan_pago_v2: GeneratePlanPagoVentaV2PorBloquesRequest
     confirmacion: ConfirmVentaRequest
+
+
+class ConfirmVentaDirectaCompletaPrevalidacionHistoricaResumenData(BaseModel):
+    puede_confirmar: bool
+    cantidad_historicas_exigibles: int
+    cantidad_con_indice: int
+    cantidad_futuras: int
+    cantidad_bloqueadas: int
 
 
 class ConfirmVentaDirectaCompletaData(BaseModel):
@@ -395,6 +404,9 @@ class ConfirmVentaDirectaCompletaData(BaseModel):
         ConfirmVentaCompletaGeneracionCronogramaResumenData
     )
     obligaciones: ConfirmVentaCompletaObligacionesResumenData
+    es_venta_historica: bool | None = None
+    fecha_corte: date | None = None
+    prevalidacion_historica: ConfirmVentaDirectaCompletaPrevalidacionHistoricaResumenData | None = None
 
 
 class ConfirmVentaDirectaCompletaResponse(BaseModel):

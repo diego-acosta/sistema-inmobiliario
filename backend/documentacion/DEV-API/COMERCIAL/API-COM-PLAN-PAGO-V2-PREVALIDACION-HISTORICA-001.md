@@ -15,7 +15,7 @@ Se extiende la ruta existente `POST /api/v1/ventas/plan-pago-v2/preview` porque 
 - Clasificación: `PREVIEW_READLIKE`.
 - `If-Match-Version`: NO APLICA; no modifica entidades versionadas.
 - Outbox: NO APLICA; no persiste eventos.
-- Fecha de corte: dato de negocio explícito del request; CORE-EF no transporta la fecha operativa de negocio.
+- Fecha de corte: dato de negocio explícito del request; CORE-EF no transporta la fecha operativa de negocio. En la confirmación directa, mientras no exista una fecha operativa persistida o transportada formalmente, el día de ejecución de la aplicación se usa solo para detectar que `fecha_venta` es histórica y exigir `fecha_corte` para bloques `INDEXACION`; nunca reemplaza el corte explícito ni selecciona valores de índice.
 
 ## Request
 
@@ -112,3 +112,9 @@ Si no existe valor publicado para una cuota futura, la cuota queda `PROYECTADA_S
 ### Venta actual
 
 Con `fecha_venta == fecha_corte`, `es_venta_historica=false`; la respuesta mantiene el preview normal y puede incluir `cantidad_historicas_exigibles=0`.
+
+## Reutilización en confirmación real
+
+Desde #358 la misma prevalidación read-like se reutiliza en `POST /api/v1/ventas/directa/confirmar-venta-completa` antes de persistir venta, plan o deuda cuando `fecha_corte` está presente. El componente de aplicación no persiste, no crea corridas, no emite outbox, no toma locks y no modifica versiones; tampoco reemplaza la transacción de confirmación, que sigue siendo la frontera atómica real del caso de uso.
+
+Si una cuota `HISTORICA_EXIGIBLE` de un bloque `INDEXACION` queda bloqueada, la confirmación devuelve error funcional `VENTA_HISTORICA_INDEXACION_NO_RESUELTA` con `cantidad_bloqueadas`, `motivos_bloqueo` y `cuotas_bloqueadas`, y no crea filas parciales ni corridas V2.

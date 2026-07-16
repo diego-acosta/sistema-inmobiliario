@@ -1776,3 +1776,17 @@ Observacion:
 - para el dominio `comercial`, este documento debe leerse como fuente publica de verdad del contrato HTTP actual
 - si se incorporan nuevos endpoints o payloads, primero debe materializarse backend y luego actualizarse este contrato
 - si durante una futura implementacion aparece una necesidad no soportada por SQL actual, debe ajustarse antes el modelo o reducirse el alcance; no corresponde ampliar el contrato por inferencia
+
+## POST /api/v1/ventas/directa/confirmar-venta-completa — venta histórica con Plan Pago V2
+
+El request acepta `fecha_corte` opcional a nivel raíz para ventas actuales y planes no indexados. Es obligatoria únicamente si `generar_venta.fecha_venta::date` es anterior a la fecha operativa de confirmación y el Plan Pago Venta V2 contiene al menos un bloque `INDEXACION`; en ese caso omitirla devuelve `FECHA_CORTE_REQUERIDA_VENTA_HISTORICA`. La fecha operativa no está formalizada como dato persistido ni es transportada por CORE-EF en este caso de uso; por contrato vigente se usa el día de ejecución de la aplicación **solo para detectar historicidad**. No reemplaza `fecha_corte` ni se usa para clasificar cuotas. Por lo tanto, una venta actual indexada con primera cuota futura puede omitir `fecha_corte`. Si se informa, debe cumplir `fecha_venta <= fecha_corte`.
+
+`fecha_corte` solo clasifica exigibilidad histórica de las cuotas (`HISTORICA_EXIGIBLE`, `PERIODO_CORTE`, `FUTURA`). No modifica vencimientos ni selecciona índices: la selección vigente de índice continúa usando la fecha objetivo de cada cuota y valores `PUBLICADO` con `fecha_publicacion` no nula.
+
+Cuando `fecha_corte` está presente, antes de persistir la confirmación construye el preview Plan Pago Venta V2 y ejecuta la prevalidación histórica reutilizable. Si alguna cuota histórica exigible indexada no puede calcularse, responde `ErrorResponse` 400 con `error_code=VENTA_HISTORICA_INDEXACION_NO_RESUELTA` y detalle: `puede_confirmar=false`, `cantidad_bloqueadas`, `motivos_bloqueo` y `cuotas_bloqueadas` (`numero_cuota`, `clave_bloque`, `fecha_vencimiento`, `motivo_bloqueo`, `id_indice_financiero`).
+
+Si la prevalidación permite confirmar, la venta, objetos, participantes, condiciones, `plan_pago_venta`, `plan_pago_venta_bloque`, `generacion_cronograma_financiero`, `relacion_generadora`, `obligacion_financiera`, `composicion_obligacion`, `obligacion_financiera_indexacion` y outbox vigente quedan dentro de la transacción de confirmación. Las obligaciones históricas con `CON_INDICE_APLICADO` nacen con importe total indexado, composición `AJUSTE_INDEXACION` y fila `obligacion_financiera_indexacion`. Las cuotas futuras `PROYECTADA_SIN_INDICE` no bloquean, persisten como obligaciones proyectadas sin fila de indexación y quedan disponibles para corridas posteriores. La confirmación no dispara una corrida V2 inmediata.
+
+La respuesta exitosa mantiene la estructura previa y agrega campos opcionales: `es_venta_historica`, `fecha_corte` y `prevalidacion_historica` con resumen (`puede_confirmar`, `cantidad_historicas_exigibles`, `cantidad_con_indice`, `cantidad_futuras`, `cantidad_bloqueadas`).
+
+Ejemplos: venta actual o plan sin indexación sin `fecha_corte` confirma como antes; venta indexada histórica sin `fecha_corte` devuelve `FECHA_CORTE_REQUERIDA_VENTA_HISTORICA`; histórica válida con índices publicados confirma y genera deuda indexada; histórica bloqueada por publicación incompleta o valor inexistente aborta sin persistencia; histórica mixta confirma históricas con índice y deja futuras proyectadas.

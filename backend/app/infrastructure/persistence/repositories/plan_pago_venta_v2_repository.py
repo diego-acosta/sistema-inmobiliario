@@ -1245,6 +1245,33 @@ class PlanPagoVentaV2Repository:
         )
         return dict(row) if row else None
 
+    def diagnosticar_valor_publicado_no_aplicable(
+        self, id_indice_financiero: int, fecha_objetivo: date
+    ) -> str:
+        if self.get_indice_financiero_activo(id_indice_financiero) is None:
+            return "INDICE_FINANCIERO_INACTIVO"
+        stmt = text("""
+            SELECT 1
+            FROM indice_financiero_valor AS iv
+            WHERE iv.id_indice_financiero = :id_indice_financiero
+              AND iv.estado_valor_indice = 'PUBLICADO'
+              AND iv.fecha_publicacion IS NULL
+              AND iv.deleted_at IS NULL
+              AND iv.fecha_valor <= :fecha_objetivo
+            ORDER BY iv.fecha_valor DESC
+            LIMIT 1
+            """)
+        row = self.db.execute(
+            stmt,
+            {
+                "id_indice_financiero": id_indice_financiero,
+                "fecha_objetivo": fecha_objetivo,
+            },
+        ).first()
+        if row is not None:
+            return "FECHA_PUBLICACION_INDICE_INCOMPLETA"
+        return "VALOR_INDICE_PUBLICADO_INEXISTENTE"
+
     def create_obligacion_cronograma_v2_if_not_exists(
         self, payload: Any
     ) -> dict[str, Any]:
