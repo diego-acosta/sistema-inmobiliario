@@ -256,6 +256,108 @@ def test_consulta_plan_con_indexacion_distingue_cuotas_aplicadas_y_proyectadas(
     assert data["resumen"]["cantidad_obligaciones_proyectadas_sin_indexacion"] == 1
 
 
+def test_consulta_plan_expone_corridas_y_resultados_persistidos_por_obligacion(
+    client, db_session
+) -> None:
+    id_venta = _insertar_venta_minima(db_session, codigo_venta="V-PPV2-GET-CORRIDAS")
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(db_session, codigo="RIPTE-GET-CORRIDAS")
+    id_valor = _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2026, 7, 10),
+        valor_indice=Decimal("110.00000000"),
+    )
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[_bloque_indexado_generate(id_indice)],
+        )
+    )
+    assert result.success, result.errors
+    plan = result.data["plan_pago_venta"]
+    bloque = result.data["bloques"][0]
+    obligaciones = result.data["obligaciones"]
+    configuracion = db_session.execute(
+        text("""
+            SELECT id_plan_pago_venta_bloque_indexacion
+            FROM plan_pago_venta_bloque_indexacion
+            WHERE id_plan_pago_venta_bloque = :bloque
+              AND deleted_at IS NULL
+        """),
+        {"bloque": bloque["id_plan_pago_venta_bloque"]},
+    ).scalar_one()
+    corrida = db_session.execute(
+        text("""
+            INSERT INTO corrida_indexacion_financiera (
+                id_plan_pago_venta, id_plan_pago_venta_bloque,
+                id_plan_pago_venta_bloque_indexacion, id_indice_financiero,
+                id_indice_financiero_valor_aplicado, periodo_aplicado, fecha_corte,
+                origen_corrida, estado_corrida, op_id, hash_corrida,
+                cantidad_analizada, cantidad_elegible, cantidad_excluida,
+                importe_total_nuevo, ajuste_nuevo_total
+            ) VALUES (
+                :plan, :bloque, :configuracion, :indice, :valor, DATE '2026-07-10',
+                DATE '2026-07-10', 'PUBLICACION_INDICE', 'PENDIENTE_APLICACION',
+                '550e8400-e29b-41d4-a716-446655441100', 'a' || repeat('0', 63),
+                2, 1, 1, 2000000, 100000
+            ) RETURNING id_corrida_indexacion_financiera
+        """), {
+            "plan": plan["id_plan_pago_venta"],
+            "bloque": bloque["id_plan_pago_venta_bloque"],
+            "configuracion": configuracion,
+            "indice": id_indice,
+            "valor": id_valor,
+        },
+    ).scalar_one()
+    for obligacion, estado, motivo, error in (
+        (obligaciones[1], "ELEGIBLE", None, None),
+        (obligaciones[2], "EXCLUIDA", "ESTADO_OBLIGACION_NO_ELEGIBLE", "ERROR_CONTROLADO"),
+    ):
+        db_session.execute(
+            text("""
+                INSERT INTO corrida_indexacion_financiera_detalle (
+                    id_corrida_indexacion_financiera, id_obligacion_financiera,
+                    version_esperada, capital_base, valor_indice_base,
+                    valor_indice_aplicado, coeficiente_indexacion,
+                    estado_elegibilidad, motivo_exclusion, codigo_error
+                ) VALUES (
+                    :corrida, :obligacion, 1, 1000000, 100, 110, 1.1,
+                    :estado, :motivo, :error
+                )
+            """), {
+                "corrida": corrida,
+                "obligacion": obligacion["id_obligacion_financiera"],
+                "estado": estado,
+                "motivo": motivo,
+                "error": error,
+            },
+        )
+    db_session.commit()
+
+    response = client.get(URL_GET.format(id_venta=id_venta))
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert len(data["corridas_indexacion"]) == 1
+    corrida_data = data["corridas_indexacion"][0]
+    assert corrida_data["id_corrida_indexacion_financiera"] == corrida
+    assert corrida_data["estado_corrida"] == "PENDIENTE_APLICACION"
+    assert corrida_data["cantidad_error"] == 1
+    assert Decimal(str(corrida_data["capital_total"])) == Decimal("2000000.00")
+    assert Decimal(str(corrida_data["ajuste_total"])) == Decimal("100000.00")
+    assert len(corrida_data["exclusiones"]) == 1
+    assert len(corrida_data["errores"]) == 1
+    cuotas = data["bloques"][0]["obligaciones"]
+    assert Decimal(str(cuotas[1]["capital_original"])) == Decimal("1000000.00")
+    assert Decimal(str(cuotas[1]["ajuste_indexacion"])) > Decimal("0")
+    assert cuotas[1]["estado_indexacion_presentacion"] == "CON_INDICE_APLICADO"
+    assert cuotas[1]["origen_indexacion"] == "AL_NACIMIENTO"
+    assert cuotas[2]["estado_indexacion_presentacion"] == "CON_ERROR"
+    assert cuotas[2]["corrida_relacionada"]["id_corrida_indexacion_financiera"] == corrida
+
+
 def test_consulta_plan_con_dos_compradores_expone_obligados_sin_duplicar(
     client, db_session
 ) -> None:

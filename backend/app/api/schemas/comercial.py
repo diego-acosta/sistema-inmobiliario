@@ -668,11 +668,56 @@ class PlanPagoVentaV2ObligacionIndexacionData(BaseModel):
     tipo_generacion_indexada: str
 
 
+class PlanPagoVentaV2CorridaRelacionadaData(BaseModel):
+    id_corrida_indexacion_financiera: int
+    estado_corrida: str
+    origen_corrida: str
+    estado_elegibilidad: str
+    codigo_error: str | None = None
+
+
+class PlanPagoVentaV2CorridaObligacionData(BaseModel):
+    id_corrida_indexacion_financiera: int
+    id_obligacion_financiera: int
+    estado_elegibilidad: str
+    motivo_exclusion: str | None = None
+    codigo_error: str | None = None
+    detalle_controlado: str | None = None
+
+
+class PlanPagoVentaV2CorridaData(BaseModel):
+    id_corrida_indexacion_financiera: int
+    estado_corrida: str
+    origen_corrida: str
+    codigo_indice_financiero: str
+    periodo_aplicado: date
+    fecha_corte: date
+    fecha_preparacion: datetime
+    fecha_aplicacion: datetime | None = None
+    cantidad_analizada: int
+    cantidad_elegible: int
+    cantidad_excluida: int
+    cantidad_aplicada: int
+    cantidad_error: int
+    capital_total: Decimal
+    ajuste_total: Decimal
+    importe_total: Decimal
+    exclusiones: list[PlanPagoVentaV2CorridaObligacionData]
+    errores: list[PlanPagoVentaV2CorridaObligacionData]
+    obligaciones_afectadas: list[PlanPagoVentaV2CorridaObligacionData]
+
+
 class PlanPagoVentaV2ObligacionIntegralData(ObligacionCronogramaVentaPorBloquesV2Data):
     composiciones: list[PlanPagoVentaV2ObligacionComposicionData]
     obligados: list[PlanPagoVentaV2ObligacionObligadoData]
     indexacion: PlanPagoVentaV2ObligacionIndexacionData | None = None
     numero_cuota_asociada: int | None = None
+    capital_original: Decimal
+    ajuste_indexacion: Decimal
+    importe_vigente: Decimal
+    estado_indexacion_presentacion: str
+    origen_indexacion: str | None = None
+    corrida_relacionada: PlanPagoVentaV2CorridaRelacionadaData | None = None
 
 
 class PlanPagoVentaV2BloqueIntegralData(PlanPagoVentaBloqueV2Data):
@@ -701,6 +746,7 @@ class PlanPagoVentaV2IntegralData(BaseModel):
     generaciones: list[GeneracionCronogramaFinancieroData]
     bloques: list[PlanPagoVentaV2BloqueIntegralData]
     resumen: PlanPagoVentaV2ResumenData
+    corridas_indexacion: list[PlanPagoVentaV2CorridaData]
 
 
 class PlanPagoVentaV2IntegralResponse(BaseModel):

@@ -82,6 +82,21 @@ class PlanPagoVentaV2Repository:
         )
         generaciones = self.get_generaciones_plan_pago_venta_v2(id_plan_pago_venta)
         resumen = self.get_resumen_plan_pago_venta_v2(id_plan_pago_venta)
+        corridas = self.get_corridas_indexacion_v2(id_plan_pago_venta)
+
+        corrida_por_obligacion: dict[int, dict[str, Any]] = {}
+        for corrida in corridas:
+            for afectada in corrida["obligaciones_afectadas"]:
+                # La corrida mas reciente es la referencia de presentacion de la cuota.
+                corrida_por_obligacion[afectada["id_obligacion_financiera"]] = {
+                    "id_corrida_indexacion_financiera": corrida[
+                        "id_corrida_indexacion_financiera"
+                    ],
+                    "estado_corrida": corrida["estado_corrida"],
+                    "origen_corrida": corrida["origen_corrida"],
+                    "estado_elegibilidad": afectada["estado_elegibilidad"],
+                    "codigo_error": afectada["codigo_error"],
+                }
 
         obligaciones_por_bloque: dict[int, list[dict[str, Any]]] = {}
         composiciones_por_obligacion: dict[int, list[dict[str, Any]]] = {}
@@ -97,9 +112,51 @@ class PlanPagoVentaV2Repository:
             ).append(composicion)
 
         for obligacion in obligaciones:
-            obligacion["composiciones"] = composiciones_por_obligacion.get(
+            composiciones_obligacion = composiciones_por_obligacion.get(
                 obligacion["id_obligacion_financiera"], []
             )
+            importes_por_concepto = {
+                composicion["codigo_concepto_financiero"]: composicion[
+                    "importe_componente"
+                ]
+                for composicion in composiciones_obligacion
+            }
+            corrida_relacionada = corrida_por_obligacion.get(
+                obligacion["id_obligacion_financiera"]
+            )
+            obligacion["capital_original"] = importes_por_concepto.get(
+                "CAPITAL_VENTA", Decimal("0")
+            )
+            obligacion["ajuste_indexacion"] = importes_por_concepto.get(
+                "AJUSTE_INDEXACION", Decimal("0")
+            )
+            obligacion["importe_vigente"] = obligacion["importe_total"]
+            obligacion["corrida_relacionada"] = corrida_relacionada
+            if corrida_relacionada and corrida_relacionada["codigo_error"]:
+                obligacion["estado_indexacion_presentacion"] = "CON_ERROR"
+                obligacion["origen_indexacion"] = "CORRIDA_POSTERIOR"
+            elif corrida_relacionada and corrida_relacionada["estado_elegibilidad"] == "EXCLUIDA":
+                obligacion["estado_indexacion_presentacion"] = "EXCLUIDA"
+                obligacion["origen_indexacion"] = None
+            elif obligacion["indexacion"] is not None:
+                obligacion["estado_indexacion_presentacion"] = "CON_INDICE_APLICADO"
+                obligacion["origen_indexacion"] = (
+                    "CORRIDA_POSTERIOR"
+                    if corrida_relacionada
+                    and corrida_relacionada["estado_corrida"] == "APLICADA"
+                    else "AL_NACIMIENTO"
+                )
+            elif obligacion["id_plan_pago_venta_bloque"] in {
+                bloque["id_plan_pago_venta_bloque"]
+                for bloque in bloques
+                if bloque["indexacion"] is not None
+            }:
+                obligacion["estado_indexacion_presentacion"] = "PROYECTADA_SIN_INDICE"
+                obligacion["origen_indexacion"] = None
+            else:
+                obligacion["estado_indexacion_presentacion"] = "NO_REQUIERE_INDICE"
+                obligacion["origen_indexacion"] = None
+            obligacion["composiciones"] = composiciones_obligacion
             obligacion["obligados"] = obligados_por_obligacion.get(
                 obligacion["id_obligacion_financiera"], []
             )
@@ -119,7 +176,70 @@ class PlanPagoVentaV2Repository:
             "generaciones": generaciones,
             "bloques": bloques,
             "resumen": resumen,
+            "corridas_indexacion": corridas,
         }
+
+    def get_corridas_indexacion_v2(
+        self, id_plan_pago_venta: int
+    ) -> list[dict[str, Any]]:
+        cabeceras = self.db.execute(text("""
+            SELECT c.id_corrida_indexacion_financiera, c.estado_corrida,
+                   c.origen_corrida, i.codigo_indice_financiero,
+                   c.periodo_aplicado, c.fecha_corte, c.created_at AS fecha_preparacion,
+                   c.fecha_aplicacion, c.cantidad_analizada, c.cantidad_elegible,
+                   c.cantidad_excluida, c.cantidad_aplicada,
+                   COALESCE(d.cantidad_error, 0) AS cantidad_error,
+                   COALESCE(d.capital_total, 0) AS capital_total,
+                   c.ajuste_nuevo_total AS ajuste_total,
+                   c.importe_total_nuevo AS importe_total
+            FROM corrida_indexacion_financiera c
+            JOIN indice_financiero i ON i.id_indice_financiero = c.id_indice_financiero
+             AND i.deleted_at IS NULL
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) FILTER (WHERE codigo_error IS NOT NULL) AS cantidad_error,
+                       COALESCE(SUM(capital_base), 0) AS capital_total
+                FROM corrida_indexacion_financiera_detalle d
+                WHERE d.id_corrida_indexacion_financiera = c.id_corrida_indexacion_financiera
+                  AND d.deleted_at IS NULL
+            ) d ON TRUE
+            WHERE c.id_plan_pago_venta = :id_plan_pago_venta
+              AND c.deleted_at IS NULL
+            ORDER BY c.created_at ASC, c.id_corrida_indexacion_financiera ASC
+        """), {"id_plan_pago_venta": id_plan_pago_venta}).mappings().all()
+        corridas = [dict(row) for row in cabeceras]
+        if not corridas:
+            return []
+        detalles = self.db.execute(text("""
+            SELECT d.id_corrida_indexacion_financiera, d.id_obligacion_financiera,
+                   d.estado_elegibilidad, d.motivo_exclusion, d.codigo_error,
+                   d.detalle_controlado
+            FROM corrida_indexacion_financiera_detalle d
+            JOIN corrida_indexacion_financiera c
+              ON c.id_corrida_indexacion_financiera = d.id_corrida_indexacion_financiera
+             AND c.deleted_at IS NULL
+            WHERE c.id_plan_pago_venta = :id_plan_pago_venta
+              AND d.deleted_at IS NULL
+            ORDER BY d.id_corrida_indexacion_financiera ASC, d.id_obligacion_financiera ASC
+        """), {"id_plan_pago_venta": id_plan_pago_venta}).mappings().all()
+        detalles_por_corrida: dict[int, list[dict[str, Any]]] = {}
+        for row in detalles:
+            detalle = dict(row)
+            detalles_por_corrida.setdefault(
+                detalle["id_corrida_indexacion_financiera"], []
+            ).append(detalle)
+        for corrida in corridas:
+            detalles_corrida = detalles_por_corrida.get(
+                corrida["id_corrida_indexacion_financiera"], []
+            )
+            corrida["exclusiones"] = [
+                detalle for detalle in detalles_corrida
+                if detalle["estado_elegibilidad"] == "EXCLUIDA"
+            ]
+            corrida["errores"] = [
+                detalle for detalle in detalles_corrida if detalle["codigo_error"] is not None
+            ]
+            corrida["obligaciones_afectadas"] = detalles_corrida
+        return corridas
 
     def get_relacion_generadora_venta(self, id_venta: int) -> dict[str, Any] | None:
         stmt = text("""
