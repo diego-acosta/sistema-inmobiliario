@@ -85,6 +85,7 @@ class PlanPagoVentaV2Repository:
         corridas = self.get_corridas_indexacion_v2(id_plan_pago_venta)
 
         corrida_por_obligacion: dict[int, dict[str, Any]] = {}
+        corrida_aplicada_por_obligacion: dict[int, dict[str, Any]] = {}
         for corrida in corridas:
             for afectada in corrida["obligaciones_afectadas"]:
                 # La corrida mas reciente es la referencia de presentacion de la cuota.
@@ -97,6 +98,10 @@ class PlanPagoVentaV2Repository:
                     "estado_elegibilidad": afectada["estado_elegibilidad"],
                     "codigo_error": afectada["codigo_error"],
                 }
+                if corrida["estado_corrida"] == "APLICADA":
+                    corrida_aplicada_por_obligacion[
+                        afectada["id_obligacion_financiera"]
+                    ] = corrida_por_obligacion[afectada["id_obligacion_financiera"]]
 
         obligaciones_por_bloque: dict[int, list[dict[str, Any]]] = {}
         composiciones_por_obligacion: dict[int, list[dict[str, Any]]] = {}
@@ -118,6 +123,9 @@ class PlanPagoVentaV2Repository:
             corrida_relacionada = corrida_por_obligacion.get(
                 obligacion["id_obligacion_financiera"]
             )
+            corrida_aplicada_vigente = corrida_aplicada_por_obligacion.get(
+                obligacion["id_obligacion_financiera"]
+            )
             obligacion["capital_original"] = sum(
                 (
                     composicion["importe_componente"]
@@ -136,9 +144,18 @@ class PlanPagoVentaV2Repository:
             )
             obligacion["importe_vigente"] = obligacion["importe_total"]
             obligacion["corrida_relacionada"] = corrida_relacionada
+            obligacion["corrida_aplicada_vigente"] = corrida_aplicada_vigente
             if corrida_relacionada and corrida_relacionada["codigo_error"]:
                 obligacion["estado_indexacion_presentacion"] = "CON_ERROR"
-                obligacion["origen_indexacion"] = "CORRIDA_POSTERIOR"
+                obligacion["origen_indexacion"] = (
+                    "CORRIDA_POSTERIOR"
+                    if corrida_aplicada_vigente
+                    else (
+                        "AL_NACIMIENTO"
+                        if obligacion["indexacion"] is not None
+                        else None
+                    )
+                )
             elif corrida_relacionada and corrida_relacionada["estado_elegibilidad"] == "EXCLUIDA":
                 obligacion["estado_indexacion_presentacion"] = "EXCLUIDA"
                 obligacion["origen_indexacion"] = None
@@ -146,8 +163,7 @@ class PlanPagoVentaV2Repository:
                 obligacion["estado_indexacion_presentacion"] = "CON_INDICE_APLICADO"
                 obligacion["origen_indexacion"] = (
                     "CORRIDA_POSTERIOR"
-                    if corrida_relacionada
-                    and corrida_relacionada["estado_corrida"] == "APLICADA"
+                    if corrida_aplicada_vigente
                     else "AL_NACIMIENTO"
                 )
             elif obligacion["id_plan_pago_venta_bloque"] in {
@@ -192,7 +208,9 @@ class PlanPagoVentaV2Repository:
                    c.periodo_aplicado, c.fecha_corte, c.created_at AS fecha_preparacion,
                    c.fecha_aplicacion, c.cantidad_analizada, c.cantidad_elegible,
                    c.cantidad_excluida, c.cantidad_aplicada,
-                   COALESCE(d.cantidad_error, 0) AS cantidad_error,
+                   c.codigo_error, c.etapa_error, c.diagnostico_tecnico,
+                   COALESCE(d.cantidad_error, 0)
+                     + CASE WHEN c.codigo_error IS NULL THEN 0 ELSE 1 END AS cantidad_error,
                    COALESCE(d.capital_analizado_total, 0) AS capital_analizado_total,
                    c.ajuste_nuevo_total AS ajuste_total,
                    c.importe_total_nuevo AS importe_total

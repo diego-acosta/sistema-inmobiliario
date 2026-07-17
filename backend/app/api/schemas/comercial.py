@@ -699,6 +699,9 @@ class PlanPagoVentaV2CorridaData(BaseModel):
     cantidad_excluida: int
     cantidad_aplicada: int
     cantidad_error: int
+    codigo_error: str | None = None
+    etapa_error: str | None = None
+    diagnostico_tecnico: str | None = None
     capital_analizado_total: Decimal
     ajuste_total: Decimal
     importe_total: Decimal
@@ -718,6 +721,7 @@ class PlanPagoVentaV2ObligacionIntegralData(ObligacionCronogramaVentaPorBloquesV
     estado_indexacion_presentacion: str
     origen_indexacion: str | None = None
     corrida_relacionada: PlanPagoVentaV2CorridaRelacionadaData | None = None
+    corrida_aplicada_vigente: PlanPagoVentaV2CorridaRelacionadaData | None = None
 
 
 class PlanPagoVentaV2BloqueIntegralData(PlanPagoVentaBloqueV2Data):

@@ -364,13 +364,35 @@ def test_consulta_plan_expone_corridas_y_resultados_persistidos_por_obligacion(
                 "error": error,
             },
         )
+    corrida_fallida = db_session.execute(
+        text("""
+            INSERT INTO corrida_indexacion_financiera (
+                id_plan_pago_venta, id_plan_pago_venta_bloque,
+                id_plan_pago_venta_bloque_indexacion, id_indice_financiero,
+                id_indice_financiero_valor_aplicado, periodo_aplicado, fecha_corte,
+                origen_corrida, estado_corrida, op_id, hash_corrida,
+                codigo_error, etapa_error, diagnostico_tecnico
+            ) VALUES (
+                :plan, :bloque, :configuracion, :indice, :valor, DATE '2026-07-10',
+                DATE '2026-07-10', 'REINDEXACION_MANUAL', 'FALLIDA',
+                '550e8400-e29b-41d4-a716-446655441101', 'b' || repeat('0', 63),
+                'VERSION_OBLIGACION_INCOMPATIBLE', 'APLICACION', 'Fallo sin detalles'
+            ) RETURNING id_corrida_indexacion_financiera
+        """), {
+            "plan": plan["id_plan_pago_venta"],
+            "bloque": bloque["id_plan_pago_venta_bloque"],
+            "configuracion": configuracion,
+            "indice": id_indice,
+            "valor": id_valor,
+        },
+    ).scalar_one()
     db_session.commit()
 
     response = client.get(URL_GET.format(id_venta=id_venta))
 
     assert response.status_code == 200, response.text
     data = response.json()["data"]
-    assert len(data["corridas_indexacion"]) == 1
+    assert len(data["corridas_indexacion"]) == 2
     corrida_data = data["corridas_indexacion"][0]
     assert corrida_data["id_corrida_indexacion_financiera"] == corrida
     assert corrida_data["estado_corrida"] == "PENDIENTE_APLICACION"
@@ -381,6 +403,13 @@ def test_consulta_plan_expone_corridas_y_resultados_persistidos_por_obligacion(
     assert Decimal(str(corrida_data["ajuste_total"])) == Decimal("100000.00")
     assert len(corrida_data["exclusiones"]) == 1
     assert len(corrida_data["errores"]) == 1
+    corrida_fallida_data = data["corridas_indexacion"][1]
+    assert corrida_fallida_data["id_corrida_indexacion_financiera"] == corrida_fallida
+    assert corrida_fallida_data["cantidad_error"] == 1
+    assert corrida_fallida_data["codigo_error"] == "VERSION_OBLIGACION_INCOMPATIBLE"
+    assert corrida_fallida_data["etapa_error"] == "APLICACION"
+    assert corrida_fallida_data["diagnostico_tecnico"] == "Fallo sin detalles"
+    assert corrida_fallida_data["errores"] == []
     cuotas = data["bloques"][0]["obligaciones"]
     assert Decimal(str(cuotas[1]["capital_original"])) == Decimal("1000050.00")
     assert Decimal(str(cuotas[1]["ajuste_indexacion"])) == Decimal("98663.65")
