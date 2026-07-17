@@ -219,3 +219,27 @@ Permite visualizar parámetros configurados.
 - Endpoints / clasificación HTTP / headers / `If-Match-Version` / idempotencia HTTP / outbox runtime / lock lógico: **NO APLICA**; el incremento es únicamente SQL/infrastructural.
 - Versionado físico y triggers: aplica y queda implementado en ambas tablas.
 - Transacción y rollback: el patch usa una transacción; ante error revierte. La reversión posterior requiere restaurar backup previo porque la limpieza de datos es deliberada.
+
+## Incremento #368 — CRUD write de catálogos maestros
+
+### Estado implementado
+
+- Se implementan exclusivamente los comandos de `catalogo_maestro`: alta, modificación y baja lógica. Los writes de `item_catalogo` permanecen pendientes.
+- `POST /api/v1/administrativo/catalogos` crea el catálogo con versión inicial `1`, metadata CORE-EF y evento `catalogo_maestro_creado`.
+- `PUT /api/v1/administrativo/catalogos/{id_catalogo_maestro}` actualiza código, nombre y descripción mediante `version_registro` esperado y emite `catalogo_maestro_modificado`.
+- `PATCH /api/v1/administrativo/catalogos/{id_catalogo_maestro}/baja` persiste `deleted_at`, incrementa la versión y emite `catalogo_maestro_desactivado`.
+- La baja repetida devuelve el recurso solo para el replay real del mismo `X-Op-Id`; con otro identificador la fila ya no es operable y responde `404`.
+
+### Decisión CORE-EF
+
+Los tres endpoints se clasifican como `COMMAND_WRITE_NEGOCIO`. Exigen el helper común con `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`; update y baja también exigen `If-Match-Version`.
+
+- **Idempotencia:** alta consulta `op_id_alta` y compara el payload completo. Update y baja usan `op_id_ultima_modificacion`; un replay consistente no vuelve a mutar ni a emitir outbox. Un `X-Op-Id` asociado a payload incompatible devuelve `IDEMPOTENT_DUPLICATE`.
+- **Versionado:** la base aplica `version_registro = 1` en alta; los cambios condicionales por id y versión delegan el incremento único al trigger CORE-EF.
+- **Outbox y transacción:** repository persiste cambio y `outbox_event` antes de un único `commit`; cualquier error, incluido el de outbox o constraint, ejecuta rollback de toda la unidad.
+- **Lock lógico:** `NO APLICA`; no existe lock lógico administrativo para esta entidad. El control de incompatibilidad es optimistic locking.
+- **Soft delete:** los read models existentes excluyen `deleted_at IS NOT NULL`; la fila y su código único se conservan. No se implementa reactivación ni reutilización de código.
+
+### NO CONFIRMADO / fuera de alcance
+
+Permanecen **NO CONFIRMADOS** la política futura de reactivación, reutilización de códigos, estado persistido de catálogo, jerarquías e historial funcional. No se implementan writes, activación/desactivación, defaults, vigencias ni configuración contextual de ítems.
