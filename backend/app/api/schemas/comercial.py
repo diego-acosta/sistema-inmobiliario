@@ -699,7 +699,7 @@ class PlanPagoVentaV2CorridaData(BaseModel):
     cantidad_excluida: int
     cantidad_aplicada: int
     cantidad_error: int
-    capital_total: Decimal
+    capital_analizado_total: Decimal
     ajuste_total: Decimal
     importe_total: Decimal
     exclusiones: list[PlanPagoVentaV2CorridaObligacionData]

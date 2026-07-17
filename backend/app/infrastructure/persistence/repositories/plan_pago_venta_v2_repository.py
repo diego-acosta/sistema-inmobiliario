@@ -115,20 +115,24 @@ class PlanPagoVentaV2Repository:
             composiciones_obligacion = composiciones_por_obligacion.get(
                 obligacion["id_obligacion_financiera"], []
             )
-            importes_por_concepto = {
-                composicion["codigo_concepto_financiero"]: composicion[
-                    "importe_componente"
-                ]
-                for composicion in composiciones_obligacion
-            }
             corrida_relacionada = corrida_por_obligacion.get(
                 obligacion["id_obligacion_financiera"]
             )
-            obligacion["capital_original"] = importes_por_concepto.get(
-                "CAPITAL_VENTA", Decimal("0")
+            obligacion["capital_original"] = sum(
+                (
+                    composicion["importe_componente"]
+                    for composicion in composiciones_obligacion
+                    if composicion["codigo_concepto_financiero"] == "CAPITAL_VENTA"
+                ),
+                Decimal("0"),
             )
-            obligacion["ajuste_indexacion"] = importes_por_concepto.get(
-                "AJUSTE_INDEXACION", Decimal("0")
+            obligacion["ajuste_indexacion"] = sum(
+                (
+                    composicion["importe_componente"]
+                    for composicion in composiciones_obligacion
+                    if composicion["codigo_concepto_financiero"] == "AJUSTE_INDEXACION"
+                ),
+                Decimal("0"),
             )
             obligacion["importe_vigente"] = obligacion["importe_total"]
             obligacion["corrida_relacionada"] = corrida_relacionada
@@ -189,7 +193,7 @@ class PlanPagoVentaV2Repository:
                    c.fecha_aplicacion, c.cantidad_analizada, c.cantidad_elegible,
                    c.cantidad_excluida, c.cantidad_aplicada,
                    COALESCE(d.cantidad_error, 0) AS cantidad_error,
-                   COALESCE(d.capital_total, 0) AS capital_total,
+                   COALESCE(d.capital_analizado_total, 0) AS capital_analizado_total,
                    c.ajuste_nuevo_total AS ajuste_total,
                    c.importe_total_nuevo AS importe_total
             FROM corrida_indexacion_financiera c
@@ -197,7 +201,7 @@ class PlanPagoVentaV2Repository:
              AND i.deleted_at IS NULL
             LEFT JOIN LATERAL (
                 SELECT COUNT(*) FILTER (WHERE codigo_error IS NOT NULL) AS cantidad_error,
-                       COALESCE(SUM(capital_base), 0) AS capital_total
+                       COALESCE(SUM(capital_base), 0) AS capital_analizado_total
                 FROM corrida_indexacion_financiera_detalle d
                 WHERE d.id_corrida_indexacion_financiera = c.id_corrida_indexacion_financiera
                   AND d.deleted_at IS NULL

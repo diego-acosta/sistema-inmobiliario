@@ -21,7 +21,7 @@ def _apply_reserva_multiobjeto_patch(db_session) -> None:
 def _crear_rol_participacion_activo(
     db_session,
     *,
-    id_rol_participacion: int,
+    id_rol_participacion: int | None = None,
     codigo_rol: str | None = None,
 ) -> int:
     codigo = codigo_rol or f"ROL-COM-{id_rol_participacion}"
@@ -40,11 +40,10 @@ def _crear_rol_participacion_activo(
     if existing is not None:
         return existing["id_rol_participacion"]
 
-    db_session.execute(
+    return db_session.execute(
         text(
             """
             INSERT INTO rol_participacion (
-                id_rol_participacion,
                 uid_global,
                 version_registro,
                 created_at,
@@ -59,7 +58,6 @@ def _crear_rol_participacion_activo(
                 estado_rol
             )
             VALUES (
-                :id_rol_participacion,
                 gen_random_uuid(),
                 1,
                 CURRENT_TIMESTAMP,
@@ -73,16 +71,15 @@ def _crear_rol_participacion_activo(
                 NULL,
                 'ACTIVO'
             )
+            RETURNING id_rol_participacion
             """
         ),
         {
-            "id_rol_participacion": id_rol_participacion,
             "op_id": HEADERS["X-Op-Id"],
             "codigo_rol": codigo,
             "nombre_rol": f"Rol Comercial {codigo}",
         },
-    )
-    return id_rol_participacion
+    ).scalar_one()
 
 
 def _crear_persona(client, *, nombre: str, apellido: str) -> int:

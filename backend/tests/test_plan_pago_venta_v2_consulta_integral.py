@@ -288,6 +288,36 @@ def test_consulta_plan_expone_corridas_y_resultados_persistidos_por_obligacion(
         """),
         {"bloque": bloque["id_plan_pago_venta_bloque"]},
     ).scalar_one()
+    id_obligacion_repetida = obligaciones[1]["id_obligacion_financiera"]
+    for codigo_concepto, importe in (
+        ("CAPITAL_VENTA", Decimal("50.00")),
+        ("AJUSTE_INDEXACION", Decimal("20.00")),
+    ):
+        db_session.execute(
+            text("""
+                INSERT INTO composicion_obligacion (
+                    id_obligacion_financiera, id_concepto_financiero,
+                    orden_composicion, estado_composicion_obligacion,
+                    importe_componente, saldo_componente, moneda_componente
+                )
+                SELECT :obligacion, cf.id_concepto_financiero,
+                       COALESCE((
+                           SELECT MAX(co.orden_composicion) + 1
+                           FROM composicion_obligacion co
+                           WHERE co.id_obligacion_financiera = :obligacion
+                             AND co.deleted_at IS NULL
+                       ), 1),
+                       'ACTIVA', :importe, :importe, 'ARS'
+                FROM concepto_financiero cf
+                WHERE cf.codigo_concepto_financiero = :codigo_concepto
+                  AND cf.deleted_at IS NULL
+            """),
+            {
+                "obligacion": id_obligacion_repetida,
+                "codigo_concepto": codigo_concepto,
+                "importe": importe,
+            },
+        )
     corrida = db_session.execute(
         text("""
             INSERT INTO corrida_indexacion_financiera (
@@ -345,13 +375,15 @@ def test_consulta_plan_expone_corridas_y_resultados_persistidos_por_obligacion(
     assert corrida_data["id_corrida_indexacion_financiera"] == corrida
     assert corrida_data["estado_corrida"] == "PENDIENTE_APLICACION"
     assert corrida_data["cantidad_error"] == 1
-    assert Decimal(str(corrida_data["capital_total"])) == Decimal("2000000.00")
+    assert Decimal(str(corrida_data["capital_analizado_total"])) == Decimal(
+        "2000000.00"
+    )
     assert Decimal(str(corrida_data["ajuste_total"])) == Decimal("100000.00")
     assert len(corrida_data["exclusiones"]) == 1
     assert len(corrida_data["errores"]) == 1
     cuotas = data["bloques"][0]["obligaciones"]
-    assert Decimal(str(cuotas[1]["capital_original"])) == Decimal("1000000.00")
-    assert Decimal(str(cuotas[1]["ajuste_indexacion"])) > Decimal("0")
+    assert Decimal(str(cuotas[1]["capital_original"])) == Decimal("1000050.00")
+    assert Decimal(str(cuotas[1]["ajuste_indexacion"])) == Decimal("98663.65")
     assert cuotas[1]["estado_indexacion_presentacion"] == "CON_INDICE_APLICADO"
     assert cuotas[1]["origen_indexacion"] == "AL_NACIMIENTO"
     assert cuotas[2]["estado_indexacion_presentacion"] == "CON_ERROR"
