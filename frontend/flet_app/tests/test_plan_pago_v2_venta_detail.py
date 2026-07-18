@@ -154,7 +154,7 @@ def _plan_data() -> dict[str, Any]:
         "corridas_indexacion": [
             {
                 "id_corrida_indexacion_financiera": 10,
-                "estado_corrida": "FALLIDA",
+                "estado_corrida": "PENDIENTE_APLICACION",
                 "origen_corrida": "PUBLICACION_INDICE",
                 "codigo_indice_financiero": "CAC",
                 "periodo_aplicado": "2026-02-01",
@@ -166,9 +166,9 @@ def _plan_data() -> dict[str, Any]:
                 "cantidad_excluida": 1,
                 "cantidad_aplicada": 0,
                 "cantidad_error": 1,
-                "codigo_error": "ERR_CAB",
-                "etapa_error": "PREPARACION",
-                "diagnostico_tecnico": "Falla controlada",
+                "codigo_error": None,
+                "etapa_error": None,
+                "diagnostico_tecnico": None,
                 "capital_analizado_total": "2000",
                 "ajuste_total": "100",
                 "importe_total": "2100",
@@ -193,7 +193,31 @@ def _plan_data() -> dict[str, Any]:
                     }
                 ],
                 "obligaciones_afectadas": [],
-            }
+            },
+            {
+                "id_corrida_indexacion_financiera": 11,
+                "estado_corrida": "FALLIDA",
+                "origen_corrida": "PUBLICACION_INDICE",
+                "codigo_indice_financiero": "CAC",
+                "periodo_aplicado": "2026-03-01",
+                "fecha_corte": "2026-03-31",
+                "fecha_preparacion": "2026-04-01T10:00:00",
+                "fecha_aplicacion": None,
+                "cantidad_analizada": 0,
+                "cantidad_elegible": 0,
+                "cantidad_excluida": 0,
+                "cantidad_aplicada": 0,
+                "cantidad_error": 1,
+                "codigo_error": "ERR_CAB",
+                "etapa_error": "PREPARACION",
+                "diagnostico_tecnico": "Falla controlada",
+                "capital_analizado_total": "0",
+                "ajuste_total": "0",
+                "importe_total": "0",
+                "exclusiones": [],
+                "errores": [],
+                "obligaciones_afectadas": [],
+            },
         ],
     }
 
@@ -244,6 +268,9 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Hay corridas pendientes de aplicación." in text
     assert "ID 9 · APLICADA" in text
     assert "Historial de corridas" in text
+    assert "ID 11" in text
+    assert "FALLIDA" in text
+    assert "Hay corridas fallidas." in text
     assert "ERR_CAB" in text
     assert "Exclusiones" in text
     assert "Errores por obligación" in text
