@@ -809,7 +809,6 @@ def test_confirmar_venta_directa_comprador_invalido(client, db_session) -> None:
     base = _crear_base_directa(client, db_session, codigo="ROL")
     id_rol_no_comprador = _crear_rol_participacion_activo(
         db_session,
-        id_rol_participacion=9950,
         codigo_rol="VENDEDOR-VD-COMP",
     )
     base["id_rol"] = id_rol_no_comprador
