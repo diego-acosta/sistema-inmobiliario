@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+from typing import Any
+
+import flet as ft
+
+from app.api_client import ApiClient, ApiResult
+from app.pages.ventas_page import VentaDetailView, _plan_pago_v2_integral_view
+
+
+def _walk(control: object):
+    yield control
+    if isinstance(control, ft.Control):
+        for attr in ("controls", "tabs", "rows", "cells", "columns"):
+            for child in getattr(control, attr, None) or []:
+                yield from _walk(child)
+        child = getattr(control, "content", None)
+        if child is not None:
+            yield from _walk(child)
+
+
+def _texts(control: ft.Control) -> str:
+    values: list[str] = []
+    for item in _walk(control):
+        value = getattr(item, "value", None) or getattr(item, "text", None)
+        if isinstance(value, str):
+            values.append(value)
+    return "\n".join(values)
+
+
+class FakeApi:
+    def __init__(self, plan_result: ApiResult) -> None:
+        self.plan_result = plan_result
+        self.plan_calls: list[int] = []
+
+    def get_venta_detalle_integral(self, id_venta: int) -> ApiResult:
+        return ApiResult(
+            True,
+            data={
+                "id_venta": id_venta,
+                "codigo_venta": "V-371",
+                "estado_venta": "CONFIRMADA",
+                "fecha_venta": "2026-07-01",
+                "moneda": "ARS",
+                "condiciones_comerciales": {"moneda": "ARS", "monto_total": "1000"},
+                "resumen_financiero": {},
+                "objetos": [],
+                "partes": [],
+                "obligaciones_financieras": [],
+            },
+        )
+
+    def get_plan_pago_venta_v2_integral(self, id_venta: int) -> ApiResult:
+        self.plan_calls.append(id_venta)
+        return self.plan_result
+
+
+def _plan_data() -> dict[str, Any]:
+    corrida_rel = {
+        "id_corrida_indexacion_financiera": 10,
+        "estado_corrida": "PREVISUALIZADA",
+        "origen_corrida": "PUBLICACION_INDICE",
+        "estado_elegibilidad": "ELEGIBLE",
+        "codigo_error": None,
+    }
+    corrida_aplicada = {
+        "id_corrida_indexacion_financiera": 9,
+        "estado_corrida": "APLICADA",
+        "origen_corrida": "CORRIDA_POSTERIOR",
+        "estado_elegibilidad": "ELEGIBLE",
+        "codigo_error": None,
+    }
+    return {
+        "id_venta": 371,
+        "plan_pago_venta": {
+            "id_plan_pago_venta": 20,
+            "metodo_plan_pago": "PLAN_POR_BLOQUES",
+            "estado_plan_pago": "GENERADO",
+            "moneda": "ARS",
+        },
+        "resumen": {
+            "cantidad_bloques": 1,
+            "cantidad_obligaciones": 2,
+            "total_capital": "1000.00",
+            "total_interes": "0",
+            "total_ajuste_indexacion": "100.1234",
+            "total_obligaciones": "1100.1234",
+            "cantidad_obligaciones_con_indexacion": 1,
+            "cantidad_obligados_total": 2,
+            "cantidad_obligaciones_con_multiples_obligados": 1,
+            "cantidad_obligaciones_proyectadas_sin_indexacion": 1,
+        },
+        "bloques": [
+            {
+                "numero_bloque": 1,
+                "etiqueta_bloque": "Indexado",
+                "tipo_bloque": "TRAMO_CUOTAS",
+                "metodo_liquidacion": "INDEXACION",
+                "importe_total_bloque": "1100.1234",
+                "indexacion": {
+                    "codigo_indice_financiero": "CAC",
+                    "nombre_indice_financiero": "CAC",
+                    "fecha_base_indice": "2026-01-01",
+                    "valor_base_indice": "2.5",
+                },
+                "obligaciones": [
+                    {
+                        "id_obligacion_financiera": 100,
+                        "numero_obligacion": 1,
+                        "numero_cuota_asociada": 1,
+                        "tipo_item_cronograma": "CUOTA",
+                        "fecha_vencimiento": "2026-02-10",
+                        "capital_original": "1000",
+                        "ajuste_indexacion": "100.1234",
+                        "importe_vigente": "1100.1234",
+                        "saldo_pendiente": "1100.1234",
+                        "moneda": "ARS",
+                        "estado_obligacion": "PENDIENTE",
+                        "estado_indexacion_presentacion": "CON_INDICE_APLICADO",
+                        "origen_indexacion": "AL_NACIMIENTO",
+                        "indexacion": {
+                            "id_indice_financiero": 1,
+                            "fecha_base_indice": "2026-01-01",
+                            "valor_base_indice": "2.5",
+                            "fecha_aplicacion_indice": "2026-02-01",
+                            "valor_aplicado_indice": "2.75000000",
+                            "coeficiente_indexacion": "1.10000000",
+                            "modo_indexacion": "POR_COEFICIENTE",
+                        },
+                        "corrida_relacionada": corrida_rel,
+                        "corrida_aplicada_vigente": corrida_aplicada,
+                    },
+                    {
+                        "id_obligacion_financiera": 101,
+                        "numero_obligacion": 2,
+                        "tipo_item_cronograma": "CUOTA",
+                        "fecha_vencimiento": "2026-03-10",
+                        "capital_original": "1000",
+                        "ajuste_indexacion": "0",
+                        "importe_vigente": "1000",
+                        "saldo_pendiente": "1000",
+                        "moneda": "ARS",
+                        "estado_obligacion": "PENDIENTE",
+                        "estado_indexacion_presentacion": "PROYECTADA_SIN_INDICE",
+                        "origen_indexacion": None,
+                        "indexacion": None,
+                        "corrida_relacionada": None,
+                        "corrida_aplicada_vigente": None,
+                    },
+                ],
+            }
+        ],
+        "corridas_indexacion": [
+            {
+                "id_corrida_indexacion_financiera": 10,
+                "estado_corrida": "FALLIDA",
+                "origen_corrida": "PUBLICACION_INDICE",
+                "codigo_indice_financiero": "CAC",
+                "periodo_aplicado": "2026-02-01",
+                "fecha_corte": "2026-02-28",
+                "fecha_preparacion": "2026-03-01T10:00:00",
+                "fecha_aplicacion": None,
+                "cantidad_analizada": 2,
+                "cantidad_elegible": 1,
+                "cantidad_excluida": 1,
+                "cantidad_aplicada": 0,
+                "cantidad_error": 1,
+                "codigo_error": "ERR_CAB",
+                "etapa_error": "PREPARACION",
+                "diagnostico_tecnico": "Falla controlada",
+                "capital_analizado_total": "2000",
+                "ajuste_total": "100",
+                "importe_total": "2100",
+                "exclusiones": [
+                    {
+                        "id_corrida_indexacion_financiera": 10,
+                        "id_obligacion_financiera": 101,
+                        "estado_elegibilidad": "EXCLUIDA",
+                        "motivo_exclusion": "SIN_INDICE",
+                        "codigo_error": None,
+                        "detalle_controlado": "No publicado",
+                    }
+                ],
+                "errores": [
+                    {
+                        "id_corrida_indexacion_financiera": 10,
+                        "id_obligacion_financiera": 100,
+                        "estado_elegibilidad": "ERROR",
+                        "motivo_exclusion": None,
+                        "codigo_error": "VALOR_INVALIDO",
+                        "detalle_controlado": "Valor inválido",
+                    }
+                ],
+                "obligaciones_afectadas": [],
+            }
+        ],
+    }
+
+
+def test_api_client_get_plan_pago_v2_es_readlike_sin_headers(monkeypatch) -> None:
+    captured = {}
+
+    def fake_get(self, path, params=None, *, preserve_envelope=False):
+        captured.update(
+            {"path": path, "params": params, "preserve_envelope": preserve_envelope}
+        )
+        return ApiResult(True, data=_plan_data())
+
+    monkeypatch.setattr(ApiClient, "_get", fake_get)
+    result = ApiClient(base_url="http://test").get_plan_pago_venta_v2_integral(371)
+    assert result.success is True
+    assert captured == {
+        "path": "/api/v1/ventas/371/plan-pago-v2",
+        "params": None,
+        "preserve_envelope": False,
+    }
+
+
+def test_plan_pago_v2_not_found_muestra_vacio_amigable() -> None:
+    control = _plan_pago_v2_integral_view(
+        ApiResult(
+            False,
+            status_code=404,
+            error_code="NOT_FOUND_PLAN_PAGO_V2",
+            error_message="HTTP 404",
+        )
+    )
+    text = _texts(control)
+    assert "todavía no tiene un Plan Pago V2 asociado" in text
+    assert "HTTP 404" not in text
+
+
+def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    text = _texts(control)
+    assert "Plan Pago V2" not in text  # el título lo agrega la ficha contenedora
+    assert "QUERY_READLIKE" in text
+    assert "ARS 1.100,12" in text
+    assert "Pendiente de índice" in text
+    assert "Indexada" in text
+    assert "Al nacimiento" in text
+    assert "ID 10 · PREVISUALIZADA" in text
+    assert "ID 9 · APLICADA" in text
+    assert "Historial de corridas" in text
+    assert "ERR_CAB" in text
+    assert "Exclusiones" in text
+    assert "Errores por obligación" in text
+    assert "Preparar" not in text
+    assert "Aplicar" not in text
+    assert "Confirmar corrida" not in text
+
+
+def test_ficha_venta_consulta_e_integra_plan_pago_v2() -> None:
+    api = FakeApi(ApiResult(True, data=_plan_data()))
+    control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
+    text = _texts(control)
+    assert api.plan_calls == [371]
+    assert "Plan Pago V2" in text
+    assert "Historial de corridas" in text
+    assert "Nueva corrida" not in text
