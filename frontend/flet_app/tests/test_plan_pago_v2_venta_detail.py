@@ -5,6 +5,7 @@ from typing import Any
 import flet as ft
 
 from app.api_client import ApiClient, ApiResult
+from app.components.loading_state import DeferredLoadingContainer
 from app.pages.ventas_page import VentaDetailView, _plan_pago_v2_integral_view
 
 
@@ -58,7 +59,7 @@ class FakeApi:
 def _plan_data() -> dict[str, Any]:
     corrida_rel = {
         "id_corrida_indexacion_financiera": 10,
-        "estado_corrida": "PREVISUALIZADA",
+        "estado_corrida": "PENDIENTE_APLICACION",
         "origen_corrida": "PUBLICACION_INDICE",
         "estado_elegibilidad": "ELEGIBLE",
         "codigo_error": None,
@@ -239,7 +240,8 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Pendiente de índice" in text
     assert "Indexada" in text
     assert "Al nacimiento" in text
-    assert "ID 10 · PREVISUALIZADA" in text
+    assert "ID 10 · PENDIENTE_APLICACION" in text
+    assert "Hay corridas pendientes de aplicación." in text
     assert "ID 9 · APLICADA" in text
     assert "Historial de corridas" in text
     assert "ERR_CAB" in text
@@ -250,11 +252,99 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Confirmar corrida" not in text
 
 
-def test_ficha_venta_consulta_e_integra_plan_pago_v2() -> None:
+class FakeMountedPage:
+    def __init__(self) -> None:
+        self.updated: list[ft.Control] = []
+
+    def run_thread(self, callback):
+        callback()
+
+    def update(self, control):
+        self.updated.append(control)
+
+
+def _find_deferred_loader(control: ft.Control) -> DeferredLoadingContainer:
+    for item in _walk(control):
+        if isinstance(item, DeferredLoadingContainer):
+            return item
+    raise AssertionError("No se encontró DeferredLoadingContainer")
+
+
+def test_ficha_venta_muestra_carga_inicial_y_no_bloquea_detalle_principal() -> None:
     api = FakeApi(ApiResult(True, data=_plan_data()))
     control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
     text = _texts(control)
-    assert api.plan_calls == [371]
+    assert api.plan_calls == []
+    assert "V-371" in text
     assert "Plan Pago V2" in text
-    assert "Historial de corridas" in text
+    assert "Cargando Plan Pago V2" in text
+    assert "Historial de corridas" not in text
     assert "Nueva corrida" not in text
+
+
+def test_loader_plan_pago_v2_consulta_una_vez_y_reemplaza_por_contenido(
+    monkeypatch,
+) -> None:
+    api = FakeApi(ApiResult(True, data=_plan_data()))
+    control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
+    loader = _find_deferred_loader(control)
+
+    fake_page = FakeMountedPage()
+    monkeypatch.setattr(
+        "app.components.loading_state.get_control_page", lambda _: fake_page
+    )
+
+    loader.did_mount()
+    loader.did_mount()
+
+    text = _texts(loader)
+    assert api.plan_calls == [371]
+    assert "Historial de corridas" in text
+    assert "Hay corridas pendientes de aplicación." in text
+    assert fake_page.updated
+
+
+def test_loader_plan_pago_v2_reemplaza_por_vacio_amigable(monkeypatch) -> None:
+    api = FakeApi(
+        ApiResult(
+            False,
+            status_code=404,
+            error_code="NOT_FOUND_PLAN_PAGO_V2",
+            error_message="HTTP 404",
+        )
+    )
+    control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
+    loader = _find_deferred_loader(control)
+    monkeypatch.setattr(
+        "app.components.loading_state.get_control_page", lambda _: FakeMountedPage()
+    )
+
+    loader.did_mount()
+
+    text = _texts(loader)
+    assert api.plan_calls == [371]
+    assert "todavía no tiene un Plan Pago V2 asociado" in text
+    assert "HTTP 404" not in text
+
+
+def test_loader_plan_pago_v2_reemplaza_por_error_controlado(monkeypatch) -> None:
+    api = FakeApi(
+        ApiResult(
+            False,
+            status_code=500,
+            error_code="INTERNAL_ERROR",
+            error_message="HTTP 500 | INTERNAL_ERROR",
+        )
+    )
+    control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
+    loader = _find_deferred_loader(control)
+    monkeypatch.setattr(
+        "app.components.loading_state.get_control_page", lambda _: FakeMountedPage()
+    )
+
+    loader.did_mount()
+
+    text = _texts(loader)
+    assert api.plan_calls == [371]
+    assert "HTTP 500 | INTERNAL_ERROR" in text
+    assert "Aplicar" not in text

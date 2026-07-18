@@ -205,7 +205,6 @@ class VentaDetailView:
             return _detail_error(self.on_navigate, result.error_message)
 
         data = result.data if isinstance(result.data, dict) else {}
-        plan_pago_v2_result = self.api.get_plan_pago_venta_v2_integral(self.id_venta)
         technical_detail = _technical_detail_collapsible(data)
         return ft.Column(
             controls=[
@@ -248,8 +247,13 @@ class VentaDetailView:
                                     detail_section(
                                         "Plan Pago V2",
                                         [
-                                            _plan_pago_v2_integral_view(
-                                                plan_pago_v2_result
+                                            DeferredLoadingContainer(
+                                                lambda: _plan_pago_v2_integral_view(
+                                                    self.api.get_plan_pago_venta_v2_integral(
+                                                        self.id_venta
+                                                    )
+                                                ),
+                                                message="Cargando Plan Pago V2...",
                                             )
                                         ],
                                     ),
@@ -663,8 +667,8 @@ def _plan_pago_v2_interface_states(
     ):
         messages.append("Plan indexado sin corridas registradas.")
     estados = {str(c.get("estado_corrida") or "").upper() for c in corridas}
-    if "PREVISUALIZADA" in estados or "PENDIENTE" in estados:
-        messages.append("Hay corridas pendientes/previsualizadas.")
+    if "PENDIENTE_APLICACION" in estados:
+        messages.append("Hay corridas pendientes de aplicación.")
     if "APLICADA" in estados:
         messages.append("Hay corridas aplicadas.")
     if "FALLIDA" in estados:
