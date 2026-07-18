@@ -98,10 +98,34 @@ class PlanPagoVentaV2Repository:
                     "estado_elegibilidad": afectada["estado_elegibilidad"],
                     "codigo_error": afectada["codigo_error"],
                 }
-                if corrida["estado_corrida"] == "APLICADA":
-                    corrida_aplicada_por_obligacion[
+                aplicada_efectivamente = (
+                    corrida["estado_corrida"] == "APLICADA"
+                    and afectada["estado_elegibilidad"] == "ELEGIBLE"
+                    and afectada["codigo_error"] is None
+                    and afectada["version_resultante"] is not None
+                    and afectada["id_obligacion_financiera_indexacion"] is not None
+                )
+                if aplicada_efectivamente:
+                    actual = corrida_aplicada_por_obligacion.get(
                         afectada["id_obligacion_financiera"]
-                    ] = corrida_por_obligacion[afectada["id_obligacion_financiera"]]
+                    )
+                    clave_actual = (
+                        actual["fecha_aplicacion"],
+                        actual["id_corrida_indexacion_financiera"],
+                    ) if actual else None
+                    clave_nueva = (
+                        corrida["fecha_aplicacion"],
+                        corrida["id_corrida_indexacion_financiera"],
+                    )
+                    if clave_actual is None or clave_nueva > clave_actual:
+                        corrida_aplicada_por_obligacion[
+                            afectada["id_obligacion_financiera"]
+                        ] = {
+                            **corrida_por_obligacion[
+                                afectada["id_obligacion_financiera"]
+                            ],
+                            "fecha_aplicacion": corrida["fecha_aplicacion"],
+                        }
 
         obligaciones_por_bloque: dict[int, list[dict[str, Any]]] = {}
         composiciones_por_obligacion: dict[int, list[dict[str, Any]]] = {}
@@ -234,7 +258,8 @@ class PlanPagoVentaV2Repository:
         detalles = self.db.execute(text("""
             SELECT d.id_corrida_indexacion_financiera, d.id_obligacion_financiera,
                    d.estado_elegibilidad, d.motivo_exclusion, d.codigo_error,
-                   d.detalle_controlado
+                   d.detalle_controlado, d.version_resultante,
+                   d.id_obligacion_financiera_indexacion
             FROM corrida_indexacion_financiera_detalle d
             JOIN corrida_indexacion_financiera c
               ON c.id_corrida_indexacion_financiera = d.id_corrida_indexacion_financiera
