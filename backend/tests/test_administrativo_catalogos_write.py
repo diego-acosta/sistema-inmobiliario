@@ -81,7 +81,7 @@ def test_alta_rechaza_headers_y_codigo_duplicado(client):
     assert _create(client, payload=payload).status_code == 201
     duplicate = _create(client, payload=payload)
     assert duplicate.status_code == 409
-    assert duplicate.json()["error_code"] == "TECHNICAL_INCONSISTENCY"
+    assert duplicate.json()["error_code"] == "DUPLICATE_CODE"
 
 
 def test_update_versionado_idempotencia_y_metadata(client, db_session):
@@ -158,7 +158,7 @@ def test_update_rechaza_codigo_duplicado_y_catalogo_dado_de_baja(client):
         headers=_headers(version=second["version_registro"]),
     )
     assert duplicate.status_code == 409
-    assert duplicate.json()["error_code"] == "TECHNICAL_INCONSISTENCY"
+    assert duplicate.json()["error_code"] == "DUPLICATE_CODE"
     baja = client.patch(
         f"/api/v1/administrativo/catalogos/{first['id_catalogo_maestro']}/baja",
         headers=_headers(version=first["version_registro"]),
@@ -190,3 +190,129 @@ def test_falla_outbox_en_update_revierte_cambio(client, db_session, monkeypatch)
         FROM catalogo_maestro WHERE id_catalogo_maestro = :id
     """), {"id": created["id_catalogo_maestro"]}).mappings().one()
     assert dict(persisted) == dict(original)
+
+
+def test_alta_colision_op_id_despues_de_integrity_error_devuelve_replay(
+    client, db_session, monkeypatch
+):
+    payload = _payload("RACE-REPLAY")
+    op_id = str(uuid4())
+    created = _create(client, op_id=op_id, payload=payload)
+    assert created.status_code == 201
+    first = created.json()["data"]
+
+    from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
+        CatalogoMaestroRepository,
+    )
+
+    original = CatalogoMaestroRepository.get_by_op_id_alta
+    calls = 0
+
+    def _miss_first_lookup(self, requested_op_id):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return None
+        return original(self, requested_op_id)
+
+    monkeypatch.setattr(
+        CatalogoMaestroRepository, "get_by_op_id_alta", _miss_first_lookup
+    )
+    monkeypatch.setattr(
+        CatalogoMaestroRepository,
+        "_constraint_name",
+        staticmethod(lambda exc: "ux_catalogo_maestro_op_id_alta"),
+    )
+    replay = _create(client, op_id=op_id, payload=payload)
+
+    assert calls == 2
+    assert replay.status_code == 201
+    assert replay.json()["data"] == first
+    assert db_session.execute(
+        text("SELECT COUNT(*) FROM catalogo_maestro WHERE op_id_alta = CAST(:op AS uuid)"),
+        {"op": op_id},
+    ).scalar_one() == 1
+    assert len(_events(db_session, "catalogo_maestro_creado", first["id_catalogo_maestro"])) == 1
+    assert replay.json()["data"]["version_registro"] == 1
+
+
+def test_alta_colision_op_id_despues_de_integrity_error_rechaza_payload_incompatible(
+    client, db_session, monkeypatch
+):
+    payload = _payload("RACE-CONFLICT")
+    op_id = str(uuid4())
+    created = _create(client, op_id=op_id, payload=payload)
+    assert created.status_code == 201
+    first = created.json()["data"]
+
+    from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
+        CatalogoMaestroRepository,
+    )
+
+    original = CatalogoMaestroRepository.get_by_op_id_alta
+    calls = 0
+
+    def _miss_first_lookup(self, requested_op_id):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return None
+        return original(self, requested_op_id)
+
+    monkeypatch.setattr(
+        CatalogoMaestroRepository, "get_by_op_id_alta", _miss_first_lookup
+    )
+    monkeypatch.setattr(
+        CatalogoMaestroRepository,
+        "_constraint_name",
+        staticmethod(lambda exc: "ux_catalogo_maestro_op_id_alta"),
+    )
+    conflict = _create(
+        client,
+        op_id=op_id,
+        payload={**payload, "nombre_catalogo_maestro": "Payload incompatible"},
+    )
+
+    assert calls == 2
+    assert conflict.status_code == 409
+    assert conflict.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    row = db_session.execute(
+        text("""
+            SELECT nombre_catalogo_maestro, version_registro
+            FROM catalogo_maestro WHERE id_catalogo_maestro = :id
+        """),
+        {"id": first["id_catalogo_maestro"]},
+    ).mappings().one()
+    assert row["nombre_catalogo_maestro"] == payload["nombre_catalogo_maestro"]
+    assert row["version_registro"] == 1
+    assert len(_events(db_session, "catalogo_maestro_creado", first["id_catalogo_maestro"])) == 1
+
+
+def test_falla_outbox_en_alta_revierte_catalogo_y_permite_reutilizar_codigo(
+    client, db_session, monkeypatch
+):
+    payload = _payload("CREATE-OUTBOX-FAIL")
+    op_id = str(uuid4())
+    from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
+
+    with monkeypatch.context() as context:
+        context.setattr(
+            OutboxRepository,
+            "add_event",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("outbox falló")),
+        )
+        failed = _create(client, op_id=op_id, payload=payload)
+
+    assert failed.status_code == 500
+    assert db_session.execute(
+        text("SELECT COUNT(*) FROM catalogo_maestro WHERE codigo_catalogo_maestro = :codigo"),
+        {"codigo": payload["codigo_catalogo_maestro"]},
+    ).scalar_one() == 0
+    assert db_session.execute(
+        text("SELECT COUNT(*) FROM catalogo_maestro WHERE op_id_alta = CAST(:op AS uuid)"),
+        {"op": op_id},
+    ).scalar_one() == 0
+    assert db_session.execute(text("SELECT COUNT(*) FROM outbox_event")).scalar_one() == 0
+
+    retry = _create(client, payload=payload)
+    assert retry.status_code == 201

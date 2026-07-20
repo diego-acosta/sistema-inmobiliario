@@ -50,6 +50,7 @@ from app.api.schemas.administrativo import (
 )
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroConcurrencyError,
+    CatalogoMaestroDuplicateCodeError,
     CatalogoMaestroIdempotencyConflictError,
     CatalogoMaestroRepository,
 )
@@ -156,8 +157,8 @@ def create_catalogo_maestro(
         catalogo = CatalogoMaestroRepository(db).create(request.model_dump(), core)
     except CatalogoMaestroIdempotencyConflictError as exc:
         return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
-    except IntegrityError:
-        return _error(409, "TECHNICAL_INCONSISTENCY", "Ya existe un catálogo maestro con ese código.")
+    except CatalogoMaestroDuplicateCodeError as exc:
+        return _error(409, "DUPLICATE_CODE", str(exc))
     except Exception as exc:
         return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo crear el catálogo maestro.", {"error": str(exc)})
     return CatalogoMaestroCreateResponse(data=CatalogoMaestroWriteData(**catalogo))
@@ -191,8 +192,8 @@ def update_catalogo_maestro(
         return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
     except CatalogoMaestroConcurrencyError as exc:
         return _error(409, "CONCURRENCY_ERROR", str(exc))
-    except IntegrityError:
-        return _error(409, "TECHNICAL_INCONSISTENCY", "Ya existe un catálogo maestro con ese código.")
+    except CatalogoMaestroDuplicateCodeError as exc:
+        return _error(409, "DUPLICATE_CODE", str(exc))
     except Exception as exc:
         return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo modificar el catálogo maestro.", {"error": str(exc)})
     if catalogo is None:

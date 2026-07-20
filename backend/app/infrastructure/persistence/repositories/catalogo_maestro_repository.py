@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.infrastructure.persistence.base_repository import BaseRepository
 from app.api.core_ef_headers import CoreEFHeaders
@@ -45,6 +46,10 @@ class CatalogoMaestroIdempotencyConflictError(ValueError):
 
 
 class CatalogoMaestroConcurrencyError(ValueError):
+    pass
+
+
+class CatalogoMaestroDuplicateCodeError(ValueError):
     pass
 
 
@@ -134,6 +139,24 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
         ))
 
     @staticmethod
+    def _constraint_name(exc: IntegrityError) -> str | None:
+        orig = getattr(exc, "orig", None)
+        diag = getattr(orig, "diag", None)
+        return getattr(diag, "constraint_name", None)
+
+    def _raise_or_return_idempotent_replay(
+        self, *, op_id: str, payload: dict[str, Any], original_error: IntegrityError
+    ) -> dict[str, Any]:
+        existing = self.get_by_op_id_alta(op_id)
+        if existing is None:
+            raise original_error
+        if not self._payload_matches(existing, payload):
+            raise CatalogoMaestroIdempotencyConflictError(
+                "El X-Op-Id ya fue usado con un payload incompatible."
+            )
+        return existing
+
+    @staticmethod
     def _outbox_payload(row: dict[str, Any], *, op_id: str) -> dict[str, Any]:
         return {
             "id_catalogo_maestro": row["id_catalogo_maestro"],
@@ -176,6 +199,18 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
             )
             self.db.commit()
             return created
+        except IntegrityError as exc:
+            self.db.rollback()
+            constraint_name = self._constraint_name(exc)
+            if constraint_name == "ux_catalogo_maestro_op_id_alta":
+                return self._raise_or_return_idempotent_replay(
+                    op_id=op_id, payload=payload, original_error=exc
+                )
+            if constraint_name == "uq_catalogo_maestro_codigo":
+                raise CatalogoMaestroDuplicateCodeError(
+                    "Ya existe un catálogo maestro con ese código."
+                )
+            raise
         except Exception:
             self.db.rollback()
             raise
@@ -219,6 +254,13 @@ class CatalogoMaestroRepository(BaseRepository[Any]):
             )
             self.db.commit()
             return updated
+        except IntegrityError as exc:
+            self.db.rollback()
+            if self._constraint_name(exc) == "uq_catalogo_maestro_codigo":
+                raise CatalogoMaestroDuplicateCodeError(
+                    "Ya existe un catálogo maestro con ese código."
+                )
+            raise
         except Exception:
             self.db.rollback()
             raise

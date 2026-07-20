@@ -681,6 +681,12 @@ Request:
 
 ### Errores y transacción
 
-Los headers faltantes o inválidos devuelven `400 VALIDATION_ERROR` en el envelope administrativo. Catálogo inexistente o dado de baja no operable devuelve `404 NOT_FOUND`; código duplicado devuelve `409 TECHNICAL_INCONSISTENCY`; conflicto de versión devuelve `409 CONCURRENCY_ERROR`. Cada repository confirma el cambio de negocio y el evento outbox con un único `commit`; ante fallo de outbox o constraint hace rollback y no deja efectos parciales.
+Los headers faltantes o inválidos devuelven `400 VALIDATION_ERROR` en el envelope administrativo. Catálogo inexistente o dado de baja no operable devuelve `404 NOT_FOUND`; código duplicado devuelve `409 DUPLICATE_CODE`; conflicto de versión devuelve `409 CONCURRENCY_ERROR`. Cada repository confirma el cambio de negocio y el evento outbox con un único `commit`; ante fallo de outbox o constraint hace rollback y no deja efectos parciales.
 
 Fuera de alcance: writes de `item_catalogo`, reactivación, jerarquías, historial, defaults, vigencias, migración incidental de enums y UI. La política futura de reactivación, reutilización de código, estado persistido de catálogo, jerarquías e historial queda **NO CONFIRMADA**.
+
+### Corrección #370 — idempotencia concurrente y conflicto de código
+
+La alta conserva la consulta previa por `op_id_alta` como optimización y además resuelve la carrera de inserción por la constraint `ux_catalogo_maestro_op_id_alta`: luego de `rollback`, recupera y compara la fila persistida. El mismo payload devuelve el replay sin una nueva fila, versión ni evento; un payload incompatible devuelve `409 IDEMPOTENT_DUPLICATE`. Si la fila no aparece tras el rollback, se propaga la inconsistencia técnica real.
+
+La constraint `uq_catalogo_maestro_codigo` se traduce en el conflicto funcional `409 DUPLICATE_CODE` en alta y modificación. No se exponen nombres de constraints ni mensajes SQL. Las colisiones de constraint y los fallos de outbox hacen rollback antes de devolver la respuesta; por ello no dejan catálogo ni outbox parcial.
