@@ -106,7 +106,17 @@ def _fixture_corridas(db, venta: int, indice: int) -> None:
         """), {"corrida": corrida, "obligacion": item["id_obligacion_financiera"], "indexacion": item["id_obligacion_financiera_indexacion"] if applied else None, "expected": item["version_registro"], "result": item["version_registro"] + 1 if applied else None, "capital": item["importe_total"], "importe": item["importe_total"], "saldo": item["saldo_pendiente"], "eligibility": "EXCLUIDA" if failed else "ELEGIBLE", "reason": "Exclusión demo controlada" if failed else None, "error": "DEMO_OBLIGACION_EXCLUIDA" if failed else None})
 
 
-def _prepare_and_apply_real(db, venta: int, indice: int) -> None:
+def _resolve_demo_core_ef(db) -> CoreEFHeaders:
+    row = db.execute(text("""SELECT u.id_usuario, s.id_sucursal, i.id_instalacion
+        FROM usuario u CROSS JOIN sucursal s JOIN instalacion i ON i.id_sucursal=s.id_sucursal
+        WHERE u.estado_usuario='ACTIVO' AND s.estado_sucursal='ACTIVA' AND i.estado_instalacion='ACTIVA'
+        ORDER BY u.id_usuario,s.id_sucursal,i.id_instalacion LIMIT 1""")).mappings().one_or_none()
+    if row is None:
+        raise RuntimeError("No existe contexto CORE-EF activo para el demo.")
+    return CoreEFHeaders(uuid4(), int(row["id_usuario"]), int(row["id_sucursal"]), int(row["id_instalacion"]))
+
+
+def _reset_post_run_block_to_capital_state(db, venta: int) -> None:
     """Use the production preparation and application services for APPLIED."""
     # The generator materializes historical quotas at birth.  This fixture
     # restores only the third quota to its capital state so the real apply
@@ -126,11 +136,11 @@ def _prepare_and_apply_real(db, venta: int, indice: int) -> None:
         FROM composicion_obligacion cap WHERE cap.id_obligacion_financiera=o.id_obligacion_financiera
         AND cap.id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='CAPITAL_VENTA' AND deleted_at IS NULL)
         AND o.id_obligacion_financiera IN (SELECT o2.id_obligacion_financiera FROM obligacion_financiera o2 JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=o2.id_plan_pago_venta_bloque JOIN plan_pago_venta p ON p.id_plan_pago_venta=b.id_plan_pago_venta WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior')"""), {"sale": venta})
+def _create_and_apply_scoped_real_run(db, venta: int, indice: int, headers: CoreEFHeaders) -> None:
     value = db.execute(text("SELECT id_indice_financiero_valor FROM indice_financiero_valor WHERE id_indice_financiero=:indice AND fecha_valor=DATE '2026-04-01' AND deleted_at IS NULL"), {"indice": indice}).scalar_one()
     scope = db.execute(text("""SELECT p.id_plan_pago_venta,b.id_plan_pago_venta_bloque,i.id_plan_pago_venta_bloque_indexacion
         FROM plan_pago_venta p JOIN plan_pago_venta_bloque b USING(id_plan_pago_venta) JOIN plan_pago_venta_bloque_indexacion i USING(id_plan_pago_venta_bloque)
         WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior'"""), {"sale": venta}).mappings().one()
-    headers = CoreEFHeaders(uuid4(), 1, 1, 1)
     preview = PreviewIndexacionCuotasV2Service(PreviewIndexacionCuotasV2SqlAlchemyRepository(db)).execute(
         PreviewIndexacionCuotasV2Command(**scope, id_indice_financiero=indice, id_indice_financiero_valor_aplicado=value, fecha_corte=date(2026, 4, 30), periodo_aplicado=date(2026, 4, 1), persistir=True, motivo="DEMO-373"), headers)
     if not preview.success:
@@ -138,7 +148,7 @@ def _prepare_and_apply_real(db, venta: int, indice: int) -> None:
     corrida = db.execute(text("SELECT id_corrida_indexacion_financiera,hash_corrida,version_registro FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id"), {"id": preview.data["id_corrida_indexacion_financiera"]}).mappings().one()
     applied = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db)).execute(
         AplicarIndexacionCuotasV2Command(corrida["id_corrida_indexacion_financiera"], corrida["hash_corrida"]),
-        CoreEFHeaders(uuid4(), 1, 1, 1, int(corrida["version_registro"])),
+        CoreEFHeaders(uuid4(), headers.x_usuario_id, headers.x_sucursal_id, headers.x_instalacion_id, int(corrida["version_registro"])),
     )
     if not applied.success:
         raise RuntimeError("No se pudo aplicar corrida demo: " + applied.errors[0])
@@ -160,7 +170,8 @@ def create() -> None:
             else:
                 state = "reutilizado"
             _fixture_corridas(db, venta, indice)
-            _prepare_and_apply_real(db, venta, indice)
+            _reset_post_run_block_to_capital_state(db, venta)
+            _create_and_apply_scoped_real_run(db, venta, indice, _resolve_demo_core_ef(db))
             integral = repo.get_plan_pago_venta_v2_integral(venta)
             db.commit()
         except Exception:

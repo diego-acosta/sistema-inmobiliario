@@ -42,6 +42,16 @@ def test_demo_scenario_is_isolated_idempotent_and_cleanable(monkeypatch):
         sale = db.execute(text("SELECT id_venta,estado_venta FROM venta WHERE codigo_venta=:code"), {"code": demo.CODIGO_VENTA}).mappings().one()
         assert sale["id_venta"] != base and sale["estado_venta"] == "confirmada"
         assert db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta='DEMO-VTA-CUOTAS'")).scalar_one() == base
+
+
+def test_demo_core_ef_context_is_resolved_and_active(monkeypatch):
+    monkeypatch.setenv("ENV", "test")
+    with SessionLocal() as db:
+        context = demo._resolve_demo_core_ef(db)
+        assert context.x_usuario_id and context.x_sucursal_id and context.x_instalacion_id
+        assert db.execute(text("SELECT 1 FROM usuario WHERE id_usuario=:id AND estado_usuario='ACTIVO'"), {"id": context.x_usuario_id}).scalar_one() == 1
+        assert db.execute(text("SELECT 1 FROM sucursal WHERE id_sucursal=:id AND estado_sucursal='ACTIVA'"), {"id": context.x_sucursal_id}).scalar_one() == 1
+        assert db.execute(text("SELECT 1 FROM instalacion WHERE id_instalacion=:id AND estado_instalacion='ACTIVA'"), {"id": context.x_instalacion_id}).scalar_one() == 1
         plan = db.execute(text("SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:sale AND deleted_at IS NULL"), {"sale": sale["id_venta"]}).scalar_one()
         assert db.execute(text("SELECT count(*) FROM plan_pago_venta_bloque WHERE id_plan_pago_venta=:plan AND deleted_at IS NULL"), {"plan": plan}).scalar_one() == 3
         assert db.execute(text("SELECT count(*) FROM obligacion_financiera WHERE id_plan_pago_venta_bloque IN (SELECT id_plan_pago_venta_bloque FROM plan_pago_venta_bloque WHERE id_plan_pago_venta=:plan)"), {"plan": plan}).scalar_one() == 3
