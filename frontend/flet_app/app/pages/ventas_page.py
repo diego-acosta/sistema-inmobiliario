@@ -3,7 +3,7 @@ from typing import Any, Callable
 
 import flet as ft
 
-from app.api_client import ApiClient
+from app.api_client import ApiClient, ApiResult
 from app.components.detail_section import detail_section, key_value_grid
 from app.components.entity_table import entity_table
 from app.components.error_state import error_state
@@ -243,6 +243,19 @@ class VentaDetailView:
                                     detail_section(
                                         "Plan de pago / obligaciones",
                                         [_plan_obligaciones_operativas(data)],
+                                    ),
+                                    detail_section(
+                                        "Plan Pago V2",
+                                        [
+                                            DeferredLoadingContainer(
+                                                lambda: _plan_pago_v2_integral_view(
+                                                    self.api.get_plan_pago_venta_v2_integral(
+                                                        self.id_venta
+                                                    )
+                                                ),
+                                                message="Cargando Plan Pago V2...",
+                                            )
+                                        ],
                                     ),
                                     detail_section(
                                         "Origen",
@@ -557,6 +570,356 @@ def _bloques_plan_table(rows: list[dict[str, Any]]) -> ft.Control:
             for row in rows
         ],
     )
+
+
+def _plan_pago_v2_integral_view(result: ApiResult) -> ft.Control:
+    if not result.success:
+        if result.status_code == 404 and result.error_code == "NOT_FOUND_PLAN_PAGO_V2":
+            return ft.Text("Esta venta todavía no tiene un Plan Pago V2 asociado.")
+        return error_state(
+            result.error_message or "No se pudo consultar el Plan Pago V2."
+        )
+    data = result.data if isinstance(result.data, dict) else {}
+    if not data:
+        return ft.Text("Esta venta todavía no tiene un Plan Pago V2 asociado.")
+
+    resumen = data.get("resumen") if isinstance(data.get("resumen"), dict) else {}
+    plan = (
+        data.get("plan_pago_venta")
+        if isinstance(data.get("plan_pago_venta"), dict)
+        else {}
+    )
+    corridas = _safe_list(data.get("corridas_indexacion"))
+    bloques = _safe_list(data.get("bloques"))
+    controls: list[ft.Control] = [
+        ft.Text(
+            "Consulta read-only QUERY_READLIKE: sin acciones de preparación, aplicación ni confirmación.",
+            color=ft.Colors.BLUE_GREY_600,
+        ),
+        _plan_pago_v2_summary(plan, resumen),
+        _plan_pago_v2_interface_states(resumen, corridas),
+        ft.Text("Bloques y obligaciones", size=16, weight=ft.FontWeight.W_700),
+        _plan_pago_v2_blocks(bloques),
+        ft.Text("Historial de corridas", size=16, weight=ft.FontWeight.W_700),
+        _plan_pago_v2_corridas(corridas, plan.get("moneda")),
+    ]
+    return ft.Column(controls=controls, spacing=12)
+
+
+def _plan_pago_v2_summary(plan: dict[str, Any], resumen: dict[str, Any]) -> ft.Control:
+    moneda = plan.get("moneda")
+    return ft.Column(
+        controls=[
+            key_value_grid(
+                [
+                    ("ID plan", plan.get("id_plan_pago_venta")),
+                    ("Método", plan.get("metodo_plan_pago")),
+                    ("Estado", plan.get("estado_plan_pago")),
+                    ("Moneda", moneda),
+                    (
+                        "Importe total",
+                        _format_money(moneda, resumen.get("total_obligaciones")),
+                    ),
+                    (
+                        "Capital total",
+                        _format_money(moneda, resumen.get("total_capital")),
+                    ),
+                    (
+                        "Interés total",
+                        _format_money(moneda, resumen.get("total_interes")),
+                    ),
+                    (
+                        "Ajuste total indexación",
+                        _format_money(moneda, resumen.get("total_ajuste_indexacion")),
+                    ),
+                    ("Cantidad obligaciones", resumen.get("cantidad_obligaciones")),
+                    (
+                        "Obligaciones indexadas",
+                        resumen.get("cantidad_obligaciones_con_indexacion"),
+                    ),
+                    (
+                        "Proyectadas sin índice",
+                        resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion"),
+                    ),
+                    ("Cantidad obligados", resumen.get("cantidad_obligados_total")),
+                    (
+                        "Obligaciones múltiples obligados",
+                        resumen.get("cantidad_obligaciones_con_multiples_obligados"),
+                    ),
+                ]
+            ),
+        ],
+        spacing=8,
+    )
+
+
+def _plan_pago_v2_interface_states(
+    resumen: dict[str, Any], corridas: list[dict[str, Any]]
+) -> ft.Control:
+    messages: list[str] = []
+    if _safe_int(resumen.get("cantidad_obligaciones_con_indexacion")) == 0:
+        messages.append("Plan Pago V2 sin indexación materializada.")
+    if _safe_int(resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion")) > 0:
+        messages.append("Hay obligaciones proyectadas sin índice materializado.")
+    if (
+        _safe_int(resumen.get("cantidad_obligaciones_con_indexacion")) > 0
+        and not corridas
+    ):
+        messages.append("Plan indexado sin corridas registradas.")
+    estados = {str(c.get("estado_corrida") or "").upper() for c in corridas}
+    if "PENDIENTE_APLICACION" in estados:
+        messages.append("Hay corridas pendientes de aplicación.")
+    if "APLICADA" in estados:
+        messages.append("Hay corridas aplicadas.")
+    if "FALLIDA" in estados:
+        messages.append("Hay corridas fallidas.")
+    if not messages:
+        messages.append("Sin alertas de indexación para presentación.")
+    return ft.Column(
+        [ft.Text(m, color=ft.Colors.BLUE_GREY_700) for m in messages], spacing=4
+    )
+
+
+def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
+    if not bloques:
+        return ft.Text("Sin bloques de Plan Pago V2 expuestos.")
+    controls: list[ft.Control] = []
+    for bloque in bloques:
+        idx = (
+            bloque.get("indexacion")
+            if isinstance(bloque.get("indexacion"), dict)
+            else {}
+        )
+        controls.append(
+            _compact_card(
+                [
+                    (
+                        "Bloque",
+                        _join_values(
+                            bloque.get("numero_bloque"), bloque.get("etiqueta_bloque")
+                        ),
+                    ),
+                    ("Tipo", bloque.get("tipo_bloque")),
+                    ("Método liquidación", bloque.get("metodo_liquidacion")),
+                    (
+                        "Importe total",
+                        _format_money(None, bloque.get("importe_total_bloque")),
+                    ),
+                    (
+                        "Índice",
+                        _join_values(
+                            idx.get("codigo_indice_financiero"),
+                            idx.get("nombre_indice_financiero"),
+                        ),
+                    ),
+                    (
+                        "Fecha / valor base",
+                        _join_values(
+                            _format_date(idx.get("fecha_base_indice")),
+                            _format_coefficient(idx.get("valor_base_indice")),
+                        ),
+                    ),
+                ]
+            )
+        )
+        controls.append(
+            _plan_pago_v2_obligaciones(_safe_list(bloque.get("obligaciones")))
+        )
+    return ft.Column(controls=controls, spacing=10)
+
+
+def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control:
+    if not obligaciones:
+        return ft.Text("Sin obligaciones en el bloque.")
+    rows = []
+    for o in obligaciones:
+        ix = o.get("indexacion") if isinstance(o.get("indexacion"), dict) else {}
+        rows.append(
+            {
+                "item": o.get("numero_cuota_asociada") or o.get("numero_obligacion"),
+                "tipo": o.get("tipo_item_cronograma"),
+                "vencimiento": _format_date(o.get("fecha_vencimiento")),
+                "capital": _format_money(o.get("moneda"), o.get("capital_original")),
+                "ajuste": _format_money(o.get("moneda"), o.get("ajuste_indexacion")),
+                "vigente": _format_money(o.get("moneda"), o.get("importe_vigente")),
+                "saldo": _format_money(o.get("moneda"), o.get("saldo_pendiente")),
+                "moneda": o.get("moneda"),
+                "estado": status_badge(
+                    _estado_indexacion_label(o.get("estado_indexacion_presentacion"))
+                ),
+                "origen": _origen_indexacion_label(o.get("origen_indexacion")),
+                "indice": _join_values(
+                    ix.get("id_indice_financiero"), ix.get("modo_indexacion")
+                ),
+                "base": _join_values(
+                    _format_date(ix.get("fecha_base_indice")),
+                    _format_coefficient(ix.get("valor_base_indice")),
+                ),
+                "aplicado": _join_values(
+                    _format_date(ix.get("fecha_aplicacion_indice")),
+                    _format_coefficient(ix.get("valor_aplicado_indice")),
+                ),
+                "coef": _format_coefficient(ix.get("coeficiente_indexacion")),
+                "relacionada": _corrida_ref(o.get("corrida_relacionada")),
+                "vigente_corrida": _corrida_ref(o.get("corrida_aplicada_vigente")),
+            }
+        )
+    return entity_table(
+        columns=[
+            ("Ítem", "item"),
+            ("Tipo", "tipo"),
+            ("Vencimiento", "vencimiento"),
+            ("Capital", "capital"),
+            ("Ajuste", "ajuste"),
+            ("Importe vigente", "vigente"),
+            ("Saldo", "saldo"),
+            ("Moneda", "moneda"),
+            ("Indexación", "estado"),
+            ("Origen", "origen"),
+            ("Índice", "indice"),
+            ("Base", "base"),
+            ("Aplicado", "aplicado"),
+            ("Coef.", "coef"),
+            ("Corrida relacionada", "relacionada"),
+            ("Corrida aplicada vigente", "vigente_corrida"),
+        ],
+        rows=rows,
+    )
+
+
+def _plan_pago_v2_corridas(
+    corridas: list[dict[str, Any]], moneda: object
+) -> ft.Control:
+    if not corridas:
+        return ft.Text("Sin corridas de indexación registradas.")
+    controls = []
+    for c in corridas:
+        controls.append(
+            _compact_card(
+                [
+                    ("ID", c.get("id_corrida_indexacion_financiera")),
+                    ("Estado", c.get("estado_corrida")),
+                    ("Origen", c.get("origen_corrida")),
+                    ("Índice", c.get("codigo_indice_financiero")),
+                    ("Período aplicado", _format_date(c.get("periodo_aplicado"))),
+                    ("Fecha corte", _format_date(c.get("fecha_corte"))),
+                    ("Preparación", _format_timestamp(c.get("fecha_preparacion"))),
+                    ("Aplicación", _format_timestamp(c.get("fecha_aplicacion"))),
+                    (
+                        "Analizada/elegible/excluida/aplicada/error",
+                        f"{_dash(c.get('cantidad_analizada'))}/{_dash(c.get('cantidad_elegible'))}/{_dash(c.get('cantidad_excluida'))}/{_dash(c.get('cantidad_aplicada'))}/{_dash(c.get('cantidad_error'))}",
+                    ),
+                    (
+                        "Capital analizado",
+                        _format_money(moneda, c.get("capital_analizado_total")),
+                    ),
+                    ("Ajuste total", _format_money(moneda, c.get("ajuste_total"))),
+                    ("Importe total", _format_money(moneda, c.get("importe_total"))),
+                ]
+            )
+        )
+        if any(
+            c.get(k) for k in ("codigo_error", "etapa_error", "diagnostico_tecnico")
+        ):
+            controls.append(
+                ft.Container(
+                    content=key_value_grid(
+                        [
+                            ("Código error", c.get("codigo_error")),
+                            ("Etapa error", c.get("etapa_error")),
+                            ("Diagnóstico técnico", c.get("diagnostico_tecnico")),
+                        ]
+                    ),
+                    padding=12,
+                    bgcolor=ft.Colors.RED_50,
+                    border=ft.border.all(1, ft.Colors.RED_100),
+                    border_radius=8,
+                )
+            )
+        controls.append(
+            _corrida_detalles("Exclusiones", _safe_list(c.get("exclusiones")))
+        )
+        controls.append(
+            _corrida_detalles("Errores por obligación", _safe_list(c.get("errores")))
+        )
+        controls.append(
+            _corrida_detalles(
+                "Obligaciones afectadas", _safe_list(c.get("obligaciones_afectadas"))
+            )
+        )
+    return ft.Column(controls=controls, spacing=8)
+
+
+def _corrida_detalles(title: str, rows: list[dict[str, Any]]) -> ft.Control:
+    if not rows:
+        return ft.Text(f"{title}: sin registros.")
+    return ft.Column(
+        [
+            ft.Text(title, weight=ft.FontWeight.W_600),
+            entity_table(
+                columns=[
+                    ("Obligación", "id_obligacion_financiera"),
+                    ("Elegibilidad", "estado_elegibilidad"),
+                    ("Motivo exclusión", "motivo_exclusion"),
+                    ("Código error", "codigo_error"),
+                    ("Detalle controlado", "detalle_controlado"),
+                ],
+                rows=[
+                    {
+                        **r,
+                        "motivo_exclusion": _dash(r.get("motivo_exclusion")),
+                        "codigo_error": _dash(r.get("codigo_error")),
+                        "detalle_controlado": _dash(r.get("detalle_controlado")),
+                    }
+                    for r in rows
+                ],
+            ),
+        ],
+        spacing=4,
+    )
+
+
+def _estado_indexacion_label(value: object) -> str:
+    labels = {
+        "NO_REQUIERE_INDICE": "Sin indexación",
+        "PROYECTADA_SIN_INDICE": "Pendiente de índice",
+        "CON_INDICE_APLICADO": "Indexada",
+        "EXCLUIDA": "Excluida",
+        "CON_ERROR": "Con error",
+    }
+    raw = str(value or "")
+    return labels.get(raw, raw or "Sin estado")
+
+
+def _origen_indexacion_label(value: object) -> str:
+    labels = {
+        "AL_NACIMIENTO": "Al nacimiento",
+        "CORRIDA_POSTERIOR": "Corrida posterior",
+    }
+    raw = str(value or "")
+    return labels.get(raw, _dash(raw))
+
+
+def _corrida_ref(value: object) -> str:
+    if not isinstance(value, dict) or not value:
+        return "—"
+    parts = [
+        f"ID {value.get('id_corrida_indexacion_financiera')}",
+        str(value.get("estado_corrida") or ""),
+        str(value.get("origen_corrida") or ""),
+        str(value.get("estado_elegibilidad") or ""),
+    ]
+    if value.get("codigo_error"):
+        parts.append(str(value.get("codigo_error")))
+    return " · ".join(p for p in parts if p and p != "None")
+
+
+def _format_coefficient(value: object) -> str:
+    return _format_decimal(value, decimal_places=None, max_decimal_places=8) or "—"
+
+
+def _dash(value: object) -> str:
+    return "—" if value in (None, "", "-") else str(value)
 
 
 def _tecnica_minima(data: dict[str, Any]) -> ft.Control:
@@ -952,6 +1315,15 @@ def _format_date(value: object) -> str:
     if len(year) != 4 or len(month) != 2 or len(day) != 2:
         return text
     return f"{day}/{month}/{year}"
+
+
+def _format_timestamp(value: object) -> str:
+    if value in (None, "", "-"):
+        return "-"
+    text = str(value).strip().replace("T", " ")
+    if len(text) >= 16 and text[4:5] == "-" and text[7:8] == "-":
+        return f"{_format_date(text[:10])} {text[11:16]}"
+    return _format_date(text)
 
 
 def _format_number(value: object) -> str:
