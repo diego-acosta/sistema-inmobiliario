@@ -2,11 +2,11 @@
 
 ## Uso
 
-El script `scripts/create_plan_pago_v2_demo.py` identifica la venta confirmada
-del seed UI como `DEMO-VTA-CUOTAS-PPV2-INDEXADA` y materializa el plan por
-bloques con el servicio real. Comercial conserva la venta; Financiero conserva
-obligaciones e indexación. No crea endpoints ni toca Administrativo, #346,
-#349, #365 o la UX de #374.
+El script crea una venta exclusiva `DEMO-VTA-CUOTAS-PPV2-INDEXADA`; nunca
+renombra ni elimina `DEMO-VTA-CUOTAS`. Reutiliza comprador, objeto e índices
+del seed UI, mientras que plan y obligaciones se materializan con el servicio
+real. La corrida aplicada se prepara y aplica mediante los servicios reales;
+pendiente/fallida son fixtures DEV/test de presentación.
 
 1. Con PostgreSQL activo, ejecutar el reset oficial:
    `cd backend && scripts/reset_db.sh`.
@@ -20,7 +20,7 @@ escenario identificado por su código estable:
 `PYTHONPATH=. ENV=dev python scripts/create_plan_pago_v2_demo.py --clean`.
 La limpieza elimina en orden las relaciones financieras, plan, bloques,
 indexaciones, corridas y venta de ese escenario; no usa IDs fijos. El script
-rechaza cualquier entorno que no sea `dev` o `test`.
+requiere `ENV` explícito y rechaza cualquier entorno que no sea `dev` o `test`.
 
 ## Decisión CORE-EF
 

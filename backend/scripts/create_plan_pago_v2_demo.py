@@ -13,8 +13,15 @@ from sqlalchemy import text
 from app.application.comercial.commands.generate_plan_pago_venta_v2_por_bloques import GeneratePlanPagoVentaV2PorBloquesCommand, PlanPagoVentaBloqueInput
 from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_service import GeneratePlanPagoVentaV2PorBloquesService
 from app.application.common.commands import CommandContext
+from app.api.core_ef_headers import CoreEFHeaders
+from app.application.financiero.services.aplicar_indexacion_cuotas_v2_service import AplicarIndexacionCuotasV2Command, AplicarIndexacionCuotasV2Service
+from app.application.financiero.services.preparar_corridas_indexacion_cuotas_v2_service import PrepararCorridasIndexacionCuotasV2Command, PrepararCorridasIndexacionCuotasV2Service
 from app.config.database import SessionLocal
+from app.infrastructure.persistence.repositories.aplicar_indexacion_cuotas_v2_repository import AplicarIndexacionCuotasV2SqlAlchemyRepository
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import PlanPagoVentaV2Repository
+from app.infrastructure.persistence.repositories.preparar_corridas_indexacion_cuotas_v2_repository import PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository
+from app.infrastructure.persistence.repositories.preview_indexacion_cuotas_v2_repository import PreviewIndexacionCuotasV2SqlAlchemyRepository
+from app.application.financiero.services.preview_indexacion_cuotas_v2_service import PreviewIndexacionCuotasV2Service
 
 CODIGO_VENTA = "DEMO-VTA-CUOTAS-PPV2-INDEXADA"
 CODIGO_BASE = "DEMO-VTA-CUOTAS"
@@ -22,7 +29,10 @@ CODIGO_BASE = "DEMO-VTA-CUOTAS"
 
 def require_safe_environment() -> None:
     """Fail closed: demo data must never be applied to production."""
-    if os.getenv("ENV", "dev").strip().lower() not in {"dev", "test"}:
+    env_raw = os.getenv("ENV")
+    if env_raw is None or not env_raw.strip():
+        raise RuntimeError("Debe definir explícitamente ENV=dev o ENV=test.")
+    if env_raw.strip().lower() not in {"dev", "test"}:
         raise RuntimeError("Este script solo puede ejecutarse con ENV=dev o ENV=test.")
 
 
@@ -32,19 +42,27 @@ def _seed_ui(db) -> None:
     db.connection().connection.driver_connection.cursor().execute(sql)
 
 
-def _rename_base_sale(db) -> int:
+def _get_or_create_sale(db) -> int:
     found = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND deleted_at IS NULL"), {"code": CODIGO_VENTA}).scalar_one_or_none()
     if found:
         return found
-    sale = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND estado_venta='confirmada' AND deleted_at IS NULL"), {"code": CODIGO_BASE}).scalar_one()
-    db.execute(text("UPDATE venta SET codigo_venta=:target, observaciones='Escenario demo #373: Plan Pago V2 indexado' WHERE id_venta=:id"), {"target": CODIGO_VENTA, "id": sale})
+    source = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND estado_venta='confirmada' AND deleted_at IS NULL"), {"code": CODIGO_BASE}).scalar_one()
+    sale = db.execute(text("""
+        INSERT INTO venta (id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion,codigo_venta,fecha_venta,estado_venta,monto_total,tipo_plan_financiero,moneda,observaciones)
+        SELECT id_instalacion_origen,id_instalacion_ultima_modificacion,CAST(:op AS uuid),CAST(:op AS uuid),:code,fecha_venta,'confirmada',monto_total,tipo_plan_financiero,moneda,'Escenario demo aislado #373'
+        FROM venta WHERE id_venta=:source RETURNING id_venta
+    """), {"op": str(uuid4()), "code": CODIGO_VENTA, "source": source}).scalar_one()
+    db.execute(text("""INSERT INTO venta_objeto_inmobiliario (id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion,id_venta,id_inmueble,id_unidad_funcional,precio_asignado,observaciones)
+        SELECT id_instalacion_origen,id_instalacion_ultima_modificacion,CAST(:op AS uuid),CAST(:op AS uuid),:sale,id_inmueble,id_unidad_funcional,precio_asignado,'Objeto reutilizado solo para fixture #373' FROM venta_objeto_inmobiliario WHERE id_venta=:source"""), {"op": str(uuid4()), "sale": sale, "source": source})
+    db.execute(text("""INSERT INTO relacion_persona_rol (id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion,id_persona,id_rol_participacion,tipo_relacion,id_relacion,fecha_desde,observaciones)
+        SELECT id_instalacion_origen,id_instalacion_ultima_modificacion,CAST(:op AS uuid),CAST(:op AS uuid),id_persona,id_rol_participacion,'venta',:sale,fecha_desde,'Comprador demo #373' FROM relacion_persona_rol WHERE tipo_relacion='venta' AND id_relacion=:source AND deleted_at IS NULL"""), {"op": str(uuid4()), "sale": sale, "source": source})
     return sale
 
 
 def _command(venta: int, indice: int) -> GeneratePlanPagoVentaV2PorBloquesCommand:
     common = dict(metodo_liquidacion="INDEXACION", id_indice_financiero=indice, fecha_base_indice=date(2026, 1, 1), valor_base_indice=Decimal("1000"), modo_indexacion="POR_COEFICIENTE", base_calculo_indexacion="CAPITAL_INICIAL_BLOQUE", tipo_generacion_indexada="DEFINITIVA", politica_valor_no_disponible="ERROR_SI_NO_EXISTE", conserva_capital_original=True, genera_ajuste_por_diferencia=True)
     block = lambda label, due: PlanPagoVentaBloqueInput(tipo_bloque="TRAMO_CUOTAS", etiqueta_bloque=label, cantidad_cuotas=1, importe_total_bloque=Decimal("40000000"), fecha_primer_vencimiento=due, periodicidad="MENSUAL", **common)
-    return GeneratePlanPagoVentaV2PorBloquesCommand(context=CommandContext(actor_id="demo-ppv2", metadata={"op_id": str(uuid4())}), id_venta=venta, tipo_pago="FINANCIADO", monto_total_plan=Decimal("120000000"), moneda="ARS", bloques=[block("Demo: índice al nacimiento", date(2026, 3, 10)), block("Demo: proyectada sin índice", date(2027, 1, 10)), block("Demo: corrida posterior", date(2026, 4, 10))], observaciones="Fixture DEV/test #373; no usar como negocio productivo.")
+    return GeneratePlanPagoVentaV2PorBloquesCommand(context=CommandContext(actor_id="demo-ppv2", metadata={"op_id": str(uuid4())}), id_venta=venta, tipo_pago="FINANCIADO", monto_total_plan=Decimal("120000000"), moneda="ARS", bloques=[block("Demo: índice al nacimiento", date(2026, 3, 10)), block("Demo: proyectada sin índice", date(2027, 1, 10)), block("Demo: corrida posterior", date(2026, 2, 10))], observaciones="Fixture DEV/test #373; no usar como negocio productivo.")
 
 
 def _fixture_corridas(db, venta: int, indice: int) -> None:
@@ -69,12 +87,12 @@ def _fixture_corridas(db, venta: int, indice: int) -> None:
     if len(rows) < 3:
         raise RuntimeError("El plan demo no materializó las tres obligaciones esperadas.")
     valor = db.execute(text("SELECT id_indice_financiero_valor FROM indice_financiero_valor WHERE id_indice_financiero=:indice AND fecha_valor=DATE '2026-04-01' AND deleted_at IS NULL"), {"indice": indice}).scalar_one()
-    for position, state in enumerate(("PENDIENTE_APLICACION", "FALLIDA", "APLICADA")):
+    for position, state in enumerate(("PENDIENTE_APLICACION", "FALLIDA")):
         item = rows[position]
         exists = db.execute(text("SELECT 1 FROM corrida_indexacion_financiera WHERE id_plan_pago_venta_bloque=:block AND motivo=:motivo AND deleted_at IS NULL"), {"block": item["id_plan_pago_venta_bloque"], "motivo": f"DEMO-373-{state}"}).scalar()
         if exists:
             continue
-        applied = state == "APLICADA"
+        applied = False
         failed = state == "FALLIDA"
         corrida = db.execute(text("""
           INSERT INTO corrida_indexacion_financiera
@@ -89,22 +107,69 @@ def _fixture_corridas(db, venta: int, indice: int) -> None:
         """), {"corrida": corrida, "obligacion": item["id_obligacion_financiera"], "indexacion": item["id_obligacion_financiera_indexacion"] if applied else None, "expected": item["version_registro"], "result": item["version_registro"] + 1 if applied else None, "capital": item["importe_total"], "importe": item["importe_total"], "saldo": item["saldo_pendiente"], "eligibility": "EXCLUIDA" if failed else "ELEGIBLE", "reason": "Exclusión demo controlada" if failed else None, "error": "DEMO_OBLIGACION_EXCLUIDA" if failed else None})
 
 
+def _prepare_and_apply_real(db, venta: int, indice: int) -> None:
+    """Use the production preparation and application services for APPLIED."""
+    # The generator materializes historical quotas at birth.  This fixture
+    # restores only the third quota to its capital state so the real apply
+    # service owns the subsequent adjustment and traceability.
+    db.execute(text("""DELETE FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera IN
+        (SELECT c.id_corrida_indexacion_financiera FROM corrida_indexacion_financiera c JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=c.id_plan_pago_venta_bloque JOIN plan_pago_venta p ON p.id_plan_pago_venta=c.id_plan_pago_venta WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior')"""), {"sale": venta})
+    db.execute(text("""DELETE FROM corrida_indexacion_financiera WHERE id_plan_pago_venta_bloque IN
+        (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p ON p.id_plan_pago_venta=b.id_plan_pago_venta WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior')"""), {"sale": venta})
+    db.execute(text("""DELETE FROM obligacion_financiera_indexacion WHERE id_obligacion_financiera IN
+        (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque)
+         JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior')"""), {"sale": venta})
+    db.execute(text("""DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN
+        (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque)
+         JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior')
+        AND id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='AJUSTE_INDEXACION' AND deleted_at IS NULL)"""), {"sale": venta})
+    db.execute(text("""UPDATE obligacion_financiera o SET importe_total=cap.importe_componente, saldo_pendiente=cap.saldo_componente
+        FROM composicion_obligacion cap WHERE cap.id_obligacion_financiera=o.id_obligacion_financiera
+        AND cap.id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='CAPITAL_VENTA' AND deleted_at IS NULL)
+        AND o.id_obligacion_financiera IN (SELECT o2.id_obligacion_financiera FROM obligacion_financiera o2 JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=o2.id_plan_pago_venta_bloque JOIN plan_pago_venta p ON p.id_plan_pago_venta=b.id_plan_pago_venta WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior')"""), {"sale": venta})
+    value = db.execute(text("SELECT id_indice_financiero_valor FROM indice_financiero_valor WHERE id_indice_financiero=:indice AND fecha_valor=DATE '2026-04-01' AND deleted_at IS NULL"), {"indice": indice}).scalar_one()
+    headers = CoreEFHeaders(uuid4(), 1, 1, 1)
+    prepare = PrepararCorridasIndexacionCuotasV2Service(
+        PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository(db),
+        PreviewIndexacionCuotasV2Service(PreviewIndexacionCuotasV2SqlAlchemyRepository(db)),
+    ).execute(PrepararCorridasIndexacionCuotasV2Command(value, "DEMO-373"), headers)
+    if not prepare.success:
+        raise RuntimeError("No se pudo preparar corrida demo: " + prepare.errors[0])
+    corrida = db.execute(text("""SELECT c.id_corrida_indexacion_financiera, c.hash_corrida, c.version_registro
+        FROM corrida_indexacion_financiera c JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=c.id_plan_pago_venta_bloque
+        JOIN plan_pago_venta p ON p.id_plan_pago_venta=c.id_plan_pago_venta
+        WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior' AND c.estado_corrida IN ('PREVISUALIZADA','PENDIENTE_APLICACION')
+        ORDER BY c.id_corrida_indexacion_financiera DESC LIMIT 1"""), {"sale": venta}).mappings().one()
+    applied = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db)).execute(
+        AplicarIndexacionCuotasV2Command(corrida["id_corrida_indexacion_financiera"], corrida["hash_corrida"]),
+        CoreEFHeaders(uuid4(), 1, 1, 1, int(corrida["version_registro"])),
+    )
+    if not applied.success:
+        raise RuntimeError("No se pudo aplicar corrida demo: " + applied.errors[0])
+
+
 def create() -> None:
     require_safe_environment()
-    with SessionLocal() as db, db.begin():
-        _seed_ui(db)
-        venta = _rename_base_sale(db)
-        indice = db.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
-        repo = PlanPagoVentaV2Repository(db)
-        if repo.get_plan_pago_venta_vivo(venta) is None:
-            result = GeneratePlanPagoVentaV2PorBloquesService(repo).execute_in_existing_transaction(_command(venta, indice))
-            if not result.success:
-                raise RuntimeError("No se pudo materializar el plan real: " + result.errors[0])
-            state = "creado"
-        else:
-            state = "reutilizado"
-        _fixture_corridas(db, venta, indice)
-        integral = repo.get_plan_pago_venta_v2_integral(venta)
+    with SessionLocal() as db:
+        try:
+            _seed_ui(db)
+            venta = _get_or_create_sale(db)
+            indice = db.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
+            repo = PlanPagoVentaV2Repository(db)
+            if repo.get_plan_pago_venta_vivo(venta) is None:
+                result = GeneratePlanPagoVentaV2PorBloquesService(repo).execute_in_existing_transaction(_command(venta, indice))
+                if not result.success:
+                    raise RuntimeError("No se pudo materializar el plan real: " + result.errors[0])
+                state = "creado"
+            else:
+                state = "reutilizado"
+            _fixture_corridas(db, venta, indice)
+            _prepare_and_apply_real(db, venta, indice)
+            integral = repo.get_plan_pago_venta_v2_integral(venta)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
     print(f"Escenario {state}: venta id={venta}, código={CODIGO_VENTA}")
     print(f"Abrir: /ventas/{venta}")
     obligaciones = sum(len(bloque["obligaciones"]) for bloque in integral["bloques"])
