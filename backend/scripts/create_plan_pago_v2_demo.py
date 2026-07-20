@@ -49,10 +49,16 @@ def _seed_indices_financieros_demo(db) -> None:
     db.connection().connection.driver_connection.cursor().execute(sql)
 
 
-def _get_or_create_sale(db, codigo_venta: str = CODIGO_VENTA) -> int:
-    found = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND deleted_at IS NULL"), {"code": codigo_venta}).scalar_one_or_none()
-    if found:
-        return found
+def _get_demo_sale(db, codigo_venta: str = CODIGO_VENTA) -> int | None:
+    """Return the exclusive demo sale without changing it."""
+    return db.execute(
+        text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND deleted_at IS NULL"),
+        {"code": codigo_venta},
+    ).scalar_one_or_none()
+
+
+def _create_demo_sale(db, codigo_venta: str = CODIGO_VENTA) -> int:
+    """Create the exclusive sale.  Call only after absence was established."""
     source = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND estado_venta='confirmada' AND deleted_at IS NULL"), {"code": CODIGO_BASE}).scalar_one()
     sale = db.execute(text("""
         INSERT INTO venta (id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion,codigo_venta,fecha_venta,estado_venta,monto_total,tipo_plan_financiero,moneda,observaciones)
@@ -64,6 +70,11 @@ def _get_or_create_sale(db, codigo_venta: str = CODIGO_VENTA) -> int:
     db.execute(text("""INSERT INTO relacion_persona_rol (id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion,id_persona,id_rol_participacion,tipo_relacion,id_relacion,fecha_desde,observaciones)
         SELECT id_instalacion_origen,id_instalacion_ultima_modificacion,CAST(:op AS uuid),CAST(:op AS uuid),id_persona,id_rol_participacion,'venta',:sale,fecha_desde,'Comprador demo #373' FROM relacion_persona_rol WHERE tipo_relacion='venta' AND id_relacion=:source AND deleted_at IS NULL"""), {"op": str(uuid4()), "sale": sale, "source": source})
     return sale
+
+
+# Kept for the #373 isolation test helper; create() deliberately never uses it.
+def _get_or_create_sale(db, codigo_venta: str = CODIGO_VENTA) -> int:
+    return _get_demo_sale(db, codigo_venta) or _create_demo_sale(db, codigo_venta)
 
 
 def _command(venta: int, indice: int) -> GeneratePlanPagoVentaV2PorBloquesCommand:
@@ -165,36 +176,149 @@ def _create_and_apply_scoped_real_run(db, venta: int, indice: int, headers: Core
         raise RuntimeError("No se pudo aplicar corrida demo: " + applied.errors[0])
 
 
+def _get_demo_plan(db, venta: int) -> int | None:
+    return db.execute(text("""SELECT id_plan_pago_venta FROM plan_pago_venta
+        WHERE id_venta=:sale AND deleted_at IS NULL ORDER BY id_plan_pago_venta"""), {"sale": venta}).scalar_one_or_none()
+
+
+def _inspect_demo_scenario(db, venta: int) -> dict:
+    """Read-only structural inspection used to choose create/reuse/fail.
+
+    This intentionally validates the persisted financial contract before the
+    no-op path.  It never repairs a partially created graph.
+    """
+    plan = _get_demo_plan(db, venta)
+    if plan is None:
+        return {"complete": False, "reason": "plan ausente"}
+    blocks = db.execute(text("""SELECT b.etiqueta_bloque, b.id_plan_pago_venta_bloque,
+        o.id_obligacion_financiera, o.importe_total, o.version_registro,
+        oi.id_obligacion_financiera_indexacion
+        FROM plan_pago_venta_bloque b
+        LEFT JOIN obligacion_financiera o ON o.id_plan_pago_venta_bloque=b.id_plan_pago_venta_bloque
+        LEFT JOIN obligacion_financiera_indexacion oi ON oi.id_obligacion_financiera=o.id_obligacion_financiera AND oi.deleted_at IS NULL
+        WHERE b.id_plan_pago_venta=:plan AND b.deleted_at IS NULL ORDER BY b.numero_bloque"""), {"plan": plan}).mappings().all()
+    expected = {"Demo: índice al nacimiento", "Demo: proyectada sin índice", "Demo: corrida posterior"}
+    if len(blocks) != 3 or {row["etiqueta_bloque"] for row in blocks} != expected or any(row["id_obligacion_financiera"] is None for row in blocks):
+        return {"complete": False, "reason": "bloques u obligaciones incompletos"}
+    by_label = {row["etiqueta_bloque"]: row for row in blocks}
+    if by_label["Demo: índice al nacimiento"]["id_obligacion_financiera_indexacion"] is None:
+        return {"complete": False, "reason": "falta indexación al nacimiento"}
+    if by_label["Demo: proyectada sin índice"]["id_obligacion_financiera_indexacion"] is not None:
+        return {"complete": False, "reason": "bloque proyectado materializado"}
+    runs = db.execute(text("""SELECT c.id_corrida_indexacion_financiera, c.estado_corrida,
+        c.id_plan_pago_venta_bloque, c.hash_corrida, c.version_registro
+        FROM corrida_indexacion_financiera c WHERE c.id_plan_pago_venta=:plan
+        AND c.deleted_at IS NULL ORDER BY c.id_corrida_indexacion_financiera"""), {"plan": plan}).mappings().all()
+    states = [row["estado_corrida"] for row in runs]
+    if len(runs) != 3 or {state: states.count(state) for state in set(states)} != {"PENDIENTE_APLICACION": 1, "FALLIDA": 1, "APLICADA": 1}:
+        return {"complete": False, "reason": "corridas incompletas o duplicadas"}
+    detail_counts = db.execute(text("""SELECT id_corrida_indexacion_financiera, count(*) AS cantidad
+        FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera IN
+        (SELECT id_corrida_indexacion_financiera FROM corrida_indexacion_financiera WHERE id_plan_pago_venta=:plan)
+        AND deleted_at IS NULL GROUP BY id_corrida_indexacion_financiera"""), {"plan": plan}).mappings().all()
+    if {int(row["cantidad"]) for row in detail_counts} != {1} or len(detail_counts) != 3:
+        return {"complete": False, "reason": "detalles de corrida incompletos"}
+    runs_by_state = {row["estado_corrida"]: row for row in runs}
+    expected_blocks_by_state = {
+        "PENDIENTE_APLICACION": by_label["Demo: proyectada sin índice"]["id_plan_pago_venta_bloque"],
+        # _fixture_corridas intentionally places the failed presentation run
+        # on the same later block as the real applied run.
+        "FALLIDA": by_label["Demo: corrida posterior"]["id_plan_pago_venta_bloque"],
+        "APLICADA": by_label["Demo: corrida posterior"]["id_plan_pago_venta_bloque"],
+    }
+    for state, expected_block_id in expected_blocks_by_state.items():
+        if runs_by_state[state]["id_plan_pago_venta_bloque"] != expected_block_id:
+            return {
+                "complete": False,
+                "reason": f"corrida {state} asociada al bloque incorrecto",
+            }
+    applied = runs_by_state["APLICADA"]
+    detail = db.execute(text("""SELECT d.version_resultante, d.id_obligacion_financiera_indexacion,
+        d.id_obligacion_financiera, d.capital_base, d.importe_nuevo
+        FROM corrida_indexacion_financiera_detalle d
+        WHERE d.id_corrida_indexacion_financiera=:run AND d.deleted_at IS NULL"""), {"run": applied["id_corrida_indexacion_financiera"]}).mappings().all()
+    if len(detail) != 1 or detail[0]["version_resultante"] != by_label["Demo: corrida posterior"]["version_registro"] or detail[0]["id_obligacion_financiera_indexacion"] is None:
+        return {"complete": False, "reason": "detalle aplicado inconsistente"}
+    amount = db.execute(text("""SELECT o.importe_total, co.importe_componente AS capital,
+        aj.importe_componente AS ajuste FROM obligacion_financiera o
+        JOIN composicion_obligacion co ON co.id_obligacion_financiera=o.id_obligacion_financiera
+        JOIN concepto_financiero cc ON cc.id_concepto_financiero=co.id_concepto_financiero AND cc.codigo_concepto_financiero='CAPITAL_VENTA'
+        JOIN composicion_obligacion aj ON aj.id_obligacion_financiera=o.id_obligacion_financiera AND aj.deleted_at IS NULL
+        JOIN concepto_financiero ca ON ca.id_concepto_financiero=aj.id_concepto_financiero AND ca.codigo_concepto_financiero='AJUSTE_INDEXACION'
+        WHERE o.id_obligacion_financiera=:obl AND co.deleted_at IS NULL"""), {"obl": detail[0]["id_obligacion_financiera"]}).mappings().one_or_none()
+    if amount is None or amount["importe_total"] != amount["capital"] + amount["ajuste"]:
+        return {"complete": False, "reason": "importe aplicado inconsistente"}
+    outbox = db.execute(text("""SELECT count(*) FROM outbox_event
+        WHERE aggregate_type='corrida_indexacion_financiera' AND aggregate_id=:run"""), {"run": applied["id_corrida_indexacion_financiera"]}).scalar_one()
+    if outbox != 1:
+        return {"complete": False, "reason": "outbox de aplicación inconsistente"}
+    try:
+        integral = PlanPagoVentaV2Repository(db).get_plan_pago_venta_v2_integral(venta)
+    except Exception as exc:
+        return {"complete": False, "reason": f"contrato integral no disponible: {exc}"}
+    if integral is None or len(integral.get("bloques", [])) != 3 or len(integral.get("corridas_indexacion", [])) != 3:
+        return {"complete": False, "reason": "contrato integral incompleto"}
+    return {"complete": True, "venta": venta, "plan": plan, "obligaciones": 3, "corridas": 3}
+
+
+def _validate_complete_demo_scenario(db, venta: int) -> dict | None:
+    inspected = _inspect_demo_scenario(db, venta)
+    return inspected if inspected["complete"] else None
+
+
+def _prepare_new_demo_scenario(db, venta: int, indice: int) -> None:
+    repo = PlanPagoVentaV2Repository(db)
+    result = GeneratePlanPagoVentaV2PorBloquesService(repo).execute_in_existing_transaction(_command(venta, indice))
+    if not result.success:
+        raise RuntimeError("No se pudo materializar el plan real: " + result.errors[0])
+    _reset_block_to_capital_state(db, venta, "Demo: proyectada sin índice")
+    _reset_block_to_capital_state(db, venta, "Demo: corrida posterior")
+
+
+def _create_presentation_fixtures_before_apply(db, venta: int, indice: int) -> None:
+    _fixture_corridas(db, venta, indice)
+
+
+def _print_demo_summary(summary: dict, *, reused: bool) -> None:
+    print(f"Escenario {'reutilizado' if reused else 'creado'}: venta id={summary['venta']}, código={CODIGO_VENTA}")
+    print(f"Abrir: /ventas/{summary['venta']}")
+    print(f"Obligaciones: {summary['obligaciones']}; corridas: {summary['corridas']}")
+
+
 def create() -> None:
     require_safe_environment()
     with SessionLocal() as db:
         try:
             _seed_ui(db)
             _seed_indices_financieros_demo(db)
-            venta = _get_or_create_sale(db)
+            venta = _get_demo_sale(db)
+            if venta is not None:
+                summary = _validate_complete_demo_scenario(db, venta)
+                if summary is None:
+                    raise RuntimeError("El escenario demo existe pero está incompleto o inconsistente. Ejecute --clean y vuelva a crear.")
+                # The reuse path is strictly read-only after idempotent seeds.
+                try:
+                    _print_demo_summary(summary, reused=True)
+                except Exception as exc:
+                    print(f"ADVERTENCIA: escenario reutilizado, no se pudo imprimir el resumen: {exc}")
+                return
             indice = db.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
-            repo = PlanPagoVentaV2Repository(db)
-            if repo.get_plan_pago_venta_vivo(venta) is None:
-                result = GeneratePlanPagoVentaV2PorBloquesService(repo).execute_in_existing_transaction(_command(venta, indice))
-                if not result.success:
-                    raise RuntimeError("No se pudo materializar el plan real: " + result.errors[0])
-                state = "creado"
-            else:
-                state = "reutilizado"
-            _reset_block_to_capital_state(db, venta, "Demo: proyectada sin índice")
-            _fixture_corridas(db, venta, indice)
-            _reset_block_to_capital_state(db, venta, "Demo: corrida posterior")
+            venta = _create_demo_sale(db)
+            _prepare_new_demo_scenario(db, venta, indice)
+            _create_presentation_fixtures_before_apply(db, venta, indice)
             _create_and_apply_scoped_real_run(db, venta, indice, _resolve_demo_core_ef(db))
-            _fixture_corridas(db, venta, indice)
-            integral = repo.get_plan_pago_venta_v2_integral(venta)
-            db.commit()
+            # The service committed its own transaction.  No mutation, fixture,
+            # reset or validation is allowed below this boundary.
+            summary = {"venta": venta, "obligaciones": 3, "corridas": 3}
         except Exception:
             db.rollback()
             raise
-    print(f"Escenario {state}: venta id={venta}, código={CODIGO_VENTA}")
-    print(f"Abrir: /ventas/{venta}")
-    obligaciones = sum(len(bloque["obligaciones"]) for bloque in integral["bloques"])
-    print(f"Obligaciones: {obligaciones}; corridas: {len(integral['corridas_indexacion'])}")
+    try:
+        _print_demo_summary(summary, reused=False)
+    except Exception as exc:
+        # Presentation is deliberately non-fatal: the real apply service has
+        # already committed and cannot be rolled back by this session.
+        print(f"ADVERTENCIA: escenario creado, no se pudo imprimir el resumen: {exc}")
 
 
 def clean() -> None:
