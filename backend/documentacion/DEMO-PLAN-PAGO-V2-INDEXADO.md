@@ -15,7 +15,9 @@ pendiente/fallida son fixtures DEV/test de presentación.
    `/ventas/{id}` (el ID se imprime). El seed `CAC_DEMO` tiene valores
    explícitos y ficticios; nunca usar en producción.
 
-La segunda ejecución reutiliza el plan V2 existente. Para eliminar solamente el
+La segunda ejecución inspecciona y valida el escenario completo antes de
+reutilizarlo; no resetea bloques, no crea fixtures, no persiste preview ni
+vuelve a aplicar la corrida. Para eliminar solamente el
 escenario identificado por su código estable:
 `PYTHONPATH=. ENV=dev python scripts/create_plan_pago_v2_demo.py --clean`.
 La limpieza elimina en orden las relaciones financieras, plan, bloques,
@@ -45,11 +47,29 @@ La prueba de aislamiento crea un segundo plan válido y alcanzable por abril de
 saldos, composiciones, indexaciones y corridas, y verifica que `create()` no
 modifica ninguno. La corrida real queda limitada a `Demo: corrida posterior`.
 
-`create()` es idempotente: una doble creación conserva venta, plan, bloques y
-obligaciones, dejando exactamente una corrida pendiente, fallida y aplicada, y
-una sola composición/indexación activa por obligación aplicable. Toda la
-creación es una única transacción; un fallo interno posterior a venta/plan hace
-rollback del grafo exclusivo. `clean()` borra sólo el código exclusivo y puede
+`create()` es un no-op observable en su segunda ejecución: conserva IDs,
+versiones, timestamps, op IDs, trazabilidad, corridas, detalles, composiciones,
+indexaciones y outbox. Si la venta exclusiva existe pero no pasa la inspección
+completa, el script falla con una indicación de ejecutar `--clean`; nunca intenta
+repararla mediante resets parciales.
+
+## Límite transaccional real (#380)
+
+Seeds, venta, plan, reseteos iniciales, fixtures de presentación y el preview
+persistido se preparan antes de la aplicación real. Mientras esa aplicación no
+se invocó, un error del script hace rollback del grafo exclusivo creado en la
+sesión.
+
+`AplicarIndexacionCuotasV2Service` confirma mediante un `commit` interno de su
+repository. Ese commit es el límite transaccional real: después no hay rollback
+externo que pueda revertir venta, plan, corrida aplicada, ajuste, trazabilidad o
+outbox ya confirmados. Por eso no se ejecutan fixtures, resets, inserciones,
+deletes ni validaciones funcionales después de llamar al servicio. El resumen
+se construye con los IDs y cantidades ya conocidas; si imprimirlo falla, se
+informa una advertencia y no se presenta como rollback de una creación exitosa.
+
+La primera creación deja exactamente una corrida pendiente, fallida y aplicada,
+y una sola composición/indexación activa por obligación aplicable. `clean()` borra sólo el código exclusivo y puede
 ejecutarse dos veces; preserva venta base, comprador/personas/roles, inmueble y
 unidad, `CAC_DEMO` y sus valores, conceptos financieros, sucursal e instalación.
 
