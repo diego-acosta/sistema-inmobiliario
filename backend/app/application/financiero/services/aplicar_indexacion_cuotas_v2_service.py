@@ -26,6 +26,7 @@ class AplicarIndexacionCuotasV2Repository(Protocol):
     def get_corrida_by_apply_op(self, op_id: Any) -> dict[str, Any] | None: ...
     def list_detalles_for_update(self, corrida_id: int) -> list[dict[str, Any]]: ...
     def get_obligacion_actual_for_update(self, obligacion_id: int) -> dict[str, Any] | None: ...
+    def get_obligacion_version_actual_for_update(self, obligacion_id: int) -> int | None: ...
     def get_lock_conflict(self, uid_entidad: Any, op_id: Any) -> dict[str, Any] | None: ...
     def acquire_lock(self, uid_entidad: Any, core_ef: CoreEFHeaders) -> None: ...
     def release_locks(self, op_id: Any) -> None: ...
@@ -98,9 +99,18 @@ class AplicarIndexacionCuotasV2Service:
                     core_ef,
                 )
                 ofi_id = self.repository.upsert_trazabilidad(detalle, corrida, actual, core_ef)
+                version_final = self.repository.get_obligacion_version_actual_for_update(
+                    detalle["id_obligacion_financiera"]
+                )
+                if version_final is None:
+                    raise AplicacionIndexacionError(
+                        "OBLIGACION_INDEXACION_INEXISTENTE",
+                        mark_failed=True,
+                        stage="MUTACION",
+                    )
                 self.repository.update_detalle_aplicado(
                     detalle["id_corrida_indexacion_financiera_detalle"],
-                    int(detalle["version_esperada"]) + 1,
+                    version_final,
                     ajuste_id,
                     ofi_id,
                     core_ef,

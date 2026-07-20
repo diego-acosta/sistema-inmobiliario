@@ -71,6 +71,20 @@ class AplicarIndexacionCuotasV2SqlAlchemyRepository:
         """), {"id": obligacion_id}).mappings().first()
         return dict(row) if row else None
 
+    def get_obligacion_version_actual_for_update(self, obligacion_id: int) -> int | None:
+        """Returns the persisted version without releasing the row lock.
+
+        This read happens after every mutation that may refresh the obligation,
+        so callers must not derive the result from the preview version.
+        """
+        row = self.db.execute(text("""
+            SELECT version_registro
+            FROM obligacion_financiera
+            WHERE id_obligacion_financiera = :id AND deleted_at IS NULL
+            FOR UPDATE
+        """), {"id": obligacion_id}).mappings().first()
+        return int(row["version_registro"]) if row else None
+
     def get_lock_conflict(self, uid_entidad: Any, op_id: Any) -> dict[str, Any] | None:
         row = self.db.execute(text("""
             SELECT * FROM lock_logico
