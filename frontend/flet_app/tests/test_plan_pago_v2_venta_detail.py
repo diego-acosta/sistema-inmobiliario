@@ -268,10 +268,11 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Hay corridas pendientes de aplicación." in text
     assert "ID 9 · APLICADA" in text
     assert "Historial de corridas" in text
-    assert "ID 11" in text
+    assert "\n11\n" in f"\n{text}\n"
     assert "FALLIDA" in text
     assert "Hay corridas fallidas." in text
     assert "ERR_CAB" in text
+    assert "Falla controlada" in text
     assert "Exclusiones" in text
     assert "Errores por obligación" in text
     assert "Preparar" not in text
