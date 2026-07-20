@@ -57,7 +57,17 @@ def test_postgres_aplica_corrida_crea_trazabilidad_actualiza_obligacion_detalle_
     assert obl["op"] == str(APPLY_CORE.x_op_id)
 
     assert _scalar(db_session, "SELECT COUNT(*) FROM obligacion_financiera_indexacion WHERE deleted_at IS NULL AND id_obligacion_financiera=:id", id=ctx["obligacion"]) == 1
-    assert _scalar(db_session, "SELECT COUNT(*) FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=:id AND version_resultante IS NOT NULL", id=corrida) == 2
+    detalles_versiones = db_session.execute(text("""
+        SELECT d.version_esperada, d.version_resultante, o.version_registro
+        FROM corrida_indexacion_financiera_detalle d
+        JOIN obligacion_financiera o ON o.id_obligacion_financiera = d.id_obligacion_financiera
+        WHERE d.id_corrida_indexacion_financiera=:id
+        ORDER BY d.id_obligacion_financiera
+    """), {"id": corrida}).mappings().all()
+    assert len(detalles_versiones) == 2
+    assert all(row["version_resultante"] == row["version_registro"] for row in detalles_versiones)
+    assert all(row["version_resultante"] > row["version_esperada"] for row in detalles_versiones)
+    assert _scalar(db_session, "SELECT COUNT(*) FROM lock_logico WHERE op_id=:op_id AND estado_lock='ACTIVO'", op_id=str(APPLY_CORE.x_op_id)) == 0
     outbox = db_session.execute(text("SELECT event_type, aggregate_type, aggregate_id, payload FROM outbox_event WHERE aggregate_id=:id"), {"id": corrida}).mappings().one()
     assert outbox["event_type"] == "financiero.indexacion_cuotas_v2.corrida_aplicada"
     assert outbox["aggregate_type"] == "corrida_indexacion_financiera"
@@ -86,6 +96,7 @@ def test_postgres_conflicto_version_persiste_fallida_y_rollback(db_session):
     assert cab["estado_corrida"] == "FALLIDA"
     assert cab["codigo_error"] == "VERSION_OBLIGACION_INCOMPATIBLE"
     assert _scalar(db_session, "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id=:id", id=corrida) == 0
+    assert _scalar(db_session, "SELECT COUNT(*) FROM composicion_obligacion WHERE id_obligacion_financiera=:id AND deleted_at IS NULL", id=ctx["obligacion"]) == 3
 
 
 def test_api_aplicar_headers_exito_conflictos(client, db_session):
@@ -181,6 +192,28 @@ def test_postgres_replay_devuelve_cantidad_real_y_no_duplica(db_session):
     bad = service.execute(AplicarIndexacionCuotasV2Command(corrida, "0" * 64), APPLY_CORE)
     assert not bad.success
     assert bad.errors == ["IDEMPOTENCIA_PAYLOAD_INCOMPATIBLE"]
+
+
+def test_postgres_inserta_ajuste_y_persiste_version_final_refrescada(db_session):
+    ctx = _create_context(db_session)
+    db_session.execute(text("DELETE FROM composicion_obligacion WHERE id_composicion_obligacion=:id"), {"id": ctx["comp_ajuste"]})
+    db_session.commit()
+    preview = _persist_preview(db_session, ctx)
+    corrida = preview["id_corrida_indexacion_financiera"]
+
+    result = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session)).execute(
+        AplicarIndexacionCuotasV2Command(corrida, preview["hash_corrida"]), APPLY_CORE
+    )
+
+    assert result.success, result.errors
+    detalle = db_session.execute(text("""
+        SELECT d.version_esperada, d.version_resultante, o.version_registro
+        FROM corrida_indexacion_financiera_detalle d
+        JOIN obligacion_financiera o ON o.id_obligacion_financiera = d.id_obligacion_financiera
+        WHERE d.id_corrida_indexacion_financiera=:corrida AND d.id_obligacion_financiera=:obligacion
+    """), {"corrida": corrida, "obligacion": ctx["obligacion"]}).mappings().one()
+    assert detalle["version_resultante"] == detalle["version_registro"]
+    assert detalle["version_resultante"] > detalle["version_esperada"]
 
 
 def test_postgres_hash_persistido_inconsistente_no_marca_fallida_ni_muta(db_session):
