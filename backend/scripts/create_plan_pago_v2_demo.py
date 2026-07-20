@@ -15,11 +15,10 @@ from app.application.comercial.services.generate_plan_pago_venta_v2_por_bloques_
 from app.application.common.commands import CommandContext
 from app.api.core_ef_headers import CoreEFHeaders
 from app.application.financiero.services.aplicar_indexacion_cuotas_v2_service import AplicarIndexacionCuotasV2Command, AplicarIndexacionCuotasV2Service
-from app.application.financiero.services.preparar_corridas_indexacion_cuotas_v2_service import PrepararCorridasIndexacionCuotasV2Command, PrepararCorridasIndexacionCuotasV2Service
+from app.application.financiero.services.preview_indexacion_cuotas_v2_service import PreviewIndexacionCuotasV2Command
 from app.config.database import SessionLocal
 from app.infrastructure.persistence.repositories.aplicar_indexacion_cuotas_v2_repository import AplicarIndexacionCuotasV2SqlAlchemyRepository
 from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository import PlanPagoVentaV2Repository
-from app.infrastructure.persistence.repositories.preparar_corridas_indexacion_cuotas_v2_repository import PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository
 from app.infrastructure.persistence.repositories.preview_indexacion_cuotas_v2_repository import PreviewIndexacionCuotasV2SqlAlchemyRepository
 from app.application.financiero.services.preview_indexacion_cuotas_v2_service import PreviewIndexacionCuotasV2Service
 
@@ -128,18 +127,15 @@ def _prepare_and_apply_real(db, venta: int, indice: int) -> None:
         AND cap.id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='CAPITAL_VENTA' AND deleted_at IS NULL)
         AND o.id_obligacion_financiera IN (SELECT o2.id_obligacion_financiera FROM obligacion_financiera o2 JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=o2.id_plan_pago_venta_bloque JOIN plan_pago_venta p ON p.id_plan_pago_venta=b.id_plan_pago_venta WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior')"""), {"sale": venta})
     value = db.execute(text("SELECT id_indice_financiero_valor FROM indice_financiero_valor WHERE id_indice_financiero=:indice AND fecha_valor=DATE '2026-04-01' AND deleted_at IS NULL"), {"indice": indice}).scalar_one()
+    scope = db.execute(text("""SELECT p.id_plan_pago_venta,b.id_plan_pago_venta_bloque,i.id_plan_pago_venta_bloque_indexacion
+        FROM plan_pago_venta p JOIN plan_pago_venta_bloque b USING(id_plan_pago_venta) JOIN plan_pago_venta_bloque_indexacion i USING(id_plan_pago_venta_bloque)
+        WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior'"""), {"sale": venta}).mappings().one()
     headers = CoreEFHeaders(uuid4(), 1, 1, 1)
-    prepare = PrepararCorridasIndexacionCuotasV2Service(
-        PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository(db),
-        PreviewIndexacionCuotasV2Service(PreviewIndexacionCuotasV2SqlAlchemyRepository(db)),
-    ).execute(PrepararCorridasIndexacionCuotasV2Command(value, "DEMO-373"), headers)
-    if not prepare.success:
-        raise RuntimeError("No se pudo preparar corrida demo: " + prepare.errors[0])
-    corrida = db.execute(text("""SELECT c.id_corrida_indexacion_financiera, c.hash_corrida, c.version_registro
-        FROM corrida_indexacion_financiera c JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=c.id_plan_pago_venta_bloque
-        JOIN plan_pago_venta p ON p.id_plan_pago_venta=c.id_plan_pago_venta
-        WHERE p.id_venta=:sale AND b.etiqueta_bloque='Demo: corrida posterior' AND c.estado_corrida IN ('PREVISUALIZADA','PENDIENTE_APLICACION')
-        ORDER BY c.id_corrida_indexacion_financiera DESC LIMIT 1"""), {"sale": venta}).mappings().one()
+    preview = PreviewIndexacionCuotasV2Service(PreviewIndexacionCuotasV2SqlAlchemyRepository(db)).execute(
+        PreviewIndexacionCuotasV2Command(**scope, id_indice_financiero=indice, id_indice_financiero_valor_aplicado=value, fecha_corte=date(2026, 4, 30), periodo_aplicado=date(2026, 4, 1), persistir=True, motivo="DEMO-373"), headers)
+    if not preview.success:
+        raise RuntimeError("No se pudo persistir preview demo: " + preview.errors[0])
+    corrida = db.execute(text("SELECT id_corrida_indexacion_financiera,hash_corrida,version_registro FROM corrida_indexacion_financiera WHERE id_corrida_indexacion_financiera=:id"), {"id": preview.data["id_corrida_indexacion_financiera"]}).mappings().one()
     applied = AplicarIndexacionCuotasV2Service(AplicarIndexacionCuotasV2SqlAlchemyRepository(db)).execute(
         AplicarIndexacionCuotasV2Command(corrida["id_corrida_indexacion_financiera"], corrida["hash_corrida"]),
         CoreEFHeaders(uuid4(), 1, 1, 1, int(corrida["version_registro"])),
