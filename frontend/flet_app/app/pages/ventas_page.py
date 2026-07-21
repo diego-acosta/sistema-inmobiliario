@@ -703,7 +703,7 @@ def _plan_pago_v2_cuota_row(obligacion: dict[str, Any], *, visual_order: int) ->
         bgcolor=ft.Colors.BLUE_GREY_50,
         border_radius=4,
     )
-    button = ft.IconButton(icon=ft.Icons.ADD, tooltip="Ver composición")
+    button = ft.IconButton(data=f"toggle-composicion-{obligacion.get('id_obligacion_financiera')}", icon=ft.Icons.ADD, tooltip="Ver composición")
 
     def toggle(_: ft.ControlEvent) -> None:
         details.visible = not details.visible

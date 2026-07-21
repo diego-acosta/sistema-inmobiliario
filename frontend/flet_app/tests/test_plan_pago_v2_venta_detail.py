@@ -385,7 +385,8 @@ def test_datos_tecnicos_permanecen_en_tarjeta_estatica_accesible() -> None:
 def test_cuota_compacta_muestra_estados_importe_y_composicion_colapsada() -> None:
     control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
     text = _texts(control)
-    assert "Cuota" in text
+    headers = [row for row in _walk(control) if isinstance(row, ft.Row) and "N°" in _texts(row) and "Vencimiento" in _texts(row) and "Total cuota" in _texts(row)]
+    assert len(headers) == 1
     assert "Vencimiento" in text
     assert "Total cuota" in text
     assert "Estado obligación" in text
@@ -460,7 +461,7 @@ def test_cuotas_aplanadas_tienen_tres_filas_ordenadas_y_no_mutan_datos() -> None
     assert len(rows) == 3
     assert [row.data for row in rows] == ["cuota-103", "cuota-101", "cuota-102"]
     assert [_texts(row).split("\n")[0] for row in rows] == ["1", "2", "3"]
-    assert ["10/02/2026" in _texts(row) for row in rows] == [True, False, False]
+    assert [next(value for value in _texts(row).split("\n") if "/" in value) for row in rows] == ["10/02/2026", "10/03/2026", "10/01/2027"]
     assert "Bloque - Demo:" not in _texts(control)
 
 
