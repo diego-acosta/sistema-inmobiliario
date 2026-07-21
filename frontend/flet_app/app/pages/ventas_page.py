@@ -595,10 +595,8 @@ def _plan_pago_v2_integral_view(result: ApiResult) -> ft.Control:
             color=ft.Colors.BLUE_GREY_600,
         ),
         _plan_pago_v2_summary(plan, resumen),
-        _plan_pago_v2_interface_states(resumen, corridas),
         ft.Text("Cuotas", size=16, weight=ft.FontWeight.W_700),
         _plan_pago_v2_blocks(bloques),
-        ft.Text("Historial de corridas", size=16, weight=ft.FontWeight.W_700),
         _plan_pago_v2_corridas(corridas, plan.get("moneda")),
     ]
     return ft.Column(controls=controls, spacing=12)
@@ -731,25 +729,34 @@ def _plan_pago_v2_corridas(corridas: list[dict[str, Any]], moneda: object) -> ft
         elif estado == "FALLIDA": counts["Fallidas"] += 1
     latest = max(corridas, key=lambda item: (str(item.get("fecha_aplicacion") or item.get("fecha_preparacion") or item.get("periodo_aplicado") or ""), item.get("id_corrida_indexacion_financiera") or 0))
     latest_date = _format_date(latest.get("fecha_aplicacion") or latest.get("periodo_aplicado"))
-    summary = ft.Column([ft.Text("Corridas de indexación", size=16, weight=ft.FontWeight.W_700), ft.Text(" · ".join(f"{label} {value}" for label, value in counts.items())), ft.Text(f"Última: {latest_date} · {_dash(latest.get('codigo_indice_financiero'))} · {_corrida_estado_label(latest.get('estado_corrida'))}")], spacing=3)
+    summary = ft.Column(data="resumen-corridas", controls=[ft.Text("Corridas de indexación", size=16, weight=ft.FontWeight.W_700), ft.Text(" · ".join(f"{label} {value}" for label, value in counts.items())), ft.Text(f"Última: {latest_date} · {_dash(latest.get('codigo_indice_financiero'))} · {_corrida_estado_label(latest.get('estado_corrida'))}")], spacing=3)
     history = ft.Container(data="historial-corridas", visible=False, content=ft.Column([_plan_pago_v2_corrida_compacta(corrida, moneda) for corrida in corridas], spacing=6))
     toggle = ft.TextButton("Ver historial", data="toggle-historial-corridas", tooltip="Ver historial")
     def toggle_history(_: ft.ControlEvent) -> None:
         history.visible = not history.visible
         toggle.text = "Ocultar historial" if history.visible else "Ver historial"
         toggle.tooltip = toggle.text
-        safe_update(toggle); safe_update(history)
+        safe_update(toggle)
+        safe_update(history)
     toggle.on_click = toggle_history
-    return ft.Column([summary, toggle, history], spacing=6)
+    return ft.Container(
+        data="seccion-corridas-indexacion",
+        content=ft.Column([summary, toggle, history], spacing=6),
+    )
 
 
 def _plan_pago_v2_corrida_compacta(corrida: dict[str, Any], moneda: object) -> ft.Control:
     corrida_id = corrida.get("id_corrida_indexacion_financiera")
-    affected = _safe_list(corrida.get("obligaciones_afectadas")); exclusions = _safe_list(corrida.get("exclusiones")); errors = _safe_list(corrida.get("errores"))
+    affected = _safe_list(corrida.get("obligaciones_afectadas"))
+    exclusions = _safe_list(corrida.get("exclusiones"))
+    errors = _safe_list(corrida.get("errores_por_obligacion"))
     technical = ft.Container(data=f"tecnico-corrida-{corrida_id}", visible=False, content=ft.Column([ft.Text("Datos técnicos"), ft.Text(f"ID corrida: {_dash(corrida_id)}"), ft.Text(f"Origen técnico: {_dash(corrida.get('origen_corrida'))}"), ft.Text(_dash(corrida.get("diagnostico_tecnico")))], spacing=3), padding=6, bgcolor=ft.Colors.BLUE_GREY_50)
     technical_toggle = ft.TextButton("Mostrar datos técnicos", data=f"toggle-tecnico-corrida-{corrida_id}")
     def toggle_technical(_: ft.ControlEvent) -> None:
-        technical.visible = not technical.visible; technical_toggle.text = "Ocultar datos técnicos" if technical.visible else "Mostrar datos técnicos"; safe_update(technical); safe_update(technical_toggle)
+        technical.visible = not technical.visible
+        technical_toggle.text = "Ocultar datos técnicos" if technical.visible else "Mostrar datos técnicos"
+        safe_update(technical)
+        safe_update(technical_toggle)
     technical_toggle.on_click = toggle_technical
     detail_rows = [ft.Text("Resultado", weight=ft.FontWeight.W_600), ft.Text(f"Período: {_format_date(corrida.get('periodo_aplicado'))} · Índice: {_dash(corrida.get('codigo_indice_financiero'))}"), ft.Text(f"Capital {_format_money(moneda, corrida.get('capital_analizado_total'))} · Ajuste {_format_money(moneda, corrida.get('ajuste_total'))} · Importe {_format_money(moneda, corrida.get('importe_total'))}")]
     for title, rows, color in (("Obligaciones afectadas", affected, ft.Colors.BLUE_GREY_50), ("Exclusiones", exclusions, ft.Colors.AMBER_50), ("Errores", errors, ft.Colors.RED_50)):
@@ -760,7 +767,10 @@ def _plan_pago_v2_corrida_compacta(corrida: dict[str, Any], moneda: object) -> f
     detail = ft.Container(data=f"detalle-corrida-{corrida_id}", visible=False, content=ft.Column(detail_rows, spacing=4), padding=8, bgcolor=ft.Colors.BLUE_GREY_50)
     toggle = ft.TextButton("Ver detalle", data=f"toggle-corrida-{corrida_id}")
     def toggle_detail(_: ft.ControlEvent) -> None:
-        detail.visible = not detail.visible; toggle.text = "Ocultar detalle" if detail.visible else "Ver detalle"; safe_update(detail); safe_update(toggle)
+        detail.visible = not detail.visible
+        toggle.text = "Ocultar detalle" if detail.visible else "Ver detalle"
+        safe_update(detail)
+        safe_update(toggle)
     toggle.on_click = toggle_detail
     title = f"{_format_date(corrida.get('fecha_aplicacion') or corrida.get('periodo_aplicado'))} · {_dash(corrida.get('codigo_indice_financiero'))}"
     counts = f"Afectadas {len(affected)} · Excluidas {len(exclusions)} · Errores {len(errors)}"
