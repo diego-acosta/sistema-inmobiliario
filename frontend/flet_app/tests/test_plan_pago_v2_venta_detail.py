@@ -36,6 +36,12 @@ def _texts(control: ft.Control) -> str:
     return "\n".join(values)
 
 
+def _find_control_by_data(control: object, data: str, control_type):
+    matches = [item for item in _walk(control) if isinstance(item, control_type) and getattr(item, "data", None) == data]
+    assert len(matches) == 1
+    return matches[0]
+
+
 class FakeApi:
     def __init__(self, plan_result: ApiResult) -> None:
         self.plan_result = plan_result
@@ -405,7 +411,7 @@ def test_cuota_compacta_muestra_estados_importe_y_composicion_colapsada() -> Non
 
 def test_cuota_expande_composicion_localmente_y_vuelve_a_colapsar() -> None:
     control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
-    button = next(item for item in _walk(control) if isinstance(item, ft.IconButton))
+    button = _find_control_by_data(control, "toggle-composicion-100", ft.IconButton)
     details = next(
         item for item in _walk(control)
         if isinstance(item, ft.Container) and item.data == "composicion-100"
