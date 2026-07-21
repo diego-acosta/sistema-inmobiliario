@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 import flet as ft
@@ -443,18 +444,24 @@ def test_estado_pago_y_porcentaje_de_ajuste_son_derivados_de_presentacion() -> N
     ) == "—"
 
 
-def test_cuotas_aplanadas_tienen_un_unico_encabezado_y_contexto_secundario() -> None:
+def test_cuotas_aplanadas_tienen_tres_filas_ordenadas_y_no_mutan_datos() -> None:
     data = _plan_data()
-    base = data["bloques"][0]
-    for numero, etiqueta in ((3, "Demo: corrida posterior"), (2, "Demo: proyectada sin índice")):
-        copia = {**base, "numero_bloque": numero, "etiqueta_bloque": etiqueta, "obligaciones": [{**base["obligaciones"][1], "id_obligacion_financiera": 100 + numero, "numero_obligacion": numero, "numero_cuota_asociada": numero}]}
-        data["bloques"].append(copia)
+    base = deepcopy(data["bloques"][0])
+    obligaciones = [deepcopy(base["obligaciones"][0]), deepcopy(base["obligaciones"][1]), deepcopy(base["obligaciones"][0])]
+    for obligacion, identifier, vencimiento in zip(obligaciones, (101, 102, 103), ("2026-03-10", "2027-01-10", "2026-02-10"), strict=True):
+        obligacion.update({"id_obligacion_financiera": identifier, "numero_cuota_asociada": 1, "numero_obligacion": identifier, "fecha_vencimiento": vencimiento})
+    data["bloques"] = [{**deepcopy(base), "numero_bloque": index, "etiqueta_bloque": f"Demo: bloque {index}", "obligaciones": [obligacion]} for index, obligacion in enumerate(obligaciones, 1)]
+    before = deepcopy(data)
     control = _plan_pago_v2_integral_view(ApiResult(True, data=data))
-    text = _texts(control)
-    assert text.count("Vencimiento") == 1
-    assert text.count("Total cuota") == 1
-    assert len([x for x in _walk(control) if isinstance(x, ft.Row) and str(x.data or "").startswith("cuota-")]) == 3
-    assert "Bloque - Demo:" not in text
+    assert data == before
+    headers = [row for row in _walk(control) if isinstance(row, ft.Row) and "N°" in _texts(row) and "Vencimiento" in _texts(row)]
+    rows = [row for row in _walk(control) if isinstance(row, ft.Row) and str(row.data or "").startswith("cuota-")]
+    assert len(headers) == 1
+    assert len(rows) == 3
+    assert [row.data for row in rows] == ["cuota-103", "cuota-101", "cuota-102"]
+    assert [_texts(row).split("\n")[0] for row in rows] == ["1", "2", "3"]
+    assert ["10/02/2026" in _texts(row) for row in rows] == [True, False, False]
+    assert "Bloque - Demo:" not in _texts(control)
 
 
 class FakeMountedPage:
