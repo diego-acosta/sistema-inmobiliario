@@ -6,7 +6,11 @@ import flet as ft
 
 from app.api_client import ApiClient, ApiResult
 from app.components.loading_state import DeferredLoadingContainer
-from app.pages.ventas_page import VentaDetailView, _plan_pago_v2_integral_view
+from app.pages.ventas_page import (
+    VentaDetailView,
+    _obligacion_indexacion_label,
+    _plan_pago_v2_integral_view,
+)
 
 
 def _walk(control: object):
@@ -273,11 +277,71 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Fallidas" in text
     assert "ERR_CAB" in text
     assert "Falla controlada" in text
-    assert "Obligaciones y exclusiones de esta corrida" in text
-    assert "Código de error" in text
+    assert "Exclusiones" in text
+    assert "SIN_INDICE" in text
+    assert "No publicado" in text
+    assert "Errores por obligación" in text
+    assert "VALOR_INVALIDO" in text
+    assert "Valor inválido" in text
     assert "Preparar" not in text
     assert "Aplicar" not in text
     assert "Confirmar corrida" not in text
+
+
+def test_corrida_renderiza_las_tres_colecciones_en_secciones_separadas() -> None:
+    data = _plan_data()
+    corrida = data["corridas_indexacion"][0]
+    corrida["obligaciones_afectadas"] = [
+        {
+            "id_obligacion_financiera": 100,
+            "estado_elegibilidad": "ELEGIBLE",
+            "motivo_exclusion": None,
+            "codigo_error": None,
+            "detalle_controlado": "Aplicada correctamente",
+        }
+    ]
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=data))
+
+    sections = [
+        item
+        for item in _walk(control)
+        if isinstance(item, ft.Column)
+        and item.controls
+        and isinstance(item.controls[0], ft.Text)
+        and item.controls[0].value
+        in {"Obligaciones afectadas", "Exclusiones", "Errores por obligación"}
+    ]
+    section_texts = {str(section.controls[0].value): _texts(section) for section in sections}
+
+    assert set(section_texts) == {
+        "Obligaciones afectadas",
+        "Exclusiones",
+        "Errores por obligación",
+    }
+    assert "Aplicada correctamente" in section_texts["Obligaciones afectadas"]
+    assert "SIN_INDICE" in section_texts["Exclusiones"]
+    assert "No publicado" in section_texts["Exclusiones"]
+    assert "VALOR_INVALIDO" in section_texts["Errores por obligación"]
+    assert "Valor inválido" in section_texts["Errores por obligación"]
+
+
+def test_estado_excepcional_tiene_prioridad_sobre_origen_corrida_posterior() -> None:
+    base = {"origen_indexacion": "CORRIDA_POSTERIOR"}
+    assert _obligacion_indexacion_label(
+        {**base, "estado_indexacion_presentacion": "CON_ERROR"}
+    ) == "Con error"
+    assert _obligacion_indexacion_label(
+        {**base, "estado_indexacion_presentacion": "EXCLUIDA"}
+    ) == "Excluida"
+
+
+def test_estado_exitoso_de_corrida_posterior_mantiene_badge_ajustada() -> None:
+    assert _obligacion_indexacion_label(
+        {
+            "estado_indexacion_presentacion": "CON_INDICE_APLICADO",
+            "origen_indexacion": "CORRIDA_POSTERIOR",
+        }
+    ) == "Ajustada por corrida"
 
 
 class FakeMountedPage:

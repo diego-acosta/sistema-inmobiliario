@@ -1,5 +1,5 @@
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import flet as ft
 
@@ -655,32 +655,144 @@ def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control
     return ft.Column(cards, spacing=8)
 
 
-def _plan_pago_v2_corridas(corridas: list[dict[str, Any]], moneda: object) -> ft.Control:
-    if not corridas: return ft.Text("Sin corridas de indexación registradas.")
-    controls=[]
-    for c in corridas:
-        details=[("Cálculo",_format_timestamp(c.get("fecha_preparacion"))), ("Fecha de corte",_format_date(c.get("fecha_corte"))), ("Período",_format_date(c.get("periodo_aplicado"))), ("Índice",_dash(c.get("codigo_indice_financiero"))), ("Analizada / elegible / excluida / aplicada",f"{_dash(c.get('cantidad_analizada'))} / {_dash(c.get('cantidad_elegible'))} / {_dash(c.get('cantidad_excluida'))} / {_dash(c.get('cantidad_aplicada'))}"), ("Capital / ajuste / importe",f"{_format_money(moneda,c.get('capital_analizado_total'))} / {_format_money(moneda,c.get('ajuste_total'))} / {_format_money(moneda,c.get('importe_total'))}")]
-        title=ft.Row([ft.Text("Corrida de indexación",size=16,weight=ft.FontWeight.W_700),ft.Container(expand=True),status_badge(_corrida_estado_label(c.get("estado_corrida")))],wrap=True)
-        children=[title,key_value_grid(details)]
-        if any(c.get(k) for k in ("codigo_error","etapa_error","diagnostico_tecnico")): children.append(ft.Container(content=key_value_grid([("Error de corrida",_dash(c.get("codigo_error"))), ("Etapa",_dash(c.get("etapa_error"))), ("Diagnóstico",_dash(c.get("diagnostico_tecnico")))]),padding=10,bgcolor=ft.Colors.RED_50,border_radius=8))
-        children.append(_corrida_detalles("Obligaciones y exclusiones de esta corrida", _safe_list(c.get("obligaciones_afectadas"))))
-        children.append(ft.ExpansionTile(title=ft.Text("Datos técnicos"), controls=[key_value_grid([("ID corrida", c.get("id_corrida_indexacion_financiera")), ("Origen técnico", _dash(c.get("origen_corrida")))])]))
-        controls.append(ft.Container(content=ft.Column(children,spacing=9),padding=14,border=ft.border.all(1,ft.Colors.BLUE_GREY_200),border_radius=10))
-    return ft.Column(controls,spacing=12)
+def _plan_pago_v2_corridas(
+    corridas: list[dict[str, Any]], moneda: object
+) -> ft.Control:
+    if not corridas:
+        return ft.Text("Sin corridas de indexación registradas.")
+
+    controls: list[ft.Control] = []
+    for corrida in corridas:
+        details = [
+            ("Cálculo", _format_timestamp(corrida.get("fecha_preparacion"))),
+            ("Fecha de corte", _format_date(corrida.get("fecha_corte"))),
+            ("Período", _format_date(corrida.get("periodo_aplicado"))),
+            ("Índice", _dash(corrida.get("codigo_indice_financiero"))),
+            (
+                "Analizada / elegible / excluida / aplicada",
+                " / ".join(
+                    _dash(corrida.get(field))
+                    for field in (
+                        "cantidad_analizada",
+                        "cantidad_elegible",
+                        "cantidad_excluida",
+                        "cantidad_aplicada",
+                    )
+                ),
+            ),
+            (
+                "Capital / ajuste / importe",
+                " / ".join(
+                    _format_money(moneda, corrida.get(field))
+                    for field in (
+                        "capital_analizado_total",
+                        "ajuste_total",
+                        "importe_total",
+                    )
+                ),
+            ),
+        ]
+        children: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Text("Corrida de indexación", size=16, weight=ft.FontWeight.W_700),
+                    ft.Container(expand=True),
+                    status_badge(_corrida_estado_label(corrida.get("estado_corrida"))),
+                ],
+                wrap=True,
+            ),
+            key_value_grid(details),
+        ]
+        if any(corrida.get(field) for field in ("codigo_error", "etapa_error", "diagnostico_tecnico")):
+            children.append(
+                ft.Container(
+                    content=key_value_grid(
+                        [
+                            ("Error de corrida", _dash(corrida.get("codigo_error"))),
+                            ("Etapa", _dash(corrida.get("etapa_error"))),
+                            ("Diagnóstico", _dash(corrida.get("diagnostico_tecnico"))),
+                        ]
+                    ),
+                    padding=10,
+                    bgcolor=ft.Colors.RED_50,
+                    border_radius=8,
+                )
+            )
+        for title, field, kind in (
+            ("Obligaciones afectadas", "obligaciones_afectadas", "affected"),
+            ("Exclusiones", "exclusiones", "exclusion"),
+            ("Errores por obligación", "errores", "error"),
+        ):
+            rows = _safe_list(corrida.get(field))
+            if rows:
+                children.append(_corrida_detalles(title, rows, kind=kind))
+        children.append(
+            ft.ExpansionTile(
+                title=ft.Text("Datos técnicos"),
+                controls=[
+                    key_value_grid(
+                        [
+                            ("ID corrida", corrida.get("id_corrida_indexacion_financiera")),
+                            ("Origen técnico", _dash(corrida.get("origen_corrida"))),
+                        ]
+                    )
+                ],
+            )
+        )
+        controls.append(
+            ft.Container(
+                content=ft.Column(children, spacing=9),
+                padding=14,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
+                border_radius=10,
+            )
+        )
+    return ft.Column(controls, spacing=12)
 
 
-def _corrida_detalles(title: str, rows: list[dict[str, Any]]) -> ft.Control:
-    if not rows: return ft.Text(f"{title}: sin registros.")
-    return ft.Column([ft.Text(title,weight=ft.FontWeight.W_600)] + [ft.Container(content=key_value_grid([("Obligación",_dash(r.get("id_obligacion_financiera"))), ("Elegibilidad",_dash(r.get("estado_elegibilidad"))), ("Motivo",_dash(r.get("motivo_exclusion"))), ("Código de error",_dash(r.get("codigo_error"))), ("Detalle",_dash(r.get("detalle_controlado"))), ("Versión resultante",_dash(r.get("version_resultante")))]),padding=8,bgcolor=ft.Colors.RED_50 if r.get("codigo_error") or r.get("motivo_exclusion") else ft.Colors.BLUE_GREY_50,border_radius=6) for r in rows],spacing=5)
-
+def _corrida_detalles(
+    title: str,
+    rows: list[dict[str, Any]],
+    *,
+    kind: Literal["affected", "exclusion", "error"],
+) -> ft.Control:
+    """Renderiza cada colección del contrato sin mezclarlas entre sí."""
+    colors = {
+        "affected": ft.Colors.BLUE_GREY_50,
+        "exclusion": ft.Colors.AMBER_50,
+        "error": ft.Colors.RED_50,
+    }
+    detail_controls: list[ft.Control] = [ft.Text(title, weight=ft.FontWeight.W_600)]
+    for row in rows:
+        # El DTO read-only sólo expone estos campos; no se derivan importes ni versiones.
+        detail_controls.append(
+            ft.Container(
+                content=key_value_grid(
+                    [
+                        ("Obligación", _dash(row.get("id_obligacion_financiera"))),
+                        ("Elegibilidad", _dash(row.get("estado_elegibilidad"))),
+                        ("Motivo", _dash(row.get("motivo_exclusion"))),
+                        ("Código de error", _dash(row.get("codigo_error"))),
+                        ("Detalle", _dash(row.get("detalle_controlado"))),
+                    ]
+                ),
+                padding=8,
+                bgcolor=colors[kind],
+                border_radius=6,
+            )
+        )
+    return ft.Column(detail_controls, spacing=5)
 
 def _corrida_estado_label(value: object) -> str:
     return {"PENDIENTE_APLICACION":"Pendiente", "APLICADA":"Aplicada", "FALLIDA":"Fallida"}.get(str(value or "").upper(), _dash(value))
 
 def _obligacion_indexacion_label(obligacion: dict[str, Any]) -> str:
+    estado = str(obligacion.get("estado_indexacion_presentacion") or "").upper()
+    if estado in {"CON_ERROR", "EXCLUIDA"}:
+        return _estado_indexacion_label(estado)
     if obligacion.get("origen_indexacion") == "CORRIDA_POSTERIOR":
         return "Ajustada por corrida"
-    return _estado_indexacion_label(obligacion.get("estado_indexacion_presentacion"))
+    return _estado_indexacion_label(estado)
 
 
 def _estado_indexacion_label(value: object) -> str:
