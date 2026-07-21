@@ -596,7 +596,7 @@ def _plan_pago_v2_integral_view(result: ApiResult) -> ft.Control:
         ),
         _plan_pago_v2_summary(plan, resumen),
         _plan_pago_v2_interface_states(resumen, corridas),
-        ft.Text("Bloques y obligaciones", size=16, weight=ft.FontWeight.W_700),
+        ft.Text("Cuotas", size=16, weight=ft.FontWeight.W_700),
         _plan_pago_v2_blocks(bloques),
         ft.Text("Historial de corridas", size=16, weight=ft.FontWeight.W_700),
         _plan_pago_v2_corridas(corridas, plan.get("moneda")),
@@ -651,20 +651,28 @@ def _plan_pago_v2_interface_states(resumen: dict[str, Any], corridas: list[dict[
 
 
 def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
-    if not bloques:
-        return ft.Text("Sin bloques de Plan Pago V2 expuestos.")
-    controls: list[ft.Control] = []
+    """Aplana bloques para que las cuotas sean la estructura principal de lectura."""
+    obligaciones: list[dict[str, Any]] = []
     for bloque in bloques:
-        controls.append(
-            ft.Text(
-                _join_values("Bloque", bloque.get("etiqueta_bloque")),
-                color=ft.Colors.BLUE_GREY_700,
-                weight=ft.FontWeight.W_600,
-            )
+        contexto = {
+            "numero_bloque": bloque.get("numero_bloque"),
+            "etiqueta_bloque": bloque.get("etiqueta_bloque"),
+            "metodo_liquidacion": bloque.get("metodo_liquidacion"),
+            "indexacion": bloque.get("indexacion"),
+        }
+        obligaciones.extend(
+            {**obligacion, "_bloque": contexto}
+            for obligacion in _safe_list(bloque.get("obligaciones"))
         )
-        controls.append(_plan_pago_v2_obligaciones(_safe_list(bloque.get("obligaciones"))))
-    return ft.Column(controls, spacing=6)
-
+    obligaciones.sort(
+        key=lambda item: (
+            item.get("numero_cuota_asociada") is None,
+            item.get("numero_cuota_asociada") or item.get("numero_obligacion") or 0,
+            item.get("fecha_vencimiento") or "",
+            item.get("id_obligacion_financiera") or 0,
+        )
+    )
+    return _plan_pago_v2_obligaciones(obligaciones)
 
 def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control:
     if not obligaciones:
@@ -673,8 +681,8 @@ def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control
         ft.Row(
             [
                 ft.Text("", width=32), ft.Text("Cuota", width=55),
-                ft.Text("Vencimiento", width=95), ft.Text("Total cuota", width=125),
-                ft.Text("Estado obligación", width=115), ft.Text("Estado pago", width=95),
+                ft.Text("Vencimiento", width=95), ft.Text("Total cuota", width=145),
+                ft.Text("Estado obligación", width=130), ft.Text("Estado pago", width=110),
                 ft.Text("Indexación"),
             ],
             spacing=6,
@@ -709,7 +717,7 @@ def _plan_pago_v2_cuota_row(obligacion: dict[str, Any]) -> ft.Control:
     return ft.Column(
         [
             ft.Row(
-                [
+                controls=[
                     button,
                     ft.Text(_dash(numero), width=55),
                     ft.Text(_format_date(obligacion.get("fecha_vencimiento")), width=95),
@@ -718,6 +726,7 @@ def _plan_pago_v2_cuota_row(obligacion: dict[str, Any]) -> ft.Control:
                     status_badge(_estado_pago_label(obligacion)),
                     status_badge(_obligacion_indexacion_label(obligacion)),
                 ],
+                data=f"cuota-{obligacion.get('id_obligacion_financiera')}",
                 spacing=6,
             ),
             details,
@@ -747,6 +756,10 @@ def _plan_pago_v2_composition_rows(
                 spacing=8,
             )
         )
+    bloque = obligacion.get("_bloque") if isinstance(obligacion.get("_bloque"), dict) else {}
+    indice = bloque.get("indexacion") if isinstance(bloque.get("indexacion"), dict) else {}
+    if bloque:
+        rows.extend([ft.Text("Configuración del tramo", color=ft.Colors.BLUE_GREY_700), key_value_grid([("Método", _dash(bloque.get("metodo_liquidacion"))), ("Índice", _dash(indice.get("codigo_indice_financiero"))), ("Fecha base", _format_date(indice.get("fecha_base_indice"))), ("Valor base", _format_coefficient(indice.get("valor_base_indice")))])])
     return ft.Column(rows, spacing=4)
 
 

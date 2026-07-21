@@ -276,7 +276,6 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "ARS 1.100,12" in text
     assert "Proyectada sin índice" in text
     assert "Indexada al nacimiento" in text
-    assert "Al nacimiento" in text
     assert "Pendiente" in text
     assert "Pendientes" in text
     assert "Aplicadas" in text
@@ -363,9 +362,11 @@ def test_plan_pago_v2_usa_arbol_estatico_sin_expansion_ni_espaciadores_expand() 
         isinstance(item, ft.Container) and getattr(item, "expand", False)
         for item in controls
     )
-    assert "Capital original" in text
-    assert "Ajuste" in text
-    assert "Importe vigente" in text
+    assert "Cuotas" in text
+    assert "Total cuota" in text
+    assert "Estado obligación" in text
+    assert "Estado pago" in text
+    assert "Indexación" in text
     assert "Exclusiones" in text
     assert "Errores por obligación" in text
     assert "Datos técnicos" in text
@@ -440,6 +441,20 @@ def test_estado_pago_y_porcentaje_de_ajuste_son_derivados_de_presentacion() -> N
         {"capital_original": "100"},
         {"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": "100"},
     ) == "—"
+
+
+def test_cuotas_aplanadas_tienen_un_unico_encabezado_y_contexto_secundario() -> None:
+    data = _plan_data()
+    base = data["bloques"][0]
+    for numero, etiqueta in ((3, "Demo: corrida posterior"), (2, "Demo: proyectada sin índice")):
+        copia = {**base, "numero_bloque": numero, "etiqueta_bloque": etiqueta, "obligaciones": [{**base["obligaciones"][1], "id_obligacion_financiera": 100 + numero, "numero_obligacion": numero, "numero_cuota_asociada": numero}]}
+        data["bloques"].append(copia)
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=data))
+    text = _texts(control)
+    assert text.count("Vencimiento") == 1
+    assert text.count("Total cuota") == 1
+    assert len([x for x in _walk(control) if isinstance(x, ft.Row) and str(x.data or "").startswith("cuota-")]) == 3
+    assert "Bloque - Demo:" not in text
 
 
 class FakeMountedPage:
