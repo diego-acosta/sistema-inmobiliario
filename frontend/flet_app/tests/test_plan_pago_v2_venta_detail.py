@@ -391,22 +391,40 @@ def test_cuota_compacta_muestra_estados_importe_y_composicion_colapsada() -> Non
     assert "Proyectada" in text
     assert "Pendiente" in text
     assert "Proyectada sin índice" in text
-    assert "CAPITAL_VENTA" not in text
+    details = next(
+        item for item in _walk(control)
+        if isinstance(item, ft.Container) and item.data == "composicion-100"
+    )
+    assert details.visible is False
+    assert "CAPITAL_VENTA" in _texts(details)
+    assert "AJUSTE_INDEXACION" in _texts(details)
 
 
 def test_cuota_expande_composicion_localmente_y_vuelve_a_colapsar() -> None:
     control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
     button = next(item for item in _walk(control) if isinstance(item, ft.IconButton))
+    details = next(
+        item for item in _walk(control)
+        if isinstance(item, ft.Container) and item.data == "composicion-100"
+    )
     assert button.icon == ft.Icons.ADD
+    assert button.tooltip == "Ver composición"
+    assert details.visible is False
     button.on_click(None)  # type: ignore[misc]
     assert button.icon == ft.Icons.REMOVE
-    assert "CAPITAL_VENTA" in _texts(control)
-    assert "AJUSTE_INDEXACION" in _texts(control)
+    assert button.tooltip == "Ocultar composición"
+    assert details.visible is True
     button.on_click(None)  # type: ignore[misc]
     assert button.icon == ft.Icons.ADD
+    assert button.tooltip == "Ver composición"
+    assert details.visible is False
 
 
 def test_estado_pago_y_porcentaje_de_ajuste_son_derivados_de_presentacion() -> None:
+    assert _estado_pago_label({"estado_obligacion": "CANCELADA"}) == "Pagada"
+    assert _estado_pago_label({"estado_obligacion": "PARCIALMENTE_CANCELADA"}) == "Parcial"
+    assert _estado_pago_label({"estado_obligacion": "ANULADA"}) == "Anulada"
+    assert _estado_pago_label({"estado_obligacion": "REEMPLAZADA"}) == "Reemplazada"
     assert _estado_pago_label({"importe_vigente": "100", "saldo_pendiente": "0"}) == "Pagada"
     assert _estado_pago_label({"importe_vigente": "100", "saldo_pendiente": "25"}) == "Parcial"
     assert _estado_pago_label({"importe_vigente": "100", "saldo_pendiente": "100"}) == "Pendiente"

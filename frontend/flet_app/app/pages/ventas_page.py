@@ -688,6 +688,7 @@ def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control
 def _plan_pago_v2_cuota_row(obligacion: dict[str, Any]) -> ft.Control:
     composiciones = _safe_list(obligacion.get("composiciones"))
     details = ft.Container(
+        data=f"composicion-{obligacion.get('id_obligacion_financiera')}",
         content=_plan_pago_v2_composition_rows(obligacion, composiciones),
         visible=False,
         padding=8,
@@ -700,6 +701,7 @@ def _plan_pago_v2_cuota_row(obligacion: dict[str, Any]) -> ft.Control:
         details.visible = not details.visible
         button.icon = ft.Icons.REMOVE if details.visible else ft.Icons.ADD
         button.tooltip = "Ocultar composición" if details.visible else "Ver composición"
+        safe_update(button)
         safe_update(details)
 
     button.on_click = toggle
@@ -775,6 +777,8 @@ def _estado_obligacion_label(value: object) -> str:
 
 def _estado_pago_label(obligacion: dict[str, Any]) -> str:
     estado = str(obligacion.get("estado_obligacion") or "").upper()
+    if estado == "CANCELADA": return "Pagada"
+    if estado == "PARCIALMENTE_CANCELADA": return "Parcial"
     if estado == "ANULADA": return "Anulada"
     if estado == "REEMPLAZADA": return "Reemplazada"
     try:
