@@ -666,9 +666,9 @@ def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
         )
     obligaciones.sort(
         key=lambda item: (
-            item.get("numero_cuota_asociada") is None,
-            item.get("numero_cuota_asociada") or item.get("numero_obligacion") or 0,
             item.get("fecha_vencimiento") or "",
+            item.get("numero_cuota_asociada") or 0,
+            item.get("numero_obligacion") or 0,
             item.get("id_obligacion_financiera") or 0,
         )
     )
@@ -680,7 +680,7 @@ def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control
     rows: list[ft.Control] = [
         ft.Row(
             [
-                ft.Text("", width=32), ft.Text("Cuota", width=55),
+                ft.Text("", width=32), ft.Text("N°", width=55),
                 ft.Text("Vencimiento", width=95), ft.Text("Total cuota", width=145),
                 ft.Text("Estado obligación", width=130), ft.Text("Estado pago", width=110),
                 ft.Text("Indexación"),
@@ -688,12 +688,12 @@ def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control
             spacing=6,
         )
     ]
-    for obligacion in obligaciones:
-        rows.append(_plan_pago_v2_cuota_row(obligacion))
+    for visual_order, obligacion in enumerate(obligaciones, start=1):
+        rows.append(_plan_pago_v2_cuota_row(obligacion, visual_order=visual_order))
     return ft.Column(rows, spacing=2)
 
 
-def _plan_pago_v2_cuota_row(obligacion: dict[str, Any]) -> ft.Control:
+def _plan_pago_v2_cuota_row(obligacion: dict[str, Any], *, visual_order: int) -> ft.Control:
     composiciones = _safe_list(obligacion.get("composiciones"))
     details = ft.Container(
         data=f"composicion-{obligacion.get('id_obligacion_financiera')}",
@@ -719,7 +719,7 @@ def _plan_pago_v2_cuota_row(obligacion: dict[str, Any]) -> ft.Control:
             ft.Row(
                 controls=[
                     button,
-                    ft.Text(_dash(numero), width=55),
+                    ft.Text(str(visual_order), width=55),
                     ft.Text(_format_date(obligacion.get("fecha_vencimiento")), width=95),
                     ft.Text(_format_money(obligacion.get("moneda"), obligacion.get("importe_vigente")), width=125),
                     status_badge(_estado_obligacion_label(obligacion.get("estado_obligacion"))),
@@ -760,6 +760,7 @@ def _plan_pago_v2_composition_rows(
     indice = bloque.get("indexacion") if isinstance(bloque.get("indexacion"), dict) else {}
     if bloque:
         rows.extend([ft.Text("Configuración del tramo", color=ft.Colors.BLUE_GREY_700), key_value_grid([("Método", _dash(bloque.get("metodo_liquidacion"))), ("Índice", _dash(indice.get("codigo_indice_financiero"))), ("Fecha base", _format_date(indice.get("fecha_base_indice"))), ("Valor base", _format_coefficient(indice.get("valor_base_indice")))])])
+    rows.extend([ft.Text("Referencia original", color=ft.Colors.BLUE_GREY_700), key_value_grid([("Número dentro del tramo", _dash(obligacion.get("numero_cuota_asociada"))), ("Número de obligación", _dash(obligacion.get("numero_obligacion"))), ("ID obligación", _dash(obligacion.get("id_obligacion_financiera"))), ("Bloque", _dash(bloque.get("numero_bloque")))])])
     return ft.Column(rows, spacing=4)
 
 
