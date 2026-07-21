@@ -344,6 +344,33 @@ def test_estado_exitoso_de_corrida_posterior_mantiene_badge_ajustada() -> None:
     ) == "Ajustada por corrida"
 
 
+def test_plan_pago_v2_usa_arbol_estatico_sin_expansion_ni_espaciadores_expand() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    controls = list(_walk(control))
+    text = _texts(control)
+
+    assert not any(isinstance(item, ft.ExpansionTile) for item in controls)
+    assert not any(
+        isinstance(item, ft.Container) and getattr(item, "expand", False)
+        for item in controls
+    )
+    assert "Capital original" in text
+    assert "Ajuste" in text
+    assert "Importe vigente" in text
+    assert "Exclusiones" in text
+    assert "Errores por obligación" in text
+    assert "Datos técnicos" in text
+
+
+def test_datos_tecnicos_permanecen_en_tarjeta_estatica_accesible() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    text = _texts(control)
+
+    assert "Datos técnicos" in text
+    assert "ID corrida" in text
+    assert "Origen técnico" in text
+
+
 class FakeMountedPage:
     def __init__(self) -> None:
         self.updated: list[ft.Control] = []

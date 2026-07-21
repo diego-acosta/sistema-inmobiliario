@@ -614,12 +614,30 @@ def _plan_pago_v2_summary(plan: dict[str, Any], resumen: dict[str, Any]) -> ft.C
         ("Bloques", _dash(resumen.get("cantidad_bloques"))),
         ("Obligaciones", _dash(resumen.get("cantidad_obligaciones"))),
         ("Indexadas", _dash(resumen.get("cantidad_obligaciones_con_indexacion"))),
-        ("Proyectadas sin índice", _dash(resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion"))),
+        (
+            "Proyectadas sin índice",
+            _dash(resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion")),
+        ),
     ]
-    return ft.Container(content=ft.ResponsiveRow([
-        ft.Container(content=ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), ft.Text(value, size=17, weight=ft.FontWeight.W_700)], spacing=2), col={"sm": 6, "md": 3}, padding=10, border=ft.border.all(1, ft.Colors.BLUE_GREY_100), border_radius=8)
-        for label, value in items
-    ], spacing=8, run_spacing=8), padding=4)
+    # Una columna estática evita mediciones reactivas de ResponsiveRow durante scroll.
+    return ft.Column(
+        [
+            ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Text(label, color=ft.Colors.BLUE_GREY_700),
+                        ft.Text(value, size=17, weight=ft.FontWeight.W_700),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                padding=10,
+                border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+                border_radius=8,
+            )
+            for label, value in items
+        ],
+        spacing=6,
+    )
 
 
 def _plan_pago_v2_interface_states(resumen: dict[str, Any], corridas: list[dict[str, Any]]) -> ft.Control:
@@ -638,7 +656,14 @@ def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
     for bloque in bloques:
         idx = bloque.get("indexacion") if isinstance(bloque.get("indexacion"), dict) else {}
         title = _join_values(f"Bloque {bloque.get('numero_bloque')}", bloque.get("etiqueta_bloque"))
-        header = ft.Row([ft.Column([ft.Text(title, size=17, weight=ft.FontWeight.W_700), ft.Text(_dash(bloque.get("tipo_bloque")), color=ft.Colors.BLUE_GREY_700)], spacing=2), ft.Container(expand=True), status_badge(_dash(bloque.get("metodo_liquidacion")))], wrap=True)
+        header = ft.Column(
+            [
+                ft.Text(title, size=17, weight=ft.FontWeight.W_700),
+                ft.Text(_dash(bloque.get("tipo_bloque")), color=ft.Colors.BLUE_GREY_700),
+                status_badge(_dash(bloque.get("metodo_liquidacion"))),
+            ],
+            spacing=4,
+        )
         facts = key_value_grid([("Obligaciones", len(_safe_list(bloque.get("obligaciones")))), ("Monto del bloque", _format_money(None, bloque.get("importe_total_bloque"))), ("Índice", _join_values(idx.get("codigo_indice_financiero"), idx.get("nombre_indice_financiero"))), ("Base", _join_values(_format_date(idx.get("fecha_base_indice")), _format_coefficient(idx.get("valor_base_indice"))))])
         controls.append(ft.Container(content=ft.Column([header, facts, _plan_pago_v2_obligaciones(_safe_list(bloque.get("obligaciones")))], spacing=10), padding=14, border=ft.border.all(1, ft.Colors.BLUE_GREY_200), border_radius=10))
     return ft.Column(controls, spacing=12)
@@ -651,7 +676,7 @@ def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control
         ix=o.get("indexacion") if isinstance(o.get("indexacion"),dict) else {}
         number=o.get("numero_cuota_asociada") or o.get("numero_obligacion")
         amounts=ft.Row([ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), ft.Text(value, weight=ft.FontWeight.W_700)], spacing=2) for label,value in [("Capital original",_format_money(o.get("moneda"),o.get("capital_original"))), ("Ajuste",_format_money(o.get("moneda"),o.get("ajuste_indexacion"))), ("Importe vigente",_format_money(o.get("moneda"),o.get("importe_vigente")))]], wrap=True, spacing=8)
-        cards.append(ft.Container(content=ft.Column([ft.Row([ft.Text(f"Cuota / obligación {number}", weight=ft.FontWeight.W_700), ft.Container(expand=True), status_badge(_obligacion_indexacion_label(o))], wrap=True), amounts, ft.Text("Capital original  →  Ajuste  →  Importe vigente", color=ft.Colors.BLUE_GREY_600), key_value_grid([("Vencimiento",_format_date(o.get("fecha_vencimiento"))), ("Saldo pendiente",_format_money(o.get("moneda"),o.get("saldo_pendiente"))), ("Estado obligación",_dash(o.get("estado_obligacion"))), ("Origen",_origen_indexacion_label(o.get("origen_indexacion"))), ("Índice / coeficiente",_join_values(ix.get("modo_indexacion"),_format_coefficient(ix.get("coeficiente_indexacion")))), ("Corrida aplicada",_corrida_ref(o.get("corrida_aplicada_vigente")))])], spacing=8), padding=12, bgcolor=ft.Colors.BLUE_GREY_50, border_radius=8))
+        cards.append(ft.Container(content=ft.Column([ft.Column([ft.Text(f"Cuota / obligación {number}", weight=ft.FontWeight.W_700), status_badge(_obligacion_indexacion_label(o))], spacing=4), amounts, ft.Text("Capital original  →  Ajuste  →  Importe vigente", color=ft.Colors.BLUE_GREY_600), key_value_grid([("Vencimiento",_format_date(o.get("fecha_vencimiento"))), ("Saldo pendiente",_format_money(o.get("moneda"),o.get("saldo_pendiente"))), ("Estado obligación",_dash(o.get("estado_obligacion"))), ("Origen",_origen_indexacion_label(o.get("origen_indexacion"))), ("Índice / coeficiente",_join_values(ix.get("modo_indexacion"),_format_coefficient(ix.get("coeficiente_indexacion")))), ("Corrida aplicada",_corrida_ref(o.get("corrida_aplicada_vigente")))])], spacing=8), padding=12, bgcolor=ft.Colors.BLUE_GREY_50, border_radius=8))
     return ft.Column(cards, spacing=8)
 
 
@@ -693,13 +718,12 @@ def _plan_pago_v2_corridas(
             ),
         ]
         children: list[ft.Control] = [
-            ft.Row(
+            ft.Column(
                 [
                     ft.Text("Corrida de indexación", size=16, weight=ft.FontWeight.W_700),
-                    ft.Container(expand=True),
                     status_badge(_corrida_estado_label(corrida.get("estado_corrida"))),
                 ],
-                wrap=True,
+                spacing=4,
             ),
             key_value_grid(details),
         ]
@@ -727,16 +751,22 @@ def _plan_pago_v2_corridas(
             if rows:
                 children.append(_corrida_detalles(title, rows, kind=kind))
         children.append(
-            ft.ExpansionTile(
-                title=ft.Text("Datos técnicos"),
-                controls=[
-                    key_value_grid(
-                        [
-                            ("ID corrida", corrida.get("id_corrida_indexacion_financiera")),
-                            ("Origen técnico", _dash(corrida.get("origen_corrida"))),
-                        ]
-                    )
-                ],
+            ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text("Datos técnicos", color=ft.Colors.BLUE_GREY_700),
+                        key_value_grid(
+                            [
+                                ("ID corrida", corrida.get("id_corrida_indexacion_financiera")),
+                                ("Origen técnico", _dash(corrida.get("origen_corrida"))),
+                            ]
+                        ),
+                    ],
+                    spacing=4,
+                ),
+                padding=8,
+                bgcolor=ft.Colors.BLUE_GREY_50,
+                border_radius=6,
             )
         )
         controls.append(
