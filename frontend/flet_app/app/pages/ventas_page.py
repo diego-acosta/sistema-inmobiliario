@@ -741,7 +741,7 @@ def _plan_pago_v2_composition_rows(
     if not composiciones:
         return ft.Text("Sin composición financiera expuesta.")
     rows: list[ft.Control] = [
-        ft.Text("Composición: concepto · importe · % ajuste", weight=ft.FontWeight.W_600)
+        ft.Text("Composición de la cuota", weight=ft.FontWeight.W_600)
     ]
     for composicion in composiciones:
         codigo = str(composicion.get("codigo_concepto_financiero") or "")

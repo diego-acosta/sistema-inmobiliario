@@ -36,8 +36,16 @@ def _texts(control: ft.Control) -> str:
     return "\n".join(values)
 
 
-def _find_control_by_data(control: object, data: str, control_type):
-    matches = [item for item in _walk(control) if isinstance(item, control_type) and getattr(item, "data", None) == data]
+def _find_control_by_data(
+    control: object,
+    data: str,
+    control_type: type[ft.Control],
+):
+    matches = [
+        item
+        for item in _walk(control)
+        if isinstance(item, control_type) and getattr(item, "data", None) == data
+    ]
     assert len(matches) == 1
     return matches[0]
 
@@ -77,6 +85,8 @@ def _plan_data() -> dict[str, Any]:
         "estado_elegibilidad": "ELEGIBLE",
         "codigo_error": None,
     }
+
+
     corrida_aplicada = {
         "id_corrida_indexacion_financiera": 9,
         "estado_corrida": "APLICADA",
@@ -242,6 +252,48 @@ def _plan_data() -> dict[str, Any]:
     }
 
 
+def _three_cuota_plan_data() -> dict[str, Any]:
+    """Return a fresh three-obligation fixture spanning three payment blocks."""
+    def obligation(
+        obligation_id: int,
+        cuota: int,
+        numero: int,
+        vencimiento: str,
+        composiciones: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        return {
+            "id_obligacion_financiera": obligation_id,
+            "numero_obligacion": numero,
+            "numero_cuota_asociada": cuota,
+            "tipo_item_cronograma": "CUOTA",
+            "fecha_vencimiento": vencimiento,
+            "capital_original": "1000",
+            "ajuste_indexacion": "100" if obligation_id == 103 else "0",
+            "importe_vigente": "1100" if obligation_id == 103 else "1000",
+            "saldo_pendiente": "1100" if obligation_id == 103 else "1000",
+            "moneda": "ARS",
+            "estado_obligacion": "PENDIENTE",
+            "estado_indexacion_presentacion": "CON_INDICE_APLICADO" if obligation_id == 103 else "PROYECTADA_SIN_INDICE",
+            "origen_indexacion": "AL_NACIMIENTO" if obligation_id == 103 else None,
+            "indexacion": None,
+            "composiciones": composiciones,
+            "corrida_relacionada": None,
+            "corrida_aplicada_vigente": None,
+        }
+
+    data = {
+        "id_venta": 371,
+        "plan_pago_venta": {"id_plan_pago_venta": 20, "metodo_plan_pago": "PLAN_POR_BLOQUES", "estado_plan_pago": "GENERADO", "moneda": "ARS"},
+        "resumen": {"cantidad_bloques": 3, "cantidad_obligaciones": 3, "total_capital": "3000", "total_interes": "0", "total_ajuste_indexacion": "100", "total_obligaciones": "3100", "cantidad_obligaciones_con_indexacion": 1, "cantidad_obligados_total": 3, "cantidad_obligaciones_con_multiples_obligados": 0, "cantidad_obligaciones_proyectadas_sin_indexacion": 2},
+        "bloques": [
+            {"numero_bloque": 1, "etiqueta_bloque": "Tramo 1", "tipo_bloque": "TRAMO_CUOTAS", "metodo_liquidacion": "FIJO", "importe_total_bloque": "1000", "indexacion": None, "obligaciones": [obligation(101, 7, 41, "2026-03-10", [{"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": "1000", "saldo_componente": "1000", "moneda_componente": "ARS"}])]},
+            {"numero_bloque": 2, "etiqueta_bloque": "Tramo 2", "tipo_bloque": "TRAMO_CUOTAS", "metodo_liquidacion": "FIJO", "importe_total_bloque": "1000", "indexacion": None, "obligaciones": [obligation(102, 8, 42, "2027-01-10", [{"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": "1000", "saldo_componente": "1000", "moneda_componente": "ARS"}])]},
+            {"numero_bloque": 3, "etiqueta_bloque": "Tramo 3", "tipo_bloque": "TRAMO_CUOTAS", "metodo_liquidacion": "INDEXACION", "importe_total_bloque": "1100", "indexacion": {"codigo_indice_financiero": "CAC", "fecha_base_indice": "2026-01-01", "valor_base_indice": "2.5"}, "obligaciones": [obligation(103, 9, 43, "2026-02-10", [{"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": "1000", "saldo_componente": "1000", "moneda_componente": "ARS"}, {"codigo_concepto_financiero": "AJUSTE_INDEXACION", "importe_componente": "100", "saldo_componente": "100", "moneda_componente": "ARS"}])]},
+        ],
+        "corridas_indexacion": [],
+    }
+    return deepcopy(data)
+
 def test_api_client_get_plan_pago_v2_es_readlike_sin_headers(monkeypatch) -> None:
     captured = {}
 
@@ -400,10 +452,7 @@ def test_cuota_compacta_muestra_estados_importe_y_composicion_colapsada() -> Non
     assert "Proyectada" in text
     assert "Pendiente" in text
     assert "Proyectada sin índice" in text
-    details = next(
-        item for item in _walk(control)
-        if isinstance(item, ft.Container) and item.data == "composicion-100"
-    )
+    details = _find_control_by_data(control, "composicion-100", ft.Container)
     assert details.visible is False
     assert "CAPITAL_VENTA" in _texts(details)
     assert "AJUSTE_INDEXACION" in _texts(details)
@@ -412,10 +461,7 @@ def test_cuota_compacta_muestra_estados_importe_y_composicion_colapsada() -> Non
 def test_cuota_expande_composicion_localmente_y_vuelve_a_colapsar() -> None:
     control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
     button = _find_control_by_data(control, "toggle-composicion-100", ft.IconButton)
-    details = next(
-        item for item in _walk(control)
-        if isinstance(item, ft.Container) and item.data == "composicion-100"
-    )
+    details = _find_control_by_data(control, "composicion-100", ft.Container)
     assert button.icon == ft.Icons.ADD
     assert button.tooltip == "Ver composición"
     assert details.visible is False
@@ -452,23 +498,64 @@ def test_estado_pago_y_porcentaje_de_ajuste_son_derivados_de_presentacion() -> N
 
 
 def test_cuotas_aplanadas_tienen_tres_filas_ordenadas_y_no_mutan_datos() -> None:
-    data = _plan_data()
-    base = deepcopy(data["bloques"][0])
-    obligaciones = [deepcopy(base["obligaciones"][0]), deepcopy(base["obligaciones"][1]), deepcopy(base["obligaciones"][0])]
-    for obligacion, identifier, vencimiento in zip(obligaciones, (101, 102, 103), ("2026-03-10", "2027-01-10", "2026-02-10"), strict=True):
-        obligacion.update({"id_obligacion_financiera": identifier, "numero_cuota_asociada": 1, "numero_obligacion": identifier, "fecha_vencimiento": vencimiento})
-    data["bloques"] = [{**deepcopy(base), "numero_bloque": index, "etiqueta_bloque": f"Demo: bloque {index}", "obligaciones": [obligacion]} for index, obligacion in enumerate(obligaciones, 1)]
+    data = _three_cuota_plan_data()
     before = deepcopy(data)
     control = _plan_pago_v2_integral_view(ApiResult(True, data=data))
     assert data == before
-    headers = [row for row in _walk(control) if isinstance(row, ft.Row) and "N°" in _texts(row) and "Vencimiento" in _texts(row)]
+    headers = [row for row in _walk(control) if isinstance(row, ft.Row) and {"N°", "Vencimiento", "Total cuota", "Estado obligación", "Estado pago", "Indexación"}.issubset(_texts(row).split("\n"))]
     rows = [row for row in _walk(control) if isinstance(row, ft.Row) and str(row.data or "").startswith("cuota-")]
     assert len(headers) == 1
     assert len(rows) == 3
     assert [row.data for row in rows] == ["cuota-103", "cuota-101", "cuota-102"]
     assert [_texts(row).split("\n")[0] for row in rows] == ["1", "2", "3"]
     assert [next(value for value in _texts(row).split("\n") if "/" in value) for row in rows] == ["10/02/2026", "10/03/2026", "10/01/2027"]
-    assert "Bloque - Demo:" not in _texts(control)
+
+
+def test_cuotas_expandibles_son_independientes() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
+    buttons = {item: _find_control_by_data(control, f"toggle-composicion-{item}", ft.IconButton) for item in (101, 102, 103)}
+    details = {item: _find_control_by_data(control, f"composicion-{item}", ft.Container) for item in (101, 102, 103)}
+    assert all(not detail.visible for detail in details.values())
+    assert all(button.icon == ft.Icons.ADD and button.tooltip == "Ver composición" for button in buttons.values())
+    buttons[101].on_click(None)  # type: ignore[misc]
+    assert details[101].visible and not details[102].visible and not details[103].visible
+    assert buttons[101].icon == ft.Icons.REMOVE and buttons[101].tooltip == "Ocultar composición"
+    buttons[102].on_click(None)  # type: ignore[misc]
+    assert details[101].visible and details[102].visible and not details[103].visible
+    buttons[101].on_click(None)  # type: ignore[misc]
+    assert not details[101].visible and details[102].visible and not details[103].visible
+    buttons[103].on_click(None)  # type: ignore[misc]
+    assert not details[101].visible and details[102].visible and details[103].visible
+
+
+def test_cada_toggle_controla_su_detalle_por_id() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
+    details = {item: _find_control_by_data(control, f"composicion-{item}", ft.Container) for item in (101, 102, 103)}
+    for obligation_id in (101, 102, 103):
+        button = _find_control_by_data(control, f"toggle-composicion-{obligation_id}", ft.IconButton)
+        detail = _find_control_by_data(control, f"composicion-{obligation_id}", ft.Container)
+        before = {item: item_detail.visible for item, item_detail in details.items()}
+        button.on_click(None)  # type: ignore[misc]
+        assert detail.visible is not before[obligation_id]
+        assert all(details[item].visible is before[item] for item in details if item != obligation_id)
+        button.on_click(None)  # type: ignore[misc]
+        assert detail.visible is before[obligation_id]
+
+
+def test_referencia_original_preserva_datos_de_cada_cuota() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
+    for obligation_id, cuota, numero, bloque in ((101, 7, 41, 1), (102, 8, 42, 2), (103, 9, 43, 3)):
+        detail = _find_control_by_data(control, f"composicion-{obligation_id}", ft.Container)
+        text = _texts(detail)
+        for value in ("Referencia original", "Número dentro del tramo", str(cuota), "Número de obligación", str(numero), "ID obligación", str(obligation_id), "Bloque", str(bloque)):
+            assert value in text
+
+
+def test_composicion_y_referencia_original_coexisten_en_cuota_103() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
+    text = _texts(_find_control_by_data(control, "composicion-103", ft.Container))
+    for value in ("Composición de la cuota", "Configuración del tramo", "Referencia original", "CAPITAL_VENTA", "AJUSTE_INDEXACION"):
+        assert value in text
 
 
 class FakeMountedPage:
