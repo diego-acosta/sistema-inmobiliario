@@ -211,6 +211,17 @@ class VentaDetailView:
                 _back_row(self.on_navigate),
                 _venta_operativa_header(data),
                 _summary_cards(data),
+                detail_section(
+                    "Plan Pago V2",
+                    [
+                        DeferredLoadingContainer(
+                            lambda: _plan_pago_v2_integral_view(
+                                self.api.get_plan_pago_venta_v2_integral(self.id_venta)
+                            ),
+                            message="Cargando Plan Pago V2...",
+                        )
+                    ],
+                ),
                 ft.ResponsiveRow(
                     controls=[
                         ft.Container(
@@ -243,19 +254,6 @@ class VentaDetailView:
                                     detail_section(
                                         "Plan de pago / obligaciones",
                                         [_plan_obligaciones_operativas(data)],
-                                    ),
-                                    detail_section(
-                                        "Plan Pago V2",
-                                        [
-                                            DeferredLoadingContainer(
-                                                lambda: _plan_pago_v2_integral_view(
-                                                    self.api.get_plan_pago_venta_v2_integral(
-                                                        self.id_venta
-                                                    )
-                                                ),
-                                                message="Cargando Plan Pago V2...",
-                                            )
-                                        ],
                                     ),
                                     detail_section(
                                         "Origen",
@@ -575,13 +573,13 @@ def _bloques_plan_table(rows: list[dict[str, Any]]) -> ft.Control:
 def _plan_pago_v2_integral_view(result: ApiResult) -> ft.Control:
     if not result.success:
         if result.status_code == 404 and result.error_code == "NOT_FOUND_PLAN_PAGO_V2":
-            return ft.Text("Esta venta todavía no tiene un Plan Pago V2 asociado.")
+            return ft.Text("La venta no tiene un Plan Pago V2 materializado.")
         return error_state(
             result.error_message or "No se pudo consultar el Plan Pago V2."
         )
     data = result.data if isinstance(result.data, dict) else {}
     if not data:
-        return ft.Text("Esta venta todavía no tiene un Plan Pago V2 asociado.")
+        return ft.Text("La venta no tiene un Plan Pago V2 materializado.")
 
     resumen = data.get("resumen") if isinstance(data.get("resumen"), dict) else {}
     plan = (
@@ -607,283 +605,89 @@ def _plan_pago_v2_integral_view(result: ApiResult) -> ft.Control:
 
 
 def _plan_pago_v2_summary(plan: dict[str, Any], resumen: dict[str, Any]) -> ft.Control:
+    """Presenta exclusivamente agregados entregados por el contrato read-only."""
     moneda = plan.get("moneda")
-    return ft.Column(
-        controls=[
-            key_value_grid(
-                [
-                    ("ID plan", plan.get("id_plan_pago_venta")),
-                    ("Método", plan.get("metodo_plan_pago")),
-                    ("Estado", plan.get("estado_plan_pago")),
-                    ("Moneda", moneda),
-                    (
-                        "Importe total",
-                        _format_money(moneda, resumen.get("total_obligaciones")),
-                    ),
-                    (
-                        "Capital total",
-                        _format_money(moneda, resumen.get("total_capital")),
-                    ),
-                    (
-                        "Interés total",
-                        _format_money(moneda, resumen.get("total_interes")),
-                    ),
-                    (
-                        "Ajuste total indexación",
-                        _format_money(moneda, resumen.get("total_ajuste_indexacion")),
-                    ),
-                    ("Cantidad obligaciones", resumen.get("cantidad_obligaciones")),
-                    (
-                        "Obligaciones indexadas",
-                        resumen.get("cantidad_obligaciones_con_indexacion"),
-                    ),
-                    (
-                        "Proyectadas sin índice",
-                        resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion"),
-                    ),
-                    ("Cantidad obligados", resumen.get("cantidad_obligados_total")),
-                    (
-                        "Obligaciones múltiples obligados",
-                        resumen.get("cantidad_obligaciones_con_multiples_obligados"),
-                    ),
-                ]
-            ),
-        ],
-        spacing=8,
-    )
+    items = [
+        ("Importe vigente total", _format_money(moneda, resumen.get("total_obligaciones"))),
+        ("Capital total", _format_money(moneda, resumen.get("total_capital"))),
+        ("Ajuste total", _format_money(moneda, resumen.get("total_ajuste_indexacion"))),
+        ("Bloques", _dash(resumen.get("cantidad_bloques"))),
+        ("Obligaciones", _dash(resumen.get("cantidad_obligaciones"))),
+        ("Indexadas", _dash(resumen.get("cantidad_obligaciones_con_indexacion"))),
+        ("Proyectadas sin índice", _dash(resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion"))),
+    ]
+    return ft.Container(content=ft.ResponsiveRow([
+        ft.Container(content=ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), ft.Text(value, size=17, weight=ft.FontWeight.W_700)], spacing=2), col={"sm": 6, "md": 3}, padding=10, border=ft.border.all(1, ft.Colors.BLUE_GREY_100), border_radius=8)
+        for label, value in items
+    ], spacing=8, run_spacing=8), padding=4)
 
 
-def _plan_pago_v2_interface_states(
-    resumen: dict[str, Any], corridas: list[dict[str, Any]]
-) -> ft.Control:
-    messages: list[str] = []
-    if _safe_int(resumen.get("cantidad_obligaciones_con_indexacion")) == 0:
-        messages.append("Plan Pago V2 sin indexación materializada.")
-    if _safe_int(resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion")) > 0:
-        messages.append("Hay obligaciones proyectadas sin índice materializado.")
-    if (
-        _safe_int(resumen.get("cantidad_obligaciones_con_indexacion")) > 0
-        and not corridas
-    ):
-        messages.append("Plan indexado sin corridas registradas.")
-    estados = {str(c.get("estado_corrida") or "").upper() for c in corridas}
-    if "PENDIENTE_APLICACION" in estados:
-        messages.append("Hay corridas pendientes de aplicación.")
-    if "APLICADA" in estados:
-        messages.append("Hay corridas aplicadas.")
-    if "FALLIDA" in estados:
-        messages.append("Hay corridas fallidas.")
-    if not messages:
-        messages.append("Sin alertas de indexación para presentación.")
-    return ft.Column(
-        [ft.Text(m, color=ft.Colors.BLUE_GREY_700) for m in messages], spacing=4
-    )
+def _plan_pago_v2_interface_states(resumen: dict[str, Any], corridas: list[dict[str, Any]]) -> ft.Control:
+    counts = {"Pendientes": 0, "Aplicadas": 0, "Fallidas": 0}
+    for corrida in corridas:
+        estado = str(corrida.get("estado_corrida") or "").upper()
+        if estado == "PENDIENTE_APLICACION": counts["Pendientes"] += 1
+        elif estado == "APLICADA": counts["Aplicadas"] += 1
+        elif estado == "FALLIDA": counts["Fallidas"] += 1
+    return ft.Row([ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), status_badge(str(value))], spacing=3) for label, value in counts.items()], wrap=True, spacing=20)
 
 
 def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
-    if not bloques:
-        return ft.Text("Sin bloques de Plan Pago V2 expuestos.")
+    if not bloques: return ft.Text("Sin bloques de Plan Pago V2 expuestos.")
     controls: list[ft.Control] = []
     for bloque in bloques:
-        idx = (
-            bloque.get("indexacion")
-            if isinstance(bloque.get("indexacion"), dict)
-            else {}
-        )
-        controls.append(
-            _compact_card(
-                [
-                    (
-                        "Bloque",
-                        _join_values(
-                            bloque.get("numero_bloque"), bloque.get("etiqueta_bloque")
-                        ),
-                    ),
-                    ("Tipo", bloque.get("tipo_bloque")),
-                    ("Método liquidación", bloque.get("metodo_liquidacion")),
-                    (
-                        "Importe total",
-                        _format_money(None, bloque.get("importe_total_bloque")),
-                    ),
-                    (
-                        "Índice",
-                        _join_values(
-                            idx.get("codigo_indice_financiero"),
-                            idx.get("nombre_indice_financiero"),
-                        ),
-                    ),
-                    (
-                        "Fecha / valor base",
-                        _join_values(
-                            _format_date(idx.get("fecha_base_indice")),
-                            _format_coefficient(idx.get("valor_base_indice")),
-                        ),
-                    ),
-                ]
-            )
-        )
-        controls.append(
-            _plan_pago_v2_obligaciones(_safe_list(bloque.get("obligaciones")))
-        )
-    return ft.Column(controls=controls, spacing=10)
+        idx = bloque.get("indexacion") if isinstance(bloque.get("indexacion"), dict) else {}
+        title = _join_values(f"Bloque {bloque.get('numero_bloque')}", bloque.get("etiqueta_bloque"))
+        header = ft.Row([ft.Column([ft.Text(title, size=17, weight=ft.FontWeight.W_700), ft.Text(_dash(bloque.get("tipo_bloque")), color=ft.Colors.BLUE_GREY_700)], spacing=2), ft.Container(expand=True), status_badge(_dash(bloque.get("metodo_liquidacion")))], wrap=True)
+        facts = key_value_grid([("Obligaciones", len(_safe_list(bloque.get("obligaciones")))), ("Monto del bloque", _format_money(None, bloque.get("importe_total_bloque"))), ("Índice", _join_values(idx.get("codigo_indice_financiero"), idx.get("nombre_indice_financiero"))), ("Base", _join_values(_format_date(idx.get("fecha_base_indice")), _format_coefficient(idx.get("valor_base_indice"))))])
+        controls.append(ft.Container(content=ft.Column([header, facts, _plan_pago_v2_obligaciones(_safe_list(bloque.get("obligaciones")))], spacing=10), padding=14, border=ft.border.all(1, ft.Colors.BLUE_GREY_200), border_radius=10))
+    return ft.Column(controls, spacing=12)
 
 
 def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control:
-    if not obligaciones:
-        return ft.Text("Sin obligaciones en el bloque.")
-    rows = []
+    if not obligaciones: return ft.Text("Sin obligaciones en el bloque.")
+    cards=[]
     for o in obligaciones:
-        ix = o.get("indexacion") if isinstance(o.get("indexacion"), dict) else {}
-        rows.append(
-            {
-                "item": o.get("numero_cuota_asociada") or o.get("numero_obligacion"),
-                "tipo": o.get("tipo_item_cronograma"),
-                "vencimiento": _format_date(o.get("fecha_vencimiento")),
-                "capital": _format_money(o.get("moneda"), o.get("capital_original")),
-                "ajuste": _format_money(o.get("moneda"), o.get("ajuste_indexacion")),
-                "vigente": _format_money(o.get("moneda"), o.get("importe_vigente")),
-                "saldo": _format_money(o.get("moneda"), o.get("saldo_pendiente")),
-                "moneda": o.get("moneda"),
-                "estado": status_badge(
-                    _estado_indexacion_label(o.get("estado_indexacion_presentacion"))
-                ),
-                "origen": _origen_indexacion_label(o.get("origen_indexacion")),
-                "indice": _join_values(
-                    ix.get("id_indice_financiero"), ix.get("modo_indexacion")
-                ),
-                "base": _join_values(
-                    _format_date(ix.get("fecha_base_indice")),
-                    _format_coefficient(ix.get("valor_base_indice")),
-                ),
-                "aplicado": _join_values(
-                    _format_date(ix.get("fecha_aplicacion_indice")),
-                    _format_coefficient(ix.get("valor_aplicado_indice")),
-                ),
-                "coef": _format_coefficient(ix.get("coeficiente_indexacion")),
-                "relacionada": _corrida_ref(o.get("corrida_relacionada")),
-                "vigente_corrida": _corrida_ref(o.get("corrida_aplicada_vigente")),
-            }
-        )
-    return entity_table(
-        columns=[
-            ("Ítem", "item"),
-            ("Tipo", "tipo"),
-            ("Vencimiento", "vencimiento"),
-            ("Capital", "capital"),
-            ("Ajuste", "ajuste"),
-            ("Importe vigente", "vigente"),
-            ("Saldo", "saldo"),
-            ("Moneda", "moneda"),
-            ("Indexación", "estado"),
-            ("Origen", "origen"),
-            ("Índice", "indice"),
-            ("Base", "base"),
-            ("Aplicado", "aplicado"),
-            ("Coef.", "coef"),
-            ("Corrida relacionada", "relacionada"),
-            ("Corrida aplicada vigente", "vigente_corrida"),
-        ],
-        rows=rows,
-    )
+        ix=o.get("indexacion") if isinstance(o.get("indexacion"),dict) else {}
+        number=o.get("numero_cuota_asociada") or o.get("numero_obligacion")
+        amounts=ft.Row([ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), ft.Text(value, weight=ft.FontWeight.W_700)], spacing=2) for label,value in [("Capital original",_format_money(o.get("moneda"),o.get("capital_original"))), ("Ajuste",_format_money(o.get("moneda"),o.get("ajuste_indexacion"))), ("Importe vigente",_format_money(o.get("moneda"),o.get("importe_vigente")))]], wrap=True, spacing=8)
+        cards.append(ft.Container(content=ft.Column([ft.Row([ft.Text(f"Cuota / obligación {number}", weight=ft.FontWeight.W_700), ft.Container(expand=True), status_badge(_obligacion_indexacion_label(o))], wrap=True), amounts, ft.Text("Capital original  →  Ajuste  →  Importe vigente", color=ft.Colors.BLUE_GREY_600), key_value_grid([("Vencimiento",_format_date(o.get("fecha_vencimiento"))), ("Saldo pendiente",_format_money(o.get("moneda"),o.get("saldo_pendiente"))), ("Estado obligación",_dash(o.get("estado_obligacion"))), ("Origen",_origen_indexacion_label(o.get("origen_indexacion"))), ("Índice / coeficiente",_join_values(ix.get("modo_indexacion"),_format_coefficient(ix.get("coeficiente_indexacion")))), ("Corrida aplicada",_corrida_ref(o.get("corrida_aplicada_vigente")))])], spacing=8), padding=12, bgcolor=ft.Colors.BLUE_GREY_50, border_radius=8))
+    return ft.Column(cards, spacing=8)
 
 
-def _plan_pago_v2_corridas(
-    corridas: list[dict[str, Any]], moneda: object
-) -> ft.Control:
-    if not corridas:
-        return ft.Text("Sin corridas de indexación registradas.")
-    controls = []
+def _plan_pago_v2_corridas(corridas: list[dict[str, Any]], moneda: object) -> ft.Control:
+    if not corridas: return ft.Text("Sin corridas de indexación registradas.")
+    controls=[]
     for c in corridas:
-        controls.append(
-            _compact_card(
-                [
-                    ("ID", c.get("id_corrida_indexacion_financiera")),
-                    ("Estado", c.get("estado_corrida")),
-                    ("Origen", c.get("origen_corrida")),
-                    ("Índice", c.get("codigo_indice_financiero")),
-                    ("Período aplicado", _format_date(c.get("periodo_aplicado"))),
-                    ("Fecha corte", _format_date(c.get("fecha_corte"))),
-                    ("Preparación", _format_timestamp(c.get("fecha_preparacion"))),
-                    ("Aplicación", _format_timestamp(c.get("fecha_aplicacion"))),
-                    (
-                        "Analizada/elegible/excluida/aplicada/error",
-                        f"{_dash(c.get('cantidad_analizada'))}/{_dash(c.get('cantidad_elegible'))}/{_dash(c.get('cantidad_excluida'))}/{_dash(c.get('cantidad_aplicada'))}/{_dash(c.get('cantidad_error'))}",
-                    ),
-                    (
-                        "Capital analizado",
-                        _format_money(moneda, c.get("capital_analizado_total")),
-                    ),
-                    ("Ajuste total", _format_money(moneda, c.get("ajuste_total"))),
-                    ("Importe total", _format_money(moneda, c.get("importe_total"))),
-                ]
-            )
-        )
-        if any(
-            c.get(k) for k in ("codigo_error", "etapa_error", "diagnostico_tecnico")
-        ):
-            controls.append(
-                ft.Container(
-                    content=key_value_grid(
-                        [
-                            ("Código error", c.get("codigo_error")),
-                            ("Etapa error", c.get("etapa_error")),
-                            ("Diagnóstico técnico", c.get("diagnostico_tecnico")),
-                        ]
-                    ),
-                    padding=12,
-                    bgcolor=ft.Colors.RED_50,
-                    border=ft.border.all(1, ft.Colors.RED_100),
-                    border_radius=8,
-                )
-            )
-        controls.append(
-            _corrida_detalles("Exclusiones", _safe_list(c.get("exclusiones")))
-        )
-        controls.append(
-            _corrida_detalles("Errores por obligación", _safe_list(c.get("errores")))
-        )
-        controls.append(
-            _corrida_detalles(
-                "Obligaciones afectadas", _safe_list(c.get("obligaciones_afectadas"))
-            )
-        )
-    return ft.Column(controls=controls, spacing=8)
+        details=[("Cálculo",_format_timestamp(c.get("fecha_preparacion"))), ("Fecha de corte",_format_date(c.get("fecha_corte"))), ("Período",_format_date(c.get("periodo_aplicado"))), ("Índice",_dash(c.get("codigo_indice_financiero"))), ("Analizada / elegible / excluida / aplicada",f"{_dash(c.get('cantidad_analizada'))} / {_dash(c.get('cantidad_elegible'))} / {_dash(c.get('cantidad_excluida'))} / {_dash(c.get('cantidad_aplicada'))}"), ("Capital / ajuste / importe",f"{_format_money(moneda,c.get('capital_analizado_total'))} / {_format_money(moneda,c.get('ajuste_total'))} / {_format_money(moneda,c.get('importe_total'))}")]
+        title=ft.Row([ft.Text("Corrida de indexación",size=16,weight=ft.FontWeight.W_700),ft.Container(expand=True),status_badge(_corrida_estado_label(c.get("estado_corrida")))],wrap=True)
+        children=[title,key_value_grid(details)]
+        if any(c.get(k) for k in ("codigo_error","etapa_error","diagnostico_tecnico")): children.append(ft.Container(content=key_value_grid([("Error de corrida",_dash(c.get("codigo_error"))), ("Etapa",_dash(c.get("etapa_error"))), ("Diagnóstico",_dash(c.get("diagnostico_tecnico")))]),padding=10,bgcolor=ft.Colors.RED_50,border_radius=8))
+        children.append(_corrida_detalles("Obligaciones y exclusiones de esta corrida", _safe_list(c.get("obligaciones_afectadas"))))
+        children.append(ft.ExpansionTile(title=ft.Text("Datos técnicos"), controls=[key_value_grid([("ID corrida", c.get("id_corrida_indexacion_financiera")), ("Origen técnico", _dash(c.get("origen_corrida")))])]))
+        controls.append(ft.Container(content=ft.Column(children,spacing=9),padding=14,border=ft.border.all(1,ft.Colors.BLUE_GREY_200),border_radius=10))
+    return ft.Column(controls,spacing=12)
 
 
 def _corrida_detalles(title: str, rows: list[dict[str, Any]]) -> ft.Control:
-    if not rows:
-        return ft.Text(f"{title}: sin registros.")
-    return ft.Column(
-        [
-            ft.Text(title, weight=ft.FontWeight.W_600),
-            entity_table(
-                columns=[
-                    ("Obligación", "id_obligacion_financiera"),
-                    ("Elegibilidad", "estado_elegibilidad"),
-                    ("Motivo exclusión", "motivo_exclusion"),
-                    ("Código error", "codigo_error"),
-                    ("Detalle controlado", "detalle_controlado"),
-                ],
-                rows=[
-                    {
-                        **r,
-                        "motivo_exclusion": _dash(r.get("motivo_exclusion")),
-                        "codigo_error": _dash(r.get("codigo_error")),
-                        "detalle_controlado": _dash(r.get("detalle_controlado")),
-                    }
-                    for r in rows
-                ],
-            ),
-        ],
-        spacing=4,
-    )
+    if not rows: return ft.Text(f"{title}: sin registros.")
+    return ft.Column([ft.Text(title,weight=ft.FontWeight.W_600)] + [ft.Container(content=key_value_grid([("Obligación",_dash(r.get("id_obligacion_financiera"))), ("Elegibilidad",_dash(r.get("estado_elegibilidad"))), ("Motivo",_dash(r.get("motivo_exclusion"))), ("Código de error",_dash(r.get("codigo_error"))), ("Detalle",_dash(r.get("detalle_controlado"))), ("Versión resultante",_dash(r.get("version_resultante")))]),padding=8,bgcolor=ft.Colors.RED_50 if r.get("codigo_error") or r.get("motivo_exclusion") else ft.Colors.BLUE_GREY_50,border_radius=6) for r in rows],spacing=5)
+
+
+def _corrida_estado_label(value: object) -> str:
+    return {"PENDIENTE_APLICACION":"Pendiente", "APLICADA":"Aplicada", "FALLIDA":"Fallida"}.get(str(value or "").upper(), _dash(value))
+
+def _obligacion_indexacion_label(obligacion: dict[str, Any]) -> str:
+    if obligacion.get("origen_indexacion") == "CORRIDA_POSTERIOR":
+        return "Ajustada por corrida"
+    return _estado_indexacion_label(obligacion.get("estado_indexacion_presentacion"))
 
 
 def _estado_indexacion_label(value: object) -> str:
     labels = {
         "NO_REQUIERE_INDICE": "Sin indexación",
-        "PROYECTADA_SIN_INDICE": "Pendiente de índice",
-        "CON_INDICE_APLICADO": "Indexada",
+        "PROYECTADA_SIN_INDICE": "Proyectada sin índice",
+        "CON_INDICE_APLICADO": "Indexada al nacimiento",
         "EXCLUIDA": "Excluida",
         "CON_ERROR": "Con error",
     }

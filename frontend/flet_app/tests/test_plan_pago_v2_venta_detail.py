@@ -251,7 +251,7 @@ def test_plan_pago_v2_not_found_muestra_vacio_amigable() -> None:
         )
     )
     text = _texts(control)
-    assert "todavía no tiene un Plan Pago V2 asociado" in text
+    assert "La venta no tiene un Plan Pago V2 materializado" in text
     assert "HTTP 404" not in text
 
 
@@ -261,20 +261,20 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Plan Pago V2" not in text  # el título lo agrega la ficha contenedora
     assert "QUERY_READLIKE" in text
     assert "ARS 1.100,12" in text
-    assert "Pendiente de índice" in text
-    assert "Indexada" in text
+    assert "Proyectada sin índice" in text
+    assert "Indexada al nacimiento" in text
     assert "Al nacimiento" in text
-    assert "ID 10 · PENDIENTE_APLICACION" in text
-    assert "Hay corridas pendientes de aplicación." in text
-    assert "ID 9 · APLICADA" in text
+    assert "Pendiente" in text
+    assert "Pendientes" in text
+    assert "Aplicadas" in text
     assert "Historial de corridas" in text
     assert "\n11\n" in f"\n{text}\n"
-    assert "FALLIDA" in text
-    assert "Hay corridas fallidas." in text
+    assert "Fallida" in text
+    assert "Fallidas" in text
     assert "ERR_CAB" in text
     assert "Falla controlada" in text
-    assert "Exclusiones" in text
-    assert "Errores por obligación" in text
+    assert "Obligaciones y exclusiones de esta corrida" in text
+    assert "Código de error" in text
     assert "Preparar" not in text
     assert "Aplicar" not in text
     assert "Confirmar corrida" not in text
@@ -328,7 +328,7 @@ def test_loader_plan_pago_v2_consulta_una_vez_y_reemplaza_por_contenido(
     text = _texts(loader)
     assert api.plan_calls == [371]
     assert "Historial de corridas" in text
-    assert "Hay corridas pendientes de aplicación." in text
+    assert "Pendientes" in text
     assert fake_page.updated
 
 
@@ -351,7 +351,7 @@ def test_loader_plan_pago_v2_reemplaza_por_vacio_amigable(monkeypatch) -> None:
 
     text = _texts(loader)
     assert api.plan_calls == [371]
-    assert "todavía no tiene un Plan Pago V2 asociado" in text
+    assert "La venta no tiene un Plan Pago V2 materializado" in text
     assert "HTTP 404" not in text
 
 
