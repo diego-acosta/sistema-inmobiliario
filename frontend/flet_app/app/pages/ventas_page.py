@@ -605,39 +605,27 @@ def _plan_pago_v2_integral_view(result: ApiResult) -> ft.Control:
 
 
 def _plan_pago_v2_summary(plan: dict[str, Any], resumen: dict[str, Any]) -> ft.Control:
-    """Presenta exclusivamente agregados entregados por el contrato read-only."""
     moneda = plan.get("moneda")
-    items = [
-        ("Importe vigente total", _format_money(moneda, resumen.get("total_obligaciones"))),
-        ("Capital total", _format_money(moneda, resumen.get("total_capital"))),
-        ("Ajuste total", _format_money(moneda, resumen.get("total_ajuste_indexacion"))),
-        ("Bloques", _dash(resumen.get("cantidad_bloques"))),
-        ("Obligaciones", _dash(resumen.get("cantidad_obligaciones"))),
-        ("Indexadas", _dash(resumen.get("cantidad_obligaciones_con_indexacion"))),
-        (
-            "Proyectadas sin índice",
-            _dash(resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion")),
-        ),
+    amounts = [
+        ("Importe vigente total", resumen.get("total_obligaciones")),
+        ("Capital total", resumen.get("total_capital")),
+        ("Ajuste total", resumen.get("total_ajuste_indexacion")),
     ]
-    # Una columna estática evita mediciones reactivas de ResponsiveRow durante scroll.
-    return ft.Column(
-        [
-            ft.Container(
-                content=ft.Row(
-                    [
-                        ft.Text(label, color=ft.Colors.BLUE_GREY_700),
-                        ft.Text(value, size=17, weight=ft.FontWeight.W_700),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                ),
-                padding=10,
-                border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
-                border_radius=8,
-            )
-            for label, value in items
-        ],
-        spacing=6,
-    )
+    amount_cards = [
+        ft.Container(
+            content=ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), ft.Text(_format_money(moneda, value), size=17, weight=ft.FontWeight.W_700)], spacing=3),
+            padding=10, border=ft.border.all(1, ft.Colors.BLUE_GREY_100), border_radius=8,
+        ) for label, value in amounts
+    ]
+    counters = [
+        ("Cuotas", resumen.get("cantidad_obligaciones")),
+        ("Indexadas", resumen.get("cantidad_obligaciones_con_indexacion")),
+        ("Proyectadas sin índice", resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion")),
+    ]
+    return ft.Container(data="plan-pago-v2-resumen", content=ft.Column([
+        ft.Row(amount_cards, wrap=True, spacing=8),
+        ft.Row([ft.Text(f"{label} {_dash(value)}", color=ft.Colors.BLUE_GREY_700) for label, value in counters], wrap=True, spacing=16),
+    ], spacing=8))
 
 
 def _plan_pago_v2_interface_states(resumen: dict[str, Any], corridas: list[dict[str, Any]]) -> ft.Control:
@@ -647,120 +635,47 @@ def _plan_pago_v2_interface_states(resumen: dict[str, Any], corridas: list[dict[
         if estado == "PENDIENTE_APLICACION": counts["Pendientes"] += 1
         elif estado == "APLICADA": counts["Aplicadas"] += 1
         elif estado == "FALLIDA": counts["Fallidas"] += 1
-    return ft.Row([ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), status_badge(str(value))], spacing=3) for label, value in counts.items()], wrap=True, spacing=20)
+    return ft.Row([ft.Text("Corridas:", color=ft.Colors.BLUE_GREY_700)] + [ft.Text(f"{label} {value}") for label, value in counts.items()], wrap=True, spacing=10)
+
+
+_PLAN_V2_COLUMN_WIDTHS = {"toggle": 36, "order": 48, "due_date": 100, "total": 150, "obligation_state": 135, "payment_state": 115, "indexation": 190}
+_PLAN_V2_COLUMN_SPACING = 8
+_PLAN_V2_COMPOSITION_WIDTHS = {"concept": 190, "amount": 150, "percentage": 90}
+
+
+def _plan_pago_v2_cell(content: ft.Control, *, width: int, alignment=ft.alignment.center_left) -> ft.Container:
+    return ft.Container(content=content, width=width, alignment=alignment)
 
 
 def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
-    """Aplana bloques para que las cuotas sean la estructura principal de lectura."""
-    obligaciones: list[dict[str, Any]] = []
-    for bloque in bloques:
-        contexto = {
-            "numero_bloque": bloque.get("numero_bloque"),
-            "etiqueta_bloque": bloque.get("etiqueta_bloque"),
-            "metodo_liquidacion": bloque.get("metodo_liquidacion"),
-            "indexacion": bloque.get("indexacion"),
-        }
-        obligaciones.extend(
-            {**obligacion, "_bloque": contexto}
-            for obligacion in _safe_list(bloque.get("obligaciones"))
-        )
-    obligaciones.sort(
-        key=lambda item: (
-            item.get("fecha_vencimiento") or "",
-            item.get("numero_cuota_asociada") or 0,
-            item.get("numero_obligacion") or 0,
-            item.get("id_obligacion_financiera") or 0,
-        )
-    )
+    obligaciones = [dict(obligacion) for bloque in bloques for obligacion in _safe_list(bloque.get("obligaciones"))]
+    obligaciones.sort(key=lambda item: (item.get("fecha_vencimiento") or "", item.get("numero_cuota_asociada") or 0, item.get("numero_obligacion") or 0, item.get("id_obligacion_financiera") or 0))
     return _plan_pago_v2_obligaciones(obligaciones)
 
+
 def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control:
-    if not obligaciones:
-        return ft.Text("Sin obligaciones en el bloque.")
-    rows: list[ft.Control] = [
-        ft.Row(
-            [
-                ft.Text("", width=32), ft.Text("N°", width=55),
-                ft.Text("Vencimiento", width=95), ft.Text("Total cuota", width=145),
-                ft.Text("Estado obligación", width=130), ft.Text("Estado pago", width=110),
-                ft.Text("Indexación"),
-            ],
-            spacing=6,
-        )
-    ]
-    for visual_order, obligacion in enumerate(obligaciones, start=1):
-        rows.append(_plan_pago_v2_cuota_row(obligacion, visual_order=visual_order))
-    return ft.Column(rows, spacing=2)
+    if not obligaciones: return ft.Text("Sin obligaciones en el bloque.")
+    headers = [("", "toggle"), ("N°", "order"), ("Vencimiento", "due_date"), ("Total cuota", "total"), ("Estado obligación", "obligation_state"), ("Estado pago", "payment_state"), ("Indexación", "indexation")]
+    header = ft.Row([_plan_pago_v2_cell(ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=ft.Colors.BLUE_GREY_700), width=_PLAN_V2_COLUMN_WIDTHS[key], alignment=ft.alignment.center if key in {"toggle", "order"} else ft.alignment.center_left) for label, key in headers], spacing=_PLAN_V2_COLUMN_SPACING)
+    return ft.Column([header] + [_plan_pago_v2_cuota_row(item, visual_order=index) for index, item in enumerate(obligaciones, 1)], spacing=4)
 
 
 def _plan_pago_v2_cuota_row(obligacion: dict[str, Any], *, visual_order: int) -> ft.Control:
-    composiciones = _safe_list(obligacion.get("composiciones"))
-    details = ft.Container(
-        data=f"composicion-{obligacion.get('id_obligacion_financiera')}",
-        content=_plan_pago_v2_composition_rows(obligacion, composiciones),
-        visible=False,
-        padding=8,
-        bgcolor=ft.Colors.BLUE_GREY_50,
-        border_radius=4,
-    )
-    button = ft.IconButton(data=f"toggle-composicion-{obligacion.get('id_obligacion_financiera')}", icon=ft.Icons.ADD, tooltip="Ver composición")
-
+    obligation_id = obligacion.get("id_obligacion_financiera")
+    details = ft.Container(data=f"composicion-{obligation_id}", content=_plan_pago_v2_composition_rows(obligacion, _safe_list(obligacion.get("composiciones"))), visible=False, padding=8, bgcolor=ft.Colors.BLUE_GREY_50, border_radius=4)
+    button = ft.IconButton(data=f"toggle-composicion-{obligation_id}", icon=ft.Icons.ADD, tooltip="Ver composición")
     def toggle(_: ft.ControlEvent) -> None:
-        details.visible = not details.visible
-        button.icon = ft.Icons.REMOVE if details.visible else ft.Icons.ADD
-        button.tooltip = "Ocultar composición" if details.visible else "Ver composición"
-        safe_update(button)
-        safe_update(details)
-
+        details.visible = not details.visible; button.icon = ft.Icons.REMOVE if details.visible else ft.Icons.ADD; button.tooltip = "Ocultar composición" if details.visible else "Ver composición"; safe_update(button); safe_update(details)
     button.on_click = toggle
-    numero = obligacion.get("numero_cuota_asociada") or obligacion.get("numero_obligacion")
-    return ft.Column(
-        [
-            ft.Row(
-                controls=[
-                    button,
-                    ft.Text(str(visual_order), width=55),
-                    ft.Text(_format_date(obligacion.get("fecha_vencimiento")), width=95),
-                    ft.Text(_format_money(obligacion.get("moneda"), obligacion.get("importe_vigente")), width=125),
-                    status_badge(_estado_obligacion_label(obligacion.get("estado_obligacion"))),
-                    status_badge(_estado_pago_label(obligacion)),
-                    status_badge(_obligacion_indexacion_label(obligacion)),
-                ],
-                data=f"cuota-{obligacion.get('id_obligacion_financiera')}",
-                spacing=6,
-            ),
-            details,
-        ],
-        spacing=2,
-    )
+    values = [(button, "toggle", ft.alignment.center), (ft.Text(str(visual_order)), "order", ft.alignment.center), (ft.Text(_format_date(obligacion.get("fecha_vencimiento"))), "due_date", ft.alignment.center_left), (ft.Text(_format_money(obligacion.get("moneda"), obligacion.get("importe_vigente"))), "total", ft.alignment.center_left), (status_badge(_estado_obligacion_label(obligacion.get("estado_obligacion"))), "obligation_state", ft.alignment.center_left), (status_badge(_estado_pago_label(obligacion)), "payment_state", ft.alignment.center_left), (status_badge(_obligacion_indexacion_label(obligacion)), "indexation", ft.alignment.center_left)]
+    return ft.Column([ft.Row([_plan_pago_v2_cell(value, width=_PLAN_V2_COLUMN_WIDTHS[key], alignment=alignment) for value, key, alignment in values], data=f"cuota-{obligation_id}", spacing=_PLAN_V2_COLUMN_SPACING), details], spacing=2)
 
 
-def _plan_pago_v2_composition_rows(
-    obligacion: dict[str, Any], composiciones: list[dict[str, Any]]
-) -> ft.Control:
-    if not composiciones:
-        return ft.Text("Sin composición financiera expuesta.")
-    rows: list[ft.Control] = [
-        ft.Text("Composición de la cuota", weight=ft.FontWeight.W_600)
-    ]
-    for composicion in composiciones:
-        codigo = str(composicion.get("codigo_concepto_financiero") or "")
-        porcentaje = _porcentaje_ajuste_presentacion(obligacion, composicion)
-        rows.append(
-            ft.Row(
-                [
-                    ft.Text(_dash(codigo), width=180),
-                    ft.Text(_format_money(composicion.get("moneda_componente"), composicion.get("importe_componente")), width=140),
-                    ft.Text(porcentaje),
-                ],
-                spacing=8,
-            )
-        )
-    bloque = obligacion.get("_bloque") if isinstance(obligacion.get("_bloque"), dict) else {}
-    indice = bloque.get("indexacion") if isinstance(bloque.get("indexacion"), dict) else {}
-    if bloque:
-        rows.extend([ft.Text("Configuración del tramo", color=ft.Colors.BLUE_GREY_700), key_value_grid([("Método", _dash(bloque.get("metodo_liquidacion"))), ("Índice", _dash(indice.get("codigo_indice_financiero"))), ("Fecha base", _format_date(indice.get("fecha_base_indice"))), ("Valor base", _format_coefficient(indice.get("valor_base_indice")))])])
-    rows.extend([ft.Text("Referencia original", color=ft.Colors.BLUE_GREY_700), key_value_grid([("Número dentro del tramo", _dash(obligacion.get("numero_cuota_asociada"))), ("Número de obligación", _dash(obligacion.get("numero_obligacion"))), ("ID obligación", _dash(obligacion.get("id_obligacion_financiera"))), ("Bloque", _dash(bloque.get("numero_bloque")))])])
+def _plan_pago_v2_composition_rows(obligacion: dict[str, Any], composiciones: list[dict[str, Any]]) -> ft.Control:
+    widths = _PLAN_V2_COMPOSITION_WIDTHS
+    header = ft.Row([_plan_pago_v2_cell(ft.Text(label, size=12, weight=ft.FontWeight.W_600), width=widths[key]) for label, key in [("Concepto", "concept"), ("Importe", "amount"), ("% ajuste", "percentage")]], spacing=8)
+    rows = [ft.Text("Composición de la cuota", weight=ft.FontWeight.W_600), header]
+    rows.extend(ft.Row([_plan_pago_v2_cell(ft.Text(_dash(str(item.get("codigo_concepto_financiero") or ""))), width=widths["concept"]), _plan_pago_v2_cell(ft.Text(_format_money(item.get("moneda_componente"), item.get("importe_componente"))), width=widths["amount"]), _plan_pago_v2_cell(ft.Text(_porcentaje_ajuste_presentacion(obligacion, item)), width=widths["percentage"])], spacing=8) for item in composiciones)
     return ft.Column(rows, spacing=4)
 
 

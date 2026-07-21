@@ -542,20 +542,35 @@ def test_cada_toggle_controla_su_detalle_por_id() -> None:
         assert detail.visible is before[obligation_id]
 
 
-def test_referencia_original_preserva_datos_de_cada_cuota() -> None:
-    control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
-    for obligation_id, cuota, numero, bloque in ((101, 7, 41, 1), (102, 8, 42, 2), (103, 9, 43, 3)):
-        detail = _find_control_by_data(control, f"composicion-{obligation_id}", ft.Container)
-        text = _texts(detail)
-        for value in ("Referencia original", "Número dentro del tramo", str(cuota), "Número de obligación", str(numero), "ID obligación", str(obligation_id), "Bloque", str(bloque)):
-            assert value in text
-
-
-def test_composicion_y_referencia_original_coexisten_en_cuota_103() -> None:
+def test_detalle_expandido_muestra_solo_composiciones() -> None:
     control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
     text = _texts(_find_control_by_data(control, "composicion-103", ft.Container))
-    for value in ("Composición de la cuota", "Configuración del tramo", "Referencia original", "CAPITAL_VENTA", "AJUSTE_INDEXACION"):
+    for value in ("Composición de la cuota", "Concepto", "Importe", "% ajuste", "CAPITAL_VENTA", "AJUSTE_INDEXACION", "ARS 1.000,00", "ARS 100,00", "10,00%"):
         assert value in text
+    for value in ("Configuración del tramo", "Referencia original", "Método", "Índice", "Fecha base", "Valor base", "Número dentro del tramo", "Número de obligación", "ID obligación", "Bloque"):
+        assert value not in text
+
+
+def test_composicion_sin_ajuste_muestra_solo_componentes_reales() -> None:
+    text = _texts(_find_control_by_data(_plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data())), "composicion-101", ft.Container))
+    assert "CAPITAL_VENTA" in text and "ARS 1.000,00" in text and "—" in text
+    assert "AJUSTE_INDEXACION" not in text
+
+
+def test_cuota_header_y_filas_comparten_anchos() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
+    header = next(row for row in _walk(control) if isinstance(row, ft.Row) and "N°" in _texts(row) and len(row.controls) == 7)
+    row = _find_control_by_data(control, "cuota-103", ft.Row)
+    assert [cell.width for cell in header.controls] == [cell.width for cell in row.controls]
+
+
+def test_resumen_compacto_expone_solo_metricas_operativas() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_three_cuota_plan_data()))
+    text = _texts(_find_control_by_data(control, "plan-pago-v2-resumen", ft.Container))
+    for value in ("Importe vigente total", "Capital total", "Ajuste total", "Cuotas", "Indexadas", "Proyectadas sin índice"):
+        assert value in text
+    for value in ("Bloques", "Cantidad obligados", "Obligaciones múltiples", "ID plan", "Método"):
+        assert value not in text
 
 
 class FakeMountedPage:
