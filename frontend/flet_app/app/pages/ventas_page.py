@@ -651,34 +651,141 @@ def _plan_pago_v2_interface_states(resumen: dict[str, Any], corridas: list[dict[
 
 
 def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
-    if not bloques: return ft.Text("Sin bloques de Plan Pago V2 expuestos.")
+    if not bloques:
+        return ft.Text("Sin bloques de Plan Pago V2 expuestos.")
     controls: list[ft.Control] = []
     for bloque in bloques:
-        idx = bloque.get("indexacion") if isinstance(bloque.get("indexacion"), dict) else {}
-        title = _join_values(f"Bloque {bloque.get('numero_bloque')}", bloque.get("etiqueta_bloque"))
-        header = ft.Column(
-            [
-                ft.Text(title, size=17, weight=ft.FontWeight.W_700),
-                ft.Text(_dash(bloque.get("tipo_bloque")), color=ft.Colors.BLUE_GREY_700),
-                status_badge(_dash(bloque.get("metodo_liquidacion"))),
-            ],
-            spacing=4,
+        controls.append(
+            ft.Text(
+                _join_values("Bloque", bloque.get("etiqueta_bloque")),
+                color=ft.Colors.BLUE_GREY_700,
+                weight=ft.FontWeight.W_600,
+            )
         )
-        facts = key_value_grid([("Obligaciones", len(_safe_list(bloque.get("obligaciones")))), ("Monto del bloque", _format_money(None, bloque.get("importe_total_bloque"))), ("Índice", _join_values(idx.get("codigo_indice_financiero"), idx.get("nombre_indice_financiero"))), ("Base", _join_values(_format_date(idx.get("fecha_base_indice")), _format_coefficient(idx.get("valor_base_indice"))))])
-        controls.append(ft.Container(content=ft.Column([header, facts, _plan_pago_v2_obligaciones(_safe_list(bloque.get("obligaciones")))], spacing=10), padding=14, border=ft.border.all(1, ft.Colors.BLUE_GREY_200), border_radius=10))
-    return ft.Column(controls, spacing=12)
+        controls.append(_plan_pago_v2_obligaciones(_safe_list(bloque.get("obligaciones"))))
+    return ft.Column(controls, spacing=6)
 
 
 def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control:
-    if not obligaciones: return ft.Text("Sin obligaciones en el bloque.")
-    cards=[]
-    for o in obligaciones:
-        ix=o.get("indexacion") if isinstance(o.get("indexacion"),dict) else {}
-        number=o.get("numero_cuota_asociada") or o.get("numero_obligacion")
-        amounts=ft.Row([ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), ft.Text(value, weight=ft.FontWeight.W_700)], spacing=2) for label,value in [("Capital original",_format_money(o.get("moneda"),o.get("capital_original"))), ("Ajuste",_format_money(o.get("moneda"),o.get("ajuste_indexacion"))), ("Importe vigente",_format_money(o.get("moneda"),o.get("importe_vigente")))]], wrap=True, spacing=8)
-        cards.append(ft.Container(content=ft.Column([ft.Column([ft.Text(f"Cuota / obligación {number}", weight=ft.FontWeight.W_700), status_badge(_obligacion_indexacion_label(o))], spacing=4), amounts, ft.Text("Capital original  →  Ajuste  →  Importe vigente", color=ft.Colors.BLUE_GREY_600), key_value_grid([("Vencimiento",_format_date(o.get("fecha_vencimiento"))), ("Saldo pendiente",_format_money(o.get("moneda"),o.get("saldo_pendiente"))), ("Estado obligación",_dash(o.get("estado_obligacion"))), ("Origen",_origen_indexacion_label(o.get("origen_indexacion"))), ("Índice / coeficiente",_join_values(ix.get("modo_indexacion"),_format_coefficient(ix.get("coeficiente_indexacion")))), ("Corrida aplicada",_corrida_ref(o.get("corrida_aplicada_vigente")))])], spacing=8), padding=12, bgcolor=ft.Colors.BLUE_GREY_50, border_radius=8))
-    return ft.Column(cards, spacing=8)
+    if not obligaciones:
+        return ft.Text("Sin obligaciones en el bloque.")
+    rows: list[ft.Control] = [
+        ft.Row(
+            [
+                ft.Text("", width=32), ft.Text("Cuota", width=55),
+                ft.Text("Vencimiento", width=95), ft.Text("Total cuota", width=125),
+                ft.Text("Estado obligación", width=115), ft.Text("Estado pago", width=95),
+                ft.Text("Indexación"),
+            ],
+            spacing=6,
+        )
+    ]
+    for obligacion in obligaciones:
+        rows.append(_plan_pago_v2_cuota_row(obligacion))
+    return ft.Column(rows, spacing=2)
 
+
+def _plan_pago_v2_cuota_row(obligacion: dict[str, Any]) -> ft.Control:
+    composiciones = _safe_list(obligacion.get("composiciones"))
+    details = ft.Container(
+        content=_plan_pago_v2_composition_rows(obligacion, composiciones),
+        visible=False,
+        padding=8,
+        bgcolor=ft.Colors.BLUE_GREY_50,
+        border_radius=4,
+    )
+    button = ft.IconButton(icon=ft.Icons.ADD, tooltip="Ver composición")
+
+    def toggle(_: ft.ControlEvent) -> None:
+        details.visible = not details.visible
+        button.icon = ft.Icons.REMOVE if details.visible else ft.Icons.ADD
+        button.tooltip = "Ocultar composición" if details.visible else "Ver composición"
+        safe_update(details)
+
+    button.on_click = toggle
+    numero = obligacion.get("numero_cuota_asociada") or obligacion.get("numero_obligacion")
+    return ft.Column(
+        [
+            ft.Row(
+                [
+                    button,
+                    ft.Text(_dash(numero), width=55),
+                    ft.Text(_format_date(obligacion.get("fecha_vencimiento")), width=95),
+                    ft.Text(_format_money(obligacion.get("moneda"), obligacion.get("importe_vigente")), width=125),
+                    status_badge(_estado_obligacion_label(obligacion.get("estado_obligacion"))),
+                    status_badge(_estado_pago_label(obligacion)),
+                    status_badge(_obligacion_indexacion_label(obligacion)),
+                ],
+                spacing=6,
+            ),
+            details,
+        ],
+        spacing=2,
+    )
+
+
+def _plan_pago_v2_composition_rows(
+    obligacion: dict[str, Any], composiciones: list[dict[str, Any]]
+) -> ft.Control:
+    if not composiciones:
+        return ft.Text("Sin composición financiera expuesta.")
+    rows: list[ft.Control] = [
+        ft.Text("Composición: concepto · importe · % ajuste", weight=ft.FontWeight.W_600)
+    ]
+    for composicion in composiciones:
+        codigo = str(composicion.get("codigo_concepto_financiero") or "")
+        porcentaje = _porcentaje_ajuste_presentacion(obligacion, composicion)
+        rows.append(
+            ft.Row(
+                [
+                    ft.Text(_dash(codigo), width=180),
+                    ft.Text(_format_money(composicion.get("moneda_componente"), composicion.get("importe_componente")), width=140),
+                    ft.Text(porcentaje),
+                ],
+                spacing=8,
+            )
+        )
+    return ft.Column(rows, spacing=4)
+
+
+def _porcentaje_ajuste_presentacion(
+    obligacion: dict[str, Any], composicion: dict[str, Any]
+) -> str:
+    if composicion.get("codigo_concepto_financiero") != "AJUSTE_INDEXACION":
+        return "—"
+    try:
+        capital = Decimal(str(obligacion.get("capital_original")))
+        ajuste = Decimal(str(composicion.get("importe_componente")))
+    except (InvalidOperation, TypeError, ValueError):
+        return "—"
+    if capital <= 0:
+        return "—"
+    return f"{_format_decimal((ajuste / capital) * Decimal('100'), decimal_places=2)}%"
+
+
+def _estado_obligacion_label(value: object) -> str:
+    labels = {
+        "PROYECTADA": "Proyectada", "EMITIDA": "Emitida", "EXIGIBLE": "Exigible",
+        "VENCIDA": "Vencida", "PARCIALMENTE_CANCELADA": "Parcialmente pagada",
+        "CANCELADA": "Pagada", "ANULADA": "Anulada", "REEMPLAZADA": "Reemplazada",
+    }
+    raw = str(value or "").upper()
+    return labels.get(raw, _dash(value))
+
+
+def _estado_pago_label(obligacion: dict[str, Any]) -> str:
+    estado = str(obligacion.get("estado_obligacion") or "").upper()
+    if estado == "ANULADA": return "Anulada"
+    if estado == "REEMPLAZADA": return "Reemplazada"
+    try:
+        total = Decimal(str(obligacion.get("importe_vigente")))
+        saldo = Decimal(str(obligacion.get("saldo_pendiente")))
+    except (InvalidOperation, TypeError, ValueError):
+        return "—"
+    if saldo == 0: return "Pagada"
+    if total > 0 and 0 < saldo < total: return "Parcial"
+    if saldo == total: return "Pendiente"
+    return "—"
 
 def _plan_pago_v2_corridas(
     corridas: list[dict[str, Any]], moneda: object

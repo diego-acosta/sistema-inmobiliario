@@ -8,8 +8,10 @@ from app.api_client import ApiClient, ApiResult
 from app.components.loading_state import DeferredLoadingContainer
 from app.pages.ventas_page import (
     VentaDetailView,
+    _estado_pago_label,
     _obligacion_indexacion_label,
     _plan_pago_v2_integral_view,
+    _porcentaje_ajuste_presentacion,
 )
 
 
@@ -132,6 +134,10 @@ def _plan_data() -> dict[str, Any]:
                             "coeficiente_indexacion": "1.10000000",
                             "modo_indexacion": "POR_COEFICIENTE",
                         },
+                        "composiciones": [
+                            {"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": "1000", "saldo_componente": "1000", "moneda_componente": "ARS"},
+                            {"codigo_concepto_financiero": "AJUSTE_INDEXACION", "importe_componente": "100.1234", "saldo_componente": "100.1234", "moneda_componente": "ARS"},
+                        ],
                         "corrida_relacionada": corrida_rel,
                         "corrida_aplicada_vigente": corrida_aplicada,
                     },
@@ -149,6 +155,9 @@ def _plan_data() -> dict[str, Any]:
                         "estado_indexacion_presentacion": "PROYECTADA_SIN_INDICE",
                         "origen_indexacion": None,
                         "indexacion": None,
+                        "composiciones": [
+                            {"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": "1000", "saldo_componente": "1000", "moneda_componente": "ARS"}
+                        ],
                         "corrida_relacionada": None,
                         "corrida_aplicada_vigente": None,
                     },
@@ -369,6 +378,50 @@ def test_datos_tecnicos_permanecen_en_tarjeta_estatica_accesible() -> None:
     assert "Datos técnicos" in text
     assert "ID corrida" in text
     assert "Origen técnico" in text
+
+
+def test_cuota_compacta_muestra_estados_importe_y_composicion_colapsada() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    text = _texts(control)
+    assert "Cuota" in text
+    assert "Vencimiento" in text
+    assert "Total cuota" in text
+    assert "Estado obligación" in text
+    assert "Estado pago" in text
+    assert "Proyectada" in text
+    assert "Pendiente" in text
+    assert "Proyectada sin índice" in text
+    assert "CAPITAL_VENTA" not in text
+
+
+def test_cuota_expande_composicion_localmente_y_vuelve_a_colapsar() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    button = next(item for item in _walk(control) if isinstance(item, ft.IconButton))
+    assert button.icon == ft.Icons.ADD
+    button.on_click(None)  # type: ignore[misc]
+    assert button.icon == ft.Icons.REMOVE
+    assert "CAPITAL_VENTA" in _texts(control)
+    assert "AJUSTE_INDEXACION" in _texts(control)
+    button.on_click(None)  # type: ignore[misc]
+    assert button.icon == ft.Icons.ADD
+
+
+def test_estado_pago_y_porcentaje_de_ajuste_son_derivados_de_presentacion() -> None:
+    assert _estado_pago_label({"importe_vigente": "100", "saldo_pendiente": "0"}) == "Pagada"
+    assert _estado_pago_label({"importe_vigente": "100", "saldo_pendiente": "25"}) == "Parcial"
+    assert _estado_pago_label({"importe_vigente": "100", "saldo_pendiente": "100"}) == "Pendiente"
+    assert _porcentaje_ajuste_presentacion(
+        {"capital_original": "40000000"},
+        {"codigo_concepto_financiero": "AJUSTE_INDEXACION", "importe_componente": "3152000"},
+    ) == "7,88%"
+    assert _porcentaje_ajuste_presentacion(
+        {"capital_original": "0"},
+        {"codigo_concepto_financiero": "AJUSTE_INDEXACION", "importe_componente": "1"},
+    ) == "—"
+    assert _porcentaje_ajuste_presentacion(
+        {"capital_original": "100"},
+        {"codigo_concepto_financiero": "CAPITAL_VENTA", "importe_componente": "100"},
+    ) == "—"
 
 
 class FakeMountedPage:
