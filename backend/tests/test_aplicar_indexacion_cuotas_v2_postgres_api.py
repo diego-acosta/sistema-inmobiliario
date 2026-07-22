@@ -50,7 +50,8 @@ def test_postgres_aplica_corrida_crea_trazabilidad_actualiza_obligacion_detalle_
     assert cab["version_registro"] > 1
     assert cab["op"] == str(APPLY_CORE.x_op_id)
 
-    obl = db_session.execute(text("SELECT importe_total, saldo_pendiente, version_registro, op_id_ultima_modificacion::text op FROM obligacion_financiera WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]}).mappings().one()
+    obl = db_session.execute(text("SELECT estado_obligacion, importe_total, saldo_pendiente, version_registro, op_id_ultima_modificacion::text op FROM obligacion_financiera WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]}).mappings().one()
+    assert obl["estado_obligacion"] == "EMITIDA"
     assert obl["importe_total"] == 1260
     assert obl["saldo_pendiente"] == 1260
     assert obl["version_registro"] >= 2

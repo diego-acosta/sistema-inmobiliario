@@ -22,7 +22,7 @@ from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_pre
     PlanPagoVentaV2ObligacionPreview,
 )
 from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
-    ESTADO_OBLIGACION_PROYECTADA,
+    determine_ppv2_initial_obligation_state,
     GeneracionCronogramaCreatePayload,
     ObligacionFinancieraIndexacionUpsertPayload,
     ObligacionCronogramaV2CreatePayload,
@@ -532,7 +532,12 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             fecha_vencimiento=obligacion_preview.fecha_vencimiento,
             importe_total=importe_total,
             moneda=moneda,
-            estado_obligacion=ESTADO_OBLIGACION_PROYECTADA,
+            estado_obligacion=determine_ppv2_initial_obligation_state(
+                indexation_materialized=(
+                    obligacion_preview.estado_preview_indexacion
+                    != ESTADO_PREVIEW_INDEXACION_PROYECTADA
+                )
+            ),
             id_concepto_financiero=concepto["id_concepto_financiero"],
             codigo_concepto_financiero=concepto["codigo_concepto_financiero"],
             id_persona_obligado=compradores[0]["id_persona"],

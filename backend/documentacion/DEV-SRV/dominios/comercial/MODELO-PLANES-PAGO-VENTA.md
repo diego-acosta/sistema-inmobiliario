@@ -184,9 +184,10 @@ En V2 representa cada hito del cronograma:
 
 Estados relevantes:
 
-- `PROYECTADA`: obligacion prevista por cronograma, aun no emitida o exigida
-  operativamente
-- `EMITIDA`: obligacion emitida dentro del circuito financiero vigente
+- `PROYECTADA`: obligacion prevista por cronograma, aún no emitida porque su
+  importe definitivo sigue pendiente de materialización
+- `EMITIDA`: obligacion emitida dentro del circuito financiero vigente, con
+  importe definitivo materializado
 - otros estados existentes mantienen su semantica financiera:
   `VENCIDA`, `PARCIALMENTE_CANCELADA`, `CANCELADA`, `ANULADA`,
   `REEMPLAZADA`, `PENDIENTE_AJUSTE`
@@ -774,4 +775,3 @@ Restricciones vigentes:
 - no crear tablas de cuotas o tramos de plan de pago de venta
 - no asumir campos inexistentes como implementados
 - metodos V2 no implementados siguen fuera de contrato productivo
-

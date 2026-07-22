@@ -11,7 +11,7 @@ from app.application.comercial.commands.generate_plan_pago_venta_anticipo_mas_cu
 )
 from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
     CONCEPTO_CAPITAL_VENTA,
-    ESTADO_OBLIGACION_PROYECTADA,
+    determine_ppv2_initial_obligation_state,
     GeneracionCronogramaCreatePayload,
     METODO_CUOTAS_IGUALES_SIMPLE,
     ObligacionCronogramaV2CreatePayload,
@@ -249,7 +249,9 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
                 fecha_vencimiento=command.fecha_vencimiento_anticipo,
                 importe_total=command.importe_anticipo,
                 moneda=moneda,
-                estado_obligacion=ESTADO_OBLIGACION_PROYECTADA,
+                estado_obligacion=determine_ppv2_initial_obligation_state(
+                    indexation_materialized=True
+                ),
                 id_concepto_financiero=concepto_anticipo["id_concepto_financiero"],
                 codigo_concepto_financiero=CONCEPTO_ANTICIPO_VENTA,
                 id_persona_obligado=comprador["id_persona"],
@@ -284,7 +286,9 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
                     fecha_vencimiento=fecha_vencimiento,
                     importe_total=importe,
                     moneda=moneda,
-                    estado_obligacion=ESTADO_OBLIGACION_PROYECTADA,
+                    estado_obligacion=determine_ppv2_initial_obligation_state(
+                        indexation_materialized=True
+                    ),
                     id_concepto_financiero=concepto_capital["id_concepto_financiero"],
                     codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
                     id_persona_obligado=comprador["id_persona"],

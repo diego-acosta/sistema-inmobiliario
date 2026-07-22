@@ -154,7 +154,8 @@ def _reset_block_to_capital_state(db, venta: int, etiqueta_bloque: str) -> None:
         (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque)
         JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:sale AND b.etiqueta_bloque=:label)
         AND id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='AJUSTE_INDEXACION' AND deleted_at IS NULL)"""), {"sale": venta, "label": etiqueta_bloque})
-    db.execute(text("""UPDATE obligacion_financiera o SET importe_total=cap.importe_componente, saldo_pendiente=cap.saldo_componente
+    db.execute(text("""UPDATE obligacion_financiera o SET importe_total=cap.importe_componente, saldo_pendiente=cap.saldo_componente,
+        estado_obligacion='PROYECTADA'
         FROM composicion_obligacion cap WHERE cap.id_obligacion_financiera=o.id_obligacion_financiera
         AND cap.id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='CAPITAL_VENTA' AND deleted_at IS NULL)
         AND o.id_obligacion_financiera IN (SELECT o2.id_obligacion_financiera FROM obligacion_financiera o2 JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=o2.id_plan_pago_venta_bloque JOIN plan_pago_venta p ON p.id_plan_pago_venta=b.id_plan_pago_venta WHERE p.id_venta=:sale AND b.etiqueta_bloque=:label)"""), {"sale": venta, "label": etiqueta_bloque})
