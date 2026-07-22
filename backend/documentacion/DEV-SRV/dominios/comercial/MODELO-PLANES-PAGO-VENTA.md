@@ -188,6 +188,8 @@ Estados relevantes:
   importe definitivo sigue pendiente de materialización
 - `EMITIDA`: obligacion emitida dentro del circuito financiero vigente, con
   importe definitivo materializado
+- Comercial aporta la regla del plan y los hechos de materialización; Financiero
+  determina el estado inicial de la obligación.
 - otros estados existentes mantienen su semantica financiera:
   `VENCIDA`, `PARCIALMENTE_CANCELADA`, `CANCELADA`, `ANULADA`,
   `REEMPLAZADA`, `PENDIENTE_AJUSTE`

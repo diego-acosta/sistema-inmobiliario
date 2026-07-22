@@ -12,6 +12,9 @@ from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_
     GeneratePlanPagoVentaCuotasIgualesSimpleCommand,
 )
 from app.application.common.results import AppResult
+from app.application.financiero.services.determine_initial_obligation_state_service import (
+    determine_initial_obligation_state,
+)
 
 METODO_CUOTAS_IGUALES_SIMPLE = "CUOTAS_IGUALES_SIMPLE"
 PERIODICIDAD_MENSUAL = "MENSUAL"
@@ -20,8 +23,6 @@ TIPO_ORIGEN_VENTA = "venta"
 TIPO_GENERACION_PLAN_PAGO_VENTA_V2 = "PLAN_PAGO_VENTA_V2"
 CONCEPTO_CAPITAL_VENTA = "CAPITAL_VENTA"
 ROL_OBLIGADO_COMPRADOR = "COMPRADOR"
-ESTADO_OBLIGACION_PROYECTADA = "PROYECTADA"
-ESTADO_OBLIGACION_EMITIDA = "EMITIDA"
 TIPO_ITEM_CUOTA = "CUOTA"
 TIPO_BLOQUE_TRAMO_CUOTAS = "TRAMO_CUOTAS"
 ETIQUETA_BLOQUE_CUOTAS_IGUALES = "Cuotas iguales"
@@ -33,20 +34,6 @@ def add_months(value: date, months: int) -> date:
     month = month_index % 12 + 1
     day = min(value.day, calendar.monthrange(year, month)[1])
     return date(year, month, day)
-
-
-def determine_ppv2_initial_obligation_state(*, indexation_materialized: bool) -> str:
-    """Return the financial issuance state from the materialized amount.
-
-    A PPV2 obligation is projected only while an indexed amount still depends
-    on an unavailable value.  Fixed amounts and indexed amounts already
-    materialized at birth are issued financial obligations.
-    """
-    return (
-        ESTADO_OBLIGACION_EMITIDA
-        if indexation_materialized
-        else ESTADO_OBLIGACION_PROYECTADA
-    )
 
 
 def build_cuotas_iguales_mensuales(
@@ -471,8 +458,8 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleService:
                         fecha_vencimiento=fecha_vencimiento,
                         importe_total=importe,
                         moneda=moneda,
-                        estado_obligacion=determine_ppv2_initial_obligation_state(
-                            indexation_materialized=True
+                        estado_obligacion=determine_initial_obligation_state(
+                            definitive_amount_materialized=True
                         ),
                         id_concepto_financiero=concepto["id_concepto_financiero"],
                         codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,

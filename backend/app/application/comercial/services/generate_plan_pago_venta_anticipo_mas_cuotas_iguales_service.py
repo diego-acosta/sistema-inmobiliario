@@ -11,7 +11,6 @@ from app.application.comercial.commands.generate_plan_pago_venta_anticipo_mas_cu
 )
 from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
     CONCEPTO_CAPITAL_VENTA,
-    determine_ppv2_initial_obligation_state,
     GeneracionCronogramaCreatePayload,
     METODO_CUOTAS_IGUALES_SIMPLE,
     ObligacionCronogramaV2CreatePayload,
@@ -29,6 +28,9 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     build_cuotas_iguales_mensuales,
 )
 from app.application.common.results import AppResult
+from app.application.financiero.services.determine_initial_obligation_state_service import (
+    determine_initial_obligation_state,
+)
 
 METODO_ANTICIPO_MAS_CUOTAS_IGUALES = "ANTICIPO_MAS_CUOTAS_IGUALES"
 CONCEPTO_ANTICIPO_VENTA = "ANTICIPO_VENTA"
@@ -249,8 +251,8 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
                 fecha_vencimiento=command.fecha_vencimiento_anticipo,
                 importe_total=command.importe_anticipo,
                 moneda=moneda,
-                estado_obligacion=determine_ppv2_initial_obligation_state(
-                    indexation_materialized=True
+                estado_obligacion=determine_initial_obligation_state(
+                    definitive_amount_materialized=True
                 ),
                 id_concepto_financiero=concepto_anticipo["id_concepto_financiero"],
                 codigo_concepto_financiero=CONCEPTO_ANTICIPO_VENTA,
@@ -286,8 +288,8 @@ class GeneratePlanPagoVentaAnticipoMasCuotasIgualesService:
                     fecha_vencimiento=fecha_vencimiento,
                     importe_total=importe,
                     moneda=moneda,
-                    estado_obligacion=determine_ppv2_initial_obligation_state(
-                        indexation_materialized=True
+                    estado_obligacion=determine_initial_obligation_state(
+                        definitive_amount_materialized=True
                     ),
                     id_concepto_financiero=concepto_capital["id_concepto_financiero"],
                     codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,

@@ -748,6 +748,9 @@ Semántica de estados de una obligación:
 - `estado_indexacion_presentacion` y `origen_indexacion` son campos derivados
   exclusivamente para explicar la indexación del read model. No transicionan ni
   sobrescriben el estado contractual.
+- El generador PPV2 aporta a Financiero el hecho
+  `definitive_amount_materialized`; la política financiera resuelve el estado
+  inicial persistido de la obligación.
 - `PROYECTADA + CON_INDICE_APLICADO` sólo puede existir transitoriamente o en
   datos heredados inconsistentes. Una indexación materializada correctamente
   emite la obligación; la combinación estable esperada es

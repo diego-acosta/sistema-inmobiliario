@@ -22,7 +22,6 @@ from app.application.comercial.services.build_plan_pago_venta_v2_por_bloques_pre
     PlanPagoVentaV2ObligacionPreview,
 )
 from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_simple_service import (
-    determine_ppv2_initial_obligation_state,
     GeneracionCronogramaCreatePayload,
     ObligacionFinancieraIndexacionUpsertPayload,
     ObligacionCronogramaV2CreatePayload,
@@ -39,6 +38,9 @@ from app.application.comercial.services.generate_plan_pago_venta_cuotas_iguales_
     TIPO_ORIGEN_VENTA,
 )
 from app.application.common.results import AppResult
+from app.application.financiero.services.determine_initial_obligation_state_service import (
+    determine_initial_obligation_state,
+)
 
 CONCEPTO_INTERES_FINANCIERO = "INTERES_FINANCIERO"
 CONCEPTO_AJUSTE_INDEXACION = "AJUSTE_INDEXACION"
@@ -532,10 +534,9 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             fecha_vencimiento=obligacion_preview.fecha_vencimiento,
             importe_total=importe_total,
             moneda=moneda,
-            estado_obligacion=determine_ppv2_initial_obligation_state(
-                indexation_materialized=(
-                    obligacion_preview.estado_preview_indexacion
-                    != ESTADO_PREVIEW_INDEXACION_PROYECTADA
+            estado_obligacion=determine_initial_obligation_state(
+                definitive_amount_materialized=(
+                    obligacion_preview.definitive_amount_materialized
                 )
             ),
             id_concepto_financiero=concepto["id_concepto_financiero"],

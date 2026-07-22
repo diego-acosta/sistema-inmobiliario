@@ -91,6 +91,7 @@ class PlanPagoVentaV2ObligacionPreview:
     fecha_vencimiento: Any
     importe_total: Decimal
     concepto_financiero_codigo: str
+    definitive_amount_materialized: bool = True
     estado_preview_indexacion: str | None = None
     id_indice_financiero: int | None = None
     id_indice_financiero_valor: int | None = None
@@ -558,6 +559,10 @@ class BuildPlanPagoVentaV2PorBloquesPreviewService:
             fecha_vencimiento=fecha_vencimiento,
             importe_total=indexacion.get("importe_total", importe),
             concepto_financiero_codigo=bloque.concepto_financiero_codigo,
+            definitive_amount_materialized=(
+                indexacion.get("estado_preview_indexacion")
+                != ESTADO_PREVIEW_INDEXACION_PROYECTADA
+            ),
             estado_preview_indexacion=indexacion.get("estado_preview_indexacion"),
             id_indice_financiero=indexacion.get("id_indice_financiero"),
             id_indice_financiero_valor=indexacion.get("id_indice_financiero_valor"),

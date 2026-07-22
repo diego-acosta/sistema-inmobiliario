@@ -88,6 +88,8 @@ Para PPV2, el estado inicial se decide por la materialización del importe: una
 cuota fija o una indexada con ajuste ya materializado nace `EMITIDA`; una cuota
 indexada sin valor aplicable nace `PROYECTADA`. La materialización exitosa de
 una indexación ejecuta `PROYECTADA -> EMITIDA` en la misma transacción.
+Esta es una política de `financiero`: Comercial aporta los hechos de
+materialización, pero no determina el estado de la obligación.
 
 ### Imputacion
 

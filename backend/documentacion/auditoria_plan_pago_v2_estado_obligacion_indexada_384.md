@@ -33,8 +33,9 @@ inconsistente o un instante no comprometido de una transacción.
 ## Evidencia de implementación
 
 La regla de generación está centralizada en
-`determine_ppv2_initial_obligation_state`: las tres variantes PPV2 la usan
-antes de crear obligaciones. La corrida toma locks, actualiza importe, saldo,
+`financiero.determine_initial_obligation_state`: las tres variantes PPV2 aportan
+el hecho `definitive_amount_materialized` antes de crear obligaciones. La
+corrida toma locks, actualiza importe, saldo,
 composición y trazabilidad, y cambia a `EMITIDA` sólo cuando el estado
 persistido es `PROYECTADA`; todo se confirma junto con detalle, corrida y
 outbox. Ante un error se hace rollback y la obligación no se emite.
