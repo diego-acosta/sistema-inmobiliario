@@ -212,7 +212,7 @@ def _plan_data() -> dict[str, Any]:
                         "detalle_controlado": "No publicado",
                     }
                 ],
-                "errores": [
+                "errores_por_obligacion": [
                     {
                         "id_corrida_indexacion_financiera": 10,
                         "id_obligacion_financiera": 100,
@@ -338,7 +338,8 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Pendiente" in text
     assert "Pendientes" in text
     assert "Aplicadas" in text
-    assert "Historial de corridas" in text
+    assert "Corridas de indexación" in text
+    assert "Historial de corridas" not in text
     assert "\n11\n" in f"\n{text}\n"
     assert "Fallida" in text
     assert "Fallidas" in text
@@ -347,7 +348,8 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Exclusiones" in text
     assert "SIN_INDICE" in text
     assert "No publicado" in text
-    assert "Errores por obligación" in text
+    assert "Errores" in text
+    assert "Errores por obligación" not in text
     assert "VALOR_INVALIDO" in text
     assert "Valor inválido" in text
     assert "Preparar" not in text
@@ -355,41 +357,50 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Confirmar corrida" not in text
 
 
-def test_corrida_renderiza_las_tres_colecciones_en_secciones_separadas() -> None:
+def test_corrida_renderiza_colecciones_compactas_en_detalle() -> None:
     data = _plan_data()
     corrida = data["corridas_indexacion"][0]
-    corrida["obligaciones_afectadas"] = [
-        {
-            "id_obligacion_financiera": 100,
-            "estado_elegibilidad": "ELEGIBLE",
-            "motivo_exclusion": None,
-            "codigo_error": None,
-            "detalle_controlado": "Aplicada correctamente",
-        }
-    ]
+    corrida["obligaciones_afectadas"] = [{"id_obligacion_financiera": 100, "estado_elegibilidad": "ELEGIBLE", "detalle_controlado": "Aplicada correctamente"}]
+    corrida_id = corrida["id_corrida_indexacion_financiera"]
     control = _plan_pago_v2_integral_view(ApiResult(True, data=data))
+    toggle = _find_control_by_data(control, f"toggle-corrida-{corrida_id}", ft.TextButton)
+    detail = _find_control_by_data(control, f"detalle-corrida-{corrida_id}", ft.Container)
+    assert detail.visible is False
+    assert toggle.text == "Ver detalle"
+    toggle.on_click(None)  # type: ignore[misc]
+    assert detail.visible is True
+    assert toggle.text == "Ocultar detalle"
+    text = _texts(detail)
+    for value in ("Resultado", "Obligaciones afectadas", "Exclusiones", "Errores", "Aplicada correctamente", "SIN_INDICE", "No publicado", "VALOR_INVALIDO", "Valor inválido"):
+        assert value in text
+    assert "Errores por obligación" not in text
+    toggle.on_click(None)  # type: ignore[misc]
+    assert detail.visible is False
+    assert toggle.text == "Ver detalle"
 
-    sections = [
-        item
-        for item in _walk(control)
-        if isinstance(item, ft.Column)
-        and item.controls
-        and isinstance(item.controls[0], ft.Text)
-        and item.controls[0].value
-        in {"Obligaciones afectadas", "Exclusiones", "Errores por obligación"}
-    ]
-    section_texts = {str(section.controls[0].value): _texts(section) for section in sections}
 
-    assert set(section_texts) == {
-        "Obligaciones afectadas",
-        "Exclusiones",
-        "Errores por obligación",
-    }
-    assert "Aplicada correctamente" in section_texts["Obligaciones afectadas"]
-    assert "SIN_INDICE" in section_texts["Exclusiones"]
-    assert "No publicado" in section_texts["Exclusiones"]
-    assert "VALOR_INVALIDO" in section_texts["Errores por obligación"]
-    assert "Valor inválido" in section_texts["Errores por obligación"]
+def test_historial_corridas_inicia_oculto_y_se_abre() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    history = _find_control_by_data(control, "historial-corridas", ft.Container)
+    toggle = _find_control_by_data(control, "toggle-historial-corridas", ft.TextButton)
+    assert history.visible is False
+    assert toggle.text == toggle.tooltip == "Ver historial"
+    toggle.on_click(None)  # type: ignore[misc]
+    assert history.visible is True
+    assert toggle.text == "Ocultar historial"
+    toggle.on_click(None)  # type: ignore[misc]
+    assert history.visible is False
+
+
+def test_seccion_corridas_y_datos_tecnicos_tienen_ids_estables() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    section = _find_control_by_data(control, "seccion-corridas-indexacion", ft.Container)
+    summary = _find_control_by_data(control, "resumen-corridas", ft.Column)
+    technical = _find_control_by_data(control, "tecnico-corrida-10", ft.Container)
+    assert "Corridas de indexación" in _texts(section)
+    assert "Historial de corridas" not in _texts(section)
+    assert "Pendientes" in _texts(summary)
+    assert technical.visible is False
 
 
 def test_estado_excepcional_tiene_prioridad_sobre_origen_corrida_posterior() -> None:
@@ -427,7 +438,8 @@ def test_plan_pago_v2_usa_arbol_estatico_sin_expansion_ni_espaciadores_expand() 
     assert "Estado pago" in text
     assert "Indexación" in text
     assert "Exclusiones" in text
-    assert "Errores por obligación" in text
+    assert "Errores" in text
+    assert "Errores por obligación" not in text
     assert "Datos técnicos" in text
 
 
@@ -620,7 +632,8 @@ def test_loader_plan_pago_v2_consulta_una_vez_y_reemplaza_por_contenido(
 
     text = _texts(loader)
     assert api.plan_calls == [371]
-    assert "Historial de corridas" in text
+    assert "Corridas de indexación" in text
+    assert "Historial de corridas" not in text
     assert "Pendientes" in text
     assert fake_page.updated
 
