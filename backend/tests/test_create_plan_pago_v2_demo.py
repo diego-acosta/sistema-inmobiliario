@@ -147,6 +147,11 @@ def test_integral_contract_exposes_complete_demo_scenario(monkeypatch):
         born = by_label["Demo: índice al nacimiento"]
         projected = by_label["Demo: proyectada sin índice"]
         later = by_label["Demo: corrida posterior"]
+        assert {
+            born["estado_obligacion"],
+            projected["estado_obligacion"],
+            later["estado_obligacion"],
+        } == {"PROYECTADA"}
         assert born["origen_indexacion"] == "AL_NACIMIENTO"
         assert born["estado_indexacion_presentacion"] == "CON_INDICE_APLICADO"
         assert born["capital_original"] > 0 and born["ajuste_indexacion"] > 0 and born["importe_vigente"] == born["importe_total"]
