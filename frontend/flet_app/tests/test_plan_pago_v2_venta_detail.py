@@ -939,6 +939,35 @@ def test_ficha_venta_ordena_secciones_sin_plan_duplicado() -> None:
     )
 
 
+def test_ficha_venta_usa_encabezados_con_iconos_y_jerarquia_secundaria() -> None:
+    control = VentaDetailView(
+        FakeApi(ApiResult(True, data=_plan_data())),
+        lambda *args, **kwargs: None,
+        371,
+    ).build()  # type: ignore[arg-type]
+    section_icons = {
+        "resumen-venta": ft.Icons.RECEIPT_LONG,
+        "objeto-vendido": ft.Icons.HOME_WORK_OUTLINED,
+        "compradores-venta": ft.Icons.GROUP_OUTLINED,
+        "plan-pago-v2": ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED,
+        "origen-venta": ft.Icons.HISTORY_OUTLINED,
+    }
+    for data, icon in section_icons.items():
+        section = _find_control_by_data(control, data, ft.Container)
+        assert any(
+            isinstance(item, ft.Icon) and item.name == icon for item in _walk(section)
+        )
+        assert section.content.bgcolor == ft.Colors.WHITE
+
+    origin = _find_control_by_data(control, "origen-venta", ft.Container)
+    origin_title = next(
+        item
+        for item in _walk(origin)
+        if isinstance(item, ft.Text) and item.value == "Origen"
+    )
+    assert origin_title.size == 14
+
+
 def test_ficha_venta_muestra_carga_inicial_y_no_bloquea_detalle_principal() -> None:
     api = FakeApi(ApiResult(True, data=_plan_data()))
     control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
