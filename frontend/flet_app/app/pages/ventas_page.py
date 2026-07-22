@@ -586,81 +586,312 @@ def _plan_pago_v2_integral_view(result: ApiResult) -> ft.Control:
 
 def _plan_pago_v2_summary(plan: dict[str, Any], resumen: dict[str, Any]) -> ft.Control:
     moneda = plan.get("moneda")
-    amounts = [
-        ("Importe vigente total", resumen.get("total_obligaciones")),
-        ("Capital total", resumen.get("total_capital")),
-        ("Ajuste total", resumen.get("total_ajuste_indexacion")),
-    ]
     amount_cards = [
-        ft.Container(
-            content=ft.Column([ft.Text(label, color=ft.Colors.BLUE_GREY_700), ft.Text(_format_money(moneda, value), size=17, weight=ft.FontWeight.W_700)], spacing=3),
-            padding=10, border=ft.border.all(1, ft.Colors.BLUE_GREY_100), border_radius=8,
-        ) for label, value in amounts
+        _plan_pago_v2_amount_card(label, _format_money(moneda, value))
+        for label, value in (
+            ("Importe vigente total", resumen.get("total_obligaciones")),
+            ("Capital total", resumen.get("total_capital")),
+            ("Ajuste total", resumen.get("total_ajuste_indexacion")),
+        )
     ]
     counters = [
-        ("Cuotas", resumen.get("cantidad_obligaciones")),
-        ("Indexadas", resumen.get("cantidad_obligaciones_con_indexacion")),
-        ("Proyectadas sin índice", resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion")),
+        ft.Text(f"{label} {_dash(value)}", color=ft.Colors.BLUE_GREY_700)
+        for label, value in (
+            ("Cuotas", resumen.get("cantidad_obligaciones")),
+            (
+                "Indexadas",
+                resumen.get("cantidad_obligaciones_con_indexacion"),
+            ),
+            (
+                "Proyectadas sin índice",
+                resumen.get("cantidad_obligaciones_proyectadas_sin_indexacion"),
+            ),
+        )
     ]
-    return ft.Container(data="plan-pago-v2-resumen", content=ft.Column([
-        ft.Row(amount_cards, wrap=True, spacing=8),
-        ft.Row([ft.Text(f"{label} {_dash(value)}", color=ft.Colors.BLUE_GREY_700) for label, value in counters], wrap=True, spacing=16),
-    ], spacing=8))
+    return ft.Container(
+        data="plan-pago-v2-resumen",
+        content=ft.Column(
+            controls=[
+                ft.Row(amount_cards, wrap=True, spacing=8),
+                ft.Row(counters, wrap=True, spacing=16),
+            ],
+            spacing=8,
+        ),
+    )
 
 
-def _plan_pago_v2_interface_states(resumen: dict[str, Any], corridas: list[dict[str, Any]]) -> ft.Control:
-    counts = {"Pendientes": 0, "Aplicadas": 0, "Fallidas": 0}
-    for corrida in corridas:
-        estado = str(corrida.get("estado_corrida") or "").upper()
-        if estado == "PENDIENTE_APLICACION": counts["Pendientes"] += 1
-        elif estado == "APLICADA": counts["Aplicadas"] += 1
-        elif estado == "FALLIDA": counts["Fallidas"] += 1
-    return ft.Row([ft.Text("Corridas:", color=ft.Colors.BLUE_GREY_700)] + [ft.Text(f"{label} {value}") for label, value in counts.items()], wrap=True, spacing=10)
+def _plan_pago_v2_amount_card(label: str, value: str) -> ft.Container:
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Text(label, color=ft.Colors.BLUE_GREY_700),
+                ft.Text(value, size=17, weight=ft.FontWeight.W_700),
+            ],
+            spacing=3,
+        ),
+        padding=10,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+    )
 
 
-_PLAN_V2_COLUMN_WIDTHS = {"toggle": 36, "order": 48, "due_date": 100, "total": 150, "obligation_state": 135, "payment_state": 115, "indexation": 190}
+_PLAN_V2_COLUMN_WIDTHS = {
+    "toggle": 36,
+    "order": 48,
+    "due_date": 100,
+    "total": 150,
+    "obligation_state": 135,
+    "payment_state": 115,
+    "indexation": 190,
+}
+_PLAN_V2_COLUMN_HEADERS = (
+    ("", "toggle"),
+    ("N°", "order"),
+    ("Vencimiento", "due_date"),
+    ("Total cuota", "total"),
+    ("Estado obligación", "obligation_state"),
+    ("Estado pago", "payment_state"),
+    ("Indexación", "indexation"),
+)
+_PLAN_V2_CENTERED_COLUMNS = {"toggle", "order"}
 _PLAN_V2_COLUMN_SPACING = 8
-_PLAN_V2_COMPOSITION_WIDTHS = {"concept": 190, "amount": 150, "percentage": 90}
+_PLAN_V2_COMPOSITION_WIDTHS = {
+    "concept": 190,
+    "amount": 150,
+    "percentage": 90,
+}
+_PLAN_V2_COMPOSITION_HEADERS = (
+    ("Concepto", "concept"),
+    ("Importe", "amount"),
+    ("% ajuste", "percentage"),
+)
+_OBLIGACION_STATE_LABELS = {
+    "PROYECTADA": "Proyectada",
+    "EMITIDA": "Emitida",
+    "EXIGIBLE": "Exigible",
+    "VENCIDA": "Vencida",
+    "PARCIALMENTE_CANCELADA": "Parcialmente pagada",
+    "CANCELADA": "Pagada",
+    "ANULADA": "Anulada",
+    "REEMPLAZADA": "Reemplazada",
+}
+_CORRIDA_STATE_LABELS = {
+    "PENDIENTE_APLICACION": "Pendiente",
+    "APLICADA": "Aplicada",
+    "FALLIDA": "Fallida",
+}
+_PAYMENT_STATE_LABELS = {
+    "CANCELADA": "Pagada",
+    "PARCIALMENTE_CANCELADA": "Parcial",
+    "ANULADA": "Anulada",
+    "REEMPLAZADA": "Reemplazada",
+}
 
 
-def _plan_pago_v2_cell(content: ft.Control, *, width: int, alignment=ft.alignment.center_left) -> ft.Container:
+def _plan_pago_v2_cell(
+    content: ft.Control,
+    *,
+    width: int,
+    alignment=ft.alignment.center_left,
+) -> ft.Container:
     return ft.Container(content=content, width=width, alignment=alignment)
 
 
 def _plan_pago_v2_blocks(bloques: list[dict[str, Any]]) -> ft.Control:
-    obligaciones = [dict(obligacion) for bloque in bloques for obligacion in _safe_list(bloque.get("obligaciones"))]
-    obligaciones.sort(key=lambda item: (item.get("fecha_vencimiento") or "", item.get("numero_cuota_asociada") or 0, item.get("numero_obligacion") or 0, item.get("id_obligacion_financiera") or 0))
+    obligaciones = [
+        dict(obligacion)
+        for bloque in bloques
+        for obligacion in _safe_list(bloque.get("obligaciones"))
+    ]
+    obligaciones.sort(
+        key=lambda item: (
+            item.get("fecha_vencimiento") or "",
+            item.get("numero_cuota_asociada") or 0,
+            item.get("numero_obligacion") or 0,
+            item.get("id_obligacion_financiera") or 0,
+        )
+    )
     return _plan_pago_v2_obligaciones(obligaciones)
 
 
 def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control:
-    if not obligaciones: return ft.Text("Sin obligaciones en el bloque.")
-    headers = [("", "toggle"), ("N°", "order"), ("Vencimiento", "due_date"), ("Total cuota", "total"), ("Estado obligación", "obligation_state"), ("Estado pago", "payment_state"), ("Indexación", "indexation")]
-    header = ft.Row([_plan_pago_v2_cell(ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=ft.Colors.BLUE_GREY_700), width=_PLAN_V2_COLUMN_WIDTHS[key], alignment=ft.alignment.center if key in {"toggle", "order"} else ft.alignment.center_left) for label, key in headers], spacing=_PLAN_V2_COLUMN_SPACING)
-    return ft.Column([header] + [_plan_pago_v2_cuota_row(item, visual_order=index) for index, item in enumerate(obligaciones, 1)], spacing=4)
+    if not obligaciones:
+        return ft.Text("Sin obligaciones en el bloque.")
+
+    header = ft.Row(
+        controls=[
+            _plan_pago_v2_header_cell(label, key)
+            for label, key in _PLAN_V2_COLUMN_HEADERS
+        ],
+        spacing=_PLAN_V2_COLUMN_SPACING,
+    )
+    cuota_rows = [
+        _plan_pago_v2_cuota_row(obligacion, visual_order=index)
+        for index, obligacion in enumerate(obligaciones, 1)
+    ]
+    return ft.Column(controls=[header, *cuota_rows], spacing=4)
 
 
-def _plan_pago_v2_cuota_row(obligacion: dict[str, Any], *, visual_order: int) -> ft.Control:
+def _plan_pago_v2_header_cell(label: str, key: str) -> ft.Container:
+    alignment = (
+        ft.alignment.center
+        if key in _PLAN_V2_CENTERED_COLUMNS
+        else ft.alignment.center_left
+    )
+    return _plan_pago_v2_cell(
+        ft.Text(
+            label,
+            size=12,
+            weight=ft.FontWeight.W_600,
+            color=ft.Colors.BLUE_GREY_700,
+        ),
+        width=_PLAN_V2_COLUMN_WIDTHS[key],
+        alignment=alignment,
+    )
+
+
+def _plan_pago_v2_cuota_row(
+    obligacion: dict[str, Any],
+    *,
+    visual_order: int,
+) -> ft.Control:
     obligation_id = obligacion.get("id_obligacion_financiera")
-    details = ft.Container(data=f"composicion-{obligation_id}", content=_plan_pago_v2_composition_rows(obligacion, _safe_list(obligacion.get("composiciones"))), visible=False, padding=8, bgcolor=ft.Colors.BLUE_GREY_50, border_radius=4)
-    button = ft.IconButton(data=f"toggle-composicion-{obligation_id}", icon=ft.Icons.ADD, tooltip="Ver composición")
-    def toggle(_: ft.ControlEvent) -> None:
-        details.visible = not details.visible; button.icon = ft.Icons.REMOVE if details.visible else ft.Icons.ADD; button.tooltip = "Ocultar composición" if details.visible else "Ver composición"; safe_update(button); safe_update(details)
-    button.on_click = toggle
-    values = [(button, "toggle", ft.alignment.center), (ft.Text(str(visual_order)), "order", ft.alignment.center), (ft.Text(_format_date(obligacion.get("fecha_vencimiento"))), "due_date", ft.alignment.center_left), (ft.Text(_format_money(obligacion.get("moneda"), obligacion.get("importe_vigente"))), "total", ft.alignment.center_left), (status_badge(_estado_obligacion_label(obligacion.get("estado_obligacion"))), "obligation_state", ft.alignment.center_left), (status_badge(_estado_pago_label(obligacion)), "payment_state", ft.alignment.center_left), (status_badge(_obligacion_indexacion_label(obligacion)), "indexation", ft.alignment.center_left)]
-    return ft.Column([ft.Row([_plan_pago_v2_cell(value, width=_PLAN_V2_COLUMN_WIDTHS[key], alignment=alignment) for value, key, alignment in values], data=f"cuota-{obligation_id}", spacing=_PLAN_V2_COLUMN_SPACING), details], spacing=2)
+    details = ft.Container(
+        data=f"composicion-{obligation_id}",
+        content=_plan_pago_v2_composition_rows(
+            obligacion,
+            _safe_list(obligacion.get("composiciones")),
+        ),
+        visible=False,
+        padding=8,
+        bgcolor=ft.Colors.BLUE_GREY_50,
+        border_radius=4,
+    )
+    button = ft.IconButton(
+        data=f"toggle-composicion-{obligation_id}",
+        icon=ft.Icons.ADD,
+        tooltip="Ver composición",
+    )
+
+    def toggle_composition(_: ft.ControlEvent) -> None:
+        details.visible = not details.visible
+        button.icon = ft.Icons.REMOVE if details.visible else ft.Icons.ADD
+        button.tooltip = "Ocultar composición" if details.visible else "Ver composición"
+        safe_update(button)
+        safe_update(details)
+
+    button.on_click = toggle_composition
+    cuota_values = [
+        (button, "toggle", ft.alignment.center),
+        (ft.Text(str(visual_order)), "order", ft.alignment.center),
+        (
+            ft.Text(_format_date(obligacion.get("fecha_vencimiento"))),
+            "due_date",
+            ft.alignment.center_left,
+        ),
+        (
+            ft.Text(
+                _format_money(
+                    obligacion.get("moneda"),
+                    obligacion.get("importe_vigente"),
+                )
+            ),
+            "total",
+            ft.alignment.center_left,
+        ),
+        (
+            status_badge(_estado_obligacion_label(obligacion.get("estado_obligacion"))),
+            "obligation_state",
+            ft.alignment.center_left,
+        ),
+        (
+            status_badge(_estado_pago_label(obligacion)),
+            "payment_state",
+            ft.alignment.center_left,
+        ),
+        (
+            status_badge(_obligacion_indexacion_label(obligacion)),
+            "indexation",
+            ft.alignment.center_left,
+        ),
+    ]
+    row = ft.Row(
+        controls=[
+            _plan_pago_v2_cell(
+                value,
+                width=_PLAN_V2_COLUMN_WIDTHS[key],
+                alignment=alignment,
+            )
+            for value, key, alignment in cuota_values
+        ],
+        data=f"cuota-{obligation_id}",
+        spacing=_PLAN_V2_COLUMN_SPACING,
+    )
+    return ft.Column(controls=[row, details], spacing=2)
 
 
-def _plan_pago_v2_composition_rows(obligacion: dict[str, Any], composiciones: list[dict[str, Any]]) -> ft.Control:
+def _plan_pago_v2_composition_rows(
+    obligacion: dict[str, Any],
+    composiciones: list[dict[str, Any]],
+) -> ft.Control:
+    header = ft.Row(
+        controls=[
+            _plan_pago_v2_cell(
+                ft.Text(label, size=12, weight=ft.FontWeight.W_600),
+                width=_PLAN_V2_COMPOSITION_WIDTHS[key],
+            )
+            for label, key in _PLAN_V2_COMPOSITION_HEADERS
+        ],
+        spacing=8,
+    )
+    composition_rows = [
+        _plan_pago_v2_composition_row(obligacion, composicion)
+        for composicion in composiciones
+    ]
+    return ft.Column(
+        controls=[
+            ft.Text("Composición de la cuota", weight=ft.FontWeight.W_600),
+            header,
+            *composition_rows,
+        ],
+        spacing=4,
+    )
+
+
+def _plan_pago_v2_composition_row(
+    obligacion: dict[str, Any],
+    composicion: dict[str, Any],
+) -> ft.Row:
     widths = _PLAN_V2_COMPOSITION_WIDTHS
-    header = ft.Row([_plan_pago_v2_cell(ft.Text(label, size=12, weight=ft.FontWeight.W_600), width=widths[key]) for label, key in [("Concepto", "concept"), ("Importe", "amount"), ("% ajuste", "percentage")]], spacing=8)
-    rows = [ft.Text("Composición de la cuota", weight=ft.FontWeight.W_600), header]
-    rows.extend(ft.Row([_plan_pago_v2_cell(ft.Text(_dash(str(item.get("codigo_concepto_financiero") or ""))), width=widths["concept"]), _plan_pago_v2_cell(ft.Text(_format_money(item.get("moneda_componente"), item.get("importe_componente"))), width=widths["amount"]), _plan_pago_v2_cell(ft.Text(_porcentaje_ajuste_presentacion(obligacion, item)), width=widths["percentage"])], spacing=8) for item in composiciones)
-    return ft.Column(rows, spacing=4)
+    return ft.Row(
+        controls=[
+            _plan_pago_v2_cell(
+                ft.Text(
+                    _dash(str(composicion.get("codigo_concepto_financiero") or ""))
+                ),
+                width=widths["concept"],
+            ),
+            _plan_pago_v2_cell(
+                ft.Text(
+                    _format_money(
+                        composicion.get("moneda_componente"),
+                        composicion.get("importe_componente"),
+                    )
+                ),
+                width=widths["amount"],
+            ),
+            _plan_pago_v2_cell(
+                ft.Text(_porcentaje_ajuste_presentacion(obligacion, composicion)),
+                width=widths["percentage"],
+            ),
+        ],
+        spacing=8,
+    )
 
 
 def _porcentaje_ajuste_presentacion(
-    obligacion: dict[str, Any], composicion: dict[str, Any]
+    obligacion: dict[str, Any],
+    composicion: dict[str, Any],
 ) -> str:
     if composicion.get("codigo_concepto_financiero") != "AJUSTE_INDEXACION":
         return "—"
@@ -671,96 +902,274 @@ def _porcentaje_ajuste_presentacion(
         return "—"
     if capital <= 0:
         return "—"
-    return f"{_format_decimal((ajuste / capital) * Decimal('100'), decimal_places=2)}%"
+    percentage = (ajuste / capital) * Decimal("100")
+    return f"{_format_decimal(percentage, decimal_places=2)}%"
 
 
 def _estado_obligacion_label(value: object) -> str:
-    labels = {
-        "PROYECTADA": "Proyectada", "EMITIDA": "Emitida", "EXIGIBLE": "Exigible",
-        "VENCIDA": "Vencida", "PARCIALMENTE_CANCELADA": "Parcialmente pagada",
-        "CANCELADA": "Pagada", "ANULADA": "Anulada", "REEMPLAZADA": "Reemplazada",
-    }
     raw = str(value or "").upper()
-    return labels.get(raw, _dash(value))
+    return _OBLIGACION_STATE_LABELS.get(raw, _dash(value))
 
 
 def _estado_pago_label(obligacion: dict[str, Any]) -> str:
     estado = str(obligacion.get("estado_obligacion") or "").upper()
-    if estado == "CANCELADA": return "Pagada"
-    if estado == "PARCIALMENTE_CANCELADA": return "Parcial"
-    if estado == "ANULADA": return "Anulada"
-    if estado == "REEMPLAZADA": return "Reemplazada"
+    if estado in _PAYMENT_STATE_LABELS:
+        return _PAYMENT_STATE_LABELS[estado]
+
     try:
         total = Decimal(str(obligacion.get("importe_vigente")))
         saldo = Decimal(str(obligacion.get("saldo_pendiente")))
     except (InvalidOperation, TypeError, ValueError):
         return "—"
-    if saldo == 0: return "Pagada"
-    if total > 0 and 0 < saldo < total: return "Parcial"
-    if saldo == total: return "Pendiente"
+
+    if saldo == 0:
+        return "Pagada"
+    if total > 0 and 0 < saldo < total:
+        return "Parcial"
+    if saldo == total:
+        return "Pendiente"
     return "—"
 
-def _plan_pago_v2_corridas(corridas: list[dict[str, Any]], moneda: object) -> ft.Control:
+
+def _plan_pago_v2_corridas(
+    corridas: list[dict[str, Any]],
+    moneda: object,
+) -> ft.Control:
     if not corridas:
         return ft.Text("Sin corridas de indexación registradas.")
-    counts = {"Pendientes": 0, "Aplicadas": 0, "Fallidas": 0}
-    for corrida in corridas:
-        estado = str(corrida.get("estado_corrida") or "").upper()
-        if estado == "PENDIENTE_APLICACION": counts["Pendientes"] += 1
-        elif estado == "APLICADA": counts["Aplicadas"] += 1
-        elif estado == "FALLIDA": counts["Fallidas"] += 1
-    latest = max(corridas, key=lambda item: (str(item.get("fecha_aplicacion") or item.get("fecha_preparacion") or item.get("periodo_aplicado") or ""), item.get("id_corrida_indexacion_financiera") or 0))
-    latest_date = _format_date(latest.get("fecha_aplicacion") or latest.get("periodo_aplicado"))
-    summary = ft.Column(data="resumen-corridas", controls=[ft.Text("Corridas de indexación", size=16, weight=ft.FontWeight.W_700), ft.Text(" · ".join(f"{label} {value}" for label, value in counts.items())), ft.Text(f"Última: {latest_date} · {_dash(latest.get('codigo_indice_financiero'))} · {_corrida_estado_label(latest.get('estado_corrida'))}")], spacing=3)
-    history = ft.Container(data="historial-corridas", visible=False, content=ft.Column([_plan_pago_v2_corrida_compacta(corrida, moneda) for corrida in corridas], spacing=6))
-    toggle = ft.TextButton("Ver historial", data="toggle-historial-corridas", tooltip="Ver historial")
+
+    latest = max(
+        corridas,
+        key=lambda item: (
+            str(
+                item.get("fecha_aplicacion")
+                or item.get("fecha_preparacion")
+                or item.get("periodo_aplicado")
+                or ""
+            ),
+            item.get("id_corrida_indexacion_financiera") or 0,
+        ),
+    )
+    summary = _plan_pago_v2_corridas_summary(corridas, latest)
+    history = ft.Container(
+        data="historial-corridas",
+        visible=False,
+        content=ft.Column(
+            controls=[
+                _plan_pago_v2_corrida_compacta(corrida, moneda) for corrida in corridas
+            ],
+            spacing=6,
+        ),
+    )
+    toggle = ft.TextButton(
+        "Ver historial",
+        data="toggle-historial-corridas",
+        tooltip="Ver historial",
+    )
+
     def toggle_history(_: ft.ControlEvent) -> None:
         history.visible = not history.visible
         toggle.text = "Ocultar historial" if history.visible else "Ver historial"
         toggle.tooltip = toggle.text
         safe_update(toggle)
         safe_update(history)
+
     toggle.on_click = toggle_history
     return ft.Container(
         data="seccion-corridas-indexacion",
-        content=ft.Column([summary, toggle, history], spacing=6),
+        content=ft.Column(controls=[summary, toggle, history], spacing=6),
     )
 
 
-def _plan_pago_v2_corrida_compacta(corrida: dict[str, Any], moneda: object) -> ft.Control:
+def _plan_pago_v2_corridas_summary(
+    corridas: list[dict[str, Any]],
+    latest: dict[str, Any],
+) -> ft.Column:
+    counts = _plan_pago_v2_corrida_counts(corridas)
+    latest_date = _format_date(
+        latest.get("fecha_aplicacion") or latest.get("periodo_aplicado")
+    )
+    latest_summary = (
+        f"Última: {latest_date} · "
+        f"{_dash(latest.get('codigo_indice_financiero'))} · "
+        f"{_corrida_estado_label(latest.get('estado_corrida'))}"
+    )
+    return ft.Column(
+        data="resumen-corridas",
+        controls=[
+            ft.Text("Corridas de indexación", size=16, weight=ft.FontWeight.W_700),
+            ft.Text(" · ".join(f"{label} {value}" for label, value in counts.items())),
+            ft.Text(latest_summary),
+        ],
+        spacing=3,
+    )
+
+
+def _plan_pago_v2_corrida_counts(
+    corridas: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts = {"Pendientes": 0, "Aplicadas": 0, "Fallidas": 0}
+    count_keys = {
+        "PENDIENTE_APLICACION": "Pendientes",
+        "APLICADA": "Aplicadas",
+        "FALLIDA": "Fallidas",
+    }
+    for corrida in corridas:
+        estado = str(corrida.get("estado_corrida") or "").upper()
+        count_key = count_keys.get(estado)
+        if count_key:
+            counts[count_key] += 1
+    return counts
+
+
+def _plan_pago_v2_corrida_compacta(
+    corrida: dict[str, Any],
+    moneda: object,
+) -> ft.Control:
     corrida_id = corrida.get("id_corrida_indexacion_financiera")
     affected = _safe_list(corrida.get("obligaciones_afectadas"))
     exclusions = _safe_list(corrida.get("exclusiones"))
     errors = _safe_list(corrida.get("errores_por_obligacion"))
-    technical = ft.Container(data=f"tecnico-corrida-{corrida_id}", visible=False, content=ft.Column([ft.Text("Datos técnicos"), ft.Text(f"ID corrida: {_dash(corrida_id)}"), ft.Text(f"Origen técnico: {_dash(corrida.get('origen_corrida'))}"), ft.Text(f"Código de error: {_dash(corrida.get('codigo_error'))}"), ft.Text(_dash(corrida.get("diagnostico_tecnico")))], spacing=3), padding=6, bgcolor=ft.Colors.BLUE_GREY_50)
-    technical_toggle = ft.TextButton("Mostrar datos técnicos", data=f"toggle-tecnico-corrida-{corrida_id}")
-    def toggle_technical(_: ft.ControlEvent) -> None:
-        technical.visible = not technical.visible
-        technical_toggle.text = "Ocultar datos técnicos" if technical.visible else "Mostrar datos técnicos"
-        safe_update(technical)
-        safe_update(technical_toggle)
-    technical_toggle.on_click = toggle_technical
-    detail_rows = [ft.Text("Resultado", weight=ft.FontWeight.W_600), ft.Text(f"Período: {_format_date(corrida.get('periodo_aplicado'))} · Índice: {_dash(corrida.get('codigo_indice_financiero'))}"), ft.Text(f"Capital {_format_money(moneda, corrida.get('capital_analizado_total'))} · Ajuste {_format_money(moneda, corrida.get('ajuste_total'))} · Importe {_format_money(moneda, corrida.get('importe_total'))}")]
-    for title, rows, color in (("Obligaciones afectadas", affected, ft.Colors.BLUE_GREY_50), ("Exclusiones", exclusions, ft.Colors.AMBER_50), ("Errores", errors, ft.Colors.RED_50)):
-        if rows:
-            detail_rows.append(ft.Text(title, weight=ft.FontWeight.W_600))
-            detail_rows.extend(ft.Container(content=ft.Text(" · ".join(_dash(row.get(key)) for key in ("id_obligacion_financiera", "motivo_exclusion", "codigo_error", "detalle_controlado") if row.get(key))), bgcolor=color, padding=4) for row in rows)
-    detail_rows.extend([technical_toggle, technical])
-    detail = ft.Container(data=f"detalle-corrida-{corrida_id}", visible=False, content=ft.Column(detail_rows, spacing=4), padding=8, bgcolor=ft.Colors.BLUE_GREY_50)
+    technical_toggle, technical = _plan_pago_v2_technical_details(corrida, corrida_id)
+    detail_rows = [
+        ft.Text("Resultado", weight=ft.FontWeight.W_600),
+        ft.Text(
+            f"Período: {_format_date(corrida.get('periodo_aplicado'))} · "
+            f"Índice: {_dash(corrida.get('codigo_indice_financiero'))}"
+        ),
+        ft.Text(
+            f"Capital {_format_money(moneda, corrida.get('capital_analizado_total'))} · "
+            f"Ajuste {_format_money(moneda, corrida.get('ajuste_total'))} · "
+            f"Importe {_format_money(moneda, corrida.get('importe_total'))}"
+        ),
+        *_plan_pago_v2_corrida_result_rows(affected, exclusions, errors),
+        technical_toggle,
+        technical,
+    ]
+    detail = ft.Container(
+        data=f"detalle-corrida-{corrida_id}",
+        visible=False,
+        content=ft.Column(controls=detail_rows, spacing=4),
+        padding=8,
+        bgcolor=ft.Colors.BLUE_GREY_50,
+    )
     toggle = ft.TextButton("Ver detalle", data=f"toggle-corrida-{corrida_id}")
+
     def toggle_detail(_: ft.ControlEvent) -> None:
         detail.visible = not detail.visible
         toggle.text = "Ocultar detalle" if detail.visible else "Ver detalle"
         safe_update(detail)
         safe_update(toggle)
+
     toggle.on_click = toggle_detail
-    title = f"{_format_date(corrida.get('fecha_aplicacion') or corrida.get('periodo_aplicado'))} · {_dash(corrida.get('codigo_indice_financiero'))}"
-    counts = f"Afectadas {len(affected)} · Excluidas {len(exclusions)} · Errores {len(errors)}"
-    return ft.Container(content=ft.Column([ft.Row([ft.Text(title), status_badge(_corrida_estado_label(corrida.get('estado_corrida')))], spacing=8), ft.Text(counts), toggle, detail], spacing=3), padding=8, border=ft.border.all(1, ft.Colors.BLUE_GREY_100), border_radius=6)
+    title = (
+        f"{_format_date(corrida.get('fecha_aplicacion') or corrida.get('periodo_aplicado'))} · "
+        f"{_dash(corrida.get('codigo_indice_financiero'))}"
+    )
+    counts = (
+        f"Afectadas {len(affected)} · Excluidas {len(exclusions)} · "
+        f"Errores {len(errors)}"
+    )
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Text(title),
+                        status_badge(
+                            _corrida_estado_label(corrida.get("estado_corrida"))
+                        ),
+                    ],
+                    spacing=8,
+                ),
+                ft.Text(counts),
+                toggle,
+                detail,
+            ],
+            spacing=3,
+        ),
+        padding=8,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=6,
+    )
+
+
+def _plan_pago_v2_technical_details(
+    corrida: dict[str, Any],
+    corrida_id: object,
+) -> tuple[ft.TextButton, ft.Container]:
+    technical = ft.Container(
+        data=f"tecnico-corrida-{corrida_id}",
+        visible=False,
+        content=ft.Column(
+            controls=[
+                ft.Text("Datos técnicos"),
+                ft.Text(f"ID corrida: {_dash(corrida_id)}"),
+                ft.Text(f"Origen técnico: {_dash(corrida.get('origen_corrida'))}"),
+                ft.Text(f"Código de error: {_dash(corrida.get('codigo_error'))}"),
+                ft.Text(_dash(corrida.get("diagnostico_tecnico"))),
+            ],
+            spacing=3,
+        ),
+        padding=6,
+        bgcolor=ft.Colors.BLUE_GREY_50,
+    )
+    toggle = ft.TextButton(
+        "Mostrar datos técnicos",
+        data=f"toggle-tecnico-corrida-{corrida_id}",
+    )
+
+    def toggle_technical(_: ft.ControlEvent) -> None:
+        technical.visible = not technical.visible
+        toggle.text = (
+            "Ocultar datos técnicos" if technical.visible else "Mostrar datos técnicos"
+        )
+        safe_update(technical)
+        safe_update(toggle)
+
+    toggle.on_click = toggle_technical
+    return toggle, technical
+
+
+def _plan_pago_v2_corrida_result_rows(
+    affected: list[dict[str, Any]],
+    exclusions: list[dict[str, Any]],
+    errors: list[dict[str, Any]],
+) -> list[ft.Control]:
+    rows: list[ft.Control] = []
+    for title, items, color in (
+        ("Obligaciones afectadas", affected, ft.Colors.BLUE_GREY_50),
+        ("Exclusiones", exclusions, ft.Colors.AMBER_50),
+        ("Errores", errors, ft.Colors.RED_50),
+    ):
+        if items:
+            rows.append(ft.Text(title, weight=ft.FontWeight.W_600))
+            rows.extend(
+                ft.Container(
+                    content=ft.Text(
+                        " · ".join(
+                            _dash(item.get(key))
+                            for key in (
+                                "id_obligacion_financiera",
+                                "motivo_exclusion",
+                                "codigo_error",
+                                "detalle_controlado",
+                            )
+                            if item.get(key)
+                        )
+                    ),
+                    bgcolor=color,
+                    padding=4,
+                )
+                for item in items
+            )
+    return rows
 
 
 def _corrida_estado_label(value: object) -> str:
-    return {"PENDIENTE_APLICACION":"Pendiente", "APLICADA":"Aplicada", "FALLIDA":"Fallida"}.get(str(value or "").upper(), _dash(value))
+    raw = str(value or "").upper()
+    return _CORRIDA_STATE_LABELS.get(raw, _dash(value))
+
 
 def _obligacion_indexacion_label(obligacion: dict[str, Any]) -> str:
     estado = str(obligacion.get("estado_indexacion_presentacion") or "").upper()
