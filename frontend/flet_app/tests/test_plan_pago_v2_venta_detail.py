@@ -620,6 +620,32 @@ def _find_deferred_loader(control: ft.Control) -> DeferredLoadingContainer:
     raise AssertionError("No se encontró DeferredLoadingContainer")
 
 
+def test_ficha_venta_ordena_secciones_sin_plan_duplicado() -> None:
+    api = FakeApi(ApiResult(True, data=_plan_data()))
+    control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
+    expected = [
+        "resumen-venta",
+        "objeto-vendido",
+        "compradores-venta",
+        "plan-pago-v2",
+        "origen-venta",
+        "detalle-tecnico-venta",
+    ]
+    sections = [
+        item
+        for item in control.controls
+        if getattr(item, "data", None) in expected
+    ]
+    assert [item.data for item in sections] == expected
+    assert all(
+        len([item for item in _walk(control) if getattr(item, "data", None) == data]) == 1
+        for data in expected
+    )
+    assert "Plan de pago / obligaciones" not in _texts(control)
+    plan_section = _find_control_by_data(control, "plan-pago-v2", ft.Container)
+    assert len([item for item in _walk(plan_section) if isinstance(item, DeferredLoadingContainer)]) == 1
+
+
 def test_ficha_venta_muestra_carga_inicial_y_no_bloquea_detalle_principal() -> None:
     api = FakeApi(ApiResult(True, data=_plan_data()))
     control = VentaDetailView(api, lambda *args, **kwargs: None, 371).build()  # type: ignore[arg-type]
