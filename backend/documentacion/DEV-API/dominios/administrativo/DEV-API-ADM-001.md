@@ -640,3 +640,53 @@ Primera capa read-only de #264 para consultar `catalogo_maestro` e `item_catalog
 - Endpoints / clasificación HTTP / headers / `If-Match-Version` / idempotencia HTTP / outbox runtime / lock lógico: **NO APLICA**; el incremento es únicamente SQL/infrastructural.
 - Versionado físico y triggers: aplica y queda implementado en ambas tablas.
 - Transacción y rollback: el patch usa una transacción; ante error revierte. La reversión posterior requiere restaurar backup previo porque la limpieza de datos es deliberada.
+
+## 11. Catálogos maestros — comandos write (#368)
+
+`catalogo_maestro` es núcleo del dominio Administrativo; headers CORE-EF, versionado y outbox son soporte transversal. La instalación usada para metadata no traslada ownership de `instalacion` desde Operativo.
+
+### 11.1 `POST /api/v1/administrativo/catalogos`
+
+- Estado: implementado.
+- Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO`.
+- Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`.
+- `If-Match-Version`: **NO APLICA** (alta).
+- Idempotencia: por `op_id_alta`; mismo `X-Op-Id` y payload devuelve el recurso creado sin un segundo evento. Payload incompatible devuelve `409 IDEMPOTENT_DUPLICATE`.
+- Versionado: versión inicial `1` y `deleted_at = null`.
+- Outbox: `catalogo_maestro_creado`, aggregate `catalogo_maestro`, en la misma transacción que el insert.
+
+Request:
+```json
+{"codigo_catalogo_maestro":"TIPO_DOCUMENTO","nombre_catalogo_maestro":"Tipos de documento","descripcion":"Valores admitidos para documentos"}
+```
+
+### 11.2 `PUT /api/v1/administrativo/catalogos/{id_catalogo_maestro}`
+
+- Estado: implementado.
+- Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO`.
+- Headers obligatorios: los cuatro headers CORE-EF y `If-Match-Version`.
+- Payload: los mismos tres campos del alta; actualiza código, nombre y descripción.
+- Optimistic locking: update condicional por id, `deleted_at IS NULL` y versión. Mismatch real devuelve `409 CONCURRENCY_ERROR` sin outbox.
+- Replay: `op_id_ultima_modificacion` con payload resultante idéntico devuelve la respuesta previa sin incrementar versión ni emitir otro evento.
+- Outbox: `catalogo_maestro_modificado` dentro de la transacción.
+
+### 11.3 `PATCH /api/v1/administrativo/catalogos/{id_catalogo_maestro}/baja`
+
+- Estado: implementado.
+- Clasificación CORE-EF: `COMMAND_WRITE_NEGOCIO`.
+- Headers obligatorios: los cuatro headers CORE-EF y `If-Match-Version`.
+- Baja lógica: establece `deleted_at`, incrementa una vez `version_registro` y actualiza metadata de última modificación. Conserva físicamente la fila y su código único.
+- Replay: el mismo `X-Op-Id` de una baja ya aplicada devuelve el resultado persistido; otro `X-Op-Id` sobre el catálogo dado de baja devuelve `404 NOT_FOUND`.
+- Outbox: `catalogo_maestro_desactivado` dentro de la misma transacción.
+
+### Errores y transacción
+
+Los headers faltantes o inválidos devuelven `400 VALIDATION_ERROR` en el envelope administrativo. Catálogo inexistente o dado de baja no operable devuelve `404 NOT_FOUND`; código duplicado devuelve `409 DUPLICATE_CODE`; conflicto de versión devuelve `409 CONCURRENCY_ERROR`. Cada repository confirma el cambio de negocio y el evento outbox con un único `commit`; ante fallo de outbox o constraint hace rollback y no deja efectos parciales.
+
+Fuera de alcance: writes de `item_catalogo`, reactivación, jerarquías, historial, defaults, vigencias, migración incidental de enums y UI. La política futura de reactivación, reutilización de código, estado persistido de catálogo, jerarquías e historial queda **NO CONFIRMADA**.
+
+### Corrección #370 — idempotencia concurrente y conflicto de código
+
+La alta conserva la consulta previa por `op_id_alta` como optimización y además resuelve la carrera de inserción por la constraint `ux_catalogo_maestro_op_id_alta`: luego de `rollback`, recupera y compara la fila persistida. El mismo payload devuelve el replay sin una nueva fila, versión ni evento; un payload incompatible devuelve `409 IDEMPOTENT_DUPLICATE`. Si la fila no aparece tras el rollback, se propaga la inconsistencia técnica real.
+
+La constraint `uq_catalogo_maestro_codigo` se traduce en el conflicto funcional `409 DUPLICATE_CODE` en alta y modificación. No se exponen nombres de constraints ni mensajes SQL. Las colisiones de constraint y los fallos de outbox hacen rollback antes de devolver la respuesta; por ello no dejan catálogo ni outbox parcial.

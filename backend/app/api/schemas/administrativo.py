@@ -144,6 +144,45 @@ class CatalogoMaestroData(BaseModel):
     descripcion: str | None
 
 
+class CatalogoMaestroCreateRequest(BaseModel):
+    codigo_catalogo_maestro: str
+    nombre_catalogo_maestro: str
+    descripcion: str | None = None
+
+    @field_validator("codigo_catalogo_maestro", "nombre_catalogo_maestro")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El campo no puede estar vacío.")
+        return normalized
+
+
+class CatalogoMaestroUpdateRequest(CatalogoMaestroCreateRequest):
+    pass
+
+
+class CatalogoMaestroWriteData(CatalogoMaestroData):
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+
+
+class CatalogoMaestroCreateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CatalogoMaestroWriteData
+
+
+class CatalogoMaestroUpdateResponse(CatalogoMaestroCreateResponse):
+    pass
+
+
+class CatalogoMaestroBajaResponse(CatalogoMaestroCreateResponse):
+    pass
+
+
 class CatalogoMaestroListData(BaseModel):
     items: list[CatalogoMaestroData]
     total: int

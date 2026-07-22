@@ -11,9 +11,15 @@ from app.api.core_ef_headers import (
 from app.api.dependencies import get_db
 from app.api.schemas.administrativo import (
     CatalogoMaestroData,
+    CatalogoMaestroBajaResponse,
+    CatalogoMaestroCreateRequest,
+    CatalogoMaestroCreateResponse,
     CatalogoMaestroDetailResponse,
     CatalogoMaestroListData,
     CatalogoMaestroListResponse,
+    CatalogoMaestroUpdateRequest,
+    CatalogoMaestroUpdateResponse,
+    CatalogoMaestroWriteData,
     ErrorResponse,
     ItemCatalogoData,
     ItemCatalogoListData,
@@ -43,6 +49,9 @@ from app.api.schemas.administrativo import (
     UsuarioAlcanceOperativoResponse,
 )
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
+    CatalogoMaestroConcurrencyError,
+    CatalogoMaestroDuplicateCodeError,
+    CatalogoMaestroIdempotencyConflictError,
     CatalogoMaestroRepository,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
@@ -109,6 +118,118 @@ def _normalize_query(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _parse_core_write_or_error(
+    *, x_op_id: str | None, x_usuario_id: str | None, x_sucursal_id: str | None,
+    x_instalacion_id: str | None, if_match_version: str | None = None,
+    require_if_match_version: bool = False,
+) -> CoreEFHeaders | JSONResponse:
+    try:
+        return parse_core_ef_headers(
+            x_op_id=x_op_id, x_usuario_id=x_usuario_id, x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id, if_match_version=if_match_version,
+            require_if_match_version=require_if_match_version,
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _error(400, "VALIDATION_ERROR", exc.message,
+                      {"header": exc.header_name, "reason": exc.reason})
+
+
+@router.post(
+    "/api/v1/administrativo/catalogos", status_code=201,
+    response_model=CatalogoMaestroCreateResponse,
+    responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def create_catalogo_maestro(
+    request: CatalogoMaestroCreateRequest, db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> CatalogoMaestroCreateResponse | JSONResponse:
+    # CORE-EF: COMMAND_WRITE_NEGOCIO; create versioned aggregate plus outbox.
+    core = _parse_core_write_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id)
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        catalogo = CatalogoMaestroRepository(db).create(request.model_dump(), core)
+    except CatalogoMaestroIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except CatalogoMaestroDuplicateCodeError as exc:
+        return _error(409, "DUPLICATE_CODE", str(exc))
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo crear el catálogo maestro.", {"error": str(exc)})
+    return CatalogoMaestroCreateResponse(data=CatalogoMaestroWriteData(**catalogo))
+
+
+@router.put(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}",
+    response_model=CatalogoMaestroUpdateResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def update_catalogo_maestro(
+    id_catalogo_maestro: int, request: CatalogoMaestroUpdateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> CatalogoMaestroUpdateResponse | JSONResponse:
+    # CORE-EF: COMMAND_WRITE_NEGOCIO; conditional version update plus outbox.
+    core = _parse_core_write_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version, require_if_match_version=True)
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        catalogo = CatalogoMaestroRepository(db).update(
+            id_catalogo_maestro, request.model_dump(), core=core,
+            if_match_version=core.if_match_version or 0)
+    except CatalogoMaestroIdempotencyConflictError as exc:
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    except CatalogoMaestroConcurrencyError as exc:
+        return _error(409, "CONCURRENCY_ERROR", str(exc))
+    except CatalogoMaestroDuplicateCodeError as exc:
+        return _error(409, "DUPLICATE_CODE", str(exc))
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo modificar el catálogo maestro.", {"error": str(exc)})
+    if catalogo is None:
+        return _error(404, "NOT_FOUND", "Catálogo maestro no encontrado.")
+    return CatalogoMaestroUpdateResponse(data=CatalogoMaestroWriteData(**catalogo))
+
+
+@router.patch(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}/baja",
+    response_model=CatalogoMaestroBajaResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def baja_catalogo_maestro(
+    id_catalogo_maestro: int, db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> CatalogoMaestroBajaResponse | JSONResponse:
+    # CORE-EF: COMMAND_WRITE_NEGOCIO; soft delete, conditional version and outbox.
+    core = _parse_core_write_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version, require_if_match_version=True)
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        catalogo = CatalogoMaestroRepository(db).baja_logica(
+            id_catalogo_maestro, core=core, if_match_version=core.if_match_version or 0)
+    except CatalogoMaestroConcurrencyError as exc:
+        return _error(409, "CONCURRENCY_ERROR", str(exc))
+    except Exception as exc:
+        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo dar de baja el catálogo maestro.", {"error": str(exc)})
+    if catalogo is None:
+        return _error(404, "NOT_FOUND", "Catálogo maestro no encontrado.")
+    return CatalogoMaestroBajaResponse(data=CatalogoMaestroWriteData(**catalogo))
 
 
 @router.get(
