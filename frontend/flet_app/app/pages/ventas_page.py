@@ -750,7 +750,7 @@ def _plan_pago_v2_corrida_compacta(corrida: dict[str, Any], moneda: object) -> f
     affected = _safe_list(corrida.get("obligaciones_afectadas"))
     exclusions = _safe_list(corrida.get("exclusiones"))
     errors = _safe_list(corrida.get("errores_por_obligacion"))
-    technical = ft.Container(data=f"tecnico-corrida-{corrida_id}", visible=False, content=ft.Column([ft.Text("Datos técnicos"), ft.Text(f"ID corrida: {_dash(corrida_id)}"), ft.Text(f"Origen técnico: {_dash(corrida.get('origen_corrida'))}"), ft.Text(_dash(corrida.get("diagnostico_tecnico")))], spacing=3), padding=6, bgcolor=ft.Colors.BLUE_GREY_50)
+    technical = ft.Container(data=f"tecnico-corrida-{corrida_id}", visible=False, content=ft.Column([ft.Text("Datos técnicos"), ft.Text(f"ID corrida: {_dash(corrida_id)}"), ft.Text(f"Origen técnico: {_dash(corrida.get('origen_corrida'))}"), ft.Text(f"Código de error: {_dash(corrida.get('codigo_error'))}"), ft.Text(_dash(corrida.get("diagnostico_tecnico")))], spacing=3), padding=6, bgcolor=ft.Colors.BLUE_GREY_50)
     technical_toggle = ft.TextButton("Mostrar datos técnicos", data=f"toggle-tecnico-corrida-{corrida_id}")
     def toggle_technical(_: ft.ControlEvent) -> None:
         technical.visible = not technical.visible

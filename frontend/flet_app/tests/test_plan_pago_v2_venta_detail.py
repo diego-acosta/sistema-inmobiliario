@@ -342,11 +342,12 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Historial de corridas" not in text
     technical = _find_control_by_data(control, "tecnico-corrida-11", ft.Container)
     assert technical.visible is False
-    assert "ID corrida: 11" in _texts(technical)
+    technical_text = _texts(technical)
+    assert "ID corrida: 11" in technical_text
+    assert "ERR_CAB" in technical_text
+    assert "Falla controlada" in technical_text
     assert "Fallida" in text
     assert "Fallidas" in text
-    assert "ERR_CAB" in text
-    assert "Falla controlada" in text
     assert "Exclusiones" in text
     assert "SIN_INDICE" in text
     assert "No publicado" in text
@@ -402,6 +403,20 @@ def test_seccion_corridas_y_datos_tecnicos_tienen_ids_estables() -> None:
     assert "Corridas de indexación" in _texts(section)
     assert "Historial de corridas" not in _texts(section)
     assert "Pendientes" in _texts(summary)
+    assert technical.visible is False
+
+
+def test_codigo_error_tecnico_permanece_oculto_y_es_expandible() -> None:
+    control = _plan_pago_v2_integral_view(ApiResult(True, data=_plan_data()))
+    summary = _find_control_by_data(control, "resumen-corridas", ft.Column)
+    technical = _find_control_by_data(control, "tecnico-corrida-11", ft.Container)
+    toggle = _find_control_by_data(control, "toggle-tecnico-corrida-11", ft.TextButton)
+    assert "ERR_CAB" not in _texts(summary)
+    assert technical.visible is False
+    assert "ERR_CAB" in _texts(technical)
+    toggle.on_click(None)  # type: ignore[misc]
+    assert technical.visible is True
+    toggle.on_click(None)  # type: ignore[misc]
     assert technical.visible is False
 
 
