@@ -737,6 +737,25 @@ Reglas de lectura:
 - `total_ajuste_indexacion` suma `AJUSTE_INDEXACION`
 - `cantidad_obligaciones_proyectadas_sin_indexacion` cuenta obligaciones de bloques `INDEXACION` sin registro en `obligacion_financiera_indexacion`
 
+Semántica de estados de una obligación:
+
+- `estado_obligacion` se devuelve sin transformar desde
+  `obligacion_financiera.estado_obligacion`: es el ciclo contractual/financiero
+  persistido de la deuda. No expresa si se calculó un índice.
+- `estado_pago` no es un campo persistido de este payload. La presentación lo
+  deriva de `estado_obligacion`, `importe_vigente` y `saldo_pendiente` (por
+  ejemplo, parcial o pagada) y no debe reemplazar `estado_obligacion`.
+- `estado_indexacion_presentacion` y `origen_indexacion` son campos derivados
+  exclusivamente para explicar la indexación del read model. No transicionan ni
+  sobrescriben el estado contractual.
+- En particular, `PROYECTADA + CON_INDICE_APLICADO` es una combinación válida:
+  puede provenir de indexación `AL_NACIMIENTO` o de una
+  `CORRIDA_POSTERIOR`. Aplicar una corrida materializa importes y composición,
+  pero no emite ni vuelve exigible la obligación.
+- Para una corrida posterior, `CON_ERROR` y `EXCLUIDA` tienen prioridad visual
+  para la corrida relacionada; una corrida aplicada efectiva anterior permanece
+  en `corrida_aplicada_vigente` como trazabilidad.
+
 Errores posibles:
 
 - `404 NOT_FOUND`: la venta indicada no existe
