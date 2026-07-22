@@ -213,40 +213,50 @@ class VentaDetailView:
                 _summary_cards(data),
                 ft.Container(
                     data="resumen-venta",
-                    content=detail_section("Resumen de venta", [_base_venta(data)]),
+                    content=_venta_detail_section(
+                        "Resumen de venta", [_base_venta(data)], ft.Icons.RECEIPT_LONG
+                    ),
                 ),
                 ft.Container(
                     data="objeto-vendido",
-                    content=detail_section(
+                    content=_venta_detail_section(
                         "Objeto vendido",
                         [_objetos_operativos(data.get("objetos"), data.get("moneda"))],
+                        ft.Icons.HOME_WORK_OUTLINED,
                     ),
                 ),
                 ft.Container(
                     data="compradores-venta",
-                    content=detail_section(
+                    content=_venta_detail_section(
                         "Comprador / compradores",
                         [_partes_operativas(data.get("partes"))],
+                        ft.Icons.GROUP_OUTLINED,
                     ),
                 ),
                 ft.Container(
                     data="plan-pago-v2",
-                    content=detail_section(
+                    content=_venta_detail_section(
                         "Plan Pago V2",
                         [
                             DeferredLoadingContainer(
                                 lambda: _plan_pago_v2_integral_view(
-                                    self.api.get_plan_pago_venta_v2_integral(self.id_venta)
+                                    self.api.get_plan_pago_venta_v2_integral(
+                                        self.id_venta
+                                    )
                                 ),
                                 message="Cargando Plan Pago V2...",
                             )
                         ],
+                        ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED,
                     ),
                 ),
                 ft.Container(
                     data="origen-venta",
-                    content=detail_section(
-                        "Origen", [_origen_operativo(data.get("reserva_origen"))]
+                    content=_venta_detail_section(
+                        "Origen",
+                        [_origen_operativo(data.get("reserva_origen"))],
+                        ft.Icons.HISTORY_OUTLINED,
+                        low_emphasis=True,
                     ),
                 ),
                 ft.Container(data="detalle-tecnico-venta", content=technical_detail),
@@ -276,19 +286,27 @@ def _venta_row(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _venta_operativa_header(data: dict[str, Any]) -> ft.Control:
-    return ft.Row(
-        controls=[
-            ft.Column(
-                controls=[
-                    ft.Text(_venta_title(data), size=30, weight=ft.FontWeight.W_700),
-                    ft.Text(_venta_subtitle(data), color=ft.Colors.BLUE_GREY_600),
-                ],
-                spacing=2,
-                expand=True,
-            ),
-            status_badge(_text_or_none(data.get("estado_venta"))),
-        ],
-        vertical_alignment=ft.CrossAxisAlignment.START,
+    return ft.Container(
+        content=ft.Row(
+            controls=[
+                ft.Column(
+                    controls=[
+                        ft.Text(
+                            _venta_title(data), size=28, weight=ft.FontWeight.W_700
+                        ),
+                        ft.Text(_venta_subtitle(data), color=ft.Colors.BLUE_GREY_600),
+                    ],
+                    spacing=2,
+                    expand=True,
+                ),
+                status_badge(_text_or_none(data.get("estado_venta"))),
+            ],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=ft.padding.symmetric(horizontal=18, vertical=14),
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=10,
+        bgcolor=ft.Colors.WHITE,
     )
 
 
@@ -352,8 +370,57 @@ def _metric_card(label: str, value: object) -> ft.Control:
         ),
         padding=14,
         border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
-        border_radius=8,
+        border_radius=10,
+        bgcolor=ft.Colors.WHITE,
         width=190,
+    )
+
+
+def _venta_detail_section(
+    title: str,
+    controls: list[ft.Control],
+    icon: str,
+    *,
+    low_emphasis: bool = False,
+) -> ft.Container:
+    """Visual section shell shared by the read-only venta detail areas."""
+    color = ft.Colors.BLUE_GREY_600 if low_emphasis else ft.Colors.BLUE_700
+    return ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Icon(icon, size=16 if low_emphasis else 18, color=color),
+                        ft.Text(
+                            title,
+                            size=14 if low_emphasis else 17,
+                            weight=(
+                                ft.FontWeight.W_600
+                                if low_emphasis
+                                else ft.FontWeight.W_700
+                            ),
+                            color=(
+                                ft.Colors.BLUE_GREY_700
+                                if low_emphasis
+                                else ft.Colors.BLUE_GREY_900
+                            ),
+                        ),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Divider(height=1, color=ft.Colors.BLUE_GREY_100),
+                *controls,
+            ],
+            spacing=10,
+        ),
+        padding=ft.padding.symmetric(
+            horizontal=12 if low_emphasis else 14,
+            vertical=10 if low_emphasis else 14,
+        ),
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=10,
+        bgcolor=ft.Colors.WHITE,
     )
 
 
@@ -617,6 +684,10 @@ def _plan_pago_v2_summary(plan: dict[str, Any], resumen: dict[str, Any]) -> ft.C
             ],
             spacing=8,
         ),
+        padding=10,
+        bgcolor=ft.Colors.BLUE_GREY_50,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
     )
 
 
@@ -632,6 +703,7 @@ def _plan_pago_v2_amount_card(label: str, value: str) -> ft.Container:
         padding=10,
         border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
         border_radius=8,
+        bgcolor=ft.Colors.WHITE,
     )
 
 
@@ -729,7 +801,13 @@ def _plan_pago_v2_obligaciones(obligaciones: list[dict[str, Any]]) -> ft.Control
         _plan_pago_v2_cuota_row(obligacion, visual_order=index)
         for index, obligacion in enumerate(obligaciones, 1)
     ]
-    return ft.Column(controls=[header, *cuota_rows], spacing=4)
+    return ft.Container(
+        content=ft.Column(controls=[header, *cuota_rows], spacing=4),
+        padding=8,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+        bgcolor=ft.Colors.WHITE,
+    )
 
 
 def _plan_pago_v2_header_cell(label: str, key: str) -> ft.Container:
@@ -738,15 +816,20 @@ def _plan_pago_v2_header_cell(label: str, key: str) -> ft.Container:
         if key in _PLAN_V2_CENTERED_COLUMNS
         else ft.alignment.center_left
     )
-    return _plan_pago_v2_cell(
-        ft.Text(
-            label,
-            size=12,
-            weight=ft.FontWeight.W_600,
-            color=ft.Colors.BLUE_GREY_700,
+    return ft.Container(
+        content=_plan_pago_v2_cell(
+            ft.Text(
+                label,
+                size=12,
+                weight=ft.FontWeight.W_600,
+                color=ft.Colors.BLUE_GREY_700,
+            ),
+            width=_PLAN_V2_COLUMN_WIDTHS[key],
+            alignment=alignment,
         ),
         width=_PLAN_V2_COLUMN_WIDTHS[key],
-        alignment=alignment,
+        padding=ft.padding.symmetric(horizontal=4, vertical=6),
+        bgcolor=ft.Colors.BLUE_GREY_50,
     )
 
 
@@ -827,7 +910,18 @@ def _plan_pago_v2_cuota_row(
         data=f"cuota-{obligation_id}",
         spacing=_PLAN_V2_COLUMN_SPACING,
     )
-    return ft.Column(controls=[row, details], spacing=2)
+    return ft.Column(
+        controls=[
+            ft.Container(
+                content=row,
+                padding=ft.padding.symmetric(horizontal=4, vertical=6),
+                border_radius=6,
+                bgcolor=ft.Colors.WHITE,
+            ),
+            details,
+        ],
+        spacing=2,
+    )
 
 
 def _plan_pago_v2_composition_rows(
@@ -978,6 +1072,10 @@ def _plan_pago_v2_corridas(
     return ft.Container(
         data="seccion-corridas-indexacion",
         content=ft.Column(controls=[summary, toggle, history], spacing=6),
+        padding=10,
+        border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
+        border_radius=8,
+        bgcolor=ft.Colors.BLUE_GREY_50,
     )
 
 
@@ -1088,9 +1186,10 @@ def _plan_pago_v2_corrida_compacta(
             ],
             spacing=3,
         ),
-        padding=8,
+        padding=10,
         border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
-        border_radius=6,
+        border_radius=8,
+        bgcolor=ft.Colors.WHITE,
     )
 
 
@@ -1366,10 +1465,16 @@ def _technical_detail_collapsible(data: dict[str, Any]) -> ft.Control:
             controls=[
                 ft.Row(
                     controls=[
+                        ft.Icon(
+                            ft.Icons.SETTINGS_OUTLINED,
+                            size=16,
+                            color=ft.Colors.BLUE_GREY_600,
+                        ),
                         ft.Text(
                             "Detalle tecnico",
-                            weight=ft.FontWeight.W_700,
-                            size=18,
+                            weight=ft.FontWeight.W_600,
+                            size=14,
+                            color=ft.Colors.BLUE_GREY_700,
                         ),
                         ft.Container(expand=True),
                         toggle,
@@ -1380,9 +1485,10 @@ def _technical_detail_collapsible(data: dict[str, Any]) -> ft.Control:
             ],
             spacing=8,
         ),
-        padding=12,
+        padding=10,
         border=ft.border.all(1, ft.Colors.BLUE_GREY_100),
-        border_radius=8,
+        border_radius=10,
+        bgcolor=ft.Colors.WHITE,
     )
 
 
