@@ -340,7 +340,9 @@ def test_plan_pago_v2_renderiza_corridas_exclusiones_errores_y_sin_write() -> No
     assert "Aplicadas" in text
     assert "Corridas de indexación" in text
     assert "Historial de corridas" not in text
-    assert "\n11\n" in f"\n{text}\n"
+    technical = _find_control_by_data(control, "tecnico-corrida-11", ft.Container)
+    assert technical.visible is False
+    assert "ID corrida: 11" in _texts(technical)
     assert "Fallida" in text
     assert "Fallidas" in text
     assert "ERR_CAB" in text
