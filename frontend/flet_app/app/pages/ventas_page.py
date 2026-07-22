@@ -211,63 +211,45 @@ class VentaDetailView:
                 _back_row(self.on_navigate),
                 _venta_operativa_header(data),
                 _summary_cards(data),
-                detail_section(
-                    "Plan Pago V2",
-                    [
-                        DeferredLoadingContainer(
-                            lambda: _plan_pago_v2_integral_view(
-                                self.api.get_plan_pago_venta_v2_integral(self.id_venta)
-                            ),
-                            message="Cargando Plan Pago V2...",
-                        )
-                    ],
+                ft.Container(
+                    data="resumen-venta",
+                    content=detail_section("Resumen de venta", [_base_venta(data)]),
                 ),
-                ft.ResponsiveRow(
-                    controls=[
-                        ft.Container(
-                            col={"sm": 12, "md": 7, "lg": 7},
-                            content=ft.Column(
-                                controls=[
-                                    detail_section(
-                                        "Resumen de venta", [_base_venta(data)]
-                                    ),
-                                    detail_section(
-                                        "Objeto vendido",
-                                        [
-                                            _objetos_operativos(
-                                                data.get("objetos"), data.get("moneda")
-                                            )
-                                        ],
-                                    ),
-                                    detail_section(
-                                        "Comprador / compradores",
-                                        [_partes_operativas(data.get("partes"))],
-                                    ),
-                                ],
-                                spacing=12,
-                            ),
-                        ),
-                        ft.Container(
-                            col={"sm": 12, "md": 5, "lg": 5},
-                            content=ft.Column(
-                                controls=[
-                                    detail_section(
-                                        "Plan de pago / obligaciones",
-                                        [_plan_obligaciones_operativas(data)],
-                                    ),
-                                    detail_section(
-                                        "Origen",
-                                        [_origen_operativo(data.get("reserva_origen"))],
-                                    ),
-                                ],
-                                spacing=12,
-                            ),
-                        ),
-                    ],
-                    spacing=12,
-                    run_spacing=12,
+                ft.Container(
+                    data="objeto-vendido",
+                    content=detail_section(
+                        "Objeto vendido",
+                        [_objetos_operativos(data.get("objetos"), data.get("moneda"))],
+                    ),
                 ),
-                technical_detail,
+                ft.Container(
+                    data="compradores-venta",
+                    content=detail_section(
+                        "Comprador / compradores",
+                        [_partes_operativas(data.get("partes"))],
+                    ),
+                ),
+                ft.Container(
+                    data="plan-pago-v2",
+                    content=detail_section(
+                        "Plan Pago V2",
+                        [
+                            DeferredLoadingContainer(
+                                lambda: _plan_pago_v2_integral_view(
+                                    self.api.get_plan_pago_venta_v2_integral(self.id_venta)
+                                ),
+                                message="Cargando Plan Pago V2...",
+                            )
+                        ],
+                    ),
+                ),
+                ft.Container(
+                    data="origen-venta",
+                    content=detail_section(
+                        "Origen", [_origen_operativo(data.get("reserva_origen"))]
+                    ),
+                ),
+                ft.Container(data="detalle-tecnico-venta", content=technical_detail),
             ],
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
