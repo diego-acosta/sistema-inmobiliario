@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 from sqlalchemy import text
 
@@ -11,35 +13,25 @@ from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository i
 )
 
 
+class _TransactionalSessionContext:
+    def __init__(self, db):
+        self.db = db
+
+    def __enter__(self):
+        return self.db
+
+    def __exit__(self, *_):
+        return False
+
+
 @pytest.fixture(autouse=True)
-def clean_plan_pago_v2_demo(monkeypatch):
-    """Isolate real commits made by the demo script from pytest rollbacks."""
-    demo_session_local = demo.SessionLocal
+def transactional_demo_database(monkeypatch, db_session):
+    """Route demo seeds and real commits through pytest's outer transaction."""
     monkeypatch.setenv("ENV", "test")
-    demo.clean()
-    try:
-        yield
-    finally:
-        demo.SessionLocal = demo_session_local
-        monkeypatch.setenv("ENV", "test")
-        demo.clean()
-        with SessionLocal() as db:
-            residual = db.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM obligacion_financiera o
-                    JOIN plan_pago_venta_bloque b
-                      ON b.id_plan_pago_venta_bloque = o.id_plan_pago_venta_bloque
-                    JOIN plan_pago_venta p
-                      ON p.id_plan_pago_venta = b.id_plan_pago_venta
-                    JOIN venta v ON v.id_venta = p.id_venta
-                    WHERE v.codigo_venta = :codigo AND o.deleted_at IS NULL
-                    """
-                ),
-                {"codigo": demo.CODIGO_VENTA},
-            ).scalar_one()
-            assert residual == 0
+    factory = lambda: _TransactionalSessionContext(db_session)
+    monkeypatch.setattr(demo, "SessionLocal", factory)
+    monkeypatch.setattr(sys.modules[__name__], "SessionLocal", factory)
+    yield
 
 
 @pytest.mark.parametrize("value", [None, "", "production", "unknown"])

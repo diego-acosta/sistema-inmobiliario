@@ -286,15 +286,23 @@ def _print_demo_summary(summary: dict, *, reused: bool) -> None:
     print(f"Obligaciones: {summary['obligaciones']}; corridas: {summary['corridas']}")
 
 
-def create() -> None:
+def create(*, db=None) -> None:
+    """Create the demo using an owned session or a caller transaction.
+
+    CLI callers retain the historical committed behaviour. Tests may provide
+    their transactional session so all seed and demo rows are rolled back with
+    the surrounding test transaction.
+    """
     require_safe_environment()
-    with SessionLocal() as db:
+    owns_session = db is None
+    session = db or SessionLocal()
+    try:
         try:
-            _seed_ui(db)
-            _seed_indices_financieros_demo(db)
-            venta = _get_demo_sale(db)
+            _seed_ui(session)
+            _seed_indices_financieros_demo(session)
+            venta = _get_demo_sale(session)
             if venta is not None:
-                summary = _validate_complete_demo_scenario(db, venta)
+                summary = _validate_complete_demo_scenario(session, venta)
                 if summary is None:
                     raise RuntimeError("El escenario demo existe pero está incompleto o inconsistente. Ejecute --clean y vuelva a crear.")
                 # The reuse path is strictly read-only after idempotent seeds.
@@ -303,22 +311,24 @@ def create() -> None:
                 except Exception as exc:
                     print(f"ADVERTENCIA: escenario reutilizado, no se pudo imprimir el resumen: {exc}")
                 return
-            indice = db.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
-            venta = _create_demo_sale(db)
-            _prepare_new_demo_scenario(db, venta, indice)
-            _create_presentation_fixtures_before_apply(db, venta, indice)
-            _create_and_apply_scoped_real_run(db, venta, indice, _resolve_demo_core_ef(db))
+            indice = session.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
+            venta = _create_demo_sale(session)
+            _prepare_new_demo_scenario(session, venta, indice)
+            _create_presentation_fixtures_before_apply(session, venta, indice)
+            _create_and_apply_scoped_real_run(session, venta, indice, _resolve_demo_core_ef(session))
             # The service committed its own transaction.  No mutation, fixture,
             # reset or validation is allowed below this boundary.
             summary = {"venta": venta, "obligaciones": 3, "corridas": 3}
         except Exception:
-            db.rollback()
+            if owns_session:
+                session.rollback()
             raise
+    finally:
+        if owns_session:
+            session.close()
     try:
         _print_demo_summary(summary, reused=False)
     except Exception as exc:
-        # Presentation is deliberately non-fatal: the real apply service has
-        # already committed and cannot be rolled back by this session.
         print(f"ADVERTENCIA: escenario creado, no se pudo imprimir el resumen: {exc}")
 
 
