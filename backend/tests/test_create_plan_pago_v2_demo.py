@@ -1,5 +1,3 @@
-import sys
-
 import pytest
 from sqlalchemy import text
 
@@ -13,29 +11,13 @@ from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository i
 )
 
 
-class _TransactionalSessionContext:
-    def __init__(self, db):
-        self.db = db
-
-    def __enter__(self):
-        return self.db
-
-    def __exit__(self, *_):
-        return False
-
-
 @pytest.fixture(autouse=True)
-def transactional_demo_database(monkeypatch, db_session):
-    """Route demo seeds and real commits through pytest's outer transaction."""
+def force_test_environment(monkeypatch):
     monkeypatch.setenv("ENV", "test")
-    factory = lambda: _TransactionalSessionContext(db_session)
-    monkeypatch.setattr(demo, "SessionLocal", factory)
-    monkeypatch.setattr(sys.modules[__name__], "SessionLocal", factory)
-    yield
 
 
 @pytest.mark.parametrize("value", [None, "", "production", "unknown"])
-def test_require_safe_environment_rejects_invalid_values(monkeypatch, value):
+def test_require_safe_environment_rejects_invalid_values(monkeypatch, value, db_session):
     if value is None:
         monkeypatch.delenv("ENV", raising=False)
     else:
@@ -45,29 +27,31 @@ def test_require_safe_environment_rejects_invalid_values(monkeypatch, value):
 
 
 @pytest.mark.parametrize("value", ["dev", "test"])
-def test_require_safe_environment_accepts_dev_and_test(monkeypatch, value):
+def test_require_safe_environment_accepts_dev_and_test(monkeypatch, value, db_session):
     monkeypatch.setenv("ENV", value)
     demo.require_safe_environment()
 
 
-def test_create_rejects_invalid_environment_before_session(monkeypatch):
+def test_create_rejects_invalid_environment_before_session(monkeypatch, db_session):
     monkeypatch.setenv("ENV", "production")
     monkeypatch.setattr(demo, "SessionLocal", lambda: pytest.fail("DB abierta"))
     with pytest.raises(RuntimeError):
-        demo.create()
+        demo.create(db=db_session)
 
 
-def test_demo_scenario_is_isolated_idempotent_and_cleanable(monkeypatch):
+def test_demo_scenario_is_isolated_idempotent_and_cleanable(monkeypatch, db_session):
     """PostgreSQL integration: preserves seed sale and deletes only demo graph."""
     monkeypatch.setenv("ENV", "test")
     demo.clean()
-    with SessionLocal() as db:
+    if True:
+        db = db_session
         # The script itself loads the UI seed; this first run establishes the base.
         demo._seed_ui(db)
         db.commit()
         base = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta='DEMO-VTA-CUOTAS'")).scalar_one()
-    demo.create()
-    with SessionLocal() as db:
+    demo.create(db=db_session)
+    if True:
+        db = db_session
         sale = db.execute(text("SELECT id_venta,estado_venta FROM venta WHERE codigo_venta=:code"), {"code": demo.CODIGO_VENTA}).mappings().one()
         assert sale["id_venta"] != base and sale["estado_venta"] == "confirmada"
         assert db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta='DEMO-VTA-CUOTAS'")).scalar_one() == base
@@ -75,14 +59,16 @@ def test_demo_scenario_is_isolated_idempotent_and_cleanable(monkeypatch):
         assert db.execute(text("SELECT count(*) FROM plan_pago_venta_bloque WHERE id_plan_pago_venta=:plan AND deleted_at IS NULL"), {"plan": plan}).scalar_one() == 3
         assert db.execute(text("SELECT count(*) FROM obligacion_financiera WHERE id_plan_pago_venta_bloque IN (SELECT id_plan_pago_venta_bloque FROM plan_pago_venta_bloque WHERE id_plan_pago_venta=:plan)"), {"plan": plan}).scalar_one() == 3
         assert db.execute(text("SELECT count(*) FROM corrida_indexacion_financiera WHERE id_plan_pago_venta=:plan AND estado_corrida='APLICADA'"), {"plan": plan}).scalar_one() == 1
-    demo.create()
-    with SessionLocal() as db:
+    demo.create(db=db_session)
+    if True:
+        db = db_session
         assert db.execute(text("SELECT count(*) FROM corrida_indexacion_financiera WHERE id_plan_pago_venta=:plan"), {"plan": plan}).scalar_one() == 3
         assert db.execute(text("SELECT count(*) FROM corrida_indexacion_financiera WHERE id_plan_pago_venta=:plan AND estado_corrida='APLICADA'"), {"plan": plan}).scalar_one() == 1
         assert db.execute(text("SELECT count(*) FROM obligacion_financiera_indexacion oi JOIN obligacion_financiera o USING(id_obligacion_financiera) JOIN plan_pago_venta_bloque b USING(id_plan_pago_venta_bloque) WHERE b.id_plan_pago_venta=:plan AND oi.deleted_at IS NULL"), {"plan": plan}).scalar_one() == 2
         assert db.execute(text("SELECT count(*) FROM composicion_obligacion co JOIN concepto_financiero cf USING(id_concepto_financiero) JOIN obligacion_financiera o USING(id_obligacion_financiera) JOIN plan_pago_venta_bloque b USING(id_plan_pago_venta_bloque) WHERE b.id_plan_pago_venta=:plan AND cf.codigo_concepto_financiero='AJUSTE_INDEXACION' AND co.deleted_at IS NULL"), {"plan": plan}).scalar_one() == 2
     demo.clean()
-    with SessionLocal() as db:
+    if True:
+        db = db_session
         assert db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta='DEMO-VTA-CUOTAS' AND deleted_at IS NULL")).scalar_one() == base
         assert db.execute(text("SELECT count(*) FROM venta WHERE codigo_venta=:code"), {"code": demo.CODIGO_VENTA}).scalar_one() == 0
         assert db.execute(text("SELECT count(*) FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one() == 1
@@ -90,9 +76,10 @@ def test_demo_scenario_is_isolated_idempotent_and_cleanable(monkeypatch):
     demo.clean()
 
 
-def test_demo_core_ef_context_is_resolved_and_active(monkeypatch):
+def test_demo_core_ef_context_is_resolved_and_active(monkeypatch, db_session):
     monkeypatch.setenv("ENV", "test")
-    with SessionLocal() as db:
+    if True:
+        db = db_session
         context = demo._resolve_demo_core_ef(db)
         assert context.x_usuario_id and context.x_sucursal_id and context.x_instalacion_id
         assert db.execute(text("SELECT 1 FROM usuario WHERE id_usuario=:id AND estado_usuario='ACTIVO'"), {"id": context.x_usuario_id}).scalar_one() == 1
@@ -100,9 +87,10 @@ def test_demo_core_ef_context_is_resolved_and_active(monkeypatch):
         assert db.execute(text("SELECT 1 FROM instalacion WHERE id_instalacion=:id AND estado_instalacion='ACTIVA'"), {"id": context.x_instalacion_id}).scalar_one() == 1
 
 
-def test_applied_demo_run_has_financial_consistency_and_version(monkeypatch):
-    monkeypatch.setenv("ENV", "test"); demo.create()
-    with SessionLocal() as db:
+def test_applied_demo_run_has_financial_consistency_and_version(monkeypatch, db_session):
+    monkeypatch.setenv("ENV", "test"); demo.create(db=db_session)
+    if True:
+        db = db_session
         row = db.execute(text("""SELECT o.importe_total,o.saldo_pendiente,o.version_registro,d.version_esperada,d.version_resultante,d.id_obligacion_financiera_indexacion
           FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING(id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING(id_plan_pago_venta)
           JOIN corrida_indexacion_financiera c ON c.id_plan_pago_venta_bloque=b.id_plan_pago_venta_bloque JOIN corrida_indexacion_financiera_detalle d USING(id_corrida_indexacion_financiera)
@@ -134,12 +122,13 @@ def _other_plan_snapshot(db, plan):
     }
 
 
-def test_create_does_not_modify_other_reachable_plan(monkeypatch):
+def test_create_does_not_modify_other_reachable_plan(monkeypatch, db_session):
     foreign_demo_code = "DEMO-VTA-CUOTAS-PPV2-AJENA-373"
     monkeypatch.setenv("ENV", "test")
     demo.clean()
     try:
-        with SessionLocal() as db:
+        if True:
+            db = db_session
             demo._seed_ui(db)
             demo._seed_indices_financieros_demo(db)
             other_sale = demo._get_or_create_sale(db, foreign_demo_code)
@@ -153,8 +142,9 @@ def test_create_does_not_modify_other_reachable_plan(monkeypatch):
             assert before["obligations"] and not before["runs"]
             db.commit()
 
-        demo.create()
-        with SessionLocal() as db:
+        demo.create(db=db_session)
+        if True:
+            db = db_session
             assert _other_plan_snapshot(db, other_plan) == before
             demo_sale = _demo_sale_id(db)
             assert db.execute(text("SELECT count(*) FROM corrida_indexacion_financiera WHERE motivo='DEMO-373' AND id_plan_pago_venta<>:plan"), {"plan": db.execute(text("SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:sale"), {"sale": demo_sale}).scalar_one()}).scalar_one() == 0
@@ -169,11 +159,12 @@ def test_create_does_not_modify_other_reachable_plan(monkeypatch):
             demo.CODIGO_VENTA = original_code
 
 
-def test_integral_contract_exposes_complete_demo_scenario(monkeypatch):
+def test_integral_contract_exposes_complete_demo_scenario(monkeypatch, db_session):
     monkeypatch.setenv("ENV", "test")
     demo.clean()
-    demo.create()
-    with SessionLocal() as db:
+    demo.create(db=db_session)
+    if True:
+        db = db_session
         integral = PlanPagoVentaV2Repository(db).get_plan_pago_venta_v2_integral(_demo_sale_id(db))
         by_label = {block["etiqueta_bloque"]: block["obligaciones"][0] for block in integral["bloques"]}
         born = by_label["Demo: índice al nacimiento"]
@@ -205,17 +196,19 @@ def test_integral_contract_exposes_complete_demo_scenario(monkeypatch):
         # materialized indexation row.
 
 
-def test_create_rolls_back_all_demo_data_when_internal_step_fails(monkeypatch):
+def test_create_rolls_back_all_demo_data_when_internal_step_fails(monkeypatch, db_session):
     monkeypatch.setenv("ENV", "test")
     demo.clean()
-    with SessionLocal() as db:
+    if True:
+        db = db_session
         demo._seed_ui(db)
         demo._seed_indices_financieros_demo(db)
         db.commit()
     monkeypatch.setattr(demo, "_fixture_corridas", lambda *_: (_ for _ in ()).throw(RuntimeError("fallo controlado rollback #373")))
     with pytest.raises(RuntimeError, match="fallo controlado rollback #373"):
-        demo.create()
-    with SessionLocal() as db:
+        demo.create(db=db_session)
+    if True:
+        db = db_session
         assert db.execute(text("SELECT count(*) FROM venta WHERE codigo_venta=:code"), {"code": demo.CODIGO_VENTA}).scalar_one() == 0
         assert db.execute(text("SELECT count(*) FROM plan_pago_venta p JOIN venta v USING(id_venta) WHERE v.codigo_venta=:code"), {"code": demo.CODIGO_VENTA}).scalar_one() == 0
         assert db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta='DEMO-VTA-CUOTAS' AND deleted_at IS NULL")).scalar_one()
@@ -239,29 +232,33 @@ def _complete_snapshot(db):
     return {name: sorted(db.execute(text(sql), {"sale": sale, "plan": plan}).scalars().all()) for name, sql in graph.items()}
 
 
-def test_second_create_is_a_strict_noop_and_never_applies(monkeypatch):
+def test_second_create_is_a_strict_noop_and_never_applies(monkeypatch, db_session):
     monkeypatch.setenv("ENV", "test")
-    demo.clean(); demo.create()
-    with SessionLocal() as db:
+    demo.clean(); demo.create(db=db_session)
+    if True:
+        db = db_session
         before = _complete_snapshot(db)
         assert len(before["outbox"]) == 1
     monkeypatch.setattr(demo, "_create_and_apply_scoped_real_run", lambda *_: pytest.fail("no debe aplicar"))
-    demo.create()
-    with SessionLocal() as db:
+    demo.create(db=db_session)
+    if True:
+        db = db_session
         assert _complete_snapshot(db) == before
 
 
-def test_incomplete_existing_scenario_fails_without_repair(monkeypatch):
+def test_incomplete_existing_scenario_fails_without_repair(monkeypatch, db_session):
     monkeypatch.setenv("ENV", "test")
-    demo.clean(); demo.create()
-    with SessionLocal() as db:
+    demo.clean(); demo.create(db=db_session)
+    if True:
+        db = db_session
         db.execute(text("DELETE FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera=(SELECT id_corrida_indexacion_financiera FROM corrida_indexacion_financiera WHERE estado_corrida='FALLIDA' ORDER BY 1 LIMIT 1)"))
         db.commit()
         before = _complete_snapshot(db)
     monkeypatch.setattr(demo, "_create_and_apply_scoped_real_run", lambda *_: pytest.fail("no debe aplicar"))
     with pytest.raises(RuntimeError, match="incompleto o inconsistente"):
-        demo.create()
-    with SessionLocal() as db:
+        demo.create(db=db_session)
+    if True:
+        db = db_session
         assert _complete_snapshot(db) == before
 
 
@@ -272,10 +269,11 @@ def test_incomplete_existing_scenario_fails_without_repair(monkeypatch):
         ("FALLIDA", "Demo: proyectada sin índice"),
     ],
 )
-def test_misassociated_fixture_run_is_rejected_without_repair(monkeypatch, state, wrong_label):
+def test_misassociated_fixture_run_is_rejected_without_repair(monkeypatch, state, wrong_label, db_session):
     monkeypatch.setenv("ENV", "test")
-    demo.clean(); demo.create()
-    with SessionLocal() as db:
+    demo.clean(); demo.create(db=db_session)
+    if True:
+        db = db_session
         sale = _demo_sale_id(db)
         # The database has a composite FK that requires the block indexation
         # configuration to follow the changed block; the scenario defect under
@@ -294,20 +292,23 @@ def test_misassociated_fixture_run_is_rejected_without_repair(monkeypatch, state
         before = _complete_snapshot(db)
     monkeypatch.setattr(demo, "_create_and_apply_scoped_real_run", lambda *_: pytest.fail("no debe reaplicar"))
     with pytest.raises(RuntimeError, match="incompleto o inconsistente"):
-        demo.create()
-    with SessionLocal() as db:
+        demo.create(db=db_session)
+    if True:
+        db = db_session
         assert _complete_snapshot(db) == before
 
 
-def test_summary_failure_does_not_undo_committed_application(monkeypatch):
+def test_summary_failure_does_not_undo_committed_application(monkeypatch, db_session):
     monkeypatch.setenv("ENV", "test")
     demo.clean()
     monkeypatch.setattr(demo, "_print_demo_summary", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("salida caída")))
-    demo.create()
-    with SessionLocal() as db:
+    demo.create(db=db_session)
+    if True:
+        db = db_session
         before = _complete_snapshot(db)
         assert len(before["outbox"]) == 1
     monkeypatch.setattr(demo, "_create_and_apply_scoped_real_run", lambda *_: pytest.fail("no debe reaplicar"))
-    demo.create()
-    with SessionLocal() as db:
+    demo.create(db=db_session)
+    if True:
+        db = db_session
         assert _complete_snapshot(db) == before
