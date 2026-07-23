@@ -11,6 +11,37 @@ from app.infrastructure.persistence.repositories.plan_pago_venta_v2_repository i
 )
 
 
+@pytest.fixture(autouse=True)
+def clean_plan_pago_v2_demo(monkeypatch):
+    """Isolate real commits made by the demo script from pytest rollbacks."""
+    demo_session_local = demo.SessionLocal
+    monkeypatch.setenv("ENV", "test")
+    demo.clean()
+    try:
+        yield
+    finally:
+        demo.SessionLocal = demo_session_local
+        monkeypatch.setenv("ENV", "test")
+        demo.clean()
+        with SessionLocal() as db:
+            residual = db.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM obligacion_financiera o
+                    JOIN plan_pago_venta_bloque b
+                      ON b.id_plan_pago_venta_bloque = o.id_plan_pago_venta_bloque
+                    JOIN plan_pago_venta p
+                      ON p.id_plan_pago_venta = b.id_plan_pago_venta
+                    JOIN venta v ON v.id_venta = p.id_venta
+                    WHERE v.codigo_venta = :codigo AND o.deleted_at IS NULL
+                    """
+                ),
+                {"codigo": demo.CODIGO_VENTA},
+            ).scalar_one()
+            assert residual == 0
+
+
 @pytest.mark.parametrize("value", [None, "", "production", "unknown"])
 def test_require_safe_environment_rejects_invalid_values(monkeypatch, value):
     if value is None:
@@ -112,29 +143,38 @@ def _other_plan_snapshot(db, plan):
 
 
 def test_create_does_not_modify_other_reachable_plan(monkeypatch):
+    foreign_demo_code = "DEMO-VTA-CUOTAS-PPV2-AJENA-373"
     monkeypatch.setenv("ENV", "test")
     demo.clean()
-    with SessionLocal() as db:
-        demo._seed_ui(db)
-        demo._seed_indices_financieros_demo(db)
-        other_sale = demo._get_or_create_sale(db, "DEMO-VTA-CUOTAS-PPV2-AJENA-373")
-        indice = db.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
-        repo = PlanPagoVentaV2Repository(db)
-        if repo.get_plan_pago_venta_vivo(other_sale) is None:
-            result = GeneratePlanPagoVentaV2PorBloquesService(repo).execute_in_existing_transaction(demo._command(other_sale, indice))
-            assert result.success, result.errors
-        other_plan = repo.get_plan_pago_venta_vivo(other_sale)["id_plan_pago_venta"]
-        before = _other_plan_snapshot(db, other_plan)
-        assert before["obligations"] and not before["runs"]
-        db.commit()
+    try:
+        with SessionLocal() as db:
+            demo._seed_ui(db)
+            demo._seed_indices_financieros_demo(db)
+            other_sale = demo._get_or_create_sale(db, foreign_demo_code)
+            indice = db.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
+            repo = PlanPagoVentaV2Repository(db)
+            if repo.get_plan_pago_venta_vivo(other_sale) is None:
+                result = GeneratePlanPagoVentaV2PorBloquesService(repo).execute_in_existing_transaction(demo._command(other_sale, indice))
+                assert result.success, result.errors
+            other_plan = repo.get_plan_pago_venta_vivo(other_sale)["id_plan_pago_venta"]
+            before = _other_plan_snapshot(db, other_plan)
+            assert before["obligations"] and not before["runs"]
+            db.commit()
 
-    demo.create()
-    with SessionLocal() as db:
-        assert _other_plan_snapshot(db, other_plan) == before
-        demo_sale = _demo_sale_id(db)
-        assert db.execute(text("SELECT count(*) FROM corrida_indexacion_financiera WHERE motivo='DEMO-373' AND id_plan_pago_venta<>:plan"), {"plan": db.execute(text("SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:sale"), {"sale": demo_sale}).scalar_one()}).scalar_one() == 0
-        applied_blocks = db.execute(text("SELECT b.etiqueta_bloque FROM corrida_indexacion_financiera c JOIN plan_pago_venta_bloque b USING(id_plan_pago_venta_bloque) WHERE c.estado_corrida='APLICADA' AND c.id_plan_pago_venta=(SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:sale)"), {"sale": demo_sale}).scalars().all()
-        assert applied_blocks == ["Demo: corrida posterior"]
+        demo.create()
+        with SessionLocal() as db:
+            assert _other_plan_snapshot(db, other_plan) == before
+            demo_sale = _demo_sale_id(db)
+            assert db.execute(text("SELECT count(*) FROM corrida_indexacion_financiera WHERE motivo='DEMO-373' AND id_plan_pago_venta<>:plan"), {"plan": db.execute(text("SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:sale"), {"sale": demo_sale}).scalar_one()}).scalar_one() == 0
+            applied_blocks = db.execute(text("SELECT b.etiqueta_bloque FROM corrida_indexacion_financiera c JOIN plan_pago_venta_bloque b USING(id_plan_pago_venta_bloque) WHERE c.estado_corrida='APLICADA' AND c.id_plan_pago_venta=(SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:sale)"), {"sale": demo_sale}).scalars().all()
+            assert applied_blocks == ["Demo: corrida posterior"]
+    finally:
+        original_code = demo.CODIGO_VENTA
+        demo.CODIGO_VENTA = foreign_demo_code
+        try:
+            demo.clean()
+        finally:
+            demo.CODIGO_VENTA = original_code
 
 
 def test_integral_contract_exposes_complete_demo_scenario(monkeypatch):
