@@ -332,31 +332,45 @@ def create(*, db=None) -> None:
         print(f"ADVERTENCIA: escenario creado, no se pudo imprimir el resumen: {exc}")
 
 
-def clean() -> None:
+def clean(*, db=None) -> None:
+    """Delete the demo using an owned session or a caller transaction."""
     require_safe_environment()
-    with SessionLocal() as db, db.begin():
-        venta = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND deleted_at IS NULL"), {"code": CODIGO_VENTA}).scalar_one_or_none()
+    owns_session = db is None
+    session = db or SessionLocal()
+    try:
+        venta = session.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND deleted_at IS NULL"), {"code": CODIGO_VENTA}).scalar_one_or_none()
         if venta is None:
             print("No existe escenario demo para limpiar.")
+            if owns_session:
+                session.commit()
             return
         # Delete only rows reached from the stable demo code, children first.
-        db.execute(text("DELETE FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera IN (SELECT c.id_corrida_indexacion_financiera FROM corrida_indexacion_financiera c JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM corrida_indexacion_financiera WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_financiera_indexacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_obligado WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
-        db.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_financiera WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM generacion_cronograma_financiero WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM plan_pago_venta_bloque_indexacion WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM plan_pago_venta_bloque WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM plan_pago_venta WHERE id_venta=:id"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id"), {"id": venta})
-        db.execute(text("DELETE FROM relacion_persona_rol WHERE tipo_relacion='venta' AND id_relacion=:id"), {"id": venta})
-        db.execute(text("DELETE FROM venta_objeto_inmobiliario WHERE id_venta=:id"), {"id": venta})
-        db.execute(text("DELETE FROM venta_plan_cuota WHERE id_venta=:id"), {"id": venta})
-        db.execute(text("DELETE FROM venta WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera IN (SELECT c.id_corrida_indexacion_financiera FROM corrida_indexacion_financiera c JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM corrida_indexacion_financiera WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_financiera_indexacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_obligado WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
+        session.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_financiera WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM generacion_cronograma_financiero WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM plan_pago_venta_bloque_indexacion WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM plan_pago_venta_bloque WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM plan_pago_venta WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id"), {"id": venta})
+        session.execute(text("DELETE FROM relacion_persona_rol WHERE tipo_relacion='venta' AND id_relacion=:id"), {"id": venta})
+        session.execute(text("DELETE FROM venta_objeto_inmobiliario WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM venta_plan_cuota WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM venta WHERE id_venta=:id"), {"id": venta})
+        if owns_session:
+            session.commit()
+    except Exception:
+        if owns_session:
+            session.rollback()
+        raise
+    finally:
+        if owns_session:
+            session.close()
     print("Escenario demo eliminado; no se modificaron ventas ajenas.")
 
 
