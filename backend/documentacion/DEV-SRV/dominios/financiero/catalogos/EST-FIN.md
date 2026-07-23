@@ -45,8 +45,8 @@ Estados SQL vigentes y usados por backend:
 
 | Estado | Uso implementado |
 |---|---|
-| `PROYECTADA` | Estado inicial de obligaciones creadas manualmente por API. Acepta imputacion. |
-| `EMITIDA` | Estado aceptado para imputacion. El cronograma locativo la usa como estado inicial. |
+| `PROYECTADA` | Importe definitivo pendiente de emisión/materialización; en PPV2 indexado se usa sólo mientras falta un índice aplicable. Acepta imputacion según el contrato vigente. |
+| `EMITIDA` | Importe definitivo materializado dentro del circuito financiero. La generación PPV2 no indexada y la indexación exitosa de una proyectada pueden emitirla. |
 | `EXIGIBLE` | Estado aceptado para imputacion. No es usado por Mora V1 simple. |
 | `PARCIALMENTE_CANCELADA` | Asignado por backend despues de imputacion parcial. Acepta imputacion. |
 | `CANCELADA` | Asignado por backend cuando el saldo queda en cero. No acepta imputacion. |
@@ -83,6 +83,13 @@ No deben eliminarse de la documentacion porque existen en constraints SQL y son 
 ```text
 nueva obligacion -> PROYECTADA
 ```
+
+Para PPV2, el estado inicial se decide por la materialización del importe: una
+cuota fija o una indexada con ajuste ya materializado nace `EMITIDA`; una cuota
+indexada sin valor aplicable nace `PROYECTADA`. La materialización exitosa de
+una indexación ejecuta `PROYECTADA -> EMITIDA` en la misma transacción.
+Esta es una política de `financiero`: Comercial aporta los hechos de
+materialización, pero no determina el estado de la obligación.
 
 ### Imputacion
 

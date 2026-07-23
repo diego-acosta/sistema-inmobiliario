@@ -12,6 +12,9 @@ from app.application.comercial.commands.generate_plan_pago_venta_cuotas_iguales_
     GeneratePlanPagoVentaCuotasIgualesSimpleCommand,
 )
 from app.application.common.results import AppResult
+from app.application.financiero.services.determine_initial_obligation_state_service import (
+    determine_initial_obligation_state,
+)
 
 METODO_CUOTAS_IGUALES_SIMPLE = "CUOTAS_IGUALES_SIMPLE"
 PERIODICIDAD_MENSUAL = "MENSUAL"
@@ -20,7 +23,6 @@ TIPO_ORIGEN_VENTA = "venta"
 TIPO_GENERACION_PLAN_PAGO_VENTA_V2 = "PLAN_PAGO_VENTA_V2"
 CONCEPTO_CAPITAL_VENTA = "CAPITAL_VENTA"
 ROL_OBLIGADO_COMPRADOR = "COMPRADOR"
-ESTADO_OBLIGACION_PROYECTADA = "PROYECTADA"
 TIPO_ITEM_CUOTA = "CUOTA"
 TIPO_BLOQUE_TRAMO_CUOTAS = "TRAMO_CUOTAS"
 ETIQUETA_BLOQUE_CUOTAS_IGUALES = "Cuotas iguales"
@@ -456,7 +458,9 @@ class GeneratePlanPagoVentaCuotasIgualesSimpleService:
                         fecha_vencimiento=fecha_vencimiento,
                         importe_total=importe,
                         moneda=moneda,
-                        estado_obligacion=ESTADO_OBLIGACION_PROYECTADA,
+                        estado_obligacion=determine_initial_obligation_state(
+                            definitive_amount_materialized=True
+                        ),
                         id_concepto_financiero=concepto["id_concepto_financiero"],
                         codigo_concepto_financiero=CONCEPTO_CAPITAL_VENTA,
                         id_persona_obligado=comprador["id_persona"],

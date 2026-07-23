@@ -1,5 +1,7 @@
 from uuid import UUID
 
+import pytest
+
 from sqlalchemy import text
 
 from app.api.core_ef_headers import CoreEFHeaders
@@ -50,7 +52,8 @@ def test_postgres_aplica_corrida_crea_trazabilidad_actualiza_obligacion_detalle_
     assert cab["version_registro"] > 1
     assert cab["op"] == str(APPLY_CORE.x_op_id)
 
-    obl = db_session.execute(text("SELECT importe_total, saldo_pendiente, version_registro, op_id_ultima_modificacion::text op FROM obligacion_financiera WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]}).mappings().one()
+    obl = db_session.execute(text("SELECT estado_obligacion, importe_total, saldo_pendiente, version_registro, op_id_ultima_modificacion::text op FROM obligacion_financiera WHERE id_obligacion_financiera=:id"), {"id": ctx["obligacion"]}).mappings().one()
+    assert obl["estado_obligacion"] == "EMITIDA"
     assert obl["importe_total"] == 1260
     assert obl["saldo_pendiente"] == 1260
     assert obl["version_registro"] >= 2
@@ -78,6 +81,43 @@ def test_postgres_aplica_corrida_crea_trazabilidad_actualiza_obligacion_detalle_
     )
     assert again.success
     assert again.data["idempotente"] is True
+
+
+@pytest.mark.parametrize(
+    ("estado_inicial", "estado_final"),
+    [
+        ("PROYECTADA", "EMITIDA"),
+        ("EMITIDA", "EMITIDA"),
+        ("EXIGIBLE", "EXIGIBLE"),
+        ("VENCIDA", "VENCIDA"),
+    ],
+)
+def test_postgres_corrida_preserva_o_emite_estado_contractual(
+    db_session, estado_inicial, estado_final
+):
+    ctx = _create_context(db_session)
+    db_session.execute(
+        text("UPDATE obligacion_financiera SET estado_obligacion=:estado WHERE id_obligacion_financiera IN (:uno, :dos)"),
+        {"estado": estado_inicial, "uno": ctx["obligacion"], "dos": ctx["otra_obligacion"]},
+    )
+    db_session.commit()
+    preview = _persist_preview(db_session, ctx)
+
+    result = AplicarIndexacionCuotasV2Service(
+        AplicarIndexacionCuotasV2SqlAlchemyRepository(db_session)
+    ).execute(
+        AplicarIndexacionCuotasV2Command(
+            preview["id_corrida_indexacion_financiera"], preview["hash_corrida"]
+        ),
+        APPLY_CORE,
+    )
+
+    assert result.success, result.errors
+    assert _scalar(
+        db_session,
+        "SELECT estado_obligacion FROM obligacion_financiera WHERE id_obligacion_financiera=:id",
+        id=ctx["obligacion"],
+    ) == estado_final
 
 
 def test_postgres_conflicto_version_persiste_fallida_y_rollback(db_session):

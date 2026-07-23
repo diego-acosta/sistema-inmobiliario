@@ -154,7 +154,8 @@ def _reset_block_to_capital_state(db, venta: int, etiqueta_bloque: str) -> None:
         (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque)
         JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:sale AND b.etiqueta_bloque=:label)
         AND id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='AJUSTE_INDEXACION' AND deleted_at IS NULL)"""), {"sale": venta, "label": etiqueta_bloque})
-    db.execute(text("""UPDATE obligacion_financiera o SET importe_total=cap.importe_componente, saldo_pendiente=cap.saldo_componente
+    db.execute(text("""UPDATE obligacion_financiera o SET importe_total=cap.importe_componente, saldo_pendiente=cap.saldo_componente,
+        estado_obligacion='PROYECTADA'
         FROM composicion_obligacion cap WHERE cap.id_obligacion_financiera=o.id_obligacion_financiera
         AND cap.id_concepto_financiero=(SELECT id_concepto_financiero FROM concepto_financiero WHERE codigo_concepto_financiero='CAPITAL_VENTA' AND deleted_at IS NULL)
         AND o.id_obligacion_financiera IN (SELECT o2.id_obligacion_financiera FROM obligacion_financiera o2 JOIN plan_pago_venta_bloque b ON b.id_plan_pago_venta_bloque=o2.id_plan_pago_venta_bloque JOIN plan_pago_venta p ON p.id_plan_pago_venta=b.id_plan_pago_venta WHERE p.id_venta=:sale AND b.etiqueta_bloque=:label)"""), {"sale": venta, "label": etiqueta_bloque})
@@ -285,15 +286,23 @@ def _print_demo_summary(summary: dict, *, reused: bool) -> None:
     print(f"Obligaciones: {summary['obligaciones']}; corridas: {summary['corridas']}")
 
 
-def create() -> None:
+def create(*, db=None) -> None:
+    """Create the demo using an owned session or a caller transaction.
+
+    CLI callers retain the historical committed behaviour. Tests may provide
+    their transactional session so all seed and demo rows are rolled back with
+    the surrounding test transaction.
+    """
     require_safe_environment()
-    with SessionLocal() as db:
+    owns_session = db is None
+    session = db or SessionLocal()
+    try:
         try:
-            _seed_ui(db)
-            _seed_indices_financieros_demo(db)
-            venta = _get_demo_sale(db)
+            _seed_ui(session)
+            _seed_indices_financieros_demo(session)
+            venta = _get_demo_sale(session)
             if venta is not None:
-                summary = _validate_complete_demo_scenario(db, venta)
+                summary = _validate_complete_demo_scenario(session, venta)
                 if summary is None:
                     raise RuntimeError("El escenario demo existe pero está incompleto o inconsistente. Ejecute --clean y vuelva a crear.")
                 # The reuse path is strictly read-only after idempotent seeds.
@@ -302,50 +311,66 @@ def create() -> None:
                 except Exception as exc:
                     print(f"ADVERTENCIA: escenario reutilizado, no se pudo imprimir el resumen: {exc}")
                 return
-            indice = db.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
-            venta = _create_demo_sale(db)
-            _prepare_new_demo_scenario(db, venta, indice)
-            _create_presentation_fixtures_before_apply(db, venta, indice)
-            _create_and_apply_scoped_real_run(db, venta, indice, _resolve_demo_core_ef(db))
+            indice = session.execute(text("SELECT id_indice_financiero FROM indice_financiero WHERE codigo_indice_financiero='CAC_DEMO' AND deleted_at IS NULL")).scalar_one()
+            venta = _create_demo_sale(session)
+            _prepare_new_demo_scenario(session, venta, indice)
+            _create_presentation_fixtures_before_apply(session, venta, indice)
+            _create_and_apply_scoped_real_run(session, venta, indice, _resolve_demo_core_ef(session))
             # The service committed its own transaction.  No mutation, fixture,
             # reset or validation is allowed below this boundary.
             summary = {"venta": venta, "obligaciones": 3, "corridas": 3}
         except Exception:
-            db.rollback()
+            if owns_session:
+                session.rollback()
             raise
+    finally:
+        if owns_session:
+            session.close()
     try:
         _print_demo_summary(summary, reused=False)
     except Exception as exc:
-        # Presentation is deliberately non-fatal: the real apply service has
-        # already committed and cannot be rolled back by this session.
         print(f"ADVERTENCIA: escenario creado, no se pudo imprimir el resumen: {exc}")
 
 
-def clean() -> None:
+def clean(*, db=None) -> None:
+    """Delete the demo using an owned session or a caller transaction."""
     require_safe_environment()
-    with SessionLocal() as db, db.begin():
-        venta = db.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND deleted_at IS NULL"), {"code": CODIGO_VENTA}).scalar_one_or_none()
+    owns_session = db is None
+    session = db or SessionLocal()
+    try:
+        venta = session.execute(text("SELECT id_venta FROM venta WHERE codigo_venta=:code AND deleted_at IS NULL"), {"code": CODIGO_VENTA}).scalar_one_or_none()
         if venta is None:
             print("No existe escenario demo para limpiar.")
+            if owns_session:
+                session.commit()
             return
         # Delete only rows reached from the stable demo code, children first.
-        db.execute(text("DELETE FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera IN (SELECT c.id_corrida_indexacion_financiera FROM corrida_indexacion_financiera c JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM corrida_indexacion_financiera WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_financiera_indexacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_obligado WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
-        db.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_financiera WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM generacion_cronograma_financiero WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM plan_pago_venta_bloque_indexacion WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM plan_pago_venta_bloque WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM plan_pago_venta WHERE id_venta=:id"), {"id": venta})
-        db.execute(text("DELETE FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id)"), {"id": venta})
-        db.execute(text("DELETE FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id"), {"id": venta})
-        db.execute(text("DELETE FROM relacion_persona_rol WHERE tipo_relacion='venta' AND id_relacion=:id"), {"id": venta})
-        db.execute(text("DELETE FROM venta_objeto_inmobiliario WHERE id_venta=:id"), {"id": venta})
-        db.execute(text("DELETE FROM venta_plan_cuota WHERE id_venta=:id"), {"id": venta})
-        db.execute(text("DELETE FROM venta WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM corrida_indexacion_financiera_detalle WHERE id_corrida_indexacion_financiera IN (SELECT c.id_corrida_indexacion_financiera FROM corrida_indexacion_financiera c JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM corrida_indexacion_financiera WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_financiera_indexacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT o.id_obligacion_financiera FROM obligacion_financiera o JOIN plan_pago_venta_bloque b USING (id_plan_pago_venta_bloque) JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_obligado WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
+        session.execute(text("DELETE FROM composicion_obligacion WHERE id_obligacion_financiera IN (SELECT id_obligacion_financiera FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id))"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_financiera WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM generacion_cronograma_financiero WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM plan_pago_venta_bloque_indexacion WHERE id_plan_pago_venta_bloque IN (SELECT b.id_plan_pago_venta_bloque FROM plan_pago_venta_bloque b JOIN plan_pago_venta p USING (id_plan_pago_venta) WHERE p.id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM plan_pago_venta_bloque WHERE id_plan_pago_venta IN (SELECT id_plan_pago_venta FROM plan_pago_venta WHERE id_venta=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM plan_pago_venta WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM obligacion_financiera WHERE id_relacion_generadora IN (SELECT id_relacion_generadora FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id)"), {"id": venta})
+        session.execute(text("DELETE FROM relacion_generadora WHERE tipo_origen='venta' AND id_origen=:id"), {"id": venta})
+        session.execute(text("DELETE FROM relacion_persona_rol WHERE tipo_relacion='venta' AND id_relacion=:id"), {"id": venta})
+        session.execute(text("DELETE FROM venta_objeto_inmobiliario WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM venta_plan_cuota WHERE id_venta=:id"), {"id": venta})
+        session.execute(text("DELETE FROM venta WHERE id_venta=:id"), {"id": venta})
+        if owns_session:
+            session.commit()
+    except Exception:
+        if owns_session:
+            session.rollback()
+        raise
+    finally:
+        if owns_session:
+            session.close()
     print("Escenario demo eliminado; no se modificaron ventas ajenas.")
 
 

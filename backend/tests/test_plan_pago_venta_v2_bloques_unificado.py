@@ -1982,6 +1982,7 @@ def test_preview_y_generacion_aplican_publicacion_valida_alineados(db_session) -
     )
 
     assert generated.success, generated.errors
+    assert {obligacion["estado_obligacion"] for obligacion in generated.data["obligaciones"]} == {"EMITIDA"}
     assert {Decimal(str(obligacion["importe_total"])) for obligacion in generated.data["obligaciones"]} == {Decimal("1098643.65")}
     indexaciones = _obligaciones_indexacion(
         db_session, id_relacion_generadora=generated.data["id_relacion_generadora"]

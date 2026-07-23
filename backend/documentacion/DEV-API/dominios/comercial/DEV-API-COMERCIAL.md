@@ -748,10 +748,14 @@ Semántica de estados de una obligación:
 - `estado_indexacion_presentacion` y `origen_indexacion` son campos derivados
   exclusivamente para explicar la indexación del read model. No transicionan ni
   sobrescriben el estado contractual.
-- En particular, `PROYECTADA + CON_INDICE_APLICADO` es una combinación válida:
-  puede provenir de indexación `AL_NACIMIENTO` o de una
-  `CORRIDA_POSTERIOR`. Aplicar una corrida materializa importes y composición,
-  pero no emite ni vuelve exigible la obligación.
+- El generador PPV2 aporta a Financiero el hecho
+  `definitive_amount_materialized`; la política financiera resuelve el estado
+  inicial persistido de la obligación.
+- `PROYECTADA + CON_INDICE_APLICADO` sólo puede existir transitoriamente o en
+  datos heredados inconsistentes. Una indexación materializada correctamente
+  emite la obligación; la combinación estable esperada es
+  `EMITIDA + CON_INDICE_APLICADO`, salvo estados posteriores como `VENCIDA`,
+  `PARCIALMENTE_CANCELADA` o `CANCELADA`.
 - Para una corrida posterior, `CON_ERROR` y `EXCLUIDA` tienen prioridad visual
   para la corrida relacionada; una corrida aplicada efectiva anterior permanece
   en `corrida_aplicada_vigente` como trazabilidad.
@@ -769,7 +773,8 @@ Objetivo:
 - generar el plan de pago V2 inicial `CUOTAS_IGUALES_SIMPLE` para una venta
 - persistir la cabecera/regla comercial en `plan_pago_venta`
 - registrar una corrida tecnica en `generacion_cronograma_financiero`
-- materializar el cronograma como obligaciones financieras `PROYECTADA`
+- materializar el cronograma como obligaciones financieras `EMITIDA`, porque
+  sus importes no indexados ya son definitivos
 
 Headers tecnicos:
 - acepta `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`
@@ -911,7 +916,8 @@ Objetivo:
 - generar el plan de pago V2 inicial `ANTICIPO_MAS_CUOTAS_IGUALES` para una venta
 - persistir la cabecera/regla comercial en `plan_pago_venta`
 - registrar una corrida tecnica en `generacion_cronograma_financiero`
-- materializar anticipo y cuotas del saldo como obligaciones financieras `PROYECTADA`
+- materializar anticipo y cuotas del saldo como obligaciones financieras
+  `EMITIDA`, porque sus importes ya son definitivos
 
 Headers tecnicos:
 - acepta los mismos headers que `cuotas-iguales-simple`
@@ -943,7 +949,7 @@ Reglas de negocio:
 - genera una obligacion `ANTICIPO` con composicion `ANTICIPO_VENTA`
 - calcula el saldo como `monto_total_plan - importe_anticipo`
 - divide el saldo en `cantidad_cuotas` obligaciones `CUOTA` con composicion `CAPITAL_VENTA`
-- cada obligacion nace con `estado_obligacion = PROYECTADA`
+- cada obligacion nace con `estado_obligacion = EMITIDA`
 - cada obligacion tiene obligado `COMPRADOR` al 100% para el comprador unico resoluble
 - no usa `venta_plan_cuota`
 - no registra pagos, recibos, caja, tesoreria, aplicaciones financieras, mora ni punitorios
@@ -1804,7 +1810,7 @@ El request acepta `fecha_corte` opcional a nivel raíz para ventas actuales y pl
 
 Cuando `fecha_corte` está presente, antes de persistir la confirmación construye el preview Plan Pago Venta V2 y ejecuta la prevalidación histórica reutilizable. Si alguna cuota histórica exigible indexada no puede calcularse, responde `ErrorResponse` 400 con `error_code=VENTA_HISTORICA_INDEXACION_NO_RESUELTA` y detalle: `puede_confirmar=false`, `cantidad_bloqueadas`, `motivos_bloqueo` y `cuotas_bloqueadas` (`numero_cuota`, `clave_bloque`, `fecha_vencimiento`, `motivo_bloqueo`, `id_indice_financiero`).
 
-Si la prevalidación permite confirmar, la venta, objetos, participantes, condiciones, `plan_pago_venta`, `plan_pago_venta_bloque`, `generacion_cronograma_financiero`, `relacion_generadora`, `obligacion_financiera`, `composicion_obligacion`, `obligacion_financiera_indexacion` y outbox vigente quedan dentro de la transacción de confirmación. Las obligaciones históricas con `CON_INDICE_APLICADO` nacen con importe total indexado, composición `AJUSTE_INDEXACION` y fila `obligacion_financiera_indexacion`. Las cuotas futuras `PROYECTADA_SIN_INDICE` no bloquean, persisten como obligaciones proyectadas sin fila de indexación y quedan disponibles para corridas posteriores. La confirmación no dispara una corrida V2 inmediata.
+Si la prevalidación permite confirmar, la venta, objetos, participantes, condiciones, `plan_pago_venta`, `plan_pago_venta_bloque`, `generacion_cronograma_financiero`, `relacion_generadora`, `obligacion_financiera`, `composicion_obligacion`, `obligacion_financiera_indexacion` y outbox vigente quedan dentro de la transacción de confirmación. Las obligaciones históricas con `CON_INDICE_APLICADO` nacen `EMITIDA`, con importe total indexado, composición `AJUSTE_INDEXACION` y fila `obligacion_financiera_indexacion`. Las cuotas futuras `PROYECTADA_SIN_INDICE` no bloquean, persisten como obligaciones proyectadas sin fila de indexación y quedan disponibles para corridas posteriores. La confirmación no dispara una corrida V2 inmediata.
 
 La respuesta exitosa mantiene la estructura previa y agrega campos opcionales: `es_venta_historica`, `fecha_corte` y `prevalidacion_historica` con resumen (`puede_confirmar`, `cantidad_historicas_exigibles`, `cantidad_con_indice`, `cantidad_futuras`, `cantidad_bloqueadas`).
 

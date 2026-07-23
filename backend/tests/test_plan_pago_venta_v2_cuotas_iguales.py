@@ -218,7 +218,7 @@ def test_cuotas_iguales_v2_crea_plan_generacion_obligaciones_y_no_usa_venta_plan
     assert obligaciones[0]["clave_funcional_origen"].endswith(":CUOTA:1")
     assert obligaciones[-1]["clave_funcional_origen"].endswith(":CUOTA:12")
     assert {obligacion["estado_obligacion"] for obligacion in obligaciones} == {
-        "PROYECTADA"
+        "EMITIDA"
     }
     assert {obligacion["codigo_concepto_financiero"] for obligacion in obligaciones} == {
         "CAPITAL_VENTA"

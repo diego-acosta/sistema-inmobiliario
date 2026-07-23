@@ -249,7 +249,7 @@ def test_anticipo_mas_cuotas_v2_crea_plan_generacion_anticipo_y_cuotas(
     assert cuotas[0]["clave_funcional_origen"].endswith(":CUOTA:1")
     assert cuotas[-1]["clave_funcional_origen"].endswith(":CUOTA:10")
     assert {ob["codigo_concepto_financiero"] for ob in cuotas} == {"CAPITAL_VENTA"}
-    assert {ob["estado_obligacion"] for ob in obligaciones} == {"PROYECTADA"}
+    assert {ob["estado_obligacion"] for ob in obligaciones} == {"EMITIDA"}
     assert {ob["rol_obligado"] for ob in obligaciones} == {"COMPRADOR"}
     assert {str(ob["porcentaje_responsabilidad"]) for ob in obligaciones} == {"100.00"}
     assert sum(

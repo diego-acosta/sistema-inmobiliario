@@ -171,6 +171,7 @@ class AplicarIndexacionCuotasV2SqlAlchemyRepository:
     def update_obligacion(self, detalle: dict[str, Any], core_ef: Any) -> bool:
         res = self.db.execute(text("""
             UPDATE obligacion_financiera SET importe_total=:importe, saldo_pendiente=:saldo,
+                estado_obligacion=CASE WHEN estado_obligacion='PROYECTADA' THEN 'EMITIDA' ELSE estado_obligacion END,
                 op_id_ultima_modificacion=CAST(:op_id AS uuid), id_instalacion_ultima_modificacion=:inst
             WHERE id_obligacion_financiera=:id AND version_registro=:version AND deleted_at IS NULL
         """), {"importe": detalle["importe_nuevo"], "saldo": detalle["saldo_nuevo"], "op_id": str(core_ef.x_op_id), "inst": core_ef.x_instalacion_id, "id": detalle["id_obligacion_financiera"], "version": detalle["version_esperada"]})
