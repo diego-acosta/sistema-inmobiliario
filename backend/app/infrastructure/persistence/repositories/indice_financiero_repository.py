@@ -204,7 +204,9 @@ class IndiceFinancieroRepository:
                        nombre_indice_financiero, estado_indice_financiero, deleted_at
                 FROM indice_financiero
                 WHERE codigo_indice_financiero = :codigo_indice_financiero
-                ORDER BY id_indice_financiero ASC
+                ORDER BY
+                    CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END,
+                    id_indice_financiero DESC
                 LIMIT 1
             """),
             {"codigo_indice_financiero": codigo_normalizado},

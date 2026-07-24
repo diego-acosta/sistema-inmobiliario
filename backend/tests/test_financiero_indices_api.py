@@ -94,3 +94,45 @@ def test_valor_aplicable_valida_errores_contractuales_y_excluye_no_publicados(cl
     response = client.get(VALOR_URL, params={"id_indice_financiero": inactive, "fecha_objetivo": "2026-01-15"})
     assert response.status_code == 404
     assert response.json()["error_code"] == "INDICE_FINANCIERO_INACTIVO"
+
+
+def test_valor_aplicable_por_codigo_reutilizado_prioriza_indice_vigente(client, db_session) -> None:
+    _crear_indice(db_session, "CAC_REUTILIZADO_API", deleted=True)
+    id_indice_nuevo = _crear_indice(db_session, "CAC_REUTILIZADO_API")
+    _crear_valor(db_session, id_indice_nuevo, "2026-01-01")
+
+    response = client.get(
+        VALOR_URL,
+        params={
+            "codigo_indice_financiero": " cac_reutilizado_api ",
+            "fecha_objetivo": "2026-01-15",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["id_indice_financiero"] == id_indice_nuevo
+    assert response.json()["data"]["fecha_valor"] == "2026-01-01"
+
+
+def test_valor_aplicable_por_codigo_solo_eliminado_e_inexistente(client, db_session) -> None:
+    _crear_indice(db_session, "SOLO_ELIMINADO_API", deleted=True)
+
+    eliminado = client.get(
+        VALOR_URL,
+        params={
+            "codigo_indice_financiero": " solo_eliminado_api ",
+            "fecha_objetivo": "2026-01-15",
+        },
+    )
+    inexistente = client.get(
+        VALOR_URL,
+        params={
+            "codigo_indice_financiero": " inexistente_api ",
+            "fecha_objetivo": "2026-01-15",
+        },
+    )
+
+    assert eliminado.status_code == 404
+    assert eliminado.json()["error_code"] == "INDICE_FINANCIERO_ELIMINADO"
+    assert inexistente.status_code == 404
+    assert inexistente.json()["error_code"] == "INDICE_FINANCIERO_NO_ENCONTRADO"
