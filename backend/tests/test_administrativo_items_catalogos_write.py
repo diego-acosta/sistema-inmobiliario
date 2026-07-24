@@ -656,3 +656,127 @@ def test_change_serializa_op_antes_del_lookup_global(client, monkeypatch):
     )
     assert response.status_code == 200
     assert calls[:2] == ["lock", "lookup"]
+
+
+def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones():
+    """Update is the real concurrent case; estado and baja share change's critical section."""  # noqa: E501
+    import threading
+
+    from app.api.core_ef_headers import CoreEFHeaders
+    from app.config.database import engine
+    from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (  # noqa: E501
+        CatalogoMaestroRepository,
+    )
+    from app.infrastructure.persistence.repositories.item_catalogo_repository import (
+        ItemCatalogoIdempotencyConflictError,
+        ItemCatalogoRepository,
+    )
+    from sqlalchemy.orm import sessionmaker
+
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    setup = factory()
+    try:
+        catalogo = CatalogoMaestroRepository(setup).create(
+            {
+                "codigo_catalogo_maestro": f"LOCK_{uuid4().hex[:10]}",
+                "nombre_catalogo_maestro": "Lock",
+                "descripcion": None,
+            },
+            CoreEFHeaders(uuid4(), 1, 1, 1),
+        )
+        first = ItemCatalogoRepository(setup).create(
+            catalogo["id_catalogo_maestro"],
+            {
+                "codigo_item_catalogo": f"LA_{uuid4().hex[:8]}",
+                "nombre_item_catalogo": "A",
+                "descripcion": None,
+            },
+            CoreEFHeaders(uuid4(), 1, 1, 1),
+        )
+        second = ItemCatalogoRepository(setup).create(
+            catalogo["id_catalogo_maestro"],
+            {
+                "codigo_item_catalogo": f"LB_{uuid4().hex[:8]}",
+                "nombre_item_catalogo": "B",
+                "descripcion": None,
+            },
+            CoreEFHeaders(uuid4(), 1, 1, 1),
+        )
+    finally:
+        setup.close()
+
+    barrier = threading.Barrier(2)
+    op_id = uuid4()
+    results: list[object] = []
+
+    def _update(item, name):
+        session = factory()
+        try:
+            barrier.wait(timeout=5)
+            result = ItemCatalogoRepository(session).change(
+                catalogo["id_catalogo_maestro"],
+                item["id_item_catalogo"],
+                {
+                    "codigo_item_catalogo": item["codigo_item_catalogo"],
+                    "nombre_item_catalogo": name,
+                    "descripcion": None,
+                },
+                CoreEFHeaders(op_id, 1, 1, 1),
+                1,
+                "update",
+            )
+            results.append(("ok", result))
+        except ItemCatalogoIdempotencyConflictError:
+            results.append(("conflict", None))
+        finally:
+            session.close()
+
+    threads = [
+        threading.Thread(target=_update, args=(first, "A cambiado")),
+        threading.Thread(target=_update, args=(second, "B cambiado")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not any(thread.is_alive() for thread in threads)
+    assert sorted(result[0] for result in results) == ["conflict", "ok"]
+    verify = factory()
+    try:
+        rows = (
+            verify.execute(
+                text(
+                    "SELECT id_item_catalogo, nombre_item_catalogo, version_registro FROM item_catalogo WHERE id_item_catalogo IN (:first, :second) ORDER BY id_item_catalogo"  # noqa: E501
+                ),
+                {
+                    "first": first["id_item_catalogo"],
+                    "second": second["id_item_catalogo"],
+                },
+            )
+            .mappings()
+            .all()
+        )
+        assert sum(row["version_registro"] == 2 for row in rows) == 1
+        assert (
+            verify.execute(
+                text(
+                    "SELECT count(*) FROM item_catalogo WHERE op_id_ultima_modificacion=CAST(:op AS uuid)"  # noqa: E501
+                ),
+                {"op": str(op_id)},
+            ).scalar_one()
+            == 1
+        )
+        assert (
+            verify.execute(
+                text(
+                    "SELECT count(*) FROM outbox_event WHERE event_type='item_catalogo_modificado' AND aggregate_id IN (:first, :second)"  # noqa: E501
+                ),
+                {
+                    "first": first["id_item_catalogo"],
+                    "second": second["id_item_catalogo"],
+                },
+            ).scalar_one()
+            == 1
+        )
+    finally:
+        verify.close()
