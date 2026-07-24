@@ -540,3 +540,82 @@ def test_alta_colision_concurrente_incompatible_y_fila_ausente(client, monkeypat
         headers=_headers(op_id=op_id),
     )
     assert absent.status_code == 500 and absent.json()["details"] == {}
+
+
+def test_op_ultima_modificacion_no_se_reutiliza_entre_items(client, db_session):
+    catalogo = _catalogo(client)
+    first_response, first_payload = _item(client, catalogo)
+    second_response, second_payload = _item(client, catalogo)
+    first, second = first_response.json()["data"], second_response.json()["data"]
+    op_id = str(uuid4())
+    first_url = (
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}"
+        f"/items/{first['id_item_catalogo']}"
+    )
+    second_url = (
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}"
+        f"/items/{second['id_item_catalogo']}"
+    )
+    update = client.put(
+        first_url,
+        json={**first_payload, "nombre_item_catalogo": "Primer cambio"},
+        headers=_headers(first["version_registro"], op_id),
+    )
+    conflict = client.put(
+        second_url,
+        json={**second_payload, "nombre_item_catalogo": "No debe cambiar"},
+        headers=_headers(second["version_registro"], op_id),
+    )
+    assert update.status_code == 200
+    assert conflict.status_code == 409
+    assert conflict.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    persisted = _row(db_session, second["id_item_catalogo"])
+    assert persisted["version_registro"] == second["version_registro"]
+    assert persisted["nombre_item_catalogo"] == second_payload["nombre_item_catalogo"]
+    assert not [
+        event
+        for event in _events(db_session, second["id_item_catalogo"])
+        if event["event_type"] == "item_catalogo_modificado"
+    ]
+
+
+def test_op_ultima_modificacion_bloquea_estado_y_baja_entre_items(client, db_session):
+    catalogo = _catalogo(client)
+    first_response, _ = _item(client, catalogo)
+    second_response, _ = _item(client, catalogo)
+    first, second = first_response.json()["data"], second_response.json()["data"]
+    op_id = str(uuid4())
+    first_state = (
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}"
+        f"/items/{first['id_item_catalogo']}/estado"
+    )
+    second_state = (
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}"
+        f"/items/{second['id_item_catalogo']}/estado"
+    )
+    assert (
+        client.patch(
+            first_state,
+            json={"estado_item_catalogo": "INACTIVO"},
+            headers=_headers(1, op_id),
+        ).status_code
+        == 200
+    )
+    conflict_state = client.patch(
+        second_state,
+        json={"estado_item_catalogo": "INACTIVO"},
+        headers=_headers(1, op_id),
+    )
+    conflict_baja = client.patch(
+        second_state.removesuffix("/estado") + "/baja", headers=_headers(1, op_id)
+    )
+    assert conflict_state.status_code == conflict_baja.status_code == 409
+    assert (
+        conflict_state.json()["error_code"]
+        == conflict_baja.json()["error_code"]
+        == "IDEMPOTENT_DUPLICATE"
+    )
+    persisted = _row(db_session, second["id_item_catalogo"])
+    assert persisted["estado_item_catalogo"] == "ACTIVO"
+    assert persisted["deleted_at"] is None and persisted["version_registro"] == 1
+    assert len(_events(db_session, second["id_item_catalogo"])) == 1

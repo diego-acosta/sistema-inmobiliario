@@ -69,6 +69,23 @@ class ItemCatalogoRepository:
         )
         return dict(row) if row else None
 
+    def by_op_ultima_modificacion(self, op_id: str) -> dict[str, Any] | None:
+        row = (
+            self.db.execute(
+                text(
+                    f"""
+                    SELECT {_COLUMNS}
+                    FROM item_catalogo
+                    WHERE op_id_ultima_modificacion = CAST(:op AS uuid)
+                    """
+                ),
+                {"op": op_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return dict(row) if row else None
+
     @staticmethod
     def _payload_matches(row, payload):
         return all(
@@ -212,6 +229,11 @@ class ItemCatalogoRepository:
         if row is None:
             return None
         op = str(core.x_op_id)
+        used_by = self.by_op_ultima_modificacion(op)
+        if used_by is not None and used_by["id_item_catalogo"] != item_id:
+            raise ItemCatalogoIdempotencyConflictError(
+                "El X-Op-Id ya fue usado para otro ítem del catálogo."
+            )
         if row["deleted_at"] is not None:
             if action == "baja" and str(row["op_id_ultima_modificacion"]) == op:
                 return row
