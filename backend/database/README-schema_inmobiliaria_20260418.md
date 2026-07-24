@@ -29,3 +29,7 @@ $env:PGPASSWORD='gc001'
 
 ## Nota
 - este archivo representa el baseline estructural actual del sistema tomando la base real como fuente de verdad
+
+## Patch #393 — estado de ítems de catálogo
+
+`patch_item_catalogo_estado_20260724.sql` formaliza el ciclo de vida físico de `item_catalogo`: normaliza `NULL` a `ACTIVO`, mantiene sólo `ACTIVO` e `INACTIVO`, fija `DEFAULT 'ACTIVO'`, `NOT NULL` y `chk_item_catalogo_estado`. El patch es transaccional y se ejecuta después de `patch_catalogos_core_ef_20260716.sql` en ambos resets. La baja lógica continúa representándose por `deleted_at`; no cambia la constraint de código ni crea estructuras legacy.

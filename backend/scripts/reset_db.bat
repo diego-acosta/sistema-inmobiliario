@@ -25,6 +25,7 @@ set PATCH_CORRIDAS_INDEXACION_CUOTAS_V2_FILE=%BACKEND_DIR%\database\patch_corrid
 set PATCH_PREPARAR_CORRIDAS_INDEXACION_CUOTAS_V2_FILE=%BACKEND_DIR%\database\patch_preparar_corridas_indexacion_cuotas_v2_20260714.sql
 set PATCH_RELACION_PERSONA_ROL_PORCENTAJE_FILE=%BACKEND_DIR%\database\patch_relacion_persona_rol_porcentaje_responsabilidad_20260601.sql
 set PATCH_CATALOGOS_CORE_EF_FILE=%BACKEND_DIR%\database\patch_catalogos_core_ef_20260716.sql
+set PATCH_ITEM_CATALOGO_ESTADO_FILE=%BACKEND_DIR%\database\patch_item_catalogo_estado_20260724.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -45,6 +46,7 @@ echo Patch plan pago venta bloque indexacion: %PATCH_PLAN_PAGO_VENTA_BLOQUE_INDE
 echo Patch corridas indexacion cuotas V2: %PATCH_CORRIDAS_INDEXACION_CUOTAS_V2_FILE%
 echo Patch preparar corridas indexacion cuotas V2: %PATCH_PREPARAR_CORRIDAS_INDEXACION_CUOTAS_V2_FILE%
 echo Patch CORE-EF catalogos administrativos: %PATCH_CATALOGOS_CORE_EF_FILE%
+echo Patch estado de items de catalogo: %PATCH_ITEM_CATALOGO_ESTADO_FILE%
 echo Seed indices financieros demo: %SEED_INDICES_FINANCIEROS_DEMO_FILE%
 
 if not exist "%SCHEMA_FILE%" (
@@ -115,6 +117,12 @@ if not exist "%SEED_INDICES_FINANCIEROS_DEMO_FILE%" (
 
 if not exist "%PATCH_CATALOGOS_CORE_EF_FILE%" (
   echo ERROR: No existe el patch CORE-EF de catalogos: %PATCH_CATALOGOS_CORE_EF_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_ITEM_CATALOGO_ESTADO_FILE%" (
+  echo ERROR: No existe el patch de estado de items de catalogo: %PATCH_ITEM_CATALOGO_ESTADO_FILE%
   pause
   exit /b 1
 )
@@ -234,6 +242,15 @@ echo Aplicando patch CORE-EF catalogos administrativos en %DEV_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_CATALOGOS_CORE_EF_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch CORE-EF catalogos administrativos en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch estado de items de catalogo en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ITEM_CATALOGO_ESTADO_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch estado de items de catalogo en %DEV_DB%
   pause
   exit /b 1
 )
@@ -371,6 +388,15 @@ echo Aplicando patch CORE-EF catalogos administrativos en %TEST_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_CATALOGOS_CORE_EF_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch CORE-EF catalogos administrativos en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch estado de items de catalogo en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ITEM_CATALOGO_ESTADO_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch estado de items de catalogo en %TEST_DB%
   pause
   exit /b 1
 )

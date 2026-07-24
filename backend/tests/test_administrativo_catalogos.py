@@ -23,12 +23,18 @@ def _seed_item(
     descripcion: str | None = None,
     estado: str | None = None,
 ) -> int:
+    columns = """
+        id_catalogo_maestro, codigo_item_catalogo, nombre_item_catalogo,
+        descripcion
+    """
+    values = ":catalogo_id, :codigo, :nombre, :descripcion"
+    if estado is not None:
+        columns += ", estado_item_catalogo"
+        values += ", :estado"
     item_id = db_session.execute(
-        text("""
-            INSERT INTO item_catalogo (
-                id_catalogo_maestro, codigo_item_catalogo, nombre_item_catalogo,
-                descripcion, estado_item_catalogo
-            ) VALUES (:catalogo_id, :codigo, :nombre, :descripcion, :estado)
+        text(f"""
+            INSERT INTO item_catalogo ({columns})
+            VALUES ({values})
             RETURNING id_item_catalogo
             """),
         {
@@ -168,19 +174,24 @@ def test_list_items_busca_por_codigo_y_nombre(client, db_session):
     assert [item["id_item_catalogo"] for item in _items_data(nombre_response)["items"]] == [by_nombre]
 
 
-def test_list_items_filtra_estado_literal_y_preserva_nulo(client, db_session):
+def test_list_items_filtra_estado_literal_y_aplica_default_activo(client, db_session):
     catalogo_id = _seed_catalogo(db_session, "ADM360_ESTADOS", "Estados")
     activo = _seed_item(db_session, catalogo_id, "ACT", "Activo", estado="ACTIVO")
-    nulo = _seed_item(db_session, catalogo_id, "NUL", "Nulo", estado=None)
+    inactivo = _seed_item(db_session, catalogo_id, "INA", "Inactivo", estado="INACTIVO")
+    por_default = _seed_item(db_session, catalogo_id, "DEF", "Default")
 
     filtered = client.get(f"/api/v1/administrativo/catalogos/{catalogo_id}/items?estado_item_catalogo=ACTIVO")
+    inactive_filtered = client.get(f"/api/v1/administrativo/catalogos/{catalogo_id}/items?estado_item_catalogo=INACTIVO")
+    invalid_filtered = client.get(f"/api/v1/administrativo/catalogos/{catalogo_id}/items?estado_item_catalogo=OTRO")
     all_items = client.get(f"/api/v1/administrativo/catalogos/{catalogo_id}/items")
 
     assert filtered.status_code == 200
-    assert [item["id_item_catalogo"] for item in _items_data(filtered)["items"]] == [activo]
+    assert [item["id_item_catalogo"] for item in _items_data(filtered)["items"]] == [activo, por_default]
+    assert [item["id_item_catalogo"] for item in _items_data(inactive_filtered)["items"]] == [inactivo]
+    assert _items_data(invalid_filtered)["items"] == []
     assert all_items.status_code == 200
     items_by_id = {item["id_item_catalogo"]: item for item in _items_data(all_items)["items"]}
-    assert items_by_id[nulo]["estado_item_catalogo"] is None
+    assert items_by_id[por_default]["estado_item_catalogo"] == "ACTIVO"
 
 
 def test_list_items_pagina_y_total_correcto(client, db_session):

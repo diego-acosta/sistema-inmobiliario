@@ -328,3 +328,13 @@ Este catálogo cubre reglas sobre usuarios y acceso, seguridad y autorización, 
 - No reemplaza a CORE-EF ni al DER global.
 - Debe mantenerse alineado con SRV-ADM-001 a SRV-ADM-006.
 - Las reglas aquí listadas son canónicas para implementación, validación y revisión del dominio administrativo.
+
+### RN-ADM-060 — Ciclo de vida físico de ítem de catálogo
+- descripcion: `item_catalogo.estado_item_catalogo` sólo admite `ACTIVO` o `INACTIVO`; `ACTIVO` es inicial. Ambos estados requieren `deleted_at IS NULL`. `INACTIVO` conserva el ítem y puede volver a `ACTIVO`; la baja lógica se expresa exclusivamente por `deleted_at` y no habilita reactivación en este incremento.
+- aplica_a: item_catalogo
+- origen_principal: #393, EST-ADM-001, EST-ADM-002, SQL real
+
+### RN-ADM-061 — El código de ítem no se reutiliza tras baja lógica
+- descripcion: la unicidad `(id_catalogo_maestro, codigo_item_catalogo)` incluye filas con `deleted_at IS NOT NULL`; no existe reutilización de códigos en este ciclo de vida.
+- aplica_a: item_catalogo
+- origen_principal: SQL real, #393

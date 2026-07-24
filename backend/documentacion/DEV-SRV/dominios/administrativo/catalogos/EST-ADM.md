@@ -297,3 +297,7 @@ Este catálogo cubre estados de usuarios, credenciales, sesiones, seguridad y au
 - No define lógica de negocio, solo estados posibles.
 - Debe mantenerse alineado con RN-ADM y EVT-ADM.
 - Sirve como base para validaciones, flujos y control de consistencia.
+
+## G. Freeze físico de `item_catalogo` (#393)
+
+Para `item_catalogo`, los códigos físicos persistidos se congelan en mayúsculas como `ACTIVO` y `INACTIVO`; las entradas genéricas EST-ADM-001 y EST-ADM-002 quedan precisadas por este freeze para esa columna. `ACTIVO` es el valor inicial; ambos son no finales y requieren `deleted_at IS NULL`. `INACTIVO -> ACTIVO` está permitido para un futuro comando. `deleted_at IS NOT NULL` representa baja lógica, no un estado adicional ni un valor de esta columna, y no admite reactivación en este incremento.
