@@ -12,7 +12,6 @@ from app.application.comercial.services.generate_venta_from_reserva_venta_servic
 from app.application.common.commands import CommandContext
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import (
-    _apply_reserva_multiobjeto_patch,
     _crear_disponibilidad,
     _crear_inmueble,
     _crear_persona,
@@ -215,7 +214,6 @@ def _payload_generar_venta(*, codigo_venta: str) -> dict[str, object]:
 def test_generate_venta_from_reserva_confirmada_crea_venta_finaliza_reserva_y_copia_objetos(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Ada", apellido="Lovelace")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9201)
     id_inmueble = _crear_inmueble(client, codigo="INM-GEN-VTA-001")
@@ -404,7 +402,6 @@ def _crear_base_generar_venta_comprador(
     *,
     codigo: str,
 ) -> tuple[int, int, int]:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre=f"Comprador {codigo}", apellido="Venta")
     id_rol = _crear_rol_participacion_activo(
         db_session,
@@ -708,7 +705,6 @@ def test_generate_venta_from_reserva_dos_compradores_uno_sin_porcentaje_falla(
 def test_generate_venta_from_reserva_devuelve_404_si_no_existe(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
 
     response = client.post(
         "/api/v1/reservas-venta/999999/generar-venta",
@@ -723,7 +719,6 @@ def test_generate_venta_from_reserva_devuelve_404_si_no_existe(
 def test_generate_venta_from_reserva_con_inmueble_y_uf_hija_falla_por_jerarquia(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Reserva", apellido="Jerarquia")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9211)
     id_inmueble = _crear_inmueble(client, codigo="INM-GEN-JER-HIJA")
@@ -778,7 +773,6 @@ def test_generate_venta_from_reserva_con_inmueble_y_uf_hija_falla_por_jerarquia(
 def test_generate_venta_from_reserva_devuelve_404_si_esta_eliminada(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-GEN-VTA-002")
     _crear_disponibilidad(
         client,
@@ -813,7 +807,6 @@ def test_generate_venta_from_reserva_devuelve_404_si_esta_eliminada(
 def test_generate_venta_from_reserva_devuelve_error_si_estado_no_es_confirmada(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-GEN-VTA-003")
     _crear_disponibilidad(
         client,
@@ -843,7 +836,6 @@ def test_generate_venta_from_reserva_devuelve_error_si_estado_no_es_confirmada(
 def test_generate_venta_from_reserva_devuelve_error_de_concurrencia_si_version_no_coincide(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-GEN-VTA-003B")
     _crear_disponibilidad(
         client,
@@ -900,7 +892,6 @@ def test_generate_venta_from_reserva_devuelve_error_de_concurrencia_si_version_n
 def test_generate_venta_from_reserva_devuelve_error_si_ya_fue_convertida(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-GEN-VTA-004")
     _crear_disponibilidad(
         client,
@@ -946,7 +937,6 @@ def test_generate_venta_from_reserva_devuelve_error_si_ya_fue_convertida(
 def test_generate_venta_from_reserva_devuelve_error_si_hay_conflicto_con_venta_activa(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-GEN-VTA-005")
     _crear_disponibilidad(
         client,
@@ -981,7 +971,6 @@ def test_generate_venta_from_reserva_devuelve_error_si_hay_conflicto_con_venta_a
 def test_generate_venta_from_reserva_hace_rollback_completo_si_falla_un_objeto(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Katherine", apellido="Johnson")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9202)
     id_inmueble_1 = _crear_inmueble(client, codigo="INM-GEN-VTA-006A")

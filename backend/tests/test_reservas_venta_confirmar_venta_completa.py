@@ -6,7 +6,6 @@ from sqlalchemy import text
 from tests.sql_failpoints import install_statement_failpoint_once
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import (
-    _apply_reserva_multiobjeto_patch,
     _crear_disponibilidad,
     _crear_inmueble,
     _crear_persona,
@@ -18,7 +17,6 @@ from tests.test_reservas_venta_generate_venta import (
 
 
 def _crear_reserva_confirmada(client, db_session, *, codigo: str) -> dict[str, int]:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre=f"Comprador {codigo}", apellido="Test")
     id_rol = _crear_rol_participacion_activo(
         db_session,
@@ -430,7 +428,6 @@ def test_confirmar_venta_completa_desde_reserva_un_objeto_defaulta_monto_total(
 def test_confirmar_venta_completa_desde_reserva_multiobjeto_sin_asignacion_falla(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Comprador Multi", apellido="Reserva")
     id_rol = _crear_rol_participacion_activo(
         db_session,
@@ -512,7 +509,6 @@ def test_confirmar_venta_completa_desde_reserva_plan_usa_total_derivado(
 def test_confirmar_venta_completa_desde_reserva_multiple_sin_porcentaje_falla(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona_1 = _crear_persona(client, nombre="Comprador A", apellido="Reserva")
     id_persona_2 = _crear_persona(client, nombre="Comprador B", apellido="Reserva")
     id_rol = _crear_rol_participacion_activo(
@@ -562,7 +558,6 @@ def test_confirmar_venta_completa_desde_reserva_multiple_sin_porcentaje_falla(
 def test_confirmar_venta_completa_desde_reserva_copia_porcentajes_y_genera_obligados(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona_1 = _crear_persona(client, nombre="Comprador A", apellido="Reserva")
     id_persona_2 = _crear_persona(client, nombre="Comprador B", apellido="Reserva")
     id_rol = _crear_rol_participacion_activo(

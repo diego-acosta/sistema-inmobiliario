@@ -3,7 +3,6 @@ from sqlalchemy import text
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_cancel import _insertar_reserva_para_cancelar
 from tests.test_reservas_venta_create import (
-    _apply_reserva_multiobjeto_patch,
     _crear_disponibilidad,
     _crear_inmueble,
     _crear_persona,
@@ -66,7 +65,6 @@ def _insertar_venta_para_reserva(
 def test_update_reserva_venta_actualiza_datos_comerciales_sin_tocar_objetos_ni_disponibilidad(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Ada", apellido="Lovelace")
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-UPD-001")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
@@ -171,7 +169,6 @@ def test_update_reserva_venta_actualiza_datos_comerciales_sin_tocar_objetos_ni_d
 
 
 def test_update_reserva_venta_devuelve_404_si_esta_soft_deleted(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-UPD-002")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -207,7 +204,6 @@ def test_update_reserva_venta_devuelve_404_si_esta_soft_deleted(client, db_sessi
 
 
 def test_update_reserva_venta_devuelve_409_si_if_match_no_coincide(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-UPD-003")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -235,7 +231,6 @@ def test_update_reserva_venta_devuelve_409_si_if_match_no_coincide(client, db_se
 def test_update_reserva_venta_devuelve_error_si_estado_no_es_modificable(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-UPD-004")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -266,7 +261,6 @@ def test_update_reserva_venta_devuelve_error_si_estado_no_es_modificable(
 def test_update_reserva_venta_devuelve_error_si_ya_esta_vinculada_a_una_venta(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-UPD-005")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -302,7 +296,6 @@ def test_update_reserva_venta_devuelve_error_si_ya_esta_vinculada_a_una_venta(
 def test_update_reserva_venta_devuelve_error_si_codigo_reserva_ya_existe(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Grace", apellido="Hopper")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9502)
 

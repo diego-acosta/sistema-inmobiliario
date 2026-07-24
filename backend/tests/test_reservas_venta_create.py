@@ -1,21 +1,6 @@
-from pathlib import Path
-
 from sqlalchemy import text
 
 from tests.test_disponibilidades_create import HEADERS
-
-
-PATCH_SQL_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "database"
-    / "patch_reserva_venta_multiobjeto_20260421.sql"
-)
-
-
-def _apply_reserva_multiobjeto_patch(db_session) -> None:
-    raw_connection = db_session.connection().connection
-    with raw_connection.cursor() as cursor:
-        cursor.execute(PATCH_SQL_PATH.read_text(encoding="utf-8"))
 
 
 def _crear_rol_participacion_activo(
@@ -40,10 +25,21 @@ def _crear_rol_participacion_activo(
     if existing is not None:
         return existing["id_rol_participacion"]
 
+    role_id_column = (
+        "id_rol_participacion,"
+        if id_rol_participacion is not None
+        else ""
+    )
+    role_id_value = (
+        ":id_rol_participacion,"
+        if id_rol_participacion is not None
+        else ""
+    )
     return db_session.execute(
         text(
-            """
+            f"""
             INSERT INTO rol_participacion (
+                {role_id_column}
                 uid_global,
                 version_registro,
                 created_at,
@@ -58,6 +54,7 @@ def _crear_rol_participacion_activo(
                 estado_rol
             )
             VALUES (
+                {role_id_value}
                 gen_random_uuid(),
                 1,
                 CURRENT_TIMESTAMP,
@@ -75,6 +72,7 @@ def _crear_rol_participacion_activo(
             """
         ),
         {
+            "id_rol_participacion": id_rol_participacion,
             "op_id": HEADERS["X-Op-Id"],
             "codigo_rol": codigo,
             "nombre_rol": f"Rol Comercial {codigo}",
@@ -119,7 +117,6 @@ def _crear_inmueble(client, *, codigo: str) -> int:
 
 
 def test_create_reserva_venta_devuelve_400_si_falta_x_op_id(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Header", apellido="Create")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9490)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-HDR-001")
@@ -488,7 +485,6 @@ def _crear_base_reserva_comprador(
     *,
     codigo: str,
 ) -> tuple[int, int, int]:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre=f"Comprador {codigo}", apellido="Reserva")
     id_rol = _crear_rol_participacion_activo(
         db_session,
@@ -796,7 +792,6 @@ def test_create_reserva_venta_comprador_duplicado_falla(client, db_session) -> N
 
 
 def test_create_reserva_venta_alta_exitosa_un_objeto(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Grace", apellido="Hopper")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-OK-001")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
@@ -839,7 +834,6 @@ def test_create_reserva_venta_alta_exitosa_un_objeto(client, db_session) -> None
 
 
 def test_create_reserva_venta_alta_exitosa_multiobjeto(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Hedy", apellido="Lamarr")
     id_inmueble_1 = _crear_inmueble(client, codigo="INM-RES-MULTI-001")
     id_inmueble_2 = _crear_inmueble(client, codigo="INM-RES-MULTI-002")
@@ -880,7 +874,6 @@ def test_create_reserva_venta_alta_exitosa_multiobjeto(client, db_session) -> No
 
 
 def test_create_reserva_venta_devuelve_error_si_objetos_esta_vacio(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Niklaus", apellido="Wirth")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9111)
 
@@ -900,7 +893,6 @@ def test_create_reserva_venta_devuelve_error_si_objetos_esta_vacio(client, db_se
 
 
 def test_create_reserva_venta_devuelve_error_si_repite_mismo_inmueble(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Leslie", apellido="Lamport")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-DUP-001")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9112)
@@ -926,7 +918,6 @@ def test_create_reserva_venta_devuelve_error_si_repite_mismo_inmueble(client, db
 def test_create_reserva_venta_devuelve_error_si_repite_misma_unidad_funcional(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Tony", apellido="Hoare")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-DUP-UF-001")
     id_unidad_funcional = _crear_unidad_funcional(
@@ -965,7 +956,6 @@ def test_create_reserva_venta_devuelve_error_si_repite_misma_unidad_funcional(
 def test_create_reserva_venta_devuelve_error_si_un_item_tiene_xor_invalido(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Ada", apellido="Lovelace")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9103)
 
@@ -985,7 +975,6 @@ def test_create_reserva_venta_devuelve_error_si_un_item_tiene_xor_invalido(
 
 
 def test_create_reserva_venta_devuelve_error_si_objeto_no_existe(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Barbara", apellido="Liskov")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9104)
 
@@ -1005,7 +994,6 @@ def test_create_reserva_venta_devuelve_error_si_objeto_no_existe(client, db_sess
 
 
 def test_create_reserva_venta_devuelve_error_si_persona_no_existe(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-NOPER-001")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9105)
@@ -1028,7 +1016,6 @@ def test_create_reserva_venta_devuelve_error_si_persona_no_existe(client, db_ses
 def test_create_reserva_venta_devuelve_error_si_un_objeto_no_esta_disponible(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Edsger", apellido="Dijkstra")
     id_inmueble_1 = _crear_inmueble(client, codigo="INM-RES-DISP-001")
     id_inmueble_2 = _crear_inmueble(client, codigo="INM-RES-DISP-002")
@@ -1057,7 +1044,6 @@ def test_create_reserva_venta_devuelve_error_si_un_objeto_no_esta_disponible(
 def test_create_reserva_venta_devuelve_error_si_hay_conflicto_con_venta_activa(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Alan", apellido="Turing")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-CONFLICT-VENTA-001")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
@@ -1086,7 +1072,6 @@ def test_create_reserva_venta_devuelve_error_si_hay_conflicto_con_venta_activa(
 def test_create_reserva_venta_devuelve_error_si_hay_conflicto_con_reserva_activa(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Donald", apellido="Knuth")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-CONFLICT-RES-001")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
@@ -1115,7 +1100,6 @@ def test_create_reserva_venta_devuelve_error_si_hay_conflicto_con_reserva_activa
 def test_create_reserva_venta_hace_rollback_completo_si_falla_relacion(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     _crear_trigger_falla_relacion(db_session)
     id_persona = _crear_persona(client, nombre="John", apellido="Backus")
     id_inmueble_1 = _crear_inmueble(client, codigo="INM-RES-ROLLBACK-001")
@@ -1168,7 +1152,6 @@ def test_create_reserva_venta_hace_rollback_completo_si_falla_relacion(
 
 
 def test_create_reserva_venta_asigna_estado_inicial_valido(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Margaret", apellido="Hamilton")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-STATE-001")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
@@ -1203,8 +1186,7 @@ def test_create_reserva_venta_asigna_estado_inicial_valido(client, db_session) -
     assert reserva_row["estado_reserva"] == "borrador"
 
 
-def test_patch_multiobjeto_crea_indices_minimos_en_tabla_relacion(db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
+def test_bootstrap_incluye_indices_multiobjeto_de_reserva(db_session) -> None:
 
     rows = db_session.execute(
         text(
@@ -1231,7 +1213,6 @@ def test_patch_multiobjeto_crea_indices_minimos_en_tabla_relacion(db_session) ->
 
 
 def test_create_reserva_venta_falla_por_conflicto_jerarquico_inmueble_vs_uf_reserva(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Ada", apellido="Lovelace")
     id_inmueble = _crear_inmueble(client, codigo="INM-HIER-RES-001")
     id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo="UF-HIER-RES-001")
@@ -1244,7 +1225,6 @@ def test_create_reserva_venta_falla_por_conflicto_jerarquico_inmueble_vs_uf_rese
 
 
 def test_create_reserva_venta_falla_por_conflicto_jerarquico_uf_vs_inmueble_venta(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Linus", apellido="Torvalds")
     id_inmueble = _crear_inmueble(client, codigo="INM-HIER-VTA-001")
     id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo="UF-HIER-VTA-001")
@@ -1257,7 +1237,6 @@ def test_create_reserva_venta_falla_por_conflicto_jerarquico_uf_vs_inmueble_vent
 
 
 def test_create_reserva_venta_uf_valida_sin_conflicto_jerarquico(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Grace", apellido="Hopper")
     id_inmueble = _crear_inmueble(client, codigo="INM-HIER-OK-001")
     id_uf = _crear_unidad_funcional(client, id_inmueble=id_inmueble, codigo="UF-HIER-OK-001")
