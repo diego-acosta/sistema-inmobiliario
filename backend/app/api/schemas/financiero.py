@@ -1611,3 +1611,38 @@ class AplicarIndexacionCuotasV2Data(BaseModel):
 class AplicarIndexacionCuotasV2Response(BaseModel):
     ok: bool = True
     data: AplicarIndexacionCuotasV2Data
+
+class IndiceFinancieroCatalogoItem(BaseModel):
+    id_indice_financiero: int
+    codigo_indice_financiero: str
+    nombre_indice_financiero: str
+    unidad_medida: str
+    frecuencia_publicacion: str
+    estado_indice_financiero: str
+
+
+class IndiceFinancieroCatalogoData(BaseModel):
+    items: list[IndiceFinancieroCatalogoItem]
+    total: int
+
+
+class IndiceFinancieroCatalogoResponse(BaseModel):
+    ok: bool = True
+    data: IndiceFinancieroCatalogoData
+
+
+class IndiceFinancieroValorAplicableData(BaseModel):
+    id_indice_financiero: int
+    codigo_indice_financiero: str
+    nombre_indice_financiero: str
+    id_indice_financiero_valor: int
+    fecha_objetivo: date
+    fecha_valor: date
+    valor_indice: Decimal
+    fecha_publicacion: date
+    fuente_valor: str | None
+
+
+class IndiceFinancieroValorAplicableResponse(BaseModel):
+    ok: bool = True
+    data: IndiceFinancieroValorAplicableData | None

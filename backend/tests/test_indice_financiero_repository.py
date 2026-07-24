@@ -208,3 +208,21 @@ def test_indice_activo_valor_publicado_por_id_y_fecha(db_session) -> None:
     assert result["id_indice_financiero_valor"] == id_valor_esperado
     assert result["fecha_valor"] == date(2026, 2, 10)
     assert repo.get_valor_publicado_por_id_y_fecha(0, date(2026, 2, 20)) is None
+
+
+def test_indice_activo_excluye_valor_publicado_sin_fecha_publicacion(db_session) -> None:
+    repo = IndiceFinancieroRepository(db_session)
+    id_indice = _crear_indice(db_session, "SIN_FECHA_PUBLICACION")
+    db_session.execute(
+        text(
+            """
+            INSERT INTO indice_financiero_valor (
+                id_indice_financiero, fecha_valor, valor_indice,
+                fecha_publicacion, fuente_valor, estado_valor_indice
+            ) VALUES (:id_indice, '2026-01-01', 100.00000000, NULL, 'INDEC', 'PUBLICADO')
+            """
+        ),
+        {"id_indice": id_indice},
+    )
+
+    assert repo.get_valor_publicado_por_id_y_fecha(id_indice, date(2026, 1, 15)) is None

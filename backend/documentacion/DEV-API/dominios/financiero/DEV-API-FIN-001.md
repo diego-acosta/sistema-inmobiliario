@@ -1478,3 +1478,73 @@ Endpoints futuros a definir, no implementados:
 
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/materializar`
 - `POST /api/v1/financiero/comprobantes-impuesto/{id_comprobante_impuesto}/pago-externo`
+
+---
+
+## 12. Índices financieros (queries read-only)
+
+Ownership: `financiero`. Estas queries son `QUERY_READLIKE`: no requieren
+`X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` ni
+`If-Match-Version`; no escriben outbox, no toman locks, no modifican versiones
+ni realizan commits.
+
+### GET /api/v1/financiero/indices
+
+Lista el catálogo de índices activos no eliminados. Acepta `limit` (por defecto
+`50`, entre `0` y `200`) y `offset` (por defecto `0`, mayor o igual a `0`). El
+orden es estable por `codigo_indice_financiero ASC, id_indice_financiero ASC`.
+No incluye la serie histórica de valores.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [{
+      "id_indice_financiero": 1,
+      "codigo_indice_financiero": "CAC",
+      "nombre_indice_financiero": "Costo de la Construcción",
+      "unidad_medida": "PUNTOS",
+      "frecuencia_publicacion": "MENSUAL",
+      "estado_indice_financiero": "ACTIVO"
+    }],
+    "total": 1
+  }
+}
+```
+
+### GET /api/v1/financiero/indices/valor-aplicable
+
+Recibe `fecha_objetivo` obligatoria en formato `YYYY-MM-DD` y exactamente uno
+entre `id_indice_financiero` y `codigo_indice_financiero`. El código se
+normaliza con `strip().upper()`. Informar ambos o ninguno devuelve `400`
+`IDENTIFICADOR_INDICE_XOR_INVALIDO`; una fecha inválida devuelve `400`
+`FECHA_OBJETIVO_INVALIDA`.
+
+La respuesta `200` con `data: null` significa que el índice activo existe pero
+no tiene valor aplicable. No es un error ni se infiere un valor. Los índices no
+encontrados, eliminados o inactivos devuelven respectivamente `404`
+`INDICE_FINANCIERO_NO_ENCONTRADO`, `INDICE_FINANCIERO_ELIMINADO` o
+`INDICE_FINANCIERO_INACTIVO`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id_indice_financiero": 1,
+    "codigo_indice_financiero": "CAC",
+    "nombre_indice_financiero": "Costo de la Construcción",
+    "id_indice_financiero_valor": 15,
+    "fecha_objetivo": "2026-01-15",
+    "fecha_valor": "2026-01-01",
+    "valor_indice": "15842.33000000",
+    "fecha_publicacion": "2026-01-10",
+    "fuente_valor": "INDEC"
+  }
+}
+```
+
+El valor se resuelve exclusivamente mediante los resolvers del repositorio
+Financiero: índice `ACTIVO` y no eliminado; valor no eliminado, `PUBLICADO`,
+con `fecha_publicacion` informada y `fecha_valor <= fecha_objetivo`; se ordena
+por fecha de valor descendente y se toma el último aplicable. El router y el
+service no reimplementan esa SQL ni su regla de aplicabilidad.
