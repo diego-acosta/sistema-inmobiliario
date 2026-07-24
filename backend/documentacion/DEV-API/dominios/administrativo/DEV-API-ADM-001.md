@@ -718,3 +718,9 @@ No se agregan endpoints: clasificación HTTP, headers, `If-Match-Version`, idemp
 ### NO CONFIRMADO
 
 No se confirma ninguna regla de negocio particular de los dominios consumidores ni una reactivación de bajas lógicas. Tampoco se implementa ni confirma la operativa futura de jerarquía o historial.
+
+## Incremento #399 — CRUD write de ítems de catálogo
+
+Se implementan `POST /api/v1/administrativo/catalogos/{id_catalogo_maestro}/items`, `PUT /api/v1/administrativo/catalogos/{id_catalogo_maestro}/items/{id_item_catalogo}`, `PATCH .../estado` y `PATCH .../baja`. Todos son `COMMAND_WRITE_NEGOCIO` y exigen `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`; los tres comandos sobre una fila existente además exigen `If-Match-Version`. Alta recibe código, nombre y descripción opcional, fija `ACTIVO`; update modifica esos tres valores; estado acepta exclusivamente `ACTIVO` o `INACTIVO`; baja fija `deleted_at`.
+
+Los comandos son idempotentes: alta usa `op_id_alta` y los restantes `op_id_ultima_modificacion`; replay compatible no cambia versión ni duplica outbox, y payload/op incompatibles retornan `409 IDEMPOTENT_DUPLICATE`. El control de concurrencia retorna `409 CONCURRENCY_ERROR`; código duplicado dentro del catálogo retorna `409 DUPLICATE_CODE`. Cada cambio y su evento (`item_catalogo_creado`, `item_catalogo_modificado`, `item_catalogo_estado_cambiado`, `item_catalogo_desactivado`) se confirma en la misma transacción. El mismo estado con una operación nueva es conflicto idempotente; no es cambio material. Jerarquías, historial y reactivación de bajas quedan fuera de alcance.

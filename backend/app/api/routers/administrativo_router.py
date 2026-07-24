@@ -22,8 +22,16 @@ from app.api.schemas.administrativo import (
     CatalogoMaestroWriteData,
     ErrorResponse,
     ItemCatalogoData,
+    ItemCatalogoBajaResponse,
+    ItemCatalogoCreateRequest,
+    ItemCatalogoCreateResponse,
+    ItemCatalogoEstadoRequest,
+    ItemCatalogoEstadoResponse,
     ItemCatalogoListData,
     ItemCatalogoListResponse,
+    ItemCatalogoUpdateRequest,
+    ItemCatalogoUpdateResponse,
+    ItemCatalogoWriteData,
     PermisoData,
     PermisoListResponse,
     RolSeguridadData,
@@ -54,6 +62,12 @@ from app.infrastructure.persistence.repositories.catalogo_maestro_repository imp
     CatalogoMaestroIdempotencyConflictError,
     CatalogoMaestroRepository,
 )
+from app.infrastructure.persistence.repositories.item_catalogo_repository import (
+    ItemCatalogoConcurrencyError,
+    ItemCatalogoDuplicateCodeError,
+    ItemCatalogoIdempotencyConflictError,
+    ItemCatalogoRepository,
+)
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
 )
@@ -75,6 +89,21 @@ from app.infrastructure.persistence.repositories.usuario_sistema_repository impo
 )
 
 router = APIRouter(tags=["Administrativo"])
+
+
+def _item_write_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, ItemCatalogoIdempotencyConflictError):
+        return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
+    if isinstance(exc, ItemCatalogoConcurrencyError):
+        return _error(409, "CONCURRENCY_ERROR", str(exc))
+    if isinstance(exc, ItemCatalogoDuplicateCodeError):
+        return _error(409, "DUPLICATE_CODE", str(exc))
+    return _error(
+        500,
+        "TECHNICAL_INCONSISTENCY",
+        "No se pudo procesar el ítem del catálogo.",
+        {"error": str(exc)},
+    )
 
 
 def _error(
@@ -121,36 +150,57 @@ def _normalize_query(value: str | None) -> str | None:
 
 
 def _parse_core_write_or_error(
-    *, x_op_id: str | None, x_usuario_id: str | None, x_sucursal_id: str | None,
-    x_instalacion_id: str | None, if_match_version: str | None = None,
+    *,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None = None,
     require_if_match_version: bool = False,
 ) -> CoreEFHeaders | JSONResponse:
     try:
         return parse_core_ef_headers(
-            x_op_id=x_op_id, x_usuario_id=x_usuario_id, x_sucursal_id=x_sucursal_id,
-            x_instalacion_id=x_instalacion_id, if_match_version=if_match_version,
+            x_op_id=x_op_id,
+            x_usuario_id=x_usuario_id,
+            x_sucursal_id=x_sucursal_id,
+            x_instalacion_id=x_instalacion_id,
+            if_match_version=if_match_version,
             require_if_match_version=require_if_match_version,
         )
     except CoreEFHeaderValidationError as exc:
-        return _error(400, "VALIDATION_ERROR", exc.message,
-                      {"header": exc.header_name, "reason": exc.reason})
+        return _error(
+            400,
+            "VALIDATION_ERROR",
+            exc.message,
+            {"header": exc.header_name, "reason": exc.reason},
+        )
 
 
 @router.post(
-    "/api/v1/administrativo/catalogos", status_code=201,
+    "/api/v1/administrativo/catalogos",
+    status_code=201,
     response_model=CatalogoMaestroCreateResponse,
-    responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
 )
 def create_catalogo_maestro(
-    request: CatalogoMaestroCreateRequest, db: Session = Depends(get_db),
+    request: CatalogoMaestroCreateRequest,
+    db: Session = Depends(get_db),
     x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
     x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> CatalogoMaestroCreateResponse | JSONResponse:
     # CORE-EF: COMMAND_WRITE_NEGOCIO; create versioned aggregate plus outbox.
-    core = _parse_core_write_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id)
+    core = _parse_core_write_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
     if isinstance(core, JSONResponse):
         return core
     try:
@@ -160,17 +210,28 @@ def create_catalogo_maestro(
     except CatalogoMaestroDuplicateCodeError as exc:
         return _error(409, "DUPLICATE_CODE", str(exc))
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo crear el catálogo maestro.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo crear el catálogo maestro.",
+            {"error": str(exc)},
+        )
     return CatalogoMaestroCreateResponse(data=CatalogoMaestroWriteData(**catalogo))
 
 
 @router.put(
     "/api/v1/administrativo/catalogos/{id_catalogo_maestro}",
     response_model=CatalogoMaestroUpdateResponse,
-    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
 )
 def update_catalogo_maestro(
-    id_catalogo_maestro: int, request: CatalogoMaestroUpdateRequest,
+    id_catalogo_maestro: int,
+    request: CatalogoMaestroUpdateRequest,
     db: Session = Depends(get_db),
     x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
     x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
@@ -179,15 +240,23 @@ def update_catalogo_maestro(
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> CatalogoMaestroUpdateResponse | JSONResponse:
     # CORE-EF: COMMAND_WRITE_NEGOCIO; conditional version update plus outbox.
-    core = _parse_core_write_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id,
-        if_match_version=if_match_version, require_if_match_version=True)
+    core = _parse_core_write_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
     if isinstance(core, JSONResponse):
         return core
     try:
         catalogo = CatalogoMaestroRepository(db).update(
-            id_catalogo_maestro, request.model_dump(), core=core,
-            if_match_version=core.if_match_version or 0)
+            id_catalogo_maestro,
+            request.model_dump(),
+            core=core,
+            if_match_version=core.if_match_version or 0,
+        )
     except CatalogoMaestroIdempotencyConflictError as exc:
         return _error(409, "IDEMPOTENT_DUPLICATE", str(exc))
     except CatalogoMaestroConcurrencyError as exc:
@@ -195,7 +264,12 @@ def update_catalogo_maestro(
     except CatalogoMaestroDuplicateCodeError as exc:
         return _error(409, "DUPLICATE_CODE", str(exc))
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo modificar el catálogo maestro.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo modificar el catálogo maestro.",
+            {"error": str(exc)},
+        )
     if catalogo is None:
         return _error(404, "NOT_FOUND", "Catálogo maestro no encontrado.")
     return CatalogoMaestroUpdateResponse(data=CatalogoMaestroWriteData(**catalogo))
@@ -204,10 +278,16 @@ def update_catalogo_maestro(
 @router.patch(
     "/api/v1/administrativo/catalogos/{id_catalogo_maestro}/baja",
     response_model=CatalogoMaestroBajaResponse,
-    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
 )
 def baja_catalogo_maestro(
-    id_catalogo_maestro: int, db: Session = Depends(get_db),
+    id_catalogo_maestro: int,
+    db: Session = Depends(get_db),
     x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
     x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
@@ -215,21 +295,207 @@ def baja_catalogo_maestro(
     if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
 ) -> CatalogoMaestroBajaResponse | JSONResponse:
     # CORE-EF: COMMAND_WRITE_NEGOCIO; soft delete, conditional version and outbox.
-    core = _parse_core_write_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id,
-        x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id,
-        if_match_version=if_match_version, require_if_match_version=True)
+    core = _parse_core_write_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
     if isinstance(core, JSONResponse):
         return core
     try:
         catalogo = CatalogoMaestroRepository(db).baja_logica(
-            id_catalogo_maestro, core=core, if_match_version=core.if_match_version or 0)
+            id_catalogo_maestro, core=core, if_match_version=core.if_match_version or 0
+        )
     except CatalogoMaestroConcurrencyError as exc:
         return _error(409, "CONCURRENCY_ERROR", str(exc))
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo dar de baja el catálogo maestro.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo dar de baja el catálogo maestro.",
+            {"error": str(exc)},
+        )
     if catalogo is None:
         return _error(404, "NOT_FOUND", "Catálogo maestro no encontrado.")
     return CatalogoMaestroBajaResponse(data=CatalogoMaestroWriteData(**catalogo))
+
+
+@router.post(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}/items",
+    status_code=201,
+    response_model=ItemCatalogoCreateResponse,
+)
+def create_item_catalogo(
+    id_catalogo_maestro: int,
+    request: ItemCatalogoCreateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+) -> ItemCatalogoCreateResponse | JSONResponse:
+    # CORE-EF: COMMAND_WRITE_NEGOCIO; alta idempotente y outbox transaccional.
+    core = _parse_core_write_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        item = ItemCatalogoRepository(db).create(
+            id_catalogo_maestro, request.model_dump(), core
+        )
+    except Exception as exc:
+        return _item_write_error(exc)
+    if item is None:
+        return _error(404, "NOT_FOUND", "Catálogo maestro no encontrado.")
+    return ItemCatalogoCreateResponse(data=ItemCatalogoWriteData(**item))
+
+
+def _change_item(
+    id_catalogo_maestro: int,
+    id_item_catalogo: int,
+    payload: dict,
+    action: str,
+    db: Session,
+    x_op_id: str | None,
+    x_usuario_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None,
+):
+    core = _parse_core_write_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+        if_match_version=if_match_version,
+        require_if_match_version=True,
+    )
+    if isinstance(core, JSONResponse):
+        return core
+    try:
+        item = ItemCatalogoRepository(db).change(
+            id_catalogo_maestro,
+            id_item_catalogo,
+            payload,
+            core,
+            core.if_match_version or 0,
+            action,
+        )
+    except Exception as exc:
+        return _item_write_error(exc)
+    if item is None:
+        return _error(
+            404, "NOT_FOUND", "Ítem o catálogo maestro no encontrado o no vigente."
+        )
+    return item
+
+
+@router.put(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}/items/{id_item_catalogo}",
+    response_model=ItemCatalogoUpdateResponse,
+)
+def update_item_catalogo(
+    id_catalogo_maestro: int,
+    id_item_catalogo: int,
+    request: ItemCatalogoUpdateRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ItemCatalogoUpdateResponse | JSONResponse:
+    result = _change_item(
+        id_catalogo_maestro,
+        id_item_catalogo,
+        request.model_dump(),
+        "update",
+        db,
+        x_op_id,
+        x_usuario_id,
+        x_sucursal_id,
+        x_instalacion_id,
+        if_match_version,
+    )
+    return (
+        result
+        if isinstance(result, JSONResponse)
+        else ItemCatalogoUpdateResponse(data=ItemCatalogoWriteData(**result))
+    )
+
+
+@router.patch(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}/items/{id_item_catalogo}/estado",
+    response_model=ItemCatalogoEstadoResponse,
+)
+def change_item_catalogo_estado(
+    id_catalogo_maestro: int,
+    id_item_catalogo: int,
+    request: ItemCatalogoEstadoRequest,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ItemCatalogoEstadoResponse | JSONResponse:
+    result = _change_item(
+        id_catalogo_maestro,
+        id_item_catalogo,
+        request.model_dump(),
+        "estado",
+        db,
+        x_op_id,
+        x_usuario_id,
+        x_sucursal_id,
+        x_instalacion_id,
+        if_match_version,
+    )
+    return (
+        result
+        if isinstance(result, JSONResponse)
+        else ItemCatalogoEstadoResponse(data=ItemCatalogoWriteData(**result))
+    )
+
+
+@router.patch(
+    "/api/v1/administrativo/catalogos/{id_catalogo_maestro}/items/{id_item_catalogo}/baja",
+    response_model=ItemCatalogoBajaResponse,
+)
+def baja_item_catalogo(
+    id_catalogo_maestro: int,
+    id_item_catalogo: int,
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_usuario_id: str | None = Header(default=None, alias="X-Usuario-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ItemCatalogoBajaResponse | JSONResponse:
+    result = _change_item(
+        id_catalogo_maestro,
+        id_item_catalogo,
+        {},
+        "baja",
+        db,
+        x_op_id,
+        x_usuario_id,
+        x_sucursal_id,
+        x_instalacion_id,
+        if_match_version,
+    )
+    return (
+        result
+        if isinstance(result, JSONResponse)
+        else ItemCatalogoBajaResponse(data=ItemCatalogoWriteData(**result))
+    )
 
 
 @router.get(
@@ -647,10 +913,16 @@ def baja_rol_seguridad_usuario(
     return UsuarioRolSeguridadBajaResponse(data=UsuarioRolSeguridadData(**asignacion))
 
 
-def _validar_fecha_vigencia(request: UsuarioSucursalCreateRequest) -> JSONResponse | None:
+def _validar_fecha_vigencia(
+    request: UsuarioSucursalCreateRequest,
+) -> JSONResponse | None:
     if request.fecha_hasta is not None and request.fecha_desde is not None:
         if request.fecha_hasta < request.fecha_desde:
-            return _error(400, "VALIDATION_ERROR", "fecha_hasta no puede ser menor que fecha_desde.")
+            return _error(
+                400,
+                "VALIDATION_ERROR",
+                "fecha_hasta no puede ser menor que fecha_desde.",
+            )
     return None
 
 
@@ -666,10 +938,17 @@ def list_sucursales_by_usuario(
     try:
         sucursales = UsuarioSucursalRepository(db).list_by_usuario(id_usuario)
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudieron listar sucursales del usuario.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudieron listar sucursales del usuario.",
+            {"error": str(exc)},
+        )
     if sucursales is None:
         return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
-    return UsuarioSucursalListResponse(data=[UsuarioSucursalData(**item) for item in sucursales])
+    return UsuarioSucursalListResponse(
+        data=[UsuarioSucursalData(**item) for item in sucursales]
+    )
 
 
 @router.get(
@@ -687,25 +966,39 @@ def get_alcance_operativo_usuario(
             return _error(404, "NOT_FOUND", "Usuario del sistema no encontrado.")
         sucursales = UsuarioSucursalRepository(db).list_by_usuario(id_usuario) or []
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo obtener el alcance operativo del usuario.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo obtener el alcance operativo del usuario.",
+            {"error": str(exc)},
+        )
     data_sucursales = [UsuarioSucursalData(**item) for item in sucursales]
-    predeterminada = next((item for item in data_sucursales if item.es_sucursal_predeterminada), None)
-    return UsuarioAlcanceOperativoResponse(data=UsuarioAlcanceOperativoData(
-        usuario=UsuarioSistemaData(**usuario),
-        sucursales_asignadas=data_sucursales,
-        sucursal_predeterminada=predeterminada,
-        puede_operar=any(item.puede_operar for item in data_sucursales),
-        puede_consultar=any(item.puede_consultar for item in data_sucursales),
-        puede_administrar=any(item.puede_administrar for item in data_sucursales),
-        estado_vigencia="ACTIVO" if data_sucursales else "SIN_ALCANCE",
-    ))
+    predeterminada = next(
+        (item for item in data_sucursales if item.es_sucursal_predeterminada), None
+    )
+    return UsuarioAlcanceOperativoResponse(
+        data=UsuarioAlcanceOperativoData(
+            usuario=UsuarioSistemaData(**usuario),
+            sucursales_asignadas=data_sucursales,
+            sucursal_predeterminada=predeterminada,
+            puede_operar=any(item.puede_operar for item in data_sucursales),
+            puede_consultar=any(item.puede_consultar for item in data_sucursales),
+            puede_administrar=any(item.puede_administrar for item in data_sucursales),
+            estado_vigencia="ACTIVO" if data_sucursales else "SIN_ALCANCE",
+        )
+    )
 
 
 @router.post(
     "/api/v1/administrativo/usuarios/{id_usuario}/sucursales",
     status_code=201,
     response_model=UsuarioSucursalCreateResponse,
-    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
 )
 def assign_sucursal_to_usuario(
     id_usuario: int,
@@ -716,7 +1009,12 @@ def assign_sucursal_to_usuario(
     x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
     x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> UsuarioSucursalCreateResponse | JSONResponse:
-    core = _parse_core_or_error(x_op_id=x_op_id, x_usuario_id=x_usuario_id, x_sucursal_id=x_sucursal_id, x_instalacion_id=x_instalacion_id)
+    core = _parse_core_or_error(
+        x_op_id=x_op_id,
+        x_usuario_id=x_usuario_id,
+        x_sucursal_id=x_sucursal_id,
+        x_instalacion_id=x_instalacion_id,
+    )
     if isinstance(core, JSONResponse):
         return core
     fecha_error = _validar_fecha_vigencia(request)
@@ -735,7 +1033,12 @@ def assign_sucursal_to_usuario(
     except UsuarioSucursalDuplicateActiveError as exc:
         return _error(409, "TECHNICAL_INCONSISTENCY", str(exc))
     except Exception as exc:
-        return _error(500, "TECHNICAL_INCONSISTENCY", "No se pudo asignar sucursal al usuario.", {"error": str(exc)})
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo asignar sucursal al usuario.",
+            {"error": str(exc)},
+        )
     if vinculo is None:
         return _error(404, "NOT_FOUND", "Usuario o sucursal no encontrado.")
     return UsuarioSucursalCreateResponse(data=UsuarioSucursalData(**vinculo))

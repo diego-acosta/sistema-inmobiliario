@@ -209,6 +209,53 @@ class ItemCatalogoData(BaseModel):
     estado_item_catalogo: str | None
 
 
+class ItemCatalogoCreateRequest(BaseModel):
+    codigo_item_catalogo: str
+    nombre_item_catalogo: str
+    descripcion: str | None = None
+
+    @field_validator("codigo_item_catalogo", "nombre_item_catalogo")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("El campo no puede estar vacío.")
+        return value
+
+
+class ItemCatalogoUpdateRequest(ItemCatalogoCreateRequest):
+    pass
+
+
+class ItemCatalogoEstadoRequest(BaseModel):
+    estado_item_catalogo: Literal["ACTIVO", "INACTIVO"]
+
+
+class ItemCatalogoWriteData(ItemCatalogoData):
+    uid_global: str
+    version_registro: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+
+
+class ItemCatalogoCreateResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ItemCatalogoWriteData
+
+
+class ItemCatalogoUpdateResponse(ItemCatalogoCreateResponse):
+    pass
+
+
+class ItemCatalogoEstadoResponse(ItemCatalogoCreateResponse):
+    pass
+
+
+class ItemCatalogoBajaResponse(ItemCatalogoCreateResponse):
+    pass
+
+
 class ItemCatalogoListData(BaseModel):
     items: list[ItemCatalogoData]
     total: int
@@ -226,6 +273,7 @@ class ErrorResponse(BaseModel):
     error_code: str
     error_message: str
     details: dict[str, Any] = Field(default_factory=dict)
+
 
 class UsuarioSucursalCreateRequest(BaseModel):
     id_sucursal: int
