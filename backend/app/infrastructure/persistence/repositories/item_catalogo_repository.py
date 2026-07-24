@@ -32,6 +32,10 @@ class ItemCatalogoDuplicateCodeError(ValueError):
     pass
 
 
+class ItemCatalogoInvalidStateTransitionError(ValueError):
+    pass
+
+
 class ItemCatalogoRepository:
     def __init__(self, session) -> None:
         self.db = session
@@ -63,14 +67,14 @@ class ItemCatalogoRepository:
         return dict(row) if row else None
 
     @staticmethod
-    def _matches(row, payload):
+    def _payload_matches(row, payload):
         return all(
             row.get(k) == payload.get(k)
             for k in ("codigo_item_catalogo", "nombre_item_catalogo", "descripcion")
         )
 
     @staticmethod
-    def _constraint(exc):
+    def _constraint_name(exc):
         return getattr(
             getattr(getattr(exc, "orig", None), "diag", None), "constraint_name", None
         )
@@ -110,6 +114,20 @@ class ItemCatalogoRepository:
             return parent, None
         return parent, item
 
+    def _raise_or_return_idempotent_replay(
+        self, *, catalogo_id, op_id, payload, original_error
+    ):
+        existing = self.by_op_alta(op_id)
+        if existing is None:
+            raise original_error
+        if existing["id_catalogo_maestro"] != catalogo_id or not self._payload_matches(
+            existing, payload
+        ):
+            raise ItemCatalogoIdempotencyConflictError(
+                "El X-Op-Id ya fue usado con un payload incompatible."
+            )
+        return existing
+
     def create(self, catalogo_id, payload, core):
         parent = self._parent(catalogo_id)
         if parent is None or parent["deleted_at"] is not None:
@@ -117,9 +135,9 @@ class ItemCatalogoRepository:
         op = str(core.x_op_id)
         existing = self.by_op_alta(op)
         if existing:
-            if existing["id_catalogo_maestro"] != catalogo_id or not self._matches(
-                existing, payload
-            ):
+            if existing[
+                "id_catalogo_maestro"
+            ] != catalogo_id or not self._payload_matches(existing, payload):
                 raise ItemCatalogoIdempotencyConflictError(
                     "El X-Op-Id ya fue usado con un payload incompatible."
                 )
@@ -148,19 +166,14 @@ class ItemCatalogoRepository:
             return row
         except IntegrityError as exc:
             self.db.rollback()
-            if self._constraint(exc) == "ux_item_catalogo_op_id_alta":
-                existing = self.by_op_alta(op)
-                if (
-                    existing
-                    and existing["id_catalogo_maestro"] == catalogo_id
-                    and self._matches(existing, payload)
-                ):
-                    return existing
-                if existing:
-                    raise ItemCatalogoIdempotencyConflictError(
-                        "El X-Op-Id ya fue usado con un payload incompatible."
-                    )
-            if self._constraint(exc) == "uq_item_catalogo":
+            if self._constraint_name(exc) == "ux_item_catalogo_op_id_alta":
+                return self._raise_or_return_idempotent_replay(
+                    catalogo_id=catalogo_id,
+                    op_id=op,
+                    payload=payload,
+                    original_error=exc,
+                )
+            if self._constraint_name(exc) == "uq_item_catalogo":
                 raise ItemCatalogoDuplicateCodeError(
                     "Ya existe un ítem con ese código en el catálogo."
                 )
@@ -185,15 +198,17 @@ class ItemCatalogoRepository:
         if row is None:
             return None
         op = str(core.x_op_id)
+        if row["deleted_at"] is not None:
+            if action == "baja" and str(row["op_id_ultima_modificacion"]) == op:
+                return row
+            return None
         if str(row["op_id_ultima_modificacion"]) == op:
-            if action == "update" and self._matches(row, payload):
+            if action == "update" and self._payload_matches(row, payload):
                 return row
             if (
                 action == "estado"
                 and row["estado_item_catalogo"] == payload["estado_item_catalogo"]
             ):
-                return row
-            if action == "baja" and row["deleted_at"] is not None:
                 return row
             raise ItemCatalogoIdempotencyConflictError(
                 "El X-Op-Id ya fue usado con un payload incompatible."
@@ -204,8 +219,8 @@ class ItemCatalogoRepository:
             action == "estado"
             and row["estado_item_catalogo"] == payload["estado_item_catalogo"]
         ):
-            raise ItemCatalogoIdempotencyConflictError(
-                "El estado destino ya es el actual."
+            raise ItemCatalogoInvalidStateTransitionError(
+                "El estado destino ya es el estado actual del ítem."
             )
         sets = {
             "update": "codigo_item_catalogo=:codigo_item_catalogo,nombre_item_catalogo=:nombre_item_catalogo,descripcion=:descripcion",
@@ -245,7 +260,7 @@ class ItemCatalogoRepository:
             return row
         except IntegrityError as exc:
             self.db.rollback()
-            if self._constraint(exc) == "uq_item_catalogo":
+            if self._constraint_name(exc) == "uq_item_catalogo":
                 raise ItemCatalogoDuplicateCodeError(
                     "Ya existe un ítem con ese código en el catálogo."
                 )

@@ -66,6 +66,7 @@ from app.infrastructure.persistence.repositories.item_catalogo_repository import
     ItemCatalogoConcurrencyError,
     ItemCatalogoDuplicateCodeError,
     ItemCatalogoIdempotencyConflictError,
+    ItemCatalogoInvalidStateTransitionError,
     ItemCatalogoRepository,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
@@ -98,11 +99,13 @@ def _item_write_error(exc: Exception) -> JSONResponse:
         return _error(409, "CONCURRENCY_ERROR", str(exc))
     if isinstance(exc, ItemCatalogoDuplicateCodeError):
         return _error(409, "DUPLICATE_CODE", str(exc))
+    if isinstance(exc, ItemCatalogoInvalidStateTransitionError):
+        return _error(409, "INVALID_STATE_TRANSITION", str(exc))
     return _error(
         500,
         "TECHNICAL_INCONSISTENCY",
         "No se pudo procesar el ítem del catálogo.",
-        {"error": str(exc)},
+        {},
     )
 
 

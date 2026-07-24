@@ -253,3 +253,7 @@ La estrategia de datos es normalizar `NULL` histórico a `ACTIVO`, cerrar la col
 ## Incremento #399 — comandos de `item_catalogo`
 
 Los comandos de alta, modificación, cambio de estado y baja lógica de ítems se implementan como `COMMAND_WRITE_NEGOCIO` con metadata CORE-EF, optimistic locking en mutaciones y outbox transaccional. `ACTIVO` e `INACTIVO` son estados físicos; la baja es exclusivamente `deleted_at` y no admite reactivación. La unicidad SQL `(id_catalogo_maestro, codigo_item_catalogo)` conserva el código ocupado después de la baja. No se implementan jerarquías ni historial funcional.
+
+### Corrección PR #400
+
+El intento con un nuevo `X-Op-Id` de persistir el mismo estado físico es una transición inválida (`INVALID_STATE_TRANSITION`), no un conflicto de idempotencia. La baja repetida sólo hace replay con el mismo identificador de la baja previa; con otro identificador se trata como recurso no operable (`NOT_FOUND`). Los errores técnicos se devuelven sin detalle interno; la transacción conserva rollback conjunto de negocio y outbox.

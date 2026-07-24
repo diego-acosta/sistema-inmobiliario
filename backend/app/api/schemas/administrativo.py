@@ -210,8 +210,8 @@ class ItemCatalogoData(BaseModel):
 
 
 class ItemCatalogoCreateRequest(BaseModel):
-    codigo_item_catalogo: str
-    nombre_item_catalogo: str
+    codigo_item_catalogo: str = Field(max_length=50)
+    nombre_item_catalogo: str = Field(max_length=150)
     descripcion: str | None = None
 
     @field_validator("codigo_item_catalogo", "nombre_item_catalogo")

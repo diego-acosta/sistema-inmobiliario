@@ -120,3 +120,82 @@ def test_item_write_headers_duplicate_and_stale_version(client):
     assert (
         stale.status_code == 409 and stale.json()["error_code"] == "CONCURRENCY_ERROR"
     )
+
+
+def test_estado_repetido_es_transicion_invalida_y_replay(client):
+    catalogo = _catalogo(client)
+    created, _ = _item(client, catalogo)
+    item = created.json()["data"]
+    op_id = str(uuid4())
+    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/estado"
+    first = client.patch(
+        url,
+        json={"estado_item_catalogo": "INACTIVO"},
+        headers=_headers(item["version_registro"], op_id),
+    )
+    replay = client.patch(
+        url,
+        json={"estado_item_catalogo": "INACTIVO"},
+        headers=_headers(item["version_registro"], op_id),
+    )
+    repeated = client.patch(
+        url,
+        json={"estado_item_catalogo": "INACTIVO"},
+        headers=_headers(first.json()["data"]["version_registro"]),
+    )
+    assert first.status_code == replay.status_code == 200
+    assert replay.json()["data"] == first.json()["data"]
+    assert repeated.status_code == 409
+    assert repeated.json()["error_code"] == "INVALID_STATE_TRANSITION"
+
+
+def test_baja_repetida_replay_y_otro_op_es_not_found(client, db_session):
+    catalogo = _catalogo(client)
+    created, _ = _item(client, catalogo)
+    item = created.json()["data"]
+    op_id = str(uuid4())
+    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/baja"
+    first = client.patch(url, headers=_headers(item["version_registro"], op_id))
+    replay = client.patch(url, headers=_headers(item["version_registro"], op_id))
+    repeated = client.patch(
+        url, headers=_headers(first.json()["data"]["version_registro"])
+    )
+    assert first.status_code == replay.status_code == 200
+    assert replay.json()["data"] == first.json()["data"]
+    assert repeated.status_code == 404
+    assert (
+        db_session.execute(
+            text(
+                "SELECT count(*) FROM outbox_event WHERE aggregate_id=:id AND event_type='item_catalogo_desactivado'"
+            ),
+            {"id": item["id_item_catalogo"]},
+        ).scalar_one()
+        == 1
+    )
+
+
+def test_error_tecnico_no_expone_detalle_interno(client, monkeypatch):
+    catalogo = _catalogo(client)
+    from app.infrastructure.persistence.repositories.item_catalogo_repository import (
+        ItemCatalogoRepository,
+    )
+
+    secret = "SQL uq_item_catalogo driver-secret"
+    monkeypatch.setattr(
+        ItemCatalogoRepository,
+        "create",
+        lambda *args: (_ for _ in ()).throw(RuntimeError(secret)),
+    )
+    response = client.post(
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items",
+        json={"codigo_item_catalogo": "SECRETO", "nombre_item_catalogo": "Secreto"},
+        headers=_headers(),
+    )
+    assert response.status_code == 500
+    assert response.json() == {
+        "ok": False,
+        "error_code": "TECHNICAL_INCONSISTENCY",
+        "error_message": "No se pudo procesar el ítem del catálogo.",
+        "details": {},
+    }
+    assert secret not in response.text
