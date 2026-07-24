@@ -2,7 +2,6 @@ from sqlalchemy import text
 
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import (
-    _apply_reserva_multiobjeto_patch,
     _crear_disponibilidad,
     _crear_inmueble,
     _crear_persona,
@@ -45,7 +44,6 @@ def _crear_reserva_base(client, *, codigo_reserva: str, id_persona: int, id_rol:
 def test_get_reserva_venta_devuelve_detalle_con_shape_contractual(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Ada", apellido="Lovelace")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-GET-001")
     _crear_disponibilidad(
@@ -124,7 +122,6 @@ def test_get_reserva_venta_devuelve_detalle_con_shape_contractual(
 def test_get_reserva_venta_multiobjeto_devuelve_objetos_en_orden_persistido(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Margaret", apellido="Hamilton")
     id_inmueble = _crear_inmueble(client, codigo="INM-RES-GET-002")
     id_unidad_funcional = _crear_unidad_funcional(
@@ -205,7 +202,6 @@ def test_get_reserva_venta_devuelve_404_si_no_existe(client) -> None:
 def test_list_reservas_venta_devuelve_items_total_y_paginacion_basica(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Katherine", apellido="Johnson")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9403)
 
@@ -246,7 +242,6 @@ def test_list_reservas_venta_devuelve_items_total_y_paginacion_basica(
 def test_list_reservas_venta_filtra_por_codigo_estado_y_vigente(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Dorothy", apellido="Vaughan")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9404)
 
@@ -322,7 +317,6 @@ def test_list_reservas_venta_filtra_por_codigo_estado_y_vigente(
 def test_list_reservas_venta_filtra_por_rango_de_fechas_y_excluye_deleted_at(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Mary", apellido="Jackson")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9405)
 

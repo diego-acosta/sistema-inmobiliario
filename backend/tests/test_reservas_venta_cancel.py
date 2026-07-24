@@ -4,7 +4,6 @@ from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import _payload_base
 from tests.test_reservas_venta_generate_venta import _payload_generar_venta
 from tests.test_reservas_venta_create import (
-    _apply_reserva_multiobjeto_patch,
     _crear_disponibilidad,
     _crear_inmueble,
     _crear_persona,
@@ -147,7 +146,6 @@ def _crear_trigger_falla_cancelacion_disponibilidad(db_session, *, id_inmueble: 
 def test_cancel_reserva_venta_borrador_la_pasa_a_cancelada_sin_efectos(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-CAN-001")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -201,7 +199,6 @@ def test_cancel_reserva_venta_borrador_la_pasa_a_cancelada_sin_efectos(
 def test_cancel_reserva_venta_activa_la_pasa_a_cancelada_sin_efectos(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-CAN-002")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -238,7 +235,6 @@ def test_cancel_reserva_venta_activa_la_pasa_a_cancelada_sin_efectos(
 def test_cancel_reserva_venta_confirmada_libera_disponibilidad_y_no_toca_ocupacion_ni_venta(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-CAN-003")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="RESERVADA")
     reserva = _insertar_reserva_para_cancelar(
@@ -317,7 +313,6 @@ def test_cancel_reserva_venta_confirmada_libera_disponibilidad_y_no_toca_ocupaci
 def test_cancel_reserva_venta_devuelve_error_si_estado_es_invalido(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-CAN-004")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -340,7 +335,6 @@ def test_cancel_reserva_venta_devuelve_error_si_estado_es_invalido(
 
 
 def test_cancel_reserva_venta_devuelve_error_de_concurrencia(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-CAN-005")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_cancelar(
@@ -362,7 +356,6 @@ def test_cancel_reserva_venta_devuelve_error_de_concurrencia(client, db_session)
 def test_cancel_reserva_venta_hace_rollback_completo_si_falla_liberacion_multiobjeto(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble_1 = _crear_inmueble(client, codigo="INM-RV-CAN-006A")
     id_inmueble_2 = _crear_inmueble(client, codigo="INM-RV-CAN-006B")
     _crear_disponibilidad(client, id_inmueble=id_inmueble_1, estado_disponibilidad="RESERVADA")
@@ -430,7 +423,6 @@ def test_cancel_reserva_venta_hace_rollback_completo_si_falla_liberacion_multiob
 def test_cancel_reserva_venta_devuelve_error_si_tiene_venta_activa_asociada(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Linus", apellido="Cancel")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9403)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-CAN-007")

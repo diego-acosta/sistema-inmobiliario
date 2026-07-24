@@ -3,7 +3,6 @@ from sqlalchemy import text
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_confirm import _insertar_reserva_para_confirmar
 from tests.test_reservas_venta_create import (
-    _apply_reserva_multiobjeto_patch,
     _crear_disponibilidad,
     _crear_inmueble,
     _crear_persona,
@@ -19,7 +18,6 @@ from tests.test_reservas_venta_create import (
 def test_activate_reserva_venta_pasa_de_borrador_a_activa_sin_mutar_disponibilidad(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Ana", apellido="Activa")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9401)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-001")
@@ -97,7 +95,6 @@ def test_activate_reserva_venta_pasa_de_borrador_a_activa_sin_mutar_disponibilid
 
 
 def test_flujo_publico_reserva_venta_create_activate_confirm(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Bruno", apellido="Flujo")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9402)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-001B")
@@ -134,7 +131,6 @@ def test_flujo_publico_reserva_venta_create_activate_confirm(client, db_session)
 
 
 def test_activate_reserva_venta_devuelve_400_si_falta_if_match_version(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Header", apellido="Transition")
     _crear_rol_participacion_activo(db_session, id_rol_participacion=9491)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-HDR-002")
@@ -178,7 +174,6 @@ def test_activate_reserva_venta_devuelve_400_si_falta_if_match_version(client, d
 
 
 def test_activate_reserva_venta_devuelve_404_si_no_existe(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
 
     response = client.post(
         "/api/v1/reservas-venta/999999/activar",
@@ -191,7 +186,6 @@ def test_activate_reserva_venta_devuelve_404_si_no_existe(client, db_session) ->
 
 
 def test_activate_reserva_venta_devuelve_404_si_esta_eliminada(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-002")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_confirmar(
@@ -223,7 +217,6 @@ def test_activate_reserva_venta_devuelve_404_si_esta_eliminada(client, db_sessio
 def test_activate_reserva_venta_devuelve_error_si_estado_es_invalido(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-003")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_confirmar(
@@ -245,7 +238,6 @@ def test_activate_reserva_venta_devuelve_error_si_estado_es_invalido(
 
 
 def test_activate_reserva_venta_devuelve_error_de_concurrencia(client, db_session) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-004")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     reserva = _insertar_reserva_para_confirmar(
@@ -267,7 +259,6 @@ def test_activate_reserva_venta_devuelve_error_de_concurrencia(client, db_sessio
 def test_activate_reserva_venta_devuelve_error_si_un_objeto_no_es_elegible(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-005")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="NO_DISPONIBLE")
     reserva = _insertar_reserva_para_confirmar(
@@ -294,7 +285,6 @@ def test_activate_reserva_venta_devuelve_error_si_un_objeto_no_es_elegible(
 def test_activate_reserva_venta_devuelve_error_si_hay_conflicto_con_venta_activa(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-006")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     _insertar_venta_conflictiva(
@@ -323,7 +313,6 @@ def test_activate_reserva_venta_devuelve_error_si_hay_conflicto_con_venta_activa
 def test_activate_reserva_venta_devuelve_error_si_hay_conflicto_con_reserva_activa(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-007")
     _crear_disponibilidad(client, id_inmueble=id_inmueble, estado_disponibilidad="DISPONIBLE")
     _insertar_reserva_conflictiva(
@@ -352,7 +341,6 @@ def test_activate_reserva_venta_devuelve_error_si_hay_conflicto_con_reserva_acti
 def test_activate_reserva_multiobjeto_inmueble_y_uf_propia_no_conflicta_con_si_misma(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-HIER-SELF-001")
     id_uf = _crear_unidad_funcional(
         client, id_inmueble=id_inmueble, codigo="UF-RV-ACT-HIER-SELF-001"
@@ -379,7 +367,6 @@ def test_activate_reserva_multiobjeto_inmueble_y_uf_propia_no_conflicta_con_si_m
 def test_activate_reserva_multiobjeto_falla_si_hay_conflicto_jerarquico_externo(
     client, db_session
 ) -> None:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_inmueble = _crear_inmueble(client, codigo="INM-RV-ACT-HIER-EXT-001")
     id_uf = _crear_unidad_funcional(
         client, id_inmueble=id_inmueble, codigo="UF-RV-ACT-HIER-EXT-001"

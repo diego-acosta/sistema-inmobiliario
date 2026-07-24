@@ -118,7 +118,7 @@ Headers write observables:
 - `X-Op-Id`
 - `X-Usuario-Id`
 - `X-Sucursal-Id`
-- `X-Instalacion-Id` es requerido en:
+- `X-Instalacion-Id` es requerido en todos los command write de reservas de venta, incluidos:
   - `PUT /api/v1/reservas-venta/{id_reserva_venta}`
   - `PATCH /api/v1/reservas-venta/{id_reserva_venta}/baja`
   - transiciones de `reserva_venta`: `activar`, `cancelar`, `vencer`, `confirmar`
@@ -128,7 +128,6 @@ Headers write observables:
   - `POST /api/v1/ventas/{id_venta}/instrumentos-compraventa`
   - `POST /api/v1/ventas/{id_venta}/cesiones`
   - `POST /api/v1/ventas/{id_venta}/escrituraciones`
-- `POST /api/v1/reservas-venta` no exige hoy `X-Instalacion-Id`
 - `POST /api/v1/ventas/{id_venta}/plan-pago-v2/cuotas-iguales-simple` acepta estos headers tecnicos para trazabilidad, pero no exige `X-Instalacion-Id`
 - `If-Match-Version` es requerido en:
   - `PUT /api/v1/reservas-venta/{id_reserva_venta}`

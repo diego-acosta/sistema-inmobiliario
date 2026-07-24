@@ -3,7 +3,6 @@ from sqlalchemy import text
 from tests.sql_failpoints import install_statement_failpoint_once
 from tests.test_disponibilidades_create import HEADERS
 from tests.test_reservas_venta_create import (
-    _apply_reserva_multiobjeto_patch,
     _crear_inmueble,
     _crear_persona,
     _crear_rol_participacion_activo,
@@ -59,7 +58,6 @@ def _crear_trigger_falla_confirmacion_venta(db_session, *, id_venta: int) -> Non
 
 
 def _crear_venta_desde_reserva_publica(client, db_session) -> dict[str, int]:
-    _apply_reserva_multiobjeto_patch(db_session)
     id_persona = _crear_persona(client, nombre="Margaret", apellido="Hamilton")
     id_rol = _crear_rol_participacion_activo(
         db_session,
