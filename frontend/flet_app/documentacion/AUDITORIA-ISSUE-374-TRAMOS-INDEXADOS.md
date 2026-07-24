@@ -42,13 +42,25 @@ HTTP que liste `indice_financiero`, ni un endpoint HTTP que liste/consulte
 `indice_financiero_valor` por índice y fecha. `ApiClient` tampoco tiene métodos
 para ellos.
 
-El único mecanismo de resolución existente es interno al backend:
-`IndiceFinancieroRepository.get_valor_publicado_por_id_y_fecha`. Recibe un ID
-ya conocido y una fecha; filtra un índice activo y valores `PUBLICADO`, con
-`fecha_publicacion` no nula y `fecha_valor <= fecha_objetivo`; ordena por fecha
-descendente y toma uno. Su shape interno incluye ID/código/nombre del índice,
-ID del valor, fecha/valor/publicación y fuente. No es un contrato HTTP y el
-frontend no puede reutilizarlo directamente.
+La capacidad de resolución ya existe **dentro de la infraestructura backend** en
+`IndiceFinancieroRepository`, y está cubierta por tests de repositorio. Hay dos
+resolvers, ninguno de los cuales constituye un contrato HTTP ni puede ser
+invocado directamente por Flet:
+
+- `get_valor_publicado_por_id_y_fecha(id_indice_financiero, fecha_objetivo)`
+  recibe un ID positivo y la fecha objetivo;
+- `get_valor_publicado_por_codigo_y_fecha(codigo_indice_financiero,
+  fecha_objetivo)` normaliza el código con `strip().upper()` y no consulta si el
+  resultado queda vacío.
+
+Ambos consultan un índice activo no eliminado y valores no eliminados con estado
+`PUBLICADO`, `fecha_publicacion` informada y `fecha_valor <= fecha_objetivo`;
+ordenan por `fecha_valor` descendente y seleccionan el último aplicable. El
+repositorio convierte la fila seleccionada mediante el mismo mapper interno;
+no se afirma identidad de implementación fuera de lo verificado. Los tests
+cubren la búsqueda por código exacta, el fallback al último anterior, futuros,
+estados no publicables, inactividad, normalización y soft-delete; y también la
+búsqueda por ID con su validación de ID no positivo.
 
 Los endpoints de venta existentes aceptan el comando ya resuelto:
 
@@ -65,15 +77,26 @@ es correcto llamarlo para inferir catálogo/valores o decidir estados.
 ## Brecha que bloquea la implementación UX
 
 #374 exige seleccionar por catálogo real y autocompletar el valor aplicable sin
-exponer IDs. Para hacerlo sin inventar datos se requieren, como mínimo, queries
-read-only de Financiero que permitan:
+exponer IDs. La brecha no es ausencia de capacidad de resolución en backend:
+esta ya existe en los dos resolvers internos anteriores. La brecha es que esa
+capacidad no está expuesta mediante queries HTTP read-only consumibles por
+frontend.
 
-1. listar índices activos con ID técnico, código, nombre, unidad, periodicidad,
-   frecuencia/estado y paginación/orden documentados;
-2. obtener valores publicados de un índice para una fecha solicitada, incluyendo
-   valor, fecha efectiva, fecha de publicación, fuente y el caso sin valor;
-3. definir contractualmente si el resultado es “último valor publicado con
-   fecha de valor menor o igual” y exponer el diagnóstico correspondiente.
+El incremento previo de Financiero debe definir y documentar, como mínimo:
+
+1. **Query 1 — Catálogo de índices.** Una query HTTP read-only para listar
+   índices activos con los campos reales disponibles y documentados (ID técnico,
+   código, nombre, unidad, periodicidad/frecuencia y estado, además de su orden
+   y paginación contractual).
+2. **Query 2 — Valor aplicable.** Una query HTTP read-only que reciba una fecha
+   objetivo y resuelva el valor publicado aplicable por ID, por código o por una
+   única interfaz contractual que acepte exactamente uno de ambos
+   identificadores. Debe reutilizar
+   `get_valor_publicado_por_id_y_fecha` y
+   `get_valor_publicado_por_codigo_y_fecha` según corresponda, sin reimplementar
+   en service/router la regla SQL de aplicabilidad ni trasladarla a Flet.
+3. Schemas de respuesta y errores contractuales para el caso sin valor aplicable,
+   incluida la fecha efectiva y fuente cuando exista resultado.
 
 No se propone ni se implementa aquí un endpoint, SQL ni un cálculo alternativo:
 ello invadiría el ownership Financiero y contradice las restricciones del issue.
