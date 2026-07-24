@@ -56,7 +56,7 @@ def test_item_write_crud_idempotencia_y_outbox(client, db_session):
     assert replay.status_code == 201 and replay.json()["data"] == item
     updated_payload = {**payload, "nombre_item_catalogo": "Ítem editado"}
     updated = client.put(
-        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}",
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}",  # noqa: E501
         json=updated_payload,
         headers=_headers(item["version_registro"]),
     )
@@ -64,7 +64,7 @@ def test_item_write_crud_idempotencia_y_outbox(client, db_session):
         updated.status_code == 200 and updated.json()["data"]["version_registro"] == 2
     )
     inactive = client.patch(
-        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/estado",
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/estado",  # noqa: E501
         json={"estado_item_catalogo": "INACTIVO"},
         headers=_headers(2),
     )
@@ -73,7 +73,7 @@ def test_item_write_crud_idempotencia_y_outbox(client, db_session):
         and inactive.json()["data"]["estado_item_catalogo"] == "INACTIVO"
     )
     baja = client.patch(
-        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/baja",
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/baja",  # noqa: E501
         headers=_headers(3),
     )
     assert baja.status_code == 200 and baja.json()["data"]["deleted_at"] is not None
@@ -86,7 +86,7 @@ def test_item_write_crud_idempotencia_y_outbox(client, db_session):
     assert (
         db_session.execute(
             text(
-                "SELECT count(*) FROM outbox_event WHERE aggregate_type='item_catalogo' AND aggregate_id=:id"
+                "SELECT count(*) FROM outbox_event WHERE aggregate_type='item_catalogo' AND aggregate_id=:id"  # noqa: E501
             ),
             {"id": item["id_item_catalogo"]},
         ).scalar_one()
@@ -113,7 +113,7 @@ def test_item_write_headers_duplicate_and_stale_version(client):
         and duplicate.json()["error_code"] == "DUPLICATE_CODE"
     )
     stale = client.put(
-        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}",
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}",  # noqa: E501
         json=payload,
         headers=_headers(99),
     )
@@ -127,7 +127,7 @@ def test_estado_repetido_es_transicion_invalida_y_replay(client):
     created, _ = _item(client, catalogo)
     item = created.json()["data"]
     op_id = str(uuid4())
-    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/estado"
+    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/estado"  # noqa: E501
     first = client.patch(
         url,
         json={"estado_item_catalogo": "INACTIVO"},
@@ -154,7 +154,7 @@ def test_baja_repetida_replay_y_otro_op_es_not_found(client, db_session):
     created, _ = _item(client, catalogo)
     item = created.json()["data"]
     op_id = str(uuid4())
-    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/baja"
+    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/baja"  # noqa: E501
     first = client.patch(url, headers=_headers(item["version_registro"], op_id))
     replay = client.patch(url, headers=_headers(item["version_registro"], op_id))
     repeated = client.patch(
@@ -166,7 +166,7 @@ def test_baja_repetida_replay_y_otro_op_es_not_found(client, db_session):
     assert (
         db_session.execute(
             text(
-                "SELECT count(*) FROM outbox_event WHERE aggregate_id=:id AND event_type='item_catalogo_desactivado'"
+                "SELECT count(*) FROM outbox_event WHERE aggregate_id=:id AND event_type='item_catalogo_desactivado'"  # noqa: E501
             ),
             {"id": item["id_item_catalogo"]},
         ).scalar_one()
@@ -205,7 +205,7 @@ def _events(db_session, item_id):
     return (
         db_session.execute(
             text(
-                "SELECT event_type, aggregate_type, aggregate_id, payload FROM outbox_event WHERE aggregate_id=:id ORDER BY id"
+                "SELECT event_type, aggregate_type, aggregate_id, payload FROM outbox_event WHERE aggregate_id=:id ORDER BY id"  # noqa: E501
             ),
             {"id": item_id},
         )
@@ -337,7 +337,7 @@ def test_update_replay_preserva_metadata_y_rollback(client, db_session, monkeypa
         "descripcion": "Nueva",
     }
     op = str(uuid4())
-    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}"
+    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}"  # noqa: E501
     updated = client.put(url, json=new, headers=_headers(item["version_registro"], op))
     replay = client.put(url, json=new, headers=_headers(item["version_registro"], op))
     assert (
@@ -375,7 +375,7 @@ def test_estado_readonly_invalido_replay_incompatible_y_rollback(
     catalogo = _catalogo(client)
     created, _ = _item(client, catalogo)
     item = created.json()["data"]
-    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/estado"
+    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/estado"  # noqa: E501
     op = str(uuid4())
     inactive = client.patch(
         url, json={"estado_item_catalogo": "INACTIVO"}, headers=_headers(1, op)
@@ -427,7 +427,7 @@ def test_baja_bloquea_operaciones_y_rollback(client, db_session, monkeypatch):
     catalogo = _catalogo(client)
     created, payload = _item(client, catalogo)
     item = created.json()["data"]
-    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/baja"
+    url = f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items/{item['id_item_catalogo']}/baja"  # noqa: E501
     from app.infrastructure.persistence.repositories.outbox_repository import (
         OutboxRepository,
     )

@@ -1,15 +1,14 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
-
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroRepository,
 )
 from app.infrastructure.persistence.repositories.outbox_repository import (
     OutboxRepository,
 )
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 _COLUMNS = """
  id_item_catalogo, id_catalogo_maestro, uid_global::text AS uid_global,
@@ -57,7 +56,11 @@ class ItemCatalogoRepository:
         row = (
             self.db.execute(
                 text(
-                    f"SELECT {_COLUMNS} FROM item_catalogo WHERE op_id_alta=CAST(:op AS uuid)"
+                    f"""
+                    SELECT {_COLUMNS}
+                    FROM item_catalogo
+                    WHERE op_id_alta = CAST(:op AS uuid)
+                    """
                 ),
                 {"op": op_id},
             )
@@ -145,7 +148,18 @@ class ItemCatalogoRepository:
         try:
             iid = self.db.execute(
                 text(
-                    """INSERT INTO item_catalogo (id_catalogo_maestro,codigo_item_catalogo,nombre_item_catalogo,descripcion,estado_item_catalogo,id_instalacion_origen,id_instalacion_ultima_modificacion,op_id_alta,op_id_ultima_modificacion) VALUES (:catalogo,:codigo_item_catalogo,:nombre_item_catalogo,:descripcion,'ACTIVO',:inst,:inst,CAST(:op AS uuid),CAST(:op AS uuid)) RETURNING id_item_catalogo"""
+                    """
+                    INSERT INTO item_catalogo (
+                        id_catalogo_maestro, codigo_item_catalogo,
+                        nombre_item_catalogo, descripcion, estado_item_catalogo,
+                        id_instalacion_origen, id_instalacion_ultima_modificacion,
+                        op_id_alta, op_id_ultima_modificacion
+                    ) VALUES (
+                        :catalogo, :codigo_item_catalogo, :nombre_item_catalogo,
+                        :descripcion, 'ACTIVO', :inst, :inst,
+                        CAST(:op AS uuid), CAST(:op AS uuid)
+                    ) RETURNING id_item_catalogo
+                    """
                 ),
                 {
                     **payload,
@@ -223,7 +237,11 @@ class ItemCatalogoRepository:
                 "El estado destino ya es el estado actual del ítem."
             )
         sets = {
-            "update": "codigo_item_catalogo=:codigo_item_catalogo,nombre_item_catalogo=:nombre_item_catalogo,descripcion=:descripcion",
+            "update": """
+                codigo_item_catalogo = :codigo_item_catalogo,
+                nombre_item_catalogo = :nombre_item_catalogo,
+                descripcion = :descripcion
+            """,
             "estado": "estado_item_catalogo=:estado_item_catalogo",
             "baja": "deleted_at=CURRENT_TIMESTAMP",
         }[action]
@@ -235,7 +253,17 @@ class ItemCatalogoRepository:
         try:
             result = self.db.execute(
                 text(
-                    f"UPDATE item_catalogo SET {sets}, id_instalacion_ultima_modificacion=:inst, op_id_ultima_modificacion=CAST(:op AS uuid) WHERE id_item_catalogo=:item AND id_catalogo_maestro=:catalogo AND deleted_at IS NULL AND version_registro=:version RETURNING id_item_catalogo"
+                    f"""
+                    UPDATE item_catalogo
+                    SET {sets},
+                        id_instalacion_ultima_modificacion = :inst,
+                        op_id_ultima_modificacion = CAST(:op AS uuid)
+                    WHERE id_item_catalogo = :item
+                      AND id_catalogo_maestro = :catalogo
+                      AND deleted_at IS NULL
+                      AND version_registro = :version
+                    RETURNING id_item_catalogo
+                    """
                 ),
                 {
                     **payload,

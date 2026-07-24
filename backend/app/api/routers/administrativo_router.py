@@ -1,19 +1,14 @@
-from fastapi import APIRouter, Depends, Header, Query
-from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 from app.api.core_ef_headers import (
-    CoreEFHeaderValidationError,
     CoreEFHeaders,
+    CoreEFHeaderValidationError,
     parse_core_ef_headers,
 )
 from app.api.dependencies import get_db
 from app.api.schemas.administrativo import (
-    CatalogoMaestroData,
     CatalogoMaestroBajaResponse,
     CatalogoMaestroCreateRequest,
     CatalogoMaestroCreateResponse,
+    CatalogoMaestroData,
     CatalogoMaestroDetailResponse,
     CatalogoMaestroListData,
     CatalogoMaestroListResponse,
@@ -21,10 +16,10 @@ from app.api.schemas.administrativo import (
     CatalogoMaestroUpdateResponse,
     CatalogoMaestroWriteData,
     ErrorResponse,
-    ItemCatalogoData,
     ItemCatalogoBajaResponse,
     ItemCatalogoCreateRequest,
     ItemCatalogoCreateResponse,
+    ItemCatalogoData,
     ItemCatalogoEstadoRequest,
     ItemCatalogoEstadoResponse,
     ItemCatalogoListData,
@@ -38,23 +33,23 @@ from app.api.schemas.administrativo import (
     RolSeguridadDetailResponse,
     RolSeguridadListResponse,
     RolSeguridadPermisosResponse,
+    UsuarioAlcanceOperativoData,
+    UsuarioAlcanceOperativoResponse,
+    UsuarioRolSeguridadBajaResponse,
+    UsuarioRolSeguridadCreateRequest,
+    UsuarioRolSeguridadCreateResponse,
+    UsuarioRolSeguridadData,
+    UsuarioRolSeguridadListResponse,
     UsuarioSistemaBajaResponse,
     UsuarioSistemaCreateRequest,
     UsuarioSistemaCreateResponse,
     UsuarioSistemaData,
     UsuarioSistemaDetailResponse,
     UsuarioSistemaListResponse,
-    UsuarioRolSeguridadBajaResponse,
-    UsuarioRolSeguridadCreateRequest,
-    UsuarioRolSeguridadCreateResponse,
-    UsuarioRolSeguridadData,
-    UsuarioRolSeguridadListResponse,
     UsuarioSucursalCreateRequest,
     UsuarioSucursalCreateResponse,
     UsuarioSucursalData,
     UsuarioSucursalListResponse,
-    UsuarioAlcanceOperativoData,
-    UsuarioAlcanceOperativoResponse,
 )
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroConcurrencyError,
@@ -72,22 +67,26 @@ from app.infrastructure.persistence.repositories.item_catalogo_repository import
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
 )
-from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (
+from app.infrastructure.persistence.repositories.usuario_rol_seguridad_repository import (  # noqa: E501
     UsuarioRolSeguridadConcurrencyError,
     UsuarioRolSeguridadDuplicateActiveError,
     UsuarioRolSeguridadIdempotencyConflictError,
     UsuarioRolSeguridadRepository,
-)
-from app.infrastructure.persistence.repositories.usuario_sucursal_repository import (
-    UsuarioSucursalDuplicateActiveError,
-    UsuarioSucursalIdempotencyConflictError,
-    UsuarioSucursalRepository,
 )
 from app.infrastructure.persistence.repositories.usuario_sistema_repository import (
     UsuarioConcurrencyError,
     UsuarioIdempotencyConflictError,
     UsuarioSistemaRepository,
 )
+from app.infrastructure.persistence.repositories.usuario_sucursal_repository import (
+    UsuarioSucursalDuplicateActiveError,
+    UsuarioSucursalIdempotencyConflictError,
+    UsuarioSucursalRepository,
+)
+from fastapi import APIRouter, Depends, Header, Query
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Administrativo"])
 
