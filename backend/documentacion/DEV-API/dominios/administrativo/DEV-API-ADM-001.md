@@ -718,3 +718,15 @@ No se agregan endpoints: clasificación HTTP, headers, `If-Match-Version`, idemp
 ### NO CONFIRMADO
 
 No se confirma ninguna regla de negocio particular de los dominios consumidores ni una reactivación de bajas lógicas. Tampoco se implementa ni confirma la operativa futura de jerarquía o historial.
+
+## Incremento #399 — CRUD write de ítems de catálogo
+
+Se implementan `POST /api/v1/administrativo/catalogos/{id_catalogo_maestro}/items`, `PUT /api/v1/administrativo/catalogos/{id_catalogo_maestro}/items/{id_item_catalogo}`, `PATCH .../estado` y `PATCH .../baja`. Todos son `COMMAND_WRITE_NEGOCIO` y exigen `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`; los tres comandos sobre una fila existente además exigen `If-Match-Version`. Alta recibe código, nombre y descripción opcional, fija `ACTIVO`; update modifica esos tres valores; estado acepta exclusivamente `ACTIVO` o `INACTIVO`; baja fija `deleted_at`.
+
+Los comandos son idempotentes: alta usa `op_id_alta` y los restantes `op_id_ultima_modificacion`; replay compatible no cambia versión ni duplica outbox, y payload/op incompatibles retornan `409 IDEMPOTENT_DUPLICATE`. El control de concurrencia retorna `409 CONCURRENCY_ERROR`; código duplicado dentro del catálogo retorna `409 DUPLICATE_CODE`. Cada cambio y su evento (`item_catalogo_creado`, `item_catalogo_modificado`, `item_catalogo_estado_cambiado`, `item_catalogo_desactivado`) se confirma en la misma transacción. El mismo estado con una operación nueva es `409 INVALID_STATE_TRANSITION`; no es cambio material. Jerarquías, historial y reactivación de bajas quedan fuera de alcance.
+
+### Corrección PR #400 — contratos de transición, baja y errores técnicos
+
+Con un `X-Op-Id` nuevo, solicitar el estado físico ya vigente no es una colisión idempotente: responde `409 INVALID_STATE_TRANSITION` con el mensaje de que el destino ya es el estado actual. El replay que reutiliza el `X-Op-Id` de la transición anterior y el mismo estado sí devuelve la representación persistida, sin incrementar versión ni crear otro evento.
+
+Para baja lógica, el repository primero verifica pertenencia, existencia física y `deleted_at`: la repetición con el mismo `X-Op-Id` devuelve replay; con otro identificador devuelve `404 NOT_FOUND`. Las respuestas `500 TECHNICAL_INCONSISTENCY` se sanitizan y no incluyen SQL, constraints, parámetros ni mensajes de driver. La recuperación posterior a una colisión de `ux_item_catalogo_op_id_alta` propaga la excepción técnica original si la fila no puede recuperarse tras rollback.

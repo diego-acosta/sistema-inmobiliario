@@ -249,3 +249,11 @@ Permanecen **NO CONFIRMADOS** la política futura de reactivación, reutilizaci�
 `item_catalogo` es núcleo de configuración administrativa; el consumo posterior no traslada a Administrativo las reglas de aceptación de cada dominio. Se congelan los estados físicos `ACTIVO` (inicial) e `INACTIVO`, ambos con `deleted_at IS NULL`. La inactivación conserva fila y código, permite la transición futura `INACTIVO -> ACTIVO` y no equivale a baja lógica. La baja lógica usa sólo `deleted_at IS NOT NULL`, excluye la fila de las consultas normales y no se reactiva en este incremento. La constraint de código sigue aplicando a todas las filas, incluidas bajas, por lo que no hay reutilización.
 
 La estrategia de datos es normalizar `NULL` histórico a `ACTIVO`, cerrar la columna con `DEFAULT`, `NOT NULL` y `CHECK`, y eliminar valores incompatibles porque los datos son descartables. Las consultas read-only continúan listando activos e inactivos sin filtro, filtran literalmente cuando se solicita un estado y excluyen siempre bajas lógicas. No se implementan comandos ni endpoints de ítems; por ello headers, idempotencia HTTP, outbox runtime y lock lógico son **NO APLICA**, mientras el versionado/triggers físicos existentes se preservan.
+
+## Incremento #399 — comandos de `item_catalogo`
+
+Los comandos de alta, modificación, cambio de estado y baja lógica de ítems se implementan como `COMMAND_WRITE_NEGOCIO` con metadata CORE-EF, optimistic locking en mutaciones y outbox transaccional. `ACTIVO` e `INACTIVO` son estados físicos; la baja es exclusivamente `deleted_at` y no admite reactivación. La unicidad SQL `(id_catalogo_maestro, codigo_item_catalogo)` conserva el código ocupado después de la baja. No se implementan jerarquías ni historial funcional.
+
+### Corrección PR #400
+
+El intento con un nuevo `X-Op-Id` de persistir el mismo estado físico es una transición inválida (`INVALID_STATE_TRANSITION`), no un conflicto de idempotencia. La baja repetida sólo hace replay con el mismo identificador de la baja previa; con otro identificador se trata como recurso no operable (`NOT_FOUND`). Los errores técnicos se devuelven sin detalle interno; la transacción conserva rollback conjunto de negocio y outbox.
