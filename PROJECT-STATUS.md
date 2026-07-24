@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-07-16
+**Actualizado:** 2026-07-24
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó completado. | #346, #348, #349 y #365 abiertos; #345 y #358 cerrados. | #361 mergeado el 2026-07-16. | Auditar y dividir #348 para una primera visualización read-only de indexación V2 en la ficha de venta. |
-| B — Administrativo | Activo incremental. Usuarios, roles/permisos, asignaciones, alcance operativo y catálogos básicos tienen incrementos completados; configuración y auditoría siguen abiertas. | #249 abierto; #263 y #265 abiertos; #264 cerrado. | Estado posterior a #264 debe verificarse antes del próximo incremento. | Continuar en el frente administrativo separado, auditando #263 o #265 antes de implementar. |
+| B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
 ## 4. Reglas para trabajo paralelo
@@ -169,25 +169,38 @@ Antes de tocar código para #348:
 
 Activo incremental. GitHub muestra el epic #249 abierto: `[Epic] Administrativo: usuarios, roles, permisos y configuración`.
 
-Sub-issues conocidos:
+Sub-issues con estado verificable:
 
 - #259 `Administrativo: usuarios del sistema — modelo y CRUD base` cerrado/completado.
 - #260 `Administrativo: roles de seguridad y permisos base` cerrado/completado.
 - #261 `Administrativo: asignación de roles a usuarios` cerrado/completado.
 - #262 `Administrativo: alcance operativo por sucursal/instalación` cerrado/completado.
 - #263 `Administrativo: configuración general del sistema` abierto.
-- #264 `Administrativo: catálogos maestros e ítems configurables` cerrado/completado.
+- #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
+- #368 `CRUD write de catálogos maestros` cerrado/completado.
+- #393 `Definir y congelar el ciclo de vida físico de item_catalogo` cerrado/completado.
 
-El frente Administrativo se trabaja en paralelo en otro chat. Antes de continuar, verificar en GitHub los PRs y sub-issues que cerraron #264 y el estado operativo más reciente.
+Incrementos completados en catálogos:
+
+- #360 / PR #362: consultas read-only de `catalogo_maestro` e `item_catalogo`.
+- #363 / PR #364: soporte CORE-EF y restricciones SQL para catálogos.
+- #368 / PR #370: alta, modificación y baja lógica de `catalogo_maestro`, con idempotencia, optimistic locking, outbox y errores tipados.
+- #393 / PR #396: estados físicos `ACTIVO` e `INACTIVO`, estado inicial `ACTIVO`, `NOT NULL`, `CHECK`, diferenciación entre inactivación y baja lógica, código no reutilizable después de baja y preparación del futuro CRUD write de ítems.
 
 ### 6.2 Epic o issue principal
 
 - #249 `[Epic] Administrativo: usuarios, roles, permisos y configuración`: abierto.
 
-### 6.3 Issue activo
+### 6.3 Issues activos
 
-Los candidatos verificables para continuar son #263 y #265. Elegir uno por incremento y auditar primero SQL, implementación y tests reales.
+Los frentes activos verificables son:
+
+- #263 — configuración general.
+- #264 — catálogos maestros e ítems configurables.
+- #265 — auditoría administrativa básica.
+
+Dentro de #264, el próximo incremento recomendado es `CRUD write de ítems de catálogo`.
 
 ### 6.4 Decisiones vigentes
 
@@ -196,27 +209,62 @@ Los candidatos verificables para continuar son #263 y #265. Elegir uno por incre
 - `rol_seguridad` y `permiso` no son `rol_participacion` ni roles de negocio.
 - `usuario_sucursal` referencia alcance operativo, pero no convierte Administrativo en dueño de `sucursal` o `instalacion`.
 - La documentación API vigente indica que todavía no hay login real, passwords, OAuth/SSO, middleware de autorización real ni menú dinámico salvo evidencia posterior.
+- `catalogo_maestro` ya tiene CRUD write mínimo.
+- `item_catalogo` tiene solo lectura y freeze físico de estado; no tiene CRUD write.
+- Los únicos estados físicos permitidos de `item_catalogo` son `ACTIVO` e `INACTIVO`; su estado inicial es `ACTIVO`.
+- `INACTIVO` no equivale a baja lógica: la baja lógica se representa mediante `deleted_at`.
+- La transición `INACTIVO → ACTIVO` queda permitida para un futuro comando; la reactivación de una baja lógica sigue `NO CONFIRMADA`.
+- El código de ítem no se reutiliza después de baja.
+- Los dominios consumidores deciden sus reglas particulares de aceptación de ítems inactivos.
+- No migrar enums de otros dominios incidentalmente.
 - Todo write administrativo nuevo debe cumplir CORE-EF desde el inicio.
 
-### 6.5 Fuera de alcance
+### 6.5 Próximo foco recomendado
+
+Para dar continuidad coherente a #264, crear un sub-issue de #264 para el CRUD write de `item_catalogo` e implementar, en un incremento posterior, alta, modificación, cambio de estado y baja lógica. Debe respetar CORE-EF desde el inicio.
+
+Mantener fuera de alcance jerarquías, historial, defaults avanzados, vigencias y UI. #263 y #265 siguen siendo candidatos válidos para otros incrementos paralelos, pero no deben desplazar el cierre coherente de #264 en este frente.
+
+### 6.6 Fuera de alcance
 
 - Redefinir Personas.
 - Implementar Operativo dentro de Administrativo.
 - Usar `sucursal` e `instalacion` como si fueran entidades administrativas.
 - Crear autenticación real, sesiones o credenciales persistidas sin issue y auditoría previa.
 - Declarar outbox, locks o autorización real si no hay evidencia en repository, SQL y tests.
+- Implementar jerarquías, historial, defaults avanzados, vigencias o UI como parte del futuro CRUD write de ítems.
 
-### 6.6 Documentos relevantes
+### 6.7 Documentos relevantes
 
 - `backend/documentacion/DEV-API/dominios/administrativo/DEV-API-ADM-001.md`.
-- `backend/documentacion/DEV-SRV/dominios/administrativo/`.
+- `backend/documentacion/DEV-SRV/dominios/administrativo/SRV-ADM-005-gestion-de-configuracion-y-parametrizacion.md`.
+- `backend/documentacion/DEV-SRV/dominios/administrativo/catalogos/EST-ADM.md`.
+- `backend/documentacion/DEV-SRV/dominios/administrativo/catalogos/RN-ADM.md`.
 - `backend/documentacion/CORE-EF/CORE-EF-001.md` y matriz de cumplimiento.
 - `backend/documentacion/DEV-ARCH/dominios/personas/DEV-ARCH-PER-001.md`.
 - `backend/documentacion/DEV-ARCH/dominios/operativo/DEV-ARCH-OPE-001.md`.
 
-### 6.7 Regla de continuidad
+### 6.8 Últimos PR relevantes
 
-Antes de tocar código administrativo, seleccionar un issue abierto (#263 o #265), auditar SQL/backend/tests y documentar explícitamente lo implementado, pendiente y `NO CONFIRMADO`.
+- #396 `feat(administrativo): definir ciclo de vida de ítems de catálogo (#393)` — mergeado.
+- #370 `feat(administrativo): CRUD write de catálogos maestros (#368)` — mergeado.
+- #364 `feat(administrativo): preparar catálogos CORE-EF` — mergeado.
+- #362 `feat(administrativo): consulta read-only de catálogos e ítems (#360)` — mergeado.
+
+### 6.9 Regla de continuidad
+
+Antes de tocar código para el futuro CRUD write de ítems:
+
+1. abrir #264, #393 y PR #396;
+2. revisar DEV-API Administrativo y DEV-SRV Administrativo;
+3. validar SQL real de `item_catalogo`;
+4. revisar router, schemas y repository actuales;
+5. revisar tests read-only y CORE-EF;
+6. estudiar el patrón implementado en `catalogo_maestro`;
+7. no implementar jerarquías ni historial;
+8. no migrar enums;
+9. no mezclar #263 ni #265 dentro del mismo PR;
+10. marcar `NO CONFIRMADO` todo lo no respaldado.
 
 ## 7. Dependencias entre frentes
 
