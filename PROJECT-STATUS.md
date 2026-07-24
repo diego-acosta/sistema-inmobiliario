@@ -25,7 +25,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó completado. | #346, #348, #349 y #365 abiertos; #345 y #358 cerrados. | #361 mergeado el 2026-07-16. | Auditar y dividir #348 para una primera visualización read-only de indexación V2 en la ficha de venta. |
+| A — Comercial / Financiero | Activo. #390 corrigió emisión PPV2; #392 alineó reservas; #394 auditó la brecha de #374; #397 expuso queries read-only de índices. | #346, #348, #349, #365 y #374 abiertos; #395 cerrado. | #397 mergeado el 2026-07-24. | #374: integrar catálogo y valor aplicable reales en Venta completa V3, sin cálculo financiero en frontend. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
@@ -42,20 +42,14 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 ### 5.1 Estado
 
-Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó completado:
+Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó completado. Los merges recientes dejaron disponible el contrato read-only que necesitaba #374:
 
-- #338, #342, #343 y #344 están cerrados/completados.
-- #345 está cerrado/completado después de auditoría integral.
-- #356 está cerrado/completado.
-- #358 está cerrado/completado.
-- PR #350 agregó la base SQL de corridas V2.
-- PR #352 implementó preview efímero y persistido.
-- PR #353 implementó aplicación de corridas V2.
-- PR #354 implementó preparación por publicación de índice.
-- PR #355 documentó la estrategia de ventas históricas.
-- PR #357 implementó la prevalidación histórica read-like.
-- PR #361 integró la prevalidación en la confirmación completa de venta.
-- #346, #348, #349 y #365 permanecen abiertos.
+- PR #390 corrigió la emisión PPV2: los importes definitivos nacen `EMITIDA`; una cuota indexada sin importe materializado nace `PROYECTADA`; la aplicación posterior la pasa de `PROYECTADA` a `EMITIDA`. La demo PPV2 quedó aislada transaccionalmente en tests.
+- PR #392 alineó la suite de reservas con el contrato vigente, eliminó el patch DDL heredado de los tests y corrigió los fixtures de roles. Cerró #391.
+- PR #394 incorporó la auditoría contractual de #374; no implementó ni cerró #374.
+- PR #397 expuso catálogo de índices y valor publicado aplicable por fecha como queries read-only. Cerró #395 y desbloqueó #374.
+- El último baseline backend verificable informado para este corte es `1740 passed`; no se reejecutó la suite completa en este cambio exclusivamente documental.
+- #346, #348, #349, #365 y #374 permanecen abiertos.
 
 Implementación relevante verificada:
 
@@ -69,37 +63,25 @@ Implementación relevante verificada:
 ### 5.2 Issues activos
 
 - #346 — integración con importación de ventas históricas.
-- #348 — frontend de indexación y corridas.
+- #348 — frente amplio de frontend de indexación y corridas.
 - #349 — corrección y reversión avanzada.
 - #365 — definición transversal de fecha operativa.
+- #374 — mejorar configuración de tramos indexados en Venta completa V3; abierto y desbloqueado por #397.
 - #59 continúa abierto como issue histórico y amplio de confirmación desde reserva; revisar su vigencia antes de usarlo como próximo incremento.
 
 ### 5.3 Últimos PR relevantes
 
-- #361 `feat(comercial): integrar prevalidación histórica al confirmar venta` — mergeado 2026-07-16.
-- #357 `feat(comercial): prevalidar indexación de ventas históricas` — mergeado 2026-07-15.
-- #355 `docs(auditoria): diseñar indexación de ventas históricas` — mergeado 2026-07-14.
-- #354 `feat(financiero): preparar corridas V2 al publicar un índice` — mergeado 2026-07-14.
-- #353 `feat(financiero): aplicar corridas de indexación V2` — mergeado 2026-07-14.
-- #352 `feat(financiero): implementar preview de indexación V2` — mergeado 2026-07-13.
-- #350 `feat(financiero): agregar SQL base de corridas de indexación V2` — mergeado 2026-07-13.
+- #397 `feat(financiero): exponer catálogo de índices y valor publicado aplicable por fecha` — mergeado 2026-07-24.
+- #394 `docs(frontend): documentar brecha contractual de tramos indexados` — mergeado 2026-07-24.
+- #392 `feat(comercial): restaurar contrato y suite de reservas de venta` — mergeado 2026-07-24.
+- #390 `fix(financiero): alinear ciclo de obligaciones PPV2 con emisión` — mergeado 2026-07-23.
+- #388 `docs(financiero): documentar semántica de estados en Plan Pago V2` — mergeado 2026-07-22.
 
 ### 5.4 Próximo foco recomendado
 
-Auditar y dividir #348 para implementar primero una visualización read-only de indexación V2 en la ficha de venta.
+#374 — Mejorar configuración de tramos indexados en Venta completa V3. #397 ya proporciona `GET /api/v1/financiero/indices` y `GET /api/v1/financiero/indices/valor-aplicable`, los contratos que la auditoría #394 identificó como faltantes.
 
-El primer incremento tentativo debe mostrar, usando datos reales del backend:
-
-- capital original;
-- ajuste de indexación;
-- importe vigente;
-- saldo;
-- índice y valores aplicados;
-- coeficiente;
-- estado de indexación;
-- corrida relacionada, si existe.
-
-Antes de implementar se debe confirmar si el backend ya ofrece una query suficiente o si hace falta un contrato read-like mínimo. No duplicar cálculo financiero en Comercial ni en frontend.
+El incremento debe cargar el catálogo real, resolver el valor aplicable para la fecha solicitada y ocultar IDs técnicos. El frontend sólo presenta las respuestas y arma el comando comercial válido: no calcula indexación, no infiere valores y no duplica reglas financieras. #348 se mantiene como issue más amplio para visualización de indexación y corridas.
 
 ### 5.5 Decisiones vigentes
 
@@ -108,19 +90,24 @@ Antes de implementar se debe confirmar si el backend ya ofrece una query suficie
 - La orquestación no traslada ownership financiero al dominio Comercial.
 - Una venta histórica puede generar obligaciones directamente indexadas si el valor aplicable ya está publicado.
 - No se aplica una corrida inmediata sobre obligaciones que ya nacieron indexadas.
+- Las obligaciones no indexadas y las indexadas con importe definitivo materializado nacen `EMITIDA`; las indexadas sin valor materializado nacen `PROYECTADA`.
+- La aplicación posterior de una corrida pasa una obligación `PROYECTADA` a `EMITIDA` y no altera los demás estados contractuales.
 - Las cuotas históricas exigibles sin índice válido bloquean toda la confirmación.
 - Las cuotas futuras pueden persistirse como `PROYECTADA` sin ajuste materializado.
 - `PROYECTADA_SIN_INDICE` es una clasificación de cálculo/preview, no un estado físico de `obligacion_financiera`.
 - `fecha_corte` es un dato de negocio explícito.
 - El uso de `date.today()` para detectar historicidad es provisional hasta resolver #365.
 - Publicación, preparación y aplicación de una corrida son operaciones separadas.
+- El catálogo de índices y la resolución de valor aplicable pertenecen a Financiero y son `QUERY_READLIKE`: no requieren headers write, no escriben ni recalculan en frontend.
+- Una respuesta de valor aplicable con `data: null` significa que el índice activo existe pero no tiene valor aplicable; no se infiere un valor.
 - `cliente_comprador` es semántica funcional comercial aunque tenga persistencia heredada.
 - `persona` es identidad base; no define condición de cliente ni comprador.
 - `analitico` es read-only y no debe recalcular ni persistir lógica financiera.
 
 ### 5.6 Pendientes y orden sugerido
 
-- #348: mejor candidato inmediato, comenzando por lectura y visualización.
+- #374: candidato inmediato; integrar catálogo real y resolución de valor aplicable en los tramos indexados de Venta completa V3.
+- #348: permanece como frente amplio; ordenar después la visualización read-only de indexación y corridas.
 - #365: deuda transversal que debe avanzar antes de ampliar importaciones históricas, procesos batch o escenarios multiinstalación.
 - #346: pendiente vigente, pero requiere auditoría específica del importador y posible relación con #365.
 - #349: pendiente vigente de alto riesgo; debe auditarse y dividirse antes de implementar.
@@ -128,6 +115,7 @@ Antes de implementar se debe confirmar si el backend ya ofrece una query suficie
 ### 5.7 Fuera de alcance del próximo incremento
 
 - Importación masiva.
+- Calcular, interpolar, proyectar o inferir valores de índice en frontend.
 - Preparar o aplicar corridas desde la UI.
 - Publicar o editar índices.
 - Reversión y corrección avanzada.
@@ -148,18 +136,19 @@ Antes de implementar se debe confirmar si el backend ya ofrece una query suficie
 - `backend/documentacion/DEV-SRV/dominios/financiero/`.
 - `backend/documentacion/DEV-API/dominios/comercial/DEV-API-COMERCIAL.md`.
 - `backend/documentacion/DEV-API/dominios/financiero/`.
+- `frontend/flet_app/documentacion/AUDITORIA-ISSUE-374-TRAMOS-INDEXADOS.md`.
 - `backend/documentacion/CORE-EF/`.
 - `backend/documentacion/DECISIONES/integracion/INT-FIN-*.md`.
 
 ### 5.9 Regla de continuidad
 
-Antes de tocar código para #348:
+Antes de tocar código para #374:
 
-1. abrir #348 y los PR #350, #352, #353, #354, #357 y #361;
-2. revisar frontend real de ficha de venta;
-3. verificar queries existentes;
-4. validar SQL, routers, schemas, services, repositories y tests;
-5. dividir #348 en incrementos pequeños;
+1. abrir #374, la auditoría #394 y el PR #397;
+2. revisar el wizard Venta completa V3 y el cliente HTTP real;
+3. validar los contratos DEV-API Financiero y Comercial, router, schemas, service, repository y tests de índices;
+4. integrar sólo catálogo, resolución de valor aplicable, estados de carga/error y ocultamiento de IDs técnicos;
+5. no calcular indexación ni duplicar reglas financieras;
 6. no invadir #346, #349 ni #365;
 7. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
 
@@ -277,7 +266,7 @@ Antes de tocar código para el futuro CRUD write de ítems:
 
 - Operativo: existen trabajos recientes de caja operativa (#325, #327, #331) y epic #248 abierto. No mezclar con Administrativo.
 - Importación histórica: #346 abierto; auditar antes de implementar y revisar relación con #365.
-- Frontend de indexación V2: #348 abierto; próximo candidato, comenzando por lectura.
+- Frontend de indexación V2: #348 abierto; #374 es el incremento inmediato desbloqueado por las queries read-only de #397.
 - Reversión/corrección avanzada de indexación V2: #349 abierto; requiere auditoría y división.
 - Fecha operativa transversal: #365 abierto; no reabre #345 ni #358.
 
