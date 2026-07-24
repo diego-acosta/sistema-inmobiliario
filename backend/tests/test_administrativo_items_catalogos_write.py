@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import text
 
 
@@ -658,7 +659,68 @@ def test_change_serializa_op_antes_del_lookup_global(client, monkeypatch):
     assert calls[:2] == ["lock", "lookup"]
 
 
-def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones(monkeypatch):
+@pytest.fixture
+def _cleanup_concurrent_catalogo():
+    created: dict[str, int] = {}
+    yield created
+    if not created:
+        return
+    from app.config.database import engine
+    from sqlalchemy.orm import sessionmaker
+
+    cleanup = sessionmaker(bind=engine)()
+    try:
+        item_ids = [created["first"], created["second"]]
+        cleanup.execute(
+            text(
+                """
+                DELETE FROM outbox_event
+                WHERE (aggregate_type = 'item_catalogo'
+                       AND aggregate_id IN (:first, :second))
+                   OR (aggregate_type = 'catalogo_maestro'
+                       AND aggregate_id = :catalogo)
+                """
+            ),
+            {
+                "first": item_ids[0],
+                "second": item_ids[1],
+                "catalogo": created["catalogo"],
+            },
+        )
+        cleanup.execute(
+            text(
+                "DELETE FROM item_catalogo WHERE id_item_catalogo IN (:first, :second)"
+            ),
+            {"first": item_ids[0], "second": item_ids[1]},
+        )
+        cleanup.execute(
+            text("DELETE FROM catalogo_maestro WHERE id_catalogo_maestro = :catalogo"),
+            {"catalogo": created["catalogo"]},
+        )
+        cleanup.commit()
+        assert (
+            cleanup.execute(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM item_catalogo
+                    WHERE id_item_catalogo IN (:first, :second)
+                    """
+                ),
+                {"first": item_ids[0], "second": item_ids[1]},
+            ).scalar_one()
+            == 0
+        )
+    except Exception:
+        cleanup.rollback()
+        raise
+    finally:
+        cleanup.close()
+
+
+def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones(
+    monkeypatch, _cleanup_concurrent_catalogo
+):
     """Update is the real concurrent case; estado and baja share change's critical section."""  # noqa: E501
     import threading
 
@@ -701,6 +763,11 @@ def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones(monkeypatch)
                 "descripcion": None,
             },
             CoreEFHeaders(uuid4(), 1, 1, 1),
+        )
+        _cleanup_concurrent_catalogo.update(
+            catalogo=catalogo["id_catalogo_maestro"],
+            first=first["id_item_catalogo"],
+            second=second["id_item_catalogo"],
         )
     finally:
         setup.close()
