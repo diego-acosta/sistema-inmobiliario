@@ -456,3 +456,87 @@ def test_baja_bloquea_operaciones_y_rollback(client, db_session, monkeypatch):
     assert (
         update.status_code == state.status_code == 404 and duplicate.status_code == 409
     )
+
+
+def test_alta_colision_concurrente_op_id_devuelve_replay(
+    client, db_session, monkeypatch
+):
+    catalogo = _catalogo(client)
+    op_id = str(uuid4())
+    created, payload = _item(client, catalogo, op_id)
+    original = __import__(
+        "app.infrastructure.persistence.repositories.item_catalogo_repository",
+        fromlist=["ItemCatalogoRepository"],
+    ).ItemCatalogoRepository
+    original_lookup = original.by_op_alta
+    calls = 0
+
+    def miss_initial(self, requested_op_id):
+        nonlocal calls
+        calls += 1
+        return None if calls == 1 else original_lookup(self, requested_op_id)
+
+    monkeypatch.setattr(original, "by_op_alta", miss_initial)
+    monkeypatch.setattr(
+        original,
+        "_constraint_name",
+        staticmethod(lambda exc: "ux_item_catalogo_op_id_alta"),
+    )
+    replay = client.post(
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items",
+        json=payload,
+        headers=_headers(op_id=op_id),
+    )
+    item = created.json()["data"]
+    assert calls == 2 and replay.status_code == 201 and replay.json()["data"] == item
+    assert (
+        db_session.execute(
+            text(
+                "SELECT count(*) FROM item_catalogo WHERE op_id_alta=CAST(:op AS uuid)"
+            ),
+            {"op": op_id},
+        ).scalar_one()
+        == 1
+    )
+    assert len(_events(db_session, item["id_item_catalogo"])) == 1
+
+
+def test_alta_colision_concurrente_incompatible_y_fila_ausente(client, monkeypatch):
+    catalogo = _catalogo(client)
+    op_id = str(uuid4())
+    _, payload = _item(client, catalogo, op_id)
+    from app.infrastructure.persistence.repositories.item_catalogo_repository import (
+        ItemCatalogoRepository,
+    )
+
+    lookup = ItemCatalogoRepository.by_op_alta
+    calls = 0
+
+    def miss_then_find(self, requested_op_id):
+        nonlocal calls
+        calls += 1
+        return None if calls == 1 else lookup(self, requested_op_id)
+
+    monkeypatch.setattr(ItemCatalogoRepository, "by_op_alta", miss_then_find)
+    monkeypatch.setattr(
+        ItemCatalogoRepository,
+        "_constraint_name",
+        staticmethod(lambda exc: "ux_item_catalogo_op_id_alta"),
+    )
+    incompatible = client.post(
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items",
+        json={**payload, "nombre_item_catalogo": "Distinto"},
+        headers=_headers(op_id=op_id),
+    )
+    assert (
+        calls == 2
+        and incompatible.status_code == 409
+        and incompatible.json()["error_code"] == "IDEMPOTENT_DUPLICATE"
+    )
+    monkeypatch.setattr(ItemCatalogoRepository, "by_op_alta", lambda *args: None)
+    absent = client.post(
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}/items",
+        json=payload,
+        headers=_headers(op_id=op_id),
+    )
+    assert absent.status_code == 500 and absent.json()["details"] == {}
