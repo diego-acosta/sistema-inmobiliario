@@ -619,3 +619,40 @@ def test_op_ultima_modificacion_bloquea_estado_y_baja_entre_items(client, db_ses
     assert persisted["estado_item_catalogo"] == "ACTIVO"
     assert persisted["deleted_at"] is None and persisted["version_registro"] == 1
     assert len(_events(db_session, second["id_item_catalogo"])) == 1
+
+
+def test_change_serializa_op_antes_del_lookup_global(client, monkeypatch):
+    catalogo = _catalogo(client)
+    created, payload = _item(client, catalogo)
+    item = created.json()["data"]
+    from app.infrastructure.persistence.repositories.item_catalogo_repository import (
+        ItemCatalogoRepository,
+    )
+
+    calls = []
+    lock = ItemCatalogoRepository._lock_operation
+    lookup = ItemCatalogoRepository.by_op_ultima_modificacion
+
+    def tracked_lock(self, op_id):
+        calls.append("lock")
+        return lock(self, op_id)
+
+    def tracked_lookup(self, op_id):
+        calls.append("lookup")
+        return lookup(self, op_id)
+
+    monkeypatch.setattr(ItemCatalogoRepository, "_lock_operation", tracked_lock)
+    monkeypatch.setattr(
+        ItemCatalogoRepository, "by_op_ultima_modificacion", tracked_lookup
+    )
+    url = (
+        f"/api/v1/administrativo/catalogos/{catalogo['id_catalogo_maestro']}"
+        f"/items/{item['id_item_catalogo']}"
+    )
+    response = client.put(
+        url,
+        json={**payload, "nombre_item_catalogo": "Con lock"},
+        headers=_headers(item["version_registro"]),
+    )
+    assert response.status_code == 200
+    assert calls[:2] == ["lock", "lookup"]

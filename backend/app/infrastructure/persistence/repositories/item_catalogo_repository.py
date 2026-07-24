@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroRepository,
@@ -85,6 +86,20 @@ class ItemCatalogoRepository:
             .one_or_none()
         )
         return dict(row) if row else None
+
+    def _lock_operation(self, op_id: str) -> None:
+        """Serialize item commands by operation UUID for the current transaction."""
+        value = UUID(op_id).int
+        key1 = (value >> 96) & 0xFFFFFFFF
+        key2 = (value >> 64) & 0xFFFFFFFF
+        if key1 >= 0x80000000:
+            key1 -= 0x100000000
+        if key2 >= 0x80000000:
+            key2 -= 0x100000000
+        self.db.execute(
+            text("SELECT pg_advisory_xact_lock(:key1, :key2)"),
+            {"key1": key1, "key2": key2},
+        )
 
     @staticmethod
     def _payload_matches(row, payload):
@@ -229,6 +244,7 @@ class ItemCatalogoRepository:
         if row is None:
             return None
         op = str(core.x_op_id)
+        self._lock_operation(op)
         used_by = self.by_op_ultima_modificacion(op)
         if used_by is not None and used_by["id_item_catalogo"] != item_id:
             raise ItemCatalogoIdempotencyConflictError(
