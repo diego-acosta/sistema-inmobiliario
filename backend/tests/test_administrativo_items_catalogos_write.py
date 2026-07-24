@@ -658,7 +658,7 @@ def test_change_serializa_op_antes_del_lookup_global(client, monkeypatch):
     assert calls[:2] == ["lock", "lookup"]
 
 
-def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones():
+def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones(monkeypatch):
     """Update is the real concurrent case; estado and baja share change's critical section."""  # noqa: E501
     import threading
 
@@ -705,14 +705,39 @@ def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones():
     finally:
         setup.close()
 
-    barrier = threading.Barrier(2)
     op_id = uuid4()
     results: list[object] = []
+    errors: list[Exception] = []
+    first_lookup_reached = threading.Event()
+    allow_first_to_continue = threading.Event()
+    second_started = threading.Event()
+    second_lookup_reached = threading.Event()
+    lookup_guard = threading.Lock()
+    lookup_calls = 0
+    original_lookup = ItemCatalogoRepository.by_op_ultima_modificacion
 
-    def _update(item, name):
+    def coordinated_lookup(repository, requested_op_id):
+        nonlocal lookup_calls
+        result = original_lookup(repository, requested_op_id)
+        with lookup_guard:
+            lookup_calls += 1
+            call = lookup_calls
+        if call == 1:
+            first_lookup_reached.set()
+            assert allow_first_to_continue.wait(timeout=5)
+        else:
+            second_lookup_reached.set()
+        return result
+
+    monkeypatch.setattr(
+        ItemCatalogoRepository, "by_op_ultima_modificacion", coordinated_lookup
+    )
+
+    def _update(item, name, is_second=False):
         session = factory()
         try:
-            barrier.wait(timeout=5)
+            if is_second:
+                second_started.set()
             result = ItemCatalogoRepository(session).change(
                 catalogo["id_catalogo_maestro"],
                 item["id_item_catalogo"],
@@ -728,18 +753,25 @@ def test_advisory_lock_serializa_update_concurrente_en_dos_sesiones():
             results.append(("ok", result))
         except ItemCatalogoIdempotencyConflictError:
             results.append(("conflict", None))
+        except Exception as exc:
+            session.rollback()
+            errors.append(exc)
         finally:
             session.close()
 
-    threads = [
-        threading.Thread(target=_update, args=(first, "A cambiado")),
-        threading.Thread(target=_update, args=(second, "B cambiado")),
-    ]
-    for thread in threads:
-        thread.start()
+    first_thread = threading.Thread(target=_update, args=(first, "A cambiado"))
+    second_thread = threading.Thread(target=_update, args=(second, "B cambiado", True))
+    first_thread.start()
+    assert first_lookup_reached.wait(timeout=5)
+    second_thread.start()
+    assert second_started.wait(timeout=5)
+    assert not second_lookup_reached.wait(timeout=0.2)
+    allow_first_to_continue.set()
+    threads = [first_thread, second_thread]
     for thread in threads:
         thread.join(timeout=10)
     assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
     assert sorted(result[0] for result in results) == ["conflict", "ok"]
     verify = factory()
     try:
