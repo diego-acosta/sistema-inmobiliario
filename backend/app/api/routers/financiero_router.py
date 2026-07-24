@@ -88,6 +88,11 @@ from app.api.schemas.financiero import (
     ImputacionData,
     ImputacionResponse,
     InboxEventRequest,
+    IndiceFinancieroCatalogoData,
+    IndiceFinancieroCatalogoItem,
+    IndiceFinancieroCatalogoResponse,
+    IndiceFinancieroValorAplicableData,
+    IndiceFinancieroValorAplicableResponse,
     LiquidacionRecuperoFacturaServicioData,
     LiquidacionRecuperoDetalleData,
     LiquidacionRecuperoDetalleResponse,
@@ -298,6 +303,12 @@ from app.application.financiero.services.regenerar_cronograma_locativo_service i
 )
 from app.infrastructure.persistence.repositories.financiero_repository import (
     FinancieroRepository,
+)
+from app.infrastructure.persistence.repositories.indice_financiero_repository import (
+    IndiceFinancieroRepository,
+)
+from app.application.financiero.services.consultar_indices_financieros_service import (
+    ConsultarIndicesFinancierosService,
 )
 from app.infrastructure.persistence.repositories.locativo_repository import (
     LocativoRepository,
@@ -2166,6 +2177,81 @@ def get_deuda_consolidado(
                 DeudaConsolidadoRelacionItem(**r) for r in data["relaciones"]
             ],
         )
+    )
+
+
+@router.get(
+    "/api/v1/financiero/indices",
+    response_model=IndiceFinancieroCatalogoResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_indices_financieros(
+    limit: int = Query(default=50, ge=0, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> IndiceFinancieroCatalogoResponse | JSONResponse:
+    service = ConsultarIndicesFinancierosService(IndiceFinancieroRepository(db))
+    try:
+        result = service.listar(limit=limit, offset=offset)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+    return IndiceFinancieroCatalogoResponse(
+        data=IndiceFinancieroCatalogoData(
+            items=[IndiceFinancieroCatalogoItem(**item) for item in result.data["items"]],
+            total=result.data["total"],
+        )
+    )
+
+
+@router.get(
+    "/api/v1/financiero/indices/valor-aplicable",
+    response_model=IndiceFinancieroValorAplicableResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_indice_financiero_valor_aplicable(
+    fecha_objetivo: str,
+    id_indice_financiero: int | None = Query(default=None),
+    codigo_indice_financiero: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> IndiceFinancieroValorAplicableResponse | JSONResponse:
+    try:
+        fecha_objetivo_parseada = date.fromisoformat(fecha_objetivo)
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="FECHA_OBJETIVO_INVALIDA",
+                error_message="fecha_objetivo debe usar el formato YYYY-MM-DD.",
+            ).model_dump(),
+        )
+    service = ConsultarIndicesFinancierosService(IndiceFinancieroRepository(db))
+    try:
+        result = service.resolver_valor_aplicable(
+            id_indice_financiero=id_indice_financiero,
+            codigo_indice_financiero=codigo_indice_financiero,
+            fecha_objetivo=fecha_objetivo_parseada,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error_code="INTERNAL_ERROR", error_message=str(exc)).model_dump(),
+        )
+    if not result.success:
+        error_code = result.errors[0]
+        status_code = 404 if error_code in {
+            "INDICE_FINANCIERO_NO_ENCONTRADO",
+            "INDICE_FINANCIERO_ELIMINADO",
+            "INDICE_FINANCIERO_INACTIVO",
+        } else 400
+        return JSONResponse(
+            status_code=status_code,
+            content=ErrorResponse(error_code=error_code, error_message="No se pudo resolver el valor aplicable del índice financiero.").model_dump(),
+        )
+    return IndiceFinancieroValorAplicableResponse(
+        data=IndiceFinancieroValorAplicableData(**result.data) if result.data else None
     )
 
 

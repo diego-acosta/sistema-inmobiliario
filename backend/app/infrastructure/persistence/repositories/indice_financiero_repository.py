@@ -160,3 +160,55 @@ class IndiceFinancieroRepository:
             "fecha_publicacion": row["fecha_publicacion"],
             "fuente_valor": row["fuente_valor"],
         }
+
+    def list_indices_financieros_activos(self, *, limit: int, offset: int) -> dict[str, Any]:
+        filters = "estado_indice_financiero = 'ACTIVO' AND deleted_at IS NULL"
+        rows = self.db.execute(
+            text(f"""
+                SELECT id_indice_financiero, codigo_indice_financiero,
+                       nombre_indice_financiero, unidad_medida,
+                       frecuencia_publicacion, estado_indice_financiero
+                FROM indice_financiero
+                WHERE {filters}
+                ORDER BY codigo_indice_financiero ASC, id_indice_financiero ASC
+                LIMIT :limit OFFSET :offset
+            """),
+            {"limit": limit, "offset": offset},
+        ).mappings().all()
+        total = self.db.execute(
+            text(f"SELECT COUNT(*) FROM indice_financiero WHERE {filters}")
+        ).scalar_one()
+        return {"items": [dict(row) for row in rows], "total": total}
+
+    def get_indice_financiero_por_id(self, id_indice_financiero: int) -> dict[str, Any] | None:
+        if id_indice_financiero <= 0:
+            return None
+        row = self.db.execute(
+            text("""
+                SELECT id_indice_financiero, codigo_indice_financiero,
+                       nombre_indice_financiero, estado_indice_financiero, deleted_at
+                FROM indice_financiero
+                WHERE id_indice_financiero = :id_indice_financiero
+            """),
+            {"id_indice_financiero": id_indice_financiero},
+        ).mappings().one_or_none()
+        return dict(row) if row else None
+
+    def get_indice_financiero_por_codigo(self, codigo_indice_financiero: str) -> dict[str, Any] | None:
+        codigo_normalizado = codigo_indice_financiero.strip().upper()
+        if not codigo_normalizado:
+            return None
+        row = self.db.execute(
+            text("""
+                SELECT id_indice_financiero, codigo_indice_financiero,
+                       nombre_indice_financiero, estado_indice_financiero, deleted_at
+                FROM indice_financiero
+                WHERE codigo_indice_financiero = :codigo_indice_financiero
+                ORDER BY
+                    CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END,
+                    id_indice_financiero DESC
+                LIMIT 1
+            """),
+            {"codigo_indice_financiero": codigo_normalizado},
+        ).mappings().one_or_none()
+        return dict(row) if row else None

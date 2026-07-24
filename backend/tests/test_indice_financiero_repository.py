@@ -208,3 +208,54 @@ def test_indice_activo_valor_publicado_por_id_y_fecha(db_session) -> None:
     assert result["id_indice_financiero_valor"] == id_valor_esperado
     assert result["fecha_valor"] == date(2026, 2, 10)
     assert repo.get_valor_publicado_por_id_y_fecha(0, date(2026, 2, 20)) is None
+
+
+def test_indice_activo_excluye_valor_publicado_sin_fecha_publicacion(db_session) -> None:
+    repo = IndiceFinancieroRepository(db_session)
+    id_indice = _crear_indice(db_session, "SIN_FECHA_PUBLICACION")
+    db_session.execute(
+        text(
+            """
+            INSERT INTO indice_financiero_valor (
+                id_indice_financiero, fecha_valor, valor_indice,
+                fecha_publicacion, fuente_valor, estado_valor_indice
+            ) VALUES (:id_indice, '2026-01-01', 100.00000000, NULL, 'INDEC', 'PUBLICADO')
+            """
+        ),
+        {"id_indice": id_indice},
+    )
+
+    assert repo.get_valor_publicado_por_id_y_fecha(id_indice, date(2026, 1, 15)) is None
+
+
+def test_lookup_por_codigo_prioriza_encarnacion_vigente_reutilizada(db_session) -> None:
+    repo = IndiceFinancieroRepository(db_session)
+    _crear_indice(db_session, "CAC_REUTILIZADO", deleted=True)
+    id_indice_nuevo = _crear_indice(db_session, "CAC_REUTILIZADO")
+    id_valor_nuevo = _crear_valor(
+        db_session, id_indice_nuevo, "2026-01-01", "200.00000000"
+    )
+
+    indice = repo.get_indice_financiero_por_codigo(" cac_reutilizado ")
+    valor = repo.get_valor_publicado_por_codigo_y_fecha(
+        " cac_reutilizado ", date(2026, 1, 15)
+    )
+
+    assert indice is not None
+    assert indice["id_indice_financiero"] == id_indice_nuevo
+    assert indice["deleted_at"] is None
+    assert valor is not None
+    assert valor["id_indice_financiero"] == id_indice_nuevo
+    assert valor["id_indice_financiero_valor"] == id_valor_nuevo
+
+
+def test_lookup_por_codigo_solo_eliminado_e_inexistente(db_session) -> None:
+    repo = IndiceFinancieroRepository(db_session)
+    id_indice_eliminado = _crear_indice(db_session, "SOLO_ELIMINADO", deleted=True)
+
+    eliminado = repo.get_indice_financiero_por_codigo(" solo_eliminado ")
+
+    assert eliminado is not None
+    assert eliminado["id_indice_financiero"] == id_indice_eliminado
+    assert eliminado["deleted_at"] is not None
+    assert repo.get_indice_financiero_por_codigo("INEXISTENTE") is None
