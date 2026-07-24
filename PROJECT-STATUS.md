@@ -81,7 +81,7 @@ Implementación relevante verificada:
 
 #374 — Mejorar configuración de tramos indexados en Venta completa V3. #397 ya proporciona `GET /api/v1/financiero/indices` y `GET /api/v1/financiero/indices/valor-aplicable`, los contratos que la auditoría #394 identificó como faltantes.
 
-El incremento debe cargar el catálogo real, resolver el valor aplicable para la fecha solicitada y ocultar IDs técnicos. El frontend sólo presenta las respuestas y arma el comando comercial válido: no calcula indexación, no infiere valores y no duplica reglas financieras. #348 se mantiene como issue más amplio para visualización de indexación y corridas.
+El incremento debe cargar el catálogo real, resolver el valor aplicable para la fecha solicitada y ocultar IDs técnicos. También debe completar la edición y eliminación de tramos ya agregados, preservar el estado al avanzar, volver y editar, y cubrir validaciones visibles, resumen de pendientes y la habilitación coherente de Guardar tramo y Siguiente. El frontend sólo presenta las respuestas y arma el comando comercial válido: no calcula indexación, no infiere valores y no duplica reglas financieras. #348 se mantiene como issue más amplio para visualización de indexación y corridas.
 
 ### 5.5 Decisiones vigentes
 
@@ -106,7 +106,7 @@ El incremento debe cargar el catálogo real, resolver el valor aplicable para la
 
 ### 5.6 Pendientes y orden sugerido
 
-- #374: candidato inmediato; integrar catálogo real y resolución de valor aplicable en los tramos indexados de Venta completa V3.
+- #374: candidato inmediato; completar catálogo, valor aplicable, edición/eliminación de tramos, navegación preservando estado y validaciones del wizard Venta completa V3.
 - #348: permanece como frente amplio; ordenar después la visualización read-only de indexación y corridas.
 - #365: deuda transversal que debe avanzar antes de ampliar importaciones históricas, procesos batch o escenarios multiinstalación.
 - #346: pendiente vigente, pero requiere auditoría específica del importador y posible relación con #365.
@@ -147,10 +147,13 @@ Antes de tocar código para #374:
 1. abrir #374, la auditoría #394 y el PR #397;
 2. revisar el wizard Venta completa V3 y el cliente HTTP real;
 3. validar los contratos DEV-API Financiero y Comercial, router, schemas, service, repository y tests de índices;
-4. integrar sólo catálogo, resolución de valor aplicable, estados de carga/error y ocultamiento de IDs técnicos;
-5. no calcular indexación ni duplicar reglas financieras;
-6. no invadir #346, #349 ni #365;
-7. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
+4. integrar catálogo real, resolución de valor aplicable, estados de carga/error y ocultamiento de IDs técnicos;
+5. implementar edición y eliminación de tramos ya agregados, preservando el estado durante la navegación;
+6. agregar validaciones por campo, resumen de pendientes y habilitación coherente de Guardar tramo y Siguiente;
+7. probar navegación, edición y eliminación sin pérdida ni duplicación de datos;
+8. no calcular indexación ni duplicar reglas financieras;
+9. no invadir #346, #349 ni #365;
+10. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
 
 ## 6. Frente B — Administrativo
 
