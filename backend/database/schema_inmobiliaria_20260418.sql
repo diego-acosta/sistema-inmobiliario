@@ -3328,9 +3328,10 @@ CREATE TABLE public.item_catalogo (
     codigo_item_catalogo character varying(50) NOT NULL,
     nombre_item_catalogo character varying(150) NOT NULL,
     descripcion text,
-    estado_item_catalogo character varying(30),
+    estado_item_catalogo character varying(30) DEFAULT 'ACTIVO'::character varying NOT NULL,
     CONSTRAINT chk_item_catalogo_version_registro CHECK ((version_registro >= 1)),
-    CONSTRAINT chk_item_catalogo_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at)))
+    CONSTRAINT chk_item_catalogo_deleted_at CHECK (((deleted_at IS NULL) OR (deleted_at >= created_at))),
+    CONSTRAINT chk_item_catalogo_estado CHECK (((estado_item_catalogo)::text = ANY (ARRAY['ACTIVO'::text, 'INACTIVO'::text])))
 );
 
 

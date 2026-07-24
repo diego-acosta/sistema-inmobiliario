@@ -46,8 +46,16 @@ def test_catalogos_core_ef_estructura_y_triggers(db_session):
     }
     assert {(table, column) for table in ("catalogo_maestro", "item_catalogo") for column in core} <= present
     assert {(row["table_name"], row["column_name"]): row["is_nullable"] for row in columns}[("catalogo_maestro", "uid_global")] == "NO"
+    item_state = db_session.execute(text("""
+        SELECT is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'item_catalogo'
+          AND column_name = 'estado_item_catalogo'
+    """)).mappings().one()
+    assert item_state["is_nullable"] == "NO"
+    assert "ACTIVO" in item_state["column_default"]
     names = set(db_session.execute(text("""SELECT conname FROM pg_constraint WHERE conrelid IN ('catalogo_maestro'::regclass, 'item_catalogo'::regclass)""")).scalars())
-    assert {"uq_catalogo_maestro_codigo", "uq_catalogo_maestro_uid_global", "uq_item_catalogo", "uq_item_catalogo_uid_global", "fk_item_catalogo_catalogo", "chk_catalogo_maestro_version_registro", "chk_item_catalogo_version_registro"} <= names
+    assert {"uq_catalogo_maestro_codigo", "uq_catalogo_maestro_uid_global", "uq_item_catalogo", "uq_item_catalogo_uid_global", "fk_item_catalogo_catalogo", "chk_catalogo_maestro_version_registro", "chk_item_catalogo_version_registro", "chk_item_catalogo_estado"} <= names
     triggers = set(db_session.execute(text("""SELECT tgname FROM pg_trigger WHERE tgrelid IN ('catalogo_maestro'::regclass, 'item_catalogo'::regclass) AND NOT tgisinternal""")).scalars())
     assert {"trg_bi_catalogo_maestro_core_ef", "trg_bu_catalogo_maestro_core_ef", "trg_bi_item_catalogo_core_ef", "trg_bu_item_catalogo_core_ef"} <= triggers
 
@@ -84,6 +92,7 @@ def test_item_catalogo_core_ef_insert_defaults_and_idempotency_index(db_session)
     assert row["id_instalacion_ultima_modificacion"] == 1
     assert str(row["op_id_alta"]) == op_id
     assert str(row["op_id_ultima_modificacion"]) == op_id
+    assert db_session.execute(text("SELECT estado_item_catalogo FROM item_catalogo WHERE id_item_catalogo = :id"), {"id": item_id}).scalar_one() == "ACTIVO"
     db_session.commit()
 
     other_catalogo_id = _catalogo(db_session, "ADM363_ITEM_ALTA_OTRO_CATALOGO")
@@ -133,6 +142,41 @@ def test_item_catalogo_core_ef_update_preserves_original_metadata(db_session):
     assert str(updated["op_id_ultima_modificacion"]) == op_id_modificacion
 
 
+def test_item_catalogo_estado_admite_ciclo_activo_inactivo_y_rechaza_valores_invalidos(db_session):
+    catalogo_id = _catalogo(db_session, "ADM393_ESTADO_CATALOGO")
+    item_id = _item(db_session, catalogo_id, "ADM393_ESTADO")
+    original = db_session.execute(text("""
+        SELECT version_registro, uid_global, created_at, id_instalacion_origen, op_id_alta
+        FROM item_catalogo WHERE id_item_catalogo = :id
+    """), {"id": item_id}).mappings().one()
+    db_session.commit()
+
+    db_session.execute(text("""
+        UPDATE item_catalogo SET estado_item_catalogo = 'INACTIVO'
+        WHERE id_item_catalogo = :id
+    """), {"id": item_id})
+    inactive = db_session.execute(text("""
+        SELECT estado_item_catalogo, deleted_at, version_registro, uid_global,
+               created_at, id_instalacion_origen, op_id_alta
+        FROM item_catalogo WHERE id_item_catalogo = :id
+    """), {"id": item_id}).mappings().one()
+    assert inactive["estado_item_catalogo"] == "INACTIVO"
+    assert inactive["deleted_at"] is None
+    assert inactive["version_registro"] == original["version_registro"] + 1
+    immutable_fields = ("uid_global", "created_at", "id_instalacion_origen", "op_id_alta")
+    assert {key: inactive[key] for key in immutable_fields} == {key: original[key] for key in immutable_fields}
+
+    db_session.execute(text("UPDATE item_catalogo SET estado_item_catalogo = 'ACTIVO' WHERE id_item_catalogo = :id"), {"id": item_id})
+    assert db_session.execute(text("SELECT estado_item_catalogo, version_registro FROM item_catalogo WHERE id_item_catalogo = :id"), {"id": item_id}).one() == ("ACTIVO", original["version_registro"] + 2)
+    db_session.commit()
+    with pytest.raises(IntegrityError):
+        db_session.execute(text("UPDATE item_catalogo SET estado_item_catalogo = 'PENDIENTE' WHERE id_item_catalogo = :id"), {"id": item_id})
+    db_session.rollback()
+    with pytest.raises(IntegrityError):
+        db_session.execute(text("UPDATE item_catalogo SET estado_item_catalogo = NULL WHERE id_item_catalogo = :id"), {"id": item_id})
+    db_session.rollback()
+
+
 def test_item_catalogo_soft_delete_is_versioned_and_hidden_from_readonly(client, db_session):
     catalogo_id = _catalogo(db_session, "ADM363_ITEM_BAJA_CATALOGO")
     item_id = _item(db_session, catalogo_id, "ADM363_ITEM_BAJA")
@@ -144,6 +188,9 @@ def test_item_catalogo_soft_delete_is_versioned_and_hidden_from_readonly(client,
     assert deleted["version_registro"] == original["version_registro"] + 1
     assert deleted["updated_at"] >= original["updated_at"]
     assert db_session.execute(text("SELECT COUNT(*) FROM item_catalogo WHERE id_item_catalogo = :id"), {"id": item_id}).scalar_one() == 1
+    with pytest.raises(IntegrityError):
+        _item(db_session, catalogo_id, "ADM363_ITEM_BAJA")
+    db_session.rollback()
 
     response = client.get(f"/api/v1/administrativo/catalogos/{catalogo_id}/items")
     assert response.status_code == 200

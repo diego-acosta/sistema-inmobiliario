@@ -243,3 +243,9 @@ Los tres endpoints se clasifican como `COMMAND_WRITE_NEGOCIO`. Exigen el helper 
 ### NO CONFIRMADO / fuera de alcance
 
 Permanecen **NO CONFIRMADOS** la política futura de reactivación, reutilización de códigos, estado persistido de catálogo, jerarquías e historial funcional. No se implementan writes, activación/desactivación, defaults, vigencias ni configuración contextual de ítems.
+
+## Incremento #393 — Estado y ciclo de vida de `item_catalogo`
+
+`item_catalogo` es núcleo de configuración administrativa; el consumo posterior no traslada a Administrativo las reglas de aceptación de cada dominio. Se congelan los estados físicos `ACTIVO` (inicial) e `INACTIVO`, ambos con `deleted_at IS NULL`. La inactivación conserva fila y código, permite la transición futura `INACTIVO -> ACTIVO` y no equivale a baja lógica. La baja lógica usa sólo `deleted_at IS NOT NULL`, excluye la fila de las consultas normales y no se reactiva en este incremento. La constraint de código sigue aplicando a todas las filas, incluidas bajas, por lo que no hay reutilización.
+
+La estrategia de datos es normalizar `NULL` histórico a `ACTIVO`, cerrar la columna con `DEFAULT`, `NOT NULL` y `CHECK`, y eliminar valores incompatibles porque los datos son descartables. Las consultas read-only continúan listando activos e inactivos sin filtro, filtran literalmente cuando se solicita un estado y excluyen siempre bajas lógicas. No se implementan comandos ni endpoints de ítems; por ello headers, idempotencia HTTP, outbox runtime y lock lógico son **NO APLICA**, mientras el versionado/triggers físicos existentes se preservan.

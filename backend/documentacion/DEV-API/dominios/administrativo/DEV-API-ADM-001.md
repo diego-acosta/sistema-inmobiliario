@@ -690,3 +690,31 @@ Fuera de alcance: writes de `item_catalogo`, reactivación, jerarquías, histori
 La alta conserva la consulta previa por `op_id_alta` como optimización y además resuelve la carrera de inserción por la constraint `ux_catalogo_maestro_op_id_alta`: luego de `rollback`, recupera y compara la fila persistida. El mismo payload devuelve el replay sin una nueva fila, versión ni evento; un payload incompatible devuelve `409 IDEMPOTENT_DUPLICATE`. Si la fila no aparece tras el rollback, se propaga la inconsistencia técnica real.
 
 La constraint `uq_catalogo_maestro_codigo` se traduce en el conflicto funcional `409 DUPLICATE_CODE` en alta y modificación. No se exponen nombres de constraints ni mensajes SQL. Las colisiones de constraint y los fallos de outbox hacen rollback antes de devolver la respuesta; por ello no dejan catálogo ni outbox parcial.
+
+## Incremento #393 — Ciclo de vida de ítems de catálogo
+
+### Auditoría y decisión
+
+La auditoría confirma `ACTIVO` como estado inicial por `EST-ADM-001` y por la suite read-only que ya usa ese valor. `EST-ADM-002` y `ERR-ADM-048` confirman la existencia y semántica de `INACTIVO`. El modelo SQL anterior era nullable y no tenía `CHECK`; esa ausencia no contradice la formalización actual porque los datos de esta etapa son descartables.
+
+El patch `patch_item_catalogo_estado_20260724.sql` adopta la estrategia A: normaliza `NULL` a `ACTIVO`, elimina filas con valores distintos de `ACTIVO`/`INACTIVO` junto con sus relaciones jerárquicas, y deja `DEFAULT 'ACTIVO'`, `NOT NULL` y `chk_item_catalogo_estado`. No crea tablas `_legacy`, espejos ni lectura dual.
+
+| Estado físico | `deleted_at` | Significado | Transiciones permitidas |
+| --- | --- | --- | --- |
+| `ACTIVO` | `NULL` | Ítem disponible administrativamente para ser ofrecido a dominios consumidores. | A `INACTIVO` o a baja lógica. |
+| `INACTIVO` | `NULL` | Ítem existente y visible administrativamente, no disponible para nuevas selecciones. El dominio consumidor conserva la decisión de aceptación. | A `ACTIVO` o a baja lógica. |
+| Baja lógica | no `NULL` | Fila conservada, fuera de consultas normales. No es un tercer valor de `estado_item_catalogo`. | Sin reactivación en este incremento. |
+
+La reactivación futura sólo significa `INACTIVO -> ACTIVO` con `deleted_at IS NULL`; no hay endpoint ni flujo write implementado. La baja lógica se representa exclusivamente con `deleted_at IS NOT NULL`; la eliminación física queda fuera de alcance. La constraint `uq_item_catalogo` conserva el código dentro del catálogo también después de baja, por lo que no se reutiliza.
+
+### Contrato read-only preservado
+
+`GET /api/v1/administrativo/catalogos/{id_catalogo_maestro}/items` sigue siendo `QUERY_READLIKE`: no requiere headers write ni produce efectos persistentes. Sin filtro devuelve ítems `ACTIVO` e `INACTIVO` no dados de baja; con filtro literal devuelve el estado físico solicitado; un valor no válido produce una lista vacía, sin convertir el query param en enum contractual. Las filas con `deleted_at IS NOT NULL` siempre quedan excluidas. `NULL` deja de ser un valor persistible y no se expone para ítems creados tras el patch.
+
+### CORE-EF y alcance
+
+No se agregan endpoints: clasificación HTTP, headers, `If-Match-Version`, idempotencia HTTP, outbox runtime y lock lógico son **NO APLICA**. Se preservan versionado físico y triggers; el patch SQL es transaccional y sus efectos persistentes son normalización/limpieza estructural controlada. Quedan fuera de alcance el CRUD write de `item_catalogo`, jerarquías, historial funcional, defaults por catálogo, vigencias, configuración contextual y UI.
+
+### NO CONFIRMADO
+
+No se confirma ninguna regla de negocio particular de los dominios consumidores ni una reactivación de bajas lógicas. Tampoco se implementa ni confirma la operativa futura de jerarquía o historial.
