@@ -1,8 +1,14 @@
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+
+
+PATCH_ITEM_CATALOGO_ESTADO = Path(
+    "backend/database/patch_item_catalogo_estado_20260724.sql"
+)
 
 
 def _catalogo(db_session, codigo: str, op_id: str | None = None) -> int:
@@ -175,6 +181,85 @@ def test_item_catalogo_estado_admite_ciclo_activo_inactivo_y_rechaza_valores_inv
     with pytest.raises(IntegrityError):
         db_session.execute(text("UPDATE item_catalogo SET estado_item_catalogo = NULL WHERE id_item_catalogo = :id"), {"id": item_id})
     db_session.rollback()
+
+
+def test_patch_item_catalogo_estado_transforma_datos_preexistentes(db_session):
+    """Ejecuta el patch real sobre una estructura temporal equivalente a pre-#393."""
+    catalogo_id = _catalogo(db_session, "ADM393_PATCH_CATALOGO")
+    db_session.execute(text("""
+        ALTER TABLE item_catalogo DROP CONSTRAINT chk_item_catalogo_estado;
+        ALTER TABLE item_catalogo ALTER COLUMN estado_item_catalogo DROP NOT NULL;
+        ALTER TABLE item_catalogo ALTER COLUMN estado_item_catalogo DROP DEFAULT;
+    """))
+    items = {}
+    for codigo, estado in (
+        ("NULL", None), ("ACTIVO", "ACTIVO"), ("INACTIVO", "INACTIVO"),
+        ("OBSOLETO", "OBSOLETO"),
+    ):
+        items[codigo] = db_session.execute(text("""
+            INSERT INTO item_catalogo (
+                id_catalogo_maestro, codigo_item_catalogo, nombre_item_catalogo,
+                estado_item_catalogo
+            ) VALUES (:catalogo_id, :codigo, :codigo, :estado)
+            RETURNING id_item_catalogo
+        """), {"catalogo_id": catalogo_id, "codigo": codigo, "estado": estado}).scalar_one()
+    for padre, hijo in (("ACTIVO", "INACTIVO"), ("OBSOLETO", "ACTIVO")):
+        db_session.execute(text("""
+            INSERT INTO jerarquia_item_catalogo (id_item_catalogo_padre, id_item_catalogo_hijo)
+            VALUES (:padre, :hijo)
+        """), {"padre": items[padre], "hijo": items[hijo]})
+
+    # La fixture mantiene una transacción externa para aislar cada test. Se ejecuta
+    # el archivo real, omitiendo únicamente su BEGIN/COMMIT envolvente para que el
+    # rollback de la fixture pueda restaurar la estructura inicial del test.
+    patch_sql = PATCH_ITEM_CATALOGO_ESTADO.read_text(encoding="utf-8")
+    patch_sql = patch_sql.replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
+    db_session.execute(text(patch_sql))
+
+    states = dict(db_session.execute(text("""
+        SELECT codigo_item_catalogo, estado_item_catalogo
+        FROM item_catalogo
+        WHERE id_catalogo_maestro = :catalogo_id
+    """), {"catalogo_id": catalogo_id}).all())
+    assert states == {"NULL": "ACTIVO", "ACTIVO": "ACTIVO", "INACTIVO": "INACTIVO"}
+    links = db_session.execute(text("""
+        SELECT padre.codigo_item_catalogo, hijo.codigo_item_catalogo
+        FROM jerarquia_item_catalogo jerarquia
+        JOIN item_catalogo padre ON padre.id_item_catalogo = jerarquia.id_item_catalogo_padre
+        JOIN item_catalogo hijo ON hijo.id_item_catalogo = jerarquia.id_item_catalogo_hijo
+        WHERE padre.id_catalogo_maestro = :catalogo_id
+    """), {"catalogo_id": catalogo_id}).all()
+    assert links == [("ACTIVO", "INACTIVO")]
+
+    state_column = db_session.execute(text("""
+        SELECT is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'item_catalogo'
+          AND column_name = 'estado_item_catalogo'
+    """)).mappings().one()
+    assert state_column["is_nullable"] == "NO"
+    assert "ACTIVO" in state_column["column_default"]
+    assert db_session.execute(text("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = 'item_catalogo'::regclass
+              AND conname = 'chk_item_catalogo_estado'
+        )
+    """)).scalar_one()
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            db_session.execute(text("""
+                INSERT INTO item_catalogo (
+                    id_catalogo_maestro, codigo_item_catalogo, nombre_item_catalogo,
+                    estado_item_catalogo
+                ) VALUES (:catalogo_id, 'INVALIDO', 'Invalido', 'OBSOLETO')
+            """), {"catalogo_id": catalogo_id})
+    default_state = db_session.execute(text("""
+        INSERT INTO item_catalogo (id_catalogo_maestro, codigo_item_catalogo, nombre_item_catalogo)
+        VALUES (:catalogo_id, 'DEFAULT', 'Default')
+        RETURNING estado_item_catalogo
+    """), {"catalogo_id": catalogo_id}).scalar_one()
+    assert default_state == "ACTIVO"
 
 
 def test_item_catalogo_soft_delete_is_versioned_and_hidden_from_readonly(client, db_session):
