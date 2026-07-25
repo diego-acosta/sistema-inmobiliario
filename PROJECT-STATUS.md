@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-07-24
+**Actualizado:** 2026-07-25
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -25,7 +25,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. #390 corrigió emisión PPV2; #392 alineó reservas; #394 auditó la brecha de #374; #397 expuso queries read-only de índices. | #346, #348, #349, #365 y #374 abiertos; #395 cerrado. | #397 mergeado el 2026-07-24. | #374: integrar catálogo y valor aplicable reales en Venta completa V3, sin cálculo financiero en frontend. |
+| A — Comercial / Financiero | Activo. #390 corrigió emisión PPV2; #392 alineó reservas; #394 auditó la brecha de #374; #397 expuso queries read-only de índices; #404 integró catálogo y valor aplicable en el wizard. | #346, #348, #349, #365 y #374 abiertos; #395 cerrado. | #404 implementado en este incremento frontend; PR pendiente de revisión. | #405: completar edición y eliminación de tramos ya agregados, preservando #374 abierto. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
@@ -48,6 +48,7 @@ Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó comp
 - PR #392 alineó la suite de reservas con el contrato vigente, eliminó el patch DDL heredado de los tests y corrigió los fixtures de roles. Cerró #391.
 - PR #394 incorporó la auditoría contractual de #374; no implementó ni cerró #374.
 - PR #397 expuso catálogo de índices y valor publicado aplicable por fecha como queries read-only. Cerró #395 y desbloqueó #374.
+- #404 integró esas queries en Venta completa V3: catálogo real, resolución automática, estados de carga/error/sin valor e ID técnico interno. #374 permanece abierto y #405 es el siguiente incremento.
 - El último baseline backend verificable informado para este corte es `1740 passed`; no se reejecutó la suite completa en este cambio exclusivamente documental.
 - #346, #348, #349, #365 y #374 permanecen abiertos.
 
@@ -79,9 +80,9 @@ Implementación relevante verificada:
 
 ### 5.4 Próximo foco recomendado
 
-#374 — Mejorar configuración de tramos indexados en Venta completa V3. #397 ya proporciona `GET /api/v1/financiero/indices` y `GET /api/v1/financiero/indices/valor-aplicable`, los contratos que la auditoría #394 identificó como faltantes.
+#405 — Completar el siguiente incremento de #374: edición y eliminación de tramos ya agregados y navegación sin pérdida ni duplicación. #404 ya integra el catálogo real y el valor aplicable provistos por #397, oculta IDs técnicos y mantiene bloqueado el tramo ante carga, error o ausencia de valor.
 
-El incremento debe cargar el catálogo real, resolver el valor aplicable para la fecha solicitada y ocultar IDs técnicos. También debe completar la edición y eliminación de tramos ya agregados, preservar el estado al avanzar, volver y editar, y cubrir validaciones visibles, resumen de pendientes y la habilitación coherente de Guardar tramo y Siguiente. El frontend sólo presenta las respuestas y arma el comando comercial válido: no calcula indexación, no infiere valores y no duplica reglas financieras. #348 se mantiene como issue más amplio para visualización de indexación y corridas.
+#374 permanece abierto hasta completar esos flujos. El frontend sólo presenta las respuestas y arma el comando comercial válido: no calcula indexación, no infiere valores y no duplica reglas financieras. #348 se mantiene como issue más amplio para visualización de indexación y corridas.
 
 ### 5.5 Decisiones vigentes
 
@@ -106,7 +107,7 @@ El incremento debe cargar el catálogo real, resolver el valor aplicable para la
 
 ### 5.6 Pendientes y orden sugerido
 
-- #374: candidato inmediato; completar catálogo, valor aplicable, edición/eliminación de tramos, navegación preservando estado y validaciones del wizard Venta completa V3.
+- #405: siguiente incremento de #374; completar edición/eliminación de tramos y navegación preservando estado. #404 ya cubre catálogo y valor aplicable.
 - #348: permanece como frente amplio; ordenar después la visualización read-only de indexación y corridas.
 - #365: deuda transversal que debe avanzar antes de ampliar importaciones históricas, procesos batch o escenarios multiinstalación.
 - #346: pendiente vigente, pero requiere auditoría específica del importador y posible relación con #365.
