@@ -65,21 +65,21 @@ Si detecta contradicción, ambigüedad o falta de evidencia, debe informarla ant
 5. **Implementación**
    - Modificar solo lo necesario.
    - Mantener CORE-EF desde el primer commit cuando aplique.
-6. **Validación**
+6. **Evaluación de impacto en `PROJECT-STATUS`**
+   - Evaluar impacto; actualizar el archivo o resolver la decisión `NO APLICA` con motivo.
+   - Verificar que se preservan los otros frentes y que la decisión es única, no está vacía ni conserva placeholders.
+7. **Validación**
    - Ejecutar suite mínima relacionada.
    - Ejecutar `git diff --check`.
-   - Revisar diff completo.
-7. **Commit**
+   - Revisar el diff completo, incluida la actualización de `PROJECT-STATUS.md` cuando corresponda.
+8. **Commit**
    - Confirmar que el diff corresponde al alcance.
    - Usar mensaje claro y trazable.
-8. **Push**
+9. **Push**
    - Subir la rama acordada.
-9. **PR draft**
-   - Abrir PR draft con descripción, decisión CORE-EF, decisión de impacto en `PROJECT-STATUS` y tests reales.
-10. **Evaluación de impacto en `PROJECT-STATUS`**
-   - Evaluar impacto; actualizar el archivo o declarar `NO APLICA` con motivo.
-   - Verificar que se preservan los otros frentes y revisar el diff final.
-   - Confirmar que el body del PR contiene la decisión antes de declararlo listo para merge.
+10. **PR draft**
+   - Abrir o actualizar el PR draft con descripción, decisión CORE-EF, la decisión de impacto ya resuelta y tests reales.
+   - Copiar al body exactamente una línea activa `PROJECT-STATUS impact:`.
 11. **Cierre**
    - No cerrar issues funcionales salvo que el usuario lo indique.
    - Dejar pendientes y `NO CONFIRMADO` explícitos.
@@ -115,6 +115,8 @@ PROJECT-STATUS impact: NO APLICA — <motivo>
 ```
 
 El motivo debe explicarse brevemente. Ningún PR se debe declarar listo para merge sin una de estas dos decisiones.
+
+El body debe contener exactamente una línea activa `PROJECT-STATUS impact:`. La decisión no puede quedar vacía, conservar `<motivo>` ni presentar simultáneamente `UPDATED` y `NO APLICA`; si es vacía, contiene placeholders o resulta ambigua, el PR no está listo para merge.
 
 ### Cuándo corresponde actualizar
 
@@ -371,24 +373,31 @@ No declarar tests como ejecutados sin salida real de terminal.
 
 ### PROJECT-STATUS
 
+<!-- Escribí exactamente una decisión:
 PROJECT-STATUS impact: UPDATED
-
-o:
-
 PROJECT-STATUS impact: NO APLICA — <motivo>
+No dejes el campo vacío, no conserves <motivo> y no hagas coexistir ambas decisiones.
+-->
+
+PROJECT-STATUS impact:
 
 ### Decisión CORE-EF
+<!-- Clasificaciones vigentes: COMMAND_WRITE_NEGOCIO, COMMAND_WRITE_TECNICO,
+SIMULACION_READLIKE, PREVIEW_READLIKE, QUERY_READLIKE o NO_CONFIRMADO. -->
 - Clasificación:
+- Naturaleza del endpoint:
 - Headers:
 - If-Match-Version:
 - Idempotencia:
 - Outbox:
 - Lock lógico:
 - Versionado:
-- Transacción/Rollback:
-- Tests CORE-EF:
+- Frontera transaccional / rollback:
+- Tests CORE-EF ejecutados:
 
-Para cambios exclusivamente documentales: `NO APLICA`, indicando que no hay endpoints, writes, persistencia ni sincronización.
+Para cambios exclusivamente documentales o cuando no corresponda: `NO APLICA — <justificación breve>`.
+
+Para `SIMULACION_READLIKE`, `PREVIEW_READLIKE` y `QUERY_READLIKE`, explicar por qué no requiere headers write.
 
 ### Testing
 - `comando ejecutado`
@@ -416,6 +425,8 @@ Para cambios exclusivamente documentales: `NO APLICA`, indicando que no hay endp
 - [ ] Push realizado.
 - [ ] PR draft abierto con tests reales y fuera de alcance.
 - [ ] Impacto en `PROJECT-STATUS` evaluado y decisión incluida en el body del PR.
+- [ ] El body contiene exactamente una decisión `PROJECT-STATUS impact`.
+- [ ] La decisión no está vacía ni conserva placeholders.
 - [ ] `PROJECT-STATUS.md` actualizado o `NO APLICA` documentado con motivo.
 - [ ] Otros frentes preservados al actualizar `PROJECT-STATUS.md`.
 
@@ -430,3 +441,4 @@ Al preparar un PR, el entregable final de Codex debe incluir esta tabla:
 | Otros frentes preservados | PASS/FAIL/NO APLICA |
 | Estados GitHub verificados | PASS/FAIL/NO APLICA |
 | Decisión incluida en body del PR | PASS/FAIL |
+| Decisión de impacto única y no ambigua | PASS/FAIL |
