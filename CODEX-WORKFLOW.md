@@ -75,12 +75,67 @@ Si detecta contradicción, ambigüedad o falta de evidencia, debe informarla ant
 8. **Push**
    - Subir la rama acordada.
 9. **PR draft**
-   - Abrir PR draft con descripción, decisión CORE-EF y tests reales.
-10. **Cierre**
+   - Abrir PR draft con descripción, decisión CORE-EF, decisión de impacto en `PROJECT-STATUS` y tests reales.
+10. **Evaluación de impacto en `PROJECT-STATUS`**
+   - Evaluar impacto; actualizar el archivo o declarar `NO APLICA` con motivo.
+   - Verificar que se preservan los otros frentes y revisar el diff final.
+   - Confirmar que el body del PR contiene la decisión antes de declararlo listo para merge.
+11. **Cierre**
    - No cerrar issues funcionales salvo que el usuario lo indique.
    - Dejar pendientes y `NO CONFIRMADO` explícitos.
 
-## 6. Plantilla estándar de issue
+## 6. Control obligatorio de `PROJECT-STATUS` antes del merge
+
+Antes de declarar un PR listo para merge, se debe evaluar si cambia alguno de estos elementos:
+
+- estado operativo de un frente;
+- issue o epic principal;
+- próximo incremento recomendado;
+- decisión funcional vigente;
+- decisión arquitectónica vigente;
+- contrato API relevante;
+- baseline verificable de tests;
+- bloqueo o dependencia entre issues;
+- último PR relevante del frente.
+
+### Regla de decisión
+
+Si cambia alguno, el body del PR debe declarar:
+
+```text
+PROJECT-STATUS impact: UPDATED
+```
+
+Además, se debe actualizar `PROJECT-STATUS.md` dentro del mismo PR, limitar la modificación al frente afectado, preservar las secciones de otros frentes, verificar los estados de GitHub el mismo día, releer el archivo después de rebasear contra `origin/main` e incluir el cambio en el review final.
+
+Si no cambia ninguno, el body del PR debe declarar:
+
+```text
+PROJECT-STATUS impact: NO APLICA — <motivo>
+```
+
+El motivo debe explicarse brevemente. Ningún PR se debe declarar listo para merge sin una de estas dos decisiones.
+
+### Cuándo corresponde actualizar
+
+Normalmente corresponde actualizar ante nueva funcionalidad completa; cierre de un issue que era próximo foco; creación o eliminación de un bloqueo; nuevo contrato API relevante; cambio de regla de negocio u ownership; saneamiento de suite que cambia el baseline; cambio de roadmap; o auditoría que redefine el próximo incremento.
+
+Normalmente no corresponde ante un refactor interno sin cambio observable; test adicional aislado; corrección tipográfica; cleanup; optimización sin impacto operativo; o fix menor que no cambia decisiones ni próximos pasos. Estos ejemplos no reemplazan la evaluación real de cada PR.
+
+### Regla para trabajo paralelo y rebase
+
+Cada PR solo puede modificar la fila resumen y la sección del frente que le pertenece, salvo orquestación interdominio explícita y justificada. Comercial/Financiero no debe reescribir Administrativo; Administrativo no debe reescribir Comercial/Financiero; Operativo no debe modificar ambos salvo un cambio transversal documentado.
+
+Antes de editar `PROJECT-STATUS.md`, ejecutar:
+
+```bash
+git fetch origin
+git rebase origin/main
+```
+
+Después del rebase se debe volver a leer `PROJECT-STATUS.md`, no aplicar una versión guardada anteriormente y resolver cualquier conflicto preservando los cambios ya mergeados de otros frentes.
+
+## 7. Plantilla estándar de issue
 
 ```markdown
 ## Contexto
@@ -135,7 +190,7 @@ Si detecta contradicción, ambigüedad o falta de evidencia, debe informarla ant
 ## Dependencias
 ```
 
-## 7. Plantilla estándar de prompt para Codex
+## 8. Plantilla estándar de prompt para Codex
 
 ```markdown
 Trabajá sobre `diego-acosta/sistema-inmobiliario`.
@@ -198,7 +253,7 @@ Trabajá sobre `diego-acosta/sistema-inmobiliario`.
 - Fuera de alcance
 ```
 
-## 8. Clasificación CORE-EF
+## 9. Clasificación CORE-EF
 
 Usar exactamente las clasificaciones vigentes indicadas por `AGENTS.md`:
 
@@ -209,7 +264,7 @@ Usar exactamente las clasificaciones vigentes indicadas por `AGENTS.md`:
 - `QUERY_READLIKE`
 - `NO_CONFIRMADO`
 
-### 8.1 Writes sincronizables
+### 9.1 Writes sincronizables
 
 Deben documentar y probar, según aplique:
 
@@ -224,7 +279,7 @@ Deben documentar y probar, según aplique:
 - Frontera transaccional y rollback.
 - Tests mínimos exigidos por `AGENTS.md`.
 
-### 8.2 Read-like, simulación y preview
+### 9.2 Read-like, simulación y preview
 
 Deben justificar explícitamente:
 
@@ -234,9 +289,9 @@ Deben justificar explícitamente:
 - Ausencia de modificación de versiones.
 - Ausencia de efectos laterales persistentes.
 
-## 9. Reglas por tipo de archivo
+## 10. Reglas por tipo de archivo
 
-### 9.1 SQL
+### 10.1 SQL
 
 Cuando corresponda:
 
@@ -250,33 +305,33 @@ Cuando corresponda:
 - Documentar rollback o reversión funcional.
 - No modificar scripts históricos sin justificación explícita.
 
-### 9.2 Services
+### 10.2 Services
 
 - Mantener reglas de negocio en el dominio dueño.
 - No llamar lógica de otro dominio para redefinirla.
 - Explicitar frontera transaccional.
 - No ocultar errores de dominio como errores técnicos genéricos.
 
-### 9.3 Repositories
+### 10.3 Repositories
 
 - Reflejar SQL real y locks/versionado si aplican.
 - No implementar reglas de negocio primarias que pertenecen al service, salvo validaciones de persistencia.
 - Mantener consultas coherentes con soft delete y estados existentes.
 
-### 9.4 Routers
+### 10.4 Routers
 
 - Mantener contratos DEV-API.
 - Usar helpers CORE-EF comunes en writes sincronizables.
 - No inventar endpoints.
 - Preservar envelopes y `ErrorResponse` estándar.
 
-### 9.5 Schemas
+### 10.5 Schemas
 
 - No mezclar DTOs de dominios distintos.
 - Validar enums/estados contra catálogos y SQL.
 - No introducir campos no persistidos o no calculados sin marcarlos como derivados/documentales.
 
-### 9.6 Tests
+### 10.6 Tests
 
 Según el cambio, cubrir:
 
@@ -300,19 +355,27 @@ Según el cambio, cubrir:
 
 No declarar tests como ejecutados sin salida real de terminal.
 
-### 9.7 Documentación
+### 10.7 Documentación
 
 - Actualizar solo documentación afectada por el incremento.
 - No copiar arquitectura completa.
 - Distinguir implementado, documentado, pendiente y `NO CONFIRMADO`.
 - Referenciar issues/PRs reales si se citan estados.
 
-## 10. Plantilla de descripción de PR
+## 11. Plantilla de descripción de PR
 
 ```markdown
 ### Motivation
 
 ### Description
+
+### PROJECT-STATUS
+
+PROJECT-STATUS impact: UPDATED
+
+o:
+
+PROJECT-STATUS impact: NO APLICA — <motivo>
 
 ### Decisión CORE-EF
 - Clasificación:
@@ -338,7 +401,7 @@ Para cambios exclusivamente documentales: `NO APLICA`, indicando que no hay endp
 ### Riesgos / NO CONFIRMADO
 ```
 
-## 11. Checklist de cierre
+## 12. Checklist de cierre
 
 - [ ] `AGENTS.md`, `PROJECT-STATUS.md` y `CODEX-WORKFLOW.md` leídos.
 - [ ] Issue, epic y PRs relacionados revisados.
@@ -352,3 +415,18 @@ Para cambios exclusivamente documentales: `NO APLICA`, indicando que no hay endp
 - [ ] Commit realizado.
 - [ ] Push realizado.
 - [ ] PR draft abierto con tests reales y fuera de alcance.
+- [ ] Impacto en `PROJECT-STATUS` evaluado y decisión incluida en el body del PR.
+- [ ] `PROJECT-STATUS.md` actualizado o `NO APLICA` documentado con motivo.
+- [ ] Otros frentes preservados al actualizar `PROJECT-STATUS.md`.
+
+## 13. Review final obligatorio
+
+Al preparar un PR, el entregable final de Codex debe incluir esta tabla:
+
+| Verificación | Resultado |
+| --- | --- |
+| Impacto en PROJECT-STATUS evaluado | PASS/FAIL |
+| PROJECT-STATUS actualizado | PASS/FAIL/NO APLICA |
+| Otros frentes preservados | PASS/FAIL/NO APLICA |
+| Estados GitHub verificados | PASS/FAIL/NO APLICA |
+| Decisión incluida en body del PR | PASS/FAIL |
