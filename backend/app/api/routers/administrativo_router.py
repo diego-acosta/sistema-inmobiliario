@@ -27,6 +27,11 @@ from app.api.schemas.administrativo import (
     ItemCatalogoUpdateRequest,
     ItemCatalogoUpdateResponse,
     ItemCatalogoWriteData,
+    ParametroSistemaAlcanceData,
+    ParametroSistemaData,
+    ParametroSistemaListData,
+    ParametroSistemaListResponse,
+    ParametroSistemaTipoData,
     PermisoData,
     PermisoListResponse,
     RolSeguridadData,
@@ -63,6 +68,9 @@ from app.infrastructure.persistence.repositories.item_catalogo_repository import
     ItemCatalogoIdempotencyConflictError,
     ItemCatalogoInvalidStateTransitionError,
     ItemCatalogoRepository,
+)
+from app.infrastructure.persistence.repositories.parametro_sistema_repository import (
+    ParametroSistemaRepository,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
@@ -497,6 +505,49 @@ def baja_item_catalogo(
         result
         if isinstance(result, JSONResponse)
         else ItemCatalogoBajaResponse(data=ItemCatalogoWriteData(**result))
+    )
+
+
+@router.get(
+    "/api/v1/administrativo/configuracion/parametros",
+    response_model=ParametroSistemaListResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def list_parametros_sistema(
+    db: Session = Depends(get_db),
+) -> ParametroSistemaListResponse | JSONResponse:
+    # CORE-EF: QUERY_READLIKE. No usa headers write ni genera efectos persistentes.
+    try:
+        rows = ParametroSistemaRepository(db).list_definiciones()
+    except Exception:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo consultar el inventario de parámetros.",
+            {},
+        )
+
+    items = [
+        ParametroSistemaData(
+            id_parametro_sistema=row["id_parametro_sistema"],
+            codigo_parametro=row["codigo_parametro"],
+            nombre_parametro=row["nombre_parametro"],
+            descripcion=row["descripcion"],
+            tipo=ParametroSistemaTipoData(
+                id_tipo_dato_parametro=row["id_tipo_dato_parametro"],
+                codigo_tipo_dato=row["codigo_tipo_dato"],
+                nombre_tipo_dato=row["nombre_tipo_dato"],
+            ),
+            alcance=ParametroSistemaAlcanceData(
+                id_alcance_parametro=row["id_alcance_parametro"],
+                codigo_alcance=row["codigo_alcance"],
+                nombre_alcance=row["nombre_alcance"],
+            ),
+        )
+        for row in rows
+    ]
+    return ParametroSistemaListResponse(
+        data=ParametroSistemaListData(items=items, total=len(items))
     )
 
 

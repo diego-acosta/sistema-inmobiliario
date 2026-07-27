@@ -725,6 +725,51 @@ Se implementan `POST /api/v1/administrativo/catalogos/{id_catalogo_maestro}/item
 
 Los comandos son idempotentes: alta usa `op_id_alta` y los restantes `op_id_ultima_modificacion`; replay compatible no cambia versión ni duplica outbox, y payload/op incompatibles retornan `409 IDEMPOTENT_DUPLICATE`. El control de concurrencia retorna `409 CONCURRENCY_ERROR`; código duplicado dentro del catálogo retorna `409 DUPLICATE_CODE`. Cada cambio y su evento (`item_catalogo_creado`, `item_catalogo_modificado`, `item_catalogo_estado_cambiado`, `item_catalogo_desactivado`) se confirma en la misma transacción. El mismo estado con una operación nueva es `409 INVALID_STATE_TRANSITION`; no es cambio material. Jerarquías, historial y reactivación de bajas quedan fuera de alcance.
 
+## Incremento #407 — Inventario read-only de definiciones de parámetros
+
+### `GET /api/v1/administrativo/configuracion/parametros`
+
+- Clasificación CORE-EF: `QUERY_READLIKE`.
+- Devuelve el listado completo, sin paginación, búsqueda ni filtros.
+- Orden estable: `codigo_parametro`, con `id_parametro_sistema` como desempate.
+- Headers write, `If-Match-Version`, idempotencia, outbox, lock lógico,
+  versionado y rollback de negocio: **NO APLICA**, porque es una consulta pura.
+- `200` admite `items: []` y `total: 0`.
+- Ante una falla técnica devuelve `500 TECHNICAL_INCONSISTENCY` con
+  `details: {}` y sin información interna.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "id_parametro_sistema": 1,
+        "codigo_parametro": "EJEMPLO",
+        "nombre_parametro": "Ejemplo",
+        "descripcion": null,
+        "tipo": {
+          "id_tipo_dato_parametro": 1,
+          "codigo_tipo_dato": "TEXTO",
+          "nombre_tipo_dato": "Texto"
+        },
+        "alcance": {
+          "id_alcance_parametro": 1,
+          "codigo_alcance": "GLOBAL",
+          "nombre_alcance": "Global"
+        }
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+La respuesta expone exclusivamente columnas reales de `parametro_sistema`,
+`tipo_dato_parametro` y `alcance_parametro`. Quedan fuera de alcance valores,
+defaults, overrides, secretos, resolución por sucursal o instalación,
+`configuracion_general`, writes, autorización nueva y configuración local operativa.
+
 ### Corrección PR #400 — contratos de transición, baja y errores técnicos
 
 Con un `X-Op-Id` nuevo, solicitar el estado físico ya vigente no es una colisión idempotente: responde `409 INVALID_STATE_TRANSITION` con el mensaje de que el destino ya es el estado actual. El replay que reutiliza el `X-Op-Id` de la transición anterior y el mismo estado sí devuelve la representación persistida, sin incrementar versión ni crear otro evento.

@@ -257,3 +257,23 @@ Los comandos de alta, modificación, cambio de estado y baja lógica de ítems s
 ### Corrección PR #400
 
 El intento con un nuevo `X-Op-Id` de persistir el mismo estado físico es una transición inválida (`INVALID_STATE_TRANSITION`), no un conflicto de idempotencia. La baja repetida sólo hace replay con el mismo identificador de la baja previa; con otro identificador se trata como recurso no operable (`NOT_FOUND`). Los errores técnicos se devuelven sin detalle interno; la transacción conserva rollback conjunto de negocio y outbox.
+
+## Incremento #407 — Inventario de definiciones de parámetros
+
+Se implementa una consulta administrativa read-only del inventario existente. La
+fuente física se limita a `parametro_sistema`, unida con
+`tipo_dato_parametro` y `alcance_parametro`. El repository no ejecuta writes,
+commits, resolución de valores ni lógica de negocio; devuelve una lista vacía
+cuando no existen definiciones y ordena por `codigo_parametro`, con el ID como
+desempate determinista.
+
+La consulta es `QUERY_READLIKE`: no usa headers CORE-EF write y no aplican
+idempotencia, outbox, lock lógico, optimistic locking, versionado ni rollback de
+negocio. El primer incremento entrega el listado completo, sin paginación,
+búsqueda o filtros.
+
+No constituye configuración funcional completa. Permanecen fuera de alcance
+`valor_parametro`, valores efectivos, defaults, overrides, vigencias, secretos,
+resolución global/sucursal/instalación, writes, `configuracion_general` y
+configuración local operativa. La definición de valores y su fuente de verdad
+corresponde al incremento posterior #408.
