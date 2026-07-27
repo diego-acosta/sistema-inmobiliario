@@ -25,7 +25,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. #390 corrigió emisión PPV2; #392 alineó reservas; #394 auditó la brecha de #374; #397 expuso queries read-only de índices; #404 integró catálogo y valor aplicable en el wizard. | #346, #348, #349, #365 y #374 abiertos; #395 cerrado. | #404 implementado en este incremento frontend; PR pendiente de revisión. | #405: completar edición y eliminación de tramos ya agregados, preservando #374 abierto. |
+| A — Comercial / Financiero | Activo. #390 corrigió emisión PPV2; #392 alineó reservas; #394 auditó la brecha de #374; #397 expuso queries read-only de índices; PR #406 implementa #404 integrando catálogo y valor aplicable en el wizard. | #346, #348, #349, #365 y #374 abiertos; #395 cerrado. | PR #406 implementa #404; #405 queda como siguiente incremento. | #405: completar edición y eliminación de tramos ya agregados, preservando #374 abierto. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
@@ -48,7 +48,7 @@ Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó comp
 - PR #392 alineó la suite de reservas con el contrato vigente, eliminó el patch DDL heredado de los tests y corrigió los fixtures de roles. Cerró #391.
 - PR #394 incorporó la auditoría contractual de #374; no implementó ni cerró #374.
 - PR #397 expuso catálogo de índices y valor publicado aplicable por fecha como queries read-only. Cerró #395 y desbloqueó #374.
-- #404 integró esas queries en Venta completa V3: catálogo real, resolución automática, estados de carga/error/sin valor e ID técnico interno. #374 permanece abierto y #405 es el siguiente incremento.
+- PR #406 integró esas queries en Venta completa V3 para implementar #404: catálogo real, resolución automática, estados de carga/error/sin valor e ID técnico interno. #374 permanece abierto y #405 es el siguiente incremento. No se declara mergeado antes del merge.
 - El último baseline backend verificable informado para este corte es `1740 passed`; no se reejecutó la suite completa en este cambio exclusivamente documental.
 - #346, #348, #349, #365 y #374 permanecen abiertos.
 

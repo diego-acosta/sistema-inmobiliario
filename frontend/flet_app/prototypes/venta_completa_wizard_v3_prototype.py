@@ -525,6 +525,12 @@ class VentaCompletaWizardV3Prototype:
             selectable=True,
         )
         self.next_button: ft.Button | None = None
+        self.installment_save_button = ft.Button(
+            "Guardar tramo",
+            icon=ft.Icons.SAVE,
+            on_click=self._add_installment_block,
+            disabled=True,
+        )
 
     def run(self) -> None:
         self.page.title = "Wizard venta completa V3 - Datos iniciales"
@@ -2720,6 +2726,7 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_installment_form_section(self) -> ft.Control:
+        self._sync_installment_save_button()
         return ft.Container(
             padding=14,
             border_radius=12,
@@ -2739,12 +2746,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     ft.Row(
                         controls=[
-                            ft.Button(
-                                "Guardar tramo",
-                                icon=ft.Icons.SAVE,
-                                on_click=self._add_installment_block,
-                                disabled=not self._can_save_installment_block(),
-                            ),
+                            self.installment_save_button,
                             ft.OutlinedButton(
                                 "Cancelar",
                                 icon=ft.Icons.CLOSE,
@@ -2892,6 +2894,18 @@ class VentaCompletaWizardV3Prototype:
                     self.tramo_fecha_base_indice_feedback,
                     self.tramo_valor_base_indice_field,
                     self.tramo_valor_base_indice_feedback,
+                    *(
+                        [
+                            ft.OutlinedButton(
+                                "Reintentar catálogo",
+                                icon=ft.Icons.REFRESH,
+                                on_click=self._load_indices_catalog,
+                            )
+                        ]
+                        if self.state.indices_catalogo_error
+                        and not self.state.indices_catalogo_loading
+                        else []
+                    ),
                 ]
             )
         controls.append(self._build_installment_reinforcement_method_controls())
@@ -6288,6 +6302,7 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_capital_value = str(event.control.value or "")
         self.state.tramo_capital_error = None
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
     def _on_tramo_capital_commit(self, event: ft.ControlEvent) -> None:
@@ -6297,6 +6312,7 @@ class VentaCompletaWizardV3Prototype:
             self.state.tramo_capital_value = _format_money(parsed)
             event.control.value = self.state.tramo_capital_value
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
     def _on_tramo_cantidad_change(self, event: ft.ControlEvent) -> None:
@@ -6306,12 +6322,15 @@ class VentaCompletaWizardV3Prototype:
         self.state.refuerzo_numero_error = None
         self._discard_reinforcement_locations_outside_effective_duration()
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
     def _on_tramo_fecha_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_fecha_display = str(event.control.value or "")
         self.state.tramo_fecha_iso = ""
         self.state.tramo_fecha_error = None
+        self._sync_installment_save_button()
+        self.page.update()
 
     def _select_installment_liquidation_method(self, method: MetodoLiquidacionTramoWizard) -> None:
         previous_method = self.state.tramo_metodo_liquidacion
@@ -6330,6 +6349,7 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_tasa_interes_value = str(event.control.value or "")
         self.state.tramo_tasa_interes_error = None
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
     def _on_tramo_indice_change(self, event: ft.ControlEvent) -> None:
@@ -6348,8 +6368,7 @@ class VentaCompletaWizardV3Prototype:
         )
         self.state.tramo_id_indice_financiero_error = None
         self._invalidate_resolved_index_value()
-        self._resolve_index_value_if_ready()
-        self._render()
+        self._request_index_value_if_ready()
 
     def _on_tramo_fecha_base_indice_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_fecha_base_indice_display = str(event.control.value or "")
@@ -6359,8 +6378,10 @@ class VentaCompletaWizardV3Prototype:
         parsed = _parse_date_ar_strict(self.state.tramo_fecha_base_indice_display)
         if parsed is not None:
             self.state.tramo_fecha_base_indice_iso = parsed
-            self._resolve_index_value_if_ready()
-            self._render()
+            self._request_index_value_if_ready()
+            return
+        self._sync_installment_save_button()
+        self.page.update()
 
     def _on_refuerzo_cantidad_change(self, event: ft.ControlEvent) -> None:
         new_value = str(event.control.value or "")
@@ -6368,6 +6389,8 @@ class VentaCompletaWizardV3Prototype:
             self.state.refuerzo_cantidad_value = new_value
             self.state.refuerzo_cantidad_error = None
             self._clear_installment_reinforcement_locations()
+            self._sync_installment_save_button()
+            self.page.update()
 
     def _on_refuerzo_cantidad_commit(self, _: ft.ControlEvent) -> None:
         self._validate_reinforcement_count()
@@ -6393,6 +6416,7 @@ class VentaCompletaWizardV3Prototype:
         if number < 1 or number > effective_duration:
             self.state.refuerzo_numero_error = "La cuota seleccionada está fuera de las posiciones válidas."
             self._sync_refuerzo_numero_feedback()
+            self._sync_installment_save_button()
             self.page.update()
             return
         existing_index = next(
@@ -6411,6 +6435,7 @@ class VentaCompletaWizardV3Prototype:
         if len(self.state.tramo_cuotas_refuerzo_draft) >= reinforcement_count:
             self.state.refuerzo_numero_error = "Ya seleccionaste la cantidad de cuotas refuerzo definida."
             self._sync_refuerzo_numero_feedback()
+            self._sync_installment_save_button()
             self.page.update()
             return
         self.state.tramo_cuotas_refuerzo_draft.append(
@@ -6466,6 +6491,7 @@ class VentaCompletaWizardV3Prototype:
             self.tramo_fecha_field.value = self.state.tramo_fecha_display
             self.state.tramo_fecha_error = None
             self._sync_tramo_fecha_feedback()
+            self._sync_installment_save_button()
             self.page.update()
 
 
@@ -6505,33 +6531,66 @@ class VentaCompletaWizardV3Prototype:
             self.tramo_fecha_base_indice_field.value = self.state.tramo_fecha_base_indice_display
             self.state.tramo_fecha_base_indice_error = None
             self._invalidate_resolved_index_value()
-            self._resolve_index_value_if_ready()
-            self._sync_tramo_fecha_base_indice_feedback()
-            self._render()
+            self._request_index_value_if_ready()
 
 
-    def _load_indices_catalog(self) -> None:
+    def _load_indices_catalog(self, _: ft.ControlEvent | None = None) -> None:
         if self.state.indices_catalogo_loaded or self.state.indices_catalogo_loading:
             return
         self.state.indices_catalogo_loading = True
         self.state.indices_catalogo_error = None
-        result = self.api.get_indices_financieros(limit=200, offset=0)
-        self.state.indices_catalogo_loading = False
-        self.state.indices_catalogo_loaded = True
+        self._render()
+        self.page.run_thread(self._run_indices_catalog_request)
+
+    def _run_indices_catalog_request(self) -> None:
+        try:
+            result = self.api.get_indices_financieros(limit=200, offset=0)
+        except Exception as exc:
+            self._fail_indices_catalog(
+                f"No se pudo cargar el catálogo de índices: {exc}"
+            )
+            return
         if not result.success:
-            self.state.indices_catalogo = []
-            self.state.indices_catalogo_error = (
+            self._fail_indices_catalog(
                 f"No se pudo cargar el catálogo de índices: {result.error_message or 'error de red o contrato.'}"
             )
             return
         data = result.data
         if not isinstance(data, dict) or not isinstance(data.get("items"), list):
-            self.state.indices_catalogo = []
-            self.state.indices_catalogo_error = "El catálogo de índices devolvió un formato inesperado."
+            self._fail_indices_catalog(
+                "El catálogo de índices devolvió un formato inesperado."
+            )
             return
-        self.state.indices_catalogo = [
-            item for item in data["items"] if isinstance(item, dict)
-        ]
+        items = data["items"]
+        if not all(self._is_valid_index_catalog_item(item) for item in items):
+            self._fail_indices_catalog(
+                "El catálogo de índices devolvió un formato inesperado."
+            )
+            return
+        self.state.indices_catalogo = list(items)
+        self.state.indices_catalogo_loaded = True
+        self.state.indices_catalogo_loading = False
+        self.state.indices_catalogo_error = None
+        self._render()
+
+    @staticmethod
+    def _is_valid_index_catalog_item(item: Any) -> bool:
+        return (
+            isinstance(item, dict)
+            and isinstance(item.get("id_indice_financiero"), int)
+            and item["id_indice_financiero"] > 0
+            and isinstance(item.get("codigo_indice_financiero"), str)
+            and bool(item["codigo_indice_financiero"].strip())
+            and isinstance(item.get("nombre_indice_financiero"), str)
+            and bool(item["nombre_indice_financiero"].strip())
+        )
+
+    def _fail_indices_catalog(self, message: str) -> None:
+        self.state.indices_catalogo_loaded = False
+        self.state.indices_catalogo_loading = False
+        self.state.indices_catalogo = []
+        self.state.indices_catalogo_error = message
+        self._render()
 
     def _invalidate_resolved_index_value(self) -> None:
         self._index_value_request_generation += 1
@@ -6542,20 +6601,39 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_valor_indice_fuente = None
         self.state.tramo_valor_indice_error = None
         self.state.tramo_valor_base_indice_error = None
+        self._sync_installment_save_button()
 
-    def _resolve_index_value_if_ready(self) -> None:
+    def _request_index_value_if_ready(self) -> None:
         raw_id = self.state.tramo_id_indice_financiero_value.strip()
         fecha_iso = self.state.tramo_fecha_base_indice_iso
         index_id = self._parse_positive_integer(raw_id) if raw_id else None
         if index_id is None or not fecha_iso:
+            self._sync_installment_save_button()
+            self.page.update()
             return
         generation = self._index_value_request_generation
         self.state.tramo_valor_indice_loading = True
-        result = self.api.get_indice_financiero_valor_aplicable(
-            fecha_objetivo=fecha_iso,
-            id_indice_financiero=index_id,
+        self._sync_installment_save_button()
+        self._render()
+        self.page.run_thread(
+            lambda: self._run_index_value_request(generation, index_id, fecha_iso)
         )
-        if generation != self._index_value_request_generation:
+
+    def _run_index_value_request(
+        self, generation: int, index_id: int, fecha_iso: str
+    ) -> None:
+        try:
+            result = self.api.get_indice_financiero_valor_aplicable(
+                fecha_objetivo=fecha_iso,
+                id_indice_financiero=index_id,
+            )
+        except Exception as exc:
+            result = ApiResult(False, error_message=str(exc))
+        if (
+            generation != self._index_value_request_generation
+            or str(index_id) != self.state.tramo_id_indice_financiero_value
+            or fecha_iso != self.state.tramo_fecha_base_indice_iso
+        ):
             return
         self.state.tramo_valor_indice_loading = False
         if not result.success:
@@ -6563,18 +6641,24 @@ class VentaCompletaWizardV3Prototype:
             self.state.tramo_valor_indice_error = (
                 f"No se pudo consultar el valor aplicable: {result.error_message or 'error de red o contrato.'}"
             )
-            return
-        if result.data is None:
+        elif result.data is None:
             self.state.tramo_valor_indice_status = "SIN_VALOR"
-            return
-        if not isinstance(result.data, dict) or not result.data.get("valor_indice"):
+        elif not isinstance(result.data, dict) or not result.data.get("valor_indice"):
             self.state.tramo_valor_indice_status = "ERROR"
-            self.state.tramo_valor_indice_error = "La consulta del valor aplicable devolvió un formato inesperado."
-            return
-        self.state.tramo_valor_base_indice_value = str(result.data["valor_indice"])
-        self.state.tramo_valor_indice_fecha_efectiva = str(result.data.get("fecha_valor") or "") or None
-        self.state.tramo_valor_indice_fuente = str(result.data.get("fuente_valor") or "") or None
-        self.state.tramo_valor_indice_status = "RESUELTO"
+            self.state.tramo_valor_indice_error = (
+                "La consulta del valor aplicable devolvió un formato inesperado."
+            )
+        else:
+            self.state.tramo_valor_base_indice_value = str(result.data["valor_indice"])
+            self.state.tramo_valor_indice_fecha_efectiva = str(
+                result.data.get("fecha_valor") or ""
+            ) or None
+            self.state.tramo_valor_indice_fuente = str(
+                result.data.get("fuente_valor") or ""
+            ) or None
+            self.state.tramo_valor_indice_status = "RESUELTO"
+        self._sync_installment_save_button()
+        self._render()
 
 
     def _open_installment_form_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -6660,6 +6744,8 @@ class VentaCompletaWizardV3Prototype:
             return False
         if capital > self._capital_remaining_for_installments():
             return False
+        if not self._installment_reinforcements_are_ready(quantity):
+            return False
         if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
             return _parse_decimal(self.state.tramo_tasa_interes_value.strip()) is not None
         if self.state.tramo_metodo_liquidacion == "INDEXACION":
@@ -6677,6 +6763,25 @@ class VentaCompletaWizardV3Prototype:
                 and _parse_decimal(self.state.tramo_valor_base_indice_value) is not None
             )
         return True
+
+    def _installment_reinforcements_are_ready(self, quantity: int) -> bool:
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            return not self.state.tramo_cuotas_refuerzo_draft and not self.state.refuerzo_cantidad_value.strip()
+        if not self.state.tramo_usa_refuerzos:
+            return True
+        count = self._parse_positive_integer(self.state.refuerzo_cantidad_value.strip())
+        if count is None or count >= quantity:
+            return False
+        effective_duration = quantity - count
+        numbers = [item.numero_cuota for item in self.state.tramo_cuotas_refuerzo_draft]
+        return (
+            len(numbers) == count
+            and len(numbers) == len(set(numbers))
+            and all(1 <= number <= effective_duration for number in numbers)
+        )
+
+    def _sync_installment_save_button(self) -> None:
+        self.installment_save_button.disabled = not self._can_save_installment_block()
 
     def _validate_installment_quantity(self) -> int | None:
         raw_value = self.state.tramo_cantidad_cuotas_value.strip()
@@ -6943,6 +7048,7 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_capital_field.value = ""
         self.tramo_cantidad_field.value = ""
         self.tramo_fecha_field.value = ""
+        self._sync_installment_save_button()
 
     def _clear_installment_errors(self) -> None:
         self.state.tramo_capital_error = None
