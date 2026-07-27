@@ -57,7 +57,11 @@ def value(amount="15842.33000000"):
 
 def wizard(api):
     page = ControlledPage()
-    instance = VentaCompletaWizardV3Prototype(page, api=api)  # type: ignore[arg-type]
+    instance = VentaCompletaWizardV3Prototype(
+        page,
+        api=api,
+        embedded=True,
+    )  # type: ignore[arg-type]
     instance._capital_remaining_for_installments = lambda: Decimal("2000")  # type: ignore[method-assign]
     return instance, page
 
