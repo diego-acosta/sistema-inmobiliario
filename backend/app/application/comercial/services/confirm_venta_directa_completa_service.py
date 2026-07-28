@@ -1,4 +1,3 @@
-from contextlib import AbstractContextManager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -37,6 +36,7 @@ from app.application.comercial.services.prevalidate_venta_historica_indexacion_s
     resumen_confirmacion_prevalidacion,
 )
 from app.application.common.results import AppResult
+from app.application.common.transaction import committed_command
 from app.application.personas.duplicados import TipoDuplicadoPersona
 
 
@@ -421,10 +421,8 @@ class ConfirmVentaDirectaCompletaService:
             Decimal("0"),
         )
 
-    def _transaction(self) -> AbstractContextManager[Any]:
-        if self.db.in_transaction():
-            return self.db.begin_nested()
-        return self.db.begin()
+    def _transaction(self) -> Any:
+        return committed_command(self.db)
 
     def _venta_payload(
         self,
