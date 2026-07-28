@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-07-24
+**Actualizado:** 2026-07-28
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -25,7 +25,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. #390 corrigió emisión PPV2; #392 alineó reservas; #394 auditó la brecha de #374; #397 expuso queries read-only de índices. | #346, #348, #349, #365 y #374 abiertos; #395 cerrado. | #397 mergeado el 2026-07-24. | #374: integrar catálogo y valor aplicable reales en Venta completa V3, sin cálculo financiero en frontend. |
+| A — Comercial / Financiero | Activo y bloqueado por validación transaccional. PR #415 corrige la frontera de confirmación completa; #406 permanece abierto y bloqueado hasta validar persistencia y detalle integral. Baseline verificable: `1763 passed`. | #346, #348, #349, #365, #374, #405, #406 y #416 abiertos. | #415 backend y #406 frontend abiertos; #404 integró catálogo y valor aplicable en #406. | Completar #415, revalidar la venta histórica de #406 y luego continuar con #405. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
@@ -42,14 +42,33 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 ### 5.1 Estado
 
-Activo. El ciclo inicial de indexación V2 y venta histórica manual quedó completado. Los merges recientes dejaron disponible el contrato read-only que necesitaba #374:
+Activo. La integración de venta histórica está temporalmente bloqueada por la
+persistencia transaccional de la confirmación completa:
 
 - PR #390 corrigió la emisión PPV2: los importes definitivos nacen `EMITIDA`; una cuota indexada sin importe materializado nace `PROYECTADA`; la aplicación posterior la pasa de `PROYECTADA` a `EMITIDA`. La demo PPV2 quedó aislada transaccionalmente en tests.
 - PR #392 alineó la suite de reservas con el contrato vigente, eliminó el patch DDL heredado de los tests y corrigió los fixtures de roles. Cerró #391.
 - PR #394 incorporó la auditoría contractual de #374; no implementó ni cerró #374.
 - PR #397 expuso catálogo de índices y valor publicado aplicable por fecha como queries read-only. Cerró #395 y desbloqueó #374.
-- El último baseline backend verificable informado para este corte es `1740 passed`; no se reejecutó la suite completa en este cambio exclusivamente documental.
-- #346, #348, #349, #365 y #374 permanecen abiertos.
+- #404 implementó dentro de #406 la integración del catálogo y del valor aplicable
+  para los tramos indexados; #374 permanece abierto y no se considera cerrado por
+  esa integración.
+- PR #406 permanece abierto. Su validación de venta histórica completa está
+  bloqueada hasta integrar y comprobar la corrección transaccional de #415.
+- Issue #416 documenta el defecto observado: el command podía responder `200`
+  después de liberar sólo un savepoint y la sesión revertía luego silenciosamente
+  la venta al cerrarse.
+- PR #415 corrige tanto la confirmación directa como la confirmación desde reserva:
+  el application service orquestador conserva el savepoint cuando existe una
+  transacción previa y realiza un commit exterior explícito antes de completar la
+  respuesta exitosa. Venta, plan, obligaciones, disponibilidad y outbox comparten
+  la misma transacción.
+- La suite backend completa ejecutada sobre el cambio runtime de #415 informó
+  `1763 passed, 1 warning`; éste es el baseline verificable de este corte.
+- La persistencia desde una segunda sesión y el detalle integral posterior están
+  cubiertos programáticamente. Sigue pendiente la prueba manual real: confirmar la
+  venta, verificar la fila desde otra sesión, obtener detalle integral `200`,
+  reiniciar el backend y volver a consultar.
+- #346, #348, #349, #365, #374, #405, #406 y #416 permanecen abiertos.
 
 Implementación relevante verificada:
 
@@ -67,10 +86,20 @@ Implementación relevante verificada:
 - #349 — corrección y reversión avanzada.
 - #365 — definición transversal de fecha operativa.
 - #374 — mejorar configuración de tramos indexados en Venta completa V3; abierto y desbloqueado por #397.
+- #405 — siguiente subincremento funcional después de cerrar y validar el bloqueo
+  transaccional de #406; no es el foco inmediato mientras dependa de #415.
+- #406 — integración frontend de venta histórica; abierto y bloqueado hasta
+  validar persistencia real y detalle integral con la corrección de #415.
+- #416 — persistencia atómica de la confirmación completa; abierto y atendido por
+  el PR backend #415.
 - #59 continúa abierto como issue histórico y amplio de confirmación desde reserva; revisar su vigencia antes de usarlo como próximo incremento.
 
 ### 5.3 Últimos PR relevantes
 
+- #415 `[Backend/CORE-EF] Persistir atómicamente confirmación completa de venta` —
+  corrige la frontera transaccional backend de confirmación directa y desde reserva.
+- #406 — integra en frontend el flujo de venta histórica y permanece bloqueado
+  hasta revalidar persistencia y detalle integral con #415.
 - #397 `feat(financiero): exponer catálogo de índices y valor publicado aplicable por fecha` — mergeado 2026-07-24.
 - #394 `docs(frontend): documentar brecha contractual de tramos indexados` — mergeado 2026-07-24.
 - #392 `feat(comercial): restaurar contrato y suite de reservas de venta` — mergeado 2026-07-24.
@@ -79,15 +108,32 @@ Implementación relevante verificada:
 
 ### 5.4 Próximo foco recomendado
 
-#374 — Mejorar configuración de tramos indexados en Venta completa V3. #397 ya proporciona `GET /api/v1/financiero/indices` y `GET /api/v1/financiero/indices/valor-aplicable`, los contratos que la auditoría #394 identificó como faltantes.
+El orden operativo recomendado es:
 
-El incremento debe cargar el catálogo real, resolver el valor aplicable para la fecha solicitada y ocultar IDs técnicos. También debe completar la edición y eliminación de tramos ya agregados, preservar el estado al avanzar, volver y editar, y cubrir validaciones visibles, resumen de pendientes y la habilitación coherente de Guardar tramo y Siguiente. El frontend sólo presenta las respuestas y arma el comando comercial válido: no calcula indexación, no infiere valores y no duplica reglas financieras. #348 se mantiene como issue más amplio para visualización de indexación y corridas.
+1. completar la revisión e integración de #415;
+2. rebasear y actualizar #406 contra `main`;
+3. repetir la prueba manual de venta histórica con PostgreSQL y Uvicorn reales;
+4. verificar la fila desde otra sesión, el detalle integral `200` y la persistencia
+   después de reiniciar el backend;
+5. integrar #406 sólo después de esa validación;
+6. continuar con #405 como siguiente subincremento funcional.
+
+#374 permanece abierto como frente funcional y #365 como deuda transversal, pero
+ninguno desplaza la validación del bloqueo transaccional actual. El frontend sólo
+presenta respuestas y arma el command comercial: no calcula indexación, no infiere
+valores y no duplica reglas financieras.
 
 ### 5.5 Decisiones vigentes
 
 - Comercial conserva ownership de la venta.
 - Financiero conserva ownership de obligaciones, índices, ajustes, saldos y corridas.
 - La orquestación no traslada ownership financiero al dominio Comercial.
+- El application service orquestador es dueño único del commit y rollback del
+  command completo; los repositories no realizan commits parciales de sus etapas.
+- La respuesta exitosa de confirmación completa sólo se emite después del commit
+  exterior explícito.
+- Venta, plan, obligaciones, disponibilidad y outbox se confirman o revierten en
+  una única frontera transaccional.
 - Una venta histórica puede generar obligaciones directamente indexadas si el valor aplicable ya está publicado.
 - No se aplica una corrida inmediata sobre obligaciones que ya nacieron indexadas.
 - Las obligaciones no indexadas y las indexadas con importe definitivo materializado nacen `EMITIDA`; las indexadas sin valor materializado nacen `PROYECTADA`.
@@ -96,17 +142,26 @@ El incremento debe cargar el catálogo real, resolver el valor aplicable para la
 - Las cuotas futuras pueden persistirse como `PROYECTADA` sin ajuste materializado.
 - `PROYECTADA_SIN_INDICE` es una clasificación de cálculo/preview, no un estado físico de `obligacion_financiera`.
 - `fecha_corte` es un dato de negocio explícito.
+- Mientras #365 siga abierto, la fecha de corte presentada por frontend conserva
+  provisionalmente la referencia local vigente; no redefine la fecha operativa.
 - El uso de `date.today()` para detectar historicidad es provisional hasta resolver #365.
 - Publicación, preparación y aplicación de una corrida son operaciones separadas.
 - El catálogo de índices y la resolución de valor aplicable pertenecen a Financiero y son `QUERY_READLIKE`: no requieren headers write, no escriben ni recalculan en frontend.
 - Una respuesta de valor aplicable con `data: null` significa que el índice activo existe pero no tiene valor aplicable; no se infiere un valor.
+- La validación de disponibilidad y sus estados incompatibles no se relajan para
+  permitir ventas históricas.
+- No se calculan importes ni indexación en frontend.
 - `cliente_comprador` es semántica funcional comercial aunque tenga persistencia heredada.
 - `persona` es identidad base; no define condición de cliente ni comprador.
 - `analitico` es read-only y no debe recalcular ni persistir lógica financiera.
 
 ### 5.6 Pendientes y orden sugerido
 
-- #374: candidato inmediato; completar catálogo, valor aplicable, edición/eliminación de tramos, navegación preservando estado y validaciones del wizard Venta completa V3.
+- #415: cerrar primero la corrección transaccional backend asociada a #416.
+- #406: rebasear y repetir después la validación manual de persistencia histórica,
+  detalle integral y reinicio del backend.
+- #405: continuar sólo después de cerrar el bloqueo #415 → #406.
+- #374: permanece abierto como frente funcional de Venta completa V3.
 - #348: permanece como frente amplio; ordenar después la visualización read-only de indexación y corridas.
 - #365: deuda transversal que debe avanzar antes de ampliar importaciones históricas, procesos batch o escenarios multiinstalación.
 - #346: pendiente vigente, pero requiere auditoría específica del importador y posible relación con #365.
@@ -142,17 +197,17 @@ El incremento debe cargar el catálogo real, resolver el valor aplicable para la
 
 ### 5.9 Regla de continuidad
 
-Antes de tocar código para #374:
+Antes de continuar #405 o ampliar la venta histórica:
 
-1. abrir #374, la auditoría #394 y el PR #397;
-2. revisar el wizard Venta completa V3 y el cliente HTTP real;
-3. validar los contratos DEV-API Financiero y Comercial, router, schemas, service, repository y tests de índices;
-4. integrar catálogo real, resolución de valor aplicable, estados de carga/error y ocultamiento de IDs técnicos;
-5. implementar edición y eliminación de tramos ya agregados, preservando el estado durante la navegación;
-6. agregar validaciones por campo, resumen de pendientes y habilitación coherente de Guardar tramo y Siguiente;
-7. probar navegación, edición y eliminación sin pérdida ni duplicación de datos;
-8. no calcular indexación ni duplicar reglas financieras;
-9. no invadir #346, #349 ni #365;
+1. integrar #415 sin modificar el ownership Comercial/Financiero;
+2. actualizar #406 contra `main`;
+3. confirmar una venta histórica con Uvicorn y PostgreSQL reales;
+4. consultar venta, plan, obligaciones y outbox desde otra sesión;
+5. exigir detalle integral `200` antes y después de reiniciar el backend;
+6. mantener `INVALID_DISPONIBILIDAD_STATE` y conflictos vigentes;
+7. no calcular indexación ni importes en frontend;
+8. mantener #365 abierto hasta definir la fecha operativa transversal;
+9. continuar con #405 sólo después de validar #406;
 10. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
 
 ## 6. Frente B — Administrativo
