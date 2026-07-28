@@ -1,4 +1,3 @@
-from contextlib import AbstractContextManager
 from decimal import Decimal
 from typing import Any
 
@@ -30,6 +29,7 @@ from app.application.comercial.services.generate_venta_from_reserva_venta_servic
     GenerateVentaFromReservaVentaService,
 )
 from app.application.common.results import AppResult
+from app.application.common.transaction import committed_command
 
 
 class _TransactionalComercialRepository:
@@ -363,7 +363,5 @@ class ConfirmVentaCompletaDesdeReservaService:
                 return True
         return False
 
-    def _transaction(self) -> AbstractContextManager[Any]:
-        if self.db.in_transaction():
-            return self.db.begin_nested()
-        return self.db.begin()
+    def _transaction(self) -> Any:
+        return committed_command(self.db)
