@@ -1,8 +1,17 @@
 from types import SimpleNamespace
 from decimal import Decimal
+from datetime import date
 
 from app.api_client import ApiResult
-from prototypes.venta_completa_wizard_v3_prototype import VentaCompletaWizardV3Prototype
+from prototypes.venta_completa_wizard_v3_prototype import (
+    CompradorWizardDraft,
+    ObjetoVentaWizardDraft,
+    TramoCuotasWizardDraft,
+    VentaCompletaWizardV3Prototype,
+    _format_period,
+    _parse_month_year,
+    _period_to_canonical_date,
+)
 
 
 class ControlledPage:
@@ -76,6 +85,20 @@ def change(handler, value):
     handler(SimpleNamespace(control=SimpleNamespace(value=value)))
 
 
+def test_periodo_mensual_parsea_y_convierte_al_primer_dia() -> None:
+    assert _parse_month_year("01/2026") == (1, 2026)
+    assert _parse_month_year("12/2026") == (12, 2026)
+    assert _period_to_canonical_date("01/2026") == "2026-01-01"
+    assert _period_to_canonical_date("12/2026") == "2026-12-01"
+    assert _format_period("2026-12-01") == "12/2026"
+
+
+def test_periodo_mensual_rechaza_mes_anio_y_fecha_completa_invalidos() -> None:
+    for invalid in ("00/2026", "13/2026", "01/1899", "01/2101", "1/2026", "01/01/2026"):
+        assert _parse_month_year(invalid) is None
+        assert _period_to_canonical_date(invalid) is None
+
+
 def test_guardar_recalcula_para_sin_interes_y_se_deshabilita_al_invalidar():
     instance, _ = wizard(FakeIndexApi())
     assert instance.installment_save_button.disabled
@@ -139,8 +162,8 @@ def prepare_indexed(instance):
     set_basic_valid(instance)
     instance.state.tramo_metodo_liquidacion = "INDEXACION"
     instance.state.indices_catalogo = catalog().data["items"]
-    instance.state.tramo_fecha_base_indice_display = "15/01/2026"
-    instance.state.tramo_fecha_base_indice_iso = "2026-01-15"
+    instance.state.tramo_periodo_base_indice_display = "01/2026"
+    instance.state.tramo_fecha_base_indice_iso = "2026-01-01"
 
 
 def test_valor_async_loading_exito_y_recalculo_guardar():
@@ -152,6 +175,9 @@ def test_valor_async_loading_exito_y_recalculo_guardar():
     assert instance.installment_save_button.disabled
     assert api.value_calls == []
     page.run_next()
+    assert api.value_calls == [
+        {"fecha_objetivo": "2026-01-01", "id_indice_financiero": 7}
+    ]
     assert instance.state.tramo_valor_indice_status == "RESUELTO"
     assert instance.state.tramo_valor_base_indice_value == "15842.33000000"
     assert not instance.installment_save_button.disabled
@@ -165,7 +191,7 @@ def test_valor_data_null_y_error_bloquean_guardar():
     page.run_next()
     assert instance.state.tramo_valor_indice_status == "SIN_VALOR"
     assert instance.installment_save_button.disabled
-    change(instance._on_tramo_fecha_base_indice_change, "16/01/2026")
+    change(instance._on_tramo_fecha_base_indice_change, "02/2026")
     page.run_next()
     assert instance.state.tramo_valor_indice_status == "ERROR"
     assert instance.installment_save_button.disabled
@@ -177,7 +203,7 @@ def test_respuesta_obsoleta_no_sobrescribe_seleccion_nueva():
     prepare_indexed(instance)
     change(instance._on_tramo_indice_change, "7")
     first_worker = page.workers.pop(0)
-    change(instance._on_tramo_fecha_base_indice_change, "16/01/2026")
+    change(instance._on_tramo_fecha_base_indice_change, "02/2026")
     first_worker()
     assert instance.state.tramo_valor_indice_status == "PENDIENTE"
     assert instance.state.tramo_valor_base_indice_value == ""
@@ -196,3 +222,72 @@ def test_limpieza_invalida_worker_pendiente():
     assert instance.state.tramo_valor_indice_status == "PENDIENTE"
     assert instance.state.tramo_valor_base_indice_value == ""
     assert instance.installment_save_button.disabled
+
+
+def test_periodo_visible_y_draft_conserva_fecha_canonica() -> None:
+    instance, _ = wizard(FakeIndexApi())
+    prepare_indexed(instance)
+    instance.state.tramo_id_indice_financiero_value = "7"
+    instance.state.tramo_codigo_indice_visual_value = "CAC"
+    instance.state.tramo_valor_base_indice_value = "15842.33"
+    instance.state.tramo_valor_indice_status = "RESUELTO"
+    data = instance._validate_installment_index_fields()
+    assert instance.tramo_fecha_base_indice_field.label == "Período base del índice"
+    assert instance.tramo_fecha_base_indice_field.hint_text == "MM/AAAA"
+    assert instance.tramo_valor_base_indice_field.read_only
+    assert data == {
+        "id_indice_financiero": "7",
+        "codigo_indice_visual": "CAC",
+        "fecha_base_indice_iso": "2026-01-01",
+        "periodo_base_indice_display": "01/2026",
+        "valor_base_indice": "15842.33",
+    }
+
+
+def _confirmation_ready(instance, *, sale_date: str, indexed: bool) -> None:
+    instance.state.fecha_venta_iso = sale_date
+    instance.state.codigo_venta = "VD-CORTE"
+    instance.state.moneda = "ARS"
+    instance.state.forma_pago = "FINANCIADO"
+    instance.state.objetos = [
+        ObjetoVentaWizardDraft("INMUEBLE", 1, None, "Inmueble", "1000.00", persisted=True)
+    ]
+    instance.state.compradores = [
+        CompradorWizardDraft(1, "Comprador", "100.00", "4", persisted=True)
+    ]
+    instance.state.tramos_cuotas = [
+        TramoCuotasWizardDraft(
+            importe_total_bloque="1000.00",
+            cantidad_cuotas=1,
+            fecha_primer_vencimiento_iso="2026-02-01",
+            fecha_primer_vencimiento_display="01/02/2026",
+            metodo_liquidacion="INDEXACION" if indexed else "SIN_INTERES",
+            id_indice_financiero="7" if indexed else None,
+            codigo_indice_visual="CAC" if indexed else None,
+            fecha_base_indice_iso="2026-01-01" if indexed else None,
+            periodo_base_indice_display="01/2026" if indexed else None,
+            valor_base_indice="100.00" if indexed else None,
+        )
+    ]
+
+
+def test_fecha_corte_solo_se_agrega_a_confirmacion_historica_indexada() -> None:
+    fixed_today = date(2026, 7, 28)
+    cases = [
+        ("2026-07-28", False, False),
+        ("2026-07-28", True, False),
+        ("2026-01-01", False, False),
+        ("2026-01-01", True, True),
+    ]
+    for sale_date, indexed, expects_cutoff in cases:
+        instance, _ = wizard(FakeIndexApi())
+        assert not hasattr(instance, "fecha_corte_field")
+        instance._current_operational_date = lambda: fixed_today  # type: ignore[method-assign]
+        _confirmation_ready(instance, sale_date=sale_date, indexed=indexed)
+        preview_before = instance._build_plan_payment_preview_payload()
+        payload = instance._build_confirm_sale_direct_payload()
+        assert ("fecha_corte" in payload) is expects_cutoff
+        if expects_cutoff:
+            assert payload["fecha_corte"] == "2026-07-28"
+        assert payload["generar_venta"]["fecha_venta"] == f"{sale_date}T00:00:00"
+        assert payload["plan_pago_v2"] == preview_before
