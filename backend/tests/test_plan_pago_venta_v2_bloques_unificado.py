@@ -1248,13 +1248,16 @@ def _indexacion_repo_payload(
 
 
 def _bloque_indexado_generate(
-    id_indice: int, *, cantidad_cuotas: int = 3
+    id_indice: int,
+    *,
+    cantidad_cuotas: int = 3,
+    fecha_primer_vencimiento: date = date(2026, 6, 10),
 ) -> PlanPagoVentaBloqueInput:
     return PlanPagoVentaBloqueInput(
         tipo_bloque="TRAMO_CUOTAS",
         importe_total_bloque=Decimal("3000000.00"),
         cantidad_cuotas=cantidad_cuotas,
-        fecha_primer_vencimiento=date(2026, 6, 10),
+        fecha_primer_vencimiento=fecha_primer_vencimiento,
         periodicidad="MENSUAL",
         **_indexacion_payload_kwargs(id_indice),
     )
@@ -1367,6 +1370,51 @@ def test_generate_indexacion_con_indices_disponibles_materializa_ajuste(
     assert {row["valor_aplicado_indice"] for row in indexaciones} == {
         Decimal("110.00000000")
     }
+    assert {
+        obligacion["estado_obligacion"] for obligacion in result.data["obligaciones"]
+    } == {"EMITIDA"}
+
+
+def test_generate_indexacion_con_fecha_valor_futura_nace_aplicada_y_emitida(
+    db_session,
+) -> None:
+    id_venta = _insertar_venta_minima(
+        db_session, codigo_venta="V-PPV2-BLQ-IX-FECHA-FUTURA"
+    )
+    _vincular_comprador_venta(db_session, id_venta=id_venta)
+    id_indice = _insertar_indice_financiero_minimo(
+        db_session, codigo="RIPTE-IX-FECHA-FUTURA"
+    )
+    id_valor = _insertar_indice_financiero_valor(
+        db_session,
+        id_indice_financiero=id_indice,
+        fecha_valor=date(2027, 1, 1),
+        valor_indice=Decimal("110.00000000"),
+    )
+
+    result = _service(db_session).execute(
+        _command(
+            id_venta=id_venta,
+            monto_total_plan=Decimal("3000000.00"),
+            bloques=[
+                _bloque_indexado_generate(
+                    id_indice,
+                    cantidad_cuotas=1,
+                    fecha_primer_vencimiento=date(2027, 1, 10),
+                )
+            ],
+        )
+    )
+
+    assert result.success, result.errors
+    obligacion = result.data["obligaciones"][0]
+    assert obligacion["estado_obligacion"] == "EMITIDA"
+    indexaciones = _obligaciones_indexacion(
+        db_session, id_relacion_generadora=result.data["id_relacion_generadora"]
+    )
+    assert len(indexaciones) == 1
+    assert indexaciones[0]["id_indice_financiero_valor"] == id_valor
+    assert indexaciones[0]["fecha_aplicacion_indice"] == date(2027, 1, 1)
 
 
 def test_generate_indexacion_sin_indices_futuros_deja_proyectadas_solo_capital(
