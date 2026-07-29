@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-07-28
+**Actualizado:** 2026-07-29
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -25,7 +25,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo y bloqueado por validación transaccional. PR #415 corrige la frontera de confirmación completa; #406 permanece abierto y bloqueado hasta validar persistencia y detalle integral. Baseline verificable: `1763 passed`. | #346, #348, #349, #365, #374, #405, #406 y #416 abiertos. | #415 backend y #406 frontend abiertos; #404 integró catálogo y valor aplicable en #406. | Completar #415, revalidar la venta histórica de #406 y luego continuar con #405. |
+| A — Comercial / Financiero | Activo. Los PR #415 y #406 están integrados, #416 está cerrado y la validación transaccional quedó aprobada. La validación funcional de #406 descubrió #418. Baseline verificable: `1763 passed`. | #346, #348, #349, #365, #374, #405 y #418 abiertos. | #415 backend y #406 frontend mergeados; #404 integró catálogo y valor aplicable en #406. | Resolver #418 y luego continuar con #405. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
@@ -42,8 +42,9 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 ### 5.1 Estado
 
-Activo. La integración de venta histórica está temporalmente bloqueada por la
-persistencia transaccional de la confirmación completa:
+Activo. La integración de venta histórica de #406 y la corrección transaccional
+de #415 están integradas. La validación transaccional quedó aprobada y la
+validación funcional de #406 descubrió el issue #418:
 
 - PR #390 corrigió la emisión PPV2: los importes definitivos nacen `EMITIDA`; una cuota indexada sin importe materializado nace `PROYECTADA`; la aplicación posterior la pasa de `PROYECTADA` a `EMITIDA`. La demo PPV2 quedó aislada transaccionalmente en tests.
 - PR #392 alineó la suite de reservas con el contrato vigente, eliminó el patch DDL heredado de los tests y corrigió los fixtures de roles. Cerró #391.
@@ -52,23 +53,21 @@ persistencia transaccional de la confirmación completa:
 - #404 implementó dentro de #406 la integración del catálogo y del valor aplicable
   para los tramos indexados; #374 permanece abierto y no se considera cerrado por
   esa integración.
-- PR #406 permanece abierto. Su validación de venta histórica completa está
-  bloqueada hasta integrar y comprobar la corrección transaccional de #415.
-- Issue #416 documenta el defecto observado: el command podía responder `200`
+- PR #406 está mergeado. Su validación funcional posterior a la integración de
+  #415 descubrió #418, que pasa a ser el próximo foco del frente.
+- Issue #416, ahora cerrado, documentó el defecto observado: el command podía responder `200`
   después de liberar sólo un savepoint y la sesión revertía luego silenciosamente
   la venta al cerrarse.
-- PR #415 corrige tanto la confirmación directa como la confirmación desde reserva:
+- PR #415 está mergeado y corrige tanto la confirmación directa como la confirmación desde reserva:
   el application service orquestador conserva el savepoint cuando existe una
   transacción previa y realiza un commit exterior explícito antes de completar la
   respuesta exitosa. Venta, plan, obligaciones, disponibilidad y outbox comparten
   la misma transacción.
 - La suite backend completa ejecutada sobre el cambio runtime de #415 informó
   `1763 passed, 1 warning`; éste es el baseline verificable de este corte.
-- La persistencia desde una segunda sesión y el detalle integral posterior están
-  cubiertos programáticamente. Sigue pendiente la prueba manual real: confirmar la
-  venta, verificar la fila desde otra sesión, obtener detalle integral `200`,
-  reiniciar el backend y volver a consultar.
-- #346, #348, #349, #365, #374, #405, #406 y #416 permanecen abiertos.
+- La validación transaccional quedó aprobada. La validación funcional de #406
+  descubrió #418; resolverlo es el siguiente incremento recomendado antes de #405.
+- #346, #348, #349, #365, #374, #405 y #418 permanecen abiertos.
 
 Implementación relevante verificada:
 
@@ -86,20 +85,19 @@ Implementación relevante verificada:
 - #349 — corrección y reversión avanzada.
 - #365 — definición transversal de fecha operativa.
 - #374 — mejorar configuración de tramos indexados en Venta completa V3; abierto y desbloqueado por #397.
-- #405 — siguiente subincremento funcional después de cerrar y validar el bloqueo
-  transaccional de #406; no es el foco inmediato mientras dependa de #415.
-- #406 — integración frontend de venta histórica; abierto y bloqueado hasta
-  validar persistencia real y detalle integral con la corrección de #415.
-- #416 — persistencia atómica de la confirmación completa; abierto y atendido por
-  el PR backend #415.
+- #418 — defecto descubierto durante la validación funcional de #406; próximo foco
+  inmediato del frente Comercial/Financiero.
+- #405 — pendiente vigente y siguiente subincremento funcional después de resolver
+  #418; deja de ser el incremento inmediato.
 - #59 continúa abierto como issue histórico y amplio de confirmación desde reserva; revisar su vigencia antes de usarlo como próximo incremento.
 
 ### 5.3 Últimos PR relevantes
 
 - #415 `[Backend/CORE-EF] Persistir atómicamente confirmación completa de venta` —
-  corrige la frontera transaccional backend de confirmación directa y desde reserva.
-- #406 — integra en frontend el flujo de venta histórica y permanece bloqueado
-  hasta revalidar persistencia y detalle integral con #415.
+  mergeado; corrigió la frontera transaccional backend de confirmación directa y
+  desde reserva y permitió aprobar la validación transaccional.
+- #406 — mergeado; integró en frontend el flujo de venta histórica. Su validación
+  funcional descubrió #418.
 - #397 `feat(financiero): exponer catálogo de índices y valor publicado aplicable por fecha` — mergeado 2026-07-24.
 - #394 `docs(frontend): documentar brecha contractual de tramos indexados` — mergeado 2026-07-24.
 - #392 `feat(comercial): restaurar contrato y suite de reservas de venta` — mergeado 2026-07-24.
@@ -110,16 +108,12 @@ Implementación relevante verificada:
 
 El orden operativo recomendado es:
 
-1. completar la revisión e integración de #415;
-2. rebasear y actualizar #406 contra `main`;
-3. repetir la prueba manual de venta histórica con PostgreSQL y Uvicorn reales;
-4. verificar la fila desde otra sesión, el detalle integral `200` y la persistencia
-   después de reiniciar el backend;
-5. integrar #406 sólo después de esa validación;
-6. continuar con #405 como siguiente subincremento funcional.
+1. resolver #418, descubierto durante la validación funcional de #406;
+2. revalidar el flujo funcional afectado;
+3. continuar con #405 como siguiente subincremento funcional.
 
 #374 permanece abierto como frente funcional y #365 como deuda transversal, pero
-ninguno desplaza la validación del bloqueo transaccional actual. El frontend sólo
+ninguno desplaza la resolución inmediata de #418. El frontend sólo
 presenta respuestas y arma el command comercial: no calcula indexación, no infiere
 valores y no duplica reglas financieras.
 
@@ -157,10 +151,9 @@ valores y no duplica reglas financieras.
 
 ### 5.6 Pendientes y orden sugerido
 
-- #415: cerrar primero la corrección transaccional backend asociada a #416.
-- #406: rebasear y repetir después la validación manual de persistencia histórica,
-  detalle integral y reinicio del backend.
-- #405: continuar sólo después de cerrar el bloqueo #415 → #406.
+- #418: resolver primero el defecto descubierto por la validación funcional de #406.
+- #405: continuar después de resolver y revalidar #418; permanece vigente, pero ya
+  no es el incremento inmediato.
 - #374: permanece abierto como frente funcional de Venta completa V3.
 - #348: permanece como frente amplio; ordenar después la visualización read-only de indexación y corridas.
 - #365: deuda transversal que debe avanzar antes de ampliar importaciones históricas, procesos batch o escenarios multiinstalación.
@@ -199,16 +192,14 @@ valores y no duplica reglas financieras.
 
 Antes de continuar #405 o ampliar la venta histórica:
 
-1. integrar #415 sin modificar el ownership Comercial/Financiero;
-2. actualizar #406 contra `main`;
-3. confirmar una venta histórica con Uvicorn y PostgreSQL reales;
-4. consultar venta, plan, obligaciones y outbox desde otra sesión;
-5. exigir detalle integral `200` antes y después de reiniciar el backend;
-6. mantener `INVALID_DISPONIBILIDAD_STATE` y conflictos vigentes;
-7. no calcular indexación ni importes en frontend;
-8. mantener #365 abierto hasta definir la fecha operativa transversal;
-9. continuar con #405 sólo después de validar #406;
-10. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
+1. tomar #418 como próximo foco del frente Comercial/Financiero;
+2. resolver el defecto descubierto durante la validación funcional de #406;
+3. revalidar el flujo funcional afectado sin modificar el ownership Comercial/Financiero;
+4. mantener `INVALID_DISPONIBILIDAD_STATE` y conflictos vigentes;
+5. no calcular indexación ni importes en frontend;
+6. mantener #365 abierto hasta definir la fecha operativa transversal;
+7. continuar con #405 sólo después de resolver y revalidar #418;
+8. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
 
 ## 6. Frente B — Administrativo
 
