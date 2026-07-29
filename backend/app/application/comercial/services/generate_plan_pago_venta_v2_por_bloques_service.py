@@ -537,7 +537,8 @@ class GeneratePlanPagoVentaV2PorBloquesService:
             estado_obligacion=determine_initial_obligation_state(
                 definitive_amount_materialized=(
                     obligacion_preview.definitive_amount_materialized
-                )
+                ),
+                fecha_aplicacion_indice=obligacion_preview.fecha_valor_indice,
             ),
             id_concepto_financiero=concepto["id_concepto_financiero"],
             codigo_concepto_financiero=concepto["codigo_concepto_financiero"],
