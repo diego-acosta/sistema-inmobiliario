@@ -152,7 +152,7 @@ class TramoCuotasWizardDraft:
     id_indice_financiero: str | None = None
     codigo_indice_visual: str | None = None
     fecha_base_indice_iso: str | None = None
-    fecha_base_indice_display: str | None = None
+    periodo_base_indice_display: str | None = None
     valor_base_indice: str | None = None
     cuotas_refuerzo: list[CuotaRefuerzoWizardDraft] = field(default_factory=list)
 
@@ -200,9 +200,18 @@ class WizardVentaCompletaV3State:
     tramo_tasa_interes_value: str = ""
     tramo_id_indice_financiero_value: str = ""
     tramo_codigo_indice_visual_value: str = ""
-    tramo_fecha_base_indice_display: str = ""
+    tramo_periodo_base_indice_display: str = ""
     tramo_fecha_base_indice_iso: str = ""
     tramo_valor_base_indice_value: str = ""
+    indices_catalogo: list[dict[str, Any]] = field(default_factory=list)
+    indices_catalogo_loading: bool = False
+    indices_catalogo_loaded: bool = False
+    indices_catalogo_error: str | None = None
+    tramo_valor_indice_loading: bool = False
+    tramo_valor_indice_status: str = "PENDIENTE"
+    tramo_valor_indice_fecha_efectiva: str | None = None
+    tramo_valor_indice_fuente: str | None = None
+    tramo_valor_indice_error: str | None = None
     tramo_usa_refuerzos: bool = False
     refuerzo_cantidad_value: str = ""
     refuerzo_cantidad_error: str | None = None
@@ -261,6 +270,7 @@ class VentaCompletaWizardV3Prototype:
         self.root = ft.Container(expand=True)
         self.state = WizardVentaCompletaV3State()
         self.api = api or ApiClient(timeout=20.0)
+        self._index_value_request_generation = 0
         self.reserva_selector: SearchSelectorDemo | None = None
         self.objeto_selector: SearchSelectorDemo | None = None
         self.comprador_selector: ResolverParte | None = None
@@ -460,40 +470,30 @@ class VentaCompletaWizardV3Prototype:
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
-        self.tramo_codigo_indice_visual_field = ft.TextField(
-            label="Código/índice visual",
-            on_change=self._on_tramo_codigo_indice_visual_change,
+        self.tramo_indice_selector = ft.Dropdown(
+            label="Índice financiero",
+            hint_text="Seleccioná un índice por código y nombre",
+            on_change=self._on_tramo_indice_change,
         )
-        self.tramo_codigo_indice_visual_feedback = ft.Text(
-            "Opcional. Se usa solo para identificar el índice en pantalla.",
-            size=12,
-            color=ft.Colors.BLUE_GREY_600,
-        )
-        self.tramo_id_indice_financiero_field = ft.TextField(
-            label="ID índice financiero backend",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            on_change=self._on_tramo_id_indice_financiero_change,
-        )
-        self.tramo_id_indice_financiero_feedback = ft.Text(
-            "Ingresá el identificador numérico del índice financiero.",
+        self.tramo_indice_feedback = ft.Text(
+            "El catálogo se obtiene del backend Financiero.",
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
         self.tramo_fecha_base_indice_field = ft.TextField(
-            label="Fecha base índice",
-            hint_text="DD/MM/AAAA",
+            label="Período base del índice",
+            hint_text="MM/AAAA",
             width=240,
             on_change=self._on_tramo_fecha_base_indice_change,
         )
         self.tramo_fecha_base_indice_feedback = ft.Text(
-            "Formato: DD/MM/AAAA",
+            "Elegí mes y año. Formato: MM/AAAA",
             size=12,
             color=ft.Colors.BLUE_GREY_600,
         )
         self.tramo_valor_base_indice_field = ft.TextField(
             label="Valor base índice",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            on_change=self._on_tramo_valor_base_indice_change,
+            read_only=True,
         )
         self.tramo_valor_base_indice_feedback = ft.Text(
             "Ingresá un valor numérico mayor que 0.",
@@ -525,6 +525,12 @@ class VentaCompletaWizardV3Prototype:
             selectable=True,
         )
         self.next_button: ft.Button | None = None
+        self.installment_save_button = ft.Button(
+            "Guardar tramo",
+            icon=ft.Icons.SAVE,
+            on_click=self._add_installment_block,
+            disabled=True,
+        )
 
     def run(self) -> None:
         self.page.title = "Wizard venta completa V3 - Datos iniciales"
@@ -2720,6 +2726,7 @@ class VentaCompletaWizardV3Prototype:
         )
 
     def _build_installment_form_section(self) -> ft.Control:
+        self._sync_installment_save_button()
         return ft.Container(
             padding=14,
             border_radius=12,
@@ -2739,11 +2746,7 @@ class VentaCompletaWizardV3Prototype:
                     ),
                     ft.Row(
                         controls=[
-                            ft.Button(
-                                "Guardar tramo",
-                                icon=ft.Icons.SAVE,
-                                on_click=self._add_installment_block,
-                            ),
+                            self.installment_save_button,
                             ft.OutlinedButton(
                                 "Cancelar",
                                 icon=ft.Icons.CLOSE,
@@ -2874,25 +2877,24 @@ class VentaCompletaWizardV3Prototype:
                         ft.Colors.BLUE_50,
                         ft.Colors.BLUE_100,
                     ),
-                    self.tramo_codigo_indice_visual_field,
-                    self.tramo_codigo_indice_visual_feedback,
-                    self.tramo_id_indice_financiero_field,
-                    self.tramo_id_indice_financiero_feedback,
-                    ft.Row(
-                        controls=[
-                            self.tramo_fecha_base_indice_field,
-                            ft.IconButton(
-                                icon=ft.Icons.CALENDAR_MONTH,
-                                tooltip="Abrir calendario",
-                                on_click=self._open_tramo_fecha_base_indice_picker,
-                            ),
-                        ],
-                        spacing=8,
-                        vertical_alignment=ft.CrossAxisAlignment.START,
-                    ),
+                    self.tramo_indice_selector,
+                    self.tramo_indice_feedback,
+                    self.tramo_fecha_base_indice_field,
                     self.tramo_fecha_base_indice_feedback,
                     self.tramo_valor_base_indice_field,
                     self.tramo_valor_base_indice_feedback,
+                    *(
+                        [
+                            ft.OutlinedButton(
+                                "Reintentar catálogo",
+                                icon=ft.Icons.REFRESH,
+                                on_click=self._load_indices_catalog,
+                            )
+                        ]
+                        if self.state.indices_catalogo_error
+                        and not self.state.indices_catalogo_loading
+                        else []
+                    ),
                 ]
             )
         controls.append(self._build_installment_reinforcement_method_controls())
@@ -3371,7 +3373,7 @@ class VentaCompletaWizardV3Prototype:
             controls.extend(
                 [
                     _info_row("Índice visual o ID índice", tramo.codigo_indice_visual or f"ID {tramo.id_indice_financiero or '-'}"),
-                    _info_row("Fecha base", tramo.fecha_base_indice_display or "-"),
+                    _info_row("Período base", tramo.periodo_base_indice_display or "-"),
                     _info_row("Valor base", tramo.valor_base_indice or "-"),
                 ]
             )
@@ -4090,7 +4092,7 @@ class VentaCompletaWizardV3Prototype:
         total = _format_decimal(total_decimal)
         plan_pago_v2 = self._build_plan_payment_preview_payload()
         condiciones = self._build_confirm_sale_commercial_conditions(total_decimal)
-        return {
+        payload = {
             "generar_venta": {
                 "codigo_venta": self.state.codigo_venta.strip(),
                 "fecha_venta": f"{self.state.fecha_venta_iso}T00:00:00",
@@ -4116,6 +4118,24 @@ class VentaCompletaWizardV3Prototype:
                 "observaciones": self.state.observaciones_comerciales.strip() or None,
             },
         }
+        if self._is_historical_indexed_sale():
+            payload["fecha_corte"] = self._current_operational_date().isoformat()
+        return payload
+
+    def _is_historical_indexed_sale(self) -> bool:
+        fecha_venta = _date_from_iso(self.state.fecha_venta_iso)
+        return (
+            fecha_venta is not None
+            and fecha_venta < self._current_operational_date()
+            and any(
+                tramo.metodo_liquidacion == "INDEXACION"
+                for tramo in self.state.tramos_cuotas
+            )
+        )
+
+    def _current_operational_date(self) -> date:
+        """Fuente provisoria hasta el proveedor transversal definido por #365."""
+        return date.today()
 
     def _build_confirm_sale_buyer_payload(self, comprador: CompradorWizardDraft) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -6262,16 +6282,23 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_cantidad_field.value = self.state.tramo_cantidad_cuotas_value
         self.tramo_fecha_field.value = self._installment_date_display_value()
         self.tramo_tasa_interes_field.value = self.state.tramo_tasa_interes_value
-        self.tramo_codigo_indice_visual_field.value = self.state.tramo_codigo_indice_visual_value
-        self.tramo_id_indice_financiero_field.value = self.state.tramo_id_indice_financiero_value
-        self.tramo_fecha_base_indice_field.value = self._installment_index_base_date_display_value()
+        self.tramo_indice_selector.value = self.state.tramo_id_indice_financiero_value or None
+        self.tramo_indice_selector.options = [
+            ft.dropdown.Option(
+                str(item["id_indice_financiero"]),
+                f'{item["codigo_indice_financiero"]} — {item["nombre_indice_financiero"]}',
+            )
+            for item in self.state.indices_catalogo
+        ]
+        self.tramo_indice_selector.disabled = self.state.indices_catalogo_loading
+        self.tramo_fecha_base_indice_field.value = self._installment_index_base_period_display_value()
         self.tramo_valor_base_indice_field.value = self.state.tramo_valor_base_indice_value
         self.refuerzo_cantidad_field.value = self.state.refuerzo_cantidad_value
         self._sync_tramo_capital_feedback()
         self._sync_tramo_cantidad_feedback()
         self._sync_tramo_fecha_feedback()
         self._sync_tramo_tasa_interes_feedback()
-        self._sync_tramo_id_indice_financiero_feedback()
+        self._sync_tramo_indice_feedback()
         self._sync_tramo_fecha_base_indice_feedback()
         self._sync_tramo_valor_base_indice_feedback()
         self._sync_refuerzo_cantidad_feedback()
@@ -6282,6 +6309,7 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_capital_value = str(event.control.value or "")
         self.state.tramo_capital_error = None
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
     def _on_tramo_capital_commit(self, event: ft.ControlEvent) -> None:
@@ -6291,6 +6319,7 @@ class VentaCompletaWizardV3Prototype:
             self.state.tramo_capital_value = _format_money(parsed)
             event.control.value = self.state.tramo_capital_value
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
     def _on_tramo_cantidad_change(self, event: ft.ControlEvent) -> None:
@@ -6300,12 +6329,15 @@ class VentaCompletaWizardV3Prototype:
         self.state.refuerzo_numero_error = None
         self._discard_reinforcement_locations_outside_effective_duration()
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
     def _on_tramo_fecha_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_fecha_display = str(event.control.value or "")
         self.state.tramo_fecha_iso = ""
         self.state.tramo_fecha_error = None
+        self._sync_installment_save_button()
+        self.page.update()
 
     def _select_installment_liquidation_method(self, method: MetodoLiquidacionTramoWizard) -> None:
         previous_method = self.state.tramo_metodo_liquidacion
@@ -6324,23 +6356,41 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_tasa_interes_value = str(event.control.value or "")
         self.state.tramo_tasa_interes_error = None
         self._sync_installment_estimate_feedback()
+        self._sync_installment_save_button()
         self.page.update()
 
-    def _on_tramo_codigo_indice_visual_change(self, event: ft.ControlEvent) -> None:
-        self.state.tramo_codigo_indice_visual_value = str(event.control.value or "")
-
-    def _on_tramo_id_indice_financiero_change(self, event: ft.ControlEvent) -> None:
+    def _on_tramo_indice_change(self, event: ft.ControlEvent) -> None:
         self.state.tramo_id_indice_financiero_value = str(event.control.value or "")
+        selected = next(
+            (
+                item
+                for item in self.state.indices_catalogo
+                if str(item.get("id_indice_financiero"))
+                == self.state.tramo_id_indice_financiero_value
+            ),
+            None,
+        )
+        self.state.tramo_codigo_indice_visual_value = (
+            str(selected.get("codigo_indice_financiero")) if selected else ""
+        )
         self.state.tramo_id_indice_financiero_error = None
+        self._invalidate_resolved_index_value()
+        self._request_index_value_if_ready()
 
     def _on_tramo_fecha_base_indice_change(self, event: ft.ControlEvent) -> None:
-        self.state.tramo_fecha_base_indice_display = str(event.control.value or "")
+        self.state.tramo_periodo_base_indice_display = str(event.control.value or "")
         self.state.tramo_fecha_base_indice_iso = ""
         self.state.tramo_fecha_base_indice_error = None
-
-    def _on_tramo_valor_base_indice_change(self, event: ft.ControlEvent) -> None:
-        self.state.tramo_valor_base_indice_value = str(event.control.value or "")
-        self.state.tramo_valor_base_indice_error = None
+        self._invalidate_resolved_index_value()
+        canonical_date = _period_to_canonical_date(
+            self.state.tramo_periodo_base_indice_display
+        )
+        if canonical_date is not None:
+            self.state.tramo_fecha_base_indice_iso = canonical_date
+            self._request_index_value_if_ready()
+            return
+        self._sync_installment_save_button()
+        self.page.update()
 
     def _on_refuerzo_cantidad_change(self, event: ft.ControlEvent) -> None:
         new_value = str(event.control.value or "")
@@ -6348,6 +6398,8 @@ class VentaCompletaWizardV3Prototype:
             self.state.refuerzo_cantidad_value = new_value
             self.state.refuerzo_cantidad_error = None
             self._clear_installment_reinforcement_locations()
+            self._sync_installment_save_button()
+            self.page.update()
 
     def _on_refuerzo_cantidad_commit(self, _: ft.ControlEvent) -> None:
         self._validate_reinforcement_count()
@@ -6373,6 +6425,7 @@ class VentaCompletaWizardV3Prototype:
         if number < 1 or number > effective_duration:
             self.state.refuerzo_numero_error = "La cuota seleccionada está fuera de las posiciones válidas."
             self._sync_refuerzo_numero_feedback()
+            self._sync_installment_save_button()
             self.page.update()
             return
         existing_index = next(
@@ -6391,6 +6444,7 @@ class VentaCompletaWizardV3Prototype:
         if len(self.state.tramo_cuotas_refuerzo_draft) >= reinforcement_count:
             self.state.refuerzo_numero_error = "Ya seleccionaste la cantidad de cuotas refuerzo definida."
             self._sync_refuerzo_numero_feedback()
+            self._sync_installment_save_button()
             self.page.update()
             return
         self.state.tramo_cuotas_refuerzo_draft.append(
@@ -6446,51 +6500,141 @@ class VentaCompletaWizardV3Prototype:
             self.tramo_fecha_field.value = self.state.tramo_fecha_display
             self.state.tramo_fecha_error = None
             self._sync_tramo_fecha_feedback()
+            self._sync_installment_save_button()
             self.page.update()
 
 
-    def _open_tramo_fecha_base_indice_picker(self, _: ft.ControlEvent | None = None) -> None:
-        if not hasattr(ft, "DatePicker"):
-            if self.state.tramo_fecha_base_indice_error is None:
-                self.tramo_fecha_base_indice_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
-                self.tramo_fecha_base_indice_feedback.color = ft.Colors.AMBER_800
-            self.page.update()
+    def _load_indices_catalog(self, _: ft.ControlEvent | None = None) -> None:
+        if self.state.indices_catalogo_loaded or self.state.indices_catalogo_loading:
             return
-        selected_date = _date_from_iso(self.state.tramo_fecha_base_indice_iso) or date.today()
+        self.state.indices_catalogo_loading = True
+        self.state.indices_catalogo_error = None
+        self._render()
+        self.page.run_thread(self._run_indices_catalog_request)
+
+    def _run_indices_catalog_request(self) -> None:
         try:
-            picker = ft.DatePicker(
-                value=selected_date,
-                first_date=date(1900, 1, 1),
-                last_date=date(2100, 12, 31),
+            result = self.api.get_indices_financieros(limit=200, offset=0)
+        except Exception as exc:
+            self._fail_indices_catalog(
+                f"No se pudo cargar el catálogo de índices: {exc}"
             )
-            picker.on_change = self._on_tramo_fecha_base_indice_picker_change
-            self.page.overlay.append(picker)
-            picker.open = True
-            self.page.update()
-        except Exception:
-            if self.state.tramo_fecha_base_indice_error is None:
-                self.tramo_fecha_base_indice_feedback.value = "Selector calendario no disponible; ingresá la fecha manualmente en formato DD/MM/AAAA."
-                self.tramo_fecha_base_indice_feedback.color = ft.Colors.AMBER_800
-            self.page.update()
-
-    def _on_tramo_fecha_base_indice_picker_change(self, event: ft.ControlEvent) -> None:
-        selected_date = getattr(event.control, "value", None)
-        if selected_date is None:
             return
-        if isinstance(selected_date, datetime):
-            selected_date = selected_date.date()
-        if isinstance(selected_date, date):
-            self.state.tramo_fecha_base_indice_iso = selected_date.isoformat()
-            self.state.tramo_fecha_base_indice_display = _format_date_ar(self.state.tramo_fecha_base_indice_iso)
-            self.tramo_fecha_base_indice_field.value = self.state.tramo_fecha_base_indice_display
-            self.state.tramo_fecha_base_indice_error = None
-            self._sync_tramo_fecha_base_indice_feedback()
+        if not result.success:
+            self._fail_indices_catalog(
+                f"No se pudo cargar el catálogo de índices: {result.error_message or 'error de red o contrato.'}"
+            )
+            return
+        data = result.data
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            self._fail_indices_catalog(
+                "El catálogo de índices devolvió un formato inesperado."
+            )
+            return
+        items = data["items"]
+        if not all(self._is_valid_index_catalog_item(item) for item in items):
+            self._fail_indices_catalog(
+                "El catálogo de índices devolvió un formato inesperado."
+            )
+            return
+        self.state.indices_catalogo = list(items)
+        self.state.indices_catalogo_loaded = True
+        self.state.indices_catalogo_loading = False
+        self.state.indices_catalogo_error = None
+        self._render()
+
+    @staticmethod
+    def _is_valid_index_catalog_item(item: Any) -> bool:
+        return (
+            isinstance(item, dict)
+            and isinstance(item.get("id_indice_financiero"), int)
+            and item["id_indice_financiero"] > 0
+            and isinstance(item.get("codigo_indice_financiero"), str)
+            and bool(item["codigo_indice_financiero"].strip())
+            and isinstance(item.get("nombre_indice_financiero"), str)
+            and bool(item["nombre_indice_financiero"].strip())
+        )
+
+    def _fail_indices_catalog(self, message: str) -> None:
+        self.state.indices_catalogo_loaded = False
+        self.state.indices_catalogo_loading = False
+        self.state.indices_catalogo = []
+        self.state.indices_catalogo_error = message
+        self._render()
+
+    def _invalidate_resolved_index_value(self) -> None:
+        self._index_value_request_generation += 1
+        self.state.tramo_valor_base_indice_value = ""
+        self.state.tramo_valor_indice_loading = False
+        self.state.tramo_valor_indice_status = "PENDIENTE"
+        self.state.tramo_valor_indice_fecha_efectiva = None
+        self.state.tramo_valor_indice_fuente = None
+        self.state.tramo_valor_indice_error = None
+        self.state.tramo_valor_base_indice_error = None
+        self._sync_installment_save_button()
+
+    def _request_index_value_if_ready(self) -> None:
+        raw_id = self.state.tramo_id_indice_financiero_value.strip()
+        fecha_iso = self.state.tramo_fecha_base_indice_iso
+        index_id = self._parse_positive_integer(raw_id) if raw_id else None
+        if index_id is None or not fecha_iso:
+            self._sync_installment_save_button()
             self.page.update()
+            return
+        generation = self._index_value_request_generation
+        self.state.tramo_valor_indice_loading = True
+        self._sync_installment_save_button()
+        self._render()
+        self.page.run_thread(
+            lambda: self._run_index_value_request(generation, index_id, fecha_iso)
+        )
+
+    def _run_index_value_request(
+        self, generation: int, index_id: int, fecha_iso: str
+    ) -> None:
+        try:
+            result = self.api.get_indice_financiero_valor_aplicable(
+                fecha_objetivo=fecha_iso,
+                id_indice_financiero=index_id,
+            )
+        except Exception as exc:
+            result = ApiResult(False, error_message=str(exc))
+        if (
+            generation != self._index_value_request_generation
+            or str(index_id) != self.state.tramo_id_indice_financiero_value
+            or fecha_iso != self.state.tramo_fecha_base_indice_iso
+        ):
+            return
+        self.state.tramo_valor_indice_loading = False
+        if not result.success:
+            self.state.tramo_valor_indice_status = "ERROR"
+            self.state.tramo_valor_indice_error = (
+                f"No se pudo consultar el valor aplicable: {result.error_message or 'error de red o contrato.'}"
+            )
+        elif result.data is None:
+            self.state.tramo_valor_indice_status = "SIN_VALOR"
+        elif not isinstance(result.data, dict) or not result.data.get("valor_indice"):
+            self.state.tramo_valor_indice_status = "ERROR"
+            self.state.tramo_valor_indice_error = (
+                "La consulta del valor aplicable devolvió un formato inesperado."
+            )
+        else:
+            self.state.tramo_valor_base_indice_value = str(result.data["valor_indice"])
+            self.state.tramo_valor_indice_fecha_efectiva = str(
+                result.data.get("fecha_valor") or ""
+            ) or None
+            self.state.tramo_valor_indice_fuente = str(
+                result.data.get("fuente_valor") or ""
+            ) or None
+            self.state.tramo_valor_indice_status = "RESUELTO"
+        self._sync_installment_save_button()
+        self._render()
 
 
     def _open_installment_form_step(self, _: ft.ControlEvent | None = None) -> None:
         self._clear_installment_form_state()
         self.state.pantalla_actual = "PLAN_TRAMO_FORM"
+        self._load_indices_catalog()
         self._render()
 
     def _cancel_installment_form_step(self, _: ft.ControlEvent | None = None) -> None:
@@ -6560,6 +6704,55 @@ class VentaCompletaWizardV3Prototype:
         self.state.tramo_capital_error = None
         return parsed
 
+    def _can_save_installment_block(self) -> bool:
+        capital = _parse_money_decimal(self.state.tramo_capital_value)
+        quantity = self._parse_positive_integer(
+            self.state.tramo_cantidad_cuotas_value.strip()
+        )
+        due_date = _parse_date_ar_strict(self.state.tramo_fecha_display.strip())
+        if capital is None or quantity is None or due_date is None:
+            return False
+        if capital > self._capital_remaining_for_installments():
+            return False
+        if not self._installment_reinforcements_are_ready(quantity):
+            return False
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            return _parse_decimal(self.state.tramo_tasa_interes_value.strip()) is not None
+        if self.state.tramo_metodo_liquidacion == "INDEXACION":
+            return (
+                self._parse_positive_integer(
+                    self.state.tramo_id_indice_financiero_value.strip()
+                )
+                is not None
+                and _period_to_canonical_date(
+                    self.state.tramo_periodo_base_indice_display.strip()
+                )
+                is not None
+                and self.state.tramo_valor_indice_status == "RESUELTO"
+                and not self.state.tramo_valor_indice_loading
+                and _parse_decimal(self.state.tramo_valor_base_indice_value) is not None
+            )
+        return True
+
+    def _installment_reinforcements_are_ready(self, quantity: int) -> bool:
+        if self.state.tramo_metodo_liquidacion == "INTERES_DIRECTO":
+            return not self.state.tramo_cuotas_refuerzo_draft and not self.state.refuerzo_cantidad_value.strip()
+        if not self.state.tramo_usa_refuerzos:
+            return True
+        count = self._parse_positive_integer(self.state.refuerzo_cantidad_value.strip())
+        if count is None or count >= quantity:
+            return False
+        effective_duration = quantity - count
+        numbers = [item.numero_cuota for item in self.state.tramo_cuotas_refuerzo_draft]
+        return (
+            len(numbers) == count
+            and len(numbers) == len(set(numbers))
+            and all(1 <= number <= effective_duration for number in numbers)
+        )
+
+    def _sync_installment_save_button(self) -> None:
+        self.installment_save_button.disabled = not self._can_save_installment_block()
+
     def _validate_installment_quantity(self) -> int | None:
         raw_value = self.state.tramo_cantidad_cuotas_value.strip()
         if not raw_value:
@@ -6624,31 +6817,37 @@ class VentaCompletaWizardV3Prototype:
 
     def _validate_installment_index_fields(self) -> dict[str, str | None] | None:
         raw_index_id = self.state.tramo_id_indice_financiero_value.strip()
-        raw_date = self.state.tramo_fecha_base_indice_display.strip()
+        raw_period = self.state.tramo_periodo_base_indice_display.strip()
         raw_base_value = self.state.tramo_valor_base_indice_value.strip()
         index_id = self._parse_positive_integer(raw_index_id) if raw_index_id else None
-        parsed_date = _parse_date_ar_strict(raw_date) if raw_date else None
+        canonical_date = _period_to_canonical_date(raw_period) if raw_period else None
         base_value = _parse_decimal(raw_base_value) if raw_base_value else None
 
         if not raw_index_id:
-            self.state.tramo_id_indice_financiero_error = "El ID índice financiero backend es requerido."
+            self.state.tramo_id_indice_financiero_error = "Seleccioná un índice financiero."
         elif index_id is None:
-            self.state.tramo_id_indice_financiero_error = "El ID índice financiero backend debe ser un entero mayor que 0."
+            self.state.tramo_id_indice_financiero_error = "La selección del índice no es válida; recargá el catálogo."
         else:
             self.state.tramo_id_indice_financiero_error = None
 
-        if not raw_date:
-            self.state.tramo_fecha_base_indice_error = "La fecha base índice es requerida."
-        elif parsed_date is None:
-            self.state.tramo_fecha_base_indice_error = "Fecha inválida. Usá formato DD/MM/AAAA."
+        if not raw_period:
+            self.state.tramo_fecha_base_indice_error = "El período base del índice es requerido."
+        elif canonical_date is None:
+            self.state.tramo_fecha_base_indice_error = "Período inválido. Usá formato MM/AAAA."
             self.state.tramo_fecha_base_indice_iso = ""
         else:
             self.state.tramo_fecha_base_indice_error = None
-            self.state.tramo_fecha_base_indice_iso = parsed_date
-            self.state.tramo_fecha_base_indice_display = _format_date_ar(parsed_date)
+            self.state.tramo_fecha_base_indice_iso = canonical_date
+            self.state.tramo_periodo_base_indice_display = _format_period(canonical_date)
 
-        if not raw_base_value:
-            self.state.tramo_valor_base_indice_error = "El valor base índice es requerido."
+        if self.state.tramo_valor_indice_loading:
+            self.state.tramo_valor_base_indice_error = "La consulta del valor aplicable está en curso."
+        elif self.state.tramo_valor_indice_status == "SIN_VALOR":
+            self.state.tramo_valor_base_indice_error = "El índice no tiene un valor publicado aplicable para el período base."
+        elif self.state.tramo_valor_indice_status == "ERROR":
+            self.state.tramo_valor_base_indice_error = self.state.tramo_valor_indice_error or "No se pudo consultar el valor aplicable."
+        elif not raw_base_value:
+            self.state.tramo_valor_base_indice_error = "Seleccioná un índice y un período base para resolver el valor aplicable."
         elif base_value is None:
             self.state.tramo_valor_base_indice_error = "El valor base índice debe ser un número finito mayor que 0."
         else:
@@ -6665,7 +6864,7 @@ class VentaCompletaWizardV3Prototype:
             "id_indice_financiero": raw_index_id,
             "codigo_indice_visual": self.state.tramo_codigo_indice_visual_value.strip() or None,
             "fecha_base_indice_iso": self.state.tramo_fecha_base_indice_iso,
-            "fecha_base_indice_display": self.state.tramo_fecha_base_indice_display,
+            "periodo_base_indice_display": self.state.tramo_periodo_base_indice_display,
             "valor_base_indice": raw_base_value,
         }
 
@@ -6819,6 +7018,7 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_capital_field.value = ""
         self.tramo_cantidad_field.value = ""
         self.tramo_fecha_field.value = ""
+        self._sync_installment_save_button()
 
     def _clear_installment_errors(self) -> None:
         self.state.tramo_capital_error = None
@@ -6840,12 +7040,11 @@ class VentaCompletaWizardV3Prototype:
     def _clear_installment_index_fields(self) -> None:
         self.state.tramo_id_indice_financiero_value = ""
         self.state.tramo_codigo_indice_visual_value = ""
-        self.state.tramo_fecha_base_indice_display = ""
+        self.state.tramo_periodo_base_indice_display = ""
         self.state.tramo_fecha_base_indice_iso = ""
-        self.state.tramo_valor_base_indice_value = ""
+        self._invalidate_resolved_index_value()
         self._clear_installment_index_errors()
-        self.tramo_id_indice_financiero_field.value = ""
-        self.tramo_codigo_indice_visual_field.value = ""
+        self.tramo_indice_selector.value = None
         self.tramo_fecha_base_indice_field.value = ""
         self.tramo_valor_base_indice_field.value = ""
 
@@ -6859,10 +7058,10 @@ class VentaCompletaWizardV3Prototype:
             return self.state.tramo_fecha_display
         return self.state.tramo_fecha_display or _format_date_ar(self.state.tramo_fecha_iso)
 
-    def _installment_index_base_date_display_value(self) -> str:
+    def _installment_index_base_period_display_value(self) -> str:
         if self.state.tramo_fecha_base_indice_error is not None:
-            return self.state.tramo_fecha_base_indice_display
-        return self.state.tramo_fecha_base_indice_display or _format_date_ar(self.state.tramo_fecha_base_indice_iso)
+            return self.state.tramo_periodo_base_indice_display
+        return self.state.tramo_periodo_base_indice_display or _format_period(self.state.tramo_fecha_base_indice_iso)
 
 
     def _sync_installment_estimate_feedback(self) -> None:
@@ -6924,20 +7123,28 @@ class VentaCompletaWizardV3Prototype:
         self.tramo_tasa_interes_feedback.value = "Ingresá un porcentaje mayor que 0. Ej: 6 para 6%."
         self.tramo_tasa_interes_feedback.color = ft.Colors.BLUE_GREY_600
 
-    def _sync_tramo_id_indice_financiero_feedback(self) -> None:
+    def _sync_tramo_indice_feedback(self) -> None:
         if self.state.tramo_id_indice_financiero_error is not None:
-            self.tramo_id_indice_financiero_feedback.value = self.state.tramo_id_indice_financiero_error
-            self.tramo_id_indice_financiero_feedback.color = ft.Colors.RED_700
+            self.tramo_indice_feedback.value = self.state.tramo_id_indice_financiero_error
+            self.tramo_indice_feedback.color = ft.Colors.RED_700
             return
-        self.tramo_id_indice_financiero_feedback.value = "Ingresá el identificador numérico del índice financiero."
-        self.tramo_id_indice_financiero_feedback.color = ft.Colors.BLUE_GREY_600
+        if self.state.indices_catalogo_loading:
+            message, color = "Cargando catálogo de índices…", ft.Colors.BLUE_700
+        elif self.state.indices_catalogo_error:
+            message, color = self.state.indices_catalogo_error, ft.Colors.RED_700
+        elif self.state.indices_catalogo_loaded and not self.state.indices_catalogo:
+            message, color = "No hay índices activos disponibles.", ft.Colors.AMBER_800
+        else:
+            message, color = "Seleccioná por código y nombre; el ID técnico se conserva internamente.", ft.Colors.BLUE_GREY_600
+        self.tramo_indice_feedback.value = message
+        self.tramo_indice_feedback.color = color
 
     def _sync_tramo_fecha_base_indice_feedback(self) -> None:
         if self.state.tramo_fecha_base_indice_error is not None:
             self.tramo_fecha_base_indice_feedback.value = self.state.tramo_fecha_base_indice_error
             self.tramo_fecha_base_indice_feedback.color = ft.Colors.RED_700
             return
-        self.tramo_fecha_base_indice_feedback.value = "Formato: DD/MM/AAAA"
+        self.tramo_fecha_base_indice_feedback.value = "Elegí mes y año. Formato: MM/AAAA"
         self.tramo_fecha_base_indice_feedback.color = ft.Colors.BLUE_GREY_600
 
     def _sync_tramo_valor_base_indice_feedback(self) -> None:
@@ -6945,7 +7152,21 @@ class VentaCompletaWizardV3Prototype:
             self.tramo_valor_base_indice_feedback.value = self.state.tramo_valor_base_indice_error
             self.tramo_valor_base_indice_feedback.color = ft.Colors.RED_700
             return
-        self.tramo_valor_base_indice_feedback.value = "Ingresá un valor numérico mayor que 0."
+        if self.state.tramo_valor_indice_loading:
+            self.tramo_valor_base_indice_feedback.value = "Consultando valor publicado aplicable…"
+        elif self.state.tramo_valor_indice_status == "RESUELTO":
+            details = [f"Valor aplicable: {self.state.tramo_valor_base_indice_value}"]
+            if self.state.tramo_valor_indice_fecha_efectiva:
+                details.append(f"fecha efectiva {self.state.tramo_valor_indice_fecha_efectiva}")
+            if self.state.tramo_valor_indice_fuente:
+                details.append(f"fuente {self.state.tramo_valor_indice_fuente}")
+            self.tramo_valor_base_indice_feedback.value = " · ".join(details)
+        elif self.state.tramo_valor_indice_status == "SIN_VALOR":
+            self.tramo_valor_base_indice_feedback.value = "No hay valor publicado aplicable para esa fecha."
+        elif self.state.tramo_valor_indice_status == "ERROR":
+            self.tramo_valor_base_indice_feedback.value = self.state.tramo_valor_indice_error or "Error al consultar el valor aplicable."
+        else:
+            self.tramo_valor_base_indice_feedback.value = "Se completa automáticamente al seleccionar índice y período base."
         self.tramo_valor_base_indice_feedback.color = ft.Colors.BLUE_GREY_600
 
     @staticmethod
@@ -6974,7 +7195,7 @@ class VentaCompletaWizardV3Prototype:
             return f"Tasa: {tasa} — Períodos: {tramo.cantidad_periodos or tramo.cantidad_cuotas}"
         if tramo.metodo_liquidacion == "INDEXACION":
             index_label = tramo.codigo_indice_visual or f"ID {tramo.id_indice_financiero or '-'}"
-            return f"Índice: {index_label} · fecha base: {tramo.fecha_base_indice_display or '-'}"
+            return f"Índice: {index_label} · período base: {tramo.periodo_base_indice_display or '-'}"
         return ""
 
     @staticmethod
@@ -7733,6 +7954,34 @@ def _parse_date_ar_strict(value: Any) -> str | None:
     if not (day.isdigit() and month.isdigit() and year.isdigit()):
         return None
     return _parse_date_ar(text)
+
+
+def _parse_month_year(value: Any) -> tuple[int, int] | None:
+    """Parsea exclusivamente MM/AAAA; no acepta una fecha completa."""
+    text = str(value or "").strip()
+    if len(text) != 7 or text[2] != "/":
+        return None
+    month_text, year_text = text[:2], text[3:]
+    if not (month_text.isdigit() and year_text.isdigit()):
+        return None
+    month, year = int(month_text), int(year_text)
+    if not 1 <= month <= 12 or not 1900 <= year <= 2100:
+        return None
+    return month, year
+
+
+def _period_to_canonical_date(value: Any) -> str | None:
+    parsed = _parse_month_year(value)
+    if parsed is None:
+        return None
+    month, year = parsed
+    # Convención contractual para periodicidad MENSUAL: primer día del mes.
+    return date(year, month, 1).isoformat()
+
+
+def _format_period(value: Any) -> str:
+    parsed_date = value if isinstance(value, date) else _date_from_iso(str(value or ""))
+    return parsed_date.strftime("%m/%Y") if parsed_date is not None else ""
 
 
 def _date_from_iso(iso_date: str | None) -> date | None:

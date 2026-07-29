@@ -552,6 +552,30 @@ class ApiClient:
     def get_plan_pago_venta_v2_integral(self, id_venta: int) -> ApiResult:
         return self._get(f"/api/v1/ventas/{id_venta}/plan-pago-v2")
 
+    def get_indices_financieros(
+        self, *, limit: int = 50, offset: int = 0
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/financiero/indices",
+            params={"limit": limit, "offset": offset},
+        )
+
+    def get_indice_financiero_valor_aplicable(
+        self,
+        *,
+        fecha_objetivo: str,
+        id_indice_financiero: int | None = None,
+        codigo_indice_financiero: str | None = None,
+    ) -> ApiResult:
+        return self._get(
+            "/api/v1/financiero/indices/valor-aplicable",
+            params={
+                "fecha_objetivo": fecha_objetivo,
+                "id_indice_financiero": id_indice_financiero,
+                "codigo_indice_financiero": codigo_indice_financiero,
+            },
+        )
+
     def preview_plan_pago_venta_v2_sin_venta(
         self, payload: dict[str, Any]
     ) -> ApiResult:
