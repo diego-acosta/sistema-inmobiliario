@@ -1,5 +1,11 @@
 # Auditoría #374 — Tramos indexados en Venta completa V3
 
+> **Vigencia contractual:** esta auditoría conserva evidencia del selector y del
+> frontend existentes. Desde `#424`, `INT-FIN-005` fija para la deuda PPV2 futura
+> un período objetivo mensual persistido y resolución exacta. El fallback al último
+> valor anterior no puede materializar deuda; solo puede presentarse como
+> estimación explícita. La implementación definitiva corresponde a `#423/#429`.
+
 **Estado:** BLOQUEADO POR BRECHA CONTRACTUAL CONFIRMADA
 
 ## Alcance auditado

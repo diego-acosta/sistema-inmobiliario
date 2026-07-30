@@ -1,5 +1,11 @@
 # AUD-COM-FIN-VENTA-HISTORICA-INDEXADA-001 — Auditoría para indexar cuotas al registrar una venta histórica (#345)
 
+> **Vigencia contractual:** este documento conserva la evidencia del flujo
+> histórico implementado. Para futuras ventas PPV2, `#424` / `INT-FIN-005`
+> reemplaza la selección abierta por una base común y un período objetivo mensual
+> exacto. Los comportamientos aquí auditados continúan siendo implementación real
+> hasta completar `#423/#427/#429`; no prueban cumplimiento del contrato futuro.
+
 ## 1. Contexto
 
 Esta auditoría releva el flujo real de alta manual de ventas, generación de Plan Pago Venta V2 y motor de indexación de cuotas V2 para definir un camino incremental de implementación de #345. No implementa la funcionalidad completa, no agrega endpoints y no modifica deuda.

@@ -49,7 +49,15 @@ Las cuotas se clasifican por `fecha_vencimiento` contra la fecha de corte exacta
 - `PERIODO_CORTE`: `fecha_vencimiento == fecha_corte`.
 - `FUTURA`: `fecha_vencimiento > fecha_corte`.
 
-El preview vigente selecciona el valor de índice aplicable con `fecha_valor <= fecha_vencimiento`; esta prevalidación no cambia esa política ni usa una fecha mensual alternativa. `fecha_corte` solo clasifica exigibilidad para decidir bloqueos de prevalidación: no participa en la selección del índice, el período del índice, el coeficiente ni el importe de cuota.
+El preview implementado selecciona hoy el valor de índice aplicable con
+`fecha_valor <= fecha_vencimiento`; esta prevalidación no cambia ese comportamiento
+vigente. Para la evolución contractual, `INT-FIN-005` reemplaza esa regla como
+criterio definitivo: cada obligación deberá persistir un período objetivo mensual
+y Financiero deberá resolver su valor exacto. Hasta implementar `#423` y `#429`, el
+selector actual es compatibilidad heredada y no evidencia cumplimiento del nuevo
+contrato. `fecha_corte` solo clasifica exigibilidad para decidir bloqueos de
+prevalidación: no participa en la selección del índice, el coeficiente ni el
+importe de cuota.
 
 ## Response
 

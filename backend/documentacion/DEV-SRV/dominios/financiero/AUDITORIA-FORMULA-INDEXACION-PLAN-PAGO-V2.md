@@ -213,6 +213,12 @@ Para evitar ambiguedad con valor aplicado distinto por cuota, la implementacion 
 
 ## E) Fecha de aplicacion del indice
 
+> **Decisión posterior (`#424` / `INT-FIN-005`):** esta sección conserva la
+> evidencia del comportamiento auditado, pero su recomendación de usar
+> `fecha_vencimiento` y fallback al último valor anterior quedó reemplazada para el
+> contrato futuro. La deuda definitiva deberá resolverse por período objetivo
+> mensual exacto persistido; el último valor anterior solo podrá ser informativo.
+
 ### E.1 Opcion recomendada para primera implementacion
 
 Recomendacion: **cada obligacion/cuota usa su propia `fecha_vencimiento` como `fecha_objetivo` de busqueda del indice**.
@@ -588,6 +594,10 @@ Cuando se implemente la strategy de generacion indexada unica, agregar o ajustar
 ---
 
 ## N) Decision final recomendada
+
+> **Superada parcialmente por `INT-FIN-005`:** los puntos 3 y 4 siguientes no son
+> la política contractual a implementar en `#423/#429`. Se mantienen como registro
+> histórico del diseño que explica el selector actualmente implementado.
 
 Para la primera implementacion de la strategy `INDEXACION`:
 
