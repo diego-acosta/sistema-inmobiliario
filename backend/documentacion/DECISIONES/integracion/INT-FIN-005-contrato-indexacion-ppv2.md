@@ -37,9 +37,10 @@ física futura de la base común no cambia este ownership.
 
 ## 3. Vocabulario contractual
 
-- **Período mensual:** par `(año, mes)`, representable físicamente como ambos
-  componentes o como una fecha normalizada al primer día del mes. El día no posee
-  semántica financiera.
+- **Período mensual:** par `(año, mes)`. Su representación canónica futura debe ser
+  una fecha normalizada al primer día del mes o una columna equivalente que no
+  admita ambigüedad de día. El día original de `fecha_valor` no diferencia dos
+  valores contractuales dentro de un mismo período mensual.
 - **Período base:** período mensual común desde el que se referencia toda la venta
   indexada.
 - **Valor base:** valor publicado del índice para el período base. Puede estar
@@ -47,7 +48,8 @@ física futura de la base común no cambia este ownership.
 - **Vencimiento sugerido original:** fecha calculada una sola vez a partir de la
   fecha de venta y la configuración general; sirve de ancla para una edición.
 - **Período objetivo:** período mensual propio y persistido de cada obligación
-  indexada, independiente de su fecha de vencimiento.
+  indexada. Es distinto del vencimiento, pero se relaciona con él mediante el
+  vencimiento sugerido original y las reglas de desplazamiento contractual.
 - **Valor objetivo:** valor publicado del índice exactamente correspondiente al
   período objetivo.
 - **Materialización definitiva:** cálculo y persistencia de coeficiente, ajuste,
@@ -114,10 +116,18 @@ debe cerrarla con evidencia funcional antes de implementar.
 
 ### 4.5 Período objetivo por obligación
 
-Cada obligación indexada posee un período objetivo explícito y persistido. Con el
-vencimiento sugerido sin editar, la primera cuota usa el período inmediatamente
-posterior al período base y las siguientes avanzan un mes por cada mes del
-cronograma. Los bloques no indexados no interrumpen el calendario global.
+Cada obligación indexada posee un período objetivo explícito y persistido. Son dos
+datos distintos: el vencimiento no determina por sí solo el índice aplicable, pero
+el período objetivo sugerido se calcula usando el vencimiento sugerido original y
+el calendario contractual común. Con el vencimiento sugerido sin editar, la
+primera cuota usa el período inmediatamente posterior al período base y las
+siguientes se ubican según el mes de sus respectivos vencimientos sugeridos.
+
+Los bloques no indexados no tienen `periodo_objetivo`: no consumen períodos de
+índice, no reinician el calendario y tampoco lo congelan. Cuando aparece un nuevo
+tramo indexado, cada objetivo se deriva del calendario común respecto de la base y
+del vencimiento sugerido original de esa obligación; nunca del conteo de cuotas
+indexadas o no indexadas anteriores.
 
 `fecha_vencimiento` no es fuente suficiente para reconstruir el período objetivo:
 ambos datos se conservan y cumplen funciones distintas.
@@ -143,11 +153,13 @@ período_objetivo_editado = PO + desplazamiento meses
 
 Financiero debe resolver el valor **exacto del período objetivo**. Para materializar
 deben existir el valor base y el valor publicado del período objetivo, ambos del
-índice común y válidos según las reglas contractuales.
+índice común y válidos según las reglas contractuales, y debe cumplirse
+`valor_objetivo >= valor_base`.
 
 | Disponibilidad | Resultado contractual |
 | --- | --- |
-| Base publicada + objetivo exacto publicado | coeficiente y ajuste; `definitive_amount_materialized=True`; `EMITIDA`; trazabilidad aplicada |
+| Base publicada + objetivo exacto publicado y `objetivo >= base` | coeficiente y ajuste no negativo; `definitive_amount_materialized=True`; `EMITIDA`; trazabilidad aplicada |
+| Base publicada + objetivo exacto publicado y `objetivo < base` | incompatibilidad `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`; no materializa por el modelo vigente y no crea componente negativo |
 | Base pendiente | capital provisional; `False`; `PROYECTADA`; sin ajuste ni trazabilidad aplicada |
 | Objetivo pendiente | capital provisional; `False`; `PROYECTADA`; sin ajuste ni trazabilidad aplicada |
 | Solo existe un valor anterior al objetivo | igual a objetivo pendiente; puede mostrarse únicamente como estimación explícita |
@@ -155,6 +167,18 @@ deben existir el valor base y el valor publicado del período objetivo, ambos de
 La fórmula vigente continúa siendo `valor_objetivo / valor_base`; este incremento
 no reabre fórmula, redondeo ni estados. `determine_initial_obligation_state()` no se
 modifica: recibe el hecho de materialización y conserva `EMITIDA`/`PROYECTADA`.
+
+Si `valor_objetivo < valor_base`, no corresponde afirmar que la obligación queda
+simplemente `PROYECTADA`: el flujo debe devolver o conservar la incompatibilidad
+funcional vigente `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`, sin crear un
+`AJUSTE_INDEXACION` negativo. SQL exige importes no negativos en
+`composicion_obligacion` y en las estructuras de corrida, y los tests vigentes
+esperan ese rechazo. Resolver la disminución requiere un modelo futuro explícito
+de bonificación, crédito o ajuste compensatorio; no se diseña en #424.
+
+El código anterior corresponde a preview/generación comercial PPV2. Las corridas
+financieras posteriores conservan hoy su incompatibilidad específica
+`AJUSTE_NEGATIVO_NO_SOPORTADO`; #424 no unifica ni cambia contratos ejecutables.
 
 El último valor conocido nunca puede convertirse automáticamente en aplicado,
 materializar deuda, crear ajuste definitivo, crear trazabilidad aplicada ni emitir
@@ -185,13 +209,21 @@ disponible al confirmar.
 
 ### 5.3 Varios tramos
 
-| Secuencia | Método | Período objetivo / efecto |
-| --- | --- | --- |
-| tramo A, cuotas 1–2 | indexado | 09/2026, 10/2026 |
-| tramo B, cuotas 3–4 | no indexado | no aplica índice, pero ocupa 11/2026 y 12/2026 en el cronograma |
-| tramo C, cuotas 5–6 | indexado | 01/2027, 02/2027 |
+Base común: 08/2026. Cada fila conserva su vencimiento sugerido original.
 
-A y C usan el mismo índice y base común 08/2026. C no reinicia en 09/2026.
+| Tramo / cuota | Método | Vencimiento sugerido | Período objetivo |
+| --- | --- | --- | --- |
+| A / 1 | indexado | 10/09/2026 | 09/2026 |
+| A / 2 | indexado | 10/10/2026 | 10/2026 |
+| B / 3 | no indexado | 10/11/2026 | no aplica |
+| B / 4 | no indexado | 10/12/2026 | no aplica |
+| C / 5 | indexado | 10/01/2027 | 01/2027 |
+| C / 6 | indexado | 10/02/2027 | 02/2027 |
+
+A y C usan el mismo índice y base común. B no “consume” objetivos: sus obligaciones
+no tienen `periodo_objetivo`. Los objetivos de C son enero y febrero porque se
+derivan de sus vencimientos sugeridos originales dentro del calendario común, no
+porque cuatro cuotas anteriores —indexadas o no— hayan sido contadas.
 
 ### 5.4 Vencimiento editado
 
@@ -214,6 +246,7 @@ Con base 09/2026, la última fila sería inválida por producir 08/2026.
 | indexada A | publicada | exacto publicado | irrelevante | `EMITIDA`; ajuste y trazabilidad |
 | indexada B | pendiente | publicado | disponible | `PROYECTADA`; sin ajuste ni trazabilidad |
 | indexada C | publicada | pendiente | disponible | `PROYECTADA`; anterior solo informativo |
+| indexada D | publicada | exacto menor que base | irrelevante | incompatibilidad `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`; no materializa ni crea componente negativo |
 
 Un mismo plan puede contener legítimamente obligaciones `EMITIDA` y `PROYECTADA`.
 
@@ -234,7 +267,10 @@ Propuesta para resolver en `#427` y `#429`, sin DDL en `#424`:
 4. Considerar `CHECK` de normalización al primer día del mes, valor base positivo
    cuando no sea nulo, unicidad de una base activa por venta/plan y coherencia del
    índice entre cabecera y trazabilidad.
-5. Considerar índices por `(id_indice_financiero, periodo_objetivo)` para pendientes
+5. Garantizar en el modelo futuro un único valor publicado por
+   `(id_indice_financiero, período_mensual)`, mediante constraint o índice único
+   físico una vez auditados y saneados los datos existentes.
+6. Considerar índices por `(id_indice_financiero, periodo_objetivo)` para pendientes
    y por venta/plan para consumir la base común.
 
 La ubicación exacta, nombres, nulabilidad de campos auxiliares, FK y estrategia de
@@ -249,6 +285,10 @@ backfill son propuestas, no contratos físicos implementados.
   eligiendo silenciosamente una fila.
 - Normalizar solo períodos mensuales con evidencia inequívoca. Registros ambiguos
   quedan `NO CONFIRMADOS` y requieren decisión de migración.
+- Auditar antes de migrar si un mismo índice posee más de un valor en el mismo mes,
+  incluso cuando sus `fecha_valor` sean días distintos. No elegir uno de manera
+  arbitraria: duplicados, fechas no normalizadas y valores divergentes requieren
+  saneamiento previo y una regla de migración explícita.
 - Mantener lectura compatible durante una transición, pero toda venta nueva luego
   del corte deberá usar la base común.
 - No deducir períodos objetivo históricos únicamente desde vencimientos si se
@@ -295,6 +335,12 @@ publicado y aplicar las validaciones contractuales. La consulta heredada puede
 seguir existiendo hasta su reemplazo, pero un resultado anterior solo sirve como
 información/estimación explícita.
 
+Contractualmente debe existir un único valor publicado por índice y período
+mensual. Si se detectan varios, el selector futuro debe informar incompatibilidad:
+no puede desempatar por día, fecha de publicación, id ni orden de inserción. La
+auditoría de duplicados históricos, saneamiento, migración, normalización física y
+constraint/índice único mensual permanecen pendientes de implementación.
+
 ## 7. Responsabilidades por issue
 
 | Issue | Habilitación proporcionada por #424 |
@@ -321,9 +367,14 @@ resuelve fecha operativa transversal, no reabre la temporalidad corregida en
 | `#427` | varios bloques comparten base; bloque no indexado no reinicia; rechazo de divergencias |
 | `#428` | base pendiente no materializa; publicación exacta materializa una vez; rollback e idempotencia |
 | `#429` | secuencia mensual; tramo intermedio; ediciones 0/+1/+N/-1; rechazo anterior a base |
-| `#423` | exacto publicado; exacto ausente; anterior disponible no aplicado; índice/estado incompatibles |
+| `#423` | exacto publicado; exacto ausente; anterior no aplicado; dos publicados del mismo índice/mes rechazados; normalización mensual |
 | `#430` | sugerencia visible/editable; pendiente explícito; frontend no calcula coeficiente ni deuda |
 | `#431` | plan mixto; transacción completa; retry; outbox/lock/versionado según commands modificados |
+
+Casos transversales que no pueden omitirse en esos PRs: objetivo menor que base y
+rechazo `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`; migración de duplicados
+mensuales; nuevo tramo indexado después de uno no indexado; cambio de día dentro
+del mismo mes sin desplazamiento; y cambio de mes con desplazamiento del objetivo.
 
 Cada PR write deberá completar la checklist CORE-EF y sus tests reales. Esta matriz
 no declara cobertura existente.
@@ -350,5 +401,7 @@ Continúa `NO CONFIRMADO`:
 - tabla y nombres físicos definitivos de la base común;
 - necesidad de persistir el id del valor base además de período y valor;
 - tratamiento migratorio de ventas cuyos bloques heredados discrepen;
+- auditoría, saneamiento y migración de valores duplicados por índice/mes;
+- constraint o índice único físico mensual y tratamiento de fechas no normalizadas;
 - reglas para periodicidades distintas de la mensual;
 - endpoints/envelopes definitivos de los incrementos futuros.

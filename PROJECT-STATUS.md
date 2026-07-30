@@ -161,8 +161,19 @@ infiere valores y no duplica reglas financieras.
 - Cada obligación indexada futura tendrá período objetivo mensual persistido,
   distinto del vencimiento.
 - La materialización definitiva exige valor base y valor publicado exacto del
-  período objetivo. El último valor anterior solo puede ser informativo y no cambia
-  `PROYECTADA` a `EMITIDA`.
+  período objetivo, con objetivo mayor o igual que base. Un valor menor devuelve
+  `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`; no se materializa como componente
+  negativo ni se clasifica simplemente como proyección.
+- El contrato futuro exige un único valor publicado por índice y período mensual;
+  duplicados históricos deben auditarse y sanearse, nunca desempatarse
+  arbitrariamente.
+- Los bloques no indexados no poseen ni consumen períodos objetivo; un tramo
+  indexado posterior deriva los suyos del calendario común y sus vencimientos
+  sugeridos originales.
+- Vencimiento y período objetivo se persisten separados, pero se relacionan: el
+  cambio de mes desplaza el objetivo y un cambio de día dentro del mes no lo hace.
+- El último valor anterior solo puede ser informativo y no cambia `PROYECTADA` a
+  `EMITIDA`.
 - El selector vigente `fecha_valor <= fecha_vencimiento` es compatibilidad heredada
   hasta #423/#429; no es el contrato definitivo fijado por #424.
 - La validación de disponibilidad y sus estados incompatibles no se relajan para

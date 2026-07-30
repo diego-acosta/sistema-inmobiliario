@@ -115,7 +115,12 @@ Definiciones obligatorias:
 - `coeficiente_indexacion` debe ser positivo porque `valor_base_indice > 0` y los valores publicados computables deben tener `valor_indice > 0`.
 - No se reescribe `CAPITAL_VENTA`.
 - La diferencia debe materializarse como composicion separada `AJUSTE_INDEXACION`.
-- Si `valor_aplicado_indice < valor_base_indice`, el resultado matematico produce ajuste negativo. Para primera etapa queda **NO CONFIRMADO** si se permite ajuste negativo; recomendacion segura: validar con negocio antes de generate definitivo y, mientras no este decidido, devolver `INDEXACION_CONFIG_INVALIDA` o error funcional especifico si el ajuste negativo no es aceptado.
+- Si `valor_aplicado_indice < valor_base_indice`, el resultado matemático produce
+  ajuste negativo. El modelo vigente no lo materializa: devuelve
+  `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`, no crea un componente negativo y
+  requiere un futuro modelo explícito de bonificación, crédito o ajuste
+  compensatorio. Esta regla está respaldada por las constraints de importes no
+  negativos y los tests PPV2 vigentes; `INT-FIN-005` la incorpora al contrato.
 
 ### B.2 Redondeo de formula
 
