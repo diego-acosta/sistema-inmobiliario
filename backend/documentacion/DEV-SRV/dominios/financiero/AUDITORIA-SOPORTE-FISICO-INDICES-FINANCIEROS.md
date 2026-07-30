@@ -209,6 +209,12 @@ Para implementacion futura (no aplicada en este PR):
 
 ## 7) Politica de consulta por fecha (F)
 
+> **Decisión posterior (`#424` / `INT-FIN-005`):** la política siguiente documenta
+> una consulta histórica/genérica y el comportamiento heredado. No puede usarse
+> para materializar definitivamente obligaciones PPV2: ese caso exige el valor
+> publicado exacto del período objetivo mensual persistido. El último anterior es,
+> como máximo, una estimación explícita.
+
 Definicion recomendada para query de consumo:
 
 1. **Exacta por fecha**: buscar valor `PUBLICADO` para `fecha_valor = fecha_objetivo`.

@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-07-29
+**Actualizado:** 2026-07-30
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -25,7 +25,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. Los PR #415 y #406 están integrados, #416 está cerrado y la validación transaccional quedó aprobada. La validación funcional de #406 descubrió #418. Baseline verificable: `1763 passed`. | #346, #348, #349, #365, #374, #405 y #418 abiertos. | #415 backend y #406 frontend mergeados; #404 integró catálogo y valor aplicable en #406. | Resolver #418 y luego continuar con #405. |
+| A — Comercial / Financiero | Activo. #424 fija documentalmente el contrato mensual PPV2; su implementación permanece pendiente. El PR #422 está integrado y conserva la materialización como fuente del estado inicial. Baseline anterior verificable: `1763 passed`; no se reejecutó por este cambio documental. | #423 y #425–#431 conforman el roadmap de indexación; #345 y #365 conservan alcance relacionado. | #422 mergeado; #424 es el incremento documental actual, todavía sin merge. | Implementar incrementalmente #425–#429 y #423 según dependencias; luego #430/#431. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
@@ -43,8 +43,14 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 ### 5.1 Estado
 
 Activo. La integración de venta histórica de #406 y la corrección transaccional
-de #415 están integradas. La validación transaccional quedó aprobada y la
-validación funcional de #406 descubrió el issue #418:
+de #415 están integradas. Los cambios de #418/#420 y la alineación de #421/#422
+también están presentes en `main`:
+
+- #424 cierra el diseño contractual de indexación PPV2 mensual como fuente única
+  para #423 y #425–#431: una base común por venta, valor base nullable, período
+  objetivo persistido por obligación y selección exacta sin fallback materializable.
+- PR #422 está mergeado y mantiene `definitive_amount_materialized` como fuente de
+  verdad de `EMITIDA`/`PROYECTADA`; #424 no reabre ni modifica esa lógica.
 
 - PR #390 corrigió la emisión PPV2: los importes definitivos nacen `EMITIDA`; una cuota indexada sin importe materializado nace `PROYECTADA`; la aplicación posterior la pasa de `PROYECTADA` a `EMITIDA`. La demo PPV2 quedó aislada transaccionalmente en tests.
 - PR #392 alineó la suite de reservas con el contrato vigente, eliminó el patch DDL heredado de los tests y corrigió los fixtures de roles. Cerró #391.
@@ -54,7 +60,7 @@ validación funcional de #406 descubrió el issue #418:
   para los tramos indexados; #374 permanece abierto y no se considera cerrado por
   esa integración.
 - PR #406 está mergeado. Su validación funcional posterior a la integración de
-  #415 descubrió #418, que pasa a ser el próximo foco del frente.
+  #415 descubrió #418, cuya corrección está integrada en el historial de `main`.
 - Issue #416, ahora cerrado, documentó el defecto observado: el command podía responder `200`
   después de liberar sólo un savepoint y la sesión revertía luego silenciosamente
   la venta al cerrarse.
@@ -65,9 +71,11 @@ validación funcional de #406 descubrió el issue #418:
   la misma transacción.
 - La suite backend completa ejecutada sobre el cambio runtime de #415 informó
   `1763 passed, 1 warning`; éste es el baseline verificable de este corte.
-- La validación transaccional quedó aprobada. La validación funcional de #406
-  descubrió #418; resolverlo es el siguiente incremento recomendado antes de #405.
-- #346, #348, #349, #365, #374, #405 y #418 permanecen abiertos.
+- La validación transaccional quedó aprobada. #422 corrigió la regresión temporal
+  posterior y restauró la materialización como fuente de verdad.
+- #346, #348, #349, #365, #374 y #405 conservan frentes previos; verificar su
+  estado actual en GitHub antes de retomarlos.
+- #423, #424 y #425–#431 permanecen abiertos; este incremento no los cierra.
 
 Implementación relevante verificada:
 
@@ -80,15 +88,20 @@ Implementación relevante verificada:
 
 ### 5.2 Issues activos
 
+- #424 — contrato documental de indexación PPV2 mensual; incremento actual, no
+  implementa ni cierra el issue.
+- #425–#429 — configuración, vencimiento, base común, materialización pendiente y
+  período objetivo, dependientes del contrato #424.
+- #423 — selector financiero definitivo por período objetivo exacto.
+- #430/#431 — frontend e integración completa, posteriores a los incrementos base.
+
 - #346 — integración con importación de ventas históricas.
 - #348 — frente amplio de frontend de indexación y corridas.
 - #349 — corrección y reversión avanzada.
 - #365 — definición transversal de fecha operativa.
 - #374 — mejorar configuración de tramos indexados en Venta completa V3; abierto y desbloqueado por #397.
-- #418 — defecto descubierto durante la validación funcional de #406; próximo foco
-  inmediato del frente Comercial/Financiero.
-- #405 — pendiente vigente y siguiente subincremento funcional después de resolver
-  #418; deja de ser el incremento inmediato.
+- #405 — frente previo de venta histórica; verificar vigencia y dependencias antes
+  de retomarlo frente al roadmap #423/#425–#431.
 - #59 continúa abierto como issue histórico y amplio de confirmación desde reserva; revisar su vigencia antes de usarlo como próximo incremento.
 
 ### 5.3 Últimos PR relevantes
@@ -106,16 +119,15 @@ Implementación relevante verificada:
 
 ### 5.4 Próximo foco recomendado
 
-El orden operativo recomendado es:
+Para el roadmap contractual de indexación PPV2, el orden recomendado es cerrar
+incrementalmente configuración/vencimiento/base/período y materialización mediante
+#425–#429, implementar el selector exacto #423 cuando su soporte exista y abordar
+#430/#431 después. Cada issue permanece separado y debe cumplir CORE-EF cuando
+incorpore commands.
 
-1. resolver #418, descubierto durante la validación funcional de #406;
-2. revalidar el flujo funcional afectado;
-3. continuar con #405 como siguiente subincremento funcional.
-
-#374 permanece abierto como frente funcional y #365 como deuda transversal, pero
-ninguno desplaza la resolución inmediata de #418. El frontend sólo
-presenta respuestas y arma el command comercial: no calcula indexación, no infiere
-valores y no duplica reglas financieras.
+#374 permanece como frente funcional y #365 como deuda transversal. El frontend
+solo presenta respuestas y arma el command comercial: no calcula indexación, no
+infiere valores y no duplica reglas financieras.
 
 ### 5.5 Decisiones vigentes
 
@@ -142,6 +154,28 @@ valores y no duplica reglas financieras.
 - Publicación, preparación y aplicación de una corrida son operaciones separadas.
 - El catálogo de índices y la resolución de valor aplicable pertenecen a Financiero y son `QUERY_READLIKE`: no requieren headers write, no escriben ni recalculan en frontend.
 - Una respuesta de valor aplicable con `data: null` significa que el índice activo existe pero no tiene valor aplicable; no se infiere un valor.
+- Toda venta indexada futura comparte una base común; un tramo nuevo o no indexado
+  intermedio no reinicia índice, base ni calendario.
+- Período base y valor base son conceptos distintos; la venta puede registrarse
+  con período base y valor pendiente.
+- Cada obligación indexada futura tendrá período objetivo mensual persistido,
+  distinto del vencimiento.
+- La materialización definitiva exige valor base y valor publicado exacto del
+  período objetivo, con objetivo mayor o igual que base. Un valor menor devuelve
+  `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`; no se materializa como componente
+  negativo ni se clasifica simplemente como proyección.
+- El contrato futuro exige un único valor publicado por índice y período mensual;
+  duplicados históricos deben auditarse y sanearse, nunca desempatarse
+  arbitrariamente.
+- Los bloques no indexados no poseen ni consumen períodos objetivo; un tramo
+  indexado posterior deriva los suyos del calendario común y sus vencimientos
+  sugeridos originales.
+- Vencimiento y período objetivo se persisten separados, pero se relacionan: el
+  cambio de mes desplaza el objetivo y un cambio de día dentro del mes no lo hace.
+- El último valor anterior solo puede ser informativo y no cambia `PROYECTADA` a
+  `EMITIDA`.
+- El selector vigente `fecha_valor <= fecha_vencimiento` es compatibilidad heredada
+  hasta #423/#429; no es el contrato definitivo fijado por #424.
 - La validación de disponibilidad y sus estados incompatibles no se relajan para
   permitir ventas históricas.
 - No se calculan importes ni indexación en frontend.
@@ -151,9 +185,14 @@ valores y no duplica reglas financieras.
 
 ### 5.6 Pendientes y orden sugerido
 
-- #418: resolver primero el defecto descubierto por la validación funcional de #406.
-- #405: continuar después de resolver y revalidar #418; permanece vigente, pero ya
-  no es el incremento inmediato.
+- #425–#429: implementar por incrementos la configuración general, sugerencias,
+  base común, valor pendiente y período objetivo definidos en #424.
+- #423: reemplazar el selector heredado por resolución exacta cuando exista soporte
+  de período objetivo.
+- #430/#431: frontend e integración completa después de los incrementos de base.
+
+- #405: verificar vigencia antes de retomarlo; no desplaza el roadmap específico
+  definido por #424.
 - #374: permanece abierto como frente funcional de Venta completa V3.
 - #348: permanece como frente amplio; ordenar después la visualización read-only de indexación y corridas.
 - #365: deuda transversal que debe avanzar antes de ampliar importaciones históricas, procesos batch o escenarios multiinstalación.
@@ -187,18 +226,19 @@ valores y no duplica reglas financieras.
 - `frontend/flet_app/documentacion/AUDITORIA-ISSUE-374-TRAMOS-INDEXADOS.md`.
 - `backend/documentacion/CORE-EF/`.
 - `backend/documentacion/DECISIONES/integracion/INT-FIN-*.md`.
+- `backend/documentacion/DECISIONES/integracion/INT-FIN-005-contrato-indexacion-ppv2.md`.
 
 ### 5.9 Regla de continuidad
 
 Antes de continuar #405 o ampliar la venta histórica:
 
-1. tomar #418 como próximo foco del frente Comercial/Financiero;
-2. resolver el defecto descubierto durante la validación funcional de #406;
-3. revalidar el flujo funcional afectado sin modificar el ownership Comercial/Financiero;
+1. tomar `INT-FIN-005` como fuente contractual de los incrementos PPV2 mensuales;
+2. implementar #425–#429 sin combinar sus alcances;
+3. implementar #423 sobre período objetivo persistido, sin fallback materializable;
 4. mantener `INVALID_DISPONIBILIDAD_STATE` y conflictos vigentes;
 5. no calcular indexación ni importes en frontend;
 6. mantener #365 abierto hasta definir la fecha operativa transversal;
-7. continuar con #405 sólo después de resolver y revalidar #418;
+7. abordar #430/#431 solo después de contar con los contratos backend necesarios;
 8. marcar `NO CONFIRMADO` cualquier dato sin evidencia.
 
 ## 6. Frente B — Administrativo

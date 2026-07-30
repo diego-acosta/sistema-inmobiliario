@@ -115,7 +115,12 @@ Definiciones obligatorias:
 - `coeficiente_indexacion` debe ser positivo porque `valor_base_indice > 0` y los valores publicados computables deben tener `valor_indice > 0`.
 - No se reescribe `CAPITAL_VENTA`.
 - La diferencia debe materializarse como composicion separada `AJUSTE_INDEXACION`.
-- Si `valor_aplicado_indice < valor_base_indice`, el resultado matematico produce ajuste negativo. Para primera etapa queda **NO CONFIRMADO** si se permite ajuste negativo; recomendacion segura: validar con negocio antes de generate definitivo y, mientras no este decidido, devolver `INDEXACION_CONFIG_INVALIDA` o error funcional especifico si el ajuste negativo no es aceptado.
+- Si `valor_aplicado_indice < valor_base_indice`, el resultado matemático produce
+  ajuste negativo. El modelo vigente no lo materializa: devuelve
+  `INDEXACION_AJUSTE_NEGATIVO_NO_SOPORTADO`, no crea un componente negativo y
+  requiere un futuro modelo explícito de bonificación, crédito o ajuste
+  compensatorio. Esta regla está respaldada por las constraints de importes no
+  negativos y los tests PPV2 vigentes; `INT-FIN-005` la incorpora al contrato.
 
 ### B.2 Redondeo de formula
 
@@ -212,6 +217,12 @@ Para evitar ambiguedad con valor aplicado distinto por cuota, la implementacion 
 ---
 
 ## E) Fecha de aplicacion del indice
+
+> **Decisión posterior (`#424` / `INT-FIN-005`):** esta sección conserva la
+> evidencia del comportamiento auditado, pero su recomendación de usar
+> `fecha_vencimiento` y fallback al último valor anterior quedó reemplazada para el
+> contrato futuro. La deuda definitiva deberá resolverse por período objetivo
+> mensual exacto persistido; el último valor anterior solo podrá ser informativo.
 
 ### E.1 Opcion recomendada para primera implementacion
 
@@ -588,6 +599,10 @@ Cuando se implemente la strategy de generacion indexada unica, agregar o ajustar
 ---
 
 ## N) Decision final recomendada
+
+> **Superada parcialmente por `INT-FIN-005`:** los puntos 3 y 4 siguientes no son
+> la política contractual a implementar en `#423/#429`. Se mantienen como registro
+> histórico del diseño que explica el selector actualmente implementado.
 
 Para la primera implementacion de la strategy `INDEXACION`:
 
