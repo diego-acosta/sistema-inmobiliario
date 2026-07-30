@@ -25,7 +25,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
-| A — Comercial / Financiero | Activo. #424 fija documentalmente el contrato mensual PPV2; su implementación permanece pendiente. El PR #422 está integrado y conserva la materialización como fuente del estado inicial. Baseline anterior verificable: `1763 passed`; no se reejecutó por este cambio documental. | #423 y #425–#431 conforman el roadmap de indexación; #345 y #365 conservan alcance relacionado. | #422 mergeado; #424 es el incremento documental actual, todavía sin merge. | Implementar incrementalmente #425–#429 y #423 según dependencias; luego #430/#431. |
+| A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
@@ -46,9 +46,11 @@ Activo. La integración de venta histórica de #406 y la corrección transaccion
 de #415 están integradas. Los cambios de #418/#420 y la alineación de #421/#422
 también están presentes en `main`:
 
-- #424 cierra el diseño contractual de indexación PPV2 mensual como fuente única
-  para #423 y #425–#431: una base común por venta, valor base nullable, período
-  objetivo persistido por obligación y selección exacta sin fallback materializable.
+- PR #432 está mergeado y cerró #424 como completado. El documento `INT-FIN-005`
+  es la fuente contractual vigente para #423 y #425–#431: una base común por
+  venta, valor base nullable, período objetivo persistido por obligación y
+  selección exacta sin fallback materializable. La implementación runtime de ese
+  contrato permanece pendiente.
 - PR #422 está mergeado y mantiene `definitive_amount_materialized` como fuente de
   verdad de `EMITIDA`/`PROYECTADA`; #424 no reabre ni modifica esa lógica.
 
@@ -75,7 +77,9 @@ también están presentes en `main`:
   posterior y restauró la materialización como fuente de verdad.
 - #346, #348, #349, #365, #374 y #405 conservan frentes previos; verificar su
   estado actual en GitHub antes de retomarlos.
-- #423, #424 y #425–#431 permanecen abiertos; este incremento no los cierra.
+- #424 está cerrado como completado por el merge de PR #432. #423 y #425–#431
+  conservan la implementación runtime pendiente; #425 es el próximo incremento y
+  #423 sigue bloqueado hasta contar con los incrementos de soporte.
 
 Implementación relevante verificada:
 
@@ -88,11 +92,12 @@ Implementación relevante verificada:
 
 ### 5.2 Issues activos
 
-- #424 — contrato documental de indexación PPV2 mensual; incremento actual, no
-  implementa ni cierra el issue.
-- #425–#429 — configuración, vencimiento, base común, materialización pendiente y
-  período objetivo, dependientes del contrato #424.
-- #423 — selector financiero definitivo por período objetivo exacto.
+- #425 — próximo incremento: configuración general requerida por el contrato
+  mensual vigente en `INT-FIN-005`.
+- #426–#429 — vencimiento, base común, materialización pendiente y período
+  objetivo; incrementos de soporte posteriores a #425.
+- #423 — selector financiero definitivo por período objetivo exacto; permanece
+  bloqueado hasta que existan los incrementos de soporte.
 - #430/#431 — frontend e integración completa, posteriores a los incrementos base.
 
 - #346 — integración con importación de ventas históricas.
@@ -106,6 +111,10 @@ Implementación relevante verificada:
 
 ### 5.3 Últimos PR relevantes
 
+- #432 `[Docs] Cerrar contrato mensual de indexación PPV2 (#424)` — mergeado;
+  cerró #424 como completado y estableció `INT-FIN-005` como fuente contractual
+  vigente. Fue exclusivamente documental y no originó una nueva ejecución de la
+  suite backend.
 - #415 `[Backend/CORE-EF] Persistir atómicamente confirmación completa de venta` —
   mergeado; corrigió la frontera transaccional backend de confirmación directa y
   desde reserva y permitió aprobar la validación transaccional.
@@ -119,11 +128,10 @@ Implementación relevante verificada:
 
 ### 5.4 Próximo foco recomendado
 
-Para el roadmap contractual de indexación PPV2, el orden recomendado es cerrar
-incrementalmente configuración/vencimiento/base/período y materialización mediante
-#425–#429, implementar el selector exacto #423 cuando su soporte exista y abordar
-#430/#431 después. Cada issue permanece separado y debe cumplir CORE-EF cuando
-incorpore commands.
+Para el roadmap contractual de indexación PPV2, el próximo foco inmediato es #425.
+El orden recomendado es `#425 → #426 → #427 → #428/#429 → #423 → #430/#431`.
+#423 permanece bloqueado hasta que sus incrementos de soporte estén disponibles.
+Cada issue permanece separado y debe cumplir CORE-EF cuando incorpore commands.
 
 #374 permanece como frente funcional y #365 como deuda transversal. El frontend
 solo presenta respuestas y arma el command comercial: no calcula indexación, no
@@ -185,11 +193,12 @@ infiere valores y no duplica reglas financieras.
 
 ### 5.6 Pendientes y orden sugerido
 
-- #425–#429: implementar por incrementos la configuración general, sugerencias,
-  base común, valor pendiente y período objetivo definidos en #424.
-- #423: reemplazar el selector heredado por resolución exacta cuando exista soporte
-  de período objetivo.
-- #430/#431: frontend e integración completa después de los incrementos de base.
+- #425: implementar primero la configuración general definida en `INT-FIN-005`.
+- #426 → #427 → #428/#429: continuar con vencimiento, base común, valor pendiente,
+  materialización y período objetivo, sin combinar alcances.
+- #423: reemplazar el selector heredado por resolución exacta después de contar con
+  el soporte de período objetivo; hasta entonces permanece bloqueado.
+- #430/#431: frontend e integración completa después de los incrementos backend.
 
 - #405: verificar vigencia antes de retomarlo; no desplaza el roadmap específico
   definido por #424.
@@ -232,9 +241,10 @@ infiere valores y no duplica reglas financieras.
 
 Antes de continuar #405 o ampliar la venta histórica:
 
-1. tomar `INT-FIN-005` como fuente contractual de los incrementos PPV2 mensuales;
-2. implementar #425–#429 sin combinar sus alcances;
-3. implementar #423 sobre período objetivo persistido, sin fallback materializable;
+1. tomar `INT-FIN-005` como fuente contractual vigente de los incrementos PPV2 mensuales;
+2. comenzar por #425 y continuar `#426 → #427 → #428/#429`, sin combinar alcances;
+3. mantener #423 bloqueado hasta contar con ese soporte e implementarlo después
+   sobre período objetivo persistido, sin fallback materializable;
 4. mantener `INVALID_DISPONIBILIDAD_STATE` y conflictos vigentes;
 5. no calcular indexación ni importes en frontend;
 6. mantener #365 abierto hasta definir la fecha operativa transversal;
