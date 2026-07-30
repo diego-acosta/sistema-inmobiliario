@@ -264,6 +264,9 @@ Sub-issues con estado verificable:
 - #261 `Administrativo: asignación de roles a usuarios` cerrado/completado.
 - #262 `Administrativo: alcance operativo por sucursal/instalación` cerrado/completado.
 - #263 `Administrativo: configuración general del sistema` abierto.
+- #407 implementa el primer incremento de #263: inventario read-only de
+  definiciones de parámetros. Valores y writes siguen pendientes; #408 es el
+  siguiente paso y #263 no se considera completado.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 - #368 `CRUD write de catálogos maestros` cerrado/completado.

@@ -268,6 +268,37 @@ class ItemCatalogoListResponse(BaseModel):
     data: ItemCatalogoListData
 
 
+class ParametroSistemaTipoData(BaseModel):
+    id_tipo_dato_parametro: int
+    codigo_tipo_dato: str
+    nombre_tipo_dato: str
+
+
+class ParametroSistemaAlcanceData(BaseModel):
+    id_alcance_parametro: int
+    codigo_alcance: str
+    nombre_alcance: str
+
+
+class ParametroSistemaData(BaseModel):
+    id_parametro_sistema: int
+    codigo_parametro: str
+    nombre_parametro: str
+    descripcion: str | None
+    tipo: ParametroSistemaTipoData
+    alcance: ParametroSistemaAlcanceData
+
+
+class ParametroSistemaListData(BaseModel):
+    items: list[ParametroSistemaData]
+    total: int
+
+
+class ParametroSistemaListResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ParametroSistemaListData
+
+
 class ErrorResponse(BaseModel):
     ok: Literal[False] = False
     error_code: str
