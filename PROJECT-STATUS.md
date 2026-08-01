@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración general y auditoría básica siguen abiertas. Catálogos continúa activo: ya completó lectura read-only, preparación CORE-EF y SQL, CRUD write de `catalogo_maestro` y freeze físico del ciclo de vida de ítems; falta el CRUD write de `item_catalogo`. | #249, #263, #264 y #265 abiertos. | #396 mergeado (commit `7d0d4c5dc2c90e7de11ee550c8eb17d974ed77ab`); #370 fue el incremento inmediatamente anterior. | CRUD write de `item_catalogo`. |
+| B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración y auditoría básica siguen abiertas. Catálogos ya cuenta con CRUD write de maestros e ítems. #407/PR #414 implementó sólo el inventario read-only de definiciones; #408 congela documentalmente la fuente canónica sin runtime nuevo. | #249, #263, #264 y #265 abiertos. | #414 mergeado (commit `b8d4ccb`); #408 es el freeze documental actual. | #425 sobre `parametro_sistema`/`valor_parametro` GLOBAL; implementación completa pendiente. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
 ## 4. Reglas para trabajo paralelo
@@ -265,8 +265,7 @@ Sub-issues con estado verificable:
 - #262 `Administrativo: alcance operativo por sucursal/instalación` cerrado/completado.
 - #263 `Administrativo: configuración general del sistema` abierto.
 - #407 implementa el primer incremento de #263: inventario read-only de
-  definiciones de parámetros. Valores y writes siguen pendientes; #408 es el
-  siguiente paso y #263 no se considera completado.
+  definiciones de parámetros. PR #414/commit `b8d4ccb` conserva ese GET. #408 congela documentalmente `parametro_sistema` como definición y `valor_parametro` como fuente de valores; no agrega endpoints. Los valores y writes siguen pendientes y #263 no se considera completado.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 - #368 `CRUD write de catálogos maestros` cerrado/completado.
@@ -277,7 +276,8 @@ Incrementos completados en catálogos:
 - #360 / PR #362: consultas read-only de `catalogo_maestro` e `item_catalogo`.
 - #363 / PR #364: soporte CORE-EF y restricciones SQL para catálogos.
 - #368 / PR #370: alta, modificación y baja lógica de `catalogo_maestro`, con idempotencia, optimistic locking, outbox y errores tipados.
-- #393 / PR #396: estados físicos `ACTIVO` e `INACTIVO`, estado inicial `ACTIVO`, `NOT NULL`, `CHECK`, diferenciación entre inactivación y baja lógica, código no reutilizable después de baja y preparación del futuro CRUD write de ítems.
+- #393 / PR #396: estados físicos `ACTIVO` e `INACTIVO`, estado inicial `ACTIVO`, `NOT NULL`, `CHECK`, diferenciación entre inactivación y baja lógica y código no reutilizable después de baja.
+- #399: CRUD write de `item_catalogo` implementado.
 
 ### 6.2 Epic o issue principal
 
@@ -291,7 +291,7 @@ Los frentes activos verificables son:
 - #264 — catálogos maestros e ítems configurables.
 - #265 — auditoría administrativa básica.
 
-Dentro de #264, el próximo incremento recomendado es `CRUD write de ítems de catálogo`.
+Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configuración, #408 deja #425 como próximo incremento arquitectónicamente habilitado, todavía sin runtime.
 
 ### 6.4 Decisiones vigentes
 
@@ -301,7 +301,7 @@ Dentro de #264, el próximo incremento recomendado es `CRUD write de ítems de c
 - `usuario_sucursal` referencia alcance operativo, pero no convierte Administrativo en dueño de `sucursal` o `instalacion`.
 - La documentación API vigente indica que todavía no hay login real, passwords, OAuth/SSO, middleware de autorización real ni menú dinámico salvo evidencia posterior.
 - `catalogo_maestro` ya tiene CRUD write mínimo.
-- `item_catalogo` tiene solo lectura y freeze físico de estado; no tiene CRUD write.
+- `item_catalogo` tiene lectura y CRUD write implementados; jerarquías e historial funcional permanecen fuera de alcance.
 - Los únicos estados físicos permitidos de `item_catalogo` son `ACTIVO` e `INACTIVO`; su estado inicial es `ACTIVO`.
 - `INACTIVO` no equivale a baja lógica: la baja lógica se representa mediante `deleted_at`.
 - La transición `INACTIVO → ACTIVO` queda permitida para un futuro comando; la reactivación de una baja lógica sigue `NO CONFIRMADA`.
@@ -309,12 +309,12 @@ Dentro de #264, el próximo incremento recomendado es `CRUD write de ítems de c
 - Los dominios consumidores deciden sus reglas particulares de aceptación de ítems inactivos.
 - No migrar enums de otros dominios incidentalmente.
 - Todo write administrativo nuevo debe cumplir CORE-EF desde el inicio.
+- `parametro_sistema` es la definición canónica y `valor_parametro` la fuente canónica de valores; `configuracion_general` es compatibilidad heredada y `configuracion_local` pertenece a Operativo.
+- #425 queda arquitectónicamente habilitado sólo para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos), pero todo su runtime, SQL CORE-EF y tests PostgreSQL continúa pendiente.
 
 ### 6.5 Próximo foco recomendado
 
-Para dar continuidad coherente a #264, crear un sub-issue de #264 para el CRUD write de `item_catalogo` e implementar, en un incremento posterior, alta, modificación, cambio de estado y baja lógica. Debe respetar CORE-EF desde el inicio.
-
-Mantener fuera de alcance jerarquías, historial, defaults avanzados, vigencias y UI. #263 y #265 siguen siendo candidatos válidos para otros incrementos paralelos, pero no deben desplazar el cierre coherente de #264 en este frente.
+El CRUD write de `item_catalogo` quedó implementado por #399. Para configuración, el freeze #408 desbloquea arquitectónicamente #425, que es el próximo incremento del roadmap Comercial/Financiero: deberá comenzar por el patch SQL CORE-EF y los valores GLOBAL, sin mezclar `configuracion_general`, `configuracion_local` ni catálogos. #263 permanece abierto hasta implementar y validar valores y writes. #265 conserva su alcance independiente.
 
 ### 6.6 Fuera de alcance
 

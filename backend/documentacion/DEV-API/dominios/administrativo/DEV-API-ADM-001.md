@@ -775,3 +775,9 @@ defaults, overrides, secretos, resolución por sucursal o instalación,
 Con un `X-Op-Id` nuevo, solicitar el estado físico ya vigente no es una colisión idempotente: responde `409 INVALID_STATE_TRANSITION` con el mensaje de que el destino ya es el estado actual. El replay que reutiliza el `X-Op-Id` de la transición anterior y el mismo estado sí devuelve la representación persistida, sin incrementar versión ni crear otro evento.
 
 Para baja lógica, el repository primero verifica pertenencia, existencia física y `deleted_at`: la repetición con el mismo `X-Op-Id` devuelve replay; con otro identificador devuelve `404 NOT_FOUND`. Las respuestas `500 TECHNICAL_INCONSISTENCY` se sanitizan y no incluyen SQL, constraints, parámetros ni mensajes de driver. La recuperación posterior a una colisión de `ux_item_catalogo_op_id_alta` propaga la excepción técnica original si la fila no puede recuperarse tras rollback.
+
+## Incremento #408 — Sin cambios de API
+
+#408 congela arquitectura y **no agrega ni modifica endpoints**. El GET de #407 continúa exponiendo únicamente definiciones; no devuelve `valor_parametro`, no resuelve `INSTALACION > SUCURSAL > GLOBAL` y no constituye el read de #425.
+
+CORE-EF para endpoints: **NO APLICA**, porque este incremento es exclusivamente documental. Los futuros read/write, envelopes, autorización, manejo de secretos, versionado, idempotencia, outbox, historial y rollback de #425 permanecen pendientes; no se declara aquí ningún contrato runtime.

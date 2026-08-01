@@ -6,6 +6,7 @@ Este documento centraliza las reglas arquitectónicas del sistema, define cómo 
 ## Documentos de arquitectura (fuente de verdad)
 Los documentos de arquitectura vigentes son:
 - `DEV-ARCH-GEN-001.md`
+- `dominios/administrativo/DEV-ARCH-ADM-001.md`
 - `dominios/personas/DEV-ARCH-PER-001.md`
 - `dominios/comercial/DEV-ARCH-COM-001.md`
 - `dominios/operativo/DEV-ARCH-OPE-001.md`

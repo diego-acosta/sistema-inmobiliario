@@ -1,3 +1,7 @@
+NOTA DE VIGENCIA — FREEZE ADMINISTRATIVO #408
+
+Para configuración administrativa, el diseño histórico incluido debajo no es fuente de verdad física. Prevalecen DEV-ARCH-ADM-001, DER-ADMINISTRATIVO.md y el SQL real: parametro_sistema es la definición canónica; valor_parametro es la fuente canónica de valores; configuracion_general es compatibilidad heredada sin nuevas claves ni consumidores; configuracion_local pertenece a Operativo; parametro_opcion sólo expresa opciones válidas y no es un catálogo. Alcances: GLOBAL, SUCURSAL e INSTALACION, con precedencia INSTALACION > SUCURSAL > GLOBAL. #425 usa sólo GLOBAL con id_sucursal e id_instalacion nulos. Toda estructura o conducta adicional descrita históricamente queda pendiente o NO CONFIRMADA si no existe en SQL/backend/tests.
+
 DER global unificado 
  
  dominio transaccional ya cerrado 
