@@ -270,6 +270,7 @@ Sub-issues con estado verificable:
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 - #368 `CRUD write de catálogos maestros` cerrado/completado.
 - #393 `Definir y congelar el ciclo de vida físico de item_catalogo` cerrado/completado.
+- #399 `CRUD write de item_catalogo` cerrado/completado por commit `e1efa0a`.
 
 Incrementos completados en catálogos:
 
@@ -304,7 +305,7 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - `item_catalogo` tiene lectura y CRUD write implementados; jerarquías e historial funcional permanecen fuera de alcance.
 - Los únicos estados físicos permitidos de `item_catalogo` son `ACTIVO` e `INACTIVO`; su estado inicial es `ACTIVO`.
 - `INACTIVO` no equivale a baja lógica: la baja lógica se representa mediante `deleted_at`.
-- La transición `INACTIVO → ACTIVO` queda permitida para un futuro comando; la reactivación de una baja lógica sigue `NO CONFIRMADA`.
+- El command vigente de cambio de estado soporta `ACTIVO` e `INACTIVO`, incluida la transición `INACTIVO → ACTIVO`; la reactivación de una baja lógica sigue `NO CONFIRMADA`.
 - El código de ítem no se reutiliza después de baja.
 - Los dominios consumidores deciden sus reglas particulares de aceptación de ítems inactivos.
 - No migrar enums de otros dominios incidentalmente.
@@ -323,7 +324,8 @@ El CRUD write de `item_catalogo` quedó implementado por #399. Para configuraci�
 - Usar `sucursal` e `instalacion` como si fueran entidades administrativas.
 - Crear autenticación real, sesiones o credenciales persistidas sin issue y auditoría previa.
 - Declarar outbox, locks o autorización real si no hay evidencia en repository, SQL y tests.
-- Implementar jerarquías, historial, defaults avanzados, vigencias o UI como parte del futuro CRUD write de ítems.
+- Implementar jerarquías o historial funcional de ítems; esas capacidades no forman parte del CRUD vigente.
+- Implementar defaults avanzados, vigencias o UI de configuración sin incremento específico.
 
 ### 6.7 Documentos relevantes
 
@@ -337,6 +339,8 @@ El CRUD write de `item_catalogo` quedó implementado por #399. Para configuraci�
 
 ### 6.8 Últimos PR relevantes
 
+- PR #414 / commit `b8d4ccb`: inventario read-only de definiciones de parámetros (#407), mergeado.
+- Commit `e1efa0a`: CRUD write de `item_catalogo` (#399), mergeado.
 - #396 `feat(administrativo): definir ciclo de vida de ítems de catálogo (#393)` — mergeado.
 - #370 `feat(administrativo): CRUD write de catálogos maestros (#368)` — mergeado.
 - #364 `feat(administrativo): preparar catálogos CORE-EF` — mergeado.
@@ -344,18 +348,15 @@ El CRUD write de `item_catalogo` quedó implementado por #399. Para configuraci�
 
 ### 6.9 Regla de continuidad
 
-Antes de tocar código para el futuro CRUD write de ítems:
+Antes de implementar #425:
 
-1. abrir #264, #393 y PR #396;
-2. revisar DEV-API Administrativo y DEV-SRV Administrativo;
-3. validar SQL real de `item_catalogo`;
-4. revisar router, schemas y repository actuales;
-5. revisar tests read-only y CORE-EF;
-6. estudiar el patrón implementado en `catalogo_maestro`;
-7. no implementar jerarquías ni historial;
-8. no migrar enums;
-9. no mezclar #263 ni #265 dentro del mismo PR;
-10. marcar `NO CONFIRMADO` todo lo no respaldado.
+1. revisar #263, #407, #408, #425 y PR #414;
+2. releer el freeze Administrativo, DEV-API y SRV-ADM-005;
+3. validar nuevamente SQL, implementación y tests reales;
+4. mantener `configuracion_local` en Operativo y no usar catálogos como parámetros;
+5. no declarar resuelta la semántica contextual futura;
+6. preservar como pendientes SQL CORE-EF, runtime y tests PostgreSQL;
+7. marcar `NO CONFIRMADO` todo lo no respaldado.
 
 ## 7. Dependencias entre frentes
 

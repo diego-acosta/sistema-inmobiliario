@@ -22,9 +22,9 @@ Los parámetros no son catálogos. `catalogo_maestro`/`item_catalogo` conservan 
 
 ## 3. Modelo canónico
 
-`parametro_sistema` define identidad, tipo y alcance. `valor_parametro` conserva el valor y su contexto. Los únicos alcances admitidos contractualmente son `GLOBAL`, `SUCURSAL` e `INSTALACION`.
+`parametro_sistema` define identidad y referencia físicamente a `alcance_parametro`; `valor_parametro` conserva el valor y posee campos opcionales `id_sucursal` e `id_instalacion`. Esas columnas prueban capacidad física de contexto, pero no congelan por sí solas su semántica de resolución.
 
-Cuando exista resolución contextual, la precedencia será `INSTALACION > SUCURSAL > GLOBAL`. Esta regla está congelada, pero el query service que la ejecutará permanece pendiente y no se declara implementado.
+Para futuros parámetros contextuales quedan **NO CONFIRMADOS** el catálogo cerrado de alcances, el significado exacto de `alcance_parametro`, la posibilidad de overrides, la precedencia entre niveles, la obligatoriedad de un valor global base y las reglas de contexto y fallback. En particular, no se define una granularidad máxima de override ni una precedencia general.
 
 Las vigencias de un mismo parámetro y contexto no pueden solaparse. El SQL actual sólo comprueba el orden entre `fecha_desde` y `fecha_hasta`; la exclusión de solapamientos permanece pendiente. La inclusividad de `fecha_hasta` está **NO CONFIRMADA**.
 
@@ -62,4 +62,4 @@ El SQL real no provee a `valor_parametro` la infraestructura CORE-EF completa. Q
 - Headers, `If-Match-Version`, idempotencia, outbox, lock, versionado, transacción y rollback ejecutables: **NO APLICA** en este incremento.
 - Tests CORE-EF y reset PostgreSQL: **NO APLICA**; no se modifica SQL ni runtime.
 
-El `GET /api/v1/administrativo/configuracion/parametros` de #407/PR #414 se preserva como `QUERY_READLIKE`: inventaría definiciones, pero no lee valores ni resuelve precedencia. #408 documenta este freeze y no agrega endpoints.
+El `GET /api/v1/administrativo/configuracion/parametros` de #407/PR #414 se preserva como `QUERY_READLIKE`: inventaría definiciones, pero no lee valores ni ejecuta resolución contextual. #408 documenta este freeze y no agrega endpoints.

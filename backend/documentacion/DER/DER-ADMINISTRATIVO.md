@@ -15,7 +15,7 @@ erDiagram
     INSTALACION o|--o{ VALOR_PARAMETRO : contextualiza
 ```
 
-`parametro_sistema` es la definición canónica y `valor_parametro` la fuente canónica de valores. `parametro_opcion` sólo enumera opciones válidas de una definición: un parámetro no es un catálogo. Los contextos admitidos son `GLOBAL` (ambas FK nulas), `SUCURSAL` e `INSTALACION`, con precedencia `INSTALACION > SUCURSAL > GLOBAL`.
+`parametro_sistema` es la definición canónica y `valor_parametro` la fuente canónica de valores. `parametro_opcion` sólo enumera opciones válidas de una definición: un parámetro no es un catálogo. Para #425, `GLOBAL` significa ambas FK nulas. Las columnas físicas opcionales de sucursal e instalación evidencian contextos posibles, pero el catálogo cerrado de alcances, el significado de `alcance_parametro`, los overrides, la precedencia, la exigencia de una base global y el fallback futuro permanecen **NO CONFIRMADOS**.
 
 `configuracion_general` queda fuera del grafo canónico como compatibilidad heredada: no recibe claves ni consumidores nuevos, tendrá migración incremental y su eliminación física es futura. `configuracion_local` tampoco integra este DER: pertenece a Operativo y no participa de #425.
 
