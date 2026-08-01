@@ -277,3 +277,19 @@ No constituye configuración funcional completa. Permanecen fuera de alcance
 resolución global/sucursal/instalación, writes, `configuracion_general` y
 configuración local operativa. La definición de valores y su fuente de verdad
 corresponde al incremento posterior #408.
+
+## Incremento #408 — Freeze canónico de configuración
+
+Este incremento es sólo documental y no agrega endpoints. Sustituye los nombres conceptuales no materializados de las secciones iniciales por el siguiente mapa al SQL real: `parametro_sistema` es la definición canónica; `valor_parametro` es la fuente canónica de valores; `tipo_dato_parametro` y `alcance_parametro` soportan la definición; `parametro_opcion` sólo declara opciones válidas; e `historial_parametro` es soporte de trazabilidad físicamente incompleto.
+
+`valor_parametro` posee físicamente `id_sucursal` e `id_instalacion` opcionales, pero esa evidencia no cierra la semántica contextual. Para futuros parámetros quedan **NO CONFIRMADOS** el catálogo de alcances, el significado exacto de `alcance_parametro`, overrides, precedencia, obligatoriedad de una base global y reglas de contexto/fallback. Los consumidores de otros dominios deberán usar un query service administrativo interno, aún pendiente, y no SQL directo. `configuracion_general` es compatibilidad heredada sin nuevas claves ni consumidores. `configuracion_local` pertenece a Operativo. Los parámetros no son catálogos.
+
+Las claves contractuales se crearán por migraciones versionadas, no por alta/baja dinámica en el primer runtime. Editabilidad, visibilidad y sensibilidad requieren metadata explícita aún no existente. No se expondrán secretos en claro por API, historial, outbox ni logs. También están pendientes la prohibición física de vigencias solapadas y toda la deuda CORE-EF de `valor_parametro`: UID, versión, timestamps, soft delete, metadata de instalación, op IDs, idempotencia, outbox e historial.
+
+Para #425 se usarán sólo definición `parametro_sistema` y valor GLOBAL vigente en `valor_parametro`, con `id_sucursal IS NULL` e `id_instalacion IS NULL`, sin `configuracion_general`, `configuracion_local` ni catálogos. Continúan pendientes patch SQL CORE-EF, seeds de dos claves, constraints 1–31, read, write, versionado, idempotencia, outbox, historial, rollback, query service y tests PostgreSQL.
+
+Son **NO CONFIRMADOS** los códigos/nombres exactos, defaults, cifrado o secret manager, autorización, caché, inclusividad de `fecha_hasta`, reactivación y reutilización de claves y taxonomía final de eventos.
+
+### Decisión CORE-EF
+
+**NO APLICA** para endpoints: #408 no crea ni modifica rutas. No se afirma cumplimiento runtime ni se ejecuta reset PostgreSQL.
