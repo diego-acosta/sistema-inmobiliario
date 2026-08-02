@@ -63,3 +63,24 @@ El SQL real no provee a `valor_parametro` la infraestructura CORE-EF completa. Q
 - Tests CORE-EF y reset PostgreSQL: **NO APLICA**; no se modifica SQL ni runtime.
 
 El `GET /api/v1/administrativo/configuracion/parametros` de #407/PR #414 se preserva como `QUERY_READLIKE`: inventaría definiciones, pero no lee valores ni ejecuta resolución contextual. #408 documenta este freeze y no agrega endpoints.
+
+## 8. Incremento estructural #409
+
+El patch incremental `patch_parametrizacion_estructural_20260802.sql` materializa
+exclusivamente el tipo `ENTERO` y el alcance `GLOBAL`, resueltos siempre por sus
+códigos y sin IDs contractuales. Sus nombres y descripciones son datos
+estructurales no editables por API. El patch falla y revierte ante nombres o
+descripciones incompatibles, variantes de mayúsculas/minúsculas y los sinónimos
+`NUMERO`, `GENERAL` o `LOCAL`; su reejecución compatible no duplica filas.
+
+#409 sólo elimina el bloqueo físico de tipo y alcance previo a #425. No crea
+`parametro_sistema`, no crea `valor_parametro`, no define semántica contextual y
+no implementa ninguna clave, valor, endpoint ni runtime de #425.
+
+### Decisión CORE-EF
+
+- Naturaleza: datos estructurales SQL.
+- Endpoints, commands, headers, `If-Match`, idempotencia HTTP, outbox, locks y
+  versionado: **NO APLICA**.
+- Transacción, rollback, idempotencia SQL y reset reproducible DEV/TEST: aplican
+  y forman parte del patch y de sus tests PostgreSQL.

@@ -22,3 +22,8 @@ erDiagram
 El SQL vigente aún no materializa toda la semántica congelada: faltan metadata de editabilidad/visibilidad/sensibilidad, CORE-EF completo de `valor_parametro`, restricción de no solapamiento y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
 
 Para #425, el subgrafo exclusivo es `parametro_sistema -> valor_parametro` con alcance `GLOBAL`, `id_sucursal IS NULL` e `id_instalacion IS NULL`; no intervienen `configuracion_general`, `configuracion_local` ni catálogos.
+
+Desde #409 existen como datos estructurales contractuales el tipo `ENTERO` y el
+alcance `GLOBAL`, identificados por código y no editables por API. Este incremento
+no agrega filas a `parametro_sistema` ni `valor_parametro`: únicamente elimina el
+bloqueo físico de tipo/alcance previo a #425 y no implementa sus claves o valores.

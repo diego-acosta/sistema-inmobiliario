@@ -293,3 +293,17 @@ Son **NO CONFIRMADOS** los códigos/nombres exactos, defaults, cifrado o secret 
 ### Decisión CORE-EF
 
 **NO APLICA** para endpoints: #408 no crea ni modifica rutas. No se afirma cumplimiento runtime ni se ejecuta reset PostgreSQL.
+
+## Incremento #409 — Vocabulario estructural mínimo
+
+Se persisten por patch transaccional e idempotente únicamente el tipo `ENTERO`
+(`Entero`, “Valor numérico entero sin componente decimal.”) y el alcance
+`GLOBAL` (`Global`, “Aplicable sin contexto de sucursal o instalación.”). Ambos
+son soporte de la definición administrativa, se consumen por código y no son
+editables mediante API. Datos incompatibles, variantes case-insensitive y los
+sinónimos `NUMERO`, `GENERAL` o `LOCAL` causan error y rollback.
+
+No se siembran definiciones ni valores funcionales: #409 habilita físicamente el
+tipo y alcance que podrá consumir #425, pero no completa ni implementa #425.
+Endpoints y CORE-EF HTTP son **NO APLICA**; sí aplican transacción, rollback,
+idempotencia SQL y resets reproducibles DEV/TEST.

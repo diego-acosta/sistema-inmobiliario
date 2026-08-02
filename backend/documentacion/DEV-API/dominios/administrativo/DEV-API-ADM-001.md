@@ -781,3 +781,11 @@ Para baja lógica, el repository primero verifica pertenencia, existencia físic
 #408 congela arquitectura y **no agrega ni modifica endpoints**. El GET de #407 continúa exponiendo únicamente definiciones; no devuelve `valor_parametro`, no ejecuta resolución contextual y no constituye el read de #425.
 
 CORE-EF para endpoints: **NO APLICA**, porque este incremento es exclusivamente documental. Los futuros read/write, envelopes, autorización, manejo de secretos, versionado, idempotencia, outbox, historial y rollback de #425 permanecen pendientes; no se declara aquí ningún contrato runtime.
+
+## Incremento #409 — Sin cambios de API
+
+#409 incorpora únicamente datos estructurales SQL (`ENTERO` y `GLOBAL`). No
+agrega endpoints ni vuelve editables esos datos. El GET de #407 conserva su
+contrato y puede exponer los códigos al inventariar una definición que los
+referencie; las nuevas descripciones estructurales no se agregan a su response.
+#409 no crea definiciones ni valores funcionales y no implementa #425.
