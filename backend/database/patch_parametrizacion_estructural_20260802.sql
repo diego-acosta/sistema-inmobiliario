@@ -15,11 +15,11 @@ BEGIN
         SELECT 1
         FROM tipo_dato_parametro
         WHERE upper(codigo_tipo_dato) IN ('ENTERO', 'NUMERO')
-          AND NOT (
-              codigo_tipo_dato = 'ENTERO'
-              AND nombre_tipo_dato = 'Entero'
-              AND descripcion_tipo_dato =
-                  'Valor numérico entero sin componente decimal.'
+          AND (
+              codigo_tipo_dato IS DISTINCT FROM 'ENTERO'
+              OR nombre_tipo_dato IS DISTINCT FROM 'Entero'
+              OR descripcion_tipo_dato IS DISTINCT FROM
+                 'Valor numérico entero sin componente decimal.'
           )
     ) THEN
         RAISE EXCEPTION
@@ -30,11 +30,11 @@ BEGIN
         SELECT 1
         FROM alcance_parametro
         WHERE upper(codigo_alcance) IN ('GLOBAL', 'GENERAL', 'LOCAL')
-          AND NOT (
-              codigo_alcance = 'GLOBAL'
-              AND nombre_alcance = 'Global'
-              AND descripcion_alcance =
-                  'Aplicable sin contexto de sucursal o instalación.'
+          AND (
+              codigo_alcance IS DISTINCT FROM 'GLOBAL'
+              OR nombre_alcance IS DISTINCT FROM 'Global'
+              OR descripcion_alcance IS DISTINCT FROM
+                 'Aplicable sin contexto de sucursal o instalación.'
           )
     ) THEN
         RAISE EXCEPTION

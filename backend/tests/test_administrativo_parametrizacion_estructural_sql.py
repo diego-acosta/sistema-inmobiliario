@@ -51,6 +51,8 @@ def test_patch_es_incremental_transaccional_y_no_siembra_425():
     assert "INSERT INTO PARAMETRO_SISTEMA" not in normalized
     assert "INSERT INTO VALOR_PARAMETRO" not in normalized
     assert "DO UPDATE" not in normalized
+    assert normalized.count("IS DISTINCT FROM") == 6
+    assert "COALESCE" not in normalized
     assert "SCHEMA_INMOBILIARIA_20260418.SQL" not in sql
 
 
@@ -90,6 +92,102 @@ def test_patch_se_puede_reejecutar_sin_duplicar(db_session):
         SELECT COUNT(*) FROM alcance_parametro
         WHERE codigo_alcance = 'GLOBAL'
     """)).scalar_one() == 1
+
+
+@pytest.mark.parametrize(
+    ("table", "code_column", "code", "description_column", "description"),
+    (
+        pytest.param(
+            "tipo_dato_parametro",
+            "codigo_tipo_dato",
+            "ENTERO",
+            "descripcion_tipo_dato",
+            None,
+            id="tipo_descripcion_null",
+        ),
+        pytest.param(
+            "alcance_parametro",
+            "codigo_alcance",
+            "GLOBAL",
+            "descripcion_alcance",
+            None,
+            id="alcance_descripcion_null",
+        ),
+        pytest.param(
+            "tipo_dato_parametro",
+            "codigo_tipo_dato",
+            "ENTERO",
+            "descripcion_tipo_dato",
+            "",
+            id="tipo_descripcion_vacia",
+        ),
+        pytest.param(
+            "alcance_parametro",
+            "codigo_alcance",
+            "GLOBAL",
+            "descripcion_alcance",
+            "",
+            id="alcance_descripcion_vacia",
+        ),
+        pytest.param(
+            "tipo_dato_parametro",
+            "codigo_tipo_dato",
+            "ENTERO",
+            "descripcion_tipo_dato",
+            "Descripción incompatible",
+            id="tipo_descripcion_distinta",
+        ),
+        pytest.param(
+            "alcance_parametro",
+            "codigo_alcance",
+            "GLOBAL",
+            "descripcion_alcance",
+            "Descripción incompatible",
+            id="alcance_descripcion_distinta",
+        ),
+    ),
+)
+def test_patch_rechaza_descripcion_incompleta_o_incompatible_sin_modificarla(
+    db_session,
+    table,
+    code_column,
+    code,
+    description_column,
+    description,
+):
+    db_session.execute(
+        text(f"""
+            UPDATE {table}
+            SET {description_column} = :description
+            WHERE {code_column} = :code
+        """),
+        {"description": description, "code": code},
+    )
+    parameter_count = db_session.execute(
+        text("SELECT COUNT(*) FROM parametro_sistema")
+    ).scalar_one()
+    value_count = db_session.execute(
+        text("SELECT COUNT(*) FROM valor_parametro")
+    ).scalar_one()
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_without_transaction()))
+
+    rows = db_session.execute(
+        text(f"""
+            SELECT COUNT(*), min({description_column})
+            FROM {table}
+            WHERE {code_column} = :code
+        """),
+        {"code": code},
+    ).one()
+    assert rows == (1, description)
+    assert db_session.execute(
+        text("SELECT COUNT(*) FROM parametro_sistema")
+    ).scalar_one() == parameter_count
+    assert db_session.execute(
+        text("SELECT COUNT(*) FROM valor_parametro")
+    ).scalar_one() == value_count
 
 
 @pytest.mark.parametrize(
