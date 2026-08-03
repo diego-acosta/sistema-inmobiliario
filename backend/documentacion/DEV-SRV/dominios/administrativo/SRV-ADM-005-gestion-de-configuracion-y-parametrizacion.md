@@ -307,3 +307,15 @@ No se siembran definiciones ni valores funcionales: #409 habilita físicamente e
 tipo y alcance que podrá consumir #425, pero no completa ni implementa #425.
 Endpoints y CORE-EF HTTP son **NO APLICA**; sí aplican transacción, rollback,
 idempotencia SQL y resets reproducibles DEV/TEST.
+
+## Incremento #410 — Preparación SQL CORE-EF de valores
+
+El patch `patch_valor_parametro_core_ef_20260803.sql` migra conservadoramente `valor_parametro`: completa sólo UID, versión 1 y timestamps cuando faltan; mantiene nullable la procedencia y los op IDs heredados; y aborta toda la transacción ante datos o estructura incompatibles. El trigger de actualización incrementa una sola versión por cada `UPDATE` físico, incluido soft delete; los futuros commands deberán evitar updates sin cambio material y replays que vuelvan a mutar.
+
+La garantía contextual consulta `alcance_parametro.codigo_alcance = 'GLOBAL'` y exige contexto nulo sólo para esas definiciones. La unicidad parcial limita a uno los valores globales vigentes no eliminados por definición. La fecha final debe ser posterior a la inicial cuando ambas existen. Esto no implementa resolución por fecha, no solapamiento, overrides, precedencia ni fallback.
+
+### Decisión CORE-EF
+
+- Naturaleza: preparación SQL estructural; endpoints, command HTTP, headers, `If-Match-Version`, idempotencia HTTP, outbox runtime y lock lógico: **NO APLICA**.
+- Idempotencia SQL, versionado físico, transacción y rollback: obligatorios y cubiertos por el patch/tests PostgreSQL.
+- #411 (read), #412 (write), #425 (claves, valores y runtime), outbox e historial permanecen no implementados.

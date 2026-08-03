@@ -789,3 +789,7 @@ agrega endpoints ni vuelve editables esos datos. El GET de #407 conserva su
 contrato y puede exponer los códigos al inventariar una definición que los
 referencie; las nuevas descripciones estructurales no se agregan a su response.
 #409 no crea definiciones ni valores funcionales y no implementa #425.
+
+## Incremento #410 — Sin API nueva
+
+#410 es exclusivamente preparación SQL CORE-EF de `valor_parametro`. No agrega ni modifica endpoints, schemas, headers, errores o contratos runtime. El GET de definiciones de #407 permanece sin cambios y no lee valores. El read de valores #411, los commands #412 y las claves/valores/runtime de #425 continúan no implementados; tampoco existen resolución de overrides, precedencia o fallback, outbox ni historial para este incremento.

@@ -19,7 +19,7 @@ erDiagram
 
 `configuracion_general` queda fuera del grafo canónico como compatibilidad heredada: no recibe claves ni consumidores nuevos, tendrá migración incremental y su eliminación física es futura. `configuracion_local` tampoco integra este DER: pertenece a Operativo y no participa de #425.
 
-El SQL vigente aún no materializa toda la semántica congelada: faltan metadata de editabilidad/visibilidad/sensibilidad, CORE-EF completo de `valor_parametro`, restricción de no solapamiento y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
+Desde #410, `valor_parametro` materializa metadata CORE-EF física, versionado por trigger, soft delete, procedencia/op IDs nullable y las garantías mínimas GLOBAL/vigencia/unicidad. Aún faltan metadata de editabilidad/visibilidad/sensibilidad, restricción de no solapamiento y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
 
 Para #425, el subgrafo exclusivo es `parametro_sistema -> valor_parametro` con alcance `GLOBAL`, `id_sucursal IS NULL` e `id_instalacion IS NULL`; no intervienen `configuracion_general`, `configuracion_local` ni catálogos.
 
@@ -27,3 +27,5 @@ Desde #409 existen como datos estructurales contractuales el tipo `ENTERO` y el
 alcance `GLOBAL`, identificados por código y no editables por API. Este incremento
 no agrega filas a `parametro_sistema` ni `valor_parametro`: únicamente elimina el
 bloqueo físico de tipo/alcance previo a #425 y no implementa sus claves o valores.
+
+Desde #410 esta vista refleja preparación SQL, no runtime: #411 (read), #412 (write) y #425 (claves, valores y calendario comercial) permanecen pendientes. No se resolvieron overrides, precedencia, fallback, outbox ni historial.

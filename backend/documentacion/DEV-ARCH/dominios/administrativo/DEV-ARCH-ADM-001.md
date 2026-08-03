@@ -84,3 +84,11 @@ no implementa ninguna clave, valor, endpoint ni runtime de #425.
   versionado: **NO APLICA**.
 - Transacción, rollback, idempotencia SQL y reset reproducible DEV/TEST: aplican
   y forman parte del patch y de sus tests PostgreSQL.
+
+## 9. Incremento SQL #410 — CORE-EF físico de `valor_parametro`
+
+#410 prepara `valor_parametro` como infraestructura reusable del núcleo Administrativo: UID global, versión, timestamps, soft delete y metadata nullable de procedencia/op IDs. Los triggers fijan versión inicial 1, preservan metadata de alta e incrementan exactamente una vez cada `UPDATE` físico. Las filas heredadas no reciben procedencia ni op IDs inventados.
+
+La integridad incorporada se limita a: contexto nulo para definiciones cuyo alcance se resuelve por código `GLOBAL`; fechas estrictamente ordenadas cuando ambas existen; y como máximo un valor global vigente no eliminado por definición. No se impone semántica a alcances no globales ni se resuelven overrides, precedencia, fallback, vigencias futuras o solapamientos temporales.
+
+Es preparación SQL transaccional e idempotente. No existe todavía read de valores (#411), write (#412), runtime ni datos funcionales de #425. No se implementan API, outbox, historial, replay HTTP, CAS ni `If-Match-Version`.

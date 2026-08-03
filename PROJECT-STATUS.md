@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración y auditoría básica siguen abiertas. Catálogos ya cuenta con CRUD write de maestros e ítems. #407/PR #414 implementó sólo el inventario read-only de definiciones; #408 congela la fuente canónica y #409 agrega únicamente `ENTERO`/`GLOBAL` estructurales. | #249, #263, #264 y #265 abiertos. | #414 mergeado (commit `b8d4ccb`); #409 es el incremento SQL previo a #425. | #425 sobre `parametro_sistema`/`valor_parametro` GLOBAL; claves, valores y runtime siguen pendientes. |
+| B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración y auditoría básica siguen abiertas. Catálogos ya cuenta con CRUD write de maestros e ítems. #407/PR #414 implementó sólo el inventario read-only de definiciones; #408 congela la fuente canónica, #409 agrega únicamente `ENTERO`/`GLOBAL` estructurales y #410 prepara físicamente `valor_parametro` con CORE-EF SQL sin runtime. | #249, #263, #264 y #265 abiertos. | #414 mergeado (commit `b8d4ccb`); #409 es el incremento SQL previo a #425. | #425 sobre `parametro_sistema`/`valor_parametro` GLOBAL; claves, valores y runtime siguen pendientes. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
 ## 4. Reglas para trabajo paralelo
@@ -269,6 +269,7 @@ Sub-issues con estado verificable:
 - #409 incorpora sólo el tipo estructural `ENTERO` y el alcance estructural
   `GLOBAL`, con descripciones contractuales, reset DEV/TEST y tests PostgreSQL.
   No crea claves ni valores funcionales de #425.
+- #410 prepara exclusivamente la infraestructura SQL CORE-EF de `valor_parametro`: metadata, versionado por trigger, contexto GLOBAL mínimo, vigencia estricta y unicidad parcial. #411, #412 y #425 siguen sin read, write, claves, valores ni runtime; no hay outbox o historial.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 - #368 `CRUD write de catálogos maestros` cerrado/completado.
@@ -295,7 +296,7 @@ Los frentes activos verificables son:
 - #264 — catálogos maestros e ítems configurables.
 - #265 — auditoría administrativa básica.
 
-Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configuración, #409 elimina únicamente el bloqueo físico de tipo/alcance previo a #425, todavía sin claves, valores ni runtime.
+Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configuración, #409 elimina el bloqueo físico de tipo/alcance y #410 prepara `valor_parametro` con CORE-EF SQL, todavía sin claves, valores, read, write ni runtime.
 
 ### 6.4 Decisiones vigentes
 
@@ -316,14 +317,12 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - `parametro_sistema` es la definición canónica y `valor_parametro` la fuente canónica de valores; `configuracion_general` es compatibilidad heredada y `configuracion_local` pertenece a Operativo.
 - `ENTERO` y `GLOBAL` son datos estructurales contractuales no editables por API;
   sus consumidores resuelven IDs por código.
-- #425 queda arquitectónicamente habilitado sólo para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos), pero todo su runtime, SQL CORE-EF y tests PostgreSQL continúa pendiente.
+- #410 deja preparado el CORE-EF SQL reusable de `valor_parametro` para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos); #425 conserva pendientes sus claves, valores, reglas específicas y runtime.
 
 ### 6.5 Próximo foco recomendado
 
 El CRUD write de `item_catalogo` quedó implementado por #399. Para configuración,
-#409 deja disponibles sólo `ENTERO` y `GLOBAL`; #425 continúa como próximo
-incremento del roadmap Comercial/Financiero y deberá implementar por separado su
-SQL CORE-EF, claves y valores GLOBAL, sin mezclar `configuracion_general`,
+#409 deja disponibles `ENTERO` y `GLOBAL` y #410 prepara el CORE-EF físico de `valor_parametro`; #411 y #412 continúan pendientes. #425 deberá implementar por separado sus claves, valores GLOBAL y runtime, sin mezclar `configuracion_general`,
 `configuracion_local` ni catálogos. #263 permanece abierto hasta implementar y
 validar valores y writes. #265 conserva su alcance independiente.
 
@@ -349,6 +348,8 @@ validar valores y writes. #265 conserva su alcance independiente.
 
 ### 6.8 Últimos PR relevantes
 
+- PR #436 / commit `b11d095`: parametrización estructural #409, mergeado.
+- PR #434 / commit `5cd883a`: freeze documental #408, mergeado.
 - PR #414 / commit `b8d4ccb`: inventario read-only de definiciones de parámetros (#407), mergeado.
 - Commit `e1efa0a`: CRUD write de `item_catalogo` (#399), mergeado.
 - #396 `feat(administrativo): definir ciclo de vida de ítems de catálogo (#393)` — mergeado.
