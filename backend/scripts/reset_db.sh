@@ -29,6 +29,7 @@ SQL_FILES=(
   "patch_catalogos_core_ef_20260716.sql"
   "patch_item_catalogo_estado_20260724.sql"
   "patch_parametrizacion_estructural_20260802.sql"
+  "patch_valor_parametro_core_ef_20260803.sql"
 )
 
 DEV_SEEDS=(
@@ -142,6 +143,7 @@ apply_common_files() {
   run_sql "${db}" "patch CORE-EF catalogos administrativos" "patch_catalogos_core_ef_20260716.sql"
   run_sql "${db}" "patch estado de items de catalogo" "patch_item_catalogo_estado_20260724.sql"
   run_sql "${db}" "patch parametrizacion estructural #409" "patch_parametrizacion_estructural_20260802.sql"
+  run_sql "${db}" "patch CORE-EF de valor_parametro #410" "patch_valor_parametro_core_ef_20260803.sql"
 }
 
 log "============================"
