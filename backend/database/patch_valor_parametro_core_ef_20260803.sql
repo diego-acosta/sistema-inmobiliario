@@ -8,6 +8,7 @@ DO $$
 DECLARE
     col record;
     expected text;
+    existing_default text;
 BEGIN
     IF to_regclass('public.valor_parametro') IS NULL
        OR to_regclass('public.parametro_sistema') IS NULL
@@ -38,6 +39,19 @@ BEGIN
         IF expected IS NOT NULL AND expected <> col.data_type THEN
             RAISE EXCEPTION 'columna valor_parametro.% incompatible: tipo %', col.name, expected;
         END IF;
+        IF expected IS NOT NULL AND col.name IN ('uid_global', 'version_registro', 'created_at', 'updated_at') THEN
+            SELECT pg_get_expr(d.adbin, d.adrelid) INTO existing_default
+              FROM pg_attribute a
+              LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+             WHERE a.attrelid='public.valor_parametro'::regclass AND a.attname=col.name AND NOT a.attisdropped;
+            IF existing_default IS NOT NULL AND NOT (
+                (col.name='uid_global' AND regexp_replace(existing_default, '[[:space:]]', '', 'g')='gen_random_uuid()') OR
+                (col.name='version_registro' AND regexp_replace(existing_default, '[[:space:]()]|::integer', '', 'g')='1') OR
+                (col.name IN ('created_at','updated_at') AND upper(regexp_replace(existing_default, '[[:space:]()]', '', 'g')) IN ('CURRENT_TIMESTAMP','NOW'))
+            ) THEN
+                RAISE EXCEPTION 'default de valor_parametro.% incompatible: %', col.name, existing_default;
+            END IF;
+        END IF;
     END LOOP;
 
     IF EXISTS (
@@ -59,11 +73,6 @@ BEGIN
                  AND fecha_hasta <= fecha_desde)
     THEN RAISE EXCEPTION 'vigencia de valor_parametro inválida'; END IF;
 
-    IF EXISTS (
-        SELECT 1 FROM public.valor_parametro
-        WHERE id_sucursal IS NULL AND id_instalacion IS NULL AND es_valor_vigente
-        GROUP BY id_parametro_sistema HAVING count(*) > 1
-    ) THEN RAISE EXCEPTION 'más de un valor global vigente para una definición'; END IF;
 END $$;
 
 ALTER TABLE public.valor_parametro
@@ -89,7 +98,7 @@ WHERE uid_global IS NULL OR version_registro IS NULL
 
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM public.valor_parametro WHERE version_registro <> 1) THEN
+    IF EXISTS (SELECT 1 FROM public.valor_parametro WHERE version_registro IS NULL OR version_registro < 1) THEN
         RAISE EXCEPTION 'version_registro preexistente incompatible';
     END IF;
     IF EXISTS (SELECT uid_global FROM public.valor_parametro GROUP BY uid_global HAVING count(*) > 1) THEN
@@ -103,6 +112,28 @@ BEGIN
        OR EXISTS (SELECT 1 FROM public.valor_parametro v LEFT JOIN public.instalacion i ON i.id_instalacion=v.id_instalacion_ultima_modificacion
                WHERE v.id_instalacion_ultima_modificacion IS NOT NULL AND i.id_instalacion IS NULL)
     THEN RAISE EXCEPTION 'procedencia de instalación inválida en valor_parametro'; END IF;
+END $$;
+
+-- Después de agregar deleted_at, el preflight usa la misma semántica que la
+-- garantía runtime. En una primera migración las filas heredadas tienen NULL;
+-- en una reejecución se excluyen explícitamente las bajas lógicas.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM public.valor_parametro v
+          JOIN public.parametro_sistema p USING (id_parametro_sistema)
+          JOIN public.alcance_parametro a USING (id_alcance_parametro)
+         WHERE a.codigo_alcance = 'GLOBAL'
+           AND v.id_sucursal IS NULL
+           AND v.id_instalacion IS NULL
+           AND v.es_valor_vigente
+           AND v.deleted_at IS NULL
+         GROUP BY v.id_parametro_sistema
+        HAVING count(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'más de un valor GLOBAL vigente no eliminado para una definición';
+    END IF;
 END $$;
 
 ALTER TABLE public.valor_parametro
@@ -157,12 +188,45 @@ BEGIN
   ELSIF regexp_replace(actual, '[[:space:]()]', '', 'g') <> 'CREATEUNIQUEINDEXux_valor_parametro_op_id_altaONpublic.valor_parametroUSINGbtreeop_id_altaWHEREop_id_altaISNOTNULL' THEN
     RAISE EXCEPTION 'índice ux_valor_parametro_op_id_alta incompatible';
   END IF;
+  -- Migra de forma explícita el índice defectuoso creado por la primera
+  -- versión de #437. Otro objeto homónimo no se elimina silenciosamente.
   SELECT indexdef INTO actual FROM pg_indexes WHERE schemaname='public' AND indexname='ux_valor_parametro_global_vigente';
-  IF actual IS NULL THEN
-    CREATE UNIQUE INDEX ux_valor_parametro_global_vigente ON public.valor_parametro(id_parametro_sistema)
-      WHERE id_sucursal IS NULL AND id_instalacion IS NULL AND es_valor_vigente AND deleted_at IS NULL;
-  ELSIF regexp_replace(actual, '[[:space:]()]', '', 'g') <> 'CREATEUNIQUEINDEXux_valor_parametro_global_vigenteONpublic.valor_parametroUSINGbtreeid_parametro_sistemaWHEREid_sucursalISNULLANDid_instalacionISNULLANDes_valor_vigenteANDdeleted_atISNULL' THEN
-    RAISE EXCEPTION 'índice ux_valor_parametro_global_vigente incompatible';
+  IF actual IS NOT NULL THEN
+    IF regexp_replace(actual, '[[:space:]()]', '', 'g') = 'CREATEUNIQUEINDEXux_valor_parametro_global_vigenteONpublic.valor_parametroUSINGbtreeid_parametro_sistemaWHEREid_sucursalISNULLANDid_instalacionISNULLANDes_valor_vigenteANDdeleted_atISNULL' THEN
+      DROP INDEX public.ux_valor_parametro_global_vigente;
+    ELSE
+      RAISE EXCEPTION 'índice ux_valor_parametro_global_vigente incompatible';
+    END IF;
+  END IF;
+END $$;
+
+-- Las funciones de la primera versión de #437 son migrables; una función
+-- homónima ajena al contrato no se reemplaza silenciosamente.
+DO $$
+DECLARE definition text;
+BEGIN
+  IF to_regprocedure('public.trg_valor_parametro_core_ef_insert()') IS NOT NULL THEN
+    SELECT pg_get_functiondef('public.trg_valor_parametro_core_ef_insert()'::regprocedure) INTO definition;
+    IF definition NOT LIKE '%NEW.version_registro <> 1%'
+       OR definition NOT LIKE '%NEW.op_id_ultima_modificacion := NEW.op_id_alta%' THEN
+      RAISE EXCEPTION 'función trg_valor_parametro_core_ef_insert incompatible';
+    END IF;
+  END IF;
+  IF to_regprocedure('public.trg_valor_parametro_core_ef_update()') IS NOT NULL THEN
+    SELECT pg_get_functiondef('public.trg_valor_parametro_core_ef_update()'::regprocedure) INTO definition;
+    IF definition NOT LIKE '%NEW.version_registro := OLD.version_registro + 1%'
+       OR definition NOT LIKE '%NEW.uid_global := OLD.uid_global%' THEN
+      RAISE EXCEPTION 'función trg_valor_parametro_core_ef_update incompatible';
+    END IF;
+  END IF;
+  IF to_regprocedure('public.trg_valor_parametro_validar_alcance()') IS NOT NULL THEN
+    SELECT pg_get_functiondef('public.trg_valor_parametro_validar_alcance()'::regprocedure) INTO definition;
+    IF definition NOT LIKE '%codigo_alcance%'
+       OR definition NOT LIKE '%codigo=''GLOBAL''%'
+       OR (definition NOT LIKE '%FOR UPDATE OF p%'
+           AND definition NOT LIKE '%una definición GLOBAL no admite sucursal ni instalación%') THEN
+      RAISE EXCEPTION 'función trg_valor_parametro_validar_alcance incompatible';
+    END IF;
   END IF;
 END $$;
 
@@ -195,13 +259,30 @@ CREATE OR REPLACE FUNCTION public.trg_valor_parametro_validar_alcance() RETURNS 
 LANGUAGE plpgsql AS $$
 DECLARE codigo text;
 BEGIN
+  -- La fila estable de la definición serializa altas/updates concurrentes para
+  -- cerrar la carrera sin crear una raíz agregada nueva.
   SELECT a.codigo_alcance INTO codigo
     FROM public.parametro_sistema p
     JOIN public.alcance_parametro a ON a.id_alcance_parametro=p.id_alcance_parametro
-   WHERE p.id_parametro_sistema=NEW.id_parametro_sistema;
+   WHERE p.id_parametro_sistema=NEW.id_parametro_sistema
+   FOR UPDATE OF p;
   IF NOT FOUND THEN RAISE EXCEPTION 'definición inexistente para valor_parametro'; END IF;
-  IF codigo='GLOBAL' AND (NEW.id_sucursal IS NOT NULL OR NEW.id_instalacion IS NOT NULL) THEN
-    RAISE EXCEPTION 'una definición GLOBAL no admite sucursal ni instalación';
+
+  IF codigo='GLOBAL' THEN
+    IF NEW.id_sucursal IS NOT NULL OR NEW.id_instalacion IS NOT NULL THEN
+      RAISE EXCEPTION 'una definición GLOBAL no admite sucursal ni instalación';
+    END IF;
+    IF NEW.es_valor_vigente AND NEW.deleted_at IS NULL AND EXISTS (
+      SELECT 1 FROM public.valor_parametro v
+       WHERE v.id_parametro_sistema=NEW.id_parametro_sistema
+         AND v.id_sucursal IS NULL
+         AND v.id_instalacion IS NULL
+         AND v.es_valor_vigente
+         AND v.deleted_at IS NULL
+         AND v.id_valor_parametro IS DISTINCT FROM NEW.id_valor_parametro
+    ) THEN
+      RAISE EXCEPTION 'ya existe un valor GLOBAL vigente no eliminado para la definición %', NEW.id_parametro_sistema;
+    END IF;
   END IF;
   RETURN NEW;
 END $$;

@@ -1,9 +1,13 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from time import sleep
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
+
+from app.config.database import engine
 
 PATCH_NAME = "patch_valor_parametro_core_ef_20260803.sql"
 BACKEND = Path(__file__).resolve().parents[1]
@@ -29,6 +33,21 @@ def _insert(db, parameter, **values):
     params = {"parameter": parameter, **values}
     placeholders = [":parameter", *(f":{name}" for name in values)]
     return db.execute(text(f"INSERT INTO valor_parametro ({','.join(columns)}) VALUES ({','.join(placeholders)}) RETURNING *"), params).mappings().one()
+
+
+def _patch_without_transaction():
+    sql = PATCH.read_text()
+    return sql.replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
+
+
+def _snapshot(db, ids):
+    return db.execute(text("""
+        SELECT id_valor_parametro, uid_global, version_registro, created_at, updated_at,
+               deleted_at, id_instalacion_origen, id_instalacion_ultima_modificacion,
+               op_id_alta, op_id_ultima_modificacion, es_valor_vigente
+          FROM valor_parametro WHERE id_valor_parametro = ANY(:ids)
+          ORDER BY id_valor_parametro
+    """), {"ids": ids}).mappings().all()
 
 
 def test_patch_transaccional_acotado_y_resets_simétricos():
@@ -64,7 +83,7 @@ def test_estructura_core_ef_exacta(db_session):
     assert "ON DELETE RESTRICT" in constraints["fk_valor_parametro_instalacion_origen"]
     indexes = dict(db_session.execute(text("SELECT indexname,indexdef FROM pg_indexes WHERE tablename='valor_parametro'")).all())
     assert "op_id_alta IS NOT NULL" in indexes["ux_valor_parametro_op_id_alta"]
-    assert all(fragment in indexes["ux_valor_parametro_global_vigente"] for fragment in ("id_sucursal IS NULL","id_instalacion IS NULL","es_valor_vigente","deleted_at IS NULL"))
+    assert "ux_valor_parametro_global_vigente" not in indexes
 
 
 def test_triggers_presentes_y_sin_outbox(db_session):
@@ -115,7 +134,14 @@ def test_global_rechaza_contexto(db_session, context):
 
 def test_no_global_no_recibe_reglas_contextuales_inventadas(db_session):
     pid = _parameter(db_session, "TEST_NO_GLOBAL")
-    assert _insert(db_session, pid, id_sucursal=1, id_instalacion=1)["version_registro"] == 1
+    first = _insert(db_session, pid, valor_parametro="uno")
+    second = _insert(db_session, pid, valor_parametro="dos")
+    assert first["es_valor_vigente"] and second["es_valor_vigente"]
+    assert first["id_sucursal"] is second["id_sucursal"] is None
+    assert first["id_instalacion"] is second["id_instalacion"] is None
+    before = _snapshot(db_session, [first["id_valor_parametro"], second["id_valor_parametro"]])
+    db_session.execute(text(_patch_without_transaction()))
+    assert _snapshot(db_session, [first["id_valor_parametro"], second["id_valor_parametro"]]) == before
 
 
 def test_unicidad_global_vigente_e_historico_y_eliminado(db_session):
@@ -135,6 +161,128 @@ def test_vigencia_minima_estricta(db_session,start,end,valid):
         with context: _insert(db_session,pid,fecha_desde=start,fecha_hasta=end)
     else:
         with pytest.raises(DBAPIError), context: _insert(db_session,pid,fecha_desde=start,fecha_hasta=end)
+
+
+def test_reejecucion_preserva_metadata_con_version_mayor_a_uno(db_session):
+    pid = _parameter(db_session)
+    row = _insert(db_session, pid, valor_parametro="1", id_instalacion_origen=1, op_id_alta=uuid4())
+    for value in ("2", "3"):
+        db_session.execute(text("UPDATE valor_parametro SET valor_parametro=:value WHERE id_valor_parametro=:id"), {"value": value, "id": row["id_valor_parametro"]})
+    before = _snapshot(db_session, [row["id_valor_parametro"]])
+    outbox_before = db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one()
+
+    db_session.execute(text(_patch_without_transaction()))
+
+    assert _snapshot(db_session, [row["id_valor_parametro"]]) == before
+    assert before[0]["version_registro"] == 3
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == outbox_before
+    assert db_session.execute(text("SELECT count(*) FROM pg_trigger WHERE tgrelid='valor_parametro'::regclass AND NOT tgisinternal")).scalar_one() == 3
+
+
+def test_reejecucion_acepta_soft_delete_y_reemplazo_sin_mutarlos(db_session):
+    pid = _parameter(db_session)
+    deleted = _insert(db_session, pid, valor_parametro="anterior", op_id_alta=uuid4())
+    db_session.execute(text("UPDATE valor_parametro SET deleted_at=CURRENT_TIMESTAMP WHERE id_valor_parametro=:id"), {"id": deleted["id_valor_parametro"]})
+    replacement = _insert(db_session, pid, valor_parametro="actual", op_id_alta=uuid4())
+    ids = [deleted["id_valor_parametro"], replacement["id_valor_parametro"]]
+    before = _snapshot(db_session, ids)
+    outbox_before = db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one()
+
+    db_session.execute(text(_patch_without_transaction()))
+
+    assert _snapshot(db_session, ids) == before
+    assert before[0]["deleted_at"] is not None and before[1]["deleted_at"] is None
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == outbox_before
+
+
+def test_garantia_global_cubre_updates_y_excluye_la_misma_fila(db_session):
+    first_pid = _parameter(db_session)
+    second_pid = _parameter(db_session)
+    current = _insert(db_session, first_pid, valor_parametro="actual")
+    historical = _insert(db_session, first_pid, valor_parametro="histórico", es_valor_vigente=False)
+    other = _insert(db_session, second_pid, valor_parametro="otro")
+
+    db_session.execute(text("UPDATE valor_parametro SET valor_parametro='actualizado' WHERE id_valor_parametro=:id"), {"id": current["id_valor_parametro"]})
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text("UPDATE valor_parametro SET es_valor_vigente=true WHERE id_valor_parametro=:id"), {"id": historical["id_valor_parametro"]})
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text("UPDATE valor_parametro SET id_parametro_sistema=:target WHERE id_valor_parametro=:id"), {"target": first_pid, "id": other["id_valor_parametro"]})
+
+
+def test_migra_indice_defectuoso_previo_y_datos_usados(db_session):
+    pid = _parameter(db_session)
+    deleted = _insert(db_session, pid, valor_parametro="anterior")
+    db_session.execute(text("UPDATE valor_parametro SET deleted_at=CURRENT_TIMESTAMP WHERE id_valor_parametro=:id"), {"id": deleted["id_valor_parametro"]})
+    replacement = _insert(db_session, pid, valor_parametro="actual")
+    ids = [deleted["id_valor_parametro"], replacement["id_valor_parametro"]]
+    before = _snapshot(db_session, ids)
+    db_session.execute(text("""CREATE UNIQUE INDEX ux_valor_parametro_global_vigente
+        ON valor_parametro(id_parametro_sistema)
+        WHERE id_sucursal IS NULL AND id_instalacion IS NULL AND es_valor_vigente AND deleted_at IS NULL"""))
+
+    db_session.execute(text(_patch_without_transaction()))
+    db_session.execute(text(_patch_without_transaction()))
+
+    assert _snapshot(db_session, ids) == before
+    assert db_session.execute(text("SELECT to_regclass('public.ux_valor_parametro_global_vigente')")).scalar_one() is None
+
+
+def test_primera_migracion_sin_deleted_at_rechaza_duplicados_y_revierte(db_session):
+    pid = _parameter(db_session)
+    before_columns = db_session.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name='valor_parametro'")).scalar_one()
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text("DROP TRIGGER trg_biu_valor_parametro_validar_alcance ON valor_parametro"))
+        db_session.execute(text("DROP TRIGGER trg_bi_valor_parametro_core_ef ON valor_parametro"))
+        db_session.execute(text("DROP TRIGGER trg_bu_valor_parametro_core_ef ON valor_parametro"))
+        db_session.execute(text("ALTER TABLE valor_parametro DROP COLUMN deleted_at CASCADE"))
+        db_session.execute(text("INSERT INTO valor_parametro(id_parametro_sistema,valor_parametro) VALUES (:p,'uno'),(:p,'dos')"), {"p": pid})
+        db_session.execute(text(_patch_without_transaction()))
+    assert db_session.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name='valor_parametro'")).scalar_one() == before_columns
+    assert db_session.execute(text("SELECT count(*) FROM valor_parametro WHERE id_parametro_sistema=:p"), {"p": pid}).scalar_one() == 0
+
+
+def test_concurrencia_global_se_serializa_en_definicion():
+    code = f"TEST_410_CONCURRENT_{uuid4().hex}"
+    with engine.begin() as setup:
+        pid = setup.execute(text("""INSERT INTO parametro_sistema(
+          id_tipo_dato_parametro,id_alcance_parametro,codigo_parametro,nombre_parametro)
+          SELECT t.id_tipo_dato_parametro,a.id_alcance_parametro,:code,:code
+          FROM tipo_dato_parametro t, alcance_parametro a
+          WHERE t.codigo_tipo_dato='ENTERO' AND a.codigo_alcance='GLOBAL'
+          RETURNING id_parametro_sistema"""), {"code": code}).scalar_one()
+
+    first = engine.connect()
+    first_tx = first.begin()
+    try:
+        first.execute(text("INSERT INTO valor_parametro(id_parametro_sistema,valor_parametro) VALUES (:p,'primero')"), {"p": pid})
+
+        def competing_insert():
+            with engine.connect() as second:
+                tx = second.begin()
+                try:
+                    second.execute(text("INSERT INTO valor_parametro(id_parametro_sistema,valor_parametro) VALUES (:p,'segundo')"), {"p": pid})
+                    tx.commit()
+                    return True
+                except DBAPIError:
+                    tx.rollback()
+                    return False
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(competing_insert)
+            sleep(0.25)
+            assert not future.done()
+            first_tx.commit()
+            assert future.result(timeout=5) is False
+
+        with engine.connect() as check:
+            assert check.execute(text("SELECT count(*) FROM valor_parametro WHERE id_parametro_sistema=:p AND es_valor_vigente AND deleted_at IS NULL"), {"p": pid}).scalar_one() == 1
+    finally:
+        if first_tx.is_active:
+            first_tx.rollback()
+        first.close()
+        with engine.begin() as cleanup:
+            cleanup.execute(text("DELETE FROM valor_parametro WHERE id_parametro_sistema=:p"), {"p": pid})
+            cleanup.execute(text("DELETE FROM parametro_sistema WHERE id_parametro_sistema=:p"), {"p": pid})
 
 
 def test_baseline_sin_datos_funcionales_425_ni_outbox(db_session):
