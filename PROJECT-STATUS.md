@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-02
+**Actualizado:** 2026-08-04
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración y auditoría básica siguen abiertas. Catálogos ya cuenta con CRUD write de maestros e ítems. #407/PR #414 implementó sólo el inventario read-only de definiciones; #408 congela la fuente canónica, #409 agrega únicamente `ENTERO`/`GLOBAL` estructurales y #410 prepara físicamente `valor_parametro` con CORE-EF SQL sin runtime. | #249, #263, #264 y #265 abiertos. | #414 mergeado (commit `b8d4ccb`); #409 es el incremento SQL previo a #425. | #425 sobre `parametro_sistema`/`valor_parametro` GLOBAL; claves, valores y runtime siguen pendientes. |
+| B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración y auditoría básica siguen abiertas. Catálogos ya cuenta con CRUD write de maestros e ítems. #407/PR #414 implementó sólo el inventario read-only de definiciones; #408 congela la fuente canónica, #409 agrega únicamente `ENTERO`/`GLOBAL` estructurales, #410 prepara físicamente `valor_parametro` con CORE-EF SQL sin runtime y #438 agrega metadata default-deny de exposición/sensibilidad en `parametro_sistema` sin endpoint. | #249, #263, #264 y #265 abiertos. | #437 mergeado (commit `908929e`); #438 es preparación SQL segura previa a reads de valores. | #425 sobre `parametro_sistema`/`valor_parametro` GLOBAL; claves, valores y runtime siguen pendientes. |
 | Operativo | En espera relativa para este documento. Caja operativa tuvo PRs recientes, pero no es parte del trabajo Comercial/Financiero ni Administrativo actual. | #248 abierto. | #331 y #327 mergeados el 2026-07-10. | No confundir caja operativa con movimiento financiero ni con administrativo. |
 
 ## 4. Reglas para trabajo paralelo
@@ -270,6 +270,7 @@ Sub-issues con estado verificable:
   `GLOBAL`, con descripciones contractuales, reset DEV/TEST y tests PostgreSQL.
   No crea claves ni valores funcionales de #425.
 - #410 prepara exclusivamente la infraestructura SQL CORE-EF de `valor_parametro`: metadata, versionado por trigger, contexto GLOBAL mínimo, vigencia estricta y unicidad parcial. #411, #412 y #425 siguen sin read, write, claves, valores ni runtime; no hay outbox o historial.
+- #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. No implementa autenticación, autorización, endpoint #411, editabilidad #412, claves/valores #425 ni resolución contextual #435.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 - #368 `CRUD write de catálogos maestros` cerrado/completado.
@@ -296,7 +297,7 @@ Los frentes activos verificables son:
 - #264 — catálogos maestros e ítems configurables.
 - #265 — auditoría administrativa básica.
 
-Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configuración, #409 elimina el bloqueo físico de tipo/alcance y #410 prepara `valor_parametro` con CORE-EF SQL, todavía sin claves, valores, read, write ni runtime.
+Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configuración, #409 elimina el bloqueo físico de tipo/alcance, #410 prepara `valor_parametro` con CORE-EF SQL y #438 prepara exposición segura en `parametro_sistema`, todavía sin claves, valores, read, write, autorización real ni runtime.
 
 ### 6.4 Decisiones vigentes
 
@@ -318,11 +319,12 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - `ENTERO` y `GLOBAL` son datos estructurales contractuales no editables por API;
   sus consumidores resuelven IDs por código.
 - #410 deja preparado el CORE-EF SQL reusable de `valor_parametro` para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos); #425 conserva pendientes sus claves, valores, reglas específicas y runtime.
+- Exposición y sensibilidad son metadata separada de `parametro_sistema`: una futura lectura de valores sólo podrá devolver definiciones explícitamente exponibles y no sensibles; #407 no expone esa metadata y #438 no reemplaza autorización real.
 
 ### 6.5 Próximo foco recomendado
 
 El CRUD write de `item_catalogo` quedó implementado por #399. Para configuración,
-#409 deja disponibles `ENTERO` y `GLOBAL` y #410 prepara el CORE-EF físico de `valor_parametro`; #411 y #412 continúan pendientes. #425 deberá implementar por separado sus claves, valores GLOBAL y runtime, sin mezclar `configuracion_general`,
+#409 deja disponibles `ENTERO` y `GLOBAL`, #410 prepara el CORE-EF físico de `valor_parametro` y #438 agrega metadata default-deny de exposición/sensibilidad; #411 y #412 continúan pendientes. #425 deberá implementar por separado sus claves, valores GLOBAL y runtime, sin mezclar `configuracion_general`,
 `configuracion_local` ni catálogos. #263 permanece abierto hasta implementar y
 validar valores y writes. #265 conserva su alcance independiente.
 

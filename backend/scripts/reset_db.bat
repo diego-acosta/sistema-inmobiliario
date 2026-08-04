@@ -28,6 +28,7 @@ set PATCH_CATALOGOS_CORE_EF_FILE=%BACKEND_DIR%\database\patch_catalogos_core_ef_
 set PATCH_ITEM_CATALOGO_ESTADO_FILE=%BACKEND_DIR%\database\patch_item_catalogo_estado_20260724.sql
 set PATCH_PARAMETRIZACION_ESTRUCTURAL_FILE=%BACKEND_DIR%\database\patch_parametrizacion_estructural_20260802.sql
 set PATCH_VALOR_PARAMETRO_CORE_EF_FILE=%BACKEND_DIR%\database\patch_valor_parametro_core_ef_20260803.sql
+set PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE=%BACKEND_DIR%\database\patch_parametro_sistema_exposicion_segura_20260804.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -51,6 +52,7 @@ echo Patch CORE-EF catalogos administrativos: %PATCH_CATALOGOS_CORE_EF_FILE%
 echo Patch estado de items de catalogo: %PATCH_ITEM_CATALOGO_ESTADO_FILE%
 echo Patch parametrizacion estructural #409: %PATCH_PARAMETRIZACION_ESTRUCTURAL_FILE%
 echo Patch CORE-EF valor_parametro #410: %PATCH_VALOR_PARAMETRO_CORE_EF_FILE%
+echo Patch exposicion segura parametro_sistema #438: %PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE%
 echo Seed indices financieros demo: %SEED_INDICES_FINANCIEROS_DEMO_FILE%
 
 if not exist "%SCHEMA_FILE%" (
@@ -139,6 +141,12 @@ if not exist "%PATCH_PARAMETRIZACION_ESTRUCTURAL_FILE%" (
 
 if not exist "%PATCH_VALOR_PARAMETRO_CORE_EF_FILE%" (
   echo ERROR: No existe el patch CORE-EF valor_parametro #410: %PATCH_VALOR_PARAMETRO_CORE_EF_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE%" (
+  echo ERROR: No existe el patch exposicion segura parametro_sistema #438: %PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE%
   pause
   exit /b 1
 )
@@ -285,6 +293,15 @@ echo Aplicando patch CORE-EF valor_parametro #410 en %DEV_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_VALOR_PARAMETRO_CORE_EF_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch CORE-EF valor_parametro #410 en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch exposicion segura parametro_sistema #438 en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch exposicion segura parametro_sistema #438 en %DEV_DB%
   pause
   exit /b 1
 )
@@ -449,6 +466,15 @@ echo Aplicando patch CORE-EF valor_parametro #410 en %TEST_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_VALOR_PARAMETRO_CORE_EF_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch CORE-EF valor_parametro #410 en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch exposicion segura parametro_sistema #438 en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch exposicion segura parametro_sistema #438 en %TEST_DB%
   pause
   exit /b 1
 )
