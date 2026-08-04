@@ -29,3 +29,7 @@ no agrega filas a `parametro_sistema` ni `valor_parametro`: únicamente elimina 
 bloqueo físico de tipo/alcance previo a #425 y no implementa sus claves o valores.
 
 Desde #410 esta vista refleja preparación SQL, no runtime: #411 (read), #412 (write) y #425 (claves, valores y calendario comercial) permanecen pendientes. No se resolvieron overrides, precedencia, fallback, outbox ni historial.
+
+## Incremento #438 — Metadata física en `parametro_sistema`
+
+`parametro_sistema` incorpora `exponible_api_administrativa` y `es_sensible` como atributos físicos separados de la definición. Sus defaults son restrictivos (`false` y `true`) y la constraint `chk_parametro_sistema_exposicion_no_sensible` impide una definición simultáneamente exponible y sensible. Esta metadata no crea valores, no modifica `valor_parametro`, no agrega índices ni triggers y no resuelve autenticación, autorización, #411, #412, #425 ni #435.

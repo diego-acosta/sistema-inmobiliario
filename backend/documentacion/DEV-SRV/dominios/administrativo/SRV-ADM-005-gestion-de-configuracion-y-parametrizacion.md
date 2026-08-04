@@ -319,3 +319,13 @@ La garantía contextual consulta `alcance_parametro.codigo_alcance = 'GLOBAL'` y
 - Naturaleza: preparación SQL estructural; endpoints, command HTTP, headers, `If-Match-Version`, idempotencia HTTP, outbox runtime y lock lógico: **NO APLICA**.
 - Idempotencia SQL, versionado físico, transacción y rollback: obligatorios y cubiertos por el patch/tests PostgreSQL.
 - #411 (read), #412 (write), #425 (claves, valores y runtime), outbox e historial permanecen no implementados.
+
+## Incremento #438 — Metadata de exposición segura
+
+El patch `patch_parametro_sistema_exposicion_segura_20260804.sql` agrega a `parametro_sistema` las columnas `exponible_api_administrativa boolean NOT NULL DEFAULT false` y `es_sensible boolean NOT NULL DEFAULT true`. Exposición y sensibilidad son conceptos separados: una definición sólo será candidata a exposición por una futura API si fue marcada explícitamente como exponible y, además, no es sensible.
+
+La política default-deny queda persistida: las definiciones heredadas no se habilitan automáticamente, quedan sensibles por defecto y no se clasifican por código, tipo, alcance, nombre, descripción ni valor. La constraint `chk_parametro_sistema_exposicion_no_sensible` prohíbe marcar en simultáneo una definición como exponible y sensible. La metadata no es editable por API, no se expone en el inventario #407 y sólo debe cambiar mediante migraciones versionadas.
+
+#438 no implementa autenticación, autorización, endpoint de #411, commands, outbox, historial runtime, CRUD genérico ni logging de reads de valores. Los headers CORE-EF de write no representan autorización. El futuro read administrativo de #411 deberá estar sujeto a una dependencia de autorización real cuando exista y sólo podrá devolver valores si `exponible_api_administrativa = true AND es_sensible = false`; ante definición inexistente o no exponible se recomienda `404 Not Found` para evitar filtración por enumeración. Los futuros logs de lectura de valores no deben registrar valores, secretos, op IDs, credenciales, payload SQL ni contenido sensible.
+
+#412 mantiene pendiente editabilidad y writes. #425 mantiene pendientes claves, valores y rangos funcionales. #435 mantiene pendientes overrides, precedencia, fallback y resolución contextual.

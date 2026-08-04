@@ -793,3 +793,11 @@ referencie; las nuevas descripciones estructurales no se agregan a su response.
 ## Incremento #410 — Sin API nueva
 
 #410 es exclusivamente preparación SQL CORE-EF de `valor_parametro`. No agrega ni modifica endpoints, schemas, headers, errores o contratos runtime. El GET de definiciones de #407 permanece sin cambios y no lee valores. El read de valores #411, los commands #412 y las claves/valores/runtime de #425 continúan no implementados; tampoco existen resolución de overrides, precedencia o fallback, outbox ni historial para este incremento.
+
+## Incremento #438 — Sin endpoint nuevo
+
+#438 es preparación SQL y contractual de exposición segura en `parametro_sistema`; no agrega ni modifica rutas, schemas, repositories runtime, services, comandos, headers, errores runtime u outbox. El GET de #407 (`GET /api/v1/administrativo/configuracion/parametros`) conserva su contrato: lista sólo definición, tipo y alcance, y no expone `exponible_api_administrativa`, `es_sensible`, valores ni política interna de seguridad.
+
+Para el futuro #411, un valor administrativo sólo podrá devolverse si la definición cumple `exponible_api_administrativa = true AND es_sensible = false`. Si la definición no existe o no cumple esa condición, el contrato recomendado es `404 Not Found`, usando el error estándar de parámetro no encontrado si el catálogo real lo permite, para no revelar por enumeración la existencia de definiciones sensibles o no exponibles.
+
+#438 no implementa autenticación ni autorización. Los headers CORE-EF de write no equivalen a autorización; el futuro endpoint administrativo de #411 no debe tratarse como público y deberá incorporar una dependencia de autorización cuando exista infraestructura real. #438 tampoco implementa logging de #411; futuros reads no deben registrar valores, secretos, op IDs, credenciales, payload SQL ni contenido sensible.
