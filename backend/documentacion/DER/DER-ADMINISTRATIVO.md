@@ -19,7 +19,7 @@ erDiagram
 
 `configuracion_general` queda fuera del grafo canónico como compatibilidad heredada: no recibe claves ni consumidores nuevos, tendrá migración incremental y su eliminación física es futura. `configuracion_local` tampoco integra este DER: pertenece a Operativo y no participa de #425.
 
-Desde #410, `valor_parametro` materializa metadata CORE-EF física, versionado por trigger, soft delete, procedencia/op IDs nullable y las garantías mínimas GLOBAL/vigencia/unicidad. Aún faltan metadata de editabilidad/visibilidad/sensibilidad, restricción de no solapamiento y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
+Desde #410, `valor_parametro` materializa metadata CORE-EF física, versionado por trigger, soft delete, procedencia/op IDs nullable y las garantías mínimas GLOBAL/vigencia/unicidad. Desde #438, `parametro_sistema` materializa exposición administrativa y sensibilidad mediante `exponible_api_administrativa` y `es_sensible`. Aún faltan editabilidad, autorización real, cifrado o secret manager, cualquier modelo adicional de visibilidad, restricción de no solapamiento temporal general y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
 
 Para #425, el subgrafo exclusivo es `parametro_sistema -> valor_parametro` con alcance `GLOBAL`, `id_sucursal IS NULL` e `id_instalacion IS NULL`; no intervienen `configuracion_general`, `configuracion_local` ni catálogos.
 

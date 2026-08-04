@@ -28,7 +28,9 @@ Para futuros parámetros contextuales quedan **NO CONFIRMADOS** el catálogo cer
 
 Las vigencias de un mismo parámetro y contexto no pueden solaparse. El SQL actual sólo comprueba el orden entre `fecha_desde` y `fecha_hasta`; la exclusión de solapamientos permanece pendiente. La inclusividad de `fecha_hasta` está **NO CONFIRMADA**.
 
-Las claves contractuales del sistema no tendrán alta ni baja dinámica en el primer incremento runtime: se administrarán mediante migraciones versionadas. Editabilidad, visibilidad y sensibilidad deben ser metadata explícita de la definición y nunca inferirse del código, tipo, nombre o valor. El SQL actual de `parametro_sistema` todavía no contiene esa metadata: su forma física es pendiente.
+Las claves contractuales del sistema no tendrán alta ni baja dinámica en el primer incremento runtime: se administrarán mediante migraciones versionadas. La exposición administrativa y la sensibilidad ya son metadata física explícita de la definición mediante `exponible_api_administrativa` y `es_sensible`, con política restrictiva por defecto. No deben inferirse del código, tipo, nombre o valor.
+
+La editabilidad continúa pendiente de definición física. La autorización real, el cifrado o secret manager y cualquier modelo adicional de visibilidad siguen **NO CONFIRMADOS**.
 
 ## 4. Consumo interdominio y secretos
 
@@ -47,13 +49,15 @@ Un valor sensible nunca puede exponerse en claro por API, historial, outbox ni l
 - sin `configuracion_local`;
 - sin catálogos.
 
-Permanecen pendientes para #425 y sus incrementos de implementación: patch SQL CORE-EF; seeds de las dos claves; constraints de rango 1–31; read; write; versionado; idempotencia; outbox; historial; rollback; query service interno y tests PostgreSQL. Esta lista no declara nombres de endpoints ni comportamiento runtime existente.
+Permanecen pendientes para #425 y sus incrementos de implementación: patch SQL funcional específico; seeds de las dos claves; constraints de rango 1–31; read; write; versionado; idempotencia; outbox; historial; rollback; query service interno y tests PostgreSQL. Esta lista no declara nombres de endpoints ni comportamiento runtime existente.
 
 Quedan **NO CONFIRMADOS** hasta contar con evidencia: códigos/nombres exactos de las claves, defaults, cifrado/secret manager, autorización, caché, inclusividad de `fecha_hasta`, reactivación o reutilización de claves y taxonomía final de eventos.
 
-## 6. Deuda física CORE-EF de `valor_parametro`
+## 6. Estado CORE-EF físico de `valor_parametro`
 
-El SQL real no provee a `valor_parametro` la infraestructura CORE-EF completa. Quedan pendientes, sin declararlos implementados: UID, versión, timestamps, soft delete, metadata de instalación, op IDs, idempotencia, outbox e historial alineado al valor/contexto. También quedan pendientes las restricciones de contexto y de no solapamiento, y la frontera transaccional de futuros commands.
+#410 implementó preparación física CORE-EF en `valor_parametro`: `uid_global`, `version_registro`, `created_at`, `updated_at`, `deleted_at`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta` y `op_id_ultima_modificacion`. También implementó triggers de insert/update, versionado físico, integridad para definiciones cuyo alcance se resuelve por código `GLOBAL`, garantía concurrente de un único valor global vigente no eliminado, constraints físicas mínimas de vigencia, migración transaccional e integración en resets DEV/TEST.
+
+Siguen pendientes, sin declararlos implementados: idempotencia HTTP, replay, `If-Match-Version` runtime, compare-and-swap en repository, outbox runtime, historial alineado al valor/contexto, autorización, cifrado o secret manager, no solapamiento temporal general, resolución contextual, overrides, precedencia, fallback y la frontera transaccional de commands de #412 y #425.
 
 ## 7. Decisión CORE-EF del freeze
 
