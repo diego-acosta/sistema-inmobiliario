@@ -867,3 +867,11 @@ Si la definición es exponible, no sensible y `GLOBAL`, pero no existe valor glo
 - `500 TECHNICAL_INCONSISTENCY`: error SQL/driver inesperado sanitizado.
 
 No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, `editable_administrativamente`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.
+
+## 12. Credenciales y autenticación — estado posterior a #448
+
+#448 no agrega ni modifica endpoints. No existe endpoint administrativo implementado para crear credenciales, setear passwords, login, logout, refresh, sesiones nuevas, recuperación, rotación ni validación de hashes. Por lo tanto, no se documenta request/response de credenciales como API vigente.
+
+La tabla `credencial_usuario` existe sólo como contrato SQL inicial: `PASSWORD`, estados `ACTIVA`/`REVOCADA`, hash sensible y metadata CORE-EF física. `hash_credencial` no debe exponerse por API ni aparecer en errores. Usuarios sin credencial no autentican porque no hay runtime de autenticación implementado. #449, #450 y #446 siguen pendientes.
+
+Decisión CORE-EF API: **NO APLICA** para headers write, `If-Match-Version`, idempotencia HTTP, outbox y lock lógico, porque #448 no crea endpoints.

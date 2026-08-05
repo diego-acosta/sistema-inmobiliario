@@ -1009,3 +1009,9 @@ Esta versión lista para desarrollo deja definido que el backend deberá constru
 Con esto ya queda en condiciones de pasar al siguiente nivel de diseño técnico: contrato de servicios, diseño de repositorios, endpoints FastAPI y modelo físico final de tablas técnicas.
 
 Puedo seguir con el siguiente documento y armar la traducción directa de esta especificación a diseño técnico de backend, en formato: servicios + repositorios + endpoints + flujo de sincronización paso a paso.
+
+## Aplicación SQL #448 — `credencial_usuario`
+
+#448 aplica CORE-EF sólo en contrato físico SQL sobre `public.credencial_usuario`: UID global, versión, timestamps, baja lógica técnica, procedencia por instalación, op IDs nullable y triggers dedicados que fijan versión inicial e incrementan versión en updates físicos preservando metadata de alta.
+
+No hay command HTTP asociado: headers write, `If-Match-Version`, idempotencia/replay HTTP, outbox, historial runtime y lock lógico funcional son **NO APLICA** en este incremento. La sincronización funcional de credenciales queda pendiente para #450. No se agregan credenciales, Argon2id runtime, login ni sesiones.

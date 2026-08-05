@@ -30,6 +30,7 @@ set PATCH_PARAMETRIZACION_ESTRUCTURAL_FILE=%BACKEND_DIR%\database\patch_parametr
 set PATCH_VALOR_PARAMETRO_CORE_EF_FILE=%BACKEND_DIR%\database\patch_valor_parametro_core_ef_20260803.sql
 set PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE=%BACKEND_DIR%\database\patch_parametro_sistema_exposicion_segura_20260804.sql
 set PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE=%BACKEND_DIR%\database\patch_parametro_sistema_editabilidad_administrativa_20260805.sql
+set PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE=%BACKEND_DIR%\database\patch_credencial_usuario_core_ef_20260805.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -55,6 +56,7 @@ echo Patch parametrizacion estructural #409: %PATCH_PARAMETRIZACION_ESTRUCTURAL_
 echo Patch CORE-EF valor_parametro #410: %PATCH_VALOR_PARAMETRO_CORE_EF_FILE%
 echo Patch exposicion segura parametro_sistema #438: %PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE%
 echo Patch editabilidad administrativa parametro_sistema #441: %PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE%
+echo Patch CORE-EF credencial_usuario #448: %PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%
 echo Seed indices financieros demo: %SEED_INDICES_FINANCIEROS_DEMO_FILE%
 
 if not exist "%SCHEMA_FILE%" (
@@ -155,6 +157,12 @@ if not exist "%PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE%" (
 
 if not exist "%PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE%" (
   echo ERROR: No existe el patch editabilidad administrativa parametro_sistema #441: %PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%" (
+  echo ERROR: No existe el patch CORE-EF credencial_usuario #448: %PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%
   pause
   exit /b 1
 )
@@ -319,6 +327,15 @@ echo Aplicando patch editabilidad administrativa parametro_sistema #441 en %DEV_
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch editabilidad administrativa parametro_sistema #441 en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch CORE-EF credencial_usuario #448 en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch CORE-EF credencial_usuario #448 en %DEV_DB%
   pause
   exit /b 1
 )
@@ -501,6 +518,15 @@ echo Aplicando patch editabilidad administrativa parametro_sistema #441 en %TEST
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch editabilidad administrativa parametro_sistema #441 en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch CORE-EF credencial_usuario #448 en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch CORE-EF credencial_usuario #448 en %TEST_DB%
   pause
   exit /b 1
 )
