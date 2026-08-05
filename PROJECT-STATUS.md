@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-04
+**Actualizado:** 2026-08-05
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -270,7 +270,7 @@ Sub-issues con estado verificable:
   `GLOBAL`, con descripciones contractuales, reset DEV/TEST y tests PostgreSQL.
   No crea claves ni valores funcionales de #425.
 - #410 prepara exclusivamente la infraestructura SQL CORE-EF de `valor_parametro`: metadata, versionado por trigger, contexto GLOBAL mínimo, vigencia estricta y unicidad parcial. #411, #412 y #425 siguen sin read, write, claves, valores ni runtime; no hay outbox o historial.
-- #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. No implementa autenticación/autorización completa, editabilidad #412, claves/valores de calendario #425 ni resolución contextual #435.
+- #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. #441 agrega `editable_administrativamente` como metadata física independiente, default-deny (`false`), no editable por API y habilitable sólo por migración versionada; ninguna definición quedó editable automáticamente. No implementa autenticación/autorización completa, writes #412, claves/valores de calendario #425 ni resolución contextual #435.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
 - #368 `CRUD write de catálogos maestros` cerrado/completado.
@@ -319,7 +319,7 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - `ENTERO` y `GLOBAL` son datos estructurales contractuales no editables por API;
   sus consumidores resuelven IDs por código.
 - #410 deja preparado el CORE-EF SQL reusable de `valor_parametro` para valores GLOBAL (`id_sucursal` e `id_instalacion` nulos); #425 conserva pendientes sus claves, valores, reglas específicas y runtime.
-- Exposición y sensibilidad son metadata separada de `parametro_sistema`: una futura lectura de valores sólo podrá devolver definiciones explícitamente exponibles y no sensibles; #407 no expone esa metadata y #438 no reemplaza autorización real.
+- Exposición, sensibilidad y editabilidad son metadata separada de `parametro_sistema`: una lectura de valores sólo puede devolver definiciones explícitamente exponibles y no sensibles; la editabilidad administrativa es independiente, default-deny y no expuesta por #407/#411. #438/#441 no reemplazan autorización real ni implementan writes #412.
 
 ### 6.5 Próximo foco recomendado
 
