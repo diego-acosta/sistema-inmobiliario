@@ -857,7 +857,7 @@ Si la definición es exponible, no sensible y `GLOBAL`, pero no existe valor glo
 
 - `404 parametro_no_encontrado`: definición inexistente, no exponible o sensible; las tres respuestas son indistinguibles.
 - `409 conflicto_parametro`: definición existente, exponible y no sensible con alcance distinto de `GLOBAL`.
-- `500 inconsistencia_parametro`: `ENTERO` persistido inválido, cardinalidad mayor que uno o estructura inconsistente, siempre con mensaje sanitizado.
+- `500 inconsistencia_parametro`: `ENTERO` persistido inválido, tipo no soportado aun sin valor, cardinalidad mayor que uno o estructura inconsistente de tipo/alcance, siempre con mensaje sanitizado.
 - `500 TECHNICAL_INCONSISTENCY`: error SQL/driver inesperado sanitizado.
 
 No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.

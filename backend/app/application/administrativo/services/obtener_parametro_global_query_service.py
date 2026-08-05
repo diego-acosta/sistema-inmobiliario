@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from app.infrastructure.persistence.repositories.parametro_sistema_repository import (
@@ -35,13 +36,30 @@ class ObtenerParametroGlobalQueryService:
         if not first["exponible_api_administrativa"] or first["es_sensible"]:
             raise ParametroGlobalNotFoundError()
 
-        if first["id_tipo_dato_parametro"] is None or first["codigo_tipo_dato"] is None:
-            raise ParametroGlobalInconsistencyError()
-        if first["id_alcance_parametro"] is None or first["codigo_alcance"] is None:
+        tipo_incompleto = any(
+            first[field] is None
+            for field in (
+                "id_tipo_dato_parametro",
+                "codigo_tipo_dato",
+                "nombre_tipo_dato",
+            )
+        )
+        alcance_incompleto = any(
+            first[field] is None
+            for field in (
+                "id_alcance_parametro",
+                "codigo_alcance",
+                "nombre_alcance",
+            )
+        )
+        if tipo_incompleto or alcance_incompleto:
             raise ParametroGlobalInconsistencyError()
 
         if first["codigo_alcance"] != "GLOBAL":
             raise ParametroGlobalConflictError()
+
+        if first["codigo_tipo_dato"] != "ENTERO":
+            raise ParametroGlobalInconsistencyError()
 
         value_rows = [row for row in rows if row["id_valor_parametro"] is not None]
         if len(value_rows) > 1:
@@ -74,10 +92,8 @@ class ObtenerParametroGlobalQueryService:
             }
 
         row = value_rows[0]
-        if first["codigo_tipo_dato"] != "ENTERO":
-            raise ParametroGlobalInconsistencyError()
         valor_raw = row["valor_raw"]
-        if not isinstance(valor_raw, str) or not valor_raw or not valor_raw.isdecimal():
+        if not isinstance(valor_raw, str) or not re.fullmatch(r"-?[0-9]+", valor_raw):
             raise ParametroGlobalInconsistencyError()
         valor_tipado = int(valor_raw)
 

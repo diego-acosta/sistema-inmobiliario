@@ -515,6 +515,17 @@ def baja_item_catalogo(
     )
 
 
+def _parametro_global_response(response: JSONResponse) -> JSONResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _parametro_global_error(
+    status_code: int, code: str, message: str, details: dict | None = None
+) -> JSONResponse:
+    return _parametro_global_response(_error(status_code, code, message, details))
+
+
 @router.get(
     "/api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global",
     response_model=ParametroGlobalValorResponse,
@@ -531,36 +542,37 @@ def get_parametro_global_marcado_vigente(
             ParametroSistemaRepository(db)
         ).obtener(codigo_parametro)
     except ParametroGlobalNotFoundError:
-        return _error(
+        return _parametro_global_error(
             404,
             "parametro_no_encontrado",
             "No existe un parámetro del sistema para el criterio indicado.",
             {},
         )
     except ParametroGlobalConflictError:
-        return _error(
+        return _parametro_global_error(
             409,
             "conflicto_parametro",
             "Existe un conflicto con el alcance del parámetro.",
             {},
         )
     except ParametroGlobalInconsistencyError:
-        return _error(
+        return _parametro_global_error(
             500,
             "inconsistencia_parametro",
             "La definición o el valor del parámetro resulta inconsistente.",
             {},
         )
     except Exception:
-        return _error(
+        return _parametro_global_error(
             500,
             "TECHNICAL_INCONSISTENCY",
             "No se pudo consultar el valor global del parámetro.",
             {},
         )
-    return JSONResponse(
-        content=ParametroGlobalValorResponse(data=data).model_dump(mode="json"),
-        headers={"Cache-Control": "no-store"},
+    return _parametro_global_response(
+        JSONResponse(
+            content=ParametroGlobalValorResponse(data=data).model_dump(mode="json")
+        )
     )
 
 

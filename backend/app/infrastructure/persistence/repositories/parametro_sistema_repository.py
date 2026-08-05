@@ -62,9 +62,9 @@ class ParametroSistemaRepository(BaseRepository[Any]):
                 valor.created_at AS valor_created_at,
                 valor.updated_at AS valor_updated_at
             FROM parametro_sistema AS parametro
-            JOIN tipo_dato_parametro AS tipo
+            LEFT JOIN tipo_dato_parametro AS tipo
               ON tipo.id_tipo_dato_parametro = parametro.id_tipo_dato_parametro
-            JOIN alcance_parametro AS alcance
+            LEFT JOIN alcance_parametro AS alcance
               ON alcance.id_alcance_parametro = parametro.id_alcance_parametro
             LEFT JOIN valor_parametro AS valor
               ON valor.id_parametro_sistema = parametro.id_parametro_sistema
