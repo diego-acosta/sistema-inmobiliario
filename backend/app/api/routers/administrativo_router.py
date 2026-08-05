@@ -31,6 +31,7 @@ from app.api.schemas.administrativo import (
     ParametroSistemaData,
     ParametroSistemaListData,
     ParametroSistemaListResponse,
+    ParametroGlobalValorResponse,
     ParametroSistemaTipoData,
     PermisoData,
     PermisoListResponse,
@@ -71,6 +72,12 @@ from app.infrastructure.persistence.repositories.item_catalogo_repository import
 )
 from app.infrastructure.persistence.repositories.parametro_sistema_repository import (
     ParametroSistemaRepository,
+)
+from app.application.administrativo.services.obtener_parametro_global_query_service import (
+    ObtenerParametroGlobalQueryService,
+    ParametroGlobalConflictError,
+    ParametroGlobalInconsistencyError,
+    ParametroGlobalNotFoundError,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
@@ -505,6 +512,55 @@ def baja_item_catalogo(
         result
         if isinstance(result, JSONResponse)
         else ItemCatalogoBajaResponse(data=ItemCatalogoWriteData(**result))
+    )
+
+
+@router.get(
+    "/api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global",
+    response_model=ParametroGlobalValorResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def get_parametro_global_marcado_vigente(
+    codigo_parametro: str,
+    db: Session = Depends(get_db),
+) -> ParametroGlobalValorResponse | JSONResponse:
+    # CORE-EF: QUERY_READLIKE. Ruta administrativa no pública; no usa headers
+    # write, no bloquea, no muta, no emite outbox ni realiza commit.
+    try:
+        data = ObtenerParametroGlobalQueryService(
+            ParametroSistemaRepository(db)
+        ).obtener(codigo_parametro)
+    except ParametroGlobalNotFoundError:
+        return _error(
+            404,
+            "parametro_no_encontrado",
+            "No existe un parámetro del sistema para el criterio indicado.",
+            {},
+        )
+    except ParametroGlobalConflictError:
+        return _error(
+            409,
+            "conflicto_parametro",
+            "Existe un conflicto con el alcance del parámetro.",
+            {},
+        )
+    except ParametroGlobalInconsistencyError:
+        return _error(
+            500,
+            "inconsistencia_parametro",
+            "La definición o el valor del parámetro resulta inconsistente.",
+            {},
+        )
+    except Exception:
+        return _error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No se pudo consultar el valor global del parámetro.",
+            {},
+        )
+    return JSONResponse(
+        content=ParametroGlobalValorResponse(data=data).model_dump(mode="json"),
+        headers={"Cache-Control": "no-store"},
     )
 
 

@@ -801,3 +801,63 @@ referencie; las nuevas descripciones estructurales no se agregan a su response.
 Para el futuro #411, un valor administrativo sólo podrá devolverse si la definición cumple `exponible_api_administrativa = true AND es_sensible = false`. Si la definición no existe o no cumple esa condición, el contrato recomendado es `404 Not Found`, usando el error estándar de parámetro no encontrado si el catálogo real lo permite, para no revelar por enumeración la existencia de definiciones sensibles o no exponibles.
 
 #438 no implementa autenticación ni autorización. Los headers CORE-EF de write no equivalen a autorización; el futuro endpoint administrativo de #411 no debe tratarse como público y deberá incorporar una dependencia de autorización cuando exista infraestructura real. #438 tampoco implementa logging de #411; futuros reads no deben registrar valores, secretos, op IDs, credenciales, payload SQL ni contenido sensible.
+
+## Incremento #411 — Valor GLOBAL marcado vigente de un parámetro
+
+### `GET /api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global`
+
+Ruta administrativa no pública, `QUERY_READLIKE`, sin headers write CORE-EF y sin `If-Match-Version`. Puede devolver `Cache-Control: no-store`. El selector de `codigo_parametro` es exacto y case-sensitive.
+
+#### Respuesta `200 OK`
+
+Usa el envelope estándar:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "definicion": {
+      "id_parametro_sistema": 123,
+      "codigo_parametro": "CODIGO_EXACTO",
+      "nombre_parametro": "Nombre",
+      "descripcion": "Descripción",
+      "tipo": {
+        "id_tipo_dato_parametro": 1,
+        "codigo_tipo_dato": "ENTERO",
+        "nombre_tipo_dato": "Entero",
+        "descripcion_tipo_dato": "Valor numérico entero sin componente decimal."
+      },
+      "alcance": {
+        "id_alcance_parametro": 1,
+        "codigo_alcance": "GLOBAL",
+        "nombre_alcance": "Global",
+        "descripcion_alcance": "Aplicable sin contexto de sucursal o instalación."
+      }
+    },
+    "estado_valor": "CON_VALOR_MARCADO_VIGENTE",
+    "valor_marcado_vigente": {
+      "id_valor_parametro": 456,
+      "uid_global": "00000000-0000-0000-0000-000000000000",
+      "valor_raw": "15",
+      "valor_tipado": 15,
+      "version_registro": 3,
+      "es_valor_vigente": true,
+      "fecha_desde": null,
+      "fecha_hasta": null,
+      "created_at": "2026-08-05T12:00:00",
+      "updated_at": "2026-08-05T12:00:00"
+    }
+  }
+}
+```
+
+Si la definición es exponible, no sensible y `GLOBAL`, pero no existe valor global marcado vigente no eliminado, `estado_valor` es `SIN_VALOR` y `valor_marcado_vigente` es `null`.
+
+#### Errores
+
+- `404 parametro_no_encontrado`: definición inexistente, no exponible o sensible; las tres respuestas son indistinguibles.
+- `409 conflicto_parametro`: definición existente, exponible y no sensible con alcance distinto de `GLOBAL`.
+- `500 inconsistencia_parametro`: `ENTERO` persistido inválido, cardinalidad mayor que uno o estructura inconsistente, siempre con mensaje sanitizado.
+- `500 TECHNICAL_INCONSISTENCY`: error SQL/driver inesperado sanitizado.
+
+No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.

@@ -376,3 +376,49 @@ class UsuarioAlcanceOperativoData(BaseModel):
 class UsuarioAlcanceOperativoResponse(BaseModel):
     ok: Literal[True] = True
     data: UsuarioAlcanceOperativoData
+
+class ParametroGlobalTipoData(BaseModel):
+    id_tipo_dato_parametro: int
+    codigo_tipo_dato: str
+    nombre_tipo_dato: str
+    descripcion_tipo_dato: str | None
+
+
+class ParametroGlobalAlcanceData(BaseModel):
+    id_alcance_parametro: int
+    codigo_alcance: str
+    nombre_alcance: str
+    descripcion_alcance: str | None
+
+
+class ParametroGlobalDefinicionData(BaseModel):
+    id_parametro_sistema: int
+    codigo_parametro: str
+    nombre_parametro: str
+    descripcion: str | None
+    tipo: ParametroGlobalTipoData
+    alcance: ParametroGlobalAlcanceData
+
+
+class ParametroGlobalValorData(BaseModel):
+    id_valor_parametro: int
+    uid_global: str
+    valor_raw: str
+    valor_tipado: int
+    version_registro: int
+    es_valor_vigente: Literal[True]
+    fecha_desde: datetime | None
+    fecha_hasta: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ParametroGlobalValorResponseData(BaseModel):
+    definicion: ParametroGlobalDefinicionData
+    estado_valor: Literal["SIN_VALOR", "CON_VALOR_MARCADO_VIGENTE"]
+    valor_marcado_vigente: ParametroGlobalValorData | None
+
+
+class ParametroGlobalValorResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ParametroGlobalValorResponseData
