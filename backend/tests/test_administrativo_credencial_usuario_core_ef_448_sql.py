@@ -50,6 +50,22 @@ def _cred(db, user_id, **values):
     return db.execute(text(f"INSERT INTO credencial_usuario ({','.join(cols)}) VALUES ({','.join(':'+c for c in cols)}) RETURNING *"), base).mappings().one()
 
 
+def _snapshot(db, user_id):
+    return [dict(row) for row in db.execute(text("""
+        SELECT id_credencial_usuario, id_usuario, tipo_credencial, identificador_credencial,
+               hash_credencial, algoritmo_hash, estado_credencial, es_credencial_principal,
+               fecha_alta, fecha_activacion, fecha_vencimiento, fecha_revocacion,
+               motivo_revocacion, obliga_rotacion, ultimo_cambio_credencial,
+               intentos_fallidos_acumulados, ultimo_intento_fallido, bloqueo_hasta,
+               requiere_reset, observaciones, uid_global, version_registro, created_at,
+               updated_at, deleted_at, id_instalacion_origen,
+               id_instalacion_ultima_modificacion, op_id_alta, op_id_ultima_modificacion
+          FROM credencial_usuario
+         WHERE id_usuario=:u
+         ORDER BY id_credencial_usuario
+    """), {"u": user_id}).mappings().all()]
+
+
 def test_patch_transaccional_con_lock_y_resets_simmetricos():
     sql = PATCH.read_text()
     sh, bat = SH.read_text(), BAT.read_text()
@@ -147,6 +163,48 @@ def test_unicidad_activa_principal_y_revocadas_eliminadas(db_session):
     _cred(db_session, uid, estado_credencial="REVOCADA", fecha_revocacion="2026-08-06", es_credencial_principal=True)
     db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": active["id_credencial_usuario"]})
     _cred(db_session, uid, es_credencial_principal=True)
+
+
+def test_reejecucion_permite_credencial_eliminada_y_reemplazo_activo(db_session):
+    uid = _user(db_session)
+    before_outbox = db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one()
+    before_historial = db_session.execute(text("SELECT count(*) FROM historial_acceso")).scalar_one()
+    first = _cred(db_session, uid, es_credencial_principal=True, op_id_alta=uuid4())
+    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+    _cred(db_session, uid, es_credencial_principal=True, op_id_alta=uuid4())
+    snapshot = _snapshot(db_session, uid)
+
+    db_session.execute(text(_patch_without_transaction()))
+
+    assert _snapshot(db_session, uid) == snapshot
+    assert db_session.execute(text("SELECT count(*) FROM credencial_usuario WHERE id_usuario=:u"), {"u": uid}).scalar_one() == 2
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == before_outbox
+    assert db_session.execute(text("SELECT count(*) FROM historial_acceso")).scalar_one() == before_historial
+
+
+def test_reejecucion_rechaza_dos_password_activas_no_eliminadas(db_session):
+    uid = _user(db_session)
+    first = _cred(db_session, uid, es_credencial_principal=False)
+    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+    _cred(db_session, uid, es_credencial_principal=False)
+    db_session.execute(text("DROP INDEX ux_credencial_usuario_password_activa"))
+    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=NULL WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_without_transaction()))
+
+
+def test_reejecucion_rechaza_dos_principales_activas_no_eliminadas(db_session):
+    uid = _user(db_session)
+    first = _cred(db_session, uid, es_credencial_principal=True)
+    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+    _cred(db_session, uid, es_credencial_principal=True)
+    db_session.execute(text("DROP INDEX ux_credencial_usuario_password_activa"))
+    db_session.execute(text("DROP INDEX ux_credencial_usuario_principal_activa"))
+    db_session.execute(text("UPDATE credencial_usuario SET deleted_at=NULL WHERE id_credencial_usuario=:id"), {"id": first["id_credencial_usuario"]})
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_without_transaction()))
 
 
 def test_seguridad_sin_runtime_ni_credenciales_en_seeds():

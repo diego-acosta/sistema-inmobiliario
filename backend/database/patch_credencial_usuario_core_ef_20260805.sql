@@ -74,8 +74,6 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE intentos_fallidos_acumulados < 0) THEN RAISE EXCEPTION 'contador de intentos incompatible'; END IF;
   IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE (estado_credencial='REVOCADA') <> (fecha_revocacion IS NOT NULL)) THEN RAISE EXCEPTION 'revocación incoherente'; END IF;
   IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE (fecha_activacion IS NOT NULL AND fecha_activacion < fecha_alta) OR (fecha_vencimiento IS NOT NULL AND fecha_activacion IS NOT NULL AND fecha_vencimiento <= fecha_activacion) OR (fecha_revocacion IS NOT NULL AND fecha_revocacion < fecha_alta) OR (fecha_revocacion IS NOT NULL AND fecha_activacion IS NOT NULL AND fecha_revocacion < fecha_activacion) OR (ultimo_cambio_credencial IS NOT NULL AND ultimo_cambio_credencial < fecha_alta) OR (ultimo_intento_fallido IS NOT NULL AND ultimo_intento_fallido < fecha_alta) OR (bloqueo_hasta IS NOT NULL AND ultimo_intento_fallido IS NOT NULL AND bloqueo_hasta < ultimo_intento_fallido)) THEN RAISE EXCEPTION 'fechas de credencial_usuario incompatibles'; END IF;
-  IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE estado_credencial='ACTIVA' GROUP BY id_usuario,tipo_credencial HAVING count(*)>1) THEN RAISE EXCEPTION 'credenciales activas duplicadas'; END IF;
-  IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE es_credencial_principal IS TRUE AND estado_credencial='ACTIVA' GROUP BY id_usuario HAVING count(*)>1) THEN RAISE EXCEPTION 'credenciales principales activas duplicadas'; END IF;
 END $$;
 
 ALTER TABLE public.credencial_usuario
@@ -142,6 +140,8 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE op_id_alta IS NOT NULL GROUP BY op_id_alta HAVING count(*)>1) THEN RAISE EXCEPTION 'op_id_alta duplicado'; END IF;
   IF EXISTS (SELECT 1 FROM public.credencial_usuario c LEFT JOIN public.instalacion i ON i.id_instalacion=c.id_instalacion_origen WHERE c.id_instalacion_origen IS NOT NULL AND i.id_instalacion IS NULL)
      OR EXISTS (SELECT 1 FROM public.credencial_usuario c LEFT JOIN public.instalacion i ON i.id_instalacion=c.id_instalacion_ultima_modificacion WHERE c.id_instalacion_ultima_modificacion IS NOT NULL AND i.id_instalacion IS NULL) THEN RAISE EXCEPTION 'instalación de credencial_usuario inválida'; END IF;
+  IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE estado_credencial='ACTIVA' AND deleted_at IS NULL GROUP BY id_usuario,tipo_credencial HAVING count(*)>1) THEN RAISE EXCEPTION 'credenciales activas duplicadas'; END IF;
+  IF EXISTS (SELECT 1 FROM public.credencial_usuario WHERE es_credencial_principal IS TRUE AND estado_credencial='ACTIVA' AND deleted_at IS NULL GROUP BY id_usuario HAVING count(*)>1) THEN RAISE EXCEPTION 'credenciales principales activas duplicadas'; END IF;
 
   SELECT indexdef INTO actual FROM pg_indexes WHERE schemaname='public' AND indexname='ux_credencial_usuario_op_id_alta';
   IF actual IS NULL THEN CREATE UNIQUE INDEX ux_credencial_usuario_op_id_alta ON public.credencial_usuario(op_id_alta) WHERE op_id_alta IS NOT NULL;
