@@ -126,3 +126,17 @@ La exposición exige `exponible_api_administrativa = true` y `es_sensible = fals
 La consulta devuelve el valor global marcado vigente y no eliminado (`es_valor_vigente = true`, `deleted_at IS NULL`, `id_sucursal IS NULL`, `id_instalacion IS NULL`). No resuelve valor efectivo, fecha actual, precedencia, fallback, overrides ni contexto. `fecha_desde` y `fecha_hasta` son sólo metadata proyectada. Si no hay valor, responde `SIN_VALOR` con `valor_marcado_vigente = null`; si hay valor, responde `CON_VALOR_MARCADO_VIGENTE` e incluye `id_valor_parametro`, `uid_global` y `version_registro` del valor. En este incremento sólo se tipa `ENTERO` de forma estricta: representación decimal ASCII con signo negativo opcional (`-?[0-9]+`), sin `+`, espacios, decimales, notación científica ni dígitos Unicode. Los tipos no soportados son inconsistencia incluso cuando no existe valor; `SIN_VALOR` sólo aplica a definiciones `ENTERO` válidas.
 
 CORE-EF: headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial, lock lógico, optimistic locking, commits y mutaciones son `NO APLICA` porque la ruta es read-only. #412, #425 y #435 permanecen pendientes y no quedan implementados por esta lectura.
+
+## 12. Incremento #448 — Contrato SQL inicial de `credencial_usuario`
+
+#448 prepara exclusivamente la tabla histórica `public.credencial_usuario` como núcleo administrativo de seguridad para credenciales tipo `PASSWORD`. La implementación es SQL incremental por `ALTER` directo sobre la tabla existente: conserva columnas históricas, agrega metadata CORE-EF física (`uid_global`, `version_registro`, timestamps, `deleted_at`, procedencia por instalación y op IDs), constraints, FKs a `instalacion`, índices parciales y triggers de insert/update.
+
+No existe runtime de credenciales en este incremento: no hay Argon2id, helper criptográfico, creación automática de credenciales, login, logout, sesiones nuevas, principal autenticado, outbox ni historial runtime. `hash_credencial` es sensible y no debe exponerse por API, logs, eventos genéricos ni documentación con ejemplos reales. Usuarios sin fila compatible en `credencial_usuario` no autentican; hoy no existe endpoint que autentique usuarios.
+
+El contrato físico congela `tipo_credencial = 'PASSWORD'` y `estado_credencial IN ('ACTIVA','REVOCADA')`. `VENCIDA` y `BLOQUEADA` son condiciones derivadas futuras, no estados persistidos. #449 y #450 siguen pendientes; #446 permanece bloqueado hasta que existan primitivas/runtime de credenciales y sesión definidos en sus propios incrementos.
+
+### Decisión CORE-EF
+
+- Naturaleza: preparación SQL estructural sobre tabla histórica.
+- Endpoints, commands HTTP, headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial runtime y lock lógico funcional: **NO APLICA**; no se agregan rutas ni runtime.
+- Transacción, lock SQL, rollback, idempotencia estructural, versionado físico y resets DEV/TEST: aplican y forman parte del patch y de sus tests PostgreSQL.

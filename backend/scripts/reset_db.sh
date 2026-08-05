@@ -32,6 +32,7 @@ SQL_FILES=(
   "patch_valor_parametro_core_ef_20260803.sql"
   "patch_parametro_sistema_exposicion_segura_20260804.sql"
   "patch_parametro_sistema_editabilidad_administrativa_20260805.sql"
+  "patch_credencial_usuario_core_ef_20260805.sql"
 )
 
 DEV_SEEDS=(
@@ -148,6 +149,7 @@ apply_common_files() {
   run_sql "${db}" "patch CORE-EF de valor_parametro #410" "patch_valor_parametro_core_ef_20260803.sql"
   run_sql "${db}" "patch exposición segura parametro_sistema #438" "patch_parametro_sistema_exposicion_segura_20260804.sql"
   run_sql "${db}" "patch editabilidad administrativa parametro_sistema #441" "patch_parametro_sistema_editabilidad_administrativa_20260805.sql"
+  run_sql "${db}" "patch CORE-EF credencial_usuario #448" "patch_credencial_usuario_core_ef_20260805.sql"
 }
 
 log "============================"

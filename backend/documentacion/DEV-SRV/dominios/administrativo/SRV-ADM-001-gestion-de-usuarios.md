@@ -149,3 +149,11 @@ Permite visualizar usuarios.
 - integración con autenticación externa
 - políticas de activación/inactivación
 - relación con personas del sistema
+
+## Incremento #448 — Credenciales de usuario sólo SQL
+
+`credencial_usuario` queda preparada físicamente como soporte del núcleo administrativo de seguridad para credenciales `PASSWORD`, con metadata CORE-EF, versionado por trigger, soft delete técnico, FKs nullable a instalación, constraints de hash/algoritmo/estado/fechas/contador y unicidad parcial para credenciales activas y principales.
+
+Este servicio todavía no autentica: no crea credenciales, no genera hashes, no valida Argon2id/PHC, no implementa login/logout/tokens/sesiones, no crea principal autenticado, no emite outbox y no escribe historial runtime. `hash_credencial` es dato sensible; no debe exponerse en APIs, logs, errores, eventos genéricos ni documentación con valores reales. La ausencia de credencial implica default-deny para autenticación futura.
+
+#449 (primitivas Argon2id) y #450 (bootstrap/sincronización segura) permanecen pendientes. #446 continúa bloqueado por esos incrementos y no queda implementado por #448.

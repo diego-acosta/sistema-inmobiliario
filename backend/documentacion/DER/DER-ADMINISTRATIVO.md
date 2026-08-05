@@ -33,3 +33,9 @@ Desde #410 esta vista refleja preparación SQL, no runtime: #411 (read), #412 (w
 ## Incremento #438 — Metadata física en `parametro_sistema`
 
 `parametro_sistema` incorpora `exponible_api_administrativa` y `es_sensible` como atributos físicos separados de la definición. Sus defaults son restrictivos (`false` y `true`) y la constraint `chk_parametro_sistema_exposicion_no_sensible` impide una definición simultáneamente exponible y sensible. Esta metadata no crea valores, no modifica `valor_parametro`, no agrega índices ni triggers y no resuelve autenticación, autorización, #411, #412, #425 ni #435. Desde #441, `editable_administrativamente` existe como metadata física independiente con default `false`: ninguna definición queda editable automáticamente y cualquier habilitación futura requiere migración versionada explícita.
+
+## Incremento #448 — `credencial_usuario`
+
+`credencial_usuario` permanece como tabla histórica del dominio Administrativo y ahora cuenta con contrato SQL inicial CORE-EF: conserva sus columnas históricas, agrega `uid_global`, `version_registro`, `created_at`, `updated_at`, `deleted_at`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta` y `op_id_ultima_modificacion`; referencia `usuario` históricamente y referencia opcionalmente `instalacion` para procedencia técnica.
+
+El DER refleja preparación física, no runtime: no hay Argon2id, login, sesiones nuevas, outbox, historial runtime ni creación automática de credenciales. `hash_credencial` es sensible. `tipo_credencial` queda limitado a `PASSWORD`; `estado_credencial` a `ACTIVA`/`REVOCADA`; vencimiento y bloqueo son condiciones derivadas futuras.
