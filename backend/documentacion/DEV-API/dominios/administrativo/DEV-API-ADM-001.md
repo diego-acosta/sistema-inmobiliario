@@ -875,3 +875,9 @@ No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_se
 La tabla `credencial_usuario` existe sólo como contrato SQL inicial: `PASSWORD`, estados `ACTIVA`/`REVOCADA`, hash sensible y metadata CORE-EF física. `hash_credencial` no debe exponerse por API ni aparecer en errores. Usuarios sin credencial no autentican porque no hay runtime de autenticación implementado. #449, #450 y #446 siguen pendientes.
 
 Decisión CORE-EF API: **NO APLICA** para headers write, `If-Match-Version`, idempotencia HTTP, outbox y lock lógico, porque #448 no crea endpoints.
+
+## 10. Incremento #449 — Sin contrato HTTP nuevo
+
+#449 agrega sólo primitivas internas Argon2id para credenciales futuras. No se agrega ni modifica ningún endpoint administrativo; por lo tanto no existe autenticación, login, logout, sesiones, tokens, principal autenticado ni endpoints de credenciales en este incremento.
+
+CORE-EF para endpoints: `NO APLICA`, porque no hay rutas nuevas ni modificadas. Los futuros consumidores deberán persistir `hash_credencial` como PHC Argon2id y `algoritmo_hash` como `argon2id:v1`, pero esa persistencia no forma parte de #449. #450 y #446 continúan pendientes.

@@ -157,3 +157,9 @@ Permite visualizar usuarios.
 Este servicio todavía no autentica: no crea credenciales, no genera hashes, no valida Argon2id/PHC, no implementa login/logout/tokens/sesiones, no crea principal autenticado, no emite outbox y no escribe historial runtime. `hash_credencial` es dato sensible; no debe exponerse en APIs, logs, errores, eventos genéricos ni documentación con valores reales. La ausencia de credencial implica default-deny para autenticación futura.
 
 #449 (primitivas Argon2id) y #450 (bootstrap/sincronización segura) permanecen pendientes. #446 continúa bloqueado por esos incrementos y no queda implementado por #448.
+
+## Incremento #449 — Primitivas Argon2id internas
+
+Existe una primitiva interna transversal para credenciales futuras basada en Argon2id v1 (`argon2id:v1`) con salida PHC. #449 no crea credenciales, no persiste `hash_credencial`, no escribe `algoritmo_hash`, no implementa login/logout/tokens/sesiones ni principal autenticado y no agrega endpoints.
+
+Para consumidores futuros, `hash_credencial` deberá persistir el PHC Argon2id y `algoritmo_hash` deberá persistir `argon2id:v1`. #450 y #446 siguen pendientes.

@@ -140,3 +140,15 @@ El contrato físico congela `tipo_credencial = 'PASSWORD'` y `estado_credencial 
 - Naturaleza: preparación SQL estructural sobre tabla histórica.
 - Endpoints, commands HTTP, headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial runtime y lock lógico funcional: **NO APLICA**; no se agregan rutas ni runtime.
 - Transacción, lock SQL, rollback, idempotencia estructural, versionado físico y resets DEV/TEST: aplican y forman parte del patch y de sus tests PostgreSQL.
+
+## 13. Incremento #449 — Primitivas Argon2id para credenciales
+
+#449 incorpora únicamente una primitiva interna transversal de aplicación para hashing y verificación de secretos de credenciales futuras. La política productiva queda fija como Argon2id v1 con `time_cost=3`, `memory_cost=65536`, `parallelism=2`, `hash_len=32`, `salt_len=16` y `type=argon2id`; el identificador persistible futuro es `argon2id:v1`.
+
+Este incremento no crea ni persiste credenciales, no modifica `credencial_usuario`, no agrega endpoints, no implementa autenticación, login, logout, sesiones, tokens, principal autenticado, outbox ni historial runtime. Cuando un consumidor futuro persista credenciales, `hash_credencial` deberá almacenar el string PHC Argon2id y `algoritmo_hash` deberá almacenar `argon2id:v1`; ese consumidor permanece pendiente y fuera de #449.
+
+La primitiva pertenece a soporte transversal de aplicación para seguridad administrativa. No redefine ownership de `usuario` ni de `credencial_usuario`, no invade dominios funcionales y no crea contratos HTTP. #450 y #446 continúan pendientes.
+
+### Benchmark manual orientativo
+
+En el entorno Codex disponible, la instalación de `argon2-cffi>=25.1.0,<26.0.0` no pudo completarse por bloqueo de red del índice Python (`Tunnel connection failed: 403 Forbidden`), por lo que no se obtuvo una medición ejecutable local de 10 hashes y 10 verificaciones. La política no fue modificada para compensar esa limitación; el benchmark debe ejecutarse en un entorno con la dependencia disponible antes del merge.
