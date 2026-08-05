@@ -28,9 +28,9 @@ Para futuros parámetros contextuales quedan **NO CONFIRMADOS** el catálogo cer
 
 Las vigencias de un mismo parámetro y contexto no pueden solaparse. El SQL actual sólo comprueba el orden entre `fecha_desde` y `fecha_hasta`; la exclusión de solapamientos permanece pendiente. La inclusividad de `fecha_hasta` está **NO CONFIRMADA**.
 
-Las claves contractuales del sistema no tendrán alta ni baja dinámica en el primer incremento runtime: se administrarán mediante migraciones versionadas. La exposición administrativa y la sensibilidad ya son metadata física explícita de la definición mediante `exponible_api_administrativa` y `es_sensible`, con política restrictiva por defecto. No deben inferirse del código, tipo, nombre o valor.
+Las claves contractuales del sistema no tendrán alta ni baja dinámica en el primer incremento runtime: se administrarán mediante migraciones versionadas. La exposición administrativa, la sensibilidad y la editabilidad administrativa ya son metadata física explícita de la definición mediante `exponible_api_administrativa`, `es_sensible` y `editable_administrativamente`, con política restrictiva por defecto. No deben inferirse del código, tipo, nombre, exposición, sensibilidad o valor.
 
-La editabilidad continúa pendiente de definición física. La autorización real, el cifrado o secret manager y cualquier modelo adicional de visibilidad siguen **NO CONFIRMADOS**.
+La editabilidad administrativa es independiente de exposición y sensibilidad, nace `false` para toda definición existente o futura y sólo puede habilitarse por migración versionada explícita; no existe endpoint write que la modifique. La autorización real, el cifrado o secret manager y cualquier modelo adicional de visibilidad siguen **NO CONFIRMADOS**.
 
 ## 4. Consumo interdominio y secretos
 
@@ -107,7 +107,15 @@ La constraint `chk_parametro_sistema_exposicion_no_sensible` impide `exponible_a
 
 #438 no implementa el endpoint de #411, no modifica el inventario #407, no agrega commands, no genera outbox, no escribe historial runtime y no toca `valor_parametro`. El futuro #411 sólo podrá devolver un valor cuando `exponible_api_administrativa = true AND es_sensible = false`; para definiciones inexistentes o no exponibles se recomienda responder `404 Not Found` con el error estándar de parámetro no encontrado si el catálogo real lo permite, para no revelar existencia por enumeración. Futuros reads no deben registrar `valor_parametro`, secretos, op IDs, credenciales, payload SQL ni contenido sensible; pueden registrar identificador técnico, código cuando esté permitido, clasificación de error, correlación y stack trace interno.
 
-#412 conserva pendiente la editabilidad, autorización, `If-Match-Version`, idempotencia, outbox e historial. #425 conserva pendientes sus definiciones funcionales, valores, rangos y runtime, y deberá declarar explícitamente `exponible_api_administrativa` y `es_sensible` en su propia migración. #435 no queda resuelto: overrides, precedencia, fallback, contexto, granularidad y vigencia temporal siguen pendientes.
+#441 agrega la metadata física `editable_administrativamente boolean NOT NULL DEFAULT false`, independiente de `exponible_api_administrativa` y `es_sensible`. Ninguna definición queda editable automáticamente y la habilitación futura requiere migración funcional versionada. #412 conserva pendientes el endpoint write, autorización, `If-Match-Version`, idempotencia/replay, outbox e historial. #425 conserva pendientes sus definiciones funcionales, valores, rangos y runtime, y deberá declarar explícitamente su exposición, sensibilidad y editabilidad en su propia migración. #435 no queda resuelto: overrides, precedencia, fallback, contexto, granularidad y vigencia temporal siguen pendientes.
+
+## 10.1 Incremento #441 — Editabilidad administrativa default-deny
+
+#441 agrega a `parametro_sistema` la metadata física `editable_administrativamente boolean NOT NULL DEFAULT false`. La columna expresa únicamente editabilidad administrativa explícita: es independiente de `exponible_api_administrativa` y `es_sensible`, no tiene constraints que la acoplen a exposición o sensibilidad y no se expone por API.
+
+La política es default-deny: toda fila existente y futura queda no editable salvo que una migración funcional versionada posterior la habilite explícitamente. El incremento no infiere editabilidad por código, tipo `ENTERO`, alcance `GLOBAL`, nombre, descripción, exposición, sensibilidad, existencia de valor, dominio ni allowlists. No crea parámetros, valores, endpoints write, outbox, historial, triggers ni índices.
+
+CORE-EF: preparación SQL estructural y contractual. Endpoints, command HTTP, headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial runtime y lock lógico son **NO APLICA**; idempotencia SQL, transacción y rollback son obligatorios y están cubiertos por tests PostgreSQL.
 
 ## 11. Incremento #411 — Lectura administrativa individual de valor GLOBAL
 

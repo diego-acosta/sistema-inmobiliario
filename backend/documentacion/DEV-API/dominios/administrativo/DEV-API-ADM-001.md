@@ -800,7 +800,13 @@ referencie; las nuevas descripciones estructurales no se agregan a su response.
 
 Para el futuro #411, un valor administrativo sólo podrá devolverse si la definición cumple `exponible_api_administrativa = true AND es_sensible = false`. Si la definición no existe o no cumple esa condición, el contrato recomendado es `404 Not Found`, usando el error estándar de parámetro no encontrado si el catálogo real lo permite, para no revelar por enumeración la existencia de definiciones sensibles o no exponibles.
 
-#438 no implementa autenticación ni autorización. Los headers CORE-EF de write no equivalen a autorización; el futuro endpoint administrativo de #411 no debe tratarse como público y deberá incorporar una dependencia de autorización cuando exista infraestructura real. #438 tampoco implementa logging de #411; futuros reads no deben registrar valores, secretos, op IDs, credenciales, payload SQL ni contenido sensible.
+#438/#441 no implementan autenticación ni autorización. Los headers CORE-EF de write no equivalen a autorización; el endpoint administrativo de #411 no debe tratarse como público y deberá incorporar una dependencia de autorización cuando exista infraestructura real. #441 agrega sólo metadata física `editable_administrativamente` default-deny, independiente de exposición y sensibilidad; no agrega endpoint write y #412 sigue pendiente por autorización, idempotencia/replay, outbox e historial. Futuros reads no deben registrar valores, secretos, op IDs, credenciales, payload SQL ni contenido sensible.
+
+## Incremento #441 — Sin endpoint write ni exposición de editabilidad
+
+#441 es preparación SQL y contractual: agrega `editable_administrativamente boolean NOT NULL DEFAULT false` a `parametro_sistema` sin modificar rutas, schemas, repositories runtime, services, comandos, headers, errores runtime u outbox. El inventario #407 y el valor GLOBAL #411 no exponen la nueva metadata ni cambian su política de lectura.
+
+La editabilidad administrativa es independiente de `exponible_api_administrativa` y `es_sensible`; no se infiere por código, tipo, alcance, existencia de valor, exposición o sensibilidad. Ninguna definición queda editable automáticamente. Cualquier habilitación futura debe realizarse por migración versionada explícita y #412 continúa no implementado.
 
 ## Incremento #411 — Valor GLOBAL marcado vigente de un parámetro
 
@@ -860,4 +866,4 @@ Si la definición es exponible, no sensible y `GLOBAL`, pero no existe valor glo
 - `500 inconsistencia_parametro`: `ENTERO` persistido inválido, tipo no soportado aun sin valor, cardinalidad mayor que uno o estructura inconsistente de tipo/alcance, siempre con mensaje sanitizado.
 - `500 TECHNICAL_INCONSISTENCY`: error SQL/driver inesperado sanitizado.
 
-No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.
+No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, `editable_administrativamente`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.
