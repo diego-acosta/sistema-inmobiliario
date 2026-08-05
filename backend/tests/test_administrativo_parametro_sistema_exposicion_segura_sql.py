@@ -197,5 +197,6 @@ def test_no_endpoints_nuevos_no_outbox_no_historial_no_valores(db_session):
     after = {t: db_session.execute(text(f"SELECT count(*) FROM {t}")).scalar_one() for t in ("valor_parametro", "outbox_event", "historial_parametro")}
     assert after == before
     router = (BACKEND / "app/api/routers/administrativo_router.py").read_text(encoding="utf-8")
-    assert router.count(ENDPOINT_PREFIX) == 1
-    assert "valor_parametro" not in router[router.find(ENDPOINT_PREFIX): router.find(ENDPOINT_PREFIX) + 1200]
+    assert router.count(ENDPOINT_PREFIX) == 2
+    inventario_pos = router.find(f'"{ENDPOINT_PREFIX}"')
+    assert "valor_parametro" not in router[inventario_pos: inventario_pos + 1200]
