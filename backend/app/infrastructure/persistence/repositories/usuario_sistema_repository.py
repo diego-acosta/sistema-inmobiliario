@@ -71,6 +71,34 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         row = self.db.execute(statement, {"op_id": op_id}).mappings().one_or_none()
         return self._map(row) if row is not None else None
 
+    def get_by_codigo_exact(self, codigo_usuario: str) -> dict[str, Any] | None:
+        row = (
+            self.db.execute(
+                text(
+                    f"SELECT {_USUARIO_COLUMNS} FROM usuario WHERE codigo_usuario = :codigo"
+                ),
+                {"codigo": codigo_usuario},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return self._map(row) if row is not None else None
+
+    def get_by_codigo_exact_for_update(
+        self, codigo_usuario: str
+    ) -> dict[str, Any] | None:
+        row = (
+            self.db.execute(
+                text(
+                    f"SELECT {_USUARIO_COLUMNS} FROM usuario WHERE codigo_usuario = :codigo FOR UPDATE"
+                ),
+                {"codigo": codigo_usuario},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return self._map(row) if row is not None else None
+
     def create(self, payload: dict[str, Any], core: CoreEFHeaders) -> dict[str, Any]:
         op_id = str(core.x_op_id)
         existing = self.get_by_op_id_alta(op_id)
@@ -145,7 +173,11 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             WHERE id_usuario = :id_usuario
             """
         )
-        row = self.db.execute(statement, {"id_usuario": id_usuario}).mappings().one_or_none()
+        row = (
+            self.db.execute(statement, {"id_usuario": id_usuario})
+            .mappings()
+            .one_or_none()
+        )
         return self._map(row) if row is not None else None
 
     def baja_logica(
@@ -160,7 +192,10 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
         if actual is None:
             return None
 
-        if str(actual.get("op_id_ultima_modificacion")) == op_id and actual.get("deleted_at") is not None:
+        if (
+            str(actual.get("op_id_ultima_modificacion")) == op_id
+            and actual.get("deleted_at") is not None
+        ):
             return actual
 
         if actual["version_registro"] != if_match_version:
@@ -182,15 +217,19 @@ class UsuarioSistemaRepository(BaseRepository[Any]):
             """
         )
         try:
-            row = self.db.execute(
-                statement,
-                {
-                    "id_usuario": id_usuario,
-                    "if_match_version": if_match_version,
-                    "id_instalacion": core.x_instalacion_id,
-                    "op_id": op_id,
-                },
-            ).mappings().one_or_none()
+            row = (
+                self.db.execute(
+                    statement,
+                    {
+                        "id_usuario": id_usuario,
+                        "if_match_version": if_match_version,
+                        "id_instalacion": core.x_instalacion_id,
+                        "op_id": op_id,
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
             if row is None:
                 self.db.rollback()
                 raise UsuarioConcurrencyError("La versión del usuario no coincide.")

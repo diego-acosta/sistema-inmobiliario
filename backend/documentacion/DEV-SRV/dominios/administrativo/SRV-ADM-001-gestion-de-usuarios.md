@@ -163,3 +163,9 @@ Este servicio todavía no autentica: no crea credenciales, no genera hashes, no 
 Existe una primitiva interna transversal para credenciales futuras basada en Argon2id v1 (`argon2id:v1`) con salida PHC. #449 no crea credenciales, no persiste `hash_credencial`, no escribe `algoritmo_hash`, no implementa login/logout/tokens/sesiones ni principal autenticado y no agrega endpoints.
 
 Para consumidores futuros, `hash_credencial` deberá persistir el PHC Argon2id y `algoritmo_hash` deberá persistir `argon2id:v1`. #450 y #446 siguen pendientes.
+
+## Incremento #454 — bootstrap administrativo local
+
+La CLI local permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
+
+Clasificación CORE-EF: `COMMAND_WRITE_TECNICO`, local no sincronizable. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.

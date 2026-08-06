@@ -156,3 +156,9 @@ En el entorno Codex disponible, la instalación de `argon2-cffi>=25.1.0,<26.0.0`
 ## 13. Referencia acotada a identidad local (#456)
 
 `LOCAL_INSTALLATION_CODE` es una variable de deployment y soporte transversal read-only; no es un parámetro administrativo, no amplía `configuracion_general` ni implementa #263. Administrativo podrá consumir la identidad resuelta en incrementos futuros sin adquirir ownership sobre `instalacion` ni seleccionar sucursal.
+
+## 14. Incremento #454 — bootstrap local de credenciales
+
+El bootstrap `init`/`reset` es un command técnico local del núcleo administrativo. Selecciona `usuario` por código exacto, revalida su elegibilidad bajo lock y persiste exclusivamente credenciales `PASSWORD` Argon2id. Resuelve dos veces la identidad canónica de instalación: preflight read-only y transacción autoritativa. El reset conserva y revoca la fila histórica y crea una nueva fila activa/principal en la misma transacción.
+
+Es local y no sincronizable: no hay endpoint HTTP, headers, outbox, eventos, sesiones, tokens, autenticación ni historial runtime. `op_id_alta` brinda replay local simplificado; los locks se adquieren en orden usuario → credenciales por PK. El PHC nunca forma parte de DTOs públicos.
