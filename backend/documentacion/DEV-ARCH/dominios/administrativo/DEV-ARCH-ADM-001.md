@@ -152,3 +152,7 @@ La primitiva pertenece a soporte transversal de aplicación para seguridad admin
 ### Benchmark manual orientativo
 
 En el entorno Codex disponible, la instalación de `argon2-cffi>=25.1.0,<26.0.0` no pudo completarse por bloqueo de red del índice Python (`Tunnel connection failed: 403 Forbidden`), por lo que no se obtuvo una medición ejecutable local de 10 hashes y 10 verificaciones. La política no fue modificada para compensar esa limitación; el benchmark debe ejecutarse en un entorno con la dependencia disponible antes del merge.
+
+## 13. Referencia acotada a identidad local (#456)
+
+`LOCAL_INSTALLATION_CODE` es una variable de deployment y soporte transversal read-only; no es un parámetro administrativo, no amplía `configuracion_general` ni implementa #263. Administrativo podrá consumir la identidad resuelta en incrementos futuros sin adquirir ownership sobre `instalacion` ni seleccionar sucursal.

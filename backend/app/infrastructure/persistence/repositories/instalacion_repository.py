@@ -119,6 +119,22 @@ class InstalacionRepository(BaseRepository[Any]):
         )
         return self._map(row) if row is not None else None
 
+    def get_by_codigo_exact(self, codigo_instalacion: str) -> dict[str, Any] | None:
+        """Obtiene neutralmente por código exacto, incluidos estados no elegibles."""
+        row = (
+            self.db.execute(
+                text(f"""
+                SELECT {_COLUMNS}
+                FROM instalacion
+                WHERE codigo_instalacion = :codigo_instalacion
+                """),
+                {"codigo_instalacion": codigo_instalacion},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        return self._map(row) if row is not None else None
+
     def _sucursal_activa_exists(self, id_sucursal: int) -> bool:
         return bool(
             self.db.execute(

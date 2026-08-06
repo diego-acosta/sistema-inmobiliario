@@ -91,3 +91,7 @@ La compatibilidad heredada:
 - Este documento actúa como referencia transversal de arquitectura para todos los dominios del sistema.
 - No reemplaza freezes específicos por dominio, pero fija criterios comunes para interpretarlos y mantenerlos consistentes.
 - Debe utilizarse como guía al revisar ownership, límites de dominio y tratamiento de estructuras heredadas o compartidas.
+
+## 10. Identidad canónica de instalación local (#456)
+
+La identidad local para futuros commands técnicos CORE-EF es **soporte transversal read-only**. Se configura exclusivamente mediante `LOCAL_INSTALLATION_CODE`, se resuelve por igualdad exacta contra `public.instalacion` y falla de forma cerrada si falta la configuración o la fila no es elegible. No selecciona por ID fijo, orden, cantidad de filas, sucursal, nombre ni `es_principal` y no redefine el ownership de Operativo sobre `instalacion`.
