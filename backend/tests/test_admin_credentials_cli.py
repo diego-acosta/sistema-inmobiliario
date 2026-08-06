@@ -138,3 +138,47 @@ def test_sanitized_success_output(monkeypatch, capsys, result):
         and "SELECT" not in captured.out
         and "Traceback" not in captured.out
     )
+
+
+def test_unexpected_error_is_sanitized(monkeypatch, capsys):
+    class FailingCommand:
+        def __init__(self, *args):
+            pass
+
+        def preflight(self, user):
+            raise RuntimeError(
+                "secret=Clave123 postgresql://usuario:password@host/db "
+                "SELECT * FROM credencial_usuario $argon2id$"
+            )
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(
+        "app.cli.admin_credentials.BootstrapCredentialCommand", FailingCommand
+    )
+
+    result = main(
+        [
+            "init",
+            "--usuario",
+            "ADMIN",
+            "--op-id",
+            "12345678-1234-5678-1234-567812345678",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert captured.out == ""
+    assert captured.err == "No fue posible completar la operación.\n"
+    forbidden = (
+        "secret",
+        "Clave123",
+        "postgresql://",
+        "password",
+        "SELECT",
+        "credencial_usuario",
+        "$argon2id$",
+        "Traceback",
+        "RuntimeError",
+    )
+    assert not any(value in captured.err for value in forbidden)

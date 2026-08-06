@@ -138,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
     ) as exc:
         print(str(exc), file=sys.stderr)
         return _error_code(exc)
+    except Exception:
+        print("No fue posible completar la operación.", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
