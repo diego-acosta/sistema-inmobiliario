@@ -94,6 +94,26 @@ def _eligible(user) -> None:
         raise UserNotEligible("El usuario no es elegible para esta operación.")
 
 
+def _translate_integrity_error(exc: IntegrityError) -> CredentialBootstrapError:
+    name = getattr(
+        getattr(getattr(exc, "orig", None), "diag", None),
+        "constraint_name",
+        None,
+    )
+    if name == "ux_credencial_usuario_op_id_alta":
+        return CredentialIdempotencyConflict(
+            "El identificador de operación ya fue utilizado."
+        )
+    if name in {
+        "ux_credencial_usuario_password_activa",
+        "ux_credencial_usuario_principal_activa",
+    }:
+        return CredentialStateConflict(
+            "La operación entra en conflicto con el estado actual."
+        )
+    return CredentialBootstrapTechnicalError("No fue posible completar la operación.")
+
+
 class BootstrapCredentialCommand:
     def __init__(self, session_factory, settings) -> None:
         self.session_factory = session_factory
@@ -153,6 +173,11 @@ class BootstrapCredentialCommand:
                     raise CredentialStateConflict(
                         "El usuario cambió durante la operación."
                     )
+                validate_password_policy(
+                    secret,
+                    codigo_usuario=user["codigo_usuario"],
+                    login=user["login"],
+                )
                 repo = CredencialUsuarioRepository(session)
                 replay = repo.find_created_by_op_id(op_id)
                 if replay is not None:
@@ -221,22 +246,7 @@ class BootstrapCredentialCommand:
                 "No fue posible verificar la operación."
             ) from exc
         except IntegrityError as exc:
-            name = getattr(
-                getattr(getattr(exc, "orig", None), "diag", None),
-                "constraint_name",
-                None,
-            )
-            if name in {
-                "ux_credencial_usuario_op_id_alta",
-                "ux_credencial_usuario_password_activa",
-                "ux_credencial_usuario_principal_activa",
-            }:
-                raise CredentialStateConflict(
-                    "La operación entra en conflicto con el estado actual."
-                ) from exc
-            raise CredentialBootstrapTechnicalError(
-                "No fue posible completar la operación."
-            ) from exc
+            raise _translate_integrity_error(exc) from exc
         except DBAPIError as exc:
             raise CredentialBootstrapTechnicalError(
                 "No fue posible completar la operación."
