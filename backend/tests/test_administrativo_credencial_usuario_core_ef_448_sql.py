@@ -219,5 +219,10 @@ def test_seguridad_sin_runtime_ni_credenciales_en_seeds():
     assert " salt" not in columns and "password en claro" not in columns
     for path in BACKEND.glob("database/seed*.sql"):
         assert "credencial_usuario" not in path.read_text(encoding="utf-8").lower()
-    runtime_files = list((BACKEND / "app").rglob("*.py"))
-    assert not any("credencial_usuario" in p.read_text(encoding="utf-8").lower() for p in runtime_files)
+    # #454 incorpora runtime local deliberadamente, pero conserva la ausencia de
+    # exposición HTTP que congeló #448.
+    api_files = list((BACKEND / "app" / "api").rglob("*.py"))
+    assert not any(
+        "credencial_usuario" in p.read_text(encoding="utf-8").lower()
+        for p in api_files
+    )

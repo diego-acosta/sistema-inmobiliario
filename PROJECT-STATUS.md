@@ -417,3 +417,7 @@ Antes de implementar #425:
 ## 10. Incremento transversal/Operativo #456 — identidad local
 
 #456 agrega el setting obligatorio `LOCAL_INSTALLATION_CODE` y un resolver reusable que lee una única vez `public.instalacion` por código exacto, clasifica elegibilidad y devuelve un DTO mínimo inmutable. Es soporte transversal read-only: no agrega SQL, endpoint, outbox, lock, credenciales, sucursal ni fallback. #454 y la integración productiva permanecen pendientes.
+
+## 11. Incremento Administrativo #454 — bootstrap local de credenciales
+
+#454 incorpora una CLI TTY-only para crear o resetear credenciales `PASSWORD` de usuarios elegibles. Reutiliza Argon2id y la identidad local existentes, conserva la fila revocada, asegura una única activa/principal mediante locks e índices y permite replay local por `op_id_alta`. No incorpora autenticación, endpoints, sesiones, tokens, outbox, eventos ni sincronización.
