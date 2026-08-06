@@ -26,7 +26,7 @@ META_COLUMNS = {
 
 
 def _patch_without_transaction() -> str:
-    return PATCH.read_text().replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
+    return PATCH.read_text(encoding="utf-8").replace("\nBEGIN;\n", "\n", 1).replace("\nCOMMIT;\n", "\n", 1)
 
 
 def _user(db, suffix=None):
@@ -67,8 +67,8 @@ def _snapshot(db, user_id):
 
 
 def test_patch_transaccional_con_lock_y_resets_simmetricos():
-    sql = PATCH.read_text()
-    sh, bat = SH.read_text(), BAT.read_text()
+    sql = PATCH.read_text(encoding="utf-8")
+    sh, bat = SH.read_text(encoding="utf-8"), BAT.read_text(encoding="utf-8")
     assert sql.upper().count("BEGIN;") == 1
     assert sql.upper().count("COMMIT;") == 1
     assert "LOCK TABLE public.credencial_usuario IN ACCESS EXCLUSIVE MODE" in sql
@@ -160,7 +160,14 @@ def test_unicidad_activa_principal_y_revocadas_eliminadas(db_session):
     active = _cred(db_session, uid, es_credencial_principal=True)
     with pytest.raises(DBAPIError), db_session.begin_nested():
         _cred(db_session, uid, es_credencial_principal=True)
-    _cred(db_session, uid, estado_credencial="REVOCADA", fecha_revocacion="2026-08-06", es_credencial_principal=True)
+    _cred(
+        db_session,
+        uid,
+        estado_credencial="REVOCADA",
+        fecha_alta="2026-08-06 00:00:00",
+        fecha_revocacion="2026-08-06 00:00:01",
+        es_credencial_principal=True,
+    )
     db_session.execute(text("UPDATE credencial_usuario SET deleted_at=CURRENT_TIMESTAMP WHERE id_credencial_usuario=:id"), {"id": active["id_credencial_usuario"]})
     _cred(db_session, uid, es_credencial_principal=True)
 
@@ -208,9 +215,9 @@ def test_reejecucion_rechaza_dos_principales_activas_no_eliminadas(db_session):
 
 
 def test_seguridad_sin_runtime_ni_credenciales_en_seeds():
-    columns = PATCH.read_text().lower()
+    columns = PATCH.read_text(encoding="utf-8").lower()
     assert " salt" not in columns and "password en claro" not in columns
     for path in BACKEND.glob("database/seed*.sql"):
-        assert "credencial_usuario" not in path.read_text().lower()
+        assert "credencial_usuario" not in path.read_text(encoding="utf-8").lower()
     runtime_files = list((BACKEND / "app").rglob("*.py"))
-    assert not any("credencial_usuario" in p.read_text().lower() for p in runtime_files)
+    assert not any("credencial_usuario" in p.read_text(encoding="utf-8").lower() for p in runtime_files)
