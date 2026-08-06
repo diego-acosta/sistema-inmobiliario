@@ -30,7 +30,7 @@ def test_setting_preserva_codigo_exacto_y_case(monkeypatch):
     assert settings.local_installation_code == "Inst-Á-001"
 
 
-@pytest.mark.parametrize("value", ["", "   ", " INST-001", "INST-001 ", "123"])
+@pytest.mark.parametrize("value", ["", "   ", " INST-001", "INST-001 "])
 def test_setting_rechaza_codigo_invalido(monkeypatch, value):
     from app.application.common.local_installation import InvalidLocalInstallationCode
 
@@ -38,6 +38,11 @@ def test_setting_rechaza_codigo_invalido(monkeypatch, value):
         _settings(monkeypatch, value)
     assert "secret" not in str(exc_info.value)
     assert "postgresql" not in str(exc_info.value)
+
+
+def test_setting_acepta_codigo_exclusivamente_numerico(monkeypatch):
+    settings = _settings(monkeypatch, "123")
+    assert settings.local_installation_code == "123"
 
 
 def test_setting_ausente_es_default_deny_y_sanitizado(monkeypatch):

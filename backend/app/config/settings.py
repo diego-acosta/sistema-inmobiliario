@@ -47,7 +47,7 @@ class Settings:
             raise LocalInstallationNotConfigured(
                 "LOCAL_INSTALLATION_CODE no está configurada."
             )
-        if not raw or not raw.strip() or raw != raw.strip() or raw.isdecimal():
+        if not raw or not raw.strip() or raw != raw.strip():
             raise InvalidLocalInstallationCode(
                 "LOCAL_INSTALLATION_CODE debe ser un código no vacío sin espacios exteriores."
             )

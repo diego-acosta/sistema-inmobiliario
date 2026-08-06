@@ -70,6 +70,15 @@ def test_codigos_distintos_case_exacto_y_principal_irrelevante(db_session):
         resolve_local_installation(db_session, settings("inst-case-a"))
 
 
+def test_resuelve_codigo_exclusivamente_numerico_sin_fallback(db_session):
+    numeric = create_installation(db_session, "123")
+
+    identity = resolve_local_installation(db_session, settings("123"))
+
+    assert identity.id_instalacion == numeric["id_instalacion"]
+    assert identity.codigo_instalacion == "123"
+
+
 @pytest.mark.parametrize(
     ("suffix", "changes", "error"),
     [
