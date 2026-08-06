@@ -39,3 +39,7 @@ Desde #410 esta vista refleja preparación SQL, no runtime: #411 (read), #412 (w
 `credencial_usuario` permanece como tabla histórica del dominio Administrativo y ahora cuenta con contrato SQL inicial CORE-EF: conserva sus columnas históricas, agrega `uid_global`, `version_registro`, `created_at`, `updated_at`, `deleted_at`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta` y `op_id_ultima_modificacion`; referencia `usuario` históricamente y referencia opcionalmente `instalacion` para procedencia técnica.
 
 El DER refleja preparación física, no runtime: no hay Argon2id, login, sesiones nuevas, outbox, historial runtime ni creación automática de credenciales. `hash_credencial` es sensible. `tipo_credencial` queda limitado a `PASSWORD`; `estado_credencial` a `ACTIVA`/`REVOCADA`; vencimiento y bloqueo son condiciones derivadas futuras.
+
+## Incremento #449 — Primitiva criptográfica sin cambio DER
+
+#449 no modifica el DER ni el SQL. Sólo deja disponible una primitiva interna Argon2id v1 para consumidores futuros de `credencial_usuario`. La persistencia futura deberá usar `hash_credencial` como PHC Argon2id y `algoritmo_hash` como `argon2id:v1`, pero #449 no crea filas, no altera tablas, no agrega endpoints y no implementa login ni sesiones.

@@ -1015,3 +1015,9 @@ Puedo seguir con el siguiente documento y armar la traducción directa de esta e
 #448 aplica CORE-EF sólo en contrato físico SQL sobre `public.credencial_usuario`: UID global, versión, timestamps, baja lógica técnica, procedencia por instalación, op IDs nullable y triggers dedicados que fijan versión inicial e incrementan versión en updates físicos preservando metadata de alta.
 
 No hay command HTTP asociado: headers write, `If-Match-Version`, idempotencia/replay HTTP, outbox, historial runtime y lock lógico funcional son **NO APLICA** en este incremento. La sincronización funcional de credenciales queda pendiente para #450. No se agregan credenciales, Argon2id runtime, login ni sesiones.
+
+## Nota #449 — Primitivas Argon2id sin endpoint write
+
+#449 incorpora una primitiva interna de hashing Argon2id para credenciales futuras y no incorpora endpoints. Clasificación CORE-EF: `NO APLICA` para headers write, `If-Match-Version`, idempotencia HTTP, outbox, lock lógico, versionado de entidad y rollback transaccional, porque no hay command HTTP ni persistencia.
+
+La política fija es Argon2id v1 (`time_cost=3`, `memory_cost=65536`, `parallelism=2`, `hash_len=32`, `salt_len=16`, `type=argon2id`) y el algoritmo persistible futuro es `argon2id:v1`. #449 no crea credenciales, no modifica SQL, no emite outbox y no agrega historial runtime.
