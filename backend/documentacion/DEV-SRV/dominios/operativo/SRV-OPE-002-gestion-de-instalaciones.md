@@ -160,3 +160,7 @@ Permite visualizar instalaciones y su relación con sucursal.
 - atributos técnicos mínimos obligatorios
 - relación exacta con sincronización técnica
 - políticas de activación/inactivación
+
+## Identidad canónica local read-only (#456)
+
+`resolve_local_installation(session, settings)` consulta una vez el repository existente por igualdad exacta de `codigo_instalacion`. Sólo acepta una fila no eliminada, `ACTIVA` y sin `fecha_baja`; inexistencia, inelegibilidad, conflicto de estado y fallos técnicos se expresan mediante errores sanitizados distintos. La lectura usa la sesión del consumidor, sin lock, commit, rollback, outbox, resolución de sucursal ni fallback.

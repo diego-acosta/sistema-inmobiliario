@@ -165,3 +165,7 @@ Toda evolución futura del dominio debe:
 - No reemplaza la documentación detallada de servicios ni catálogos, pero fija el límite semántico del dominio.
 - Debe mantenerse alineado con `SYS-MAP-002`, `DEV-SRV`, `CAT-CU` y con los catálogos `CU-OPE`, `RN-OPE`, `ERR-OPE`, `EVT-OPE` y `EST-OPE`.
 - Los reportes operativos del dominio no sustituyen reporting analitico agregado del dominio `analitico`
+
+## 10. Resolución local read-only (#456)
+
+Operativo conserva el ownership de `instalacion`. El resolver transversal reutiliza su repository únicamente para identificar, por `codigo_instalacion` exacto, una fila con `deleted_at IS NULL`, estado `ACTIVA` y `fecha_baja IS NULL`. Devuelve sólo ID, UID, código y nombre; `es_principal`, sincronización y sucursal no participan. No escribe, bloquea, abre transacciones, hace fallback ni implementa un consumidor productivo.

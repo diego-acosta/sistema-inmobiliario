@@ -4,6 +4,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from app.application.common.local_installation import (
+    InvalidLocalInstallationCode,
+    LocalInstallationNotConfigured,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -24,6 +29,7 @@ class Settings:
         self.app_version = getenv("APP_VERSION", "0.1.0")
         self.env = getenv("ENV", "dev")
         self.database_url = self._get_database_url()
+        self.local_installation_code = self._get_local_installation_code()
 
     @staticmethod
     def _get_database_url() -> str:
@@ -33,6 +39,19 @@ class Settings:
                 "DATABASE_URL is not set. Define it in your environment file."
             )
         return database_url
+
+    @staticmethod
+    def _get_local_installation_code() -> str:
+        raw = getenv("LOCAL_INSTALLATION_CODE")
+        if raw is None:
+            raise LocalInstallationNotConfigured(
+                "LOCAL_INSTALLATION_CODE no está configurada."
+            )
+        if not raw or not raw.strip() or raw != raw.strip():
+            raise InvalidLocalInstallationCode(
+                "LOCAL_INSTALLATION_CODE debe ser un código no vacío sin espacios exteriores."
+            )
+        return raw
 
 
 @lru_cache
