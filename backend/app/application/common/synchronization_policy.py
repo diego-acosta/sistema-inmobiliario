@@ -54,6 +54,11 @@ SYNC_EVENT_POLICIES: Mapping[str, SyncEventPolicy] = MappingProxyType({p.event_t
     _p("entrega_locativa_registrada", "contrato_alquiler"),
     _p("restitucion_locativa_registrada", "contrato_alquiler"),
     _p("reserva_locativa_confirmada", "reserva_locativa"),
+    _p(
+        "financiero.indexacion_cuotas_v2.corrida_aplicada",
+        "corrida_indexacion_financiera",
+        "id_corrida_indexacion_financiera",
+    ),
 )})
 
 PROHIBITED_SYNC_AGGREGATES = frozenset({"credencial_usuario", "sesion_usuario"})
@@ -62,23 +67,36 @@ SENSITIVE_PAYLOAD_KEYS = frozenset({
     "refresh_token", "hash_token", "authorization", "cookie", "cookies",
     "credencial_usuario", "sesion_usuario",
 })
+CREDENTIAL_SPECIFIC_KEYS = frozenset({
+    "tipo_credencial", "identificador_credencial", "hash_credencial",
+    "estado_credencial", "es_credencial_principal", "fecha_activacion",
+    "fecha_vencimiento", "fecha_revocacion", "motivo_revocacion",
+    "obliga_rotacion", "ultimo_cambio_credencial",
+    "intentos_fallidos_acumulados", "ultimo_intento_fallido", "bloqueo_hasta",
+    "requiere_reset",
+})
 
 
-def _validate_sensitive_keys(value: Any, *, credential_context: bool = False) -> None:
+def validate_no_sensitive_sync_data(
+    value: Any, *, credential_context: bool = False
+) -> None:
+    """Rechaza material sensible anidado sin incluir sus valores en errores."""
+    if value is None:
+        return
     if isinstance(value, dict):
         keys = {str(key).strip().casefold() for key in value}
-        credential_markers = {"tipo_credencial", "identificador_credencial"}
-        if keys & SENSITIVE_PAYLOAD_KEYS or (
+        credential_markers = keys & CREDENTIAL_SPECIFIC_KEYS
+        if keys & (SENSITIVE_PAYLOAD_KEYS | CREDENTIAL_SPECIFIC_KEYS) or (
             "algoritmo_hash" in keys
-            and (credential_context or bool(keys & credential_markers))
+            and (credential_context or bool(credential_markers))
         ):
             raise SensitiveSyncPayload(SensitiveSyncPayload.code)
         nested_context = credential_context or bool(keys & credential_markers)
         for child in value.values():
-            _validate_sensitive_keys(child, credential_context=nested_context)
+            validate_no_sensitive_sync_data(child, credential_context=nested_context)
     elif isinstance(value, (list, tuple)):
         for child in value:
-            _validate_sensitive_keys(child, credential_context=credential_context)
+            validate_no_sensitive_sync_data(child, credential_context=credential_context)
 
 
 def validate_sync_event(event_type: str, aggregate_type: str, payload: Any) -> SyncEventPolicy:
@@ -89,7 +107,7 @@ def validate_sync_event(event_type: str, aggregate_type: str, payload: Any) -> S
         raise InvalidSyncAggregate(InvalidSyncAggregate.code)
     if not isinstance(payload, dict):
         raise SensitiveSyncPayload("SYNC_INVALID_PAYLOAD")
-    _validate_sensitive_keys(payload)
+    validate_no_sensitive_sync_data(payload)
     for field in policy.required_positive_int_fields:
         value = payload.get(field)
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
@@ -97,7 +115,13 @@ def validate_sync_event(event_type: str, aggregate_type: str, payload: Any) -> S
     return policy
 
 
-def sanitize_sync_error(exc: BaseException) -> str:
+def sanitize_sync_error(exc: BaseException | str) -> str:
+    if isinstance(exc, str) and exc in {
+        "SYNC_POLICY_REJECTED", "SYNC_EVENT_NOT_ALLOWED",
+        "SYNC_AGGREGATE_NOT_ALLOWED", "SYNC_SENSITIVE_PAYLOAD",
+        "SYNC_DISPATCH_FAILED", "SYNC_PUBLISH_FAILED",
+    }:
+        return exc
     if isinstance(exc, SynchronizationPolicyError):
         return exc.code
     if isinstance(exc, SyncDispatchError):

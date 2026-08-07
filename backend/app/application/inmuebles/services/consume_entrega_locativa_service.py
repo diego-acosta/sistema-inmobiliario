@@ -118,7 +118,9 @@ class OutboxRepository(Protocol):
         processing_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None: ...
 
-    def mark_as_failed(self, event_id: int, *, error: str) -> dict[str, Any] | None: ...
+    def mark_as_failed(
+        self, event_id: int, *, error: BaseException | str
+    ) -> dict[str, Any] | None: ...
 
 
 class InboxRepository(Protocol):
@@ -352,7 +354,7 @@ class ConsumeEntregaLocativaService:
 
         except Exception as exc:
             self.db.rollback()
-            self.outbox_repository.mark_as_failed(event["id"], error=str(exc))
+            self.outbox_repository.mark_as_failed(event["id"], error=exc)
             self.db.commit()
             raise
 

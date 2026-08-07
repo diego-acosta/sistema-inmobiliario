@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.application.common.synchronization_policy import (
     sanitize_sync_error,
+    validate_no_sensitive_sync_data,
     validate_sync_event,
 )
 
@@ -64,6 +65,8 @@ class OutboxRepository:
         processing_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         validate_sync_event(event_type, aggregate_type, payload)
+        validate_no_sensitive_sync_data(processing_reason)
+        validate_no_sensitive_sync_data(processing_metadata)
         statement = text(
             f"""
             INSERT INTO outbox_event (
@@ -117,6 +120,8 @@ class OutboxRepository:
         processing_reason: dict[str, Any] | None = None,
         processing_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
+        validate_no_sensitive_sync_data(processing_reason)
+        validate_no_sensitive_sync_data(processing_metadata)
         timestamp = published_at or datetime.now(UTC)
         statement = text(
             f"""
@@ -149,7 +154,7 @@ class OutboxRepository:
         self,
         event_id: int,
         *,
-        error: str,
+        error: BaseException | str,
     ) -> dict[str, Any] | None:
         """Registra un intento fallido: incrementa retry_count, guarda last_error.
         El status permanece PENDING para habilitar reintentos."""
@@ -166,7 +171,7 @@ class OutboxRepository:
         )
         row = self.db.execute(
             statement,
-            {"id": event_id, "error": sanitize_sync_error(RuntimeError(error))},
+            {"id": event_id, "error": sanitize_sync_error(error)},
         ).mappings().one_or_none()
         if row is None:
             return None
@@ -180,6 +185,8 @@ class OutboxRepository:
         processing_reason: dict[str, Any] | None = None,
         processing_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
+        validate_no_sensitive_sync_data(processing_reason)
+        validate_no_sensitive_sync_data(processing_metadata)
         now = datetime.now(UTC)
         statement = text(
             f"""

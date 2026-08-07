@@ -72,3 +72,22 @@ Un respaldo que contenga `credencial_usuario`, `sesion_usuario` o
 PRs o artifacts de CI, almacenarlo sin cifrado, o registrar un `DATABASE_URL`.
 Tras restaurarlo en un entorno no confiable deben invalidarse sesiones y rotarse
 las credenciales potencialmente expuestas. #455 no crea un sistema de backups.
+
+## Inventario runtime verificado
+
+La allowlist contiene 25 contratos emitidos por productores runtime. Los
+productores son los repositories de catálogos maestro/ítems, sucursal,
+instalación, configuración local, roles de seguridad, usuario-sucursal, cajas,
+comercial y locativo que llaman a `OutboxRepository.add_event`, más el flujo de
+aplicación de indexación de cuotas V2. Este último fue centralizado desde SQL
+directo y emite
+`financiero.indexacion_cuotas_v2.corrida_aplicada` sobre
+`corrida_indexacion_financiera`, gobernado por la misma policy.
+
+`processing_reason` y `processing_metadata` se validan en profundidad tanto al
+insertar como al actualizar resultados. El publisher no imprime payloads ni
+excepciones crudas. La allowlist global expresa transportabilidad; el dispatcher
+financiero/locativo sólo consume `venta_confirmada` y
+`contrato_alquiler_activado`. El worker deja los demás eventos permitidos para su
+publisher/consumer correspondiente y continúa rechazando eventos globalmente
+desconocidos con estado terminal `REJECTED` y un código de policy sanitizado.

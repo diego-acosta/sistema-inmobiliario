@@ -23,6 +23,15 @@ from app.application.common.synchronization_policy import (
     validate_sync_event,
 )
 
+INBOX_DISPATCHABLE_EVENT_TYPES = frozenset(
+    {
+        "venta_confirmada",
+        "contrato_alquiler_activado",
+    }
+)
+
+assert INBOX_DISPATCHABLE_EVENT_TYPES <= SYNC_EVENT_POLICIES.keys()
+
 
 class InboxEventDispatcher:
     def __init__(self, db: Session) -> None:
@@ -31,6 +40,8 @@ class InboxEventDispatcher:
     def dispatch(self, event_type: str, payload: dict[str, Any]) -> None:
         policy = SYNC_EVENT_POLICIES.get(event_type)
         validate_sync_event(event_type, policy.aggregate_type if policy else "", payload)
+        if event_type not in INBOX_DISPATCHABLE_EVENT_TYPES:
+            raise SyncDispatchError(SyncDispatchError.code)
         event = {"event_type": event_type, "payload": payload}
 
         if event_type == "venta_confirmada":

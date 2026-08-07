@@ -61,3 +61,41 @@ def test_error_crudo_de_publisher_se_persiste_sanitizado(db_session, capsys, cap
     assert raw not in captured.out
     assert raw not in captured.err
     assert raw not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "sentinel"),
+    [
+        (
+            "processing_metadata",
+            {"nested": {"token_sesion": "DO_NOT_LOG_TOKEN_455"}},
+            "DO_NOT_LOG_TOKEN_455",
+        ),
+        (
+            "processing_reason",
+            {"hash_credencial": "DO_NOT_LOG_PHC_455"},
+            "DO_NOT_LOG_PHC_455",
+        ),
+    ],
+)
+def test_campos_auxiliares_sensibles_no_se_insertan(
+    db_session, capsys, caplog, field, value, sentinel
+) -> None:
+    repo = OutboxRepository(db_session)
+    before = db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one()
+    kwargs = {field: value}
+    with pytest.raises(SynchronizationPolicyError):
+        repo.add_event(
+            event_type="sucursal_creada",
+            aggregate_type="sucursal",
+            aggregate_id=1,
+            payload={},
+            occurred_at=datetime.now(UTC),
+            **kwargs,
+        )
+    assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == before
+    assert db_session.execute(text("SELECT 1")).scalar_one() == 1
+    captured = capsys.readouterr()
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+    assert sentinel not in caplog.text
