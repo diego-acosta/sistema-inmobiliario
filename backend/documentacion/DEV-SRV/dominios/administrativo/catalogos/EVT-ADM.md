@@ -394,7 +394,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - origen_principal: SRV-ADM-004
 - entidad_principal: evento_auditoria
 - tipo_evento: auditoria
-- sincronizable: sí
+- sincronizable: no
 - genera_trazabilidad_administrativa: sí
 
 ### EVT-ADM-043 — Cambio de sesión auditado
@@ -403,7 +403,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - origen_principal: SRV-ADM-004
 - entidad_principal: evento_auditoria
 - tipo_evento: auditoria
-- sincronizable: sí
+- sincronizable: no
 - genera_trazabilidad_administrativa: sí
 
 ### EVT-ADM-044 — Cambio de rol auditado

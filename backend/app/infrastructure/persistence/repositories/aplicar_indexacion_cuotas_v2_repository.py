@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -197,10 +197,25 @@ class AplicarIndexacionCuotasV2SqlAlchemyRepository:
         return res.rowcount == 1
 
     def insert_outbox(self, corrida: dict[str, Any], cantidad: int, core_ef: Any) -> None:
-        self.db.execute(text("""
-            INSERT INTO outbox_event (event_type, aggregate_type, aggregate_id, payload, status)
-            VALUES ('financiero.indexacion_cuotas_v2.corrida_aplicada', 'corrida_indexacion_financiera', :id, CAST(:payload AS jsonb), 'PENDING')
-        """), {"id": corrida["id_corrida_indexacion_financiera"], "payload": json.dumps({"id_corrida_indexacion_financiera": corrida["id_corrida_indexacion_financiera"], "hash_corrida": corrida["hash_corrida"], "cantidad_aplicada": cantidad, "op_id": str(core_ef.x_op_id), "id_instalacion_origen": core_ef.x_instalacion_id}, sort_keys=True)})
+        from app.infrastructure.persistence.repositories.outbox_repository import (
+            OutboxRepository,
+        )
+
+        OutboxRepository(self.db).add_event(
+            event_type="financiero.indexacion_cuotas_v2.corrida_aplicada",
+            aggregate_type="corrida_indexacion_financiera",
+            aggregate_id=corrida["id_corrida_indexacion_financiera"],
+            payload={
+                "id_corrida_indexacion_financiera": corrida[
+                    "id_corrida_indexacion_financiera"
+                ],
+                "hash_corrida": corrida["hash_corrida"],
+                "cantidad_aplicada": cantidad,
+                "op_id": str(core_ef.x_op_id),
+                "id_instalacion_origen": core_ef.x_instalacion_id,
+            },
+            occurred_at=datetime.now(UTC),
+        )
 
     def commit(self) -> None:
         self.db.commit()

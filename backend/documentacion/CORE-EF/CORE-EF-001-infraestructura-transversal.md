@@ -1021,3 +1021,7 @@ No hay command HTTP asociado: headers write, `If-Match-Version`, idempotencia/re
 #449 incorpora una primitiva interna de hashing Argon2id para credenciales futuras y no incorpora endpoints. Clasificación CORE-EF: `NO APLICA` para headers write, `If-Match-Version`, idempotencia HTTP, outbox, lock lógico, versionado de entidad y rollback transaccional, porque no hay command HTTP ni persistencia.
 
 La política fija es Argon2id v1 (`time_cost=3`, `memory_cost=65536`, `parallelism=2`, `hash_len=32`, `salt_len=16`, `type=argon2id`) y el algoritmo persistible futuro es `argon2id:v1`. #449 no crea credenciales, no modifica SQL, no emite outbox y no agrega historial runtime.
+
+## Exclusión local #455
+
+La presencia de UID, versión, instalación u op ID no implica sincronizabilidad. `credencial_usuario` y `sesion_usuario`, incluida toda metadata CORE-EF, permanecen locales y fuera de outbox/inbox/conflictos/paquetes. La política runtime es allowlist y default-deny.

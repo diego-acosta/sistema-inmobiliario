@@ -10,9 +10,6 @@ Cubre:
 """
 from datetime import UTC, datetime
 
-import pytest
-from sqlalchemy import text
-
 from app.infrastructure.persistence.repositories.inbox_repository import InboxRepository
 from app.infrastructure.persistence.repositories.outbox_repository import OutboxRepository
 
@@ -21,10 +18,10 @@ from app.infrastructure.persistence.repositories.outbox_repository import Outbox
 
 def _add_event(repo: OutboxRepository, *, suffix: str = "") -> dict:
     return repo.add_event(
-        event_type=f"test_event{suffix}",
-        aggregate_type="test_aggregate",
+        event_type="sucursal_creada",
+        aggregate_type="sucursal",
         aggregate_id=1,
-        payload={"key": "value"},
+        payload={"key": f"value{suffix}"},
         occurred_at=datetime(2026, 4, 27, 10, 0, 0, tzinfo=UTC),
     )
 
@@ -77,7 +74,7 @@ def test_mark_as_failed_setea_last_error(db_session) -> None:
     error_msg = "Connection refused: broker:9092"
     updated = repo.mark_as_failed(event["id"], error=error_msg)
 
-    assert updated["last_error"] == error_msg
+    assert updated["last_error"] == "SYNC_PUBLISH_FAILED"
 
 
 def test_mark_as_failed_acumula_reintentos(db_session) -> None:
@@ -89,7 +86,7 @@ def test_mark_as_failed_acumula_reintentos(db_session) -> None:
     updated = repo.mark_as_failed(event["id"], error="error 3")
 
     assert updated["retry_count"] == 3
-    assert updated["last_error"] == "error 3"
+    assert updated["last_error"] == "SYNC_PUBLISH_FAILED"
     assert updated["status"] == "PENDING"
 
 

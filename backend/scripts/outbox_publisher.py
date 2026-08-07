@@ -1,7 +1,6 @@
 import argparse
 import os
 from datetime import UTC, datetime
-from pprint import pformat
 
 
 INTERNAL_CONSUMER_MANAGED_EVENT_TYPES = {"escrituracion_registrada"}
@@ -26,6 +25,7 @@ def main() -> int:
     from app.infrastructure.persistence.repositories.outbox_repository import (
         OutboxRepository,
     )
+    from app.application.common.synchronization_policy import sanitize_sync_error
 
     db = SessionLocal()
     repository = OutboxRepository(db)
@@ -69,7 +69,6 @@ def main() -> int:
                         "processor": "scripts.outbox_publisher",
                         "mode": "publisher",
                         "processed_at": datetime.now(UTC).isoformat(),
-                        "last_error": event.get("last_error"),
                     },
                 )
                 failed_count += 1
@@ -81,7 +80,6 @@ def main() -> int:
                     f"aggregate={event['aggregate_type']}#{event['aggregate_id']} "
                     f"event_id={event['event_id']}"
                 )
-                print(pformat(event["payload"]))
                 processed_at = datetime.now(UTC)
 
                 # ── simulated publish (replace with real broker call) ──────────
@@ -108,11 +106,9 @@ def main() -> int:
 
             except Exception as exc:
                 # Error técnico: registrar intento, mantener PENDING para reintento
-                error_msg = str(exc)
-                print(
-                    f"Technical error publishing event id={event_db_id}: {error_msg}"
-                )
-                repository.mark_as_failed(event_db_id, error=error_msg)
+                safe_error = sanitize_sync_error(exc)
+                print(f"Technical error publishing event id={event_db_id}: {safe_error}")
+                repository.mark_as_failed(event_db_id, error=exc)
                 failed_count += 1
 
         db.commit()
