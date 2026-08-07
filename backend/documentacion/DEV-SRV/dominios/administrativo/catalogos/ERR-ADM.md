@@ -491,3 +491,9 @@ Este catálogo cubre errores de usuarios y acceso, seguridad y autorización, au
 - No reemplaza validaciones de servicios, sino que las estandariza.
 - Debe mantenerse alineado con SRV-ADM y reglas RN-ADM.
 - Es base para manejo consistente de errores en API.
+# Errores de seguridad #446
+
+`INVALID_CREDENTIALS` (401) no distingue usuario, estado, credencial ni password.
+`AUTHENTICATION_UNAVAILABLE` (503) sanitiza la resolución de instalación;
+`AUTHENTICATION_TECHNICAL_ERROR` (500), `INVALID_SESSION` (401) y
+`SESSION_TECHNICAL_ERROR` (500) no exponen secretos ni detalles de persistencia.

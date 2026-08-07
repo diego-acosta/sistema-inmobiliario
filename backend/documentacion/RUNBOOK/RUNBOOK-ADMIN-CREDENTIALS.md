@@ -39,3 +39,11 @@ Esta herramienta administra credenciales estrictamente locales y no sincronizabl
 ## Sincronización y respaldos (#455)
 
 La credencial creada por `init`, `reset` o `replay` es exclusivamente local: el bootstrap no genera outbox. No copiar PHC, sesiones ni tokens a logs, Git, issues, PRs o artifacts. Todo backup que los contenga requiere cifrado; ante restore no confiable, invalidar sesiones y rotar credenciales.
+# Login y sesión local (#446)
+
+Las credenciales creadas por este runbook autentican exclusivamente por
+`usuario.login` en `POST /api/v1/administrativo/seguridad/login`. El bearer devuelto
+debe tratarse como secreto y no se puede recuperar desde DB: `token_sesion` guarda
+sólo SHA-256 hexadecimal. El logout revoca localmente mediante estado `CERRADA`.
+No registrar password, PHC, bearer, digest ni `Authorization`. No hay rehash
+automático, historial de acceso ni política persistida anti-fuerza-bruta en #446.

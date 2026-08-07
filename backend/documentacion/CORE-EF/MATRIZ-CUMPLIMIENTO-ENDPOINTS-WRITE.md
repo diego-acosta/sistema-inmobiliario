@@ -210,3 +210,10 @@ Quedan explícitamente fuera del grupo de migración HTTP/headers de write de ne
   - inbox financiero permanece **técnico parcial** con issue dedicado.
 - La siguiente fase debe enfocarse en módulos faltantes reales (caja y documental fiscal) y en auditoría de cierre con evidencia profunda por endpoint.
 - Este cierre de fase **no** debe interpretarse como cierre integral de cumplimiento CORE-EF por endpoint mientras la matriz mantenga estados `PARCIAL`, `NO_CONFIRMADO` o `NO CUMPLE` en controles de profundidad.
+# Seguridad administrativa #446
+
+Login y logout son `COMMAND_WRITE_TECNICO`. No exigen headers CORE-EF ni
+`If-Match-Version`: login es preautenticación y logout se identifica por bearer.
+La sesión es local/no sincronizable, por lo que outbox y sync están prohibidos.
+Login permite múltiples sesiones y usa una transacción hasta commit; logout usa
+`FOR UPDATE`, idempotencia natural y sólo incrementa versión ante cierre real.
