@@ -4,6 +4,23 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class LoginRequest(BaseModel):
+    login: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class LoginData(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_at: datetime
+    session_id: str
+
+
+class LoginResponse(BaseModel):
+    ok: Literal[True] = True
+    data: LoginData
+
+
 class UsuarioSistemaCreateRequest(BaseModel):
     codigo_usuario: str
     login: str

@@ -188,3 +188,12 @@ Permite visualizar autorizaciones, solicitudes y estados.
 - definición de autorizaciones automáticas versus manuales
 - políticas de revocación
 - integración con workflows de aprobación
+# Frontera de autenticación #446
+
+#446 implementa login y logout locales, pero no autorización. La password se
+verifica una vez con el helper Argon2id común (PHC real o dummy anti-enumeración),
+sin rehash ni contadores persistidos. Tras verificar se bloquean y revalidan
+usuario y credencial, incluido el PHC, antes de insertar una sesión. El bearer usa
+32 bytes aleatorios y sólo se guarda su digest SHA-256. La expiración absoluta es
+de ocho horas y se materializa de forma lazy al cerrar/inspeccionar la sesión.
+Anti-fuerza-bruta/rate limiting queda como deuda explícita posterior.

@@ -166,3 +166,11 @@ Es local y no sincronizable: no hay endpoint HTTP, headers, outbox, eventos, ses
 ## Incremento #455 — localidad verificable
 
 `credencial_usuario` y `sesion_usuario` son locales por instalación y no sincronizables. La matriz campo por campo y el límite entre tabla histórica de sesiones y runtime inexistente se fijan en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`. La metadata CORE-EF no modifica esta decisión.
+# Incremento de seguridad #446
+
+Administrativo es dueño de la autenticación humana mínima mediante `usuario.login`,
+`credencial_usuario` y `sesion_usuario`. La sesión es soporte técnico local: bearer
+opaco, sólo digest SHA-256 persistido, expiración absoluta de ocho horas y cierre
+idempotente. Credenciales, sesiones y tokens no participan de outbox ni sync.
+Este incremento no crea principal, autorización, roles efectivos ni sucursal activa;
+esas capacidades permanecen pendientes de #447 y posteriores.

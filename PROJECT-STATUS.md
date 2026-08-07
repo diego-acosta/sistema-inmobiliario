@@ -425,3 +425,11 @@ Antes de implementar #425:
 ## 12. Incremento transversal Administrativo/Seguridad #455
 
 #455 implementa exclusivamente el guardrail transversal de exclusión de credenciales/sesiones: política runtime allowlist/default-deny, rechazo profundo previo a outbox, cierre de worker/dispatcher y sanitización de errores. `credencial_usuario` y la tabla histórica `sesion_usuario` son locales por instalación y no sincronizables. No implementa autenticación, login/logout, sesiones o tokens runtime, autorización ni sincronización de hashes; #446 y los incrementos posteriores permanecen fuera de alcance.
+
+## 13. Incremento Administrativo/Seguridad #446 — login y sesión local revocable
+
+#446 implementa login por `usuario.login` y Argon2id, sesión persistida local con
+bearer opaco (sólo digest SHA-256 en DB), TTL absoluto de ocho horas y logout
+idempotente. No agrega historial de acceso, outbox, sync, rehash, contadores de
+intentos, sucursal seleccionada, principal ni autorización. #447 permanece como
+siguiente incremento para interpretar el bearer y construir el principal.

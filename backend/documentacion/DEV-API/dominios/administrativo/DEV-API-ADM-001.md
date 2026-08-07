@@ -881,3 +881,14 @@ Decisión CORE-EF API: **NO APLICA** para headers write, `If-Match-Version`, ide
 #449 agrega sólo primitivas internas Argon2id para credenciales futuras. No se agrega ni modifica ningún endpoint administrativo; por lo tanto no existe autenticación, login, logout, sesiones, tokens, principal autenticado ni endpoints de credenciales en este incremento.
 
 CORE-EF para endpoints: `NO APLICA`, porque no hay rutas nuevas ni modificadas. Los futuros consumidores deberán persistir `hash_credencial` como PHC Argon2id y `algoritmo_hash` como `argon2id:v1`, pero esa persistencia no forma parte de #449. #450 y #446 continúan pendientes.
+# Seguridad administrativa implementada por #446
+
+- `POST /api/v1/administrativo/seguridad/login`: recibe exclusivamente `login` y
+  `password`; devuelve un bearer opaco, `expires_at` y UID público de sesión con
+  `Cache-Control: no-store`.
+- `POST /api/v1/administrativo/seguridad/logout`: recibe exactamente
+  `Authorization: Bearer <token>` y responde 204 de forma idempotente, incluso
+  para tokens bien formados desconocidos o sesiones ya finalizadas.
+- Login inválido es siempre `INVALID_CREDENTIALS`; fallos de instalación se
+  publican como `AUTHENTICATION_UNAVAILABLE`. No existe `/seguridad/me`, principal,
+  roles, permisos, scopes, refresh ni autorización en #446.

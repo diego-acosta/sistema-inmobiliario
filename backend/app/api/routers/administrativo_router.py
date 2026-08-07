@@ -27,6 +27,9 @@ from app.api.schemas.administrativo import (
     ItemCatalogoUpdateRequest,
     ItemCatalogoUpdateResponse,
     ItemCatalogoWriteData,
+    LoginData,
+    LoginRequest,
+    LoginResponse,
     ParametroSistemaAlcanceData,
     ParametroSistemaData,
     ParametroSistemaListData,
@@ -98,12 +101,90 @@ from app.infrastructure.persistence.repositories.usuario_sucursal_repository imp
     UsuarioSucursalIdempotencyConflictError,
     UsuarioSucursalRepository,
 )
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
+from app.application.administrativo.authentication import (
+    AuthenticationService,
+    AuthenticationTechnicalError,
+    AuthenticationUnavailable,
+    InvalidCredentials,
+    InvalidSession,
+    SessionTechnicalError,
+    parse_bearer_header,
+)
+from app.config.settings import get_settings
 
 router = APIRouter(tags=["Administrativo"])
+
+
+@router.post(
+    "/api/v1/administrativo/seguridad/login",
+    response_model=LoginResponse,
+    responses={401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": LoginRequest.model_json_schema()
+                }
+            },
+        }
+    },
+)
+async def login_administrativo(request: Request, response: Response, db: Session = Depends(get_db)) -> LoginResponse | JSONResponse:
+    # CORE-EF: COMMAND_WRITE_TECNICO preautenticado, local y no sincronizable.
+    try:
+        payload = await request.json()
+        credentials = LoginRequest.model_validate(payload)
+    except (ValueError, TypeError, ValidationError):
+        # Este endpoint procesa su body de forma acotada para impedir que FastAPI
+        # incluya login/password o el body recibido en detail[].input.
+        return _auth_error(422, "VALIDATION_ERROR", "La solicitud de login no es válida.")
+    try:
+        result = AuthenticationService(db, get_settings()).login(
+            credentials.login, credentials.password
+        )
+    except InvalidCredentials:
+        return _auth_error(401, "INVALID_CREDENTIALS", "Las credenciales no son válidas.")
+    except AuthenticationUnavailable:
+        return _auth_error(503, "AUTHENTICATION_UNAVAILABLE", "Autenticación temporalmente no disponible.")
+    except AuthenticationTechnicalError:
+        return _auth_error(500, "AUTHENTICATION_TECHNICAL_ERROR", "No fue posible completar la autenticación.")
+    response.headers["Cache-Control"] = "no-store"
+    return LoginResponse(data=LoginData(access_token=result.access_token, expires_at=result.expires_at, session_id=str(result.session_id)))
+
+
+@router.post(
+    "/api/v1/administrativo/seguridad/logout",
+    status_code=204,
+    response_model=None,
+    response_class=Response,
+    responses={401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def logout_administrativo(response: Response, authorization: str | None = Header(default=None, alias="Authorization"), db: Session = Depends(get_db)) -> Response | JSONResponse:
+    # CORE-EF: COMMAND_WRITE_TECNICO local; Bearer es identidad e idempotency key natural.
+    try:
+        token = parse_bearer_header(authorization)
+        AuthenticationService(db, get_settings()).logout(token)
+    except InvalidSession:
+        return _auth_error(401, "INVALID_SESSION", "La sesión no es válida.")
+    except SessionTechnicalError:
+        return _auth_error(500, "SESSION_TECHNICAL_ERROR", "No fue posible cerrar la sesión.")
+    response.headers["Cache-Control"] = "no-store"
+    response.status_code = 204
+    return response
+
+
+def _auth_error(status_code: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content=ErrorResponse(error_code=code, error_message=message, details={}).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def _item_write_error(exc: Exception) -> JSONResponse:

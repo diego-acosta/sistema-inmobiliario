@@ -60,6 +60,11 @@ Este catálogo cubre reglas sobre usuarios y acceso, seguridad y autorización, 
 - origen_principal: DEV-SRV
 
 ### RN-ADM-011 — Toda sesión debe registrar usuario, sucursal operativa e instalación de origen
+
+Excepción transitoria #446: el login preautenticado registra usuario e instalación
+local, pero conserva `id_sucursal_operativa = NULL`. La selección de sucursal y el
+contexto operativo se construyen recién en #447 o incrementos posteriores; #446 no
+infiere sucursal ni falla por su ausencia.
 - descripcion: la sesión administrativa debe poder contextualizarse por usuario actor, sucursal operativa e instalación técnica.
 - aplica_a: sesion_usuario
 - origen_principal: DEV-SRV
