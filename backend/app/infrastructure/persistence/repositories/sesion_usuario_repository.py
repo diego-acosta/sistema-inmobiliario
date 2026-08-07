@@ -10,9 +10,13 @@ class SesionUsuarioRepository:
     def __init__(self, session) -> None:
         self.db = session
 
-    def get_transaction_timestamp(self) -> datetime:
-        # El schema contractual usa timestamp without time zone.
-        return self.db.execute(text("SELECT LOCALTIMESTAMP")).scalar_one()
+    def get_wall_clock_timestamp(self) -> datetime:
+        """Instante PostgreSQL real, aun dentro de una transacción ya iniciada."""
+        # clock_timestamp avanza durante la transacción; el cast conserva la
+        # convención física timestamp without time zone del schema existente.
+        return self.db.execute(
+            text("SELECT clock_timestamp()::timestamp without time zone")
+        ).scalar_one()
 
     def insert(self, *, id_usuario: int, id_credencial_usuario: int, id_instalacion_origen: int, token_digest: str, started_at: datetime, expires_at: datetime) -> UUID:
         return UUID(str(self.db.execute(text("""

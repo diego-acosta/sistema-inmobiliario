@@ -59,6 +59,47 @@ def test_login_anti_enumeration_and_request_validation(client, db_session):
     assert client.post("/api/v1/administrativo/seguridad/login", json={"login": "x"}).status_code == 422
 
 
+def test_login_validation_never_reflects_credentials_or_complete_body(
+    client, caplog, capsys
+):
+    password = "DO_NOT_LOG_PASSWORD_446_" + "x" * 1025
+    login = "DO_NOT_REFLECT_LOGIN_446_" + "x" * 100
+    body = {"login": login, "password": password, "marker": "COMPLETE_BODY_446"}
+
+    response = client.post("/api/v1/administrativo/seguridad/login", json=body)
+
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "no-store"
+    serialized = response.text
+    assert password not in serialized
+    assert login not in serialized
+    assert "COMPLETE_BODY_446" not in serialized
+    assert "DO_NOT_LOG_PASSWORD_446" not in serialized
+    captured = capsys.readouterr()
+    logs_and_streams = caplog.text + captured.out + captured.err
+    assert password not in logs_and_streams
+    assert login not in logs_and_streams
+    assert "COMPLETE_BODY_446" not in logs_and_streams
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "La solicitud de login no es válida.",
+        "details": {},
+    }
+
+
+def test_login_empty_password_validation_is_sanitized_and_no_store(client):
+    response = client.post(
+        "/api/v1/administrativo/seguridad/login",
+        json={"login": "DO_NOT_REFLECT_LOGIN_EMPTY_446", "password": ""},
+    )
+
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "no-store"
+    assert "DO_NOT_REFLECT_LOGIN_EMPTY_446" not in response.text
+    assert '"input"' not in response.text
+
+
 def test_logout_unknown_is_204_and_invalid_header_is_sanitized(client):
     assert client.post("/api/v1/administrativo/seguridad/logout", headers={"Authorization": "Bearer unknown"}).status_code == 204
     response = client.post("/api/v1/administrativo/seguridad/logout")

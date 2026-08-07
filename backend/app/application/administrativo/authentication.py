@@ -116,7 +116,7 @@ class AuthenticationService:
             except LocalInstallationError as exc:
                 raise AuthenticationUnavailable("Autenticación temporalmente no disponible.") from exc
 
-            now = sessions.get_transaction_timestamp()
+            now = sessions.get_wall_clock_timestamp()
             user = auth.get_user_by_login_exact(login)
             credentials = auth.list_password_credentials(user["id_usuario"]) if user else []
             usable = [row for row in credentials if _usable_credential(row, now)]
@@ -133,7 +133,7 @@ class AuthenticationService:
 
             locked_user = auth.get_user_for_update(user["id_usuario"])
             locked_credential = auth.get_credential_for_update(credential["id_credencial_usuario"])
-            locked_now = sessions.get_transaction_timestamp()
+            locked_now = sessions.get_wall_clock_timestamp()
             if (
                 not _eligible_user(locked_user)
                 or not _usable_credential(locked_credential, locked_now)
@@ -174,7 +174,7 @@ class AuthenticationService:
         try:
             row = sessions.get_by_digest_for_update(digest_access_token(access_token))
             if row is not None and row["estado_sesion"] == "ACTIVA":
-                now = sessions.get_transaction_timestamp()
+                now = sessions.get_wall_clock_timestamp()
                 if row["expira_en"] <= now:
                     sessions.finish(row["id_sesion_usuario"], now, "EXPIRADA", "EXPIRACION_ABSOLUTA")
                 else:

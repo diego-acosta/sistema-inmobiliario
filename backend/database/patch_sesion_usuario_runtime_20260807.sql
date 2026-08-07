@@ -13,6 +13,9 @@ UPDATE public.sesion_usuario SET
   updated_at=COALESCE(updated_at,fecha_hora_inicio,CURRENT_TIMESTAMP)
 WHERE uid_global IS NULL OR version_registro IS NULL OR created_at IS NULL OR updated_at IS NULL;
 
+-- Precondición #446: antes de este incremento no existían sesiones runtime y la
+-- tabla debe estar vacía. Si una instalación contiene tokens legacy incompatibles,
+-- se aborta el patch: nunca se convierten ni se consideran sesiones válidas.
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM public.sesion_usuario WHERE token_sesion !~ '^[0-9a-f]{64}$') THEN
     RAISE EXCEPTION 'sesion_usuario contiene tokens incompatibles con digest SHA-256';

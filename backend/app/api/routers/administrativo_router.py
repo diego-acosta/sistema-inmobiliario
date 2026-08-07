@@ -101,10 +101,11 @@ from app.infrastructure.persistence.repositories.usuario_sucursal_repository imp
     UsuarioSucursalIdempotencyConflictError,
     UsuarioSucursalRepository,
 )
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 from app.application.administrativo.authentication import (
     AuthenticationService,
     AuthenticationTechnicalError,
@@ -123,11 +124,30 @@ router = APIRouter(tags=["Administrativo"])
     "/api/v1/administrativo/seguridad/login",
     response_model=LoginResponse,
     responses={401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": LoginRequest.model_json_schema()
+                }
+            },
+        }
+    },
 )
-def login_administrativo(request: LoginRequest, response: Response, db: Session = Depends(get_db)) -> LoginResponse | JSONResponse:
+async def login_administrativo(request: Request, response: Response, db: Session = Depends(get_db)) -> LoginResponse | JSONResponse:
     # CORE-EF: COMMAND_WRITE_TECNICO preautenticado, local y no sincronizable.
     try:
-        result = AuthenticationService(db, get_settings()).login(request.login, request.password)
+        payload = await request.json()
+        credentials = LoginRequest.model_validate(payload)
+    except (ValueError, TypeError, ValidationError):
+        # Este endpoint procesa su body de forma acotada para impedir que FastAPI
+        # incluya login/password o el body recibido en detail[].input.
+        return _auth_error(422, "VALIDATION_ERROR", "La solicitud de login no es válida.")
+    try:
+        result = AuthenticationService(db, get_settings()).login(
+            credentials.login, credentials.password
+        )
     except InvalidCredentials:
         return _auth_error(401, "INVALID_CREDENTIALS", "Las credenciales no son válidas.")
     except AuthenticationUnavailable:
