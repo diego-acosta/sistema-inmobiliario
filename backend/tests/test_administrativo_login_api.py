@@ -101,8 +101,20 @@ def test_login_empty_password_validation_is_sanitized_and_no_store(client):
 
 
 def test_logout_unknown_is_204_and_invalid_header_is_sanitized(client):
-    assert client.post("/api/v1/administrativo/seguridad/logout", headers={"Authorization": "Bearer unknown"}).status_code == 204
+    unknown_token = "a" * 43
+    assert client.post("/api/v1/administrativo/seguridad/logout", headers={"Authorization": f"Bearer {unknown_token}"}).status_code == 204
     response = client.post("/api/v1/administrativo/seguridad/logout")
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "INVALID_SESSION"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_logout_rejects_non_urlsafe_bearer_before_lookup(client):
+    response = client.post(
+        "/api/v1/administrativo/seguridad/logout",
+        headers={"Authorization": "Bearer abc!"},
+    )
+
     assert response.status_code == 401
     assert response.json()["error_code"] == "INVALID_SESSION"
     assert response.headers["cache-control"] == "no-store"

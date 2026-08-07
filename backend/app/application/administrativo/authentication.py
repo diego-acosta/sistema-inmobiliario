@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from hashlib import sha256
+import re
 import secrets
 from uuid import UUID
 
@@ -15,7 +16,9 @@ from app.infrastructure.persistence.repositories.sesion_usuario_repository impor
 
 SESSION_ABSOLUTE_TTL = timedelta(hours=8)
 TOKEN_RANDOM_BYTES = 32
+ACCESS_TOKEN_LENGTH = 43
 TOKEN_COLLISION_MAX_ATTEMPTS = 3
+_ACCESS_TOKEN_PATTERN = re.compile(rf"[A-Za-z0-9_-]{{{ACCESS_TOKEN_LENGTH}}}")
 
 # PHC técnico generado exclusivamente para igualar el trabajo Argon2id cuando no
 # hay una credencial real utilizable. No corresponde a ninguna credencial real.
@@ -72,7 +75,12 @@ def parse_bearer_header(value: str | None) -> str:
     if value is None or not value.startswith("Bearer "):
         raise InvalidSession("La sesión no es válida.")
     parts = value.split(" ")
-    if len(parts) != 2 or not parts[1]:
+    if (
+        len(parts) != 2
+        or not parts[1]
+        # token_urlsafe(32) emite 43 caracteres Base64 URL-safe sin padding.
+        or _ACCESS_TOKEN_PATTERN.fullmatch(parts[1]) is None
+    ):
         raise InvalidSession("La sesión no es válida.")
     return parts[1]
 
