@@ -6,6 +6,11 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.application.common.synchronization_policy import (
+    sanitize_sync_error,
+    validate_sync_event,
+)
+
 
 class OutboxRepository:
     def __init__(self, db: Session) -> None:
@@ -58,6 +63,7 @@ class OutboxRepository:
         processing_reason: dict[str, Any] | None = None,
         processing_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        validate_sync_event(event_type, aggregate_type, payload)
         statement = text(
             f"""
             INSERT INTO outbox_event (
@@ -160,7 +166,7 @@ class OutboxRepository:
         )
         row = self.db.execute(
             statement,
-            {"id": event_id, "error": error},
+            {"id": event_id, "error": sanitize_sync_error(RuntimeError(error))},
         ).mappings().one_or_none()
         if row is None:
             return None

@@ -170,3 +170,7 @@ Permite visualizar estado de operaciones distribuidas y su trazabilidad.
 - relación formal entre paquete técnico y operación individual
 - política de reintentos de emisión y reprocesamiento
 - estrategia exacta de payload técnico portable
+
+## Guardrail #455
+
+El ingreso a sincronización usa la allowlist única de aplicación y default-deny en repository, worker y dispatcher. Eventos/aggregates desconocidos y payloads sensibles fallan cerrados; credenciales y sesiones jamás son contratos permitidos. Los errores persistibles son códigos sanitizados, no `str(exc)` ni payloads.

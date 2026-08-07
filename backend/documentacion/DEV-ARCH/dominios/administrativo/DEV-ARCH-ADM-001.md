@@ -162,3 +162,7 @@ En el entorno Codex disponible, la instalación de `argon2-cffi>=25.1.0,<26.0.0`
 El bootstrap `init`/`reset` es un command técnico local del núcleo administrativo. Selecciona `usuario` por código exacto, revalida su elegibilidad bajo lock y persiste exclusivamente credenciales `PASSWORD` Argon2id. Resuelve dos veces la identidad canónica de instalación: preflight read-only y transacción autoritativa. El reset conserva y revoca la fila histórica y crea una nueva fila activa/principal en la misma transacción.
 
 Es local y no sincronizable: no hay endpoint HTTP, headers, outbox, eventos, sesiones, tokens, autenticación ni historial runtime. `op_id_alta` brinda replay local simplificado; los locks se adquieren en orden usuario → credenciales por PK. El PHC nunca forma parte de DTOs públicos.
+
+## Incremento #455 — localidad verificable
+
+`credencial_usuario` y `sesion_usuario` son locales por instalación y no sincronizables. La matriz campo por campo y el límite entre tabla histórica de sesiones y runtime inexistente se fijan en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`. La metadata CORE-EF no modifica esta decisión.

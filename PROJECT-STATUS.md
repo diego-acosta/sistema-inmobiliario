@@ -421,3 +421,7 @@ Antes de implementar #425:
 ## 11. Incremento Administrativo #454 — bootstrap local de credenciales
 
 #454 incorpora una CLI TTY-only para crear o resetear credenciales `PASSWORD` de usuarios elegibles. Reutiliza Argon2id y la identidad local existentes, conserva la fila revocada, asegura una única activa/principal mediante locks e índices y permite replay local por `op_id_alta`. No incorpora autenticación, endpoints, sesiones, tokens, outbox, eventos ni sincronización.
+
+## 12. Incremento transversal Administrativo/Seguridad #455
+
+#455 implementa exclusivamente el guardrail transversal de exclusión de credenciales/sesiones: política runtime allowlist/default-deny, rechazo profundo previo a outbox, cierre de worker/dispatcher y sanitización de errores. `credencial_usuario` y la tabla histórica `sesion_usuario` son locales por instalación y no sincronizables. No implementa autenticación, login/logout, sesiones o tokens runtime, autorización ni sincronización de hashes; #446 y los incrementos posteriores permanecen fuera de alcance.

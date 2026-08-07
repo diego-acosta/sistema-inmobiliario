@@ -169,3 +169,7 @@ Para consumidores futuros, `hash_credencial` deberá persistir el PHC Argon2id y
 La CLI local permite `init` cuando no hay credencial PASSWORD activa y `reset` cuando existe exactamente una activa y principal. El caso de uso es dueño del único commit/rollback; genera el hash antes de abrir la transacción, bloquea usuario y credenciales ordenadas, usa un único `CURRENT_TIMESTAMP`, revoca históricamente e inserta una fila nueva. El replay por `op_id_alta` exige mismo usuario y verificación Argon2id.
 
 Clasificación CORE-EF: `COMMAND_WRITE_TECNICO`, local no sincronizable. Headers HTTP, `If-Match-Version`, outbox, eventos y lock lógico persistido: **NO APLICA**. El versionado se delega a los triggers SQL vigentes; la transacción revierte íntegramente ante fallos.
+
+## Incremento #455 — exclusión del transporte
+
+Credenciales y sesiones son locales/no sincronizables en todos sus campos. No se implementan login, logout, tokens, autorización ni sesiones runtime. El contrato verificable está en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.

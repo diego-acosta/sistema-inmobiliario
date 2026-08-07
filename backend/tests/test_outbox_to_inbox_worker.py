@@ -261,7 +261,7 @@ def test_worker_no_publica_contrato_alquiler_sin_locatario_principal(
     ) == 0
 
 
-def test_worker_ignora_evento_desconocido_sin_romper(db_session) -> None:
+def test_worker_rechaza_evento_desconocido_sin_publicarlo(db_session) -> None:
     event_id = _insert_outbox_event(
         db_session,
         event_type="evento_desconocido",
@@ -271,8 +271,8 @@ def test_worker_ignora_evento_desconocido_sin_romper(db_session) -> None:
     run_outbox_worker_once(db_session)
 
     outbox = _get_outbox_event(db_session, event_id=event_id)
-    assert outbox["status"] == "PUBLISHED"
-    assert outbox["published_at"] is not None
+    assert outbox["status"] == "PENDING"
+    assert outbox["published_at"] is None
 
 
 def test_worker_no_marca_procesado_si_payload_es_invalido(db_session) -> None:

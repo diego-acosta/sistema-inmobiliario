@@ -95,3 +95,7 @@ La compatibilidad heredada:
 ## 10. Identidad canónica de instalación local (#456)
 
 La identidad local para futuros commands técnicos CORE-EF es **soporte transversal read-only**. Se configura exclusivamente mediante `LOCAL_INSTALLATION_CODE`, se resuelve por igualdad exacta contra `public.instalacion` y falla de forma cerrada si falta la configuración o la fila no es elegible. No selecciona por ID fijo, orden, cantidad de filas, sucursal, nombre ni `es_principal` y no redefine el ownership de Operativo sobre `instalacion`.
+
+## Guardrail transversal de sincronización #455
+
+La política de aplicación es allowlist explícita y default-deny. Outbox, worker y dispatcher consumen una fuente única; credenciales, sesiones y payloads de autenticación se rechazan antes de persistir y los errores de transporte se clasifican sin contenido interno. Véase `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.

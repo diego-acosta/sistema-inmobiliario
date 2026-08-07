@@ -174,3 +174,7 @@ Permite visualizar conflictos y su trazabilidad.
 - criterios de priorización por criticidad
 - integración con auditoría
 - impacto de resolución en estado global del sistema
+
+## Exclusión #455
+
+`credencial_usuario` y `sesion_usuario` no son tipos válidos de conflicto remoto. La prohibición deriva de la política de aplicación; #455 no crea handler de conflictos ni constraint SQL.

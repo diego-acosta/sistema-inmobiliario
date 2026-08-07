@@ -158,3 +158,7 @@ Permite visualizar estado de respaldo, recuperación e integridad.
 - definición de niveles de backup
 - automatización de procesos
 - integración con infraestructura externa
+
+## Material sensible #455
+
+Los respaldos con credenciales, sesiones o historial de acceso requieren cifrado y custodia fuera de Git, issues, PRs y artifacts CI. No deben loguearse payloads ni `DATABASE_URL`; un restore no confiable exige invalidación de sesiones y rotación de credenciales. #455 no implementa backups.

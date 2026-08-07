@@ -17,6 +17,11 @@ from app.infrastructure.persistence.repositories.financiero_repository import (
 from app.infrastructure.persistence.repositories.locativo_repository import (
     LocativoRepository,
 )
+from app.application.common.synchronization_policy import (
+    SYNC_EVENT_POLICIES,
+    SyncDispatchError,
+    validate_sync_event,
+)
 
 
 class InboxEventDispatcher:
@@ -24,6 +29,8 @@ class InboxEventDispatcher:
         self._db = db
 
     def dispatch(self, event_type: str, payload: dict[str, Any]) -> None:
+        policy = SYNC_EVENT_POLICIES.get(event_type)
+        validate_sync_event(event_type, policy.aggregate_type if policy else "", payload)
         event = {"event_type": event_type, "payload": payload}
 
         if event_type == "venta_confirmada":
@@ -44,5 +51,4 @@ class InboxEventDispatcher:
                 raise ValueError(";".join(result.errors))
             return
 
-        # Evento no reconocido: ignorar silenciosamente.
-        # Para agregar nuevos handlers, añadir elif aquí.
+        raise SyncDispatchError(SyncDispatchError.code)

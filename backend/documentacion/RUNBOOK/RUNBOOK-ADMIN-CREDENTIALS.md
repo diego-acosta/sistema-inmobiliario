@@ -35,3 +35,7 @@ Ante timeout incierto, reintente el mismo verbo, usuario, secreto y `op-id`. `RE
 | 130 | cancelación con Ctrl+C |
 
 Esta herramienta administra credenciales estrictamente locales y no sincronizables. No crea sesiones, tokens, eventos ni outbox.
+
+## Sincronización y respaldos (#455)
+
+La credencial creada por `init`, `reset` o `replay` es exclusivamente local: el bootstrap no genera outbox. No copiar PHC, sesiones ni tokens a logs, Git, issues, PRs o artifacts. Todo backup que los contenga requiere cifrado; ante restore no confiable, invalidar sesiones y rotar credenciales.
