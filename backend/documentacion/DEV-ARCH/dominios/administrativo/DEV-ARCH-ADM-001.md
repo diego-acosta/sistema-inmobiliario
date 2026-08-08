@@ -174,3 +174,9 @@ opaco, sólo digest SHA-256 persistido, expiración absoluta de ocho horas y cie
 idempotente. Credenciales, sesiones y tokens no participan de outbox ni sync.
 Este incremento no crea principal, autorización, roles efectivos ni sucursal activa;
 esas capacidades permanecen pendientes de #447 y posteriores.
+
+# Incremento de seguridad #447 — principal autenticado mínimo
+
+Administrativo construye `AuthenticatedPrincipal` exclusivamente desde un bearer opaco cuya sesión local persiste utilizable y cuyo usuario asociado permanece activo. El UID público proviene de `sesion_usuario.uid_global`; el ID técnico interno de la fila no se expone. La lectura proyecta sólo sesión y usuario, usa `clock_timestamp()`, no bloquea, no escribe, no actualiza actividad ni materializa expiración.
+
+La identidad humana (`Authorization`) permanece separada de la identidad de operación (`X-Op-Id`), el contexto de sucursal (`X-Sucursal-Id`), el contexto técnico (`X-Instalacion-Id`) y la concurrencia (`If-Match-Version`). `X-Usuario-Id` está deprecado como fuente HTTP de identidad, pero continúa en endpoints heredados hasta #461. La sesión y sus secretos son locales/no sincronizables. #447 no agrega roles, permisos ni autorización; #443 y #461 permanecen pendientes. No requiere cambios SQL.

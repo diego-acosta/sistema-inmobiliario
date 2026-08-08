@@ -33,6 +33,37 @@ class SesionUsuarioRepository:
         row = self.db.execute(text("SELECT * FROM sesion_usuario WHERE token_sesion=:digest"), {"digest": digest}).mappings().one_or_none()
         return dict(row) if row else None
 
+    def get_principal_projection_by_digest(self, digest: str) -> dict | None:
+        """Proyección read-only de sesión y usuario para autenticar requests."""
+        row = self.db.execute(
+            text(
+                """
+                SELECT
+                    s.uid_global,
+                    s.id_usuario AS id_usuario_sesion,
+                    s.estado_sesion,
+                    s.fecha_hora_inicio,
+                    s.fecha_hora_cierre,
+                    s.expira_en,
+                    s.requiere_reautenticacion,
+                    s.id_instalacion_origen,
+                    s.id_sucursal_operativa,
+                    u.id_usuario AS id_usuario_usuario,
+                    u.codigo_usuario,
+                    u.login,
+                    u.estado_usuario,
+                    u.deleted_at AS usuario_deleted_at,
+                    u.fecha_baja,
+                    clock_timestamp()::timestamp without time zone AS ahora
+                FROM sesion_usuario AS s
+                LEFT JOIN usuario AS u ON u.id_usuario = s.id_usuario
+                WHERE s.token_sesion = :digest
+                """
+            ),
+            {"digest": digest},
+        ).mappings().one_or_none()
+        return dict(row) if row else None
+
     def get_by_digest_for_update(self, digest: str) -> dict | None:
         row = self.db.execute(text("SELECT * FROM sesion_usuario WHERE token_sesion=:digest FOR UPDATE"), {"digest": digest}).mappings().one_or_none()
         return dict(row) if row else None

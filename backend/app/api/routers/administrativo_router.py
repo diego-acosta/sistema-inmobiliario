@@ -4,8 +4,11 @@ from app.api.core_ef_headers import (
     parse_core_ef_headers,
 )
 from app.api.dependencies import get_db
+from app.api.authentication import get_authenticated_principal
 from app.api.schemas.administrativo import (
     CatalogoMaestroBajaResponse,
+    AuthenticatedPrincipalData,
+    AuthenticatedPrincipalResponse,
     CatalogoMaestroCreateRequest,
     CatalogoMaestroCreateResponse,
     CatalogoMaestroData,
@@ -107,6 +110,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 from app.application.administrativo.authentication import (
+    AuthenticatedPrincipal,
     AuthenticationService,
     AuthenticationTechnicalError,
     AuthenticationUnavailable,
@@ -118,6 +122,25 @@ from app.application.administrativo.authentication import (
 from app.config.settings import get_settings
 
 router = APIRouter(tags=["Administrativo"])
+
+
+@router.get(
+    "/api/v1/administrativo/seguridad/me",
+    response_model=AuthenticatedPrincipalResponse,
+    responses={401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def obtener_principal_autenticado(
+    response: Response,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+) -> AuthenticatedPrincipalResponse:
+    # CORE-EF: QUERY_READLIKE; Authorization autentica y no hay headers write.
+    response.headers["Cache-Control"] = "no-store"
+    return AuthenticatedPrincipalResponse(
+        data=AuthenticatedPrincipalData(**{
+            field: getattr(principal, field)
+            for field in AuthenticatedPrincipalData.model_fields
+        })
+    )
 
 
 @router.post(
