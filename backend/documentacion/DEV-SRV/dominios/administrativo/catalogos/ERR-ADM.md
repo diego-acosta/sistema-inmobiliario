@@ -497,3 +497,10 @@ Este catálogo cubre errores de usuarios y acceso, seguridad y autorización, au
 `AUTHENTICATION_UNAVAILABLE` (503) sanitiza la resolución de instalación;
 `AUTHENTICATION_TECHNICAL_ERROR` (500), `INVALID_SESSION` (401) y
 `SESSION_TECHNICAL_ERROR` (500) no exponen secretos ni detalles de persistencia.
+
+# Errores públicos de resolución de sesión #447
+
+- `INVALID_SESSION` (401): contrato único para bearer, sesión o usuario no utilizables; mensaje `La sesión no es válida.` y `details = {}`.
+- `SESSION_TECHNICAL_ERROR` (500): falla técnica sanitizada al validar; mensaje `No fue posible validar la sesión.` y `details = {}`.
+
+Ambos incluyen `Cache-Control: no-store` y no revelan bearer, digest, SQL, driver ni causa interna.

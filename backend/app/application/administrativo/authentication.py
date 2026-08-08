@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 import re
 import secrets
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -61,6 +62,20 @@ class LoginResult:
     access_token: str
     expires_at: datetime
     session_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedPrincipal:
+    """Identidad humana mínima derivada de una sesión local utilizable."""
+
+    id_usuario: int
+    codigo_usuario: str
+    login: str
+    id_sesion: UUID
+    mecanismo_autenticacion: Literal["SESION_SERVIDOR"]
+    autenticado_en: datetime
+    id_instalacion_origen_sesion: int
+    id_sucursal_operativa: int | None
 
 
 def generate_access_token() -> str:
@@ -191,3 +206,41 @@ class AuthenticationService:
         except Exception as exc:
             self.db.rollback()
             raise SessionTechnicalError("No fue posible cerrar la sesión.") from exc
+
+    def resolve_principal(self, access_token: str) -> AuthenticatedPrincipal:
+        """Resuelve el principal sin locks, escrituras, commit ni actividad."""
+        sessions = SesionUsuarioRepository(self.db)
+        try:
+            row = sessions.get_principal_projection_by_digest(
+                digest_access_token(access_token)
+            )
+            if not self._usable_principal_projection(row):
+                raise InvalidSession("La sesión no es válida.")
+            return AuthenticatedPrincipal(
+                id_usuario=row["id_usuario_usuario"],
+                codigo_usuario=row["codigo_usuario"],
+                login=row["login"],
+                id_sesion=UUID(str(row["uid_global"])),
+                mecanismo_autenticacion="SESION_SERVIDOR",
+                autenticado_en=row["fecha_hora_inicio"],
+                id_instalacion_origen_sesion=row["id_instalacion_origen"],
+                id_sucursal_operativa=row["id_sucursal_operativa"],
+            )
+        except InvalidSession:
+            raise
+        except Exception as exc:
+            raise SessionTechnicalError("No fue posible validar la sesión.") from exc
+
+    @staticmethod
+    def _usable_principal_projection(row: dict | None) -> bool:
+        return bool(
+            row
+            and row["estado_sesion"] == "ACTIVA"
+            and row["fecha_hora_cierre"] is None
+            and row["requiere_reautenticacion"] is False
+            and row["expira_en"] > row["ahora"]
+            and row["id_usuario_sesion"] == row["id_usuario_usuario"]
+            and row["estado_usuario"] == "ACTIVO"
+            and row["usuario_deleted_at"] is None
+            and row["fecha_baja"] is None
+        )
