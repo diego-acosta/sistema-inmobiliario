@@ -81,6 +81,28 @@ def test_me_collapses_invalid_headers_and_unknown_token(client):
         assert response.headers["cache-control"] == "no-store"
 
 
+def test_me_declares_bearer_security_scheme_in_openapi(client):
+    schema = client.get("/openapi.json").json()
+    bearer = schema["components"]["securitySchemes"]["BearerAuth"]
+    operation = schema["paths"][PATH]["get"]
+
+    assert bearer == {"type": "http", "scheme": "bearer"}
+    assert operation["security"] == [{"BearerAuth": []}]
+    assert not any(
+        parameter.get("in") == "header"
+        and parameter.get("name", "").lower() == "authorization"
+        for parameter in operation.get("parameters", [])
+    )
+
+
+def test_openapi_bearer_declaration_preserves_strict_runtime_errors(client):
+    for headers in ({}, {"Authorization": "bearer " + "a" * 43}, {"Authorization": "Bearer  " + "a" * 43}):
+        response = client.get(PATH, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == INVALID
+        assert response.headers["cache-control"] == "no-store"
+
+
 def test_me_sanitizes_database_error_and_never_logs_secrets(client, caplog, capsys):
     token = "SENSITIVE_BEARER_447" + "x" * 23
     assert len(token) == 43

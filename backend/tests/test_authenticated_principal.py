@@ -51,12 +51,14 @@ def test_authenticated_principal_is_immutable_typed_and_nullable():
 
 def test_dependency_reuses_canonical_parser_and_service():
     db = Mock()
+    request = Mock()
+    request.headers.get.return_value = "Bearer token"
     expected = Mock(spec=AuthenticatedPrincipal)
     with patch("app.api.authentication.parse_bearer_header", return_value="token") as parser, patch(
         "app.api.authentication.AuthenticationService"
     ) as service:
         service.return_value.resolve_principal.return_value = expected
-        assert get_authenticated_principal("Bearer token", db) is expected
+        assert get_authenticated_principal(request, None, db) is expected
     parser.assert_called_once_with("Bearer token")
     service.return_value.resolve_principal.assert_called_once_with("token")
 
