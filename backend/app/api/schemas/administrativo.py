@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -19,6 +20,22 @@ class LoginData(BaseModel):
 class LoginResponse(BaseModel):
     ok: Literal[True] = True
     data: LoginData
+
+
+class AuthenticatedPrincipalData(BaseModel):
+    id_usuario: int
+    codigo_usuario: str
+    login: str
+    id_sesion: UUID
+    mecanismo_autenticacion: Literal["SESION_SERVIDOR"]
+    autenticado_en: datetime
+    id_instalacion_origen_sesion: int
+    id_sucursal_operativa: int | None
+
+
+class AuthenticatedPrincipalResponse(BaseModel):
+    ok: Literal[True] = True
+    data: AuthenticatedPrincipalData
 
 
 class UsuarioSistemaCreateRequest(BaseModel):

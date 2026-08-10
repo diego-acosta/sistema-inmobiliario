@@ -1,18 +1,22 @@
-from fastapi import FastAPI
-
 from app.api.routers.administrativo_router import router as administrativo_router
 from app.api.routers.comercial_router import router as comercial_router
-from app.api.routers.edificaciones_router import router as edificaciones_router
-from app.api.routers.inmuebles_router import router as inmuebles_router
 from app.api.routers.desarrollos_router import router as desarrollos_router
+from app.api.routers.edificaciones_router import router as edificaciones_router
+from app.api.routers.financiero_router import router as financiero_router
 from app.api.routers.health_router import router as health_router
-from app.api.routers.personas_router import router as personas_router
-from app.api.routers.servicios_router import router as servicios_router
+from app.api.routers.inmuebles_router import router as inmuebles_router
 from app.api.routers.locativo_router import router as locativo_router
 from app.api.routers.operativo_router import router as operativo_router
-from app.api.routers.financiero_router import router as financiero_router
+from app.api.routers.personas_router import router as personas_router
+from app.api.routers.servicios_router import router as servicios_router
+from app.api.schemas.administrativo import ErrorResponse
+from app.application.administrativo.authentication import (
+    InvalidSession,
+    SessionTechnicalError,
+)
 from app.config.settings import get_settings
-
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 settings = get_settings()
 
@@ -56,6 +60,34 @@ app = FastAPI(
     version=settings.app_version,
     openapi_tags=OPENAPI_TAGS,
 )
+
+
+@app.exception_handler(InvalidSession)
+async def invalid_session_handler(_request: Request, _exc: InvalidSession) -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content=ErrorResponse(
+            error_code="INVALID_SESSION",
+            error_message="La sesión no es válida.",
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(SessionTechnicalError)
+async def session_technical_error_handler(
+    _request: Request, _exc: SessionTechnicalError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            error_code="SESSION_TECHNICAL_ERROR",
+            error_message="No fue posible validar la sesión.",
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
 
 app.include_router(health_router)
 app.include_router(desarrollos_router)

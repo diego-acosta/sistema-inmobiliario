@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-05
+**Actualizado:** 2026-08-08
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -305,7 +305,7 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 - El vínculo usuario-persona, si se implementa, es asociación explícita; no fusiona identidades.
 - `rol_seguridad` y `permiso` no son `rol_participacion` ni roles de negocio.
 - `usuario_sucursal` referencia alcance operativo, pero no convierte Administrativo en dueño de `sucursal` o `instalacion`.
-- La documentación API vigente indica que todavía no hay login real, passwords, OAuth/SSO, middleware de autorización real ni menú dinámico salvo evidencia posterior.
+- La autenticación mínima ya cuenta con login/sesión (#446) y principal `/seguridad/me` (#447); no hay autorización, OAuth/SSO ni menú dinámico. La migración transversal de endpoints permanece pendiente en #461.
 - `catalogo_maestro` ya tiene CRUD write mínimo.
 - `item_catalogo` tiene lectura y CRUD write implementados; jerarquías e historial funcional permanecen fuera de alcance.
 - Los únicos estados físicos permitidos de `item_catalogo` son `ACTIVO` e `INACTIVO`; su estado inicial es `ACTIVO`.
@@ -433,3 +433,8 @@ bearer opaco (sólo digest SHA-256 en DB), TTL absoluto de ocho horas y logout
 idempotente. No agrega historial de acceso, outbox, sync, rehash, contadores de
 intentos, sucursal seleccionada, principal ni autorización. #447 permanece como
 siguiente incremento para interpretar el bearer y construir el principal.
+
+
+## 14. Incremento Administrativo/Seguridad #447 — principal autenticado mínimo
+
+#445 y #446 están completados. #447 implementa exclusivamente `AuthenticatedPrincipal`, la dependency read-only `get_authenticated_principal` y `GET /api/v1/administrativo/seguridad/me` sobre el SQL existente. `Authorization` es la única fuente de identidad humana; `X-Usuario-Id` queda deprecado pero se conserva en endpoints heredados hasta #461. Sesiones y secretos continúan locales/no sincronizables. No se incorporan roles, permisos ni autorización: #443 permanece pendiente; #461 también permanece pendiente y no se declara autenticación transversal de endpoints.

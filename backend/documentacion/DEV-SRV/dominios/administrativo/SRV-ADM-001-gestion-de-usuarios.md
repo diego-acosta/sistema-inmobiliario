@@ -173,3 +173,7 @@ Clasificación CORE-EF: `COMMAND_WRITE_TECNICO`, local no sincronizable. Headers
 ## Incremento #455 — exclusión del transporte
 
 Credenciales y sesiones son locales/no sincronizables en todos sus campos. No se implementan login, logout, tokens, autorización ni sesiones runtime. El contrato verificable está en `documentacion/SINCRONIZACION/SEGURIDAD-CREDENCIALES-455.md`.
+
+## Incremento #447 — resolución read-only del principal
+
+`get_authenticated_principal` reutiliza el parser bearer y el digest de #446, consulta una proyección explícita de `sesion_usuario` y `usuario`, y devuelve el value object inmutable `AuthenticatedPrincipal`. Toda sesión no utilizable o usuario no elegible colapsa públicamente a `401 INVALID_SESSION`; una falla técnica colapsa a `500 SESSION_TECHNICAL_ERROR`. No se revalida la credencial, no se hace commit, lock, outbox, sync, autorización ni actualización de actividad. La sucursal nullable y la instalación de origen se devuelven tal como están persistidas en la sesión.

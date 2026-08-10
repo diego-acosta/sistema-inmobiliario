@@ -120,8 +120,8 @@ def test_logout_rejects_non_urlsafe_bearer_before_lookup(client):
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_openapi_has_no_me_or_password_response(client):
+def test_openapi_documents_me_without_password_response(client):
     schema = client.get("/openapi.json").json()
-    assert "/api/v1/administrativo/seguridad/me" not in schema["paths"]
+    assert "/api/v1/administrativo/seguridad/me" in schema["paths"]
     login = schema["paths"]["/api/v1/administrativo/seguridad/login"]["post"]
     assert "password" not in str(login["responses"])

@@ -892,3 +892,15 @@ CORE-EF para endpoints: `NO APLICA`, porque no hay rutas nuevas ni modificadas. 
 - Login inválido es siempre `INVALID_CREDENTIALS`; fallos de instalación se
   publican como `AUTHENTICATION_UNAVAILABLE`. No existe `/seguridad/me`, principal,
   roles, permisos, scopes, refresh ni autorización en #446.
+
+# Seguridad administrativa implementada por #447
+
+## `GET /api/v1/administrativo/seguridad/me`
+
+Clasificación CORE-EF: `QUERY_READLIKE`. Requiere únicamente `Authorization: Bearer <access_token>` y devuelve `ok` más los campos exactos `id_usuario`, `codigo_usuario`, `login`, `id_sesion` (UUID público), `mecanismo_autenticacion = SESION_SERVIDOR`, `autenticado_en`, `id_instalacion_origen_sesion` e `id_sucursal_operativa` nullable. Éxitos y errores usan `Cache-Control: no-store`.
+
+No exige `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` ni `If-Match-Version`. `Authorization` identifica a la persona; los demás headers representan operación, contexto o concurrencia y no autentican. `X-Usuario-Id` queda deprecado como identidad HTTP y su migración corresponde a #461.
+
+Una ausencia o invalidez de bearer, sesión o usuario devuelve el mismo `401 INVALID_SESSION`; una falla de persistencia devuelve `500 SESSION_TECHNICAL_ERROR`, ambos sin detalle interno. La query es read-only, sin locks, actividad, outbox o sync. No hay roles, permisos, scopes ni autorización (#443 pendiente). No hubo cambio SQL.
+
+La afirmación histórica de la introducción de que Administrativo no implementaba login queda superada por #446 y esta sección; se conserva únicamente como registro del corte anterior.
