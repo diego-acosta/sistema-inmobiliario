@@ -32,6 +32,7 @@ set PATCH_PARAMETRO_SISTEMA_EXPOSICION_SEGURA_FILE=%BACKEND_DIR%\database\patch_
 set PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE=%BACKEND_DIR%\database\patch_parametro_sistema_editabilidad_administrativa_20260805.sql
 set PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE=%BACKEND_DIR%\database\patch_credencial_usuario_core_ef_20260805.sql
 set PATCH_SESION_USUARIO_RUNTIME_FILE=%BACKEND_DIR%\database\patch_sesion_usuario_runtime_20260807.sql
+set PATCH_OPERACION_IDEMPOTENTE_FILE=%BACKEND_DIR%\database\patch_operacion_idempotente_20260810.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -164,6 +165,12 @@ if not exist "%PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE%" (
 
 if not exist "%PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%" (
   echo ERROR: No existe el patch CORE-EF credencial_usuario #448: %PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_OPERACION_IDEMPOTENTE_FILE%" (
+  echo ERROR: No existe el patch operacion_idempotente #469: %PATCH_OPERACION_IDEMPOTENTE_FILE%
   pause
   exit /b 1
 )
@@ -346,6 +353,15 @@ echo Aplicando patch sesion local revocable #446 en %DEV_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_SESION_USUARIO_RUNTIME_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch sesion local revocable #446 en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch ledger idempotente transversal #469 en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_OPERACION_IDEMPOTENTE_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch ledger idempotente transversal #469 en %DEV_DB%
   pause
   exit /b 1
 )
@@ -546,6 +562,15 @@ echo Aplicando patch sesion local revocable #446 en %TEST_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_SESION_USUARIO_RUNTIME_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch sesion local revocable #446 en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch ledger idempotente transversal #469 en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_OPERACION_IDEMPOTENTE_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch ledger idempotente transversal #469 en %TEST_DB%
   pause
   exit /b 1
 )

@@ -1025,3 +1025,17 @@ La política fija es Argon2id v1 (`time_cost=3`, `memory_cost=65536`, `paralleli
 ## Exclusión local #455
 
 La presencia de UID, versión, instalación u op ID no implica sincronizabilidad. `credencial_usuario` y `sesion_usuario`, incluida toda metadata CORE-EF, permanecen locales y fuera de outbox/inbox/conflictos/paquetes. La política runtime es allowlist y default-deny.
+
+## Persistencia técnica transversal #469
+
+#469 incorpora `public.operacion_idempotente` como ledger local, inmutable y no
+sincronizable de receipts completados. La tabla conserva un `op_id` globalmente
+único, identidad del command y target opcional, hash SHA-256 y versión de
+canonicalización explícita, snapshot JSONB del resultado y contexto técnico; un
+trigger rechaza siempre `UPDATE` y `DELETE`.
+
+Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
+clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
+versionado CORE-EF recursivo). El claim/replay/complete, la canonicalización y
+los advisory locks pertenecen a #470 y permanecen no implementados. La tabla
+continúa fuera de sync por default-deny.
