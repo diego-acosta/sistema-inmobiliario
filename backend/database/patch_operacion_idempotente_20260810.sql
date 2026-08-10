@@ -46,6 +46,10 @@ END $$;
 
 DO $$
 BEGIN
+    IF to_regprocedure('public.fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)') IS NULL THEN
+        RAISE EXCEPTION 'operacion_idempotente requiere public.fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)';
+    END IF;
+
     IF to_regprocedure('public.trg_operacion_idempotente_inmutable()') IS NULL THEN
         EXECUTE $function$
             CREATE FUNCTION public.trg_operacion_idempotente_inmutable()
@@ -57,6 +61,35 @@ BEGIN
             END
             $body$
         $function$;
+    END IF;
+
+    IF to_regprocedure('public.trg_operacion_idempotente_instalacion_sucursal()') IS NULL THEN
+        EXECUTE $function$
+            CREATE FUNCTION public.trg_operacion_idempotente_instalacion_sucursal()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $body$
+            BEGIN
+                PERFORM public.fn_assert_instalacion_pertenece_a_sucursal(
+                    NEW.id_instalacion,
+                    NEW.id_sucursal,
+                    'operacion_idempotente'
+                );
+                RETURN NEW;
+            END
+            $body$
+        $function$;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'public.operacion_idempotente'::regclass
+          AND tgname = 'trg_bi_operacion_idempotente_instalacion_sucursal'
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal
+        BEFORE INSERT ON public.operacion_idempotente
+        FOR EACH ROW EXECUTE FUNCTION public.trg_operacion_idempotente_instalacion_sucursal();
     END IF;
 
     IF NOT EXISTS (
@@ -138,6 +171,32 @@ BEGIN
 
     IF NOT EXISTS (
       SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='fn_assert_instalacion_pertenece_a_sucursal'
+         AND p.proargtypes='20 20 25'::oidvector AND p.prorettype='void'::regtype
+         AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
+         AND regexp_replace(p.prosrc,'\s','','g') = regexp_replace($src$DECLARE
+    v_ok BOOLEAN;
+BEGIN
+    IF p_id_instalacion IS NULL OR p_id_sucursal IS NULL THEN
+        RETURN;
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM instalacion i
+        WHERE i.id_instalacion = p_id_instalacion
+          AND i.id_sucursal = p_id_sucursal
+    ) INTO v_ok;
+
+    IF NOT v_ok THEN
+        RAISE EXCEPTION 'Inconsistencia sucursal/instalacion en %: instalacion % no pertenece a sucursal %',
+            p_contexto, p_id_instalacion, p_id_sucursal;
+    END IF;
+END;$src$,'\s','','g')
+    ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: helper contractual sucursal/instalación'; END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
        WHERE n.nspname='public' AND p.proname='trg_operacion_idempotente_inmutable'
          AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
          AND regexp_replace(p.prosrc,'\s','','g') = regexp_replace($src$BEGIN
@@ -145,12 +204,31 @@ BEGIN
             END$src$,'\s','','g')
     ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: función de inmutabilidad'; END IF;
 
-    IF (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 1
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='trg_operacion_idempotente_instalacion_sucursal'
+         AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
+         AND regexp_replace(p.prosrc,'\s','','g') = regexp_replace($src$BEGIN
+                PERFORM public.fn_assert_instalacion_pertenece_a_sucursal(
+                    NEW.id_instalacion,
+                    NEW.id_sucursal,
+                    'operacion_idempotente'
+                );
+                RETURN NEW;
+            END$src$,'\s','','g')
+    ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: función de validación sucursal/instalación'; END IF;
+
+    IF (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 2
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal
           AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE DELETE OR UPDATE ON public.operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_inmutable()'
-       ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: trigger de inmutabilidad'; END IF;
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
+          AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal
+          AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE INSERT ON public.operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()'
+       ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: triggers contractuales'; END IF;
 END $$;
 
 COMMIT;

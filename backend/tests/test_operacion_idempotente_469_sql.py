@@ -31,6 +31,16 @@ def _installation(db) -> int:
     return db.execute(text("SELECT id_instalacion FROM instalacion ORDER BY id_instalacion LIMIT 1")).scalar_one()
 
 
+def _installation_context(db) -> tuple[int, int]:
+    row = db.execute(text("""
+        SELECT id_instalacion, id_sucursal
+          FROM instalacion
+         ORDER BY id_instalacion
+         LIMIT 1
+    """)).one()
+    return row.id_instalacion, row.id_sucursal
+
+
 def _insert(db, **changes):
     values = {
         "op_id": uuid4(), "command_code": "TEST.COMMAND", "target_type": "TEST",
@@ -91,7 +101,26 @@ def test_schema_fisico_exacto(db_session):
     indexes = db_session.execute(text("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename='operacion_idempotente'")).scalars().all()
     assert set(indexes) == {"operacion_idempotente_pkey", "uq_operacion_idempotente_op_id"}
     triggers = db_session.execute(text("SELECT tgname FROM pg_trigger WHERE tgrelid='operacion_idempotente'::regclass AND NOT tgisinternal")).scalars().all()
-    assert triggers == ["trg_bud_operacion_idempotente_inmutable"]
+    assert set(triggers) == {
+        "trg_bi_operacion_idempotente_instalacion_sucursal",
+        "trg_bud_operacion_idempotente_inmutable",
+    }
+    functions = set(db_session.execute(text("""
+        SELECT p.proname
+          FROM pg_proc p
+          JOIN pg_namespace n ON n.oid=p.pronamespace
+         WHERE n.nspname='public'
+           AND p.proname IN (
+             'fn_assert_instalacion_pertenece_a_sucursal',
+             'trg_operacion_idempotente_instalacion_sucursal',
+             'trg_operacion_idempotente_inmutable'
+           )
+    """)).scalars())
+    assert functions == {
+        "fn_assert_instalacion_pertenece_a_sucursal",
+        "trg_operacion_idempotente_instalacion_sucursal",
+        "trg_operacion_idempotente_inmutable",
+    }
 
 
 def test_unicidad_global_op_id_y_target_no_unico(db_session):
@@ -134,6 +163,30 @@ def test_canonicalization_version_sin_default(db_session):
         """), {"op": uuid4(), "hash": "a" * 64, "installation": _installation(db_session)})
 
 
+def test_contexto_sucursal_instalacion_consistente_y_sucursal_opcional(db_session):
+    installation_id, branch_id = _installation_context(db_session)
+    _insert(db_session, id_sucursal=branch_id, id_instalacion=installation_id)
+    _insert(db_session, id_sucursal=None, id_instalacion=installation_id)
+
+
+def test_contexto_sucursal_instalacion_inconsistente_es_rechazado(db_session):
+    installation_id, branch_id = _installation_context(db_session)
+    other_branch = db_session.execute(text("""
+        INSERT INTO sucursal (
+            codigo_sucursal, nombre_sucursal, estado_sucursal
+        ) VALUES (
+            :code, 'Sucursal ajena #469', 'ACTIVA'
+        ) RETURNING id_sucursal
+    """), {"code": f"SUC_469_{uuid4().hex[:12]}"}).scalar_one()
+    assert other_branch != branch_id
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        _insert(
+            db_session,
+            id_sucursal=other_branch,
+            id_instalacion=installation_id,
+        )
+
+
 def test_jsonb_timestamp_e_inmutabilidad(db_session):
     snapshot = {"nested": {"array": [True, None, "áé漢字"]}}
     row = _insert(db_session, response_snapshot=json.dumps(snapshot, ensure_ascii=False))
@@ -152,10 +205,12 @@ def test_jsonb_timestamp_e_inmutabilidad(db_session):
 def test_reejecucion_compatible_no_reemplaza_objetos_ni_filas(db_session):
     row = _insert(db_session)
     function_oid = db_session.execute(text("SELECT 'trg_operacion_idempotente_inmutable()'::regprocedure::oid")).scalar_one()
-    trigger_oid = db_session.execute(text("SELECT oid FROM pg_trigger WHERE tgname='trg_bud_operacion_idempotente_inmutable'")).scalar_one()
+    context_function_oid = db_session.execute(text("SELECT 'trg_operacion_idempotente_instalacion_sucursal()'::regprocedure::oid")).scalar_one()
+    trigger_oids = dict(db_session.execute(text("SELECT tgname,oid FROM pg_trigger WHERE tgrelid='operacion_idempotente'::regclass AND NOT tgisinternal")).all())
     db_session.execute(text(_patch_body()))
     assert db_session.execute(text("SELECT 'trg_operacion_idempotente_inmutable()'::regprocedure::oid")).scalar_one() == function_oid
-    assert db_session.execute(text("SELECT oid FROM pg_trigger WHERE tgname='trg_bud_operacion_idempotente_inmutable'")).scalar_one() == trigger_oid
+    assert db_session.execute(text("SELECT 'trg_operacion_idempotente_instalacion_sucursal()'::regprocedure::oid")).scalar_one() == context_function_oid
+    assert dict(db_session.execute(text("SELECT tgname,oid FROM pg_trigger WHERE tgrelid='operacion_idempotente'::regclass AND NOT tgisinternal")).all()) == trigger_oids
     assert db_session.execute(text("SELECT count(*) FROM operacion_idempotente WHERE id_operacion_idempotente=:id"), {"id": row["id_operacion_idempotente"]}).scalar_one() == 1
 
 
@@ -166,6 +221,8 @@ def test_reejecucion_compatible_no_reemplaza_objetos_ni_filas(db_session):
     "ALTER TABLE operacion_idempotente ALTER COLUMN canonicalization_version SET DEFAULT 1",
     "ALTER TABLE operacion_idempotente DROP CONSTRAINT uq_operacion_idempotente_op_id; ALTER TABLE operacion_idempotente ADD UNIQUE(op_id,command_code)",
     "DROP TRIGGER trg_bud_operacion_idempotente_inmutable ON operacion_idempotente; CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE UPDATE ON operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_inmutable()",
+    "DROP TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal ON operacion_idempotente; CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE UPDATE ON operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()",
+    "DROP TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal ON operacion_idempotente; DROP FUNCTION trg_operacion_idempotente_instalacion_sucursal(); CREATE FUNCTION trg_operacion_idempotente_instalacion_sucursal() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$; CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE INSERT ON operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()",
     "DROP TRIGGER trg_bud_operacion_idempotente_inmutable ON operacion_idempotente; DROP FUNCTION trg_operacion_idempotente_inmutable(); CREATE FUNCTION trg_operacion_idempotente_inmutable() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN OLD; END $$; CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE UPDATE OR DELETE ON operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_inmutable()",
 ])
 def test_fail_fast_estructura_incompatible_y_rollback(db_session, mutation):
