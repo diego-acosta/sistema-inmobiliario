@@ -1,21 +1,22 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-
 from app.api.routers.administrativo_router import router as administrativo_router
 from app.api.routers.comercial_router import router as comercial_router
-from app.api.routers.edificaciones_router import router as edificaciones_router
-from app.api.routers.inmuebles_router import router as inmuebles_router
 from app.api.routers.desarrollos_router import router as desarrollos_router
+from app.api.routers.edificaciones_router import router as edificaciones_router
+from app.api.routers.financiero_router import router as financiero_router
 from app.api.routers.health_router import router as health_router
-from app.api.routers.personas_router import router as personas_router
-from app.api.routers.servicios_router import router as servicios_router
+from app.api.routers.inmuebles_router import router as inmuebles_router
 from app.api.routers.locativo_router import router as locativo_router
 from app.api.routers.operativo_router import router as operativo_router
-from app.api.routers.financiero_router import router as financiero_router
-from app.config.settings import get_settings
-from app.application.administrativo.authentication import InvalidSession, SessionTechnicalError
+from app.api.routers.personas_router import router as personas_router
+from app.api.routers.servicios_router import router as servicios_router
 from app.api.schemas.administrativo import ErrorResponse
-
+from app.application.administrativo.authentication import (
+    InvalidSession,
+    SessionTechnicalError,
+)
+from app.config.settings import get_settings
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 settings = get_settings()
 

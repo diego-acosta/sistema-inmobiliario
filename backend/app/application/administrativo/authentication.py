@@ -1,19 +1,28 @@
 """Autenticación administrativa local y sesiones opacas revocables (#446)."""
 
+import re
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from hashlib import sha256
-import re
-import secrets
 from typing import Literal
 from uuid import UUID
 
+from app.application.common.local_installation import (
+    LocalInstallationError,
+    resolve_local_installation,
+)
+from app.application.common.security.password_hashing import (
+    InvalidPasswordInput,
+    verify_password,
+)
+from app.infrastructure.persistence.repositories.authentication_repository import (
+    AuthenticationRepository,
+)
+from app.infrastructure.persistence.repositories.sesion_usuario_repository import (
+    SesionUsuarioRepository,
+)
 from sqlalchemy.exc import IntegrityError
-
-from app.application.common.local_installation import LocalInstallationError, resolve_local_installation
-from app.application.common.security.password_hashing import InvalidPasswordInput, verify_password
-from app.infrastructure.persistence.repositories.authentication_repository import AuthenticationRepository
-from app.infrastructure.persistence.repositories.sesion_usuario_repository import SesionUsuarioRepository
 
 SESSION_ABSOLUTE_TTL = timedelta(hours=8)
 TOKEN_RANDOM_BYTES = 32

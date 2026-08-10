@@ -1,14 +1,16 @@
+from typing import Annotated
+
+from app.api.authentication import get_authenticated_principal
 from app.api.core_ef_headers import (
     CoreEFHeaders,
     CoreEFHeaderValidationError,
     parse_core_ef_headers,
 )
 from app.api.dependencies import get_db
-from app.api.authentication import get_authenticated_principal
 from app.api.schemas.administrativo import (
-    CatalogoMaestroBajaResponse,
     AuthenticatedPrincipalData,
     AuthenticatedPrincipalResponse,
+    CatalogoMaestroBajaResponse,
     CatalogoMaestroCreateRequest,
     CatalogoMaestroCreateResponse,
     CatalogoMaestroData,
@@ -33,11 +35,11 @@ from app.api.schemas.administrativo import (
     LoginData,
     LoginRequest,
     LoginResponse,
+    ParametroGlobalValorResponse,
     ParametroSistemaAlcanceData,
     ParametroSistemaData,
     ParametroSistemaListData,
     ParametroSistemaListResponse,
-    ParametroGlobalValorResponse,
     ParametroSistemaTipoData,
     PermisoData,
     PermisoListResponse,
@@ -63,6 +65,23 @@ from app.api.schemas.administrativo import (
     UsuarioSucursalData,
     UsuarioSucursalListResponse,
 )
+from app.application.administrativo.authentication import (
+    AuthenticatedPrincipal,
+    AuthenticationService,
+    AuthenticationTechnicalError,
+    AuthenticationUnavailable,
+    InvalidCredentials,
+    InvalidSession,
+    SessionTechnicalError,
+    parse_bearer_header,
+)
+from app.application.administrativo.services.obtener_parametro_global_query_service import (
+    ObtenerParametroGlobalQueryService,
+    ParametroGlobalConflictError,
+    ParametroGlobalInconsistencyError,
+    ParametroGlobalNotFoundError,
+)
+from app.config.settings import get_settings
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroConcurrencyError,
     CatalogoMaestroDuplicateCodeError,
@@ -78,12 +97,6 @@ from app.infrastructure.persistence.repositories.item_catalogo_repository import
 )
 from app.infrastructure.persistence.repositories.parametro_sistema_repository import (
     ParametroSistemaRepository,
-)
-from app.application.administrativo.services.obtener_parametro_global_query_service import (
-    ObtenerParametroGlobalQueryService,
-    ParametroGlobalConflictError,
-    ParametroGlobalInconsistencyError,
-    ParametroGlobalNotFoundError,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
@@ -106,20 +119,9 @@ from app.infrastructure.persistence.repositories.usuario_sucursal_repository imp
 )
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from pydantic import ValidationError
-from app.application.administrativo.authentication import (
-    AuthenticatedPrincipal,
-    AuthenticationService,
-    AuthenticationTechnicalError,
-    AuthenticationUnavailable,
-    InvalidCredentials,
-    InvalidSession,
-    SessionTechnicalError,
-    parse_bearer_header,
-)
-from app.config.settings import get_settings
 
 router = APIRouter(tags=["Administrativo"])
 
@@ -131,7 +133,9 @@ router = APIRouter(tags=["Administrativo"])
 )
 def obtener_principal_autenticado(
     response: Response,
-    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    principal: Annotated[
+        AuthenticatedPrincipal, Depends(get_authenticated_principal)
+    ],
 ) -> AuthenticatedPrincipalResponse:
     # CORE-EF: QUERY_READLIKE; Authorization autentica y no hay headers write.
     response.headers["Cache-Control"] = "no-store"

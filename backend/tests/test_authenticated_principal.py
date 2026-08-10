@@ -1,10 +1,9 @@
 from dataclasses import FrozenInstanceError
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.api.authentication import get_authenticated_principal
 from app.application.administrativo.authentication import (
     AuthenticatedPrincipal,
@@ -13,9 +12,14 @@ from app.application.administrativo.authentication import (
     SessionTechnicalError,
 )
 
+# El schema usa ``timestamp without time zone``. Partimos de un instante UTC
+# explícito para satisfacer la política temporal y removemos tzinfo al entrar en
+# la representación naive compatible con PostgreSQL.
+TEST_NOW = datetime(2026, 8, 7, 12, tzinfo=UTC).replace(tzinfo=None)
+
 
 def _projection(**overrides):
-    now = datetime(2026, 8, 7, 12)
+    now = TEST_NOW
     values = {
         "uid_global": uuid4(),
         "id_usuario_sesion": 10,
@@ -41,7 +45,7 @@ def _projection(**overrides):
 def test_authenticated_principal_is_immutable_typed_and_nullable():
     principal = AuthenticatedPrincipal(
         10, "USR-001", "operador", uuid4(), "SESION_SERVIDOR",
-        datetime(2026, 8, 7, 12), 1, None,
+        TEST_NOW, 1, None,
     )
     assert isinstance(principal.id_sesion, UUID)
     assert principal.id_sucursal_operativa is None
@@ -68,12 +72,12 @@ def test_dependency_reuses_canonical_parser_and_service():
     [
         {"estado_sesion": "CERRADA"},
         {"estado_sesion": "EXPIRADA"},
-        {"fecha_hora_cierre": datetime(2026, 8, 7, 12)},
-        {"expira_en": datetime(2026, 8, 7, 12)},
+        {"fecha_hora_cierre": TEST_NOW},
+        {"expira_en": TEST_NOW},
         {"requiere_reautenticacion": True},
         {"estado_usuario": "INACTIVO"},
-        {"usuario_deleted_at": datetime(2026, 8, 7, 12)},
-        {"fecha_baja": datetime(2026, 8, 7, 12)},
+        {"usuario_deleted_at": TEST_NOW},
+        {"fecha_baja": TEST_NOW},
         {"id_usuario_usuario": None},
     ],
 )

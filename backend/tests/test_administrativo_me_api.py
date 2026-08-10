@@ -1,8 +1,7 @@
-from sqlalchemy import text
 from unittest.mock import patch
 
+from sqlalchemy import text
 from tests.test_administrativo_login_api import _credential
-
 
 PATH = "/api/v1/administrativo/seguridad/me"
 INVALID = {

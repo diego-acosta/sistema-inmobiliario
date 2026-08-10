@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
-from uuid import UUID
 
 
 class LoginRequest(BaseModel):
