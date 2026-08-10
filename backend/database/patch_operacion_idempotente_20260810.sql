@@ -2,6 +2,7 @@ BEGIN;
 
 DO $$
 BEGIN
+    PERFORM set_config('sistema.patch_operacion_idempotente_created', 'false', true);
     IF to_regclass('public.usuario') IS NULL
        OR to_regclass('public.sucursal') IS NULL
        OR to_regclass('public.instalacion') IS NULL THEN
@@ -41,6 +42,7 @@ BEGIN
             CONSTRAINT fk_operacion_idempotente_sucursal FOREIGN KEY (id_sucursal) REFERENCES public.sucursal(id_sucursal) ON DELETE RESTRICT,
             CONSTRAINT fk_operacion_idempotente_instalacion FOREIGN KEY (id_instalacion) REFERENCES public.instalacion(id_instalacion) ON DELETE RESTRICT
         );
+        PERFORM set_config('sistema.patch_operacion_idempotente_created', 'true', true);
     END IF;
 END $$;
 
@@ -51,6 +53,9 @@ BEGIN
     END IF;
 
     IF to_regprocedure('public.trg_operacion_idempotente_inmutable()') IS NULL THEN
+        IF current_setting('sistema.patch_operacion_idempotente_created') <> 'true' THEN
+            RAISE EXCEPTION 'operacion_idempotente incompatible: falta función de inmutabilidad';
+        END IF;
         EXECUTE $function$
             CREATE FUNCTION public.trg_operacion_idempotente_inmutable()
             RETURNS trigger
@@ -64,6 +69,9 @@ BEGIN
     END IF;
 
     IF to_regprocedure('public.trg_operacion_idempotente_instalacion_sucursal()') IS NULL THEN
+        IF current_setting('sistema.patch_operacion_idempotente_created') <> 'true' THEN
+            RAISE EXCEPTION 'operacion_idempotente incompatible: falta función de validación sucursal/instalación';
+        END IF;
         EXECUTE $function$
             CREATE FUNCTION public.trg_operacion_idempotente_instalacion_sucursal()
             RETURNS trigger
@@ -87,6 +95,9 @@ BEGIN
           AND tgname = 'trg_bi_operacion_idempotente_instalacion_sucursal'
           AND NOT tgisinternal
     ) THEN
+        IF current_setting('sistema.patch_operacion_idempotente_created') <> 'true' THEN
+            RAISE EXCEPTION 'operacion_idempotente incompatible: falta trigger de validación sucursal/instalación';
+        END IF;
         CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal
         BEFORE INSERT ON public.operacion_idempotente
         FOR EACH ROW EXECUTE FUNCTION public.trg_operacion_idempotente_instalacion_sucursal();
@@ -98,9 +109,26 @@ BEGIN
           AND tgname = 'trg_bud_operacion_idempotente_inmutable'
           AND NOT tgisinternal
     ) THEN
+        IF current_setting('sistema.patch_operacion_idempotente_created') <> 'true' THEN
+            RAISE EXCEPTION 'operacion_idempotente incompatible: falta trigger de inmutabilidad UPDATE/DELETE';
+        END IF;
         CREATE TRIGGER trg_bud_operacion_idempotente_inmutable
         BEFORE UPDATE OR DELETE ON public.operacion_idempotente
         FOR EACH ROW EXECUTE FUNCTION public.trg_operacion_idempotente_inmutable();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'public.operacion_idempotente'::regclass
+          AND tgname = 'trg_bt_operacion_idempotente_inmutable'
+          AND NOT tgisinternal
+    ) THEN
+        IF current_setting('sistema.patch_operacion_idempotente_created') <> 'true' THEN
+            RAISE EXCEPTION 'operacion_idempotente incompatible: falta trigger de inmutabilidad TRUNCATE';
+        END IF;
+        CREATE TRIGGER trg_bt_operacion_idempotente_inmutable
+        BEFORE TRUNCATE ON public.operacion_idempotente
+        FOR EACH STATEMENT EXECUTE FUNCTION public.trg_operacion_idempotente_inmutable();
     END IF;
 END $$;
 
@@ -183,7 +211,7 @@ BEGIN
 
     SELECT EXISTS (
         SELECT 1
-        FROM instalacion i
+        FROM public.instalacion AS i
         WHERE i.id_instalacion = p_id_instalacion
           AND i.id_sucursal = p_id_sucursal
     ) INTO v_ok;
@@ -218,7 +246,7 @@ END;$src$,'\s','','g')
             END$src$,'\s','','g')
     ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: función de validación sucursal/instalación'; END IF;
 
-    IF (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 2
+    IF (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 3
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal
@@ -228,6 +256,11 @@ END;$src$,'\s','','g')
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal
           AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE INSERT ON public.operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()'
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
+          AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal
+          AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bt_operacion_idempotente_inmutable BEFORE TRUNCATE ON public.operacion_idempotente FOR EACH STATEMENT EXECUTE FUNCTION trg_operacion_idempotente_inmutable()'
        ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: triggers contractuales'; END IF;
 END $$;
 

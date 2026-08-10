@@ -49,7 +49,7 @@ BEGIN
 
     SELECT EXISTS (
         SELECT 1
-        FROM instalacion i
+        FROM public.instalacion AS i
         WHERE i.id_instalacion = p_id_instalacion
           AND i.id_sucursal = p_id_sucursal
     ) INTO v_ok;
