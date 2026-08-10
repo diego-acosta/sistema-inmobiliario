@@ -20,6 +20,9 @@ class AdministrativeAuthorizationRepository:
     ) -> AdministrativeAuthorizationProjection:
         """Evalúa una concesión GLOBAL usando el reloj de PostgreSQL."""
         statement = text("""
+            WITH reloj AS MATERIALIZED (
+                SELECT clock_timestamp()::timestamp without time zone AS ahora
+            )
             SELECT
                 EXISTS (
                     SELECT 1
@@ -37,17 +40,16 @@ class AdministrativeAuthorizationRepository:
                       ON rsp.id_rol_seguridad = r.id_rol_seguridad
                     JOIN permiso p
                       ON p.id_permiso = rsp.id_permiso
+                    CROSS JOIN reloj
                     WHERE u.id_usuario = :id_usuario
                       AND u.estado_usuario = 'ACTIVO'
                       AND u.deleted_at IS NULL
                       AND u.fecha_baja IS NULL
                       AND urs.deleted_at IS NULL
-                      AND urs.fecha_desde <=
-                          clock_timestamp()::timestamp without time zone
+                      AND urs.fecha_desde <= reloj.ahora
                       AND (
                           urs.fecha_hasta IS NULL
-                          OR urs.fecha_hasta >
-                             clock_timestamp()::timestamp without time zone
+                          OR urs.fecha_hasta > reloj.ahora
                       )
                       AND r.estado_rol = 'ACTIVO'
                       AND p.codigo_permiso = :permission_code

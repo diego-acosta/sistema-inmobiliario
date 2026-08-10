@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
@@ -27,6 +27,8 @@ from app.main import (
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+TEST_NOW = datetime(2026, 8, 10, tzinfo=UTC).replace(tzinfo=None)
+
 
 def _principal(id_usuario=42):
     return AuthenticatedPrincipal(
@@ -35,7 +37,7 @@ def _principal(id_usuario=42):
         login="admin",
         id_sesion=uuid4(),
         mecanismo_autenticacion="SESION_SERVIDOR",
-        autenticado_en=datetime(2026, 8, 10),
+        autenticado_en=TEST_NOW,
         id_instalacion_origen_sesion=1,
         id_sucursal_operativa=None,
     )
@@ -152,9 +154,10 @@ def test_repository_query_is_global_read_only_and_uses_postgresql_wall_clock():
 
     sql = str(db.execute.call_args.args[0]).lower()
     assert projection == AdministrativeAuthorizationProjection(True, False)
-    assert "clock_timestamp()::timestamp without time zone" in sql
-    assert "fecha_desde <=" in sql
-    assert "fecha_hasta >" in sql
+    assert sql.count("clock_timestamp()::timestamp without time zone") == 1
+    assert "with reloj as materialized" in sql
+    assert "fecha_desde <= reloj.ahora" in sql
+    assert "fecha_hasta > reloj.ahora" in sql
     assert "usuario_rol_sucursal" not in sql
     assert "usuario_sucursal" not in sql
     assert "for update" not in sql
