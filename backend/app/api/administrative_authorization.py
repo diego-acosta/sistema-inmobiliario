@@ -1,6 +1,7 @@
 """Dependency reusable de autorización administrativa GLOBAL."""
 
-from typing import Annotated, Callable
+from collections.abc import Callable
+from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy.orm import Session

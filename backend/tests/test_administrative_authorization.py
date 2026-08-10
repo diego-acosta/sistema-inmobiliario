@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Annotated
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
@@ -184,7 +185,9 @@ def _isolated_client(principal, decision):
         "/protected",
         responses=ADMINISTRATIVE_AUTHORIZATION_RESPONSES,
     )
-    def protected(authenticated=Depends(dependency)):
+    def protected(
+        authenticated: Annotated[AuthenticatedPrincipal, Depends(dependency)],
+    ):
         return {"id_usuario": authenticated.id_usuario}
 
     app.dependency_overrides[get_authenticated_principal] = lambda: principal
@@ -262,7 +265,9 @@ def test_isolated_openapi_reuses_bearer_once_without_raw_header_or_scopes():
         "/protected",
         responses=ADMINISTRATIVE_AUTHORIZATION_RESPONSES,
     )
-    def protected(_principal=Depends(dependency)):
+    def protected(
+        _principal: Annotated[AuthenticatedPrincipal, Depends(dependency)],
+    ):
         return {}
 
     operation = app.openapi()["paths"]["/protected"]["get"]
