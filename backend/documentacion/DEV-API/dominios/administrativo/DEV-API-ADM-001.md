@@ -904,3 +904,20 @@ No exige `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` ni `If-M
 Una ausencia o invalidez de bearer, sesión o usuario devuelve el mismo `401 INVALID_SESSION`; una falla de persistencia devuelve `500 SESSION_TECHNICAL_ERROR`, ambos sin detalle interno. La query es read-only, sin locks, actividad, outbox o sync. No hay roles, permisos, scopes ni autorización (#443 pendiente). No hubo cambio SQL.
 
 La afirmación histórica de la introducción de que Administrativo no implementaba login queda superada por #446 y esta sección; se conserva únicamente como registro del corte anterior.
+
+# Infraestructura de autorización administrativa #443
+
+#443 no agrega ni protege endpoints productivos. Provee
+`require_administrative_permission(permission_code)` para que rutas posteriores
+reutilicen `BearerAuth` y el principal canónico de #447. Una ruta consumidora debe
+documentar 401/403/500 con `ErrorResponse`; no debe declarar `Authorization` como
+header raw ni usar OAuth scopes.
+
+Principal válido sin concesión devuelve `403 autorizacion_insuficiente` y el mensaje
+"La autorización efectiva es insuficiente para ejecutar la operación.". Permiso
+contractual inexistente o inconsistencia devuelve `500 inconsistencia_roles_permisos`
+y "No fue posible resolver la autorización administrativa.". Ambos incluyen details
+vacío y `Cache-Control: no-store`, sin código de permiso ni información interna. El
+401 `INVALID_SESSION` permanece a cargo de #447. Clasificación CORE-EF:
+`QUERY_READLIKE`; no aplican headers write, idempotencia, outbox, locks, versionado o
+sync. #461 (migración), #412 (primer command) y #435 (contexto) siguen pendientes.

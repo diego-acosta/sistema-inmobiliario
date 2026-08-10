@@ -180,3 +180,18 @@ esas capacidades permanecen pendientes de #447 y posteriores.
 Administrativo construye `AuthenticatedPrincipal` exclusivamente desde un bearer opaco cuya sesión local persiste utilizable y cuyo usuario asociado permanece activo. El UID público proviene de `sesion_usuario.uid_global`; el ID técnico interno de la fila no se expone. La lectura proyecta sólo sesión y usuario, usa `clock_timestamp()`, no bloquea, no escribe, no actualiza actividad ni materializa expiración.
 
 La identidad humana (`Authorization`) permanece separada de la identidad de operación (`X-Op-Id`), el contexto de sucursal (`X-Sucursal-Id`), el contexto técnico (`X-Instalacion-Id`) y la concurrencia (`If-Match-Version`). `X-Usuario-Id` está deprecado como fuente HTTP de identidad, pero continúa en endpoints heredados hasta #461. La sesión y sus secretos son locales/no sincronizables. #447 no agrega roles, permisos ni autorización; #443 y #461 permanecen pendientes. No requiere cambios SQL.
+
+## Incremento de seguridad #443 — autorización administrativa GLOBAL
+
+Administrativo incorpora como soporte reusable y read-only la dependency
+`require_administrative_permission(permission_code)`. La identidad proviene únicamente
+de `AuthenticatedPrincipal.id_usuario`, resuelta antes por #447; autorización no conoce
+`X-Usuario-Id` ni headers CORE-EF. La decisión es default-deny y exige usuario activo,
+asignación GLOBAL no eliminada y vigente, rol activo y permiso activo de código exacto.
+
+PostgreSQL es la autoridad de vigencia mediante `clock_timestamp()::timestamp without
+time zone`: `fecha_desde` es inclusiva y `fecha_hasta` exclusiva. La evaluación no usa
+contexto de sucursal o instalación, no bloquea ni escribe y no produce outbox o sync.
+Una falta de concesión es 403 uniforme; un permiso contractual inexistente o una
+inconsistencia técnica es 500 sanitizado. La autenticación inválida conserva el 401 de
+#447. No hubo cambio SQL. #461, #412 y la autorización contextual #435 siguen pendientes.

@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-08
+**Actualizado:** 2026-08-10
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -438,3 +438,12 @@ siguiente incremento para interpretar el bearer y construir el principal.
 ## 14. Incremento Administrativo/Seguridad #447 — principal autenticado mínimo
 
 #445 y #446 están completados. #447 implementa exclusivamente `AuthenticatedPrincipal`, la dependency read-only `get_authenticated_principal` y `GET /api/v1/administrativo/seguridad/me` sobre el SQL existente. `Authorization` es la única fuente de identidad humana; `X-Usuario-Id` queda deprecado pero se conserva en endpoints heredados hasta #461. Sesiones y secretos continúan locales/no sincronizables. No se incorporan roles, permisos ni autorización: #443 permanece pendiente; #461 también permanece pendiente y no se declara autenticación transversal de endpoints.
+
+## 15. Incremento Administrativo/Seguridad #443 — autorización GLOBAL reusable
+
+#444 está completado. #443 incorpora únicamente infraestructura read-only reusable:
+dependency sobre el principal canónico de #447, service default-deny, repository GLOBAL
+y contratos sanitizados 403/500. No protege rutas productivas ni declara autorización
+transversal. No agrega SQL, permisos funcionales, headers CORE-EF, writes, outbox, sync
+o contexto de sucursal/instalación. #461, #412 y #435 permanecen pendientes; #463–#467
+conservan la deuda Ruff histórica como frente técnico separado.

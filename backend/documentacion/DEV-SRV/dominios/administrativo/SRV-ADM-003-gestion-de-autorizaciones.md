@@ -188,6 +188,22 @@ Permite visualizar autorizaciones, solicitudes y estados.
 - definición de autorizaciones automáticas versus manuales
 - políticas de revocación
 - integración con workflows de aprobación
+
+## Runtime mínimo GLOBAL (#443)
+
+`AdministrativeAuthorizationService` delega en
+`AdministrativeAuthorizationRepository` una proyección mínima con dos `EXISTS`: la
+existencia física del permiso opaco requerido y la concesión efectiva a través de
+`usuario → usuario_rol_seguridad → rol_seguridad → rol_seguridad_permiso → permiso`.
+La concesión filtra usuario, rol y permiso activos, usuario no eliminado/sin baja y
+asignación no eliminada con `fecha_desde <= ahora` y `fecha_hasta IS NULL OR
+fecha_hasta > ahora`; el reloj es `clock_timestamp()` de PostgreSQL.
+
+La ausencia de rol, vínculo o concesión, incluidos rol/permiso inactivo y vínculo
+futuro, vencido o eliminado, colapsa a deny. El permiso contractual no definido y
+todo resultado/repositorio inconsistente producen error técnico sanitizado. No hay
+commit, rollback de negocio, flush, lock, escritura, outbox, sync ni actividad de
+sesión. El scope es exclusivamente GLOBAL; #435 conserva el contexto futuro.
 # Frontera de autenticación #446
 
 #446 implementa login y logout locales, pero no autorización. La password se
