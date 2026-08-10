@@ -14,6 +14,10 @@ from app.application.administrativo.authentication import (
     InvalidSession,
     SessionTechnicalError,
 )
+from app.application.administrativo.authorization import (
+    AdministrativeAuthorizationTechnicalError,
+    InsufficientAdministrativeAuthorization,
+)
 from app.config.settings import get_settings
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -84,6 +88,38 @@ async def session_technical_error_handler(
         content=ErrorResponse(
             error_code="SESSION_TECHNICAL_ERROR",
             error_message="No fue posible validar la sesión.",
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(InsufficientAdministrativeAuthorization)
+async def insufficient_administrative_authorization_handler(
+    _request: Request, _exc: InsufficientAdministrativeAuthorization
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=403,
+        content=ErrorResponse(
+            error_code="autorizacion_insuficiente",
+            error_message=(
+                "La autorización efectiva es insuficiente para ejecutar la operación."
+            ),
+            details={},
+        ).model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(AdministrativeAuthorizationTechnicalError)
+async def administrative_authorization_technical_error_handler(
+    _request: Request, _exc: AdministrativeAuthorizationTechnicalError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            error_code="inconsistencia_roles_permisos",
+            error_message="No fue posible resolver la autorización administrativa.",
             details={},
         ).model_dump(),
         headers={"Cache-Control": "no-store"},
