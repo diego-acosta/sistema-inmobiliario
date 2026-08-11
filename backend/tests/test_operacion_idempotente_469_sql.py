@@ -369,6 +369,65 @@ def test_reejecucion_compatible_no_reemplaza_objetos_ni_filas(db_session):
     assert db_session.execute(text("SELECT count(*) FROM operacion_idempotente WHERE id_operacion_idempotente=:id"), {"id": row["id_operacion_idempotente"]}).scalar_one() == 1
 
 
+def test_reejecucion_independiente_de_search_path_y_homonimos(db_session):
+    receipt = _insert(db_session)
+    db_session.execute(text("CREATE SCHEMA otro_schema"))
+    for table in ("usuario", "sucursal", "instalacion"):
+        db_session.execute(text(f"CREATE TABLE otro_schema.{table} (id_{table} bigint PRIMARY KEY)"))
+    function_oids = dict(db_session.execute(text("""
+        SELECT proname,oid FROM pg_proc
+        WHERE oid IN (
+          'public.fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)'::regprocedure,
+          'public.trg_operacion_idempotente_instalacion_sucursal()'::regprocedure,
+          'public.trg_operacion_idempotente_inmutable()'::regprocedure
+        )
+    """)).all())
+    trigger_oids = dict(db_session.execute(text("""
+        SELECT tgname,oid FROM pg_trigger
+        WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal
+    """)).all())
+    constraint_oids = dict(db_session.execute(text("""
+        SELECT conname,oid FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+    """)).all())
+
+    db_session.execute(text("SET LOCAL search_path = pg_catalog"))
+    db_session.execute(text(_patch_body()))
+    db_session.execute(text("SET LOCAL search_path = otro_schema, public, pg_catalog"))
+    db_session.execute(text(_patch_body()))
+
+    assert dict(db_session.execute(text("""
+        SELECT proname,oid FROM pg_proc
+        WHERE oid IN (
+          'public.fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)'::regprocedure,
+          'public.trg_operacion_idempotente_instalacion_sucursal()'::regprocedure,
+          'public.trg_operacion_idempotente_inmutable()'::regprocedure
+        )
+    """)).all()) == function_oids
+    assert dict(db_session.execute(text("""
+        SELECT tgname,oid FROM pg_trigger
+        WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal
+    """)).all()) == trigger_oids
+    assert dict(db_session.execute(text("""
+        SELECT conname,oid FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+    """)).all()) == constraint_oids
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
+    referenced = set(db_session.execute(text("""
+        SELECT confrelid FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass AND contype='f'
+    """)).scalars())
+    assert referenced == {
+        db_session.execute(text("SELECT 'public.usuario'::regclass::oid")).scalar_one(),
+        db_session.execute(text("SELECT 'public.sucursal'::regclass::oid")).scalar_one(),
+        db_session.execute(text("SELECT 'public.instalacion'::regclass::oid")).scalar_one(),
+    }
+    db_session.execute(text("SET LOCAL search_path = public, pg_catalog"))
+
+
 @pytest.mark.parametrize("mutation", [
     "ALTER TABLE operacion_idempotente DROP COLUMN target_key",
     "ALTER TABLE operacion_idempotente ALTER COLUMN target_key TYPE text",

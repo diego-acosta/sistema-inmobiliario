@@ -257,29 +257,54 @@ BEGIN
         RAISE EXCEPTION 'operacion_idempotente incompatible: definición de columna %', bad;
     END IF;
 
-    WITH expected(name, definition) AS (VALUES
-      ('operacion_idempotente_pkey','PRIMARY KEY (id_operacion_idempotente)'),
-      ('uq_operacion_idempotente_op_id','UNIQUE (op_id)'),
-      ('chk_operacion_idempotente_command_code',$def$CHECK ((btrim((command_code)::text) <> ''::text))$def$),
-      ('chk_operacion_idempotente_target_type',$def$CHECK ((btrim((target_type)::text) <> ''::text))$def$),
-      ('chk_operacion_idempotente_target_key',$def$CHECK (((target_key IS NULL) OR (btrim((target_key)::text) <> ''::text)))$def$),
-      ('chk_operacion_idempotente_payload_hash',$def$CHECK ((payload_hash ~ '^[0-9a-f]{64}$'::text))$def$),
-      ('chk_operacion_idempotente_canonicalization_version','CHECK ((canonicalization_version >= 1))'),
-      ('chk_operacion_idempotente_result_code',$def$CHECK ((btrim((result_code)::text) <> ''::text))$def$),
-      ('chk_operacion_idempotente_result_http_status','CHECK (((result_http_status IS NULL) OR ((result_http_status >= 100) AND (result_http_status <= 599))))'),
-      ('chk_operacion_idempotente_result_version','CHECK (((result_version IS NULL) OR (result_version >= 1)))'),
-      ('fk_operacion_idempotente_usuario','FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario) ON DELETE RESTRICT'),
-      ('fk_operacion_idempotente_sucursal','FOREIGN KEY (id_sucursal) REFERENCES sucursal(id_sucursal) ON DELETE RESTRICT'),
-      ('fk_operacion_idempotente_instalacion','FOREIGN KEY (id_instalacion) REFERENCES instalacion(id_instalacion) ON DELETE RESTRICT')
+    WITH expected(name, expression) AS (VALUES
+      ('chk_operacion_idempotente_command_code',$expr$(btrim((command_code)::text) <> ''::text)$expr$),
+      ('chk_operacion_idempotente_target_type',$expr$(btrim((target_type)::text) <> ''::text)$expr$),
+      ('chk_operacion_idempotente_target_key',$expr$((target_key IS NULL) OR (btrim((target_key)::text) <> ''::text))$expr$),
+      ('chk_operacion_idempotente_payload_hash',$expr$(payload_hash ~ '^[0-9a-f]{64}$'::text)$expr$),
+      ('chk_operacion_idempotente_canonicalization_version','(canonicalization_version >= 1)'),
+      ('chk_operacion_idempotente_result_code',$expr$(btrim((result_code)::text) <> ''::text)$expr$),
+      ('chk_operacion_idempotente_result_http_status','((result_http_status IS NULL) OR ((result_http_status >= 100) AND (result_http_status <= 599)))'),
+      ('chk_operacion_idempotente_result_version','((result_version IS NULL) OR (result_version >= 1))')
     ), actual AS (
-      SELECT conname name, pg_get_constraintdef(oid) definition FROM pg_constraint
-       WHERE conrelid='public.operacion_idempotente'::regclass
+      SELECT conname name, pg_get_expr(conbin,conrelid) expression FROM pg_constraint
+       WHERE conrelid='public.operacion_idempotente'::regclass AND contype='c'
     )
     SELECT coalesce(e.name,a.name) INTO bad FROM expected e FULL JOIN actual a USING (name)
-     WHERE e.name IS NULL OR a.name IS NULL OR e.definition<>a.definition LIMIT 1;
+     WHERE e.name IS NULL OR a.name IS NULL OR e.expression<>a.expression LIMIT 1;
     IF bad IS NOT NULL THEN
-        RAISE EXCEPTION 'operacion_idempotente incompatible: constraint %', bad;
+        RAISE EXCEPTION 'operacion_idempotente incompatible: CHECK %', bad;
     END IF;
+
+    IF (SELECT count(*) FROM pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass) <> 13
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+          WHERE c.conrelid='public.operacion_idempotente'::regclass
+            AND c.conname='operacion_idempotente_pkey' AND c.contype='p'
+            AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='id_operacion_idempotente')]::smallint[]
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+          WHERE c.conrelid='public.operacion_idempotente'::regclass
+            AND c.conname='uq_operacion_idempotente_op_id' AND c.contype='u'
+            AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='op_id')]::smallint[]
+       ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: PK/UNIQUE contractuales'; END IF;
+
+    WITH expected(name, local_column, remote_table, remote_column) AS (VALUES
+      ('fk_operacion_idempotente_usuario','id_usuario','public.usuario'::regclass,'id_usuario'),
+      ('fk_operacion_idempotente_sucursal','id_sucursal','public.sucursal'::regclass,'id_sucursal'),
+      ('fk_operacion_idempotente_instalacion','id_instalacion','public.instalacion'::regclass,'id_instalacion')
+    )
+    SELECT e.name INTO bad FROM expected e
+     WHERE NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.operacion_idempotente'::regclass
+          AND c.conname=e.name AND c.contype='f' AND c.confrelid=e.remote_table
+          AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname=e.local_column)]::smallint[]
+          AND c.confkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.confrelid AND attname=e.remote_column)]::smallint[]
+          AND c.confdeltype='r' AND c.convalidated
+     ) LIMIT 1;
+    IF bad IS NOT NULL THEN RAISE EXCEPTION 'operacion_idempotente incompatible: FK %', bad; END IF;
 
     IF (SELECT count(*) FROM pg_index WHERE indrelid='public.operacion_idempotente'::regclass) <> 2 THEN
         RAISE EXCEPTION 'operacion_idempotente incompatible: índices adicionales o faltantes';
@@ -338,17 +363,17 @@ END;$src$,'\s','','g')
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
-          AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE DELETE OR UPDATE ON public.operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_inmutable()'
+          AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=27
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal AND tgenabled='O'
-          AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE INSERT ON public.operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()'
+          AND tgfoid='public.trg_operacion_idempotente_instalacion_sucursal()'::regprocedure AND tgtype=7
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
-          AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bt_operacion_idempotente_inmutable BEFORE TRUNCATE ON public.operacion_idempotente FOR EACH STATEMENT EXECUTE FUNCTION trg_operacion_idempotente_inmutable()'
+          AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=34
        ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: triggers contractuales'; END IF;
 END $$;
 
