@@ -72,6 +72,16 @@ def _helper_body(db) -> str:
     """)).scalar_one()
 
 
+def _supports_conenforced(db) -> bool:
+    return db.execute(text("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_attribute
+            WHERE attrelid='pg_catalog.pg_constraint'::regclass
+              AND attname='conenforced' AND NOT attisdropped
+        )
+    """)).scalar_one()
+
+
 def _insert(db, **changes):
     values = {
         "op_id": uuid4(), "command_code": "TEST.COMMAND", "target_type": "TEST",
@@ -701,6 +711,82 @@ def test_fk_ri_interno_disabled_falla_sin_reactivacion(db_session):
         WHERE id_operacion_idempotente=:id AND id_usuario=:user_id
     """), {"id": invalid["id_operacion_idempotente"], "user_id": invalid_user}).scalar_one() == 1
     scenario.rollback()
+
+
+def test_pg18_check_not_enforced_falla_sin_reparar(db_session):
+    if not _supports_conenforced(db_session):
+        pytest.skip("pg_constraint.conenforced requiere PostgreSQL 18+")
+
+    scenario = db_session.begin_nested()
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente
+        DROP CONSTRAINT chk_operacion_idempotente_payload_hash;
+        ALTER TABLE public.operacion_idempotente
+        ADD CONSTRAINT chk_operacion_idempotente_payload_hash
+        CHECK (payload_hash ~ '^[0-9a-f]{64}$') NOT ENFORCED
+    """))
+    state = db_session.execute(text("""
+        SELECT convalidated,conenforced FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='chk_operacion_idempotente_payload_hash'
+    """)).one()
+    assert tuple(state) == (True, False)
+    invalid = _insert(db_session, payload_hash="INVALID")
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert tuple(db_session.execute(text("""
+        SELECT convalidated,conenforced FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='chk_operacion_idempotente_payload_hash'
+    """)).one()) == (True, False)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id AND payload_hash='INVALID'
+    """), {"id": invalid["id_operacion_idempotente"]}).scalar_one() == 1
+    scenario.rollback()
+
+
+def test_pg18_fk_not_enforced_falla_sin_reparar(db_session):
+    if not _supports_conenforced(db_session):
+        pytest.skip("pg_constraint.conenforced requiere PostgreSQL 18+")
+
+    scenario = db_session.begin_nested()
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente
+        DROP CONSTRAINT fk_operacion_idempotente_usuario;
+        ALTER TABLE public.operacion_idempotente
+        ADD CONSTRAINT fk_operacion_idempotente_usuario
+        FOREIGN KEY (id_usuario) REFERENCES public.usuario(id_usuario)
+        ON DELETE RESTRICT NOT ENFORCED
+    """))
+    state = db_session.execute(text("""
+        SELECT contype,convalidated,conenforced FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).one()
+    assert tuple(state) == ("f", True, False)
+    invalid_user = db_session.execute(text(
+        "SELECT coalesce(max(id_usuario),0)+1000000 FROM public.usuario"
+    )).scalar_one()
+    invalid = _insert(db_session, id_usuario=invalid_user)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert tuple(db_session.execute(text("""
+        SELECT contype,convalidated,conenforced FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).one()) == ("f", True, False)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id AND id_usuario=:user_id
+    """), {"id": invalid["id_operacion_idempotente"], "user_id": invalid_user}).scalar_one() == 1
+    scenario.rollback()
+
+
+def test_pg16_sin_conenforced_reejecuta_patch(db_session):
+    if _supports_conenforced(db_session):
+        pytest.skip("compatibilidad específica para catálogo anterior a PostgreSQL 18")
+    db_session.execute(text(_patch_body()))
 
 
 @pytest.mark.parametrize("definition", [

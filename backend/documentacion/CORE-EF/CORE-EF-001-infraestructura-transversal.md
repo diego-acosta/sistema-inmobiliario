@@ -1044,6 +1044,11 @@ a cada FK existan y permanezcan normalmente habilitados (`tgenabled='O'`). La
 secuencia identity es permanente, bigint, no cíclica, de incremento uno y usa
 el rango positivo contractual completo de bigint.
 
+Desde PostgreSQL 18, los ocho CHECK y las tres FKs contractuales deben estar
+`ENFORCED`; una constraint `NOT ENFORCED` constituye drift incompatible. En
+versiones anteriores esa propiedad no existe y se conserva el resto del
+contrato estructural sin depender de una columna de catálogo ausente.
+
 Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
 clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
 versionado CORE-EF recursivo). El claim/replay/complete, la canonicalización y

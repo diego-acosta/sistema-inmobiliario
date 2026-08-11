@@ -366,6 +366,26 @@ BEGIN
         RAISE EXCEPTION 'operacion_idempotente incompatible: CHECK %', bad;
     END IF;
 
+    -- PostgreSQL 18 incorpora pg_constraint.conenforced. La consulta debe ser
+    -- dinámica para que PostgreSQL 16 nunca intente resolver esa columna.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_attribute
+         WHERE attrelid='pg_catalog.pg_constraint'::regclass
+           AND attname='conenforced' AND NOT attisdropped
+    ) THEN
+        EXECUTE $sql$
+            SELECT conname
+              FROM pg_constraint
+             WHERE conrelid='public.operacion_idempotente'::regclass
+               AND contype='c' AND NOT conenforced
+             LIMIT 1
+        $sql$ INTO bad;
+        IF bad IS NOT NULL THEN
+            RAISE EXCEPTION 'operacion_idempotente incompatible: CHECK % NOT ENFORCED', bad;
+        END IF;
+    END IF;
+
     IF (SELECT count(*) FROM pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass) <> 13
        OR NOT EXISTS (
          SELECT 1 FROM pg_constraint c JOIN pg_index i ON i.indexrelid=c.conindid
@@ -413,8 +433,26 @@ BEGIN
           AND c.confdeltype='r' AND c.confupdtype='a' AND c.confmatchtype='s'
           AND NOT c.condeferrable AND NOT c.condeferred AND c.convalidated
           AND c.conislocal AND c.coninhcount=0
-     ) LIMIT 1;
+    ) LIMIT 1;
     IF bad IS NOT NULL THEN RAISE EXCEPTION 'operacion_idempotente incompatible: FK %', bad; END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_attribute
+         WHERE attrelid='pg_catalog.pg_constraint'::regclass
+           AND attname='conenforced' AND NOT attisdropped
+    ) THEN
+        EXECUTE $sql$
+            SELECT conname
+              FROM pg_constraint
+             WHERE conrelid='public.operacion_idempotente'::regclass
+               AND contype='f' AND NOT conenforced
+             LIMIT 1
+        $sql$ INTO bad;
+        IF bad IS NOT NULL THEN
+            RAISE EXCEPTION 'operacion_idempotente incompatible: FK % NOT ENFORCED', bad;
+        END IF;
+    END IF;
 
     WITH contractual_fk AS (
       SELECT c.oid, c.conname, c.conrelid, c.confrelid
