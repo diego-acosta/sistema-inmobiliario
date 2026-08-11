@@ -337,17 +337,17 @@ END;$src$,'\s','','g')
     IF (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 3
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
-          AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal
+          AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
           AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE DELETE OR UPDATE ON public.operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_inmutable()'
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
-          AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal
+          AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal AND tgenabled='O'
           AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE INSERT ON public.operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()'
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
-          AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal
+          AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
           AND pg_get_triggerdef(oid) = 'CREATE TRIGGER trg_bt_operacion_idempotente_inmutable BEFORE TRUNCATE ON public.operacion_idempotente FOR EACH STATEMENT EXECUTE FUNCTION trg_operacion_idempotente_inmutable()'
        ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: triggers contractuales'; END IF;
 END $$;
