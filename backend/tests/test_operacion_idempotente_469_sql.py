@@ -880,6 +880,73 @@ def test_fk_ri_interno_disabled_falla_sin_reactivacion(db_session):
     scenario.rollback()
 
 
+def test_fk_historica_huerfana_falla_con_ri_restaurada_sin_reparacion(db_session):
+    scenario = db_session.begin_nested()
+    fk_oid = db_session.execute(text("""
+        SELECT oid FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).scalar_one()
+    triggers = db_session.execute(text("""
+        SELECT t.tgrelid::regclass::text relation_name,t.tgname
+        FROM pg_trigger t WHERE t.tgconstraint=:fk_oid ORDER BY t.oid
+    """), {"fk_oid": fk_oid}).all()
+    assert len(triggers) == 4
+    for trigger in triggers:
+        db_session.execute(text(
+            f'ALTER TABLE {trigger.relation_name} DISABLE TRIGGER "{trigger.tgname}"'
+        ))
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_trigger
+        WHERE tgconstraint=:fk_oid AND tgisinternal AND tgenabled='D'
+    """), {"fk_oid": fk_oid}).scalar_one() == 4
+
+    invalid_user = db_session.execute(text(
+        "SELECT coalesce(max(id_usuario),0)+1000000 FROM public.usuario"
+    )).scalar_one()
+    receipt = _insert(db_session, id_usuario=invalid_user)
+    for trigger in triggers:
+        db_session.execute(text(
+            f'ALTER TABLE {trigger.relation_name} ENABLE TRIGGER "{trigger.tgname}"'
+        ))
+
+    fk_state = db_session.execute(text("""
+        SELECT oid,convalidated FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).one()
+    assert tuple(fk_state) == (fk_oid, True)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_trigger
+        WHERE tgconstraint=:fk_oid AND tgisinternal AND tgenabled='O'
+    """), {"fk_oid": fk_oid}).scalar_one() == 4
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente oi
+        LEFT JOIN public.usuario u ON u.id_usuario=oi.id_usuario
+        WHERE oi.id_operacion_idempotente=:id
+          AND oi.id_usuario=:user_id AND u.id_usuario IS NULL
+    """), {"id": receipt["id_operacion_idempotente"], "user_id": invalid_user}).scalar_one() == 1
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+
+    persisted = db_session.execute(text("""
+        SELECT id_usuario FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": receipt["id_operacion_idempotente"]}).scalar_one()
+    assert persisted == invalid_user
+    assert db_session.execute(text("""
+        SELECT oid FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).scalar_one() == fk_oid
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_trigger
+        WHERE tgconstraint=:fk_oid AND tgenabled='O'
+    """), {"fk_oid": fk_oid}).scalar_one() == 4
+    scenario.rollback()
+
+
 def test_pg18_check_not_enforced_falla_sin_reparar(db_session):
     if not _supports_conenforced(db_session):
         pytest.skip("pg_constraint.conenforced requiere PostgreSQL 18+")

@@ -579,16 +579,22 @@ END;$src$,'\s','','g')
     IF EXISTS (
         SELECT 1
           FROM public.operacion_idempotente AS oi
+          LEFT JOIN public.usuario AS u
+            ON u.id_usuario=oi.id_usuario
+          LEFT JOIN public.sucursal AS s
+            ON s.id_sucursal=oi.id_sucursal
           LEFT JOIN public.instalacion AS i
             ON i.id_instalacion=oi.id_instalacion
-         WHERE oi.id_sucursal IS NOT NULL
-           AND (
-               i.id_instalacion IS NULL
-               OR i.id_sucursal IS DISTINCT FROM oi.id_sucursal
-           )
+         WHERE (oi.id_usuario IS NOT NULL AND u.id_usuario IS NULL)
+            OR (oi.id_sucursal IS NOT NULL AND s.id_sucursal IS NULL)
+            OR i.id_instalacion IS NULL
+            OR (
+                oi.id_sucursal IS NOT NULL
+                AND i.id_sucursal IS DISTINCT FROM oi.id_sucursal
+            )
          LIMIT 1
     ) THEN
-        RAISE EXCEPTION 'operacion_idempotente incompatible: receipt histórico con sucursal/instalación inconsistente';
+        RAISE EXCEPTION 'operacion_idempotente incompatible: receipt histórico huérfano o con sucursal/instalación inconsistente';
     END IF;
 END $$;
 
