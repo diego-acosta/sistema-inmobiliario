@@ -82,6 +82,20 @@ def _supports_conenforced(db) -> bool:
     """)).scalar_one()
 
 
+def _identity_sequence(db) -> str:
+    return db.execute(text("""
+        SELECT seq.oid::regclass::text FROM pg_class seq
+        JOIN pg_depend d ON d.objid=seq.oid
+        WHERE d.refobjid='public.operacion_idempotente'::regclass
+          AND d.refobjsubid=1 AND d.deptype='i'
+    """)).scalar_one()
+
+
+def _sequence_state(db, sequence: str) -> tuple[int, bool]:
+    row = db.execute(text(f"SELECT last_value,is_called FROM {sequence}")).one()
+    return row.last_value, row.is_called
+
+
 def _insert(db, **changes):
     values = {
         "op_id": uuid4(), "command_code": "TEST.COMMAND", "target_type": "TEST",
@@ -769,6 +783,63 @@ def test_identity_sequence_start_incompatible_falla_sin_reparacion(db_session):
         SELECT count(*) FROM public.operacion_idempotente
         WHERE id_operacion_idempotente=:id
     """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
+    scenario.rollback()
+
+
+def test_identity_sequence_agotada_falla_sin_reparacion(db_session):
+    receipt = _insert(db_session)
+    sequence = _identity_sequence(db_session)
+    sequence_oid = db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one()
+    original_state = _sequence_state(db_session, sequence)
+    configuration = db_session.execute(text(f"""
+        SELECT seqtypid,seqincrement,seqstart,seqmin,seqmax,seqcycle
+        FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).one()
+
+    scenario = db_session.begin_nested()
+    db_session.execute(text(
+        f"SELECT setval('{sequence}', 9223372036854775807, true)"
+    ))
+    assert _sequence_state(db_session, sequence) == (9223372036854775807, True)
+    assert tuple(db_session.execute(text(f"""
+        SELECT seqtypid,seqincrement,seqstart,seqmin,seqmax,seqcycle
+        FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).one()) == tuple(configuration)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(f"SELECT nextval('{sequence}')"))
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert _sequence_state(db_session, sequence) == (9223372036854775807, True)
+    assert db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one() == sequence_oid
+    assert tuple(db_session.execute(text(f"""
+        SELECT seqtypid,seqincrement,seqstart,seqmin,seqmax,seqcycle
+        FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).one()) == tuple(configuration)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
+    db_session.execute(text(
+        f"SELECT setval('{sequence}', :value, :called)"
+    ), {"value": original_state[0], "called": original_state[1]})
+    scenario.rollback()
+
+
+@pytest.mark.parametrize("is_called", [True, False])
+def test_identity_sequence_valor_avanzado_utilizable_es_aceptado(db_session, is_called):
+    sequence = _identity_sequence(db_session)
+    original_state = _sequence_state(db_session, sequence)
+    scenario = db_session.begin_nested()
+    db_session.execute(text(
+        f"SELECT setval('{sequence}', 1500, :called)"
+    ), {"called": is_called})
+    assert _sequence_state(db_session, sequence) == (1500, is_called)
+    db_session.execute(text(_patch_body()))
+    assert _sequence_state(db_session, sequence) == (1500, is_called)
+    db_session.execute(text(
+        f"SELECT setval('{sequence}', :value, :called)"
+    ), {"value": original_state[0], "called": original_state[1]})
     scenario.rollback()
 
 

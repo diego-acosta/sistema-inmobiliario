@@ -247,6 +247,9 @@ DECLARE
     actual_count integer;
     expected_count constant integer := 17;
     bad text;
+    identity_sequence oid;
+    sequence_last_value bigint;
+    sequence_is_called boolean;
 BEGIN
     IF NOT EXISTS (
         SELECT 1
@@ -345,6 +348,25 @@ BEGIN
            AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
            AND s.seqmax=9223372036854775807 AND NOT s.seqcycle) <> 1
     THEN RAISE EXCEPTION 'operacion_idempotente incompatible: identity sequence contractual'; END IF;
+
+    SELECT seq.oid INTO identity_sequence
+      FROM pg_depend d
+      JOIN pg_class seq ON seq.oid=d.objid AND d.classid='pg_class'::regclass
+     WHERE d.refclassid='pg_class'::regclass
+       AND d.refobjid='public.operacion_idempotente'::regclass
+       AND d.refobjsubid=1 AND d.deptype='i';
+
+    -- El ACCESS EXCLUSIVE sobre el ledger estabiliza el camino ordinario de
+    -- INSERT antes de leer la secuencia. PostgreSQL no admite LOCK TABLE sobre
+    -- sequences; el preflight no consume IDs ni altera su estado.
+    EXECUTE format('SELECT last_value, is_called FROM %s', identity_sequence::regclass)
+       INTO sequence_last_value, sequence_is_called;
+    IF sequence_last_value < 1
+       OR sequence_last_value > 9223372036854775807
+       OR (sequence_is_called AND sequence_last_value >= 9223372036854775807)
+    THEN
+        RAISE EXCEPTION 'operacion_idempotente incompatible: identity sequence sin próximo valor utilizable';
+    END IF;
 
     WITH expected(name, expression) AS (VALUES
       ('chk_operacion_idempotente_command_code',$pre$(btrim((command_code)::text, $pre$ || quote_literal(E' \t\n\r\f\x0B') || $post$::text) <> ''::text)$post$),
