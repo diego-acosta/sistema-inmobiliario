@@ -20,6 +20,28 @@ PROHIBITED_COLUMNS = {
     "op_id_ultima_modificacion", "id_instalacion_origen",
     "id_instalacion_ultima_modificacion", "status", "completed_at",
 }
+HISTORICAL_HELPER_SQL = """
+CREATE OR REPLACE FUNCTION public.fn_assert_instalacion_pertenece_a_sucursal(
+    p_id_instalacion bigint, p_id_sucursal bigint, p_contexto text
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    v_ok BOOLEAN;
+BEGIN
+    IF p_id_instalacion IS NULL OR p_id_sucursal IS NULL THEN
+        RETURN;
+    END IF;
+    SELECT EXISTS (
+        SELECT 1 FROM instalacion i
+        WHERE i.id_instalacion = p_id_instalacion
+          AND i.id_sucursal = p_id_sucursal
+    ) INTO v_ok;
+    IF NOT v_ok THEN
+        RAISE EXCEPTION 'Inconsistencia sucursal/instalacion en %: instalacion % no pertenece a sucursal %',
+            p_contexto, p_id_instalacion, p_id_sucursal;
+    END IF;
+END;
+$$;
+"""
 
 
 def _patch_body() -> str:
@@ -39,6 +61,14 @@ def _installation_context(db) -> tuple[int, int]:
          LIMIT 1
     """)).one()
     return row.id_instalacion, row.id_sucursal
+
+
+def _helper_body(db) -> str:
+    return db.execute(text("""
+        SELECT prosrc
+          FROM pg_proc
+         WHERE oid='public.fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)'::regprocedure
+    """)).scalar_one()
 
 
 def _insert(db, **changes):
@@ -212,6 +242,59 @@ def test_contexto_no_puede_ser_enganado_por_search_path(db_session):
             id_sucursal=other_branch,
             id_instalacion=installation_id,
         )
+
+
+def test_upgrade_incremental_migra_helper_historico_y_crea_ledger_seguro(db_session):
+    db_session.execute(text("DROP TABLE public.operacion_idempotente"))
+    db_session.execute(text("DROP FUNCTION public.trg_operacion_idempotente_inmutable()"))
+    db_session.execute(text("DROP FUNCTION public.trg_operacion_idempotente_instalacion_sucursal()"))
+    db_session.execute(text(HISTORICAL_HELPER_SQL))
+    assert "FROM instalacion i" in _helper_body(db_session)
+
+    db_session.execute(text(_patch_body()))
+
+    assert "FROM public.instalacion AS i" in _helper_body(db_session)
+    assert db_session.execute(text("SELECT to_regclass('public.operacion_idempotente') IS NOT NULL")).scalar_one()
+    installation_id, branch_id = _installation_context(db_session)
+    other_branch = db_session.execute(text("""
+        INSERT INTO sucursal (codigo_sucursal, nombre_sucursal, estado_sucursal)
+        VALUES (:code, 'Sucursal upgrade #469', 'ACTIVA') RETURNING id_sucursal
+    """), {"code": f"SUC_UPGRADE_469_{uuid4().hex[:8]}"}).scalar_one()
+    assert other_branch != branch_id
+    db_session.execute(text("CREATE TEMP TABLE instalacion (id_instalacion bigint, id_sucursal bigint) ON COMMIT DROP"))
+    db_session.execute(text("INSERT INTO pg_temp.instalacion VALUES (:i,:s)"), {"i": installation_id, "s": other_branch})
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        _insert(db_session, id_sucursal=other_branch, id_instalacion=installation_id)
+
+
+def test_helper_seguro_no_es_reemplazado_en_reejecucion(db_session):
+    oid_before = db_session.execute(text("SELECT 'public.fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)'::regprocedure::oid")).scalar_one()
+    body_before = _helper_body(db_session)
+    db_session.execute(text(_patch_body()))
+    assert db_session.execute(text("SELECT 'public.fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)'::regprocedure::oid")).scalar_one() == oid_before
+    assert _helper_body(db_session) == body_before
+
+
+def test_helper_desconocido_falla_sin_reemplazo(db_session):
+    db_session.execute(text("""
+        CREATE OR REPLACE FUNCTION public.fn_assert_instalacion_pertenece_a_sucursal(
+            p_id_instalacion bigint, p_id_sucursal bigint, p_contexto text
+        ) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END $$
+    """))
+    unknown_body = _helper_body(db_session)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert _helper_body(db_session) == unknown_body
+
+
+def test_migracion_helper_y_ledger_son_atomicos(db_session):
+    db_session.execute(text(HISTORICAL_HELPER_SQL))
+    db_session.execute(text("ALTER TABLE operacion_idempotente ALTER COLUMN target_key TYPE text"))
+    historical_body = _helper_body(db_session)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert _helper_body(db_session) == historical_body
+    assert "FROM instalacion i" in historical_body
 
 
 def test_jsonb_timestamp_e_inmutabilidad(db_session):

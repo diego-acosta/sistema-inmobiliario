@@ -1,12 +1,100 @@
 BEGIN;
 
 DO $$
+DECLARE
+    helper_body text;
+    helper_count integer;
 BEGIN
     PERFORM set_config('sistema.patch_operacion_idempotente_created', 'false', true);
     IF to_regclass('public.usuario') IS NULL
        OR to_regclass('public.sucursal') IS NULL
        OR to_regclass('public.instalacion') IS NULL THEN
         RAISE EXCEPTION 'operacion_idempotente requiere public.usuario, public.sucursal y public.instalacion';
+    END IF;
+
+    SELECT count(*) INTO helper_count
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE n.nspname='public'
+       AND p.proname='fn_assert_instalacion_pertenece_a_sucursal';
+    IF helper_count <> 1 THEN
+        RAISE EXCEPTION 'operacion_idempotente requiere una única función contractual public.fn_assert_instalacion_pertenece_a_sucursal';
+    END IF;
+
+    SELECT p.prosrc INTO helper_body
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE n.nspname='public'
+       AND p.proname='fn_assert_instalacion_pertenece_a_sucursal'
+       AND p.proargtypes='20 20 25'::oidvector
+       AND p.prorettype='void'::regtype
+       AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql');
+    IF helper_body IS NULL THEN
+        RAISE EXCEPTION 'operacion_idempotente requiere la firma contractual fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)';
+    END IF;
+
+    IF regexp_replace(helper_body,'\s','','g') = regexp_replace($safe$DECLARE
+    v_ok BOOLEAN;
+BEGIN
+    IF p_id_instalacion IS NULL OR p_id_sucursal IS NULL THEN
+        RETURN;
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.instalacion AS i
+        WHERE i.id_instalacion = p_id_instalacion
+          AND i.id_sucursal = p_id_sucursal
+    ) INTO v_ok;
+
+    IF NOT v_ok THEN
+        RAISE EXCEPTION 'Inconsistencia sucursal/instalacion en %: instalacion % no pertenece a sucursal %',
+            p_contexto, p_id_instalacion, p_id_sucursal;
+    END IF;
+END;$safe$,'\s','','g') THEN
+        NULL;
+    ELSIF regexp_replace(helper_body,'\s','','g') = regexp_replace($historical$DECLARE
+    v_ok BOOLEAN;
+BEGIN
+    IF p_id_instalacion IS NULL OR p_id_sucursal IS NULL THEN
+        RETURN;
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM instalacion i
+        WHERE i.id_instalacion = p_id_instalacion
+          AND i.id_sucursal = p_id_sucursal
+    ) INTO v_ok;
+
+    IF NOT v_ok THEN
+        RAISE EXCEPTION 'Inconsistencia sucursal/instalacion en %: instalacion % no pertenece a sucursal %',
+            p_contexto, p_id_instalacion, p_id_sucursal;
+    END IF;
+END;$historical$,'\s','','g') THEN
+        -- Migración explícita y acotada de la única variante histórica conocida.
+        CREATE OR REPLACE FUNCTION public.fn_assert_instalacion_pertenece_a_sucursal(
+            p_id_instalacion bigint, p_id_sucursal bigint, p_contexto text
+        ) RETURNS void LANGUAGE plpgsql AS $safe_body$
+        DECLARE
+            v_ok BOOLEAN;
+        BEGIN
+            IF p_id_instalacion IS NULL OR p_id_sucursal IS NULL THEN
+                RETURN;
+            END IF;
+            SELECT EXISTS (
+                SELECT 1 FROM public.instalacion AS i
+                WHERE i.id_instalacion = p_id_instalacion
+                  AND i.id_sucursal = p_id_sucursal
+            ) INTO v_ok;
+            IF NOT v_ok THEN
+                RAISE EXCEPTION 'Inconsistencia sucursal/instalacion en %: instalacion % no pertenece a sucursal %',
+                    p_contexto, p_id_instalacion, p_id_sucursal;
+            END IF;
+        END;
+        $safe_body$;
+    ELSE
+        RAISE EXCEPTION 'operacion_idempotente incompatible: helper sucursal/instalación desconocido';
     END IF;
 
     IF to_regclass('public.operacion_idempotente') IS NULL THEN
