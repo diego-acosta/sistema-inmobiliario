@@ -1044,8 +1044,10 @@ a cada FK existan y permanezcan normalmente habilitados (`tgenabled='O'`). La
 secuencia identity es permanente, bigint y usa `START 1`, `INCREMENT 1`,
 `MINVALUE 1`, `MAXVALUE 9223372036854775807` y `NO CYCLE`.
 El preflight exige además que su estado corriente permita generar al menos un
-próximo identificador. `last_value` no es fijo: gaps y valores normalmente
-avanzados son válidos; sólo el agotamiento del rango es incompatible.
+próximo identificador y que éste no esté ocupado por un receipt. `last_value` no
+es fijo: gaps, valores normalmente avanzados e IDs explícitos altos son válidos;
+no se exige superar `MAX(id)`. El agotamiento o la colisión inmediata son
+incompatibles y el patch no corrige automáticamente la secuencia.
 
 Desde PostgreSQL 18, los ocho CHECK y las tres FKs contractuales deben estar
 `ENFORCED`; una constraint `NOT ENFORCED` constituye drift incompatible. En

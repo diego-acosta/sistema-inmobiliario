@@ -826,17 +826,84 @@ def test_identity_sequence_agotada_falla_sin_reparacion(db_session):
     scenario.rollback()
 
 
-@pytest.mark.parametrize("is_called", [True, False])
-def test_identity_sequence_valor_avanzado_utilizable_es_aceptado(db_session, is_called):
+@pytest.mark.parametrize(("last_value", "is_called"), [
+    (100, True), (1500, True), (1500, False),
+])
+def test_identity_sequence_valor_avanzado_utilizable_es_aceptado(
+    db_session, last_value, is_called,
+):
     sequence = _identity_sequence(db_session)
     original_state = _sequence_state(db_session, sequence)
     scenario = db_session.begin_nested()
     db_session.execute(text(
-        f"SELECT setval('{sequence}', 1500, :called)"
-    ), {"called": is_called})
-    assert _sequence_state(db_session, sequence) == (1500, is_called)
+        f"SELECT setval('{sequence}', :value, :called)"
+    ), {"value": last_value, "called": is_called})
+    assert _sequence_state(db_session, sequence) == (last_value, is_called)
     db_session.execute(text(_patch_body()))
-    assert _sequence_state(db_session, sequence) == (1500, is_called)
+    assert _sequence_state(db_session, sequence) == (last_value, is_called)
+    db_session.execute(text(
+        f"SELECT setval('{sequence}', :value, :called)"
+    ), {"value": original_state[0], "called": original_state[1]})
+    scenario.rollback()
+
+
+@pytest.mark.parametrize(("last_value", "is_called"), [(100, True), (101, False)])
+def test_identity_sequence_proximo_valor_ocupado_falla_sin_reparacion(
+    db_session, last_value, is_called,
+):
+    sequence = _identity_sequence(db_session)
+    sequence_oid = db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one()
+    original_state = _sequence_state(db_session, sequence)
+    configuration = db_session.execute(text(f"""
+        SELECT seqtypid,seqincrement,seqstart,seqmin,seqmax,seqcycle
+        FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).one()
+    scenario = db_session.begin_nested()
+    db_session.execute(text(
+        f"SELECT setval('{sequence}', :value, :called)"
+    ), {"value": last_value, "called": is_called})
+    receipt = _insert(
+        db_session,
+        id_operacion_idempotente=101,
+    )
+    assert _sequence_state(db_session, sequence) == (last_value, is_called)
+    assert receipt["id_operacion_idempotente"] == 101
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert _sequence_state(db_session, sequence) == (last_value, is_called)
+    assert db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one() == sequence_oid
+    assert tuple(db_session.execute(text(f"""
+        SELECT seqtypid,seqincrement,seqstart,seqmin,seqmax,seqcycle
+        FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).one()) == tuple(configuration)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=101
+    """)).scalar_one() == 1
+    db_session.execute(text(
+        f"SELECT setval('{sequence}', :value, :called)"
+    ), {"value": original_state[0], "called": original_state[1]})
+    scenario.rollback()
+
+
+def test_identity_sequence_proximo_libre_con_id_explicito_alto_es_aceptado(db_session):
+    sequence = _identity_sequence(db_session)
+    original_state = _sequence_state(db_session, sequence)
+    scenario = db_session.begin_nested()
+    db_session.execute(text(f"SELECT setval('{sequence}', 2, true)"))
+    high_receipt = _insert(
+        db_session,
+        id_operacion_idempotente=100000,
+    )
+    assert _sequence_state(db_session, sequence) == (2, True)
+    assert high_receipt["id_operacion_idempotente"] == 100000
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=3
+    """)).scalar_one() == 0
+    db_session.execute(text(_patch_body()))
+    assert _sequence_state(db_session, sequence) == (2, True)
     db_session.execute(text(
         f"SELECT setval('{sequence}', :value, :called)"
     ), {"value": original_state[0], "called": original_state[1]})

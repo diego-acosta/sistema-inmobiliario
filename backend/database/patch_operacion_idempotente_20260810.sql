@@ -250,6 +250,7 @@ DECLARE
     identity_sequence oid;
     sequence_last_value bigint;
     sequence_is_called boolean;
+    next_identity_value bigint;
 BEGIN
     IF NOT EXISTS (
         SELECT 1
@@ -366,6 +367,19 @@ BEGIN
        OR (sequence_is_called AND sequence_last_value >= 9223372036854775807)
     THEN
         RAISE EXCEPTION 'operacion_idempotente incompatible: identity sequence sin próximo valor utilizable';
+    END IF;
+
+    IF sequence_is_called THEN
+        next_identity_value := sequence_last_value + 1;
+    ELSE
+        next_identity_value := sequence_last_value;
+    END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM public.operacion_idempotente
+         WHERE id_operacion_idempotente=next_identity_value
+    ) THEN
+        RAISE EXCEPTION 'operacion_idempotente incompatible: próximo valor identity ya ocupado';
     END IF;
 
     WITH expected(name, expression) AS (VALUES
