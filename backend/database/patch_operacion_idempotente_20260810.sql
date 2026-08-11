@@ -342,7 +342,7 @@ BEGIN
            AND d.refobjsubid=1 AND d.deptype='i'
            AND seq.relkind='S' AND seq.relpersistence='p'
            AND s.seqtypid='bigint'::regtype
-           AND s.seqincrement=1 AND s.seqmin=1
+           AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
            AND s.seqmax=9223372036854775807 AND NOT s.seqcycle) <> 1
     THEN RAISE EXCEPTION 'operacion_idempotente incompatible: identity sequence contractual'; END IF;
 

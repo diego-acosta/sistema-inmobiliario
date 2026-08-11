@@ -1041,8 +1041,8 @@ bajo `session_replication_role=replica`. Las FKs permanecen administradas por
 PostgreSQL: #469 no modifica sus triggers RI internos ni promete enforcement de
 RI en ese modo privilegiado, pero exige que los cuatro mecanismos RI asociados
 a cada FK existan y permanezcan normalmente habilitados (`tgenabled='O'`). La
-secuencia identity es permanente, bigint, no cíclica, de incremento uno y usa
-el rango positivo contractual completo de bigint.
+secuencia identity es permanente, bigint y usa `START 1`, `INCREMENT 1`,
+`MINVALUE 1`, `MAXVALUE 9223372036854775807` y `NO CYCLE`.
 
 Desde PostgreSQL 18, los ocho CHECK y las tres FKs contractuales deben estar
 `ENFORCED`; una constraint `NOT ENFORCED` constituye drift incompatible. En

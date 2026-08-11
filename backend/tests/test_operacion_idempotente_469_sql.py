@@ -217,7 +217,8 @@ def test_schema_fisico_exacto(db_session):
     assert len(ri_contract) == 3
     assert all(tuple(row)[1:] == (4, 4, 2, 2) for row in ri_contract)
     sequence_contract = db_session.execute(text("""
-        SELECT count(*),min(s.seqincrement),min(s.seqmin),min(s.seqmax),bool_and(NOT s.seqcycle)
+        SELECT count(*),min(s.seqincrement),min(s.seqstart),min(s.seqmin),
+               min(s.seqmax),bool_and(NOT s.seqcycle)
         FROM pg_depend d
         JOIN pg_class seq ON seq.oid=d.objid
         JOIN pg_sequence s ON s.seqrelid=seq.oid
@@ -225,7 +226,7 @@ def test_schema_fisico_exacto(db_session):
           AND d.refobjsubid=1 AND d.deptype='i'
           AND seq.relkind='S' AND seq.relpersistence='p' AND s.seqtypid='bigint'::regtype
     """)).one()
-    assert tuple(sequence_contract) == (1, 1, 1, 9223372036854775807, True)
+    assert tuple(sequence_contract) == (1, 1, 1, 1, 9223372036854775807, True)
     triggers = {
         row.tgname: (row.tgenabled, row.tgqual, row.attribute_count)
         for row in db_session.execute(text("""
@@ -730,6 +731,40 @@ def test_identity_sequence_cycle_y_maxvalue_fallan_sin_reparacion(db_session):
     assert tuple(db_session.execute(text(f"""
         SELECT seqmax,seqcycle FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
     """)).one()) == (2, True)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
+    scenario.rollback()
+
+
+def test_identity_sequence_start_incompatible_falla_sin_reparacion(db_session):
+    receipt = _insert(db_session)
+    scenario = db_session.begin_nested()
+    sequence = db_session.execute(text("""
+        SELECT seq.oid::regclass::text FROM pg_class seq
+        JOIN pg_depend d ON d.objid=seq.oid
+        WHERE d.refobjid='public.operacion_idempotente'::regclass
+          AND d.refobjsubid=1 AND d.deptype='i'
+    """)).scalar_one()
+    sequence_oid = db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one()
+    db_session.execute(text(f"""
+        ALTER SEQUENCE {sequence}
+        START WITH 9223372036854775807 RESTART
+    """))
+    assert db_session.execute(text(f"""
+        SELECT seqstart FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).scalar_one() == 9223372036854775807
+    assert db_session.execute(text(f"SELECT nextval('{sequence}')")).scalar_one() == 9223372036854775807
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(f"SELECT nextval('{sequence}')"))
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one() == sequence_oid
+    assert db_session.execute(text(f"""
+        SELECT seqstart FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).scalar_one() == 9223372036854775807
     assert db_session.execute(text("""
         SELECT count(*) FROM public.operacion_idempotente
         WHERE id_operacion_idempotente=:id
