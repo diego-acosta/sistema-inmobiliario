@@ -195,14 +195,27 @@ def test_schema_fisico_exacto(db_session):
     assert len(fk_contract) == 3
     assert all((r.confupdtype,r.confdeltype,r.confmatchtype) == ("a","r","s") for r in fk_contract)
     assert all(not r.condeferrable and not r.condeferred and r.convalidated and r.conislocal and r.coninhcount == 0 for r in fk_contract)
-    assert db_session.execute(text("""
-        SELECT count(*) FROM pg_depend d
+    ri_contract = db_session.execute(text("""
+        SELECT c.conname,count(t.oid) trigger_count,
+               count(t.oid) FILTER (WHERE t.tgisinternal AND t.tgenabled='O') enabled_internal_count,
+               count(t.oid) FILTER (WHERE t.tgrelid=c.conrelid) local_count,
+               count(t.oid) FILTER (WHERE t.tgrelid=c.confrelid) remote_count
+        FROM pg_constraint c JOIN pg_trigger t ON t.tgconstraint=c.oid
+        WHERE c.conrelid='public.operacion_idempotente'::regclass AND c.contype='f'
+        GROUP BY c.oid,c.conname
+    """)).all()
+    assert len(ri_contract) == 3
+    assert all(tuple(row)[1:] == (4, 4, 2, 2) for row in ri_contract)
+    sequence_contract = db_session.execute(text("""
+        SELECT count(*),min(s.seqincrement),min(s.seqmin),min(s.seqmax),bool_and(NOT s.seqcycle)
+        FROM pg_depend d
         JOIN pg_class seq ON seq.oid=d.objid
         JOIN pg_sequence s ON s.seqrelid=seq.oid
         WHERE d.refobjid='public.operacion_idempotente'::regclass
           AND d.refobjsubid=1 AND d.deptype='i'
           AND seq.relkind='S' AND seq.relpersistence='p' AND s.seqtypid='bigint'::regtype
-    """)).scalar_one() == 1
+    """)).one()
+    assert tuple(sequence_contract) == (1, 1, 1, 9223372036854775807, True)
     triggers = {
         row.tgname: (row.tgenabled, row.tgqual, row.attribute_count)
         for row in db_session.execute(text("""
@@ -622,6 +635,71 @@ def test_identity_sequence_unlogged_falla_sin_reparacion(db_session):
     with pytest.raises(DBAPIError), db_session.begin_nested():
         db_session.execute(text(_patch_body()))
     assert db_session.execute(text(f"SELECT relpersistence FROM pg_class WHERE oid='{sequence}'::regclass")).scalar_one() == "u"
+    scenario.rollback()
+
+
+def test_identity_sequence_cycle_y_maxvalue_fallan_sin_reparacion(db_session):
+    receipt = _insert(db_session)
+    scenario = db_session.begin_nested()
+    sequence = db_session.execute(text("""
+        SELECT seq.oid::regclass::text FROM pg_class seq
+        JOIN pg_depend d ON d.objid=seq.oid
+        WHERE d.refobjid='public.operacion_idempotente'::regclass
+          AND d.refobjsubid=1 AND d.deptype='i'
+    """)).scalar_one()
+    sequence_oid = db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one()
+    db_session.execute(text(f"ALTER SEQUENCE {sequence} RESTART WITH 1 MAXVALUE 2 CYCLE"))
+    drift = db_session.execute(text(f"""
+        SELECT seqmax,seqcycle FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).one()
+    assert tuple(drift) == (2, True)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text(f"SELECT '{sequence}'::regclass::oid")).scalar_one() == sequence_oid
+    assert tuple(db_session.execute(text(f"""
+        SELECT seqmax,seqcycle FROM pg_sequence WHERE seqrelid='{sequence}'::regclass
+    """)).one()) == (2, True)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
+    scenario.rollback()
+
+
+def test_fk_ri_interno_disabled_falla_sin_reactivacion(db_session):
+    scenario = db_session.begin_nested()
+    fk_oid = db_session.execute(text("""
+        SELECT oid FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).scalar_one()
+    triggers = db_session.execute(text("""
+        SELECT t.oid,t.tgrelid::regclass::text relation_name,t.tgname
+        FROM pg_trigger t WHERE t.tgconstraint=:fk_oid ORDER BY t.oid
+    """), {"fk_oid": fk_oid}).all()
+    assert len(triggers) == 4
+    for trigger in triggers:
+        db_session.execute(text(
+            f'ALTER TABLE {trigger.relation_name} DISABLE TRIGGER "{trigger.tgname}"'
+        ))
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_trigger
+        WHERE tgconstraint=:fk_oid AND tgisinternal AND tgenabled='D'
+    """), {"fk_oid": fk_oid}).scalar_one() == 4
+
+    invalid_user = db_session.execute(text("SELECT coalesce(max(id_usuario),0)+1000000 FROM public.usuario")).scalar_one()
+    invalid = _insert(db_session, id_usuario=invalid_user)
+    assert invalid["id_usuario"] == invalid_user
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_trigger
+        WHERE tgconstraint=:fk_oid AND tgenabled='D'
+    """), {"fk_oid": fk_oid}).scalar_one() == 4
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id AND id_usuario=:user_id
+    """), {"id": invalid["id_operacion_idempotente"], "user_id": invalid_user}).scalar_one() == 1
     scenario.rollback()
 
 

@@ -341,7 +341,9 @@ BEGIN
            AND d.refobjid='public.operacion_idempotente'::regclass
            AND d.refobjsubid=1 AND d.deptype='i'
            AND seq.relkind='S' AND seq.relpersistence='p'
-           AND s.seqtypid='bigint'::regtype) <> 1
+           AND s.seqtypid='bigint'::regtype
+           AND s.seqincrement=1 AND s.seqmin=1
+           AND s.seqmax=9223372036854775807 AND NOT s.seqcycle) <> 1
     THEN RAISE EXCEPTION 'operacion_idempotente incompatible: identity sequence contractual'; END IF;
 
     WITH expected(name, expression) AS (VALUES
@@ -413,6 +415,30 @@ BEGIN
           AND c.conislocal AND c.coninhcount=0
      ) LIMIT 1;
     IF bad IS NOT NULL THEN RAISE EXCEPTION 'operacion_idempotente incompatible: FK %', bad; END IF;
+
+    WITH contractual_fk AS (
+      SELECT c.oid, c.conname, c.conrelid, c.confrelid
+        FROM pg_constraint c
+       WHERE c.conrelid='public.operacion_idempotente'::regclass
+         AND c.conname IN (
+           'fk_operacion_idempotente_usuario',
+           'fk_operacion_idempotente_sucursal',
+           'fk_operacion_idempotente_instalacion'
+         )
+         AND c.contype='f'
+    )
+    SELECT fk.conname INTO bad
+      FROM contractual_fk fk
+      LEFT JOIN pg_trigger t ON t.tgconstraint=fk.oid
+     GROUP BY fk.oid, fk.conname, fk.conrelid, fk.confrelid
+    HAVING count(t.oid) <> 4
+        OR count(t.oid) FILTER (WHERE t.tgisinternal AND t.tgenabled='O') <> 4
+        OR count(t.oid) FILTER (WHERE t.tgrelid=fk.conrelid) <> 2
+        OR count(t.oid) FILTER (WHERE t.tgrelid=fk.confrelid) <> 2
+     LIMIT 1;
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'operacion_idempotente incompatible: mecanismos RI internos de FK %', bad;
+    END IF;
 
     IF (SELECT count(*) FROM pg_index WHERE indrelid='public.operacion_idempotente'::regclass) <> 2 THEN
         RAISE EXCEPTION 'operacion_idempotente incompatible: índices adicionales o faltantes';

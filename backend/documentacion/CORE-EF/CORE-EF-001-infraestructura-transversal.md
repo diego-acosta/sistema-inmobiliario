@@ -1039,7 +1039,10 @@ Tres guards propios `ENABLE ALWAYS` condicionan el `INSERT` por coherencia
 sucursal/instalación y rechazan siempre `UPDATE`, `DELETE` y `TRUNCATE`, incluso
 bajo `session_replication_role=replica`. Las FKs permanecen administradas por
 PostgreSQL: #469 no modifica sus triggers RI internos ni promete enforcement de
-RI en ese modo privilegiado.
+RI en ese modo privilegiado, pero exige que los cuatro mecanismos RI asociados
+a cada FK existan y permanezcan normalmente habilitados (`tgenabled='O'`). La
+secuencia identity es permanente, bigint, no cíclica, de incremento uno y usa
+el rango positivo contractual completo de bigint.
 
 Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
 clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
