@@ -322,6 +322,67 @@ def test_contexto_sucursal_instalacion_inconsistente_es_rechazado(db_session):
         )
 
 
+def test_contexto_historico_inconsistente_falla_sin_reparacion(db_session):
+    installation_id, branch_id = _installation_context(db_session)
+    scenario = db_session.begin_nested()
+    other_branch = db_session.execute(text("""
+        INSERT INTO public.sucursal (
+            codigo_sucursal, nombre_sucursal, estado_sucursal
+        ) VALUES (
+            :code, 'Sucursal histórica ajena #469', 'ACTIVA'
+        ) RETURNING id_sucursal
+    """), {"code": f"SUC_HIST_469_{uuid4().hex[:8]}"}).scalar_one()
+    assert other_branch != branch_id
+
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente
+        DISABLE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal
+    """))
+    receipt = _insert(
+        db_session,
+        id_sucursal=other_branch,
+        id_instalacion=installation_id,
+    )
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente
+        ENABLE ALWAYS TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal
+    """))
+
+    trigger_contract = db_session.execute(text("""
+        SELECT tgenabled,tgtype,tgqual,
+               cardinality(tgattr::smallint[]) attribute_count,
+               tgfoid='public.trg_operacion_idempotente_instalacion_sucursal()'::regprocedure function_matches
+        FROM pg_trigger
+        WHERE tgrelid='public.operacion_idempotente'::regclass
+          AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal'
+          AND NOT tgisinternal
+    """)).one()
+    assert tuple(trigger_contract) == ("A", 7, None, 0, True)
+    assert db_session.execute(text("""
+        SELECT count(*)
+        FROM public.operacion_idempotente oi
+        JOIN public.instalacion i ON i.id_instalacion=oi.id_instalacion
+        WHERE oi.id_operacion_idempotente=:id
+          AND oi.id_sucursal IS DISTINCT FROM i.id_sucursal
+    """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+
+    persisted = db_session.execute(text("""
+        SELECT id_sucursal,id_instalacion
+        FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": receipt["id_operacion_idempotente"]}).one()
+    assert tuple(persisted) == (other_branch, installation_id)
+    assert db_session.execute(text("""
+        SELECT tgenabled FROM pg_trigger
+        WHERE tgrelid='public.operacion_idempotente'::regclass
+          AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal'
+    """)).scalar_one() == "A"
+    scenario.rollback()
+
+
 def test_contexto_no_puede_ser_enganado_por_search_path(db_session):
     installation_id, branch_id = _installation_context(db_session)
     other_branch = db_session.execute(text("""

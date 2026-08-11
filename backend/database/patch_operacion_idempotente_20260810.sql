@@ -553,6 +553,21 @@ END;$src$,'\s','','g')
           AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=34
           AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0 AND tgparentid=0
        ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: triggers contractuales'; END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM public.operacion_idempotente AS oi
+          LEFT JOIN public.instalacion AS i
+            ON i.id_instalacion=oi.id_instalacion
+         WHERE oi.id_sucursal IS NOT NULL
+           AND (
+               i.id_instalacion IS NULL
+               OR i.id_sucursal IS DISTINCT FROM oi.id_sucursal
+           )
+         LIMIT 1
+    ) THEN
+        RAISE EXCEPTION 'operacion_idempotente incompatible: receipt histórico con sucursal/instalación inconsistente';
+    END IF;
 END $$;
 
 COMMIT;

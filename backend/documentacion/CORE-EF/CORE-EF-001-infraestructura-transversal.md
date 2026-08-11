@@ -1049,6 +1049,10 @@ Desde PostgreSQL 18, los ocho CHECK y las tres FKs contractuales deben estar
 versiones anteriores esa propiedad no existe y se conserva el resto del
 contrato estructural sin depender de una columna de catálogo ausente.
 
+La reejecución del patch sobre un ledger existente también rechaza cualquier
+receipt histórico con `id_sucursal` informado cuya `id_instalacion` no pertenezca
+a esa sucursal; el preflight no repara ni elimina receipts incompatibles.
+
 Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
 clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
 versionado CORE-EF recursivo). El claim/replay/complete, la canonicalización y
