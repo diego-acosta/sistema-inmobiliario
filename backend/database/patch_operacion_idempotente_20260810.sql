@@ -364,16 +364,19 @@ END;$src$,'\s','','g')
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
           AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=27
+          AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal AND tgenabled='O'
           AND tgfoid='public.trg_operacion_idempotente_instalacion_sucursal()'::regprocedure AND tgtype=7
+          AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
           AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=34
+          AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0
        ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: triggers contractuales'; END IF;
 END $$;
 

@@ -130,11 +130,18 @@ def test_schema_fisico_exacto(db_session):
     assert all("ON DELETE RESTRICT" in constraints[name] for name in constraints if name.startswith("fk_"))
     indexes = db_session.execute(text("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename='operacion_idempotente'")).scalars().all()
     assert set(indexes) == {"operacion_idempotente_pkey", "uq_operacion_idempotente_op_id"}
-    triggers = dict(db_session.execute(text("SELECT tgname,tgenabled FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal")).all())
+    triggers = {
+        row.tgname: (row.tgenabled, row.tgqual, row.attribute_count)
+        for row in db_session.execute(text("""
+            SELECT tgname,tgenabled,tgqual,cardinality(tgattr::smallint[]) attribute_count
+            FROM pg_trigger
+            WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal
+        """))
+    }
     assert triggers == {
-        "trg_bi_operacion_idempotente_instalacion_sucursal": "O",
-        "trg_bt_operacion_idempotente_inmutable": "O",
-        "trg_bud_operacion_idempotente_inmutable": "O",
+        "trg_bi_operacion_idempotente_instalacion_sucursal": ("O", None, 0),
+        "trg_bt_operacion_idempotente_inmutable": ("O", None, 0),
+        "trg_bud_operacion_idempotente_inmutable": ("O", None, 0),
     }
     functions = set(db_session.execute(text("""
         SELECT p.proname
@@ -351,20 +358,58 @@ def test_guard_delete_deshabilitado_expone_riesgo_y_patch_falla(db_session):
         db_session.execute(text(_patch_body()))
 
 
+def test_guard_delete_con_when_false_expone_riesgo_y_patch_falla(db_session):
+    row = _insert(db_session)
+    scenario = db_session.begin_nested()
+    db_session.execute(text("""
+        DROP TRIGGER trg_bud_operacion_idempotente_inmutable
+        ON public.operacion_idempotente;
+        CREATE TRIGGER trg_bud_operacion_idempotente_inmutable
+        BEFORE UPDATE OR DELETE ON public.operacion_idempotente
+        FOR EACH ROW WHEN (false)
+        EXECUTE FUNCTION public.trg_operacion_idempotente_inmutable()
+    """))
+    assert db_session.execute(text("""
+        SELECT tgqual IS NOT NULL FROM pg_trigger
+        WHERE tgrelid='public.operacion_idempotente'::regclass
+          AND tgname='trg_bud_operacion_idempotente_inmutable'
+    """)).scalar_one()
+    db_session.execute(text("""
+        DELETE FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": row["id_operacion_idempotente"]})
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": row["id_operacion_idempotente"]}).scalar_one() == 0
+    scenario.rollback()
+
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text("""
+            DROP TRIGGER trg_bud_operacion_idempotente_inmutable
+            ON public.operacion_idempotente;
+            CREATE TRIGGER trg_bud_operacion_idempotente_inmutable
+            BEFORE UPDATE OR DELETE ON public.operacion_idempotente
+            FOR EACH ROW WHEN (false)
+            EXECUTE FUNCTION public.trg_operacion_idempotente_inmutable()
+        """))
+        db_session.execute(text(_patch_body()))
+
+
 def test_reejecucion_compatible_no_reemplaza_objetos_ni_filas(db_session):
     row = _insert(db_session)
     function_oid = db_session.execute(text("SELECT 'trg_operacion_idempotente_inmutable()'::regprocedure::oid")).scalar_one()
     context_function_oid = db_session.execute(text("SELECT 'trg_operacion_idempotente_instalacion_sucursal()'::regprocedure::oid")).scalar_one()
     triggers_before = {
-        row.tgname: (row.oid, row.tgenabled)
-        for row in db_session.execute(text("SELECT tgname,oid,tgenabled FROM pg_trigger WHERE tgrelid='operacion_idempotente'::regclass AND NOT tgisinternal"))
+        row.tgname: (row.oid, row.tgenabled, row.tgqual, row.attribute_count)
+        for row in db_session.execute(text("SELECT tgname,oid,tgenabled,tgqual,cardinality(tgattr::smallint[]) attribute_count FROM pg_trigger WHERE tgrelid='operacion_idempotente'::regclass AND NOT tgisinternal"))
     }
     db_session.execute(text(_patch_body()))
     assert db_session.execute(text("SELECT 'trg_operacion_idempotente_inmutable()'::regprocedure::oid")).scalar_one() == function_oid
     assert db_session.execute(text("SELECT 'trg_operacion_idempotente_instalacion_sucursal()'::regprocedure::oid")).scalar_one() == context_function_oid
     assert {
-        row.tgname: (row.oid, row.tgenabled)
-        for row in db_session.execute(text("SELECT tgname,oid,tgenabled FROM pg_trigger WHERE tgrelid='operacion_idempotente'::regclass AND NOT tgisinternal"))
+        row.tgname: (row.oid, row.tgenabled, row.tgqual, row.attribute_count)
+        for row in db_session.execute(text("SELECT tgname,oid,tgenabled,tgqual,cardinality(tgattr::smallint[]) attribute_count FROM pg_trigger WHERE tgrelid='operacion_idempotente'::regclass AND NOT tgisinternal"))
     } == triggers_before
     assert db_session.execute(text("SELECT count(*) FROM operacion_idempotente WHERE id_operacion_idempotente=:id"), {"id": row["id_operacion_idempotente"]}).scalar_one() == 1
 
@@ -441,6 +486,9 @@ def test_reejecucion_independiente_de_search_path_y_homonimos(db_session):
     "ALTER TABLE operacion_idempotente DISABLE TRIGGER trg_bud_operacion_idempotente_inmutable",
     "ALTER TABLE operacion_idempotente ENABLE REPLICA TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal",
     "ALTER TABLE operacion_idempotente ENABLE ALWAYS TRIGGER trg_bt_operacion_idempotente_inmutable",
+    "DROP TRIGGER trg_bud_operacion_idempotente_inmutable ON operacion_idempotente; CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE UPDATE OR DELETE ON operacion_idempotente FOR EACH ROW WHEN (false) EXECUTE FUNCTION trg_operacion_idempotente_inmutable()",
+    "DROP TRIGGER trg_bud_operacion_idempotente_inmutable ON operacion_idempotente; CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE UPDATE OF result_code ON operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_inmutable()",
+    "DROP TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal ON operacion_idempotente; CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE INSERT ON operacion_idempotente FOR EACH ROW WHEN (false) EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()",
     "DROP TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal ON operacion_idempotente; DROP FUNCTION trg_operacion_idempotente_instalacion_sucursal(); CREATE FUNCTION trg_operacion_idempotente_instalacion_sucursal() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$; CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal BEFORE INSERT ON operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_instalacion_sucursal()",
     "DROP TRIGGER trg_bud_operacion_idempotente_inmutable ON operacion_idempotente; DROP TRIGGER trg_bt_operacion_idempotente_inmutable ON operacion_idempotente; DROP FUNCTION trg_operacion_idempotente_inmutable(); CREATE FUNCTION trg_operacion_idempotente_inmutable() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN OLD; END $$; CREATE TRIGGER trg_bud_operacion_idempotente_inmutable BEFORE UPDATE OR DELETE ON operacion_idempotente FOR EACH ROW EXECUTE FUNCTION trg_operacion_idempotente_inmutable(); CREATE TRIGGER trg_bt_operacion_idempotente_inmutable BEFORE TRUNCATE ON operacion_idempotente FOR EACH STATEMENT EXECUTE FUNCTION trg_operacion_idempotente_inmutable()",
 ])
