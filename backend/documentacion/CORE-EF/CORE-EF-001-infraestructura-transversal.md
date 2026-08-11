@@ -1029,13 +1029,27 @@ La presencia de UID, versión, instalación u op ID no implica sincronizabilidad
 ## Persistencia técnica transversal #469
 
 #469 incorpora `public.operacion_idempotente` como ledger local, inmutable y no
-sincronizable de receipts completados. La tabla conserva un `op_id` globalmente
-único, identidad del command y target opcional, hash SHA-256 y versión de
-canonicalización explícita, snapshot JSONB del resultado y contexto técnico; un
-trigger rechaza siempre `UPDATE` y `DELETE`.
+sincronizable de receipts completados. La tabla standalone es ordinaria,
+permanente/WAL-logged y no admite inheritance, particionamiento, rules ni RLS.
+Conserva un `op_id` globalmente único e inmediato, identidad del command y target
+opcional, hash SHA-256 y versión de canonicalización explícita, snapshot JSONB
+del resultado y contexto técnico.
+
+Tres guards propios `ENABLE ALWAYS` condicionan el `INSERT` por coherencia
+sucursal/instalación y rechazan siempre `UPDATE`, `DELETE` y `TRUNCATE`, incluso
+bajo `session_replication_role=replica`. Las FKs permanecen administradas por
+PostgreSQL: #469 no modifica sus triggers RI internos ni promete enforcement de
+RI en ese modo privilegiado.
 
 Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
 clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
 versionado CORE-EF recursivo). El claim/replay/complete, la canonicalización y
 los advisory locks pertenecen a #470 y permanecen no implementados. La tabla
 continúa fuera de sync por default-deny.
+
+El threat model cubre drift físico accidental, patches/restores debilitados y
+DML ordinario. No intenta resistir a un DBA/superusuario deliberadamente hostil
+que elimine objetos, manipule catálogos, desactive WAL/fsync, destruya storage o
+produzca un restore físicamente inconsistente. Owner, ACL, tablespace,
+estadísticas, OIDs, TOAST, fillfactor y configuración física del clúster no son
+parte del contrato #469.

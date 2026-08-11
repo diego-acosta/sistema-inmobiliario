@@ -9,12 +9,13 @@ from sqlalchemy.exc import DBAPIError
 BACKEND = Path(__file__).resolve().parents[1]
 PATCH_NAME = "patch_operacion_idempotente_20260810.sql"
 PATCH = BACKEND / "database" / PATCH_NAME
-EXPECTED_COLUMNS = {
+EXPECTED_COLUMN_ORDER = (
     "id_operacion_idempotente", "op_id", "command_code", "target_type",
     "target_uid", "target_key", "payload_hash", "canonicalization_version",
     "result_code", "result_http_status", "result_target_uid", "result_version",
     "response_snapshot", "id_usuario", "id_sucursal", "id_instalacion", "created_at",
-}
+)
+EXPECTED_COLUMNS = set(EXPECTED_COLUMN_ORDER)
 PROHIBITED_COLUMNS = {
     "uid_global", "version_registro", "updated_at", "deleted_at", "op_id_alta",
     "op_id_ultima_modificacion", "id_instalacion_origen",
@@ -96,6 +97,18 @@ def test_schema_fisico_exacto(db_session):
          WHERE n.nspname='public' AND c.relname='operacion_idempotente'
     """)).one()
     assert (relation.relkind, relation.relpersistence) == ("r", "p")
+    relation_flags = db_session.execute(text("""
+        SELECT relispartition,relrowsecurity,relforcerowsecurity
+        FROM pg_class WHERE oid='public.operacion_idempotente'::regclass
+    """)).one()
+    assert tuple(relation_flags) == (False, False, False)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_inherits
+        WHERE inhrelid='public.operacion_idempotente'::regclass
+           OR inhparent='public.operacion_idempotente'::regclass
+    """)).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM pg_rewrite WHERE ev_class='public.operacion_idempotente'::regclass")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM pg_policy WHERE polrelid='public.operacion_idempotente'::regclass")).scalar_one() == 0
     columns = db_session.execute(text("""
       SELECT column_name,data_type,character_maximum_length,is_nullable,column_default,
              identity_generation
@@ -123,6 +136,17 @@ def test_schema_fisico_exacto(db_session):
     assert by_name["id_operacion_idempotente"]["identity_generation"] == "BY DEFAULT"
     assert by_name["created_at"]["column_default"] == "CURRENT_TIMESTAMP"
     assert all(row["column_default"] is None for name, row in by_name.items() if name not in {"created_at", "id_operacion_idempotente"})
+    attributes = db_session.execute(text("""
+        SELECT attnum,attname,atttypmod,attidentity,attgenerated,attisdropped
+        FROM pg_attribute
+        WHERE attrelid='public.operacion_idempotente'::regclass AND attnum>0
+        ORDER BY attnum
+    """)).all()
+    assert [row.attname for row in attributes] == list(EXPECTED_COLUMN_ORDER)
+    assert attributes[0].attidentity == "d"
+    assert all(row.attidentity == "" for row in attributes[1:])
+    assert all(row.attgenerated == "" and not row.attisdropped for row in attributes)
+    assert attributes[-1].atttypmod == -1
 
     constraints = dict(db_session.execute(text("SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='operacion_idempotente'::regclass")).all())
     assert set(constraints) == {
@@ -143,6 +167,42 @@ def test_schema_fisico_exacto(db_session):
     assert all(check_validation.values())
     indexes = db_session.execute(text("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename='operacion_idempotente'")).scalars().all()
     assert set(indexes) == {"operacion_idempotente_pkey", "uq_operacion_idempotente_op_id"}
+    index_contract = {
+        row.conname: row
+        for row in db_session.execute(text("""
+            SELECT c.conname,c.condeferrable,c.condeferred,c.convalidated,c.conislocal,
+                   c.coninhcount,i.indisprimary,i.indisunique,i.indimmediate,
+                   i.indisvalid,i.indisready,i.indislive,i.indnkeyatts,i.indnatts,
+                   i.indpred IS NULL pred_null,i.indexprs IS NULL expr_null
+            FROM pg_constraint c JOIN pg_index i ON i.indexrelid=c.conindid
+            WHERE c.conrelid='public.operacion_idempotente'::regclass AND c.contype IN ('p','u')
+        """))
+    }
+    assert set(index_contract) == {"operacion_idempotente_pkey", "uq_operacion_idempotente_op_id"}
+    for row in index_contract.values():
+        assert not row.condeferrable and not row.condeferred and row.convalidated
+        assert row.conislocal and row.coninhcount == 0
+        assert row.indisunique and row.indimmediate and row.indisvalid and row.indisready and row.indislive
+        assert row.indnkeyatts == row.indnatts == 1 and row.pred_null and row.expr_null
+    assert index_contract["operacion_idempotente_pkey"].indisprimary
+    assert not index_contract["uq_operacion_idempotente_op_id"].indisprimary
+    fk_contract = db_session.execute(text("""
+        SELECT conname,confupdtype,confdeltype,confmatchtype,condeferrable,
+               condeferred,convalidated,conislocal,coninhcount
+        FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass AND contype='f'
+    """)).all()
+    assert len(fk_contract) == 3
+    assert all((r.confupdtype,r.confdeltype,r.confmatchtype) == ("a","r","s") for r in fk_contract)
+    assert all(not r.condeferrable and not r.condeferred and r.convalidated and r.conislocal and r.coninhcount == 0 for r in fk_contract)
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_depend d
+        JOIN pg_class seq ON seq.oid=d.objid
+        JOIN pg_sequence s ON s.seqrelid=seq.oid
+        WHERE d.refobjid='public.operacion_idempotente'::regclass
+          AND d.refobjsubid=1 AND d.deptype='i'
+          AND seq.relkind='S' AND seq.relpersistence='p' AND s.seqtypid='bigint'::regtype
+    """)).scalar_one() == 1
     triggers = {
         row.tgname: (row.tgenabled, row.tgqual, row.attribute_count)
         for row in db_session.execute(text("""
@@ -184,6 +244,7 @@ def test_unicidad_global_op_id_y_target_no_unico(db_session):
 
 @pytest.mark.parametrize(("changes", "valid"), [
     ({"command_code": " "}, False), ({"target_type": ""}, False), ({"target_key": "  "}, False),
+    *[( {field: whitespace}, False) for field in ("command_code", "target_type", "target_key", "result_code") for whitespace in ("\t", "\n", "\r", "\f", "\x0b", " \t\r\n\f\x0b")],
     ({"target_uid": None, "target_key": None}, True), ({"payload_hash": "a" * 64}, True),
     ({"payload_hash": "a" * 63}, False), ({"payload_hash": "a" * 65}, False),
     ({"payload_hash": "A" * 64}, False), ({"payload_hash": "g" * 64}, False),
@@ -489,6 +550,229 @@ def test_tabla_unlogged_falla_sin_reparar_ni_modificar_receipt(db_session):
         SELECT count(*) FROM public.operacion_idempotente
         WHERE id_operacion_idempotente=:id
     """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
+    scenario.rollback()
+
+
+def test_unique_deferrable_falla_y_unique_final_conflicta_en_segundo_insert(db_session):
+    scenario = db_session.begin_nested()
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente DROP CONSTRAINT uq_operacion_idempotente_op_id;
+        ALTER TABLE public.operacion_idempotente ADD CONSTRAINT uq_operacion_idempotente_op_id
+        UNIQUE (op_id) DEFERRABLE INITIALLY DEFERRED
+    """))
+    drift = db_session.execute(text("""
+        SELECT condeferrable,condeferred FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='uq_operacion_idempotente_op_id'
+    """)).one()
+    assert tuple(drift) == (True, True)
+    duplicate = uuid4()
+    _insert(db_session, op_id=duplicate)
+    _insert(db_session, op_id=duplicate)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text("""
+        SELECT condeferrable FROM pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='uq_operacion_idempotente_op_id'
+    """)).scalar_one()
+    scenario.rollback()
+
+    immediate = uuid4()
+    _insert(db_session, op_id=immediate)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        _insert(db_session, op_id=immediate)
+
+
+@pytest.mark.parametrize(("constraint_name", "definition", "drift_query", "drift_value"), [
+    (
+        "operacion_idempotente_pkey",
+        "PRIMARY KEY (id_operacion_idempotente) DEFERRABLE INITIALLY DEFERRED",
+        "SELECT condeferrable FROM pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass AND conname='operacion_idempotente_pkey'",
+        True,
+    ),
+    (
+        "uq_operacion_idempotente_op_id",
+        "UNIQUE (op_id) INCLUDE (command_code)",
+        "SELECT indnatts FROM pg_index WHERE indexrelid=(SELECT conindid FROM pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass AND conname='uq_operacion_idempotente_op_id')",
+        2,
+    ),
+])
+def test_pk_o_indice_unique_no_contractual_falla(db_session, constraint_name, definition, drift_query, drift_value):
+    scenario = db_session.begin_nested()
+    db_session.execute(text(f"ALTER TABLE public.operacion_idempotente DROP CONSTRAINT {constraint_name}"))
+    db_session.execute(text(f"ALTER TABLE public.operacion_idempotente ADD CONSTRAINT {constraint_name} {definition}"))
+    assert db_session.execute(text(drift_query)).scalar_one() == drift_value
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text(drift_query)).scalar_one() == drift_value
+    scenario.rollback()
+
+
+def test_identity_sequence_unlogged_falla_sin_reparacion(db_session):
+    scenario = db_session.begin_nested()
+    sequence = db_session.execute(text("""
+        SELECT seq.oid::regclass::text FROM pg_class seq
+        JOIN pg_depend d ON d.objid=seq.oid
+        WHERE d.refobjid='public.operacion_idempotente'::regclass
+          AND d.refobjsubid=1 AND d.deptype='i'
+    """)).scalar_one()
+    db_session.execute(text(f"ALTER SEQUENCE {sequence} SET UNLOGGED"))
+    assert db_session.execute(text(f"SELECT relpersistence FROM pg_class WHERE oid='{sequence}'::regclass")).scalar_one() == "u"
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text(f"SELECT relpersistence FROM pg_class WHERE oid='{sequence}'::regclass")).scalar_one() == "u"
+    scenario.rollback()
+
+
+@pytest.mark.parametrize("definition", [
+    "FOREIGN KEY (id_usuario) REFERENCES public.usuario(id_usuario) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED",
+    "FOREIGN KEY (id_usuario) REFERENCES public.usuario(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT",
+    "FOREIGN KEY (id_usuario) REFERENCES public.usuario(id_usuario) ON DELETE RESTRICT NOT VALID",
+])
+def test_fk_usuario_con_semantica_no_contractual_falla_sin_reparar(db_session, definition):
+    scenario = db_session.begin_nested()
+    db_session.execute(text("ALTER TABLE public.operacion_idempotente DROP CONSTRAINT fk_operacion_idempotente_usuario"))
+    db_session.execute(text(f"""
+        ALTER TABLE public.operacion_idempotente
+        ADD CONSTRAINT fk_operacion_idempotente_usuario {definition}
+    """))
+    drift = db_session.execute(text("""
+        SELECT confupdtype,condeferrable,condeferred,convalidated
+        FROM pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).one()
+    assert tuple(drift) != ("a", False, False, True)
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text("""
+        SELECT confupdtype,condeferrable,condeferred,convalidated
+        FROM pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass
+          AND conname='fk_operacion_idempotente_usuario'
+    """)).one() == drift
+    scenario.rollback()
+
+
+def test_inheritance_como_padre_permitiria_op_id_duplicado_y_patch_falla(db_session):
+    scenario = db_session.begin_nested()
+    db_session.execute(text("""
+        CREATE TABLE public.operacion_idempotente_hija
+        (LIKE public.operacion_idempotente INCLUDING ALL);
+        ALTER TABLE public.operacion_idempotente_hija
+        INHERIT public.operacion_idempotente
+    """))
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_inherits
+        WHERE inhparent='public.operacion_idempotente'::regclass
+    """)).scalar_one() == 1
+    op_id = uuid4()
+    _insert(db_session, op_id=op_id)
+    installation = _installation(db_session)
+    db_session.execute(text("""
+        INSERT INTO public.operacion_idempotente_hija
+          (op_id,command_code,target_type,payload_hash,canonicalization_version,
+           result_code,response_snapshot,id_instalacion)
+        VALUES (:op,'C','T',:hash,1,'OK','{}',:installation)
+    """), {"op": op_id, "hash": "a" * 64, "installation": installation})
+    assert db_session.execute(text("SELECT count(*) FROM public.operacion_idempotente WHERE op_id=:op"), {"op": op_id}).scalar_one() == 2
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    scenario.rollback()
+
+
+def test_inheritance_como_hija_falla_sin_reparar(db_session):
+    scenario = db_session.begin_nested()
+    db_session.execute(text("CREATE TABLE public.operacion_idempotente_padre (LIKE public.operacion_idempotente INCLUDING ALL)"))
+    db_session.execute(text("ALTER TABLE public.operacion_idempotente INHERIT public.operacion_idempotente_padre"))
+    assert db_session.execute(text("""
+        SELECT count(*) FROM pg_inherits
+        WHERE inhrelid='public.operacion_idempotente'::regclass
+    """)).scalar_one() == 1
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    scenario.rollback()
+
+
+def test_rule_insert_do_instead_falla_y_sin_guard_suprime_receipt(db_session):
+    scenario = db_session.begin_nested()
+    db_session.execute(text("""
+        CREATE RULE operacion_idempotente_suprime_insert AS
+        ON INSERT TO public.operacion_idempotente DO INSTEAD NOTHING
+    """))
+    assert db_session.execute(text("SELECT count(*) FROM pg_rewrite WHERE ev_class='public.operacion_idempotente'::regclass")).scalar_one() == 1
+    before = db_session.execute(text("SELECT count(*) FROM public.operacion_idempotente")).scalar_one()
+    db_session.execute(text("""
+        INSERT INTO public.operacion_idempotente
+          (op_id,command_code,target_type,payload_hash,canonicalization_version,
+           result_code,response_snapshot,id_instalacion)
+        VALUES (:op,'C','T',:hash,1,'OK','{}',:installation)
+    """), {"op": uuid4(), "hash": "a" * 64, "installation": _installation(db_session)})
+    assert db_session.execute(text("SELECT count(*) FROM public.operacion_idempotente")).scalar_one() == before
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    scenario.rollback()
+
+
+def test_rls_y_policy_fallan_sin_reparacion(db_session):
+    scenario = db_session.begin_nested()
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE public.operacion_idempotente FORCE ROW LEVEL SECURITY;
+        CREATE POLICY operacion_idempotente_deny_all ON public.operacion_idempotente
+        USING (false) WITH CHECK (false)
+    """))
+    flags = db_session.execute(text("""
+        SELECT relrowsecurity,relforcerowsecurity FROM pg_class
+        WHERE oid='public.operacion_idempotente'::regclass
+    """)).one()
+    assert tuple(flags) == (True, True)
+    assert db_session.execute(text("SELECT count(*) FROM pg_policy WHERE polrelid='public.operacion_idempotente'::regclass")).scalar_one() == 1
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text("SELECT relrowsecurity FROM pg_class WHERE oid='public.operacion_idempotente'::regclass")).scalar_one()
+    scenario.rollback()
+
+
+def test_columna_generated_y_timestamp_con_precision_fallan(db_session):
+    generated = db_session.begin_nested()
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente DROP COLUMN result_target_uid;
+        ALTER TABLE public.operacion_idempotente ADD COLUMN result_target_uid uuid
+        GENERATED ALWAYS AS (target_uid) STORED
+    """))
+    assert db_session.execute(text("""
+        SELECT attgenerated FROM pg_attribute
+        WHERE attrelid='public.operacion_idempotente'::regclass AND attname='result_target_uid'
+    """)).scalar_one() == "s"
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    generated.rollback()
+
+    precision = db_session.begin_nested()
+    db_session.execute(text("""
+        ALTER TABLE public.operacion_idempotente
+        ALTER COLUMN created_at TYPE timestamp(0) without time zone
+    """))
+    assert db_session.execute(text("""
+        SELECT atttypmod FROM pg_attribute
+        WHERE attrelid='public.operacion_idempotente'::regclass AND attname='created_at'
+    """)).scalar_one() == 0
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    precision.rollback()
+
+
+@pytest.mark.parametrize(("function_name", "alteration", "column", "expected"), [
+    ("fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)", "IMMUTABLE", "provolatile", "i"),
+    ("trg_operacion_idempotente_inmutable()", "SECURITY DEFINER", "prosecdef", True),
+    ("trg_operacion_idempotente_instalacion_sucursal()", "STRICT", "proisstrict", True),
+])
+def test_atributos_materiales_de_funcion_incompatibles_fallan(db_session, function_name, alteration, column, expected):
+    scenario = db_session.begin_nested()
+    db_session.execute(text(f"ALTER FUNCTION public.{function_name} {alteration}"))
+    assert db_session.execute(text(f"SELECT {column} FROM pg_proc WHERE oid='public.{function_name}'::regprocedure")).scalar_one() == expected
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
     scenario.rollback()
 
 
