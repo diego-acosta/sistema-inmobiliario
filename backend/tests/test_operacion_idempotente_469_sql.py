@@ -89,6 +89,13 @@ def _insert(db, **changes):
 
 
 def test_schema_fisico_exacto(db_session):
+    relation = db_session.execute(text("""
+        SELECT c.relkind,c.relpersistence
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE n.nspname='public' AND c.relname='operacion_idempotente'
+    """)).one()
+    assert (relation.relkind, relation.relpersistence) == ("r", "p")
     columns = db_session.execute(text("""
       SELECT column_name,data_type,character_maximum_length,is_nullable,column_default,
              identity_generation
@@ -461,6 +468,27 @@ def test_check_contractual_not_valid_con_fila_invalida_falla_sin_reparar(db_sess
         SELECT count(*) FROM public.operacion_idempotente
         WHERE id_operacion_idempotente=:id AND payload_hash='INVALID'
     """), {"id": invalid["id_operacion_idempotente"]}).scalar_one() == 1
+    scenario.rollback()
+
+
+def test_tabla_unlogged_falla_sin_reparar_ni_modificar_receipt(db_session):
+    receipt = _insert(db_session)
+    scenario = db_session.begin_nested()
+    db_session.execute(text("ALTER TABLE public.operacion_idempotente SET UNLOGGED"))
+    assert db_session.execute(text("""
+        SELECT relpersistence FROM pg_class
+        WHERE oid='public.operacion_idempotente'::regclass
+    """)).scalar_one() == "u"
+    with pytest.raises(DBAPIError), db_session.begin_nested():
+        db_session.execute(text(_patch_body()))
+    assert db_session.execute(text("""
+        SELECT relpersistence FROM pg_class
+        WHERE oid='public.operacion_idempotente'::regclass
+    """)).scalar_one() == "u"
+    assert db_session.execute(text("""
+        SELECT count(*) FROM public.operacion_idempotente
+        WHERE id_operacion_idempotente=:id
+    """), {"id": receipt["id_operacion_idempotente"]}).scalar_one() == 1
     scenario.rollback()
 
 
