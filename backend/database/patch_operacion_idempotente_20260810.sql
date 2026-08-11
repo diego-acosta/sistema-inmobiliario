@@ -189,6 +189,8 @@ BEGIN
         CREATE TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal
         BEFORE INSERT ON public.operacion_idempotente
         FOR EACH ROW EXECUTE FUNCTION public.trg_operacion_idempotente_instalacion_sucursal();
+        ALTER TABLE public.operacion_idempotente
+        ENABLE ALWAYS TRIGGER trg_bi_operacion_idempotente_instalacion_sucursal;
     END IF;
 
     IF NOT EXISTS (
@@ -203,6 +205,8 @@ BEGIN
         CREATE TRIGGER trg_bud_operacion_idempotente_inmutable
         BEFORE UPDATE OR DELETE ON public.operacion_idempotente
         FOR EACH ROW EXECUTE FUNCTION public.trg_operacion_idempotente_inmutable();
+        ALTER TABLE public.operacion_idempotente
+        ENABLE ALWAYS TRIGGER trg_bud_operacion_idempotente_inmutable;
     END IF;
 
     IF NOT EXISTS (
@@ -217,6 +221,8 @@ BEGIN
         CREATE TRIGGER trg_bt_operacion_idempotente_inmutable
         BEFORE TRUNCATE ON public.operacion_idempotente
         FOR EACH STATEMENT EXECUTE FUNCTION public.trg_operacion_idempotente_inmutable();
+        ALTER TABLE public.operacion_idempotente
+        ENABLE ALWAYS TRIGGER trg_bt_operacion_idempotente_inmutable;
     END IF;
 END $$;
 
@@ -268,7 +274,7 @@ BEGIN
       ('chk_operacion_idempotente_result_version','((result_version IS NULL) OR (result_version >= 1))')
     ), actual AS (
       SELECT conname name, pg_get_expr(conbin,conrelid) expression FROM pg_constraint
-       WHERE conrelid='public.operacion_idempotente'::regclass AND contype='c'
+       WHERE conrelid='public.operacion_idempotente'::regclass AND contype='c' AND convalidated
     )
     SELECT coalesce(e.name,a.name) INTO bad FROM expected e FULL JOIN actual a USING (name)
      WHERE e.name IS NULL OR a.name IS NULL OR e.expression<>a.expression LIMIT 1;
@@ -362,19 +368,19 @@ END;$src$,'\s','','g')
     IF (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 3
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
-          AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
+          AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='A'
           AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=27
           AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
-          AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal AND tgenabled='O'
+          AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal AND tgenabled='A'
           AND tgfoid='public.trg_operacion_idempotente_instalacion_sucursal()'::regprocedure AND tgtype=7
           AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0
        )
        OR NOT EXISTS (
          SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
-          AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='O'
+          AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='A'
           AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=34
           AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0
        ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: triggers contractuales'; END IF;
