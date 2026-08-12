@@ -1,0 +1,365 @@
+# GOP-FREEZE-001 — Gestión Operativa — Tareas y Seguimiento Interno
+
+**Estado:** freeze funcional previo a diseño técnico
+
+**Dominio:** `gestion_operativa`
+
+**Módulo:** `tareas_y_seguimiento_interno`
+
+## 1. Propósito y alcance
+
+Este documento congela el contrato funcional de tareas y seguimiento interno antes de producir DEV-ARCH, DER, DEV-SRV, DEV-API, SQL, implementación y tests. Sus conceptos se clasifican así:
+
+- **Núcleo de dominio:** `Tarea`, sus comentarios y su historial funcional pertenecen a `gestion_operativa`.
+- **Soporte transversal consumido:** identidad/autorización administrativas y metadata CORE-EF.
+- **Compatibilidad heredada:** no se incorpora ninguna como modelo principal.
+
+Este freeze no confirma implementación existente. En particular, todavía no define SQL físico, endpoints definitivos, schemas, eventos concretos, frontend ni automatizaciones específicas. Todo ello queda pendiente de los artefactos técnicos posteriores y de su validación contra SQL, backend y tests reales.
+
+## 2. Ownership y límites
+
+Queda congelada esta frontera, sin equivalencia ni solapamiento:
+
+```text
+gestion_operativa
+→ owner de tarea y seguimiento interno
+
+operativo
+→ dominio externo
+→ conserva su ownership sobre sucursales, instalaciones, caja y sus operaciones
+```
+
+`gestion_operativa != operativo`. El uso futuro de referencias a objetos de `operativo` no transfiere ownership. Se mantienen además las separaciones:
+
+```text
+comentario_tarea != historial_tarea
+historial_tarea != auditoria_administrativa
+fecha_objetivo != evento_agenda
+tarea != incidencia
+tarea != observacion
+tarea != novedad
+cancelacion_tarea != eliminacion_tecnica
+instalacion_origen != scope_funcional_tarea
+```
+
+## 3. Aggregate principal
+
+`Tarea` es conceptualmente el **aggregate root** de `tareas_y_seguimiento_interno`. Representa una unidad de trabajo pendiente, en ejecución, completada o cancelada que Gestión Operativa debe seguir.
+
+Una tarea puede ser manual o generada por sistema, estar asignada o no tener responsable, y ser puramente interna.
+
+## 4. Identidad
+
+- `id_tarea`: identificador interno conceptual.
+- `uid_global`: condicionado por la decisión de sincronización; no se congela su incorporación hasta resolverla.
+- Código visible de tarea: fuera del MVP, salvo necesidad funcional posterior expresamente aprobada.
+
+## 5. Origen y autoría
+
+Toda tarea tiene `origen = USUARIO | SISTEMA`.
+
+Para `origen = USUARIO`:
+
+```text
+id_usuario_creador
+→ obligatorio
+→ tomado de AuthenticatedPrincipal.id_usuario
+```
+
+El cliente no puede elegir libremente al usuario creador.
+
+Para `origen = SISTEMA`:
+
+```text
+id_usuario_creador = NULL
+generador_sistema IS NOT NULL
+```
+
+`generador_sistema` identifica el proceso funcional que originó la tarea. `CONTROL_MORA` es un caso futuro conocido, pero este freeze no define un catálogo completo. No se debe crear un usuario ficticio `SYSTEM`, `BOT`, `SISTEMA` ni equivalente.
+
+Invariantes conceptuales:
+
+```text
+origen = USUARIO
+→ id_usuario_creador IS NOT NULL
+→ generador_sistema IS NULL
+
+origen = SISTEMA
+→ id_usuario_creador IS NULL
+→ generador_sistema IS NOT NULL
+```
+
+## 6. Creador versus responsable
+
+Creador y responsable son roles distintos. El creador registra autoría; el responsable identifica a quien tiene asignado el trabajo. Son válidos:
+
+```text
+creador = usuario A; responsable = usuario A
+creador = usuario A; responsable = usuario B
+creador = usuario A; responsable = NULL
+origen = SISTEMA; generador_sistema = CONTROL_MORA; responsable = NULL
+origen = SISTEMA; generador_sistema = CONTROL_MORA; responsable = usuario B
+```
+
+## 7. Responsable
+
+Para el MVP se congela `0..1 responsable`:
+
+```text
+id_usuario_responsable
+→ nullable
+→ referencia a usuario administrativo
+```
+
+Una tarea sin responsable es válida. Múltiples responsables, equipos, sectores, grupos, observadores y responsables secundarios quedan fuera del MVP.
+
+## 8. Contenido
+
+- `titulo`: obligatorio y no vacío.
+- `descripcion`: opcional.
+- Adjuntos: fuera del MVP.
+
+## 9. Estados
+
+Se propone para el freeze el catálogo inicial cerrado `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y `CANCELADA`. `PENDIENTE` es el estado inicial; `COMPLETADA` y `CANCELADA` son terminales.
+
+Transiciones preliminares:
+
+```text
+PENDIENTE
+├── EN_CURSO
+├── COMPLETADA
+└── CANCELADA
+
+EN_CURSO
+├── PENDIENTE
+├── COMPLETADA
+└── CANCELADA
+```
+
+La reapertura queda fuera del MVP salvo decisión expresa. No se incluyen inicialmente `VENCIDA`, `BLOQUEADA`, `PAUSADA`, `ARCHIVADA`, `PROGRAMADA` ni `DELEGADA`. Los estados definitivos permanecen bloqueantes antes del DER, según la sección 30.
+
+## 10. Prioridad
+
+Se propone el catálogo cerrado inicial `BAJA`, `NORMAL`, `ALTA`, `URGENTE`, con `NORMAL` como default. No será configurable en el MVP. Las prioridades definitivas permanecen abiertas antes del DER.
+
+## 11. Fecha objetivo
+
+`fecha_objetivo` es opcional y `fecha_objetivo != evento_agenda`. Asignarla no crea evento, recordatorio, alerta ni notificación.
+
+La representación `DATE` versus `TIMESTAMP` es una decisión pendiente previa al DER. Se recomienda inicialmente `DATE` si sólo se requiere un día objetivo.
+
+## 12. Vencimiento
+
+`VENCIDA` no es un estado persistido. Es la condición derivada:
+
+```text
+vencida =
+  fecha_objetivo < fecha_corte
+  AND estado NOT IN (COMPLETADA, CANCELADA)
+```
+
+## 13. Finalización
+
+Al completar una tarea debe conservarse conceptualmente `fecha_finalizacion`, generada por el servidor.
+
+## 14. Scope funcional
+
+Como propuesta preliminar se considera `id_sucursal` opcional:
+
+```text
+id_sucursal = NULL → tarea global
+id_sucursal = <id> → tarea asociada funcionalmente a una sucursal
+```
+
+Su opcionalidad definitiva queda abierta antes del DER. No se usa `id_instalacion` como scope funcional. `id_instalacion_origen` representa exclusivamente procedencia técnica CORE-EF; por tanto, `id_instalacion_origen != scope_funcional_tarea`.
+
+## 15. Comentarios
+
+```text
+Tarea
+└── Comentarios 0..N
+```
+
+Cada comentario conserva tarea, autor, texto e instante. Para autor humano se usa `AuthenticatedPrincipal.id_usuario`.
+
+Se congela la propuesta de comentario **append-only** para el MVP: no se edita, no se borra físicamente y se corrige mediante un nuevo comentario. Agregarlo no cambia automáticamente el estado.
+
+## 16. Historial funcional
+
+El historial funcional es estructurado y está separado de comentarios y auditoría. Puede representar conceptualmente:
+
+```text
+CREADA
+ASIGNADA
+DESASIGNADA
+REASIGNADA
+CAMBIO_ESTADO
+CAMBIO_PRIORIDAD
+CAMBIO_FECHA_OBJETIVO
+CAMBIO_TITULO
+CAMBIO_DESCRIPCION
+```
+
+Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor anterior/nuevo cuando corresponda.
+
+```text
+historial_funcional
+!= comentario
+!= auditoria_administrativa
+!= log_tecnico
+!= outbox
+```
+
+## 17. Generación automática
+
+El modelo debe admitir generación automática, aunque su ejecución queda fuera del primer MVP. Caso futuro conocido:
+
+```text
+Financiero
+→ detecta mora
+→ solicita/genera una tarea
+→ gestion_operativa conserva ownership de la tarea
+```
+
+La regla para determinar mora pertenece a Financiero; la tarea resultante pertenece a `gestion_operativa`. Financiero no administra directamente estado, prioridad, comentarios, historial ni asignación de esa tarea.
+
+La futura generación debe ser idempotente frente a reintentos y al mismo hecho fuente para impedir duplicados.
+
+## 18. Relaciones con objetos externos
+
+Una tarea puede ser puramente interna y el MVP no requiere relación externa. En el futuro podría relacionarse con persona, inmueble, unidad funcional, venta, reserva, contrato, alquiler, obligación financiera, documento o incidencia.
+
+No se implementa ni se congela una FK genérica `tipo_entidad` + `id_entidad`.
+
+## 19. Cancelación, baja y archivo
+
+```text
+CANCELADA → estado funcional
+deleted_at → eliminación técnica
+```
+
+La eliminación no se expone como flujo normal del MVP. `ARCHIVADA` no integra los estados iniciales. La presencia física de `deleted_at` desde el inicio queda abierta antes del DER.
+
+## 20. Identidad y autorización
+
+Para operaciones manuales:
+
+```text
+Authorization: Bearer
+→ AuthenticatedPrincipal.id_usuario
+```
+
+`X-Usuario-Id` no debe utilizarse como autoridad de identidad humana en endpoints nuevos; representa metadata/contexto CORE-EF cuando el contrato aplicable lo requiera, pero no autentica.
+
+Administrativo conserva ownership de usuarios, autenticación, autorización, roles y permisos. `gestion_operativa` sólo consume esas capacidades y no redefine su semántica.
+
+## 21. CORE-EF preliminar
+
+Clasificación conceptual futura:
+
+| Operación | Clasificación |
+| --- | --- |
+| Crear tarea manual | `COMMAND_WRITE_NEGOCIO` |
+| Crear tarea automática | `COMMAND_WRITE_NEGOCIO` |
+| Modificar tarea | `COMMAND_WRITE_NEGOCIO` |
+| Asignar, reasignar o desasignar | `COMMAND_WRITE_NEGOCIO` |
+| Cambiar estado | `COMMAND_WRITE_NEGOCIO` |
+| Agregar comentario | `COMMAND_WRITE_NEGOCIO` |
+| Consultas | `QUERY_READLIKE` |
+
+Los futuros DEV-API/DEV-SRV deben resolver y documentar, según la estrategia de sync, `X-Op-Id`, headers CORE-EF aplicables, `If-Match-Version`, versionado, idempotencia, instalación de procedencia, sucursal funcional, outbox, sync, locks y frontera de rollback/transacción. Este incremento no implementa endpoints ni afirma cumplimiento runtime.
+
+Para las consultas `QUERY_READLIKE`, headers write, idempotencia command y `If-Match-Version` no aplican porque no mutan estado.
+
+## 22. Versionado
+
+Se propone `tarea → version_registro`. Las modificaciones de una tarea existente deberán utilizar `If-Match-Version` como control de concurrencia optimista.
+
+Permanece abierta la decisión: **¿agregar comentario incrementa `version_registro` de tarea?** La recomendación preliminar es **NO** si el comentario es append-only y no modifica el estado del aggregate raíz.
+
+## 23. Idempotencia
+
+Debe aplicarse al menos a crear manual, crear automática, asignar/reasignar, cambiar estado y agregar comentario. Los contratos posteriores deberán definir criterio de payload, mismo `op_id` con mismo payload, mismo `op_id` con payload distinto y retry posterior a error.
+
+La generación automática además debe deduplicar reintentos y el mismo hecho fuente.
+
+## 24. Sync
+
+**NO CONGELADO.** Las alternativas son `SINCRONIZABLE`, `LOCAL` o `MIXTO`. Se recomienda evaluar seriamente `SINCRONIZABLE` por la necesidad futura de consultar **Mis tareas** entre instalaciones.
+
+La decisión debe tomarse antes del DER porque afecta `uid_global`, metadata CORE-EF, outbox, allowlist, conflictos, comentarios, historial, versiones e idempotencia. Este documento no crea eventos, productores, consumidores ni entradas de allowlist.
+
+## 25. Locks
+
+Para el MVP se propone no requerir lock lógico inicialmente. El mecanismo inicial es concurrencia optimista mediante:
+
+```text
+version_registro
++
+If-Match-Version
+```
+
+## 26. Consultas mínimas
+
+El contrato debe prever: obtener tarea, listar tareas, mis tareas, pendientes, vencidas y sin asignar.
+
+Filtros mínimos: responsable, estado, prioridad, sucursal, vencida y fecha objetivo.
+
+## 27. MVP funcional
+
+El alcance funcional comprende:
+
+- crear tarea manual;
+- listar tareas y ver una tarea;
+- consultar mis tareas, pendientes, vencidas y sin asignar;
+- modificar título/descripción;
+- asignar, reasignar y desasignar;
+- cambiar prioridad, fecha objetivo y estado;
+- agregar comentario;
+- consultar historial.
+
+Debe implementarse en varios incrementos trazables, no como un único issue grande.
+
+## 28. Fuera del MVP
+
+Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrencia, subtareas, dependencias, múltiples responsables, equipos, sectores, Kanban, SLA, workflows configurables, adjuntos, generación automática efectiva, control de mora efectivo, relaciones polimórficas, incidencias, novedades, observaciones, frontend avanzado y dashboard analítico.
+
+## 29. Decisiones congeladas
+
+`GOP-FREEZE-001` congela expresamente:
+
+1. `gestion_operativa` tiene ownership de `tarea`; `operativo` es un dominio externo distinto.
+2. `Tarea` es el aggregate root de `tareas_y_seguimiento_interno`.
+3. El origen es `USUARIO | SISTEMA`.
+4. Creador y responsable son roles distintos.
+5. `id_usuario_creador` es obligatorio sólo para origen `USUARIO` y procede de `AuthenticatedPrincipal.id_usuario`.
+6. `generador_sistema` es obligatorio sólo para origen `SISTEMA`; no existe usuario ficticio de sistema.
+7. Hay cero o un responsable; una tarea sin responsable es válida.
+8. Una tarea puramente interna es válida.
+9. El título es obligatorio y no vacío; la descripción es opcional.
+10. La fecha objetivo es opcional y no crea un evento de agenda.
+11. `vencida` es una condición derivada, no un estado persistido.
+12. Comentario, historial funcional y auditoría administrativa son conceptos distintos.
+13. El comentario es append-only en el MVP.
+14. Cancelación funcional y eliminación técnica son distintas.
+15. Instalación de origen técnico y scope funcional son distintos; `id_instalacion` no es scope funcional.
+16. La identidad humana procede de `AuthenticatedPrincipal`, no de `X-Usuario-Id`.
+17. Relaciones externas y múltiples responsables quedan fuera del MVP.
+18. La generación automática efectiva queda fuera del MVP, aunque el modelo debe admitirla.
+19. La concurrencia optimista mediante `version_registro` + `If-Match-Version` es el mecanismo inicial.
+
+## 30. Decisiones todavía abiertas
+
+Son bloqueantes antes del DER y este freeze no las cierra:
+
+1. Si `id_sucursal` es opcional o no.
+2. Estados definitivos.
+3. Reapertura.
+4. Prioridades definitivas.
+5. `DATE` versus `TIMESTAMP` para `fecha_objetivo`.
+6. Estrategia de sync: `SINCRONIZABLE`, `LOCAL` o `MIXTO`.
+7. Si agregar comentario incrementa `version_registro` de la tarea.
+8. Presencia de `deleted_at` desde el inicio.
+
+Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
