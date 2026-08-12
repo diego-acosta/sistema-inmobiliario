@@ -1054,6 +1054,21 @@ Desde PostgreSQL 18, los ocho CHECK y las tres FKs contractuales deben estar
 versiones anteriores esa propiedad no existe y se conserva el resto del
 contrato estructural sin depender de una columna de catálogo ausente.
 
+## Runtime técnico transversal #470
+
+#470 consume el ledger sin alterar su contrato físico. El runtime recibe una
+`Session` cuya transacción pertenece al caso de uso exterior, adquiere
+`pg_advisory_xact_lock` con una clave estable derivada de `op_id` y sólo después
+consulta el UUID completo. Un receipt compatible produce replay exclusivamente
+desde su snapshot durable; las diferencias se clasifican en el orden `COMMAND`,
+`TARGET`, `PAYLOAD`.
+
+Los payloads de v1 deben llegar normalizados a valores JSON sin `float` y se
+canonicalizan mediante RFC 8785 antes de aplicar SHA-256. La finalización hace un
+único `INSERT ... RETURNING`; el runtime no inicia transacciones ni ejecuta
+commit o rollback. La unicidad física de `op_id` sigue siendo una defensa final
+y una colisión inesperada es un fallo técnico, no un replay.
+
 La nullability de las 17 columnas se valida de forma estable entre versiones
 mediante `pg_catalog.pg_attribute.attnotnull`. En PostgreSQL 16 ésa es la fuente
 del contrato `NOT NULL`; en PostgreSQL 18 los `NOT NULL` también pueden aparecer
@@ -1071,11 +1086,12 @@ Además establece transaction-localmente `search_path = pg_catalog, public` ante
 de cualquier validación, evitando shadowing de funciones built-in; las referencias
 contractuales críticas permanecen igualmente schema-qualified.
 
-Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
-clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
-versionado CORE-EF recursivo). El claim/replay/complete, la canonicalización y
-los advisory locks pertenecen a #470 y permanecen no implementados. La tabla
-continúa fuera de sync por default-deny.
+#469 es infraestructura SQL sin endpoint (`NO APLICA` para la clasificación de
+endpoint, headers, `If-Match-Version`, outbox, lock lógico y versionado CORE-EF
+recursivo). #470 implementa en este incremento el runtime reusable de
+claim/replay/complete, la canonicalización y los advisory locks sobre esa
+persistencia. #412 continúa sin implementar. La tabla permanece fuera de sync
+por default-deny.
 
 El threat model cubre drift físico accidental, patches/restores debilitados y
 DML ordinario. No intenta resistir a un DBA/superusuario deliberadamente hostil

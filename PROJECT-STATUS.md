@@ -28,7 +28,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración y auditoría básica siguen abiertas. Catálogos ya cuenta con CRUD write de maestros e ítems. #407/PR #414 implementó sólo el inventario read-only de definiciones; #408 congela la fuente canónica, #409 agrega únicamente `ENTERO`/`GLOBAL` estructurales, #410 prepara físicamente `valor_parametro` con CORE-EF SQL, #438 agrega metadata default-deny de exposición/sensibilidad en `parametro_sistema`, #411 agrega la lectura individual del valor GLOBAL marcado vigente y #448 prepara sólo el contrato SQL CORE-EF de `credencial_usuario`. | #249, #263, #264 y #265 abiertos. | #437 mergeado (commit `908929e`); #438 es preparación SQL segura previa a reads de valores. | #425 sobre `parametro_sistema`/`valor_parametro` GLOBAL; claves, valores y runtime siguen pendientes; seguridad runtime de credenciales continúa en #450/#446; #449 aporta sólo primitivas internas Argon2id sin persistencia ni autenticación. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
-| Transversal — CORE-EF | #469 implementado y validado: existe el ledger durable, local, inmutable y no sincronizable `public.operacion_idempotente`. | #402 continúa abierto como coordinador; #469 completado; #470 pendiente; #412 permanece bloqueado por #470 y por sus contratos propios. | PR #471 (`ba0b13f`) y PR #472 (`731db8c`) mergeados. | #470 — claim/replay/complete, canonicalización y advisory locks; luego #412 como piloto, sin implementarlo aún. |
+| Transversal — CORE-EF | #469 implementó el ledger durable y #470 incorpora el runtime reusable claim/replay/complete con RFC 8785, advisory transaction lock y transacción exterior. | #402 continúa abierto como coordinador; #469 y #470 completados en implementación; #412 permanece pendiente como piloto y no está implementado. | #470 es el último incremento implementado; PR pendiente de revisión. | #412 como piloto consumidor del runtime, sin asumir aún sus contratos propios. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -61,11 +61,16 @@ La evidencia técnica de cierre registrada para #469 comprende:
   materiales adicionales dentro del threat model y sin false negatives
   materiales demostrados del preflight.
 
-#402 continúa abierto como coordinador. El orden vigente es `#469 ✅ → #470 →
-#412 piloto`: #470 es el próximo incremento de infraestructura idempotente para
-claim/replay/complete, canonicalización y advisory locks. #412 continúa
-bloqueado por #470 y por sus restantes contratos propios; no debe implementarse
-como parte del cierre documental de #469.
+#470 incorpora sobre ese contrato físico el runtime reusable de
+`claim → EXECUTE | REPLAY | CONFLICT → complete`: canonicalización RFC 8785 v1,
+SHA-256, lock transaccional por `op_id`, lookup exacto, replay del snapshot
+durable y persistencia mediante la misma `Session`, sin commits ni rollbacks
+internos. La decisión de conflicto queda ordenada como `COMMAND → TARGET →
+PAYLOAD`, y `UNIQUE(op_id)` permanece como defensa técnica final.
+
+#402 continúa abierto como coordinador. El orden vigente es `#469 ✅ → #470 ✅
+→ #412 piloto`. #412 no fue implementado por este incremento y conserva la
+obligación de validar sus contratos propios antes de consumir el runtime.
 
 ## 5. Frente A — Comercial / Financiero
 
