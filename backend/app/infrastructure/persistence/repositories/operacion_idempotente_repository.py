@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 
@@ -115,7 +115,7 @@ class OperacionIdempotenteRepository:
                     "id_instalacion": completion.id_instalacion,
                 },
             ).mappings().one()
-        except IntegrityError as exc:
+        except DBAPIError as exc:
             raise OperationReceiptIntegrityError(
                 "The operation receipt could not be persisted."
             ) from exc

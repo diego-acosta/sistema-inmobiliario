@@ -1086,11 +1086,12 @@ Además establece transaction-localmente `search_path = pg_catalog, public` ante
 de cualquier validación, evitando shadowing de funciones built-in; las referencias
 contractuales críticas permanecen igualmente schema-qualified.
 
-Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
-clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
-versionado CORE-EF recursivo). El claim/replay/complete, la canonicalización y
-los advisory locks pertenecen a #470 y permanecen no implementados. La tabla
-continúa fuera de sync por default-deny.
+#469 es infraestructura SQL sin endpoint (`NO APLICA` para la clasificación de
+endpoint, headers, `If-Match-Version`, outbox, lock lógico y versionado CORE-EF
+recursivo). #470 implementa en este incremento el runtime reusable de
+claim/replay/complete, la canonicalización y los advisory locks sobre esa
+persistencia. #412 continúa sin implementar. La tabla permanece fuera de sync
+por default-deny.
 
 El threat model cubre drift físico accidental, patches/restores debilitados y
 DML ordinario. No intenta resistir a un DBA/superusuario deliberadamente hostil

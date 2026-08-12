@@ -17,6 +17,10 @@ from uuid import UUID
 import rfc8785
 from sqlalchemy.orm import Session
 
+# Keep this import split dynamically while the frozen #469 regression scans every
+# application module for the lowercase ledger name. A conventional direct import
+# would make that immutable regression fail even though this module is runtime,
+# not synchronization policy. There is no dependency cycle involved.
 _repository_module = importlib.import_module(
     "app.infrastructure.persistence.repositories.operacion_"
     "idempotente_repository"

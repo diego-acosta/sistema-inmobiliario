@@ -1,7 +1,7 @@
 import builtins
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -46,8 +46,21 @@ class Arbitrary:
 
 @pytest.mark.parametrize(
     "payload",
-    [1.0, float("nan"), float("inf"), Decimal("1"), uuid4(), date.today(),
-     datetime.now(), set(), frozenset(), b"x", Arbitrary(1), object(), {1: "x"}],
+    [
+        1.0,
+        float("nan"),
+        float("inf"),
+        Decimal(1),
+        uuid4(),
+        date(2026, 8, 12),
+        datetime(2026, 8, 12, tzinfo=UTC),
+        set(),
+        frozenset(),
+        b"x",
+        Arbitrary(1),
+        object(),
+        {1: "x"},
+    ],
 )
 def test_non_json_ready_types_are_rejected(payload):
     with pytest.raises(NonCanonicalizablePayload):
@@ -55,5 +68,9 @@ def test_non_json_ready_types_are_rejected(payload):
 
 
 def test_python_hash_is_not_used(monkeypatch):
-    monkeypatch.setattr(builtins, "hash", lambda value: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr(
+        builtins,
+        "hash",
+        lambda value: (_ for _ in ()).throw(AssertionError()),
+    )
     assert canonical_payload_hash({"ok": True})

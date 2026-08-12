@@ -2,6 +2,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import event, text
+from sqlalchemy.orm import Session
 
 from app.application.common.idempotency import (
     ClaimDecision,
@@ -13,17 +14,28 @@ from app.application.common.idempotency import (
     claim_operation,
     complete_operation,
 )
+from app.config.database import engine
 
 
 def values(**changes):
     payload = {"name": "original", "items": [1, True, None]}
-    result = dict(
-        op_id=uuid4(), command_code="TEST.CREATE", target_type="TEST_FIXTURE",
-        target_uid=uuid4(), target_key=None, payload_hash=canonical_payload_hash(payload),
-        canonicalization_version=1, result_code="CREATED", result_http_status=201,
-        result_target_uid=uuid4(), result_version=1, response_snapshot=payload,
-        id_usuario=None, id_sucursal=1, id_instalacion=1,
-    )
+    result = {
+        "op_id": uuid4(),
+        "command_code": "TEST.CREATE",
+        "target_type": "TEST_FIXTURE",
+        "target_uid": uuid4(),
+        "target_key": None,
+        "payload_hash": canonical_payload_hash(payload),
+        "canonicalization_version": 1,
+        "result_code": "CREATED",
+        "result_http_status": 201,
+        "result_target_uid": uuid4(),
+        "result_version": 1,
+        "response_snapshot": payload,
+        "id_usuario": None,
+        "id_sucursal": 1,
+        "id_instalacion": 1,
+    }
     result.update(changes)
     return result
 
@@ -75,13 +87,30 @@ def test_conflicts(db_session, changes, kind):
     assert claim_operation(db_session, as_claim(data, **changes)).conflict is kind
 
 
-def test_unique_is_technical_error_and_requires_external_rollback(db_session):
+def test_unique_is_technical_error_and_preserves_committed_receipt():
     data = values()
-    complete_operation(db_session, OperationCompletion(**data))
-    with pytest.raises(UnexpectedOperationReceiptConflict):
-        complete_operation(db_session, OperationCompletion(**data))
-    assert not db_session.is_active
-    db_session.rollback()
+
+    with Session(engine) as first_session:
+        complete_operation(first_session, OperationCompletion(**data))
+        first_session.commit()
+
+    with Session(engine) as second_session:
+        with pytest.raises(UnexpectedOperationReceiptConflict):
+            complete_operation(second_session, OperationCompletion(**data))
+        second_session.rollback()
+
+    with Session(engine) as verification_session:
+        receipt_count = verification_session.execute(
+            text(
+                """
+                SELECT count(*)
+                  FROM public.operacion_idempotente
+                 WHERE op_id = :op_id
+                """
+            ),
+            {"op_id": data["op_id"]},
+        ).scalar_one()
+    assert receipt_count == 1
 
 
 def test_invalid_context_is_not_semantic_conflict(db_session):
