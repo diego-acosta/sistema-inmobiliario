@@ -1060,6 +1060,9 @@ históricos huérfanos respecto de usuario, sucursal o instalación, y aquellos 
 repara ni elimina receipts incompatibles.
 El preflight referencia explícitamente sus relaciones de catálogo mediante
 `pg_catalog`, por lo que no depende del `search_path` de la conexión.
+Además establece transaction-localmente `search_path = pg_catalog, public` antes
+de cualquier validación, evitando shadowing de funciones built-in; las referencias
+contractuales críticas permanecen igualmente schema-qualified.
 
 Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
 clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y

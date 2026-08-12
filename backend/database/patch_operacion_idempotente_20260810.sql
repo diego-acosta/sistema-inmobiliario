@@ -1,5 +1,11 @@
 BEGIN;
 
+SELECT pg_catalog.set_config(
+    'search_path',
+    'pg_catalog, public',
+    true
+);
+
 DO $$
 DECLARE
     helper_body text;

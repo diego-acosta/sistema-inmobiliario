@@ -1291,6 +1291,19 @@ def test_reejecucion_independiente_de_search_path_y_homonimos(db_session):
         db_session.execute(text(f"CREATE TABLE shadow469.{catalog} (shadow text)"))
     db_session.execute(text("SET LOCAL search_path = shadow469, public, pg_catalog"))
     db_session.execute(text(_patch_body()))
+    db_session.execute(text("CREATE SCHEMA shadowfunc469"))
+    db_session.execute(text("""
+        CREATE FUNCTION shadowfunc469.to_regclass(text)
+        RETURNS regclass LANGUAGE sql IMMUTABLE
+        AS $$ SELECT NULL::regclass $$;
+        CREATE FUNCTION shadowfunc469.regexp_replace(text,text,text,text)
+        RETURNS text LANGUAGE sql IMMUTABLE
+        AS $$ SELECT 'shadowed'::text $$
+    """))
+    db_session.execute(text(
+        "SET LOCAL search_path = shadowfunc469, public, pg_catalog"
+    ))
+    db_session.execute(text(_patch_body()))
     db_session.execute(text("SET LOCAL search_path = public, pg_catalog"))
 
     assert dict(db_session.execute(text("""
@@ -1326,6 +1339,8 @@ def test_reejecucion_independiente_de_search_path_y_homonimos(db_session):
 
 def test_patch_califica_relaciones_de_catalogo_postgresql():
     patch = _patch_body()
+    assert patch.lstrip().startswith("SELECT pg_catalog.set_config(")
+    assert patch.index("pg_catalog.set_config") < patch.index("to_regclass")
     catalogs = {
         "pg_proc", "pg_namespace", "pg_class", "pg_attribute", "pg_constraint",
         "pg_trigger", "pg_index", "pg_depend", "pg_sequence", "pg_rewrite",
@@ -1334,6 +1349,24 @@ def test_patch_califica_relaciones_de_catalogo_postgresql():
     for catalog in catalogs:
         assert f"pg_catalog.{catalog}" in patch
         assert re.search(rf"(?<![\w.]){catalog}\b", patch) is None
+
+
+def test_search_path_seguro_es_solo_transaction_local(db_session):
+    original_search_path = db_session.execute(text("SHOW search_path")).scalar_one()
+    scenario = db_session.begin_nested()
+    db_session.execute(text("CREATE SCHEMA shadowlocal469"))
+    db_session.execute(text("""
+        CREATE FUNCTION shadowlocal469.to_regclass(text)
+        RETURNS regclass LANGUAGE sql IMMUTABLE
+        AS $$ SELECT NULL::regclass $$
+    """))
+    db_session.execute(text(
+        "SET LOCAL search_path = shadowlocal469, public, pg_catalog"
+    ))
+    db_session.execute(text(_patch_body()))
+    assert db_session.execute(text("SHOW search_path")).scalar_one() == "pg_catalog, public"
+    scenario.rollback()
+    assert db_session.execute(text("SHOW search_path")).scalar_one() == original_search_path
 
 
 @pytest.mark.parametrize("mutation", [
