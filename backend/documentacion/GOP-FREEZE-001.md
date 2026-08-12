@@ -10,7 +10,7 @@
 
 Este documento congela el contrato funcional de tareas y seguimiento interno antes de producir DEV-ARCH, DER, DEV-SRV, DEV-API, SQL, implementación y tests. Sus conceptos se clasifican así:
 
-- **Núcleo de dominio:** `Tarea`, sus comentarios y su historial funcional pertenecen a `gestion_operativa`.
+- **Semántica funcional del dominio:** tareas y seguimiento interno corresponden conceptualmente a `gestion_operativa`. La eventual materialización de `Tarea`, comentarios e historial como entidades, aggregates o estructuras persistentes permanece pendiente de `DEV-ARCH-GOP` y del diseño técnico posterior.
 - **Soporte transversal consumido:** identidad/autorización administrativas y metadata CORE-EF.
 - **Compatibilidad heredada:** no se incorpora ninguna como modelo principal.
 
@@ -22,14 +22,15 @@ Queda congelada esta frontera, sin equivalencia ni solapamiento:
 
 ```text
 gestion_operativa
-→ owner de tarea y seguimiento interno
+→ dominio canónico reservado para la semántica funcional
+  de tareas y seguimiento interno
 
 operativo
-→ dominio externo
+→ dominio externo distinto
 → conserva su ownership sobre sucursales, instalaciones, caja y sus operaciones
 ```
 
-`gestion_operativa != operativo`. El uso futuro de referencias a objetos de `operativo` no transfiere ownership. Se mantienen además las separaciones:
+`gestion_operativa != operativo`. Esta reserva semántica no implica todavía la existencia de una entidad técnica `tarea`, un aggregate root, una tabla ni una frontera transaccional consolidada. El uso futuro de referencias a objetos de `operativo` no transfiere ownership. Se mantienen además las separaciones:
 
 ```text
 comentario_tarea != historial_tarea
@@ -331,7 +332,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 
 `GOP-FREEZE-001` congela expresamente:
 
-1. `gestion_operativa` tiene ownership de `tarea`; `operativo` es un dominio externo distinto.
+1. `gestion_operativa` es el dominio canónico reservado para la semántica funcional de tareas y seguimiento interno; `operativo` es un dominio externo distinto. Esta decisión no congela todavía una entidad técnica `tarea`.
 2. `Tarea` es el concepto funcional principal propuesto para `tareas_y_seguimiento_interno`, cuya semántica pertenece a `gestion_operativa`; su clasificación técnica eventual permanece pendiente de `DEV-ARCH-GOP` y validaciones posteriores.
 3. El origen es `USUARIO | SISTEMA`.
 4. Creador y responsable son roles distintos.
