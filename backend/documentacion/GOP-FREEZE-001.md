@@ -199,7 +199,7 @@ Tarea
 └── Comentarios 0..N
 ```
 
-Cada comentario conserva tarea, autor, texto e instante. Para autor humano se usa `AuthenticatedPrincipal.id_usuario`.
+Cada comentario conserva tarea, autor, texto e instante. Para autor humano se usa `AuthenticatedPrincipal.id_usuario`, que identifica al actor local en la instalación donde ocurre la operación. Si esa referencia debe viajar mediante sync, será necesaria la identidad canónica interinstalación pendiente; este freeze no diseña su mecanismo concreto ni presupone columnas de UID.
 
 Se congela la propuesta de comentario **append-only** para el MVP: no se edita, no se borra físicamente y se corrige mediante un nuevo comentario. Agregarlo no cambia automáticamente el estado.
 
@@ -219,7 +219,7 @@ CAMBIO_TITULO
 CAMBIO_DESCRIPCION
 ```
 
-Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor anterior/nuevo cuando corresponda.
+Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor anterior/nuevo cuando corresponda. El actor humano local deberá poder resolverse mediante la estrategia canónica interinstalación pendiente si el historial resulta sincronizable; este freeze no presupone columnas concretas de UID.
 
 ```text
 historial_funcional
@@ -320,9 +320,17 @@ La generación automática además debe deduplicar reintentos y el mismo hecho f
 
 La decisión debe tomarse antes del DER porque afecta `uid_global`, metadata CORE-EF, outbox, allowlist, conflictos, comentarios, historial, versiones e idempotencia. Este documento no crea eventos, productores, consumidores ni entradas de allowlist.
 
-Si Tarea se define como `SINCRONIZABLE`, deberá existir además una estrategia canónica interinstalación para resolver las referencias de usuario empleadas como creador y responsable. No debe asumirse que el `id_usuario` local es suficiente como identidad sincronizable.
+Si Tarea se define como `SINCRONIZABLE`, deberá existir además una estrategia canónica interinstalación para resolver toda referencia persistida a usuario dentro de `gestion_operativa`, como mínimo:
 
-La estrategia concreta —UID global de usuario, mapping u otro mecanismo autorizado— pertenece a Administrativo/Técnico y permanece **NO CONGELADA** en este documento. `gestion_operativa` consume esa identidad, no redefine el modelo administrativo de usuario y no debe agregar por sí mismo metadata global a `usuario`. **Mis tareas** entre instalaciones no puede habilitarse de manera segura hasta resolver esta dependencia.
+- usuario creador;
+- usuario responsable;
+- autor de comentario;
+- actor del historial funcional;
+- cualquier futura referencia humana persistida que participe de información sincronizable del módulo.
+
+No debe asumirse que el `id_usuario` local es suficiente como identidad sincronizable.
+
+La estrategia concreta —UID global de usuario, mapping u otro mecanismo autorizado— pertenece a Administrativo/Técnico y permanece **NO CONGELADA** en este documento. `gestion_operativa` consume esa identidad, no redefine el modelo administrativo de usuario, no inventa un UID, no crea aquí una tabla de mapping y no debe agregar por sí mismo metadata global a `usuario`. **Mis tareas** entre instalaciones no puede habilitarse de manera segura hasta resolver esta dependencia.
 
 ## 25. Locks
 
@@ -400,7 +408,7 @@ Son bloqueantes antes del DER y este freeze no las cierra:
 7. Si agregar comentario incrementa `version_registro` de la tarea.
 8. Presencia de `deleted_at` desde el inicio.
 9. Semántica de `fecha_corte` utilizada para determinar vencimiento: fuente temporal, zona horaria, granularidad y regla de comparación.
-10. Identidad canónica interinstalación de usuario para referencias de creador/responsable si Tarea resulta sincronizable: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
+10. Identidad canónica interinstalación de usuario para toda referencia humana persistida que deba sincronizarse en `gestion_operativa` —como creador, responsable, autor de comentario y actor del historial funcional—: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
 11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, cambiar estado, cancelar y comentar.
 
 Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
