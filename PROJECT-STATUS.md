@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-10
+**Actualizado:** 2026-08-12
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -28,6 +28,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
 | B — Administrativo | Activo incremental. Usuarios, roles, permisos, asignaciones y alcance operativo tienen incrementos completados; configuración y auditoría básica siguen abiertas. Catálogos ya cuenta con CRUD write de maestros e ítems. #407/PR #414 implementó sólo el inventario read-only de definiciones; #408 congela la fuente canónica, #409 agrega únicamente `ENTERO`/`GLOBAL` estructurales, #410 prepara físicamente `valor_parametro` con CORE-EF SQL, #438 agrega metadata default-deny de exposición/sensibilidad en `parametro_sistema`, #411 agrega la lectura individual del valor GLOBAL marcado vigente y #448 prepara sólo el contrato SQL CORE-EF de `credencial_usuario`. | #249, #263, #264 y #265 abiertos. | #437 mergeado (commit `908929e`); #438 es preparación SQL segura previa a reads de valores. | #425 sobre `parametro_sistema`/`valor_parametro` GLOBAL; claves, valores y runtime siguen pendientes; seguridad runtime de credenciales continúa en #450/#446; #449 aporta sólo primitivas internas Argon2id sin persistencia ni autenticación. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
+| Transversal — CORE-EF | #469 implementado y validado: existe el ledger durable, local, inmutable y no sincronizable `public.operacion_idempotente`. | #402 continúa abierto como coordinador; #469 completado; #470 pendiente; #412 permanece bloqueado por #470 y por sus contratos propios. | PR #471 (`ba0b13f`) y PR #472 (`731db8c`) mergeados. | #470 — claim/replay/complete, canonicalización y advisory locks; luego #412 como piloto, sin implementarlo aún. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -37,6 +38,34 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 - Separar `Administrativo` de `Operativo`: Administrativo gobierna usuarios, seguridad, configuración y auditoría; Operativo gobierna sucursales, instalaciones y caja operativa.
 - Mantener explícito: `USUARIO` ≠ `PERSONA`, `SUCURSAL` ≠ `INSTALACION`, rol de seguridad ≠ rol de participación, caja operativa ≠ movimiento financiero.
 - Todo endpoint write nuevo o modificado debe nacer con decisión CORE-EF según `AGENTS.md`.
+
+## 4.1 Infraestructura transversal CORE-EF
+
+#469 quedó implementado y validado mediante los PR #471 (merge commit
+`ba0b13f1443ec119f527eeb69cd559971148800d`) y #472 (merge commit
+`731db8c562168dca925d76b90d0ebb278b715ed8`). La persistencia durable ya
+existe en `public.operacion_idempotente`: es un ledger local, inmutable y no
+sincronizable de receipts completados, con `UNIQUE(op_id)` global y contrato
+físico de 17 columnas.
+
+La evidencia técnica de cierre registrada para #469 comprende:
+
+- PostgreSQL 16.14: reset DEV/TEST exitoso, suite focal y regresión relacionada
+  verdes; el PR #472 reportó `120 passed, 3 skipped, 1 warning`.
+- PostgreSQL 18 real: suite focal con `122 passed, 1 skipped, 0 failed`; el único
+  skip corresponde a `test_pg16_sin_conenforced_reejecuta_patch`. La inspección
+  física confirmó 8 CHECK, 10 NOT NULL, 1 PRIMARY KEY y 1 UNIQUE; el conteo
+  contractual `contype IN ('c','f','p','u')` es 13. La regresión relacionada
+  reportó `102 passed`.
+- Auditoría adversarial posterior al merge de #472: sin blockers ni findings
+  materiales adicionales dentro del threat model y sin false negatives
+  materiales demostrados del preflight.
+
+#402 continúa abierto como coordinador. El orden vigente es `#469 ✅ → #470 →
+#412 piloto`: #470 es el próximo incremento de infraestructura idempotente para
+claim/replay/complete, canonicalización y advisory locks. #412 continúa
+bloqueado por #470 y por sus restantes contratos propios; no debe implementarse
+como parte del cierre documental de #469.
 
 ## 5. Frente A — Comercial / Financiero
 
