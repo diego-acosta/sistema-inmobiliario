@@ -42,9 +42,11 @@ cancelacion_tarea != eliminacion_tecnica
 instalacion_origen != scope_funcional_tarea
 ```
 
-## 3. Aggregate principal
+## 3. Concepto funcional principal
 
-`Tarea` es conceptualmente el **aggregate root** de `tareas_y_seguimiento_interno`. Representa una unidad de trabajo pendiente, en ejecución, completada o cancelada que Gestión Operativa debe seguir.
+`Tarea` es el concepto funcional principal propuesto para `tareas_y_seguimiento_interno` y su semántica pertenece a `gestion_operativa`. Representa una unidad de trabajo pendiente, en ejecución, completada o cancelada que Gestión Operativa debe seguir.
+
+Todavía no existe implementación que consolide una entidad persistente, una frontera de aggregate, una frontera transaccional ni una estructura SQL. La eventual clasificación de `Tarea` como aggregate root deberá decidirse en el futuro DEV-ARCH de `gestion_operativa` (`DEV-ARCH-GOP`) y validarse después contra DER, DEV-SRV, SQL, backend y tests.
 
 Una tarea puede ser manual o generada por sistema, estar asignada o no tener responsable, y ser puramente interna.
 
@@ -121,9 +123,9 @@ Una tarea sin responsable es válida. Múltiples responsables, equipos, sectores
 
 ## 9. Estados
 
-Se propone para el freeze el catálogo inicial cerrado `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y `CANCELADA`. `PENDIENTE` es el estado inicial; `COMPLETADA` y `CANCELADA` son terminales.
+**CANDIDATOS / NO CONGELADOS:** `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y `CANCELADA`. Dentro de esta propuesta preliminar, `PENDIENTE` sería el estado inicial y `COMPLETADA` y `CANCELADA` serían terminales.
 
-Transiciones preliminares:
+Las siguientes transiciones son únicamente una propuesta preliminar y no constituyen un contrato cerrado:
 
 ```text
 PENDIENTE
@@ -141,7 +143,7 @@ La reapertura queda fuera del MVP salvo decisión expresa. No se incluyen inicia
 
 ## 10. Prioridad
 
-Se propone el catálogo cerrado inicial `BAJA`, `NORMAL`, `ALTA`, `URGENTE`, con `NORMAL` como default. No será configurable en el MVP. Las prioridades definitivas permanecen abiertas antes del DER.
+**CANDIDATOS / NO CONGELADOS:** `BAJA`, `NORMAL`, `ALTA`, `URGENTE`, con `NORMAL` como default candidato. Tanto el catálogo como el default permanecen **NO CONGELADOS**; las prioridades definitivas siguen abiertas y son bloqueantes antes del DER.
 
 ## 11. Fecha objetivo
 
@@ -330,7 +332,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 `GOP-FREEZE-001` congela expresamente:
 
 1. `gestion_operativa` tiene ownership de `tarea`; `operativo` es un dominio externo distinto.
-2. `Tarea` es el aggregate root de `tareas_y_seguimiento_interno`.
+2. `Tarea` es el concepto funcional principal propuesto para `tareas_y_seguimiento_interno`, cuya semántica pertenece a `gestion_operativa`; su clasificación técnica eventual permanece pendiente de `DEV-ARCH-GOP` y validaciones posteriores.
 3. El origen es `USUARIO | SISTEMA`.
 4. Creador y responsable son roles distintos.
 5. `id_usuario_creador` es obligatorio sólo para origen `USUARIO` y procede de `AuthenticatedPrincipal.id_usuario`.
