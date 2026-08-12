@@ -2,13 +2,12 @@ from dataclasses import FrozenInstanceError
 from typing import ClassVar
 from uuid import uuid4
 
-import pytest
-
 from app.application.common import idempotency as runtime
 from app.infrastructure.persistence.repositories.operacion_idempotente_repository import (
     StoredOperationReceipt,
     advisory_keys,
 )
+import pytest
 
 
 class FakeRepository:
