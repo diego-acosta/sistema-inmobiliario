@@ -5,13 +5,12 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-import pytest
-
 from app.application.common.idempotency import (
     NonCanonicalizablePayload,
     UnsupportedCanonicalizationVersion,
     canonical_payload_hash,
 )
+import pytest
 
 
 def test_key_order_nested_unicode_escaping_and_arrays_are_canonical():

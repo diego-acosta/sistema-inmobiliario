@@ -2,9 +2,6 @@ import threading
 import time
 from uuid import uuid4
 
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-
 from app.application.common.idempotency import (
     ClaimDecision,
     ConflictKind,
@@ -15,6 +12,9 @@ from app.application.common.idempotency import (
     complete_operation,
 )
 from app.config.database import engine
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 
 
 def concurrent_case(change=None):

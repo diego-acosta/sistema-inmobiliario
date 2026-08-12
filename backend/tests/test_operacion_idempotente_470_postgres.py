@@ -1,9 +1,5 @@
 from uuid import uuid4
 
-import pytest
-from sqlalchemy import event, text
-from sqlalchemy.orm import Session
-
 from app.application.common.idempotency import (
     ClaimDecision,
     ConflictKind,
@@ -15,6 +11,10 @@ from app.application.common.idempotency import (
     complete_operation,
 )
 from app.config.database import engine
+import pytest
+from sqlalchemy import event, text
+from sqlalchemy.orm import Session
+
 
 
 def values(**changes):
