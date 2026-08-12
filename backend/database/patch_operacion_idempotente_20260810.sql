@@ -428,7 +428,12 @@ BEGIN
         END IF;
     END IF;
 
-    IF (SELECT count(*) FROM pg_catalog.pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass) <> 13
+    -- NOT NULL se valida arriba mediante pg_catalog.pg_attribute.attnotnull. PostgreSQL 18
+    -- también puede exponerlo como pg_catalog.pg_constraint.contype='n', pero las trece
+    -- constraints contractuales de este bloque son sólo CHECK/FK/PK/UNIQUE.
+    IF (SELECT count(*) FROM pg_catalog.pg_constraint
+         WHERE conrelid='public.operacion_idempotente'::regclass
+           AND contype IN ('c','f','p','u')) <> 13
        OR NOT EXISTS (
          SELECT 1 FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_index i ON i.indexrelid=c.conindid
           JOIN pg_catalog.pg_class ic ON ic.oid=i.indexrelid JOIN pg_catalog.pg_am am ON am.oid=ic.relam
