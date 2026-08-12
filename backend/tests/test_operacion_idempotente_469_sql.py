@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -1285,6 +1286,12 @@ def test_reejecucion_independiente_de_search_path_y_homonimos(db_session):
     db_session.execute(text(_patch_body()))
     db_session.execute(text("SET LOCAL search_path = otro_schema, public, pg_catalog"))
     db_session.execute(text(_patch_body()))
+    db_session.execute(text("CREATE SCHEMA shadow469"))
+    for catalog in ("pg_proc", "pg_class", "pg_constraint"):
+        db_session.execute(text(f"CREATE TABLE shadow469.{catalog} (shadow text)"))
+    db_session.execute(text("SET LOCAL search_path = shadow469, public, pg_catalog"))
+    db_session.execute(text(_patch_body()))
+    db_session.execute(text("SET LOCAL search_path = public, pg_catalog"))
 
     assert dict(db_session.execute(text("""
         SELECT proname,oid FROM pg_proc
@@ -1315,7 +1322,18 @@ def test_reejecucion_independiente_de_search_path_y_homonimos(db_session):
         db_session.execute(text("SELECT 'public.sucursal'::regclass::oid")).scalar_one(),
         db_session.execute(text("SELECT 'public.instalacion'::regclass::oid")).scalar_one(),
     }
-    db_session.execute(text("SET LOCAL search_path = public, pg_catalog"))
+
+
+def test_patch_califica_relaciones_de_catalogo_postgresql():
+    patch = _patch_body()
+    catalogs = {
+        "pg_proc", "pg_namespace", "pg_class", "pg_attribute", "pg_constraint",
+        "pg_trigger", "pg_index", "pg_depend", "pg_sequence", "pg_rewrite",
+        "pg_policy", "pg_language", "pg_inherits", "pg_am", "pg_opclass",
+    }
+    for catalog in catalogs:
+        assert f"pg_catalog.{catalog}" in patch
+        assert re.search(rf"(?<![\w.]){catalog}\b", patch) is None
 
 
 @pytest.mark.parametrize("mutation", [

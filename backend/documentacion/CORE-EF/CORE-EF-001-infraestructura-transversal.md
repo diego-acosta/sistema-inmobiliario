@@ -1058,6 +1058,8 @@ La reejecución del patch sobre un ledger existente también rechaza receipts
 históricos huérfanos respecto de usuario, sucursal o instalación, y aquellos con
 `id_sucursal` informado cuya instalación no pertenezca a ella. El preflight no
 repara ni elimina receipts incompatibles.
+El preflight referencia explícitamente sus relaciones de catálogo mediante
+`pg_catalog`, por lo que no depende del `search_path` de la conexión.
 
 Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
 clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y

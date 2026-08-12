@@ -13,8 +13,8 @@ BEGIN
     END IF;
 
     SELECT count(*) INTO helper_count
-      FROM pg_proc p
-      JOIN pg_namespace n ON n.oid=p.pronamespace
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
      WHERE n.nspname='public'
        AND p.proname='fn_assert_instalacion_pertenece_a_sucursal';
     IF helper_count <> 1 THEN
@@ -22,13 +22,13 @@ BEGIN
     END IF;
 
     SELECT p.prosrc INTO helper_body
-      FROM pg_proc p
-      JOIN pg_namespace n ON n.oid=p.pronamespace
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
      WHERE n.nspname='public'
        AND p.proname='fn_assert_instalacion_pertenece_a_sucursal'
        AND p.proargtypes='20 20 25'::oidvector
        AND p.prorettype='void'::regtype
-       AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
+       AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
        AND p.provolatile='v' AND NOT p.prosecdef AND NOT p.proisstrict;
     IF helper_body IS NULL THEN
         RAISE EXCEPTION 'operacion_idempotente requiere la firma contractual fn_assert_instalacion_pertenece_a_sucursal(bigint,bigint,text)';
@@ -100,8 +100,8 @@ END;$historical$,'\s','','g') THEN
 
     IF to_regclass('public.operacion_idempotente') IS NOT NULL AND NOT EXISTS (
         SELECT 1
-          FROM pg_class c
-          JOIN pg_namespace n ON n.oid=c.relnamespace
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
          WHERE n.nspname='public' AND c.relname='operacion_idempotente'
            AND c.oid=to_regclass('public.operacion_idempotente')
            AND c.relkind='r' AND c.relpersistence='p'
@@ -194,7 +194,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger
+        SELECT 1 FROM pg_catalog.pg_trigger
         WHERE tgrelid = 'public.operacion_idempotente'::regclass
           AND tgname = 'trg_bi_operacion_idempotente_instalacion_sucursal'
           AND NOT tgisinternal
@@ -210,7 +210,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger
+        SELECT 1 FROM pg_catalog.pg_trigger
         WHERE tgrelid = 'public.operacion_idempotente'::regclass
           AND tgname = 'trg_bud_operacion_idempotente_inmutable'
           AND NOT tgisinternal
@@ -226,7 +226,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger
+        SELECT 1 FROM pg_catalog.pg_trigger
         WHERE tgrelid = 'public.operacion_idempotente'::regclass
           AND tgname = 'trg_bt_operacion_idempotente_inmutable'
           AND NOT tgisinternal
@@ -254,8 +254,8 @@ DECLARE
 BEGIN
     IF NOT EXISTS (
         SELECT 1
-          FROM pg_class c
-          JOIN pg_namespace n ON n.oid=c.relnamespace
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
          WHERE n.nspname='public' AND c.relname='operacion_idempotente'
            AND c.oid=to_regclass('public.operacion_idempotente')
            AND c.relkind='r' AND c.relpersistence='p' AND NOT c.relispartition
@@ -265,14 +265,14 @@ BEGIN
     END IF;
 
     IF EXISTS (
-        SELECT 1 FROM pg_inherits
+        SELECT 1 FROM pg_catalog.pg_inherits
          WHERE inhrelid='public.operacion_idempotente'::regclass
             OR inhparent='public.operacion_idempotente'::regclass
     ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: inheritance/particionamiento no permitido'; END IF;
-    IF EXISTS (SELECT 1 FROM pg_rewrite WHERE ev_class='public.operacion_idempotente'::regclass) THEN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_rewrite WHERE ev_class='public.operacion_idempotente'::regclass) THEN
         RAISE EXCEPTION 'operacion_idempotente incompatible: rules no permitidas';
     END IF;
-    IF EXISTS (SELECT 1 FROM pg_policy WHERE polrelid='public.operacion_idempotente'::regclass) THEN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polrelid='public.operacion_idempotente'::regclass) THEN
         RAISE EXCEPTION 'operacion_idempotente incompatible: policies RLS no permitidas';
     END IF;
 
@@ -327,21 +327,21 @@ BEGIN
       (17,'created_at','timestamp without time zone'::regtype::oid,-1,true,''::char)
     )
     SELECT e.name INTO bad FROM expected e
-    LEFT JOIN pg_attribute a ON a.attrelid='public.operacion_idempotente'::regclass
+    LEFT JOIN pg_catalog.pg_attribute a ON a.attrelid='public.operacion_idempotente'::regclass
       AND a.attnum=e.attnum AND a.attname=e.name
     WHERE a.attname IS NULL OR a.atttypid<>e.type_oid OR a.atttypmod<>e.typmod
        OR a.attnotnull<>e.not_null OR a.attidentity<>e.identity_kind
        OR a.attgenerated<>'' OR a.attisdropped
     LIMIT 1;
     IF bad IS NOT NULL
-       OR (SELECT count(*) FROM pg_attribute WHERE attrelid='public.operacion_idempotente'::regclass AND attnum>0) <> 17
+       OR (SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid='public.operacion_idempotente'::regclass AND attnum>0) <> 17
     THEN RAISE EXCEPTION 'operacion_idempotente incompatible: catálogo físico de columnas'; END IF;
 
     IF (SELECT count(*)
-          FROM pg_depend d
-          JOIN pg_class seq ON seq.oid=d.objid AND d.classid='pg_class'::regclass
-          JOIN pg_sequence s ON s.seqrelid=seq.oid
-         WHERE d.refclassid='pg_class'::regclass
+          FROM pg_catalog.pg_depend d
+          JOIN pg_catalog.pg_class seq ON seq.oid=d.objid AND d.classid='pg_catalog.pg_class'::regclass
+          JOIN pg_catalog.pg_sequence s ON s.seqrelid=seq.oid
+         WHERE d.refclassid='pg_catalog.pg_class'::regclass
            AND d.refobjid='public.operacion_idempotente'::regclass
            AND d.refobjsubid=1 AND d.deptype='i'
            AND seq.relkind='S' AND seq.relpersistence='p'
@@ -351,9 +351,9 @@ BEGIN
     THEN RAISE EXCEPTION 'operacion_idempotente incompatible: identity sequence contractual'; END IF;
 
     SELECT seq.oid INTO identity_sequence
-      FROM pg_depend d
-      JOIN pg_class seq ON seq.oid=d.objid AND d.classid='pg_class'::regclass
-     WHERE d.refclassid='pg_class'::regclass
+      FROM pg_catalog.pg_depend d
+      JOIN pg_catalog.pg_class seq ON seq.oid=d.objid AND d.classid='pg_catalog.pg_class'::regclass
+     WHERE d.refclassid='pg_catalog.pg_class'::regclass
        AND d.refobjid='public.operacion_idempotente'::regclass
        AND d.refobjsubid=1 AND d.deptype='i';
 
@@ -392,7 +392,7 @@ BEGIN
       ('chk_operacion_idempotente_result_http_status','((result_http_status IS NULL) OR ((result_http_status >= 100) AND (result_http_status <= 599)))'),
       ('chk_operacion_idempotente_result_version','((result_version IS NULL) OR (result_version >= 1))')
     ), actual AS (
-      SELECT conname name, pg_get_expr(conbin,conrelid) expression FROM pg_constraint
+      SELECT conname name, pg_get_expr(conbin,conrelid) expression FROM pg_catalog.pg_constraint
        WHERE conrelid='public.operacion_idempotente'::regclass AND contype='c'
          AND convalidated AND NOT connoinherit AND conislocal AND coninhcount=0
     )
@@ -402,17 +402,17 @@ BEGIN
         RAISE EXCEPTION 'operacion_idempotente incompatible: CHECK %', bad;
     END IF;
 
-    -- PostgreSQL 18 incorpora pg_constraint.conenforced. La consulta debe ser
+    -- PostgreSQL 18 incorpora pg_catalog.pg_constraint.conenforced. La consulta debe ser
     -- dinámica para que PostgreSQL 16 nunca intente resolver esa columna.
     IF EXISTS (
         SELECT 1
-          FROM pg_attribute
+          FROM pg_catalog.pg_attribute
          WHERE attrelid='pg_catalog.pg_constraint'::regclass
            AND attname='conenforced' AND NOT attisdropped
     ) THEN
         EXECUTE $sql$
             SELECT conname
-              FROM pg_constraint
+              FROM pg_catalog.pg_constraint
              WHERE conrelid='public.operacion_idempotente'::regclass
                AND contype='c' AND NOT conenforced
              LIMIT 1
@@ -422,36 +422,36 @@ BEGIN
         END IF;
     END IF;
 
-    IF (SELECT count(*) FROM pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass) <> 13
+    IF (SELECT count(*) FROM pg_catalog.pg_constraint WHERE conrelid='public.operacion_idempotente'::regclass) <> 13
        OR NOT EXISTS (
-         SELECT 1 FROM pg_constraint c JOIN pg_index i ON i.indexrelid=c.conindid
-          JOIN pg_class ic ON ic.oid=i.indexrelid JOIN pg_am am ON am.oid=ic.relam
+         SELECT 1 FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_index i ON i.indexrelid=c.conindid
+          JOIN pg_catalog.pg_class ic ON ic.oid=i.indexrelid JOIN pg_catalog.pg_am am ON am.oid=ic.relam
           WHERE c.conrelid='public.operacion_idempotente'::regclass
             AND c.conname='operacion_idempotente_pkey' AND c.contype='p'
             AND NOT c.condeferrable AND NOT c.condeferred AND c.convalidated
             AND c.conislocal AND c.coninhcount=0
-            AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='id_operacion_idempotente')]::smallint[]
+            AND c.conkey=ARRAY[(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid=c.conrelid AND attname='id_operacion_idempotente')]::smallint[]
             AND i.indisprimary AND i.indisunique AND i.indimmediate
             AND i.indisvalid AND i.indisready AND i.indislive
             AND i.indpred IS NULL AND i.indexprs IS NULL
             AND i.indnkeyatts=1 AND i.indnatts=1 AND am.amname='btree'
             AND cardinality(i.indkey::smallint[])=1 AND (i.indkey::smallint[])[0]=c.conkey[1]
-            AND cardinality(i.indclass::oid[])=1 AND (i.indclass::oid[])[0]=(SELECT o.oid FROM pg_opclass o JOIN pg_namespace n ON n.oid=o.opcnamespace JOIN pg_am a ON a.oid=o.opcmethod WHERE n.nspname='pg_catalog' AND o.opcname='int8_ops' AND a.amname='btree')
+            AND cardinality(i.indclass::oid[])=1 AND (i.indclass::oid[])[0]=(SELECT o.oid FROM pg_catalog.pg_opclass o JOIN pg_catalog.pg_namespace n ON n.oid=o.opcnamespace JOIN pg_catalog.pg_am a ON a.oid=o.opcmethod WHERE n.nspname='pg_catalog' AND o.opcname='int8_ops' AND a.amname='btree')
        )
        OR NOT EXISTS (
-         SELECT 1 FROM pg_constraint c JOIN pg_index i ON i.indexrelid=c.conindid
-          JOIN pg_class ic ON ic.oid=i.indexrelid JOIN pg_am am ON am.oid=ic.relam
+         SELECT 1 FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_index i ON i.indexrelid=c.conindid
+          JOIN pg_catalog.pg_class ic ON ic.oid=i.indexrelid JOIN pg_catalog.pg_am am ON am.oid=ic.relam
           WHERE c.conrelid='public.operacion_idempotente'::regclass
             AND c.conname='uq_operacion_idempotente_op_id' AND c.contype='u'
             AND NOT c.condeferrable AND NOT c.condeferred AND c.convalidated
             AND c.conislocal AND c.coninhcount=0
-            AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='op_id')]::smallint[]
+            AND c.conkey=ARRAY[(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid=c.conrelid AND attname='op_id')]::smallint[]
             AND NOT i.indisprimary AND i.indisunique AND i.indimmediate
             AND i.indisvalid AND i.indisready AND i.indislive
             AND i.indpred IS NULL AND i.indexprs IS NULL
             AND i.indnkeyatts=1 AND i.indnatts=1 AND am.amname='btree'
             AND cardinality(i.indkey::smallint[])=1 AND (i.indkey::smallint[])[0]=c.conkey[1]
-            AND cardinality(i.indclass::oid[])=1 AND (i.indclass::oid[])[0]=(SELECT o.oid FROM pg_opclass o JOIN pg_namespace n ON n.oid=o.opcnamespace JOIN pg_am a ON a.oid=o.opcmethod WHERE n.nspname='pg_catalog' AND o.opcname='uuid_ops' AND a.amname='btree')
+            AND cardinality(i.indclass::oid[])=1 AND (i.indclass::oid[])[0]=(SELECT o.oid FROM pg_catalog.pg_opclass o JOIN pg_catalog.pg_namespace n ON n.oid=o.opcnamespace JOIN pg_catalog.pg_am a ON a.oid=o.opcmethod WHERE n.nspname='pg_catalog' AND o.opcname='uuid_ops' AND a.amname='btree')
        ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: PK/UNIQUE o índices contractuales'; END IF;
 
     WITH expected(name, local_column, remote_table, remote_column) AS (VALUES
@@ -461,11 +461,11 @@ BEGIN
     )
     SELECT e.name INTO bad FROM expected e
      WHERE NOT EXISTS (
-       SELECT 1 FROM pg_constraint c
+       SELECT 1 FROM pg_catalog.pg_constraint c
         WHERE c.conrelid='public.operacion_idempotente'::regclass
           AND c.conname=e.name AND c.contype='f' AND c.confrelid=e.remote_table
-          AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname=e.local_column)]::smallint[]
-          AND c.confkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.confrelid AND attname=e.remote_column)]::smallint[]
+          AND c.conkey=ARRAY[(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid=c.conrelid AND attname=e.local_column)]::smallint[]
+          AND c.confkey=ARRAY[(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid=c.confrelid AND attname=e.remote_column)]::smallint[]
           AND c.confdeltype='r' AND c.confupdtype='a' AND c.confmatchtype='s'
           AND NOT c.condeferrable AND NOT c.condeferred AND c.convalidated
           AND c.conislocal AND c.coninhcount=0
@@ -474,13 +474,13 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
-          FROM pg_attribute
+          FROM pg_catalog.pg_attribute
          WHERE attrelid='pg_catalog.pg_constraint'::regclass
            AND attname='conenforced' AND NOT attisdropped
     ) THEN
         EXECUTE $sql$
             SELECT conname
-              FROM pg_constraint
+              FROM pg_catalog.pg_constraint
              WHERE conrelid='public.operacion_idempotente'::regclass
                AND contype='f' AND NOT conenforced
              LIMIT 1
@@ -492,7 +492,7 @@ BEGIN
 
     WITH contractual_fk AS (
       SELECT c.oid, c.conname, c.conrelid, c.confrelid
-        FROM pg_constraint c
+        FROM pg_catalog.pg_constraint c
        WHERE c.conrelid='public.operacion_idempotente'::regclass
          AND c.conname IN (
            'fk_operacion_idempotente_usuario',
@@ -503,7 +503,7 @@ BEGIN
     )
     SELECT fk.conname INTO bad
       FROM contractual_fk fk
-      LEFT JOIN pg_trigger t ON t.tgconstraint=fk.oid
+      LEFT JOIN pg_catalog.pg_trigger t ON t.tgconstraint=fk.oid
      GROUP BY fk.oid, fk.conname, fk.conrelid, fk.confrelid
     HAVING count(t.oid) <> 4
         OR count(t.oid) FILTER (WHERE t.tgisinternal AND t.tgenabled='O') <> 4
@@ -514,15 +514,15 @@ BEGIN
         RAISE EXCEPTION 'operacion_idempotente incompatible: mecanismos RI internos de FK %', bad;
     END IF;
 
-    IF (SELECT count(*) FROM pg_index WHERE indrelid='public.operacion_idempotente'::regclass) <> 2 THEN
+    IF (SELECT count(*) FROM pg_catalog.pg_index WHERE indrelid='public.operacion_idempotente'::regclass) <> 2 THEN
         RAISE EXCEPTION 'operacion_idempotente incompatible: índices adicionales o faltantes';
     END IF;
 
     IF NOT EXISTS (
-      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
        WHERE n.nspname='public' AND p.proname='fn_assert_instalacion_pertenece_a_sucursal'
          AND p.proargtypes='20 20 25'::oidvector AND p.prorettype='void'::regtype
-         AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
+         AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
          AND p.provolatile='v' AND NOT p.prosecdef AND NOT p.proisstrict
          AND regexp_replace(p.prosrc,'\s','','g') = regexp_replace($src$DECLARE
     v_ok BOOLEAN;
@@ -546,9 +546,9 @@ END;$src$,'\s','','g')
     ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: helper contractual sucursal/instalación'; END IF;
 
     IF NOT EXISTS (
-      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
        WHERE n.nspname='public' AND p.proname='trg_operacion_idempotente_inmutable'
-         AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
+         AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
          AND p.provolatile='v' AND NOT p.prosecdef AND NOT p.proisstrict
          AND regexp_replace(p.prosrc,'\s','','g') = regexp_replace($src$BEGIN
                 RAISE EXCEPTION 'operacion_idempotente es inmutable: % no permitido', TG_OP;
@@ -556,9 +556,9 @@ END;$src$,'\s','','g')
     ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: función de inmutabilidad'; END IF;
 
     IF NOT EXISTS (
-      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
        WHERE n.nspname='public' AND p.proname='trg_operacion_idempotente_instalacion_sucursal'
-         AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
+         AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
          AND p.provolatile='v' AND NOT p.prosecdef AND NOT p.proisstrict
          AND regexp_replace(p.prosrc,'\s','','g') = regexp_replace($src$BEGIN
                 PERFORM public.fn_assert_instalacion_pertenece_a_sucursal(
@@ -570,21 +570,21 @@ END;$src$,'\s','','g')
             END$src$,'\s','','g')
     ) THEN RAISE EXCEPTION 'operacion_idempotente incompatible: función de validación sucursal/instalación'; END IF;
 
-    IF (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 3
+    IF (SELECT count(*) FROM pg_catalog.pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass AND NOT tgisinternal) <> 3
        OR NOT EXISTS (
-         SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
+         SELECT 1 FROM pg_catalog.pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bud_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='A'
           AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=27
           AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0 AND tgparentid=0
        )
        OR NOT EXISTS (
-         SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
+         SELECT 1 FROM pg_catalog.pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bi_operacion_idempotente_instalacion_sucursal' AND NOT tgisinternal AND tgenabled='A'
           AND tgfoid='public.trg_operacion_idempotente_instalacion_sucursal()'::regprocedure AND tgtype=7
           AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0 AND tgparentid=0
        )
        OR NOT EXISTS (
-         SELECT 1 FROM pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
+         SELECT 1 FROM pg_catalog.pg_trigger WHERE tgrelid='public.operacion_idempotente'::regclass
           AND tgname='trg_bt_operacion_idempotente_inmutable' AND NOT tgisinternal AND tgenabled='A'
           AND tgfoid='public.trg_operacion_idempotente_inmutable()'::regprocedure AND tgtype=34
           AND tgqual IS NULL AND cardinality(tgattr::smallint[])=0 AND tgparentid=0
