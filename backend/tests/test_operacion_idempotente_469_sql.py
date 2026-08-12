@@ -173,7 +173,12 @@ def test_schema_fisico_exacto(db_session):
     assert all(row.attgenerated == "" and not row.attisdropped for row in attributes)
     assert attributes[-1].atttypmod == -1
 
-    constraints = dict(db_session.execute(text("SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='operacion_idempotente'::regclass")).all())
+    constraints = dict(db_session.execute(text("""
+        SELECT conname,pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid='operacion_idempotente'::regclass
+          AND contype IN ('c','f','p','u')
+    """)).all())
     assert set(constraints) == {
         "operacion_idempotente_pkey", "uq_operacion_idempotente_op_id",
         "chk_operacion_idempotente_command_code", "chk_operacion_idempotente_target_type",
@@ -271,6 +276,45 @@ def test_schema_fisico_exacto(db_session):
         "trg_operacion_idempotente_instalacion_sucursal",
         "trg_operacion_idempotente_inmutable",
     }
+
+
+def test_conteo_contractual_excluye_not_null_y_patch_reejecutable(db_session):
+    counts = dict(db_session.execute(text("""
+        SELECT contype,count(*)
+        FROM pg_catalog.pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+        GROUP BY contype
+    """)).all())
+    assert sum(counts.get(kind, 0) for kind in ("c", "f", "p", "u")) == 13
+    assert counts.get("c") == 8
+    assert counts.get("f") == 3
+    assert counts.get("p") == 1
+    assert counts.get("u") == 1
+
+    db_session.execute(text(_patch_body()))
+
+
+def test_pg18_not_null_catalogadas_no_invalidan_preflight(db_session):
+    server_version_num = int(db_session.execute(text("SHOW server_version_num")).scalar_one())
+    if server_version_num < 180000:
+        pytest.skip("regresión de pg_constraint contype='n' requiere PostgreSQL 18+")
+
+    not_null_constraints = db_session.execute(text("""
+        SELECT count(*)
+        FROM pg_catalog.pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND contype='n'
+    """)).scalar_one()
+    assert not_null_constraints > 0
+    assert db_session.execute(text("""
+        SELECT count(*)
+        FROM pg_catalog.pg_constraint
+        WHERE conrelid='public.operacion_idempotente'::regclass
+          AND contype IN ('c','f','p','u')
+    """)).scalar_one() == 13
+    assert _supports_conenforced(db_session)
+
+    db_session.execute(text(_patch_body()))
 
 
 def test_unicidad_global_op_id_y_target_no_unico(db_session):

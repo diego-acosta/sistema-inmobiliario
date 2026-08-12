@@ -1054,6 +1054,13 @@ Desde PostgreSQL 18, los ocho CHECK y las tres FKs contractuales deben estar
 versiones anteriores esa propiedad no existe y se conserva el resto del
 contrato estructural sin depender de una columna de catálogo ausente.
 
+La nullability de las 17 columnas se valida de forma estable entre versiones
+mediante `pg_catalog.pg_attribute.attnotnull`. En PostgreSQL 16 ésa es la fuente
+del contrato `NOT NULL`; en PostgreSQL 18 los `NOT NULL` también pueden aparecer
+en `pg_catalog.pg_constraint` con `contype='n'`, pero no se cuentan dos veces. El
+conteo contractual de 13 incluye exclusivamente ocho CHECK (`c`), tres FOREIGN
+KEY (`f`), una PRIMARY KEY (`p`) y una UNIQUE (`u`).
+
 La reejecución del patch sobre un ledger existente también rechaza receipts
 históricos huérfanos respecto de usuario, sucursal o instalación, y aquellos con
 `id_sucursal` informado cuya instalación no pertenezca a ella. El preflight no
