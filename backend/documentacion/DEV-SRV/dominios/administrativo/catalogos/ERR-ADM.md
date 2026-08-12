@@ -511,6 +511,10 @@ Ambos incluyen `Cache-Control: no-store` y no revelan bearer, digest, SQL, drive
 - `403 autorizacion_insuficiente`: principal válido sin concesión.
 - `404 parametro_no_encontrado`: respuesta indistinguible para definición
   inexistente, no exponible o sensible.
+- `400 inconsistencia_contexto_tecnico`: contrato existente ERR-ADM-057 reutilizado
+  cuando la sucursal no existe, la instalación no existe o la instalación no
+  pertenece a la sucursal declarada. Se responde antes del claim con
+  `ErrorResponse`, sin revelar SQL, FK, constraint ni IDs internos adicionales.
 - `409 conflicto_parametro`: definición no editable, tipo o alcance fuera del scope
   congelado, ausencia del valor GLOBAL update-only o valor no operable.
 - `412 CONCURRENCY_ERROR`: CAS de `If-Match-Version` sin fila retornada.

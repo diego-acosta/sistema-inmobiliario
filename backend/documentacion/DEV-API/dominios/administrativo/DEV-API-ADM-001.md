@@ -882,6 +882,18 @@ heredado se ignora para identidad y autorización. Un helper CORE-EF autenticado
 reusable, no parsing manual del router, leerá sólo `X-Op-Id`, `X-Sucursal-Id`,
 `X-Instalacion-Id` e `If-Match-Version`, todos obligatorios.
 
+Ese helper autenticado debe usar la misma `Session` del request y devolver al
+command un contexto técnico ya validado. Primero parsea `X-Op-Id` como UUID,
+`X-Sucursal-Id` y `X-Instalacion-Id` como enteros positivos, e
+`If-Match-Version` como entero mayor o igual a 1. Luego, antes de canonicalizar o
+hacer claim, verifica que existan sucursal e instalación y que la instalación
+pertenezca a la sucursal declarada. El router no duplica parsing ni consultas.
+
+La validación es sólo referencial/técnica entre sucursal e instalación: no exige
+coincidencia con `principal.id_sucursal_operativa`, no resuelve instalaciones del
+principal ni incorpora autorización contextual, overrides o políticas de #435.
+Bearer/`AuthenticatedPrincipal` continúa siendo la única identidad humana.
+
 El selector `codigo_parametro` usa igualdad exacta y case-sensitive, sin trim,
 normalización, aliases ni fallback. La definición debe ser exponible, no sensible,
 editable administrativamente, `ENTERO` y `GLOBAL`. El target debe ser exactamente
@@ -937,10 +949,18 @@ boolean, string y float.
 
 Errores adicionales: `401 INVALID_SESSION`; `403 autorizacion_insuficiente`; `404
 parametro_no_encontrado` indistinguible para inexistente/no exponible/sensible;
+`400 inconsistencia_contexto_tecnico` para sucursal inexistente, instalación
+inexistente o instalación ajena a la sucursal declarada;
 `409 conflicto_parametro` para no editable, tipo/alcance fuera de scope, ausencia
 update-only o valor no operable; y los errores `500` sanitizados definidos en
 ERR-ADM. La validación estructural de FastAPI puede ocurrir antes o durante las
 dependencies; no se promete una precedencia pública más fuerte sin tests.
+
+Los tests futuros separan formato de headers de validación referencial. Deben cubrir
+sucursal inexistente, instalación inexistente e instalación existente asociada a
+otra sucursal; los tres casos devuelven `ErrorResponse` con
+`400 inconsistencia_contexto_tecnico` y dejan cero claim efectivo, CAS, outbox y
+receipt.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 

@@ -354,11 +354,24 @@ CORE-EF: clasificación `QUERY_READLIKE`; headers write, `If-Match-Version`, ide
 ## Incremento #412 — contrato de servicio congelado (implementación pendiente)
 
 #469 y #470 están completados; #412 es su primer consumidor productivo. El flujo
-lógico congelado es autenticación, autorización, headers CORE-EF autenticados,
-existencia/elegibilidad estable, existencia del target update-only,
+lógico congelado es autenticación, autorización, parsing de headers CORE-EF,
+validación referencial/coherencia sucursal-instalación, existencia/elegibilidad
+estable, existencia del target update-only,
 `canonical_payload_hash`, `claim_operation`, `REPLAY | CONFLICT | EXECUTE`, CAS,
 outbox, `complete_operation` y commit exterior. La validación estructural del body
 puede intercalarse con dependencies según FastAPI.
+
+El helper CORE-EF autenticado reusable comparte la `Session` del request. Exige UUID
+válido para `X-Op-Id`, enteros positivos para `X-Sucursal-Id` y
+`X-Instalacion-Id`, y entero `>= 1` para `If-Match-Version`; después verifica la
+existencia de ambas referencias y que la instalación pertenezca a la sucursal. Sólo
+entonces entrega el contexto técnico al command. Todo contexto inválido falla antes
+de canonicalización/claim y de cualquier write; las FKs del ledger son defensa
+física final, no el mecanismo normal de validación pública.
+
+Esta coherencia no compara los headers con sucursal o instalación del principal y
+no congela autorización contextual, overrides ni #435. El router futuro no repite
+consultas o parsing manual.
 
 `OperationCompletion.id_usuario` procede de `AuthenticatedPrincipal.id_usuario`;
 `X-Usuario-Id` se ignora. Claim, CAS, outbox y
