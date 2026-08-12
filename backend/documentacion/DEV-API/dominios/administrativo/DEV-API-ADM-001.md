@@ -924,9 +924,20 @@ No incluye IDs internos, usuario, sucursal, instalación, `op_id`, metadata de
 seguridad ni `valor_raw`. `REPLAY` devuelve ese snapshot original sin SELECT
 funcional para reconstruirlo, CAS, UPDATE, versión, outbox o receipt nuevos.
 
-El CAS es un único `UPDATE ... WHERE version_registro = :if_match_version ...
-RETURNING`. Un `op_id` nuevo con versión vieja devuelve `412 CONCURRENCY_ERROR`;
-un replay compatible se resuelve antes de revalidar la versión actual.
+En `EXECUTE` se verifica primero, sin `UPDATE` de prueba, que la versión vigente sea
+`If-Match-Version`. Una versión vieja devuelve `412 CONCURRENCY_ERROR` aunque el
+valor solicitado coincida con el actual. Con versión correcta se compara el decimal
+ASCII persistido con `str(valor_tipado)`. Si son distintos, el CAS es un único
+`UPDATE ... WHERE version_registro = :if_match_version ... RETURNING`; si son
+iguales, no se ejecuta `UPDATE`, no cambian versión, `updated_at` ni
+`op_id_ultima_modificacion`, y no se genera outbox.
+
+El no-op exitoso devuelve `200` con el mismo schema ya congelado, proyectando valor,
+versión y `updated_at` persistidos sin agregar campos `changed` o `noop`. Ese response
+se guarda como `response_snapshot`, `complete_operation` persiste un receipt
+completado y el commit exterior es normal. Un retry compatible hace `REPLAY` del
+snapshot sin SELECT funcional de reconstrucción, UPDATE u outbox. Un replay
+compatible se resuelve antes de revalidar versión o cambio material.
 
 La idempotencia consume el runtime de #470 con `command_code =
 ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, target exacto
@@ -961,6 +972,12 @@ sucursal inexistente, instalación inexistente e instalación existente asociada
 otra sucursal; los tres casos devuelven `ErrorResponse` con
 `400 inconsistencia_contexto_tecnico` y dejan cero claim efectivo, CAS, outbox y
 receipt.
+
+También deben cubrir: versión correcta y mismo valor (`200`, versión, `updated_at` y
+`op_id_ultima_modificacion` intactos, cero UPDATE/outbox, un receipt completado y
+retry por replay); versión vieja y mismo valor (`412 CONCURRENCY_ERROR`, cero
+UPDATE/outbox y cero receipt exitoso); y versión correcta con valor distinto (un
+UPDATE, versión `+1`, exactamente un outbox y receipt completado).
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 

@@ -357,8 +357,9 @@ CORE-EF: clasificación `QUERY_READLIKE`; headers write, `If-Match-Version`, ide
 lógico congelado es autenticación, autorización, parsing de headers CORE-EF,
 validación referencial/coherencia sucursal-instalación, existencia/elegibilidad
 estable, existencia del target update-only,
-`canonical_payload_hash`, `claim_operation`, `REPLAY | CONFLICT | EXECUTE`, CAS,
-outbox, `complete_operation` y commit exterior. La validación estructural del body
+`canonical_payload_hash`, `claim_operation`, `REPLAY | CONFLICT | EXECUTE`; para
+`EXECUTE`, precondición de versión, comparación del valor canónico y, sólo ante
+cambio material, CAS y outbox; luego `complete_operation` y commit exterior. La validación estructural del body
 puede intercalarse con dependencies según FastAPI.
 
 El helper CORE-EF autenticado reusable comparte la `Session` del request. Exige UUID
@@ -393,6 +394,15 @@ si el modelo ofrece columnas propias, en el registro local de outbox. La policy
 default-deny y el guard de
 datos sensibles se mantienen; una definición sensible nunca es elegible. No se
 crean consumers remotos ni reconciliación en #412.
+
+La precondición `If-Match-Version` se evalúa antes de decidir si existe cambio
+material y sin hacer un `UPDATE` de prueba. Versión vieja siempre produce `412`, aun
+si el valor actual coincide. Con versión correcta, igualdad entre el decimal ASCII
+persistido y `str(valor_tipado)` es un no-op: cero UPDATE, cero incremento de versión,
+cero cambio de `updated_at`/`op_id_ultima_modificacion` y cero outbox; se construye el response
+desde el estado actual, se completa el receipt #470 y se hace commit exterior. Si
+los valores difieren, se ejecutan CAS y exactamente un outbox. `REPLAY`, `CONFLICT`
+y CAS mismatch nunca generan outbox; el replay devuelve el snapshot durable.
 
 El lock lógico persistido **NO APLICA**: la exclusión del receipt usa el advisory
 transaccional de #470 por `op_id`, mientras la concurrencia del valor se resuelve por
