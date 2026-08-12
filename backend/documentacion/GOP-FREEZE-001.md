@@ -8,11 +8,16 @@
 
 ## 1. Propósito y alcance
 
-Este documento congela el contrato funcional de tareas y seguimiento interno antes de producir DEV-ARCH, DER, DEV-SRV, DEV-API, SQL, implementación y tests. Sus conceptos se clasifican así:
+Este documento congela el contrato funcional de tareas y seguimiento interno antes de producir DEV-ARCH, DER, DEV-SRV, DEV-API, SQL, implementación y tests. Los conceptos funcionales definidos por este freeze se clasifican así:
 
-- **Semántica funcional del dominio:** tareas y seguimiento interno corresponden conceptualmente a `gestion_operativa`. La eventual materialización de `Tarea`, comentarios e historial como entidades, aggregates o estructuras persistentes permanece pendiente de `DEV-ARCH-GOP` y del diseño técnico posterior.
-- **Soporte transversal consumido:** identidad/autorización administrativas y metadata CORE-EF.
-- **Compatibilidad heredada:** no se incorpora ninguna como modelo principal.
+- **Núcleo del dominio:** el concepto funcional `Tarea`.
+- **Núcleo del dominio:** comentarios de tarea, como parte del seguimiento funcional de `gestion_operativa`.
+- **Núcleo del dominio:** historial funcional de tarea.
+- **Soporte transversal:** identidad y autorización provistas por Administrativo.
+- **Soporte transversal:** metadata, versionado, idempotencia, procedencia técnica, outbox, sync y demás capacidades CORE-EF/Técnico cuando correspondan.
+- **Compatibilidad heredada:** ninguna estructura heredada se adopta como modelo principal de Tareas.
+
+Esta clasificación es semántica y funcional. No implica que `Tarea`, comentarios o historial estén ya materializados como entidades, aggregates, tablas o fronteras transaccionales. La clasificación técnica permanece pendiente de `DEV-ARCH-GOP` y del diseño posterior.
 
 Este freeze no confirma implementación existente. En particular, todavía no define SQL físico, endpoints definitivos, schemas, eventos concretos, frontend ni automatizaciones específicas. Todo ello queda pendiente de los artefactos técnicos posteriores y de su validación contra SQL, backend y tests reales.
 
@@ -154,13 +159,23 @@ La representación `DATE` versus `TIMESTAMP` es una decisión pendiente previa a
 
 ## 12. Vencimiento
 
-`VENCIDA` no es un estado persistido. Es la condición derivada:
+`VENCIDA` no es un estado persistido. Es una condición derivada conceptualmente:
 
 ```text
 vencida =
   fecha_objetivo < fecha_corte
-  AND estado NOT IN (COMPLETADA, CANCELADA)
+  AND estado NOT IN (<estados terminales definitivos>)
 ```
+
+La semántica exacta de `fecha_corte` permanece **NO CONGELADA**. Antes del DER debe definirse, conjuntamente con la decisión `DATE` versus `TIMESTAMP`:
+
+- fuente temporal;
+- zona horaria;
+- granularidad;
+- regla de comparación;
+- comportamiento consistente entre instalaciones.
+
+No se asumen todavía UTC, reloj del cliente, reloj de instalación, hora local de sucursal ni zona del usuario.
 
 ## 13. Finalización
 
@@ -364,5 +379,6 @@ Son bloqueantes antes del DER y este freeze no las cierra:
 6. Estrategia de sync: `SINCRONIZABLE`, `LOCAL` o `MIXTO`.
 7. Si agregar comentario incrementa `version_registro` de la tarea.
 8. Presencia de `deleted_at` desde el inicio.
+9. Semántica de `fecha_corte` utilizada para determinar vencimiento: fuente temporal, zona horaria, granularidad y regla de comparación.
 
 Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
