@@ -1025,3 +1025,54 @@ La política fija es Argon2id v1 (`time_cost=3`, `memory_cost=65536`, `paralleli
 ## Exclusión local #455
 
 La presencia de UID, versión, instalación u op ID no implica sincronizabilidad. `credencial_usuario` y `sesion_usuario`, incluida toda metadata CORE-EF, permanecen locales y fuera de outbox/inbox/conflictos/paquetes. La política runtime es allowlist y default-deny.
+
+## Persistencia técnica transversal #469
+
+#469 incorpora `public.operacion_idempotente` como ledger local, inmutable y no
+sincronizable de receipts completados. La tabla standalone es ordinaria,
+permanente/WAL-logged y no admite inheritance, particionamiento, rules ni RLS.
+Conserva un `op_id` globalmente único e inmediato, identidad del command y target
+opcional, hash SHA-256 y versión de canonicalización explícita, snapshot JSONB
+del resultado y contexto técnico.
+
+Tres guards propios `ENABLE ALWAYS` condicionan el `INSERT` por coherencia
+sucursal/instalación y rechazan siempre `UPDATE`, `DELETE` y `TRUNCATE`, incluso
+bajo `session_replication_role=replica`. Las FKs permanecen administradas por
+PostgreSQL: #469 no modifica sus triggers RI internos ni promete enforcement de
+RI en ese modo privilegiado, pero exige que los cuatro mecanismos RI asociados
+a cada FK existan y permanezcan normalmente habilitados (`tgenabled='O'`). La
+secuencia identity es permanente, bigint y usa `START 1`, `INCREMENT 1`,
+`MINVALUE 1`, `MAXVALUE 9223372036854775807` y `NO CYCLE`.
+El preflight exige además que su estado corriente permita generar al menos un
+próximo identificador y que éste no esté ocupado por un receipt. `last_value` no
+es fijo: gaps, valores normalmente avanzados e IDs explícitos altos son válidos;
+no se exige superar `MAX(id)`. El agotamiento o la colisión inmediata son
+incompatibles y el patch no corrige automáticamente la secuencia.
+
+Desde PostgreSQL 18, los ocho CHECK y las tres FKs contractuales deben estar
+`ENFORCED`; una constraint `NOT ENFORCED` constituye drift incompatible. En
+versiones anteriores esa propiedad no existe y se conserva el resto del
+contrato estructural sin depender de una columna de catálogo ausente.
+
+La reejecución del patch sobre un ledger existente también rechaza receipts
+históricos huérfanos respecto de usuario, sucursal o instalación, y aquellos con
+`id_sucursal` informado cuya instalación no pertenezca a ella. El preflight no
+repara ni elimina receipts incompatibles.
+El preflight referencia explícitamente sus relaciones de catálogo mediante
+`pg_catalog`, por lo que no depende del `search_path` de la conexión.
+Además establece transaction-localmente `search_path = pg_catalog, public` antes
+de cualquier validación, evitando shadowing de funciones built-in; las referencias
+contractuales críticas permanecen igualmente schema-qualified.
+
+Este incremento es infraestructura SQL sin endpoint (`NO APLICA` para la
+clasificación de endpoint, headers, `If-Match-Version`, outbox, lock lógico y
+versionado CORE-EF recursivo). El claim/replay/complete, la canonicalización y
+los advisory locks pertenecen a #470 y permanecen no implementados. La tabla
+continúa fuera de sync por default-deny.
+
+El threat model cubre drift físico accidental, patches/restores debilitados y
+DML ordinario. No intenta resistir a un DBA/superusuario deliberadamente hostil
+que elimine objetos, manipule catálogos, desactive WAL/fsync, destruya storage o
+produzca un restore físicamente inconsistente. Owner, ACL, tablespace,
+estadísticas, OIDs, TOAST, fillfactor y configuración física del clúster no son
+parte del contrato #469.
