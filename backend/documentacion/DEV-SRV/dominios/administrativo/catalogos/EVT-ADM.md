@@ -562,6 +562,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
+- contrato #412: `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro`, `aggregate_id = valor_parametro.id_valor_parametro`; payload allowlisted con `uid_global`, `codigo_parametro`, `valor_anterior`, `valor_nuevo`, `version_anterior`, `version_registro`, `id_usuario`, `id_sucursal_contexto`, `id_instalacion` y `op_id`, en la misma transacción que CAS y receipt.
 
 ### EVT-ADM-061 — Vigencia de valor de parámetro cerrada
 - codigo: valor_parametro_vigencia_cerrada

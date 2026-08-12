@@ -868,6 +868,70 @@ Si la definición es exponible, no sensible y `GLOBAL`, pero no existe valor glo
 
 No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, `editable_administrativamente`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.
 
+## Incremento #412 — contrato final del update GLOBAL (no implementado)
+
+`PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global`
+queda congelado como `COMMAND_WRITE_NEGOCIO`, update-only de un único
+`valor_parametro` GLOBAL vigente existente. No es `PUT`, creación ni UPSERT.
+
+Requiere Bearer y `require_administrative_permission(
+"ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR")`. La identidad humana procede sólo de
+`get_authenticated_principal` y `AuthenticatedPrincipal.id_usuario`.
+`X-Usuario-Id` no se requiere, parsea, compara ni usa; si llega de un cliente
+heredado se ignora para identidad y autorización. Un helper CORE-EF autenticado
+reusable, no parsing manual del router, leerá sólo `X-Op-Id`, `X-Sucursal-Id`,
+`X-Instalacion-Id` e `If-Match-Version`, todos obligatorios.
+
+El selector `codigo_parametro` usa igualdad exacta y case-sensitive, sin trim,
+normalización, aliases ni fallback. La definición debe ser exponible, no sensible,
+editable administrativamente, `ENTERO` y `GLOBAL`. El target debe ser exactamente
+un valor con contexto nulo, vigente, no eliminado y `version_registro >= 1`. Su
+ausencia es `409 conflicto_parametro`: nunca crea un valor.
+
+El body exacto es `{"valor_tipado": 15}`: schema `BaseModel` con `extra="forbid"`
+y `valor_tipado: StrictInt`. Rechaza boolean, string, float, null, ausencia y extras;
+persiste `str(valor_tipado)` como decimal ASCII, sin rango funcional adicional.
+
+La respuesta `200` exacta, también almacenada sin cambios como
+`response_snapshot`, es:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "codigo_parametro": "CODIGO_EXACTO",
+    "uid_global": "00000000-0000-0000-0000-000000000000",
+    "valor_tipado": 15,
+    "version_registro": 4,
+    "updated_at": "2026-08-12T12:00:00Z"
+  }
+}
+```
+
+No incluye IDs internos, usuario, sucursal, instalación, `op_id`, metadata de
+seguridad ni `valor_raw`. `REPLAY` devuelve ese snapshot original sin SELECT
+funcional para reconstruirlo, CAS, UPDATE, versión, outbox o receipt nuevos.
+
+El CAS es un único `UPDATE ... WHERE version_registro = :if_match_version ...
+RETURNING`. Un `op_id` nuevo con versión vieja devuelve `412 CONCURRENCY_ERROR`;
+un replay compatible se resuelve antes de revalidar la versión actual.
+
+La idempotencia consume el runtime de #470 con `command_code =
+ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, target exacto
+`("VALOR_PARAMETRO", valor_parametro.uid_global, codigo_parametro)` y hash RFC 8785
+v1 de `{"codigo_parametro": codigo_parametro, "valor_tipado": valor_tipado,
+"if_match_version": if_match_version}`. No incorpora identidad, contexto, bearer,
+`op_id`, timestamps ni resultado. Los conflictos `COMMAND`, `TARGET` y `PAYLOAD`
+son, respectivamente, `409 IDEMPOTENCY_COMMAND_CONFLICT`,
+`409 IDEMPOTENCY_TARGET_CONFLICT` y `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
+
+Errores adicionales: `401 INVALID_SESSION`; `403 autorizacion_insuficiente`; `404
+parametro_no_encontrado` indistinguible para inexistente/no exponible/sensible;
+`409 conflicto_parametro` para no editable, tipo/alcance fuera de scope, ausencia
+update-only o valor no operable; y los errores `500` sanitizados definidos en
+ERR-ADM. La validación estructural de FastAPI puede ocurrir antes o durante las
+dependencies; no se promete una precedencia pública más fuerte sin tests.
+
 ## 12. Credenciales y autenticación — estado posterior a #448
 
 #448 no agrega ni modifica endpoints. No existe endpoint administrativo implementado para crear credenciales, setear passwords, login, logout, refresh, sesiones nuevas, recuperación, rotación ni validación de hashes. Por lo tanto, no se documenta request/response de credenciales como API vigente.

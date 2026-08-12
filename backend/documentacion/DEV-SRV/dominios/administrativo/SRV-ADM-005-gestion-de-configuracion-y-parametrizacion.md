@@ -336,7 +336,10 @@ El patch `patch_parametro_sistema_editabilidad_administrativa_20260805.sql` agre
 
 Editabilidad, exposición y sensibilidad quedan separadas: no existe constraint física `editable => exponible` ni `editable => no sensible`. La reejecución del patch sólo acepta la estructura compatible exacta y aborta ante tipo incompatible, columna nullable, default distinto o ausente, o filas nulas; no sanea silenciosamente ni habilita definiciones por código, tipo, alcance, nombre, descripción, exposición, sensibilidad o existencia de valor.
 
-No existe endpoint write para modificar esta metadata. #412 sigue bloqueado por autorización, `If-Match-Version`, idempotencia/replay, CAS, outbox e historial; #425 y #435 siguen pendientes.
+No existe endpoint write para modificar esta metadata. El contrato final de #412
+ya congela autorización, `If-Match-Version`, idempotencia/replay, CAS y outbox, pero
+su implementación continúa pendiente; historial especializado queda fuera de su
+alcance. #425 y #435 siguen pendientes.
 
 ## Incremento #411 — Consulta de valor administrativo GLOBAL marcado vigente
 
@@ -347,3 +350,50 @@ La política de exposición se evalúa antes del alcance: inexistente, no exponi
 El valor consultado es exclusivamente el marcado vigente global no eliminado (`es_valor_vigente = true`, `deleted_at IS NULL`, `id_sucursal IS NULL`, `id_instalacion IS NULL`). No es valor efectivo ni configuración resuelta: no se evalúan reloj, `fecha_desde`, `fecha_hasta`, precedencia, fallback ni contexto. Sin valor válido se devuelve `SIN_VALOR` y `valor_marcado_vigente = null`. Con valor se devuelve `CON_VALOR_MARCADO_VIGENTE`, `valor_raw`, `valor_tipado`, `uid_global`, `version_registro` y timestamps del valor. En #411 sólo `ENTERO` está soportado y se convierte de forma estricta como decimal ASCII con signo negativo opcional (`-?[0-9]+`); se rechazan `+`, espacios, decimales, notación científica y dígitos Unicode. Los tipos no soportados producen `500 inconsistencia_parametro` aun sin valor; `SIN_VALOR` sólo aplica a definiciones `ENTERO` válidas. No se aplican rangos funcionales de #425.
 
 CORE-EF: clasificación `QUERY_READLIKE`; headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial, lock lógico, optimistic locking, commits y mutaciones son `NO APLICA`. La ruta puede enviar `Cache-Control: no-store` de forma localizada. Autorización completa, writes #412, claves/calendario #425 y contexto/overrides #435 siguen pendientes.
+
+## Incremento #412 — contrato de servicio congelado (implementación pendiente)
+
+#469 y #470 están completados; #412 es su primer consumidor productivo. El flujo
+lógico congelado es autenticación, autorización, headers CORE-EF autenticados,
+existencia/elegibilidad estable, existencia del target update-only,
+`canonical_payload_hash`, `claim_operation`, `REPLAY | CONFLICT | EXECUTE`, CAS,
+outbox, `complete_operation` y commit exterior. La validación estructural del body
+puede intercalarse con dependencies según FastAPI.
+
+`OperationCompletion.id_usuario` y el `id_usuario` del evento proceden de
+`AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` se ignora. Claim, CAS, outbox y
+complete comparten una sola `Session` y transacción exterior. El runtime #470 y el
+repository funcional no hacen commit/rollback ni commits parciales. Cualquier fallo
+revierte conjuntamente CAS, evento y receipt; sólo después del commit se emite el
+éxito.
+
+Outbox **APLICA** porque `valor_parametro` es sincronizable por la política CORE-EF
+y EVT-ADM-060 ya tipifica su modificación. Se inserta en la misma transacción:
+`event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro` y
+`aggregate_id = valor_parametro.id_valor_parametro`. El payload allowlisted exacto
+es `uid_global`, `codigo_parametro`, `valor_anterior`, `valor_nuevo`,
+`version_anterior`, `version_registro`, `id_usuario`, `id_sucursal_contexto`,
+`id_instalacion` y `op_id`; `id_sucursal_contexto` toma el header técnico aunque el
+valor GLOBAL tenga contexto persistido nulo. La policy default-deny y el guard de
+datos sensibles se mantienen; una definición sensible nunca es elegible. No se
+crean consumers remotos ni reconciliación en #412.
+
+El lock lógico persistido **NO APLICA**: la exclusión del receipt usa el advisory
+transaccional de #470 por `op_id`, mientras la concurrencia del valor se resuelve por
+CAS de `version_registro`. No se agrega un advisory propio del command.
+
+La implementación deberá agregar un patch/seed versionado, transaccional e
+idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre
+`Modificar valor global de parámetro`, descripción `Permite modificar un valor
+GLOBAL administrativo existente y elegible.`, estado `ACTIVO`); vínculo al rol
+inicial existente `ADMIN`; y la definición técnica controlada
+`PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO`, `ENTERO`, `GLOBAL`, exponible, no sensible y
+editable, con exactamente un valor GLOBAL vigente existente. El patch debe abortar
+si el rol `ADMIN` no existe de forma única y activa; no lo crea ni se apropia de
+defaults funcionales de #425.
+
+`historial_parametro` especializado y #265 quedan fuera de alcance. También quedan
+fuera CRUD genérico, UPSERT, creación, #425, #435, migración de #400, UI, consumers
+remotos, reconciliación, migración masiva heredada y cleanup global de
+`X-Usuario-Id`. #412 es el primer write administrativo autenticado sin ese header y
+un incremento de #461; cerrarlo no cerrará #461 ni #402.
