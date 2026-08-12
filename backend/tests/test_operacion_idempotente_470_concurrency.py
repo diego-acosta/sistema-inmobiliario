@@ -19,9 +19,15 @@ from app.config.database import engine
 
 def concurrent_case(change=None):
     op_id = uuid4()
-    base = dict(op_id=op_id, command_code="TEST.CONCURRENT", target_type="TEST",
-                target_uid=None, target_key="key", payload_hash=canonical_payload_hash({"v": 1}),
-                canonicalization_version=1)
+    base = {
+        "op_id": op_id,
+        "command_code": "TEST.CONCURRENT",
+        "target_type": "TEST",
+        "target_uid": None,
+        "target_key": "key",
+        "payload_hash": canonical_payload_hash({"v": 1}),
+        "canonicalization_version": 1,
+    }
     second = {**base, **(change or {})}
     barrier = threading.Barrier(2)
     release = threading.Event()

@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -12,7 +13,7 @@ from app.infrastructure.persistence.repositories.operacion_idempotente_repositor
 
 class FakeRepository:
     stored = None
-    calls = []
+    calls: ClassVar[list[tuple[str, object]]] = []
 
     def __init__(self, session):
         self.session = session
@@ -33,10 +34,14 @@ def fake_repository(monkeypatch):
 
 
 def claim(**changes):
-    values = dict(
-        op_id=uuid4(), command_code="TEST.CREATE", target_type="TEST",
-        target_uid=None, target_key=None, payload_hash="a" * 64,
-    )
+    values = {
+        "op_id": uuid4(),
+        "command_code": "TEST.CREATE",
+        "target_type": "TEST",
+        "target_uid": None,
+        "target_key": None,
+        "payload_hash": "a" * 64,
+    }
     values.update(changes)
     return runtime.OperationClaim(**values)
 
