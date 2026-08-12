@@ -270,7 +270,17 @@ Authorization: Bearer
 
 `X-Usuario-Id` no debe utilizarse como autoridad de identidad humana en endpoints nuevos; representa metadata/contexto CORE-EF cuando el contrato aplicable lo requiera, pero no autentica.
 
-Administrativo conserva ownership de usuarios, autenticación, autorización, roles y permisos. `gestion_operativa` sólo consume esas capacidades y no redefine su semántica.
+Administrativo conserva ownership de usuarios, autenticación, autorización, roles y permisos, y provee sus mecanismos. `gestion_operativa` consume la identidad de usuario y debe definir qué acciones funcionales sobre Tareas requieren autorización y qué relación o scope habilita cada acción, sin redefinir el modelo administrativo.
+
+La política funcional de autorización y visibilidad permanece **NO CONGELADA / BLOQUEANTE**. Antes del DER y DEV-API debe decidir, sin inventar todavía permisos, roles, códigos ni autorización contextual:
+
+- si un usuario puede consultar sólo tareas asignadas a él o también las creadas por él;
+- quién puede consultar tareas sin responsable o tareas de otros usuarios;
+- cómo incide `id_sucursal`, si finalmente se incorpora, y quién puede consultar tareas globales;
+- cómo se comporta **Mis tareas**;
+- quién puede modificar título/descripción, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar y comentar.
+
+El ownership de autorización de Administrativo no elimina la necesidad de que `gestion_operativa` defina esta política funcional de acceso. Los códigos y mecanismos concretos se diseñarán posteriormente junto con Administrativo y DEV-API.
 
 ## 21. CORE-EF preliminar
 
@@ -308,6 +318,10 @@ La generación automática además debe deduplicar reintentos y el mismo hecho f
 
 La decisión debe tomarse antes del DER porque afecta `uid_global`, metadata CORE-EF, outbox, allowlist, conflictos, comentarios, historial, versiones e idempotencia. Este documento no crea eventos, productores, consumidores ni entradas de allowlist.
 
+Si Tarea se define como `SINCRONIZABLE`, deberá existir además una estrategia canónica interinstalación para resolver las referencias de usuario empleadas como creador y responsable. No debe asumirse que el `id_usuario` local es suficiente como identidad sincronizable.
+
+La estrategia concreta —UID global de usuario, mapping u otro mecanismo autorizado— pertenece a Administrativo/Técnico y permanece **NO CONGELADA** en este documento. `gestion_operativa` consume esa identidad, no redefine el modelo administrativo de usuario y no debe agregar por sí mismo metadata global a `usuario`. **Mis tareas** entre instalaciones no puede habilitarse de manera segura hasta resolver esta dependencia.
+
 ## 25. Locks
 
 Para el MVP se propone no requerir lock lógico inicialmente. El mecanismo inicial es concurrencia optimista mediante:
@@ -324,6 +338,8 @@ El contrato debe prever: obtener tarea, listar tareas, mis tareas, pendientes, v
 
 Filtros mínimos: responsable, estado, prioridad, sucursal, vencida y fecha objetivo.
 
+La existencia funcional de estas consultas no implica acceso irrestricto a sus resultados: su visibilidad queda condicionada a la política funcional de autorización pendiente.
+
 ## 27. MVP funcional
 
 El alcance funcional comprende:
@@ -336,6 +352,8 @@ El alcance funcional comprende:
 - cambiar prioridad, fecha objetivo y estado;
 - agregar comentario;
 - consultar historial.
+
+Los commands de modificación, asignación/reasignación/desasignación, cambios de prioridad, fecha objetivo o estado y comentarios quedan condicionados a la futura política funcional de autorización.
 
 Debe implementarse en varios incrementos trazables, no como un único issue grande.
 
@@ -380,5 +398,7 @@ Son bloqueantes antes del DER y este freeze no las cierra:
 7. Si agregar comentario incrementa `version_registro` de la tarea.
 8. Presencia de `deleted_at` desde el inicio.
 9. Semántica de `fecha_corte` utilizada para determinar vencimiento: fuente temporal, zona horaria, granularidad y regla de comparación.
+10. Identidad canónica interinstalación de usuario para referencias de creador/responsable si Tarea resulta sincronizable: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
+11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, cambiar estado, cancelar y comentar.
 
 Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
