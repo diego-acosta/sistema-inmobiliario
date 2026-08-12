@@ -302,9 +302,11 @@ Para las consultas `QUERY_READLIKE`, headers write, idempotencia command y `If-M
 
 ## 22. Versionado
 
-Se propone `tarea → version_registro`. Las modificaciones de una tarea existente deberán utilizar `If-Match-Version` como control de concurrencia optimista.
+Se adopta como estrategia objetivo la concurrencia optimista para las futuras modificaciones de `Tarea`. Los contratos técnicos posteriores deberán definir el mecanismo de versión compatible con CORE-EF y `If-Match-Version` cuando corresponda.
 
-Permanece abierta la decisión: **¿agregar comentario incrementa `version_registro` de tarea?** La recomendación preliminar es **NO** si el comentario es append-only y no modifica el estado del aggregate raíz.
+La materialización concreta —incluido si corresponde un campo `version_registro` en una futura entidad persistente— permanece pendiente de `DEV-ARCH-GOP`, DER y SQL.
+
+Permanece abierta la decisión: **¿agregar comentario incrementa `version_registro` de tarea?** La recomendación preliminar es **NO** si el comentario es append-only y no modifica el estado funcional de `Tarea`.
 
 ## 23. Idempotencia
 
@@ -324,12 +326,12 @@ La estrategia concreta —UID global de usuario, mapping u otro mecanismo autori
 
 ## 25. Locks
 
-Para el MVP se propone no requerir lock lógico inicialmente. El mecanismo inicial es concurrencia optimista mediante:
+Para el MVP se propone no requerir lock lógico inicialmente. La estrategia objetivo es la concurrencia optimista; el mecanismo de versión y su materialización técnica quedan pendientes de `DEV-ARCH-GOP`, DER y SQL, manteniendo compatibilidad con `If-Match-Version` cuando corresponda.
 
 ```text
-version_registro
-+
-If-Match-Version
+concurrencia optimista
+→ mecanismo de versión pendiente
+→ If-Match-Version cuando corresponda
 ```
 
 ## 26. Consultas mínimas
@@ -383,7 +385,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 16. La identidad humana procede de `AuthenticatedPrincipal`, no de `X-Usuario-Id`.
 17. Relaciones externas y múltiples responsables quedan fuera del MVP.
 18. La generación automática efectiva queda fuera del MVP, aunque el modelo debe admitirla.
-19. La concurrencia optimista mediante `version_registro` + `If-Match-Version` es el mecanismo inicial.
+19. La concurrencia optimista es la estrategia objetivo para futuras modificaciones de `Tarea`; su materialización técnica y mecanismo de versión deberán definirse en `DEV-ARCH-GOP` y los artefactos posteriores, manteniendo compatibilidad con `If-Match-Version` cuando corresponda.
 
 ## 30. Decisiones todavía abiertas
 
