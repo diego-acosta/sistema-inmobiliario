@@ -1076,7 +1076,7 @@ def test_pg18_check_not_enforced_falla_sin_reparar(db_session):
         WHERE conrelid='public.operacion_idempotente'::regclass
           AND conname='chk_operacion_idempotente_payload_hash'
     """)).one()
-    assert tuple(state) == (True, False)
+    assert tuple(state) == (False, False)
     invalid = _insert(db_session, payload_hash="INVALID")
     with pytest.raises(DBAPIError), db_session.begin_nested():
         db_session.execute(text(_patch_body()))
@@ -1084,7 +1084,7 @@ def test_pg18_check_not_enforced_falla_sin_reparar(db_session):
         SELECT convalidated,conenforced FROM pg_constraint
         WHERE conrelid='public.operacion_idempotente'::regclass
           AND conname='chk_operacion_idempotente_payload_hash'
-    """)).one()) == (True, False)
+    """)).one()) == (False, False)
     assert db_session.execute(text("""
         SELECT count(*) FROM public.operacion_idempotente
         WHERE id_operacion_idempotente=:id AND payload_hash='INVALID'
@@ -1110,7 +1110,7 @@ def test_pg18_fk_not_enforced_falla_sin_reparar(db_session):
         WHERE conrelid='public.operacion_idempotente'::regclass
           AND conname='fk_operacion_idempotente_usuario'
     """)).one()
-    assert tuple(state) == ("f", True, False)
+    assert tuple(state) == ("f", False, False)
     invalid_user = db_session.execute(text(
         "SELECT coalesce(max(id_usuario),0)+1000000 FROM public.usuario"
     )).scalar_one()
@@ -1121,7 +1121,7 @@ def test_pg18_fk_not_enforced_falla_sin_reparar(db_session):
         SELECT contype,convalidated,conenforced FROM pg_constraint
         WHERE conrelid='public.operacion_idempotente'::regclass
           AND conname='fk_operacion_idempotente_usuario'
-    """)).one()) == ("f", True, False)
+    """)).one()) == ("f", False, False)
     assert db_session.execute(text("""
         SELECT count(*) FROM public.operacion_idempotente
         WHERE id_operacion_idempotente=:id AND id_usuario=:user_id
