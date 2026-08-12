@@ -919,11 +919,21 @@ un replay compatible se resuelve antes de revalidar la versión actual.
 La idempotencia consume el runtime de #470 con `command_code =
 ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, target exacto
 `("VALOR_PARAMETRO", valor_parametro.uid_global, codigo_parametro)` y hash RFC 8785
-v1 de `{"codigo_parametro": codigo_parametro, "valor_tipado": valor_tipado,
+v1 de `{"codigo_parametro": codigo_parametro, "valor_tipado": str(valor_tipado),
 "if_match_version": if_match_version}`. No incorpora identidad, contexto, bearer,
 `op_id`, timestamps ni resultado. Los conflictos `COMMAND`, `TARGET` y `PAYLOAD`
 son, respectivamente, `409 IDEMPOTENCY_COMMAND_CONFLICT`,
 `409 IDEMPOTENCY_TARGET_CONFLICT` y `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
+
+El API continúa aceptando `StrictInt` sin imponer el límite safe-integer de RFC
+8785. Después de validar el tipo, la proyección idempotente convierte
+`valor_tipado` a su decimal ASCII mediante `str(valor_tipado)`: así todo entero
+soportado contractualmente por Python/SQL es canonicalizable y dos entradas del
+mismo entero producen la misma proyección. No se modifica
+`canonical_payload_hash` ni el runtime #470. Los tests de implementación deben
+cubrir un entero mayor que `2^53` cuando SQL/Python lo soporten contractualmente,
+su fingerprint canonicalizable y replay estable, además de mantener el rechazo de
+boolean, string y float.
 
 Errores adicionales: `401 INVALID_SESSION`; `403 autorizacion_insuficiente`; `404
 parametro_no_encontrado` indistinguible para inexistente/no exponible/sensible;

@@ -360,8 +360,8 @@ existencia/elegibilidad estable, existencia del target update-only,
 outbox, `complete_operation` y commit exterior. La validación estructural del body
 puede intercalarse con dependencies según FastAPI.
 
-`OperationCompletion.id_usuario` y el `id_usuario` del evento proceden de
-`AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` se ignora. Claim, CAS, outbox y
+`OperationCompletion.id_usuario` procede de `AuthenticatedPrincipal.id_usuario`;
+`X-Usuario-Id` se ignora. Claim, CAS, outbox y
 complete comparten una sola `Session` y transacción exterior. El runtime #470 y el
 repository funcional no hacen commit/rollback ni commits parciales. Cualquier fallo
 revierte conjuntamente CAS, evento y receipt; sólo después del commit se emite el
@@ -372,9 +372,12 @@ y EVT-ADM-060 ya tipifica su modificación. Se inserta en la misma transacción:
 `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro` y
 `aggregate_id = valor_parametro.id_valor_parametro`. El payload allowlisted exacto
 es `uid_global`, `codigo_parametro`, `valor_anterior`, `valor_nuevo`,
-`version_anterior`, `version_registro`, `id_usuario`, `id_sucursal_contexto`,
-`id_instalacion` y `op_id`; `id_sucursal_contexto` toma el header técnico aunque el
-valor GLOBAL tenga contexto persistido nulo. La policy default-deny y el guard de
+`version_anterior`, `version_registro` y `op_id`. Los IDs numéricos locales de
+usuario, sucursal e instalación no forman parte del payload distribuido ni se
+inventan identidades globales inexistentes. Actor y contexto continúan disponibles
+como provenance local en `operacion_idempotente`, metadata técnica del command y,
+si el modelo ofrece columnas propias, en el registro local de outbox. La policy
+default-deny y el guard de
 datos sensibles se mantienen; una definición sensible nunca es elegible. No se
 crean consumers remotos ni reconciliación en #412.
 
@@ -385,12 +388,14 @@ CAS de `version_registro`. No se agrega un advisory propio del command.
 La implementación deberá agregar un patch/seed versionado, transaccional e
 idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre
 `Modificar valor global de parámetro`, descripción `Permite modificar un valor
-GLOBAL administrativo existente y elegible.`, estado `ACTIVO`); vínculo al rol
-inicial existente `ADMIN`; y la definición técnica controlada
+GLOBAL administrativo existente y elegible.`, estado `ACTIVO`); y la definición técnica controlada
 `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO`, `ENTERO`, `GLOBAL`, exponible, no sensible y
-editable, con exactamente un valor GLOBAL vigente existente. El patch debe abortar
-si el rol `ADMIN` no existe de forma única y activa; no lo crea ni se apropia de
-defaults funcionales de #425.
+editable, con exactamente un valor GLOBAL vigente existente. #412 no inventa ni
+presupone un `codigo_rol`: la asignación debe resolver un receptor administrativo
+canónico realmente sembrado y contractual. Si el reset aún no ofrece uno apropiado,
+el incremento/seed administrativo dueño del rol debe resolver esa dependencia antes
+de asignar el permiso; el patch #412 no crea silenciosamente un rol ad hoc. Tampoco
+se apropia de defaults funcionales de #425.
 
 `historial_parametro` especializado y #265 quedan fuera de alcance. También quedan
 fuera CRUD genérico, UPSERT, creación, #425, #435, migración de #400, UI, consumers
