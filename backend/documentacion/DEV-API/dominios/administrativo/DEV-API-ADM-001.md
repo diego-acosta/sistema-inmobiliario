@@ -924,10 +924,18 @@ No incluye IDs internos, usuario, sucursal, instalación, `op_id`, metadata de
 seguridad ni `valor_raw`. `REPLAY` devuelve ese snapshot original sin SELECT
 funcional para reconstruirlo, CAS, UPDATE, versión, outbox o receipt nuevos.
 
-En `EXECUTE` se verifica primero, sin `UPDATE` de prueba, que la versión vigente sea
+Sólo en `EXECUTE`, después del claim, se selecciona nuevamente el target operable
+mediante `SELECT ... FOR UPDATE`. Bajo ese row lock se revalidan existencia,
+contexto GLOBAL, vigencia/no eliminado y `version_registro`. El lock usa la misma
+`Session` y transacción exterior y se mantiene hasta `complete_operation` y el
+commit o rollback. Así serializa commands con `op_id` distintos sobre el mismo
+`valor_parametro` y cierra la ventana entre version-check/no-op/CAS y receipt.
+
+Bajo el lock se verifica primero, sin `UPDATE` de prueba, que la versión vigente sea
 `If-Match-Version`. Una versión vieja devuelve `412 CONCURRENCY_ERROR` aunque el
 valor solicitado coincida con el actual. Con versión correcta se compara el decimal
-ASCII persistido con `str(valor_tipado)`. Si son distintos, el CAS es un único
+ASCII persistido con `str(valor_tipado)`. Si son distintos, el CAS se conserva como
+un único
 `UPDATE ... WHERE version_registro = :if_match_version ... RETURNING`; si son
 iguales, no se ejecuta `UPDATE`, no cambian versión, `updated_at` ni
 `op_id_ultima_modificacion`, y no se genera outbox.
@@ -938,6 +946,9 @@ se guarda como `response_snapshot`, `complete_operation` persiste un receipt
 completado y el commit exterior es normal. Un retry compatible hace `REPLAY` del
 snapshot sin SELECT funcional de reconstrucción, UPDATE u outbox. Un replay
 compatible se resuelve antes de revalidar versión o cambio material.
+`REPLAY` y `CONFLICT` se resuelven antes de seleccionar el target `FOR UPDATE`; sólo
+`EXECUTE` toma el row lock. No se agrega advisory lock por target, tabla de locks,
+lease ni lock durable; el advisory por `op_id` continúa perteneciendo a #470.
 
 La idempotencia consume el runtime de #470 con `command_code =
 ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, target exacto
@@ -978,6 +989,13 @@ También deben cubrir: versión correcta y mismo valor (`200`, versión, `update
 retry por replay); versión vieja y mismo valor (`412 CONCURRENCY_ERROR`, cero
 UPDATE/outbox y cero receipt exitoso); y versión correcta con valor distinto (un
 UPDATE, versión `+1`, exactamente un outbox y receipt completado).
+
+La suite futura incluye dos `Session` y `op_id` distintos sobre el mismo target
+inicial `15/v3`. Si el no-op A (`15`, versión 3) toma primero el row lock, B (`16`,
+versión 3) espera; tras receipt/commit de A, B puede actualizar a `16/v4`, con un
+outbox y receipt. En la intercalación inversa, B actualiza primero a `16/v4`; A
+espera, adquiere luego el lock, observa versión 4 y devuelve `412` sin receipt
+exitoso, snapshot de v3, UPDATE ni outbox.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 

@@ -358,8 +358,9 @@ lógico congelado es autenticación, autorización, parsing de headers CORE-EF,
 validación referencial/coherencia sucursal-instalación, existencia/elegibilidad
 estable, existencia del target update-only,
 `canonical_payload_hash`, `claim_operation`, `REPLAY | CONFLICT | EXECUTE`; para
-`EXECUTE`, precondición de versión, comparación del valor canónico y, sólo ante
-cambio material, CAS y outbox; luego `complete_operation` y commit exterior. La validación estructural del body
+`EXECUTE`, `SELECT` del target operable `FOR UPDATE`, revalidación bajo lock,
+precondición de versión, comparación del valor canónico y, sólo ante cambio
+material, CAS y outbox; luego `complete_operation` y commit exterior. La validación estructural del body
 puede intercalarse con dependencies según FastAPI.
 
 El helper CORE-EF autenticado reusable comparte la `Session` del request. Exige UUID
@@ -395,8 +396,14 @@ default-deny y el guard de
 datos sensibles se mantienen; una definición sensible nunca es elegible. No se
 crean consumers remotos ni reconciliación en #412.
 
-La precondición `If-Match-Version` se evalúa antes de decidir si existe cambio
-material y sin hacer un `UPDATE` de prueba. Versión vieja siempre produce `412`, aun
+Sólo `EXECUTE` adquiere un row lock PostgreSQL `SELECT ... FOR UPDATE` sobre el
+`valor_parametro` objetivo. En la misma `Session`/transacción exterior revalida bajo
+lock existencia/operabilidad, contexto GLOBAL, vigencia/no eliminado y versión; el
+lock permanece hasta `complete_operation` y commit o rollback. `REPLAY` y
+`CONFLICT` se resuelven antes y no toman este lock.
+
+La precondición `If-Match-Version` se evalúa bajo el row lock antes de decidir si
+existe cambio material y sin hacer un `UPDATE` de prueba. Versión vieja siempre produce `412`, aun
 si el valor actual coincide. Con versión correcta, igualdad entre el decimal ASCII
 persistido y `str(valor_tipado)` es un no-op: cero UPDATE, cero incremento de versión,
 cero cambio de `updated_at`/`op_id_ultima_modificacion` y cero outbox; se construye el response
@@ -404,9 +411,17 @@ desde el estado actual, se completa el receipt #470 y se hace commit exterior. S
 los valores difieren, se ejecutan CAS y exactamente un outbox. `REPLAY`, `CONFLICT`
 y CAS mismatch nunca generan outbox; el replay devuelve el snapshot durable.
 
-El lock lógico persistido **NO APLICA**: la exclusión del receipt usa el advisory
-transaccional de #470 por `op_id`, mientras la concurrencia del valor se resuelve por
-CAS de `version_registro`. No se agrega un advisory propio del command.
+Un advisory/business logical lock adicional **NO APLICA**: no se agrega advisory por
+target, tabla, lease ni lock durable. El advisory transaccional por `op_id` pertenece
+a #470. El row-level `SELECT ... FOR UPDATE` sobre `valor_parametro` **APLICA** sólo
+dentro de `EXECUTE` como guard transaccional entre version-check/no-op/CAS y receipt;
+el `UPDATE` conserva además su CAS explícito de `version_registro`.
+
+Los tests PostgreSQL concurrentes usan dos `Session` y `op_id` distintos sobre
+`15/v3`. Si el no-op A bloquea primero, B espera y después puede actualizar a
+`16/v4`, con un único outbox. Si B bloquea y actualiza primero, A espera y al obtener
+el lock observa v4: responde `412`, sin receipt exitoso, snapshot v3, UPDATE ni
+outbox.
 
 La implementación deberá agregar un patch/seed versionado, transaccional e
 idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre
