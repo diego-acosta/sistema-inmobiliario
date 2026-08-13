@@ -354,26 +354,34 @@ CORE-EF: clasificación `QUERY_READLIKE`; headers write, `If-Match-Version`, ide
 ## Incremento #412 — contrato de servicio congelado (implementación pendiente)
 
 #469 y #470 están completados; #412 es su primer consumidor productivo. El flujo
-lógico congelado es autenticación, autorización, parsing de headers CORE-EF,
-validación referencial/coherencia sucursal-instalación, existencia/elegibilidad
-estable, existencia del target update-only,
-`canonical_payload_hash`, `claim_operation`, `REPLAY | CONFLICT | EXECUTE`; para
-`EXECUTE`, `SELECT` del target operable `FOR UPDATE`, revalidación bajo lock,
+lógico congelado pre-claim es autenticación, autorización, parsing estructural de
+headers/body, `canonical_payload_hash`, construcción del `OperationClaim` sólo desde
+la request y `claim_operation`. `REPLAY` devuelve snapshot y `CONFLICT` se mapea sin
+lookup mutable. Sólo para `EXECUTE` siguen validación referencial del contexto,
+existencia/elegibilidad, target update-only, `SELECT` del target `FOR UPDATE`, revalidación bajo lock,
 precondición de versión, comparación del valor canónico y, sólo ante cambio
 material, CAS y outbox; luego `complete_operation` y commit exterior. La validación estructural del body
 puede intercalarse con dependencies según FastAPI.
 
-El helper CORE-EF autenticado reusable comparte la `Session` del request. Exige UUID
+El helper CORE-EF autenticado reusable exige UUID
 válido para `X-Op-Id`, enteros positivos para `X-Sucursal-Id` y
-`X-Instalacion-Id`, y entero `>= 1` para `If-Match-Version`; después verifica la
-existencia de ambas referencias y que la instalación pertenezca a la sucursal. Sólo
-entonces entrega el contexto técnico al command. Todo contexto inválido falla antes
-de canonicalización/claim y de cualquier write; las FKs del ledger son defensa
+`X-Instalacion-Id`, y entero `>= 1` para `If-Match-Version`. Antes del claim no hace
+lookup DB. Sólo en `EXECUTE`, compartiendo la `Session`, verifica existencia de ambas
+referencias y pertenencia instalación-sucursal antes de negocio, CAS, outbox o
+receipt. Las FKs del ledger son defensa
 física final, no el mecanismo normal de validación pública.
 
 Esta coherencia no compara los headers con sucursal o instalación del principal y
 no congela autorización contextual, overrides ni #435. El router futuro no repite
 consultas o parsing manual.
+
+El claim se construye sin resolver negocio: `target_type = "VALOR_PARAMETRO"`,
+`target_uid = None` y `target_key = codigo_parametro` exacto, sin trim,
+normalización, alias o fallback. `OperationCompletion` conserva esos tres campos y
+registra el UID concreto descubierto en `EXECUTE` sólo como `result_target_uid`.
+`REPLAY`/`CONFLICT` ocurren antes de cualquier lookup de definición, valor o contexto
+referencial; el replay usa únicamente el snapshot durable y nunca consulta por
+`result_target_uid`.
 
 `OperationCompletion.id_usuario` procede de `AuthenticatedPrincipal.id_usuario`;
 `X-Usuario-Id` se ignora. Claim, CAS, outbox y
@@ -513,6 +521,12 @@ Los tests funcionales cubren las equivalencias `"015"`/15, `"-0"`/0 y
 material con valor final `"16"` y evento `"15"` → `"16"`; los raw inválidos
 `"15.0"`, `"+15"`, `" 15 "` y `""` sin efectos ni receipt exitoso; y versión
 vieja con entero igual como `412` antes de comparar valores.
+
+Los tests adicionales congelan replay tras volver la definición no exponible/no
+editable o el valor no operable, siempre desde snapshot sin lookup/lock/efectos;
+`TARGET` conflict por otro código sin resolver UID; nuevo op ID/código inexistente
+con `EXECUTE` previo al 404; contexto inválido validado sólo después de `EXECUTE`; y
+replay que no revalida una relación sucursal-instalación cambiada posteriormente.
 
 La implementación deberá agregar un patch/seed versionado, transaccional e
 idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre

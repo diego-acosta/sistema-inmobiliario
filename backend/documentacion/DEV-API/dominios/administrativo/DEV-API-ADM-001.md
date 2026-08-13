@@ -882,11 +882,12 @@ heredado se ignora para identidad y autorización. Un helper CORE-EF autenticado
 reusable, no parsing manual del router, leerá sólo `X-Op-Id`, `X-Sucursal-Id`,
 `X-Instalacion-Id` e `If-Match-Version`, todos obligatorios.
 
-Ese helper autenticado debe usar la misma `Session` del request y devolver al
-command un contexto técnico ya validado. Primero parsea `X-Op-Id` como UUID,
+Ese helper autenticado primero parsea `X-Op-Id` como UUID,
 `X-Sucursal-Id` y `X-Instalacion-Id` como enteros positivos, e
-`If-Match-Version` como entero mayor o igual a 1. Luego, antes de canonicalizar o
-hacer claim, verifica que existan sucursal e instalación y que la instalación
+`If-Match-Version` como entero mayor o igual a 1. Antes del claim sólo realiza este
+parseo estructural; no consulta sucursal, instalación, `parametro_sistema`,
+`valor_parametro` ni elegibilidad mutable. Sólo si el claim devuelve `EXECUTE`, con
+la misma `Session` verifica que existan sucursal e instalación y que la instalación
 pertenezca a la sucursal declarada. El router no duplica parsing ni consultas.
 
 La validación es sólo referencial/técnica entre sucursal e instalación: no exige
@@ -962,13 +963,27 @@ Representaciones válidas equivalentes como `"015"`/`15`, `"-0"`/`0` y
 persiste `str(valor_tipado)` como decimal ASCII canónico.
 
 La idempotencia consume el runtime de #470 con `command_code =
-ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, target exacto
-`("VALOR_PARAMETRO", valor_parametro.uid_global, codigo_parametro)` y hash RFC 8785
+ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, `target_type = "VALOR_PARAMETRO"`,
+`target_uid = None`, `target_key = codigo_parametro` exacto y hash RFC 8785
 v1 de `{"codigo_parametro": codigo_parametro, "valor_tipado": str(valor_tipado),
 "if_match_version": if_match_version}`. No incorpora identidad, contexto, bearer,
 `op_id`, timestamps ni resultado. Los conflictos `COMMAND`, `TARGET` y `PAYLOAD`
 son, respectivamente, `409 IDEMPOTENCY_COMMAND_CONFLICT`,
 `409 IDEMPOTENCY_TARGET_CONFLICT` y `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
+
+Todos los datos del `OperationClaim` se derivan de la request, sin lookup funcional:
+`op_id`, command, target type/key, hash y versión de canonicalización. La
+autenticación/autorización y validación estructural de headers/body ocurren antes;
+luego se calcula el fingerprint y se invoca `claim_operation`. `REPLAY` devuelve de
+inmediato el `response_snapshot` original y `CONFLICT` se mapea inmediatamente,
+ambos sin validar estado funcional, contexto referencial, versión, target actual,
+`result_target_uid` ni tomar `FOR UPDATE`.
+
+En `OperationCompletion`, `target_type`, `target_uid = None` y `target_key` preservan
+exactamente el claim. `result_target_uid` guarda el `valor_parametro.uid_global`
+real descubierto únicamente durante `EXECUTE`, y `result_version` su versión de
+resultado. `ReplayResult` conserva esos datos almacenados, pero no los usa para
+consultar negocio ni reconstruir la respuesta.
 
 El API continúa aceptando `StrictInt` sin imponer el límite safe-integer de RFC
 8785. Después de validar el tipo, la proyección idempotente convierte
@@ -992,8 +1007,9 @@ dependencies; no se promete una precedencia pública más fuerte sin tests.
 Los tests futuros separan formato de headers de validación referencial. Deben cubrir
 sucursal inexistente, instalación inexistente e instalación existente asociada a
 otra sucursal; los tres casos devuelven `ErrorResponse` con
-`400 inconsistencia_contexto_tecnico` y dejan cero claim efectivo, CAS, outbox y
-receipt.
+`400 inconsistencia_contexto_tecnico` después de que `claim_operation` devuelve
+`EXECUTE`, y dejan cero ejecución durable/receipt exitoso, CAS y outbox. El claim no
+persiste por sí mismo.
 
 También deben cubrir: versión correcta y mismo valor (`200`, versión, `updated_at` y
 `op_id_ultima_modificacion` intactos, cero UPDATE/outbox, un receipt completado y
@@ -1035,6 +1051,14 @@ evento desconocido, payload sensible y envelope contractual permitido. Los tests
 integridad recomputan el hash desde origen+`data`, comprueban 64 hex lowercase,
 mutaciones de origen o cualquier campo de `data`, estabilidad ante orden de keys y
 valores sobre `2^53` como decimal strings.
+
+Los tests de replay durable completan una operación y luego vuelven no exponible/no
+editable la definición, o cierran/eliminan el valor: el retry compatible devuelve el
+mismo snapshot sin lookup funcional, contexto DB, `FOR UPDATE`, CAS, outbox o receipt
+nuevo. Mismo `op_id` con otro `codigo_parametro` produce `TARGET` conflict sin
+resolver UID. Un `op_id` nuevo para código inexistente obtiene primero `EXECUTE` y
+luego 404 sin receipt exitoso/CAS/outbox. Un replay con contexto referencial que
+cambió posteriormente tampoco revalida sucursal/instalación en DB.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 
