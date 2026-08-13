@@ -1002,10 +1002,20 @@ Para el único outbox de un cambio material, `outbox_event.payload` usa el envel
 `valor_parametro.uid_global`, código exacto, valores anterior/nuevo como decimal
 ASCII string, versiones y `op_id`; `metadata.uid_instalacion_origen` es
 `instalacion.uid_global` resuelto desde el contexto técnico validado, y
-`metadata.payload_hash` es SHA-256 lowercase de RFC 8785 aplicado sólo a `data`.
-No se hashea el envelope, no se reutiliza el fingerprint #470 y no se distribuyen
+`metadata.payload_hash` es SHA-256 lowercase de RFC 8785 aplicado a
+`{"metadata": {"uid_instalacion_origen": uid_instalacion_origen}, "data": data}`.
+Así protege origen y datos sin hashear el envelope final autorreferencial. No se
+reutiliza el fingerprint #470 y no se distribuyen
 PK numéricas locales. `aggregate_id` conserva el ID local únicamente como key
 interna del outbox, y `processing_metadata` no aloja metadata de origen.
+
+La implementación debe incorporar `_p("valor_parametro_modificado",
+"valor_parametro")` a `SYNC_EVENT_POLICIES`, sin campos enteros positivos locales
+requeridos, y agregar tests default-deny para par permitido, aggregate incorrecto,
+evento desconocido, payload sensible y envelope contractual permitido. Los tests de
+integridad recomputan el hash desde origen+`data`, comprueban 64 hex lowercase,
+mutaciones de origen o cualquier campo de `data`, estabilidad ante orden de keys y
+valores sobre `2^53` como decimal strings.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 

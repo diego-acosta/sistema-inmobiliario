@@ -393,7 +393,7 @@ outbox; consumidores remotos usan `data.uid_global` como identidad portable. El
 {
   "metadata": {
     "uid_instalacion_origen": "<instalacion.uid_global>",
-    "payload_hash": "<sha256 lowercase de RFC 8785(data)>"
+    "payload_hash": "<sha256 lowercase de RFC 8785(hash_input)>"
   },
   "data": {
     "uid_global": "<valor_parametro.uid_global>",
@@ -409,10 +409,31 @@ outbox; consumidores remotos usan `data.uid_global` como identidad portable. El
 
 `uid_instalacion_origen` es el `uid_global` real de la instalación correspondiente
 al `X-Instalacion-Id` técnico ya parseado, existente y coherente con
-`X-Sucursal-Id`. Primero se construye `data`, se canonicaliza `data` con RFC 8785 y
-se calcula su SHA-256 hexadecimal lowercase; sólo después se arma `metadata`. El
-hash no incluye el envelope ni se reutiliza el fingerprint #470: éste representa el
-request/command, mientras `payload_hash` protege el contenido distribuido. Los
+`X-Sucursal-Id`. Primero se construye `data` y luego el input no autorreferencial:
+
+```json
+{
+  "metadata": {
+    "uid_instalacion_origen": "<instalacion.uid_global>"
+  },
+  "data": {
+    "uid_global": "<valor_parametro.uid_global>",
+    "codigo_parametro": "<codigo exacto>",
+    "valor_anterior": "<decimal ASCII>",
+    "valor_nuevo": "<decimal ASCII>",
+    "version_anterior": 3,
+    "version_registro": 4,
+    "op_id": "<UUID>"
+  }
+}
+```
+
+`payload_hash` es el SHA-256 hexadecimal lowercase de RFC 8785(`hash_input`). Sólo
+después se arma el envelope final agregando el hash a `metadata`. El hash cubre tanto
+`uid_instalacion_origen` como todos los campos de `data`, pero nunca incluye el
+envelope final que contiene su propio hash. Tampoco se reutiliza el fingerprint #470:
+éste representa el request/command, mientras `payload_hash` protege el contenido
+distribuido. Los
 valores anterior/nuevo son decimal ASCII string, incluso sobre `2^53`; las versiones
 permanecen enteros del modelo.
 
@@ -426,6 +447,13 @@ si el modelo ofrece columnas propias, en el registro local de outbox. La policy
 default-deny y el guard de
 datos sensibles se mantienen; una definición sensible nunca es elegible. No se
 crean consumers remotos ni reconciliación en #412.
+
+La implementación de #412 debe agregar explícitamente a
+`backend/app/application/common/synchronization_policy.py` una entrada
+`_p("valor_parametro_modificado", "valor_parametro")` en
+`SYNC_EVENT_POLICIES`, sin `required_positive_int_fields`: el payload contractual
+usa identidades globales y no depende de PK locales. La policy continúa
+default-deny.
 
 Sólo `EXECUTE` adquiere un row lock PostgreSQL `SELECT ... FOR UPDATE` sobre el
 `valor_parametro` objetivo. En la misma `Session`/transacción exterior revalida bajo
@@ -457,9 +485,15 @@ outbox.
 Los tests del evento material verifican el envelope y los campos exactos de `data`;
 que `metadata.uid_instalacion_origen` provenga de `instalacion.uid_global` sin
 publicar `id_instalacion`; y que `payload_hash` tenga 64 hex lowercase, coincida con
-SHA-256(RFC 8785(`data`)), cambie ante cualquier cambio de `data` y sea independiente
-del orden de keys. También cubren valores sobre `2^53` como strings canonicalizables
-y rollback con cero evento persistido.
+SHA-256(RFC 8785(`hash_input`)), cambie ante cualquier cambio de `data` o de
+`uid_instalacion_origen` y sea independiente del orden de keys. También cubren
+valores sobre `2^53` como strings canonicalizables y rollback con cero evento
+persistido.
+
+Los tests futuros de policy verifican: evento/aggregate
+`valor_parametro_modificado`/`valor_parametro` permitido; aggregate incorrecto y
+evento desconocido rechazados; payload sensible rechazado; envelope contractual
+`{metadata, data}` permitido; y ausencia de IDs locales positivos obligatorios.
 
 La implementación deberá agregar un patch/seed versionado, transaccional e
 idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre
