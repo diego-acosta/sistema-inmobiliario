@@ -990,11 +990,22 @@ El cambio material se decide exclusivamente con
 `valor_parametro = :valor_parametro`, con `:valor_parametro = str(valor_tipado)`,
 `op_id_ultima_modificacion = X-Op-Id` e
 `id_instalacion_ultima_modificacion = X-Instalacion-Id`, con
-`WHERE version_registro = :if_match_version ... RETURNING`. Ambos datos de
+`WHERE id_valor_parametro = :id_valor_parametro AND version_registro =
+:if_match_version ... RETURNING`. `:id_valor_parametro` es la PK local exacta
+obtenida al resolver el valor GLOBAL vigente en `EXECUTE`; esa misma fila se bloquea
+por PK con `SELECT ... FOR UPDATE` y no se vuelve a resolver por código entre el lock
+y el CAS. Ambos datos de
 procedencia salen de los headers técnicos ya validados en `EXECUTE`. Si son
 iguales, no se ejecuta `UPDATE`, no cambian versión, `updated_at` ni
 `op_id_ultima_modificacion`/`id_instalacion_ultima_modificacion`, y no se genera
 outbox.
+
+El CAS combina identidad física y versión esperada y debe afectar exactamente una
+fila. Una fila retornada permite continuar con outbox, `complete_operation` y commit;
+cero filas se mapea a `412 CONCURRENCY_ERROR`. Más de una fila es imposible por la
+PK y no se tolera. El `aggregate_id` interno del outbox usa el mismo
+`id_valor_parametro` bloqueado y actualizado; la PK local no entra en el claim ni en
+el payload distribuido, y `result_target_uid` continúa siendo el `uid_global`.
 
 El command no asigna `version_registro`, `updated_at`, `uid_global`, `created_at`,
 `id_instalacion_origen` ni `op_id_alta`. El trigger #410 conserva la metadata
@@ -1182,7 +1193,16 @@ Los tests materiales parten de `public.valor_parametro.valor_parametro = "015"`:
 request 16 deja físicamente `"16"`, versión/procedencia nuevas, un outbox y receipt;
 request 15 es no-op y conserva físicamente `"015"` y toda metadata. Un test
 PostgreSQL/repository verifica que el UPDATE referencia la columna
-`public.valor_parametro.valor_parametro` y nunca `valor_raw`.
+`public.valor_parametro.valor_parametro`, nunca `valor_raw`, y contiene ambos
+predicados `id_valor_parametro = :id_valor_parametro` y `version_registro =
+:if_match_version`.
+
+Un escenario PostgreSQL prepara dos filas A y B distintas con `version_registro = 1`.
+Al ejecutar #412 sólo sobre A, verifica que A cambie valor, versión y procedencia,
+mientras B conserva íntegros valor, versión y procedencia; existe exactamente un
+outbox cuyo `aggregate_id` es la PK de A, un receipt y un `result_target_uid` igual al
+`uid_global` de A. Los tests concurrentes confirman además que lock y CAS usan la
+misma PK y nunca bloquean ni modifican otras filas sólo por compartir versión.
 
 Los tests de timestamp comparan contra el valor persistido/retornado por PostgreSQL,
 sin depender del timezone local: cambio material devuelve ISO naive sin `Z` ni

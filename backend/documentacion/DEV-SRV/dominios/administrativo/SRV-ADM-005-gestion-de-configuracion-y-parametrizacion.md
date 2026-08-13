@@ -550,13 +550,27 @@ UPDATE public.valor_parametro
 SET valor_parametro = :valor_parametro,
     op_id_ultima_modificacion = :op_id,
     id_instalacion_ultima_modificacion = :id_instalacion
-WHERE version_registro = :if_match_version
+WHERE id_valor_parametro = :id_valor_parametro
+  AND version_registro = :if_match_version
 RETURNING ...
 ```
 
 `:valor_parametro` es `str(valor_tipado)`, `:op_id` es `X-Op-Id` validado y
 `:id_instalacion` es `X-Instalacion-Id` validado referencialmente en `EXECUTE`. El
-trigger #410 sigue asignando `updated_at = CURRENT_TIMESTAMP` y
+binding `:id_valor_parametro` es la PK local exacta proyectada al resolver el valor
+GLOBAL vigente en `EXECUTE`. La misma PK identifica la fila del `SELECT ... FOR
+UPDATE` y del CAS; bajo el lock se revalidan operabilidad, GLOBAL, vigencia/no
+eliminado y versión, se parsea `valor_raw` y se decide no-op/material, sin volver a
+resolver el target por código entre lock y UPDATE. El predicado de versión se
+mantiene como defensa final de optimistic concurrency.
+
+El CAS material debe retornar exactamente una fila. Cero filas se mapea a `412
+CONCURRENCY_ERROR`; más de una es imposible por PK y no se tolera. Esa misma PK se
+usa como `aggregate_id` local del outbox, mientras el payload distribuido usa
+`uid_global`, el claim continúa request-derived sin PK y `result_target_uid` continúa
+siendo el UID global.
+
+El trigger #410 sigue asignando `updated_at = CURRENT_TIMESTAMP` y
 `version_registro = OLD.version_registro + 1`, y preserva `uid_global`, `created_at`,
 `id_instalacion_origen` y `op_id_alta`; el command no asigna esos campos. La
 instalación del evento actual coincide conceptualmente: en negocio queda su ID local
@@ -616,7 +630,16 @@ de última modificación y deja cero outbox/receipt durable; el retry vuelve a
 Los tests PostgreSQL verifican explícitamente `valor_parametro.valor_parametro`: desde
 `"015"`, request 16 persiste `"16"`; request 15 es no-op y conserva `"015"`. El SQL
 del command debe actualizar la columna física y fallar la prueba si intenta usar la
-columna inexistente `valor_raw`.
+columna inexistente `valor_raw`; también debe contener conjuntamente `WHERE
+id_valor_parametro = :id_valor_parametro AND version_registro =
+:if_match_version`, nunca sólo el predicado de versión.
+
+Un escenario PostgreSQL crea dos filas A y B con la misma `version_registro = 1` y
+ejecuta #412 sobre A. Sólo A pasa a valor/versión/procedencia nuevos; B conserva
+valor, versión y procedencia. Se verifica exactamente un outbox con `aggregate_id`
+igual a la PK de A, un receipt y `result_target_uid` igual al `uid_global` de A. Los
+tests concurrentes también prueban que lock y CAS usan la misma PK y no bloquean ni
+mutan otras filas por compartir versión.
 
 Los tests de timestamp verifican ISO naive sin sufijo/offset contra el valor real
 persistido/retornado por PostgreSQL, conservación exacta en no-op e igualdad textual
