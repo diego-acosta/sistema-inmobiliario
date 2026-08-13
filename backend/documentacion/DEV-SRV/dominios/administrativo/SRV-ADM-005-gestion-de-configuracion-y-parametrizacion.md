@@ -546,14 +546,15 @@ y CAS mismatch nunca generan outbox; el replay devuelve el snapshot durable.
 El único UPDATE funcional material asigna explícitamente:
 
 ```sql
-SET valor_raw = :valor_raw,
+UPDATE public.valor_parametro
+SET valor_parametro = :valor_parametro,
     op_id_ultima_modificacion = :op_id,
     id_instalacion_ultima_modificacion = :id_instalacion
 WHERE version_registro = :if_match_version
 RETURNING ...
 ```
 
-`:valor_raw` es `str(valor_tipado)`, `:op_id` es `X-Op-Id` validado y
+`:valor_parametro` es `str(valor_tipado)`, `:op_id` es `X-Op-Id` validado y
 `:id_instalacion` es `X-Instalacion-Id` validado referencialmente en `EXECUTE`. El
 trigger #410 sigue asignando `updated_at = CURRENT_TIMESTAMP` y
 `version_registro = OLD.version_registro + 1`, y preserva `uid_global`, `created_at`,
@@ -561,6 +562,10 @@ trigger #410 sigue asignando `updated_at = CURRENT_TIMESTAMP` y
 instalación del evento actual coincide conceptualmente: en negocio queda su ID local
 como última modificación y en el outbox viaja su `instalacion.uid_global`, nunca la
 PK local.
+
+La columna persistida se llama físicamente `valor_parametro`. `valor_raw` es sólo el
+alias lógico que el repository #411 proyecta mediante `valor.valor_parametro AS
+valor_raw` para validar y parsear; no es una columna escribible.
 
 La igualdad semántica no sanea texto heredado: `"015"` + 15, `"-0"` + 0 y
 `"000"` + 0 permanecen físicamente iguales y son no-op. En un cambio real, los
@@ -607,6 +612,11 @@ refresca ninguna procedencia. CAS mismatch no cambia metadata. Si outbox/complet
 falla tras el CAS, rollback restaura valor, versión, timestamp, op ID e instalación
 de última modificación y deja cero outbox/receipt durable; el retry vuelve a
 `EXECUTE`.
+
+Los tests PostgreSQL verifican explícitamente `valor_parametro.valor_parametro`: desde
+`"015"`, request 16 persiste `"16"`; request 15 es no-op y conserva `"015"`. El SQL
+del command debe actualizar la columna física y fallar la prueba si intenta usar la
+columna inexistente `valor_raw`.
 
 Los tests de timestamp verifican ISO naive sin sufijo/offset contra el valor real
 persistido/retornado por PostgreSQL, conservación exacta en no-op e igualdad textual

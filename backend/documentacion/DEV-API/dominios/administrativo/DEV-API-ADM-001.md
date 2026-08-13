@@ -986,7 +986,8 @@ exitoso.
 El cambio material se decide exclusivamente con
 `valor_actual_tipado != valor_tipado`, nunca comparando `valor_raw` con
 `str(valor_tipado)`. Si los enteros tipados son distintos, el CAS se conserva como un único
-`UPDATE` que asigna `valor_raw = str(valor_tipado)`,
+`UPDATE` sobre `public.valor_parametro` que asigna la columna física
+`valor_parametro = :valor_parametro`, con `:valor_parametro = str(valor_tipado)`,
 `op_id_ultima_modificacion = X-Op-Id` e
 `id_instalacion_ultima_modificacion = X-Instalacion-Id`, con
 `WHERE version_registro = :if_match_version ... RETURNING`. Ambos datos de
@@ -999,6 +1000,11 @@ El command no asigna `version_registro`, `updated_at`, `uid_global`, `created_at
 `id_instalacion_origen` ni `op_id_alta`. El trigger #410 conserva la metadata
 inmutable de alta/origen y deriva únicamente el nuevo timestamp y la versión `+1`;
 `id_instalacion_origen` nunca se sobrescribe.
+
+`valor_parametro` es el nombre físico SQL de la columna. `valor_raw` permanece sólo
+como nombre lógico de lectura (`valor.valor_parametro AS valor_raw`) antes de validar
+regex y parsear el entero; no existe una columna física `valor_raw` ni se intenta
+escribirla.
 
 El no-op exitoso devuelve `200` con el mismo schema ya congelado, proyectando valor,
 versión y `updated_at` persistidos sin agregar campos `changed` o `noop`. Ese response
@@ -1171,6 +1177,12 @@ timestamp, pero preserve `id_instalacion_origen` y `op_id_alta`. No-op, replay y
 mismatch preservan toda procedencia. Un fallo posterior al CAS revierte valor,
 versión, timestamp y ambas columnas de última modificación, además de outbox/receipt;
 el retry vuelve a `EXECUTE`.
+
+Los tests materiales parten de `public.valor_parametro.valor_parametro = "015"`:
+request 16 deja físicamente `"16"`, versión/procedencia nuevas, un outbox y receipt;
+request 15 es no-op y conserva físicamente `"015"` y toda metadata. Un test
+PostgreSQL/repository verifica que el UPDATE referencia la columna
+`public.valor_parametro.valor_parametro` y nunca `valor_raw`.
 
 Los tests de timestamp comparan contra el valor persistido/retornado por PostgreSQL,
 sin depender del timezone local: cambio material devuelve ISO naive sin `Z` ni
