@@ -18,6 +18,22 @@ Antes de este freeze no existía un DEV-ARCH Administrativo en la rama base. El 
 | `configuracion_general` | compatibilidad heredada | No admite nuevas claves ni consumidores; se migrará incrementalmente y su eliminación física queda para una evolución posterior. |
 | `configuracion_local` | núcleo de Operativo | Queda fuera de la parametrización administrativa y de #425. |
 
+### Bootstrap canónico de seguridad administrativa (#249 / alcance histórico #260)
+
+Los resets DEV y TEST materializan un único `rol_seguridad` administrativo con
+contrato exacto: `codigo_rol = 'ADMINISTRADOR_SISTEMA'`,
+`nombre_rol = 'Administrador del sistema'`, descripción
+`Rol administrativo global para la gestión y configuración del sistema.` y
+`estado_rol = 'ACTIVO'`. El patch versionado falla ante una fila incompatible y
+no asigna el rol a usuarios ni crea permisos o relaciones rol-permiso.
+
+Este bootstrap pertenece al núcleo Administrativo y sólo establece el receptor
+canónico para permisos futuros. #412 continúa abierto y no implementado; su futuro
+patch podrá resolver exactamente una fila activa por `codigo_rol` sin crearla ni
+modificarla. Endpoints, headers, idempotencia HTTP, outbox, locks y versionado
+runtime son **NO APLICA** para este incremento SQL; sí aplican transacción,
+rollback, preflight e idempotencia SQL fail-fast.
+
 Los parámetros no son catálogos. `catalogo_maestro`/`item_catalogo` conservan su modelo administrativo propio y no participan en la resolución de configuración.
 
 ## 3. Modelo canónico
