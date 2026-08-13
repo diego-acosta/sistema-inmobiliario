@@ -874,6 +874,22 @@ No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_se
 queda congelado como `COMMAND_WRITE_NEGOCIO`, update-only de un único
 `valor_parametro` GLOBAL vigente existente. No es `PUT`, creación ni UPSERT.
 
+El template público conceptual conserva `{codigo_parametro}`, pero la declaración
+FastAPI/Starlette debe usar físicamente:
+
+```python
+@router.patch(
+    "/api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global",
+    ...,
+)
+```
+
+`:path` es sintaxis interna del router, no parte del nombre lógico ni del URI. Permite
+que el string decodificado completo contenga `/`, por ejemplo `ABC/DEF` o `A/B/C`;
+el sufijo fijo `/valor-global` delimita el final. La auditoría del router vigente no
+encuentra otra ruta PATCH bajo `/configuracion/parametros/`, por lo que no hay una
+colisión estática demostrada que obligue a usar query parameter.
+
 Requiere Bearer y `require_administrative_permission(
 "ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR")`. La identidad humana procede sólo de
 `get_authenticated_principal` y `AuthenticatedPrincipal.id_usuario`.
@@ -913,6 +929,14 @@ Esta validación no normaliza el selector. `"ABC"` y `" ABC "` son válidos y su
 `target_key` son exactamente esos strings; `"   "`, `"\t"` y `"\r\n"` son
 inválidos; `" \tA \n"` es válido y se conserva completo. La validación estable se
 repite también en retries, pero replay no consulta la definición.
+
+`/` es un carácter funcional ordinario: SQL no lo prohíbe. Tras decoding,
+`codigo_parametro`, lookup exacto, `target_key` y fingerprint usan el mismo valor
+lógico sin URL-encodear, trim, replace ni división manual. Así `ABC%2FDEF` (o la
+representación equivalente aceptada por el stack) entrega `"ABC/DEF"`, y `/` solo
+es estructuralmente válido aunque termine en 404 si no existe una definición exacta.
+OpenAPI mantiene `codigo_parametro` como path parameter string; `:path` no cambia su
+nombre lógico.
 
 El body exacto es `{"valor_tipado": 15}`: schema `BaseModel` con `extra="forbid"`
 y `valor_tipado: StrictInt`. Rechaza boolean, string, float, null, ausencia y extras;
@@ -1161,6 +1185,18 @@ string exacto; rechazan `"   "`, `"\t"` y `"\r\n"` antes del claim; y aceptan el
 límite físico de 100 caracteres. Los inválidos dejan cero lookup, claim/receipt,
 CAS y outbox. No se agrega una regla de 200 porque la columna funcional ya limita el
 código a 100.
+
+Los tests de routing verifican que `ABC`, `ABC%2FDEF` y `A%2FB%2FC` alcancen #412 y
+entreguen respectivamente `"ABC"`, `"ABC/DEF"` y `"A/B/C"`; whitespace periférico
+URL-encoded se conserva. `NO%2FEXISTE` llega al command, obtiene primero `EXECUTE` y
+luego `404 parametro_no_encontrado`, no router 404. Para `ABC/DEF`, target y
+fingerprint contienen el valor decodificado, retry compatible hace replay y otro
+código con el mismo op ID produce `TARGET` conflict.
+
+El GET #411 vigente continúa declarado con `{codigo_parametro}` ordinario y, por
+tanto, mantiene temporalmente la limitación heredada de routability para códigos con
+`/`. Este PR no modifica su runtime ni afirma soporte; alinearlo a `:path` requiere un
+incremento separado.
 
 Los tests de outbox congelan `occurred_at_utc` aware con offset cero y verifican un
 único `add_event` material con el mismo wall-clock UTC pero `occurred_at.tzinfo is

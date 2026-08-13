@@ -353,6 +353,13 @@ CORE-EF: clasificación `QUERY_READLIKE`; headers write, `If-Match-Version`, ide
 
 ## Incremento #412 — contrato de servicio congelado (implementación pendiente)
 
+La ruta conceptual PATCH conserva `{codigo_parametro}`, pero el router futuro debe
+declarar `.../parametros/{codigo_parametro:path}/valor-global`. El convertidor interno
+`:path` entrega el identificador decodificado completo, incluidos uno o varios `/`,
+sin cambiar el nombre lógico del path parameter. No existe otra ruta PATCH vigente
+bajo `/api/v1/administrativo/configuracion/parametros/`, por lo que el sufijo fijo
+`/valor-global` no presenta una colisión demostrada.
+
 #469 y #470 están completados; #412 es su primer consumidor productivo. El flujo
 lógico congelado pre-claim es autenticación, autorización, parsing estructural de
 headers/body, `canonical_payload_hash`, construcción del `OperationClaim` sólo desde
@@ -389,6 +396,11 @@ varchar(200)`— y contener al menos un carácter distinto de space, tab, LF, CR
 feed o vertical tab. All-whitespace se rechaza estructuralmente con 422 antes de
 lookup/claim/efectos. El valor válido nunca se trimmea: whitespace periférico se
 conserva exactamente en selector, fingerprint y `target_key`.
+
+SQL no prohíbe `/`. El valor completo capturado por `:path` se usa exacto en lookup,
+claim `target_key` y fingerprint: `ABC%2FDEF` representa lógicamente `ABC/DEF`, no
+`%2F`; `A/B/C` no se divide. `/` por sí solo pasa la validación no-whitespace y, si
+no existe, sigue el flujo `EXECUTE` → lookup → 404.
 
 `OperationCompletion.id_usuario` procede de `AuthenticatedPrincipal.id_usuario`;
 `X-Usuario-Id` se ignora. Claim, CAS, outbox y
@@ -605,6 +617,16 @@ bytes HTTP ni orden/formatting de keys.
 Los tests de `target_key` aceptan y preservan `"ABC"`, `" ABC "` y `" \tA \n"`;
 rechazan `"   "`, `"\t"` y `"\r\n"` antes del claim; prueban 100 caracteres como
 límite válido; y verifican cero lookup, claim/receipt, CAS y outbox para inválidos.
+
+Los tests de router cubren códigos simple, `%2F`, múltiples slash y whitespace
+periférico encoded; comprueban que el command recibe el string decodificado exacto,
+OpenAPI conserva un path parameter string y un código slash inexistente produce 404
+funcional después de `EXECUTE`, no router 404. Idempotencia guarda `target_key` y
+fingerprint decodificados, con replay y `TARGET` conflict normales.
+
+El GET #411 runtime mantiene `{codigo_parametro}` sin `:path`, por lo que todavía no
+soporta códigos con `/`; su alineación corresponde a un incremento separado y no se
+declara resuelta por #412.
 
 Los tests temporales congelan una fuente aware UTC y verifican exactamente un
 `add_event` con naive UTC (`tzinfo is None`) y estado `PENDING`. Tests PostgreSQL con
