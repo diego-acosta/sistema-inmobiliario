@@ -2,7 +2,7 @@
 
 ## 1. Propósito y estado
 
-Este documento congela la fuente de verdad arquitectónica de configuración y parametrización del dominio `administrativo`. Es un incremento exclusivamente documental: no crea SQL, rutas, contratos ejecutables ni cobertura de tests.
+Este documento congela la fuente de verdad arquitectónica de configuración y parametrización del dominio `administrativo`. Su origen fue un freeze documental; desde entonces, incrementos posteriores pueden materializar decisiones concretas mediante SQL, runtime y tests verificables. El estado vigente de cada capacidad debe leerse según su sección específica y la implementación real del repositorio; las capacidades marcadas como pendientes o no confirmadas permanecen únicamente como contrato o evolución futura.
 
 Antes de este freeze no existía un DEV-ARCH Administrativo en la rama base. El material histórico del DER global describía un diseño más amplio que no coincide con el SQL real; desde este incremento, para configuración prevalecen este freeze, `DEV-ARCH-GEN-001` y la implementación verificable.
 
