@@ -202,9 +202,23 @@ Dominio transversal de plantillas, generación, emisión, asociación, control y
 - CU-DOC-019 — Consulta de documentos
 - CU-DOC-020 — Consulta de historial documental
 
-### Operativo (CU-OPER)
+### Gestión Operativa histórica — legado no vigente
 
-Dominio orientado a coordinación de trabajo, pendientes, asignaciones, seguimiento de ejecución y consultas operativas consolidadas.
+> **Estado: HISTÓRICO / RETIRADO COMO CONTRATO VIGENTE**
+>
+> Este bloque proviene de una clasificación anterior que agrupaba tareas,
+> pendientes, asignaciones, seguimiento, incidencias y workflow bajo
+> `Operativo`. Esa clasificación quedó superada por la arquitectura vigente:
+> `operativo` conserva sucursales, instalaciones, caja, movimientos y cierres,
+> mientras que `gestion_operativa` queda reservado conceptualmente para tareas,
+> seguimiento interno, agenda, vencimientos, observaciones e incidencias.
+>
+> Los identificadores `CU-OPER-*` listados a continuación se conservan sólo
+> como referencia histórica. **NO son contratos vigentes, IDs reutilizables ni
+> fuente para DEV-SRV/DEV-API**, ya sea de `operativo` o de
+> `gestion_operativa`. La futura catalogación de casos de uso de
+> `gestion_operativa` deberá definirse en un artefacto específico posterior,
+> sin reutilizar ni convertir automáticamente estos IDs en `CU-GOP-*`.
 
 - CU-OPER-001 — Alta de tarea operativa
 - CU-OPER-002 — Modificación de tarea operativa

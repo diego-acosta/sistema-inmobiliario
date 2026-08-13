@@ -148,6 +148,7 @@ Incluye sucursales, instalaciones, caja operativa, movimientos de caja, cierre d
 
 ## Notas
 
+- Los identificadores `CU-OPER-*` definidos en este archivo son los vigentes para el dominio `operativo`. El bloque histórico del catálogo global que utiliza `CU-OPER-*` para tareas o workflow es legado no vigente.
 - Este catálogo debe interpretarse en conjunto con el DEV-SRV del dominio Operativo.
 - No reemplaza la documentación de implementación backend.
 - Su contenido debe mantenerse alineado con `CU-OPE` y con los servicios reales del dominio.

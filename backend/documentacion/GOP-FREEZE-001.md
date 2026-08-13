@@ -48,6 +48,8 @@ cancelacion_tarea != eliminacion_tecnica
 instalacion_origen != scope_funcional_tarea
 ```
 
+Los antiguos `CU-OPER-*` del catálogo global que describen tareas, pendientes, asignaciones o historial se clasifican como **compatibilidad heredada / documentación histórica desalineada**. No constituyen contratos vigentes de `operativo` ni de `gestion_operativa`. El catálogo específico de `CAT-CU/dominios/operativo/CU-OPER.md` conserva los identificadores vigentes de Operativo para sucursales, instalaciones, caja, movimientos, cierres y consultas; la futura numeración de casos de uso de Gestión Operativa deberá definirse en un catálogo específico posterior, sin crear ni reutilizar automáticamente IDs `CU-GOP-*` en este freeze.
+
 ## 3. Concepto funcional principal
 
 `Tarea` es el concepto funcional principal propuesto para `tareas_y_seguimiento_interno` y su semántica pertenece a `gestion_operativa`. Representa una unidad de trabajo pendiente, en ejecución, completada o cancelada que Gestión Operativa debe seguir.
