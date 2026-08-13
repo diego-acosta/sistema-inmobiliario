@@ -270,7 +270,11 @@ Usar exactamente las clasificaciones vigentes indicadas por `AGENTS.md`:
 
 Deben documentar y probar, según aplique:
 
-- Headers obligatorios: `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`.
+- Headers técnicos obligatorios: `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`.
+- En commands nuevos o modificados autenticados con Bearer, la identidad humana se
+  deriva exclusivamente de `AuthenticatedPrincipal`: `X-Usuario-Id` no se exige,
+  usa, compara ni parsea como identidad. Los endpoints heredados pueden conservar
+  temporalmente ese header hasta su migración incremental específica.
 - `If-Match-Version` cuando modifica entidad existente/versionada.
 - Uso del helper común CORE-EF; no parsear headers manualmente.
 - ErrorResponse estándar; no devolver `{"detail": "..."}` desde errores de headers del handler.

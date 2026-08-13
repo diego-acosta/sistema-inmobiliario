@@ -100,6 +100,18 @@ Una entidad no sincronizable es toda estructura cuyo alcance sea local, derivado
 ### Tipos de operaciones
 
 #### Write sincronizable
+
+Cuando un command nuevo o modificado ya usa Bearer, la identidad humana se deriva
+exclusivamente de `AuthenticatedPrincipal`. Sus headers técnicos son `X-Op-Id`,
+`X-Sucursal-Id`, `X-Instalacion-Id` e `If-Match-Version` cuando corresponda;
+`X-Usuario-Id` no se exige, usa, compara ni parsea como identidad. El contrato
+histórico sólo puede permanecer temporalmente en endpoints aún no migrados.
+- Cuando el command usa replay durable, antes del claim sólo se parsea el contexto.
+  La existencia de sucursal/instalación y su coherencia se validan con la misma
+  sesión únicamente para `EXECUTE`, antes de cualquier write o receipt; `REPLAY` no
+  depende de contexto DB mutable. Las FKs son defensa final, no validación pública
+  normal. Esta regla técnica no implica matching con el principal ni autorización
+  contextual.
 - requiere `uid_global`
 - requiere `version_registro`
 - requiere `op_id`

@@ -178,7 +178,7 @@ Si una solución:
 Para todo endpoint write nuevo o modificado, el PR debe incluir decisión CORE-EF explícita (no se difiere a migración posterior).
 
 1. **Clasificación obligatoria del endpoint:** `COMMAND_WRITE_NEGOCIO`, `COMMAND_WRITE_TECNICO`, `SIMULACION_READLIKE`, `PREVIEW_READLIKE`, `QUERY_READLIKE` o `NO_CONFIRMADO`.
-2. **Si es write sincronizable:** usar helper común CORE-EF de headers (sin parseo manual) y exigir `X-Op-Id`, `X-Usuario-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; exigir `If-Match-Version` cuando modifica entidad existente/versionada; preservar `ErrorResponse` estándar; no devolver `{"detail": "..."}` para errores de headers.
+2. **Si es write sincronizable:** usar helper común CORE-EF de headers (sin parseo manual) y exigir `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`; exigir `If-Match-Version` cuando modifica entidad existente/versionada; preservar `ErrorResponse` estándar; no devolver `{"detail": "..."}` para errores de headers. Todo write nuevo o modificado que use autenticación Bearer debe derivar la identidad humana exclusivamente de `AuthenticatedPrincipal`; en esos commands `X-Usuario-Id` está prohibido como fuente de identidad y no se requiere, usa, compara ni parsea para identidad o autorización. Los endpoints heredados que aún dependan de `X-Usuario-Id` pueden conservar temporalmente su contrato histórico y deben migrarse incrementalmente mediante sus issues correspondientes, sin ampliar ese modelo heredado.
 3. **Todo command sincronizable debe declarar:**
    - idempotencia: aplica/no aplica, criterio de payload, `mismo op_id + mismo payload`, `mismo op_id + payload distinto`, retry post-error;
    - outbox: aplica/no aplica, evento y misma transacción que negocio;

@@ -868,6 +868,378 @@ Si la definición es exponible, no sensible y `GLOBAL`, pero no existe valor glo
 
 No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, `editable_administrativamente`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.
 
+## Incremento #412 — contrato final del update GLOBAL (no implementado)
+
+`PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global`
+queda congelado como `COMMAND_WRITE_NEGOCIO`, update-only de un único
+`valor_parametro` GLOBAL vigente existente. No es `PUT`, creación ni UPSERT.
+
+El template público conceptual conserva `{codigo_parametro}`, pero la declaración
+FastAPI/Starlette debe usar físicamente:
+
+```python
+@router.patch(
+    "/api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global",
+    ...,
+)
+```
+
+`:path` es sintaxis interna del router, no parte del nombre lógico ni del URI. Permite
+que el string decodificado completo contenga `/`, por ejemplo `ABC/DEF` o `A/B/C`;
+el sufijo fijo `/valor-global` delimita el final. La auditoría del router vigente no
+encuentra otra ruta PATCH bajo `/configuracion/parametros/`, por lo que no hay una
+colisión estática demostrada que obligue a usar query parameter.
+
+Requiere Bearer y `require_administrative_permission(
+"ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR")`. La identidad humana procede sólo de
+`get_authenticated_principal` y `AuthenticatedPrincipal.id_usuario`.
+`X-Usuario-Id` no se requiere, parsea, compara ni usa; si llega de un cliente
+heredado se ignora para identidad y autorización. Un helper CORE-EF autenticado
+reusable, no parsing manual del router, leerá sólo `X-Op-Id`, `X-Sucursal-Id`,
+`X-Instalacion-Id` e `If-Match-Version`, todos obligatorios.
+
+Ese helper autenticado primero parsea `X-Op-Id` como UUID,
+`X-Sucursal-Id` y `X-Instalacion-Id` como enteros positivos, e
+`If-Match-Version` como entero mayor o igual a 1. Antes del claim sólo realiza este
+parseo estructural; no consulta sucursal, instalación, `parametro_sistema`,
+`valor_parametro` ni elegibilidad mutable. Sólo si el claim devuelve `EXECUTE`, con
+la misma `Session` verifica que existan sucursal e instalación y que la instalación
+pertenezca a la sucursal declarada. El router no duplica parsing ni consultas.
+
+La validación es sólo referencial/técnica entre sucursal e instalación: no exige
+coincidencia con `principal.id_sucursal_operativa`, no resuelve instalaciones del
+principal ni incorpora autorización contextual, overrides o políticas de #435.
+Bearer/`AuthenticatedPrincipal` continúa siendo la única identidad humana.
+
+El selector `codigo_parametro` usa igualdad exacta y case-sensitive, sin trim,
+normalización, aliases ni fallback. La definición debe ser exponible, no sensible,
+editable administrativamente, `ENTERO` y `GLOBAL`. El target debe ser exactamente
+un valor con contexto nulo, vigente, no eliminado y `version_registro >= 1`. Su
+ausencia es `409 conflicto_parametro`: nunca crea un valor.
+
+Antes de canonicalizar/construir el claim, el path debe ser estructuralmente
+compatible con `operacion_idempotente.target_key`: longitud `1..100` —la misma
+capacidad física de `parametro_sistema.codigo_parametro varchar(100)`, menor que
+`target_key varchar(200)`— y al menos un carácter distinto de space, tab, LF, CR,
+form feed o vertical tab. Un código compuesto sólo por ese whitespace devuelve el
+`422` estructural estándar de FastAPI/Pydantic, sin lookup funcional, claim, receipt,
+CAS ni outbox.
+
+Esta validación no normaliza el selector. `"ABC"` y `" ABC "` son válidos y sus
+`target_key` son exactamente esos strings; `"   "`, `"\t"` y `"\r\n"` son
+inválidos; `" \tA \n"` es válido y se conserva completo. La validación estable se
+repite también en retries, pero replay no consulta la definición.
+
+`/` es un carácter funcional ordinario: SQL no lo prohíbe. Tras decoding,
+`codigo_parametro`, lookup exacto, `target_key` y fingerprint usan el mismo valor
+lógico sin URL-encodear, trim, replace ni división manual. Así `ABC%2FDEF` (o la
+representación equivalente aceptada por el stack) entrega `"ABC/DEF"`, y `/` solo
+es estructuralmente válido aunque termine en 404 si no existe una definición exacta.
+OpenAPI mantiene `codigo_parametro` como path parameter string; `:path` no cambia su
+nombre lógico.
+
+El body exacto es `{"valor_tipado": 15}`: schema `BaseModel` con `extra="forbid"`
+y `valor_tipado: StrictInt`. Rechaza boolean, string, float, null, ausencia y extras;
+persiste `str(valor_tipado)` como decimal ASCII, sin rango funcional adicional.
+
+La respuesta `200` exacta, también almacenada sin cambios como
+`response_snapshot`, es:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "codigo_parametro": "CODIGO_EXACTO",
+    "uid_global": "00000000-0000-0000-0000-000000000000",
+    "valor_tipado": 15,
+    "version_registro": 4,
+    "updated_at": "2026-08-12T12:00:00"
+  }
+}
+```
+
+`updated_at` refleja directamente la columna PostgreSQL `timestamp without time
+zone` y se serializa como ISO-8601 naive, sin sufijo `Z` ni offset. #412 no interpreta
+ni convierte timezone y no asume que el datetime naive sea UTC. Resolver UTC,
+`timestamptz` o datetimes timezone-aware requiere un incremento transversal
+separado.
+
+No incluye IDs internos, usuario, sucursal, instalación, `op_id`, metadata de
+seguridad ni `valor_raw`. `REPLAY` devuelve ese snapshot original sin SELECT
+funcional para reconstruirlo, CAS, UPDATE, versión, outbox o receipt nuevos.
+
+Sólo en `EXECUTE`, después del claim, se selecciona nuevamente el target operable
+mediante `SELECT ... FOR UPDATE`. Bajo ese row lock se revalidan existencia,
+contexto GLOBAL, vigencia/no eliminado y `version_registro`. El lock usa la misma
+`Session` y transacción exterior y se mantiene hasta `complete_operation` y el
+commit o rollback. Así serializa commands con `op_id` distintos sobre el mismo
+`valor_parametro` y cierra la ventana entre version-check/no-op/CAS y receipt.
+
+Bajo el lock se verifica primero, sin `UPDATE` de prueba, que la versión vigente sea
+`If-Match-Version`. Una versión vieja devuelve `412 CONCURRENCY_ERROR` aunque el
+valor solicitado sea semánticamente igual. Con versión correcta se reutiliza la
+semántica `ENTERO` de #411: `valor_raw` debe ser `str`, cumplir exactamente
+`-?[0-9]+` y convertirse mediante `valor_actual_tipado = int(valor_raw)`. Un valor
+persistido inválido produce inconsistencia técnica, sin UPDATE, outbox ni receipt
+exitoso.
+
+El cambio material se decide exclusivamente con
+`valor_actual_tipado != valor_tipado`, nunca comparando `valor_raw` con
+`str(valor_tipado)`. Si los enteros tipados son distintos, el CAS se conserva como un único
+`UPDATE` sobre `public.valor_parametro` que asigna la columna física
+`valor_parametro = :valor_parametro`, con `:valor_parametro = str(valor_tipado)`,
+`op_id_ultima_modificacion = X-Op-Id` e
+`id_instalacion_ultima_modificacion = X-Instalacion-Id`, con
+`WHERE id_valor_parametro = :id_valor_parametro AND version_registro =
+:if_match_version ... RETURNING`. `:id_valor_parametro` es la PK local exacta
+obtenida al resolver el valor GLOBAL vigente en `EXECUTE`; esa misma fila se bloquea
+por PK con `SELECT ... FOR UPDATE` y no se vuelve a resolver por código entre el lock
+y el CAS. Ambos datos de
+procedencia salen de los headers técnicos ya validados en `EXECUTE`. Si son
+iguales, no se ejecuta `UPDATE`, no cambian versión, `updated_at` ni
+`op_id_ultima_modificacion`/`id_instalacion_ultima_modificacion`, y no se genera
+outbox.
+
+El CAS combina identidad física y versión esperada y debe afectar exactamente una
+fila. Una fila retornada permite continuar con outbox, `complete_operation` y commit;
+cero filas se mapea a `412 CONCURRENCY_ERROR`. Más de una fila es imposible por la
+PK y no se tolera. El `aggregate_id` interno del outbox usa el mismo
+`id_valor_parametro` bloqueado y actualizado; la PK local no entra en el claim ni en
+el payload distribuido, y `result_target_uid` continúa siendo el `uid_global`.
+
+El command no asigna `version_registro`, `updated_at`, `uid_global`, `created_at`,
+`id_instalacion_origen` ni `op_id_alta`. El trigger #410 conserva la metadata
+inmutable de alta/origen y deriva únicamente el nuevo timestamp y la versión `+1`;
+`id_instalacion_origen` nunca se sobrescribe.
+
+`valor_parametro` es el nombre físico SQL de la columna. `valor_raw` permanece sólo
+como nombre lógico de lectura (`valor.valor_parametro AS valor_raw`) antes de validar
+regex y parsear el entero; no existe una columna física `valor_raw` ni se intenta
+escribirla.
+
+El no-op exitoso devuelve `200` con el mismo schema ya congelado, proyectando valor,
+versión y `updated_at` persistidos sin agregar campos `changed` o `noop`. Ese response
+se guarda como `response_snapshot`, `complete_operation` persiste un receipt
+completado y el commit exterior es normal. Un retry compatible hace `REPLAY` del
+snapshot sin SELECT funcional de reconstrucción, UPDATE u outbox. Un replay
+compatible se resuelve antes de revalidar versión o cambio material.
+
+En no-op se conserva exactamente el timestamp persistido. En cambio material, el
+CAS devuelve mediante `RETURNING` el `updated_at` producido por el trigger #410 y se
+serializa con la misma convención naive. El `response_snapshot` JSONB almacena la
+estructura JSON y conserva exactamente el valor string de `updated_at`; `REPLAY`
+devuelve una estructura JSON semánticamente equivalente, sin reconstruir un
+datetime, reinterpretar timezone o agregar luego `Z`/offset.
+`REPLAY` y `CONFLICT` se resuelven antes de seleccionar el target `FOR UPDATE`; sólo
+`EXECUTE` toma el row lock. No se agrega advisory lock por target, tabla de locks,
+lease ni lock durable; el advisory por `op_id` continúa perteneciendo a #470.
+
+Representaciones válidas equivalentes como `"015"`/`15`, `"-0"`/`0` y
+`"000"`/`0` son no-op y no se canonicalizan físicamente. El response mantiene
+`valor_tipado` entero y no expone `valor_raw`. Sólo ante un cambio tipado real se
+persiste `str(valor_tipado)` como decimal ASCII canónico.
+
+La idempotencia consume el runtime de #470 con `command_code =
+ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, `target_type = "VALOR_PARAMETRO"`,
+`target_uid = None`, `target_key = codigo_parametro` exacto y hash RFC 8785
+v1 de `{"codigo_parametro": codigo_parametro, "valor_tipado": str(valor_tipado),
+"if_match_version": if_match_version}`. No incorpora identidad, contexto, bearer,
+`op_id`, timestamps ni resultado. Los conflictos `COMMAND`, `TARGET` y `PAYLOAD`
+son, respectivamente, `409 IDEMPOTENCY_COMMAND_CONFLICT`,
+`409 IDEMPOTENCY_TARGET_CONFLICT` y `409 IDEMPOTENCY_PAYLOAD_CONFLICT`.
+
+Todos los datos del `OperationClaim` se derivan de la request, sin lookup funcional:
+`op_id`, command, target type/key, hash y versión de canonicalización. La
+autenticación/autorización y validación estructural de headers/body ocurren antes;
+luego se calcula el fingerprint y se invoca `claim_operation`. `REPLAY` devuelve de
+inmediato el `response_snapshot` original y `CONFLICT` se mapea inmediatamente,
+ambos sin validar estado funcional, contexto referencial, versión, target actual,
+`result_target_uid` ni tomar `FOR UPDATE`.
+
+En `OperationCompletion`, `target_type`, `target_uid = None` y `target_key` preservan
+exactamente el claim. `result_target_uid` guarda el `valor_parametro.uid_global`
+real descubierto únicamente durante `EXECUTE`, y `result_version` su versión de
+resultado. `ReplayResult` conserva esos datos almacenados, pero no los usa para
+consultar negocio ni reconstruir la respuesta.
+
+La completion exitosa queda congelada así:
+
+- cambio material: `result_code = "PARAMETRO_GLOBAL_MODIFICADO"`,
+  `result_http_status = 200`, `result_target_uid = valor_parametro.uid_global`,
+  `result_version` resultante del CAS y el response 200 como `response_snapshot`;
+- no-op: `result_code = "PARAMETRO_GLOBAL_SIN_CAMBIOS"`,
+  `result_http_status = 200`, el mismo `result_target_uid`, `result_version` vigente
+  sin incremento y el response 200 con versión/`updated_at` persistidos como
+  snapshot.
+
+Estos códigos son metadata durable del receipt y no se agregan al response público,
+que tampoco incorpora `changed` o `noop`. `REPLAY` preserva exactamente
+`result_code`, status, UID, versión y snapshot almacenados, aunque cambie luego el
+estado: no recalcula si el resultado original fue modificación o no-op.
+
+No se llama `complete_operation` exitosamente para errores 400/404/409/412, outbox o
+técnicos. #470 sólo conserva receipts completados exitosos; no se modelan receipts
+`FAILED`, `EN_PROCESO` ni parciales.
+
+El API continúa aceptando `StrictInt` sin imponer el límite safe-integer de RFC
+8785. Después de validar el tipo, la proyección idempotente convierte
+`valor_tipado` a su decimal ASCII mediante `str(valor_tipado)`: así todo entero
+soportado contractualmente por Python/SQL es canonicalizable y dos entradas del
+mismo entero producen la misma proyección. No se modifica
+`canonical_payload_hash` ni el runtime #470. Los tests de implementación deben
+cubrir un entero mayor que `2^53` cuando SQL/Python lo soporten contractualmente,
+su fingerprint canonicalizable y replay estable, además de mantener el rechazo de
+boolean, string y float.
+
+Errores adicionales: `401 INVALID_SESSION`; `403 autorizacion_insuficiente`; `404
+parametro_no_encontrado` indistinguible para inexistente/no exponible/sensible;
+`400 inconsistencia_contexto_tecnico` para sucursal inexistente, instalación
+inexistente o instalación ajena a la sucursal declarada;
+`409 conflicto_parametro` para no editable, tipo/alcance fuera de scope, ausencia
+update-only o valor no operable; y los errores `500` sanitizados definidos en
+ERR-ADM. La validación estructural de FastAPI puede ocurrir antes o durante las
+dependencies; no se promete una precedencia pública más fuerte sin tests.
+
+Los tests futuros separan formato de headers de validación referencial. Deben cubrir
+sucursal inexistente, instalación inexistente e instalación existente asociada a
+otra sucursal; los tres casos devuelven `ErrorResponse` con
+`400 inconsistencia_contexto_tecnico` después de que `claim_operation` devuelve
+`EXECUTE`, y dejan cero ejecución durable/receipt exitoso, CAS y outbox. El claim no
+persiste por sí mismo.
+
+También deben cubrir: versión correcta y mismo valor (`200`, versión, `updated_at` y
+`op_id_ultima_modificacion` intactos, cero UPDATE/outbox, un receipt completado y
+retry por replay); versión vieja y mismo valor (`412 CONCURRENCY_ERROR`, cero
+UPDATE/outbox y cero receipt exitoso); y versión correcta con valor distinto (un
+UPDATE, versión `+1`, exactamente un outbox y receipt completado).
+
+La suite futura incluye dos `Session` y `op_id` distintos sobre el mismo target
+inicial `15/v3`. Si el no-op A (`15`, versión 3) toma primero el row lock, B (`16`,
+versión 3) espera; tras receipt/commit de A, B puede actualizar a `16/v4`, con un
+outbox y receipt. En la intercalación inversa, B actualiza primero a `16/v4`; A
+espera, adquiere luego el lock, observa versión 4 y devuelve `412` sin receipt
+exitoso, snapshot de v3, UPDATE ni outbox.
+
+También cubre: `"015"` + request 15, `"-0"` + request 0 y `"000"` + request 0
+como no-op `200`, sin mutar versión, timestamps, op ID de modificación u outbox y
+con receipt durable; `"015"` + request 16 como cambio que persiste `"16"`, aumenta
+versión y emite exactamente un evento con `valor_anterior = "15"` y
+`valor_nuevo = "16"`; y valores inválidos `"15.0"`, `"+15"`, `" 15 "` y `""`
+como inconsistencia sin UPDATE, outbox o receipt exitoso. Versión vieja se valida
+antes del parser/comparación tipada y conserva `412` aunque el entero sea igual.
+
+Para el único outbox de un cambio material, `outbox_event.payload` usa el envelope
+`{"metadata": {...}, "data": {...}}`. `data` contiene la identidad portable
+`valor_parametro.uid_global`, código exacto, valores anterior/nuevo como decimal
+ASCII string, versiones y `op_id`; `metadata.uid_instalacion_origen` es
+`instalacion.uid_global` resuelto desde el contexto técnico validado, y
+`metadata.payload_hash` es SHA-256 lowercase de RFC 8785 aplicado a
+`{"metadata": {"uid_instalacion_origen": uid_instalacion_origen}, "data": data}`.
+Así protege origen y datos sin hashear el envelope final autorreferencial. No se
+reutiliza el fingerprint #470 y no se distribuyen
+PK numéricas locales. `aggregate_id` conserva el ID local únicamente como key
+interna del outbox, y `processing_metadata` no aloja metadata de origen.
+
+El evento material realiza una única captura lógica de reloj inmediatamente antes de
+`OutboxRepository.add_event(...)`: `occurred_at_utc = datetime.now(UTC)` obtiene el
+instante aware UTC y `occurred_at = occurred_at_utc.replace(tzinfo=None)` produce la
+hora de pared UTC naive que se pasa explícitamente al repository. Esto ocurre dentro
+de la misma transacción exterior CAS → outbox → complete → commit y no depende del
+`TimeZone` de la sesión PostgreSQL ni de un default del repository.
+
+`outbox_event.occurred_at` se almacena como `timestamp without time zone`: es naive,
+pero por contrato representa UTC porque se eliminó `tzinfo` sólo después de capturar
+UTC explícito. No es `valor_parametro.updated_at`, no representa request, claim,
+replay ni receipt, no se deriva del timestamp naive del trigger y nunca usa
+`updated_at.replace(tzinfo=UTC)`. Tampoco forma parte de `data`, `hash_input` o
+`payload_hash`. No-op, replay, conflict, CAS mismatch y errores no generan evento ni
+`occurred_at` durable.
+
+#412 no corrige productores históricos de outbox. Normalizar todos los producers o
+migrar `occurred_at` a `timestamptz` requiere un incremento transversal posterior.
+
+La implementación debe incorporar `_p("valor_parametro_modificado",
+"valor_parametro")` a `SYNC_EVENT_POLICIES`, sin campos enteros positivos locales
+requeridos, y agregar tests default-deny para par permitido, aggregate incorrecto,
+evento desconocido, payload sensible y envelope contractual permitido. Los tests de
+integridad recomputan el hash desde origen+`data`, comprueban 64 hex lowercase,
+mutaciones de origen o cualquier campo de `data`, estabilidad ante orden de keys y
+valores sobre `2^53` como decimal strings.
+
+Los tests de replay durable completan una operación y luego vuelven no exponible/no
+editable la definición, o cierran/eliminan el valor: el retry compatible devuelve el
+mismo snapshot sin lookup funcional, contexto DB, `FOR UPDATE`, CAS, outbox o receipt
+nuevo. Mismo `op_id` con otro `codigo_parametro` produce `TARGET` conflict sin
+resolver UID. Un `op_id` nuevo para código inexistente obtiene primero `EXECUTE` y
+luego 404 sin receipt exitoso/CAS/outbox. Un replay con contexto referencial que
+cambió posteriormente tampoco revalida sucursal/instalación en DB.
+
+Los tests de completion verifican ambos `result_code`, status 200, UID/versión y su
+replay exacto. Los tests post-error verifican que 400 y 412 no dejan receipt y el
+mismo op ID vuelve a `EXECUTE`; un retry con `If-Match-Version` corregido cambia el
+fingerprint pero no causa `PAYLOAD` conflict porque no existe receipt previo; y un
+fallo de outbox/DB antes de commit revierte CAS/outbox/receipt, tras lo cual el retry
+puede dejar exactamente una modificación, evento y receipt final.
+
+Los tests de procedencia parten de otra operación/instalación y verifican que un CAS
+material reemplace `op_id_ultima_modificacion` e
+`id_instalacion_ultima_modificacion` con los headers actuales, incremente versión y
+timestamp, pero preserve `id_instalacion_origen` y `op_id_alta`. No-op, replay y CAS
+mismatch preservan toda procedencia. Un fallo posterior al CAS revierte valor,
+versión, timestamp y ambas columnas de última modificación, además de outbox/receipt;
+el retry vuelve a `EXECUTE`.
+
+Los tests materiales parten de `public.valor_parametro.valor_parametro = "015"`:
+request 16 deja físicamente `"16"`, versión/procedencia nuevas, un outbox y receipt;
+request 15 es no-op y conserva físicamente `"015"` y toda metadata. Un test
+PostgreSQL/repository verifica que el UPDATE referencia la columna
+`public.valor_parametro.valor_parametro`, nunca `valor_raw`, y contiene ambos
+predicados `id_valor_parametro = :id_valor_parametro` y `version_registro =
+:if_match_version`.
+
+Un escenario PostgreSQL prepara dos filas A y B distintas con `version_registro = 1`.
+Al ejecutar #412 sólo sobre A, verifica que A cambie valor, versión y procedencia,
+mientras B conserva íntegros valor, versión y procedencia; existe exactamente un
+outbox cuyo `aggregate_id` es la PK de A, un receipt y un `result_target_uid` igual al
+`uid_global` de A. Los tests concurrentes confirman además que lock y CAS usan la
+misma PK y nunca bloquean ni modifican otras filas sólo por compartir versión.
+
+Los tests de timestamp comparan contra el valor persistido/retornado por PostgreSQL,
+sin depender del timezone local: cambio material devuelve ISO naive sin `Z` ni
+offset; no-op conserva exactamente el valor previo; y respuesta inicial,
+`response_snapshot["data"]["updated_at"]` y replay contienen exactamente el mismo
+valor string, sin normalización UTC. Original y replay se parsean como JSON y se
+comparan por igualdad estructural —incluidos código, UID, valor, versión y timestamp—;
+no se exige igualdad de bytes HTTP, whitespace, formatting u orden de keys.
+
+Los tests del selector aceptan `"ABC"`, `" ABC "` y `" \tA \n"` preservando cada
+string exacto; rechazan `"   "`, `"\t"` y `"\r\n"` antes del claim; y aceptan el
+límite físico de 100 caracteres. Los inválidos dejan cero lookup, claim/receipt,
+CAS y outbox. No se agrega una regla de 200 porque la columna funcional ya limita el
+código a 100.
+
+Los tests de routing verifican que `ABC`, `ABC%2FDEF` y `A%2FB%2FC` alcancen #412 y
+entreguen respectivamente `"ABC"`, `"ABC/DEF"` y `"A/B/C"`; whitespace periférico
+URL-encoded se conserva. `NO%2FEXISTE` llega al command, obtiene primero `EXECUTE` y
+luego `404 parametro_no_encontrado`, no router 404. Para `ABC/DEF`, target y
+fingerprint contienen el valor decodificado, retry compatible hace replay y otro
+código con el mismo op ID produce `TARGET` conflict.
+
+El GET #411 vigente continúa declarado con `{codigo_parametro}` ordinario y, por
+tanto, mantiene temporalmente la limitación heredada de routability para códigos con
+`/`. Este PR no modifica su runtime ni afirma soporte; alinearlo a `:path` requiere un
+incremento separado.
+
+Los tests de outbox congelan `occurred_at_utc` aware con offset cero y verifican un
+único `add_event` material con el mismo wall-clock UTC pero `occurred_at.tzinfo is
+None`, y estado `PENDING`, sin derivarlo de `updated_at`. Con `SET LOCAL TIME ZONE
+'America/Argentina/Buenos_Aires'` se persiste físicamente `15:30`, no `12:30`, para
+una captura `15:30+00:00`; dos sesiones con zonas distintas persisten el mismo valor.
+No-op/replay/CAS
+mismatch/errores hacen cero llamadas. Si hay rollback posterior, el evento no queda
+durable y el retry `EXECUTE` usa un nuevo instante UTC; al final existe exactamente
+un evento. Dos eventos controlados conservan el orden existente `occurred_at, id`.
+
 ## 12. Credenciales y autenticación — estado posterior a #448
 
 #448 no agrega ni modifica endpoints. No existe endpoint administrativo implementado para crear credenciales, setear passwords, login, logout, refresh, sesiones nuevas, recuperación, rotación ni validación de hashes. Por lo tanto, no se documenta request/response de credenciales como API vigente.

@@ -504,3 +504,33 @@ Este catálogo cubre errores de usuarios y acceso, seguridad y autorización, au
 - `SESSION_TECHNICAL_ERROR` (500): falla técnica sanitizada al validar; mensaje `No fue posible validar la sesión.` y `details = {}`.
 
 Ambos incluyen `Cache-Control: no-store` y no revelan bearer, digest, SQL, driver ni causa interna.
+
+# Errores públicos congelados para #412 (implementación pendiente)
+
+- `401 INVALID_SESSION`: principal Bearer no utilizable.
+- `403 autorizacion_insuficiente`: principal válido sin concesión.
+- `404 parametro_no_encontrado`: respuesta indistinguible para definición
+  inexistente, no exponible o sensible.
+- `400 inconsistencia_contexto_tecnico`: contrato existente ERR-ADM-057 reutilizado
+  cuando la sucursal no existe, la instalación no existe o la instalación no
+  pertenece a la sucursal declarada. Se responde únicamente en `EXECUTE`, después
+  de `claim_operation` y antes de cualquier lookup/write funcional dependiente del
+  contexto, con `ErrorResponse`, cero CAS/outbox/receipt exitoso y sin revelar SQL,
+  FK, constraint ni IDs internos adicionales. `REPLAY` no revalida contexto DB.
+- `409 conflicto_parametro`: definición no editable, tipo o alcance fuera del scope
+  congelado, ausencia del valor GLOBAL update-only o valor no operable.
+- `412 CONCURRENCY_ERROR`: CAS de `If-Match-Version` sin fila retornada.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`: el `op_id` ya pertenece a otro command.
+- `409 IDEMPOTENCY_TARGET_CONFLICT`: el `op_id` ya pertenece a otro target exacto.
+- `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: el hash o versión de canonicalización no
+  coincide. Se conserva la precedencia COMMAND → TARGET → PAYLOAD de #470.
+- `500 inconsistencia_parametro`: cardinalidad imposible o estado persistido
+  inconsistente.
+- `500 inconsistencia_roles_permisos`: el permiso contractual no existe o su
+  resolución es inconsistente.
+- `500 IDEMPOTENCY_TECHNICAL_ERROR`: fallo técnico sanitizado de claim/complete.
+- `500 TECHNICAL_INCONSISTENCY`: error SQL/driver inesperado sanitizado.
+
+Todos usan `ErrorResponse` y omiten SQL, constraints, driver, DSN, código de permiso,
+bearer y stacktrace. Los códigos nuevos de idempotencia de esta sección son contrato
+documental explícito para #412; no afirman runtime implementado.
