@@ -104,17 +104,11 @@ Incluye sucursales, instalaciones, caja operativa, movimientos de caja, cierre d
 
 ### CU-OPER-015 — Ejecución de cierre
 - tipo: write
-- objetivo: Ejecutar el cierre de una caja operativa consolidando sus movimientos.
+- objetivo: Ejecutar el cierre de una caja operativa, incluyendo las validaciones previas necesarias, consolidando sus movimientos y actualizando su estado final.
 - entidades: cierre_caja, caja_operativa, movimiento_caja
 - criticidad: crítica
 
-### CU-OPER-016 — Validación de cierre
-- tipo: write
-- objetivo: Validar las condiciones previas necesarias para el cierre de caja.
-- entidades: cierre_caja, caja_operativa, movimiento_caja
-- criticidad: alta
-
-### CU-OPER-017 — Consulta de cierre
+### CU-OPER-016 — Consulta de cierre
 - tipo: read
 - objetivo: Consultar cierres de caja con sus resultados operativos.
 - entidades: cierre_caja, caja_operativa
@@ -122,13 +116,13 @@ Incluye sucursales, instalaciones, caja operativa, movimientos de caja, cierre d
 
 ## F. Consultas operativas
 
-### CU-OPER-018 — Consulta operativa consolidada
+### CU-OPER-017 — Consulta operativa consolidada
 - tipo: read
 - objetivo: Consultar de forma consolidada sucursales, instalaciones, cajas, movimientos y cierres del dominio operativo.
 - entidades: sucursal, instalacion, caja_operativa, movimiento_caja, cierre_caja
 - criticidad: media
 
-### CU-OPER-019 — Reportes operativos
+### CU-OPER-018 — Reportes operativos
 - tipo: read
 - objetivo: Obtener reportes operativos del dominio sin generar efectos persistentes.
 - entidades: sucursal, instalacion, caja_operativa, movimiento_caja, cierre_caja
@@ -148,7 +142,8 @@ Incluye sucursales, instalaciones, caja operativa, movimientos de caja, cierre d
 
 ## Notas
 
-- Los identificadores `CU-OPER-*` definidos en este archivo son los vigentes para el dominio `operativo`. El bloque histórico del catálogo global que utiliza `CU-OPER-*` para tareas o workflow es legado no vigente.
+- Este catálogo debe mantenerse alineado con las fuentes de mayor precedencia del dominio Operativo, en particular `DEV-ARCH-OPE-001` y el catálogo autoritativo `DEV-SRV/dominios/operativo/catalogos/CU-OPE.md`.
+- El bloque histórico del catálogo global que utiliza `CU-OPER-*` para tareas o workflow permanece como legado no vigente.
 - Este catálogo debe interpretarse en conjunto con el DEV-SRV del dominio Operativo.
 - No reemplaza la documentación de implementación backend.
 - Su contenido debe mantenerse alineado con `CU-OPE` y con los servicios reales del dominio.
