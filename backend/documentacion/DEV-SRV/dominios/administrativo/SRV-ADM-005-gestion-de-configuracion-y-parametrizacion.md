@@ -485,6 +485,19 @@ default-deny y el guard de
 datos sensibles se mantienen; una definición sensible nunca es elegible. No se
 crean consumers remotos ni reconciliación en #412.
 
+Para cada cambio material se captura exactamente una vez `occurred_at =
+datetime.now(UTC)` inmediatamente antes de `OutboxRepository.add_event`, después del
+CAS/envelope/hash y antes de `complete_operation`, dentro de la misma transacción
+exterior. Es un datetime timezone-aware UTC y el instante técnico de emisión local;
+el repository lo exige y no aporta default. El evento nace `PENDING`.
+
+`occurred_at` es distinto de `valor_parametro.updated_at`: no se deriva del timestamp
+naive de PostgreSQL, no usa `replace(tzinfo=UTC)` y no representa request, claim,
+replay o receipt. Es columna física del outbox y queda fuera de `data`, `hash_input`
+y `payload_hash`. No-op, replay, conflictos, CAS mismatch y errores no generan
+evento/timestamp durable. Tras rollback, un retry que complete captura un nuevo
+instante propio; no reutiliza el de la ejecución fallida.
+
 La implementación de #412 debe agregar explícitamente a
 `backend/app/application/common/synchronization_policy.py` una entrada
 `_p("valor_parametro_modificado", "valor_parametro")` en
@@ -587,6 +600,13 @@ bytes HTTP ni orden/formatting de keys.
 Los tests de `target_key` aceptan y preservan `"ABC"`, `" ABC "` y `" \tA \n"`;
 rechazan `"   "`, `"\t"` y `"\r\n"` antes del claim; prueban 100 caracteres como
 límite válido; y verifican cero lookup, claim/receipt, CAS y outbox para inválidos.
+
+Los tests temporales del outbox congelan `datetime.now(UTC)`, verifican exactamente
+un `add_event` material, datetime aware con offset cero, estado `PENDING` y ausencia
+de derivación desde `updated_at`. No-op/replay/errores no llaman al repository. Un
+rollback elimina el evento y el retry usa un nuevo instante; dos eventos con
+instantes A < B respetan el orden existente por `occurred_at, id` sin modificar el
+worker.
 
 Los tests adicionales congelan replay tras volver la definición no exponible/no
 editable o el valor no operable, siempre desde snapshot sin lookup/lock/efectos;

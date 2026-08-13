@@ -1099,6 +1099,18 @@ reutiliza el fingerprint #470 y no se distribuyen
 PK numéricas locales. `aggregate_id` conserva el ID local únicamente como key
 interna del outbox, y `processing_metadata` no aloja metadata de origen.
 
+El evento material captura una sola vez `occurred_at = datetime.now(UTC)`, como
+datetime timezone-aware UTC, inmediatamente antes de
+`OutboxRepository.add_event(...)` y dentro de la misma transacción exterior
+CAS → outbox → complete → commit. Es el instante técnico local de ocurrencia/emisión
+del evento y se pasa explícitamente al repository, que no posee default.
+
+`outbox_event.occurred_at` no es `valor_parametro.updated_at`: no representa request,
+claim, replay ni receipt, no se deriva del timestamp naive del trigger y nunca usa
+`updated_at.replace(tzinfo=UTC)`. Tampoco forma parte de `data`, `hash_input` o
+`payload_hash`. No-op, replay, conflict, CAS mismatch y errores no generan evento ni
+`occurred_at` durable.
+
 La implementación debe incorporar `_p("valor_parametro_modificado",
 "valor_parametro")` a `SYNC_EVENT_POLICIES`, sin campos enteros positivos locales
 requeridos, y agregar tests default-deny para par permitido, aggregate incorrecto,
@@ -1143,6 +1155,13 @@ string exacto; rechazan `"   "`, `"\t"` y `"\r\n"` antes del claim; y aceptan el
 límite físico de 100 caracteres. Los inválidos dejan cero lookup, claim/receipt,
 CAS y outbox. No se agrega una regla de 200 porque la columna funcional ya limita el
 código a 100.
+
+Los tests de outbox congelan el reloj y verifican un único `add_event` material con
+`occurred_at` igual a `datetime.now(UTC)`, timezone-aware, `utcoffset() ==
+timedelta(0)` y estado `PENDING`, sin derivarlo de `updated_at`. No-op/replay/CAS
+mismatch/errores hacen cero llamadas. Si hay rollback posterior, el evento no queda
+durable y el retry `EXECUTE` usa un nuevo instante UTC; al final existe exactamente
+un evento. Dos eventos controlados conservan el orden existente `occurred_at, id`.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 
