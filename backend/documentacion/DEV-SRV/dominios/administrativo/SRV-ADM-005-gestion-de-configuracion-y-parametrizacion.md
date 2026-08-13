@@ -497,6 +497,25 @@ los enteros difieren, se ejecuta CAS, se persiste `str(valor_tipado)` y se gener
 exactamente un outbox. `REPLAY`, `CONFLICT`
 y CAS mismatch nunca generan outbox; el replay devuelve el snapshot durable.
 
+El único UPDATE funcional material asigna explícitamente:
+
+```sql
+SET valor_raw = :valor_raw,
+    op_id_ultima_modificacion = :op_id,
+    id_instalacion_ultima_modificacion = :id_instalacion
+WHERE version_registro = :if_match_version
+RETURNING ...
+```
+
+`:valor_raw` es `str(valor_tipado)`, `:op_id` es `X-Op-Id` validado y
+`:id_instalacion` es `X-Instalacion-Id` validado referencialmente en `EXECUTE`. El
+trigger #410 sigue asignando `updated_at = CURRENT_TIMESTAMP` y
+`version_registro = OLD.version_registro + 1`, y preserva `uid_global`, `created_at`,
+`id_instalacion_origen` y `op_id_alta`; el command no asigna esos campos. La
+instalación del evento actual coincide conceptualmente: en negocio queda su ID local
+como última modificación y en el outbox viaja su `instalacion.uid_global`, nunca la
+PK local.
+
 La igualdad semántica no sanea texto heredado: `"015"` + 15, `"-0"` + 0 y
 `"000"` + 0 permanecen físicamente iguales y son no-op. En un cambio real, los
 valores del evento son canónicos y tipados: `data.valor_anterior =
@@ -534,6 +553,14 @@ Los tests funcionales cubren las equivalencias `"015"`/15, `"-0"`/0 y
 material con valor final `"16"` y evento `"15"` → `"16"`; los raw inválidos
 `"15.0"`, `"+15"`, `" 15 "` y `""` sin efectos ni receipt exitoso; y versión
 vieja con entero igual como `412` antes de comparar valores.
+
+Los tests de procedencia verifican que un cambio material desde op/instalación A/1
+hacia B/2 persista B y 2 como última modificación, cambie versión/`updated_at` y
+preserve `id_instalacion_origen`/`op_id_alta`, con un outbox y receipt. El no-op no
+refresca ninguna procedencia. CAS mismatch no cambia metadata. Si outbox/complete
+falla tras el CAS, rollback restaura valor, versión, timestamp, op ID e instalación
+de última modificación y deja cero outbox/receipt durable; el retry vuelve a
+`EXECUTE`.
 
 Los tests adicionales congelan replay tras volver la definición no exponible/no
 editable o el valor no operable, siempre desde snapshot sin lookup/lock/efectos;

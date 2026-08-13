@@ -943,9 +943,19 @@ exitoso.
 El cambio material se decide exclusivamente con
 `valor_actual_tipado != valor_tipado`, nunca comparando `valor_raw` con
 `str(valor_tipado)`. Si los enteros tipados son distintos, el CAS se conserva como un único
-`UPDATE ... WHERE version_registro = :if_match_version ... RETURNING`; si son
+`UPDATE` que asigna `valor_raw = str(valor_tipado)`,
+`op_id_ultima_modificacion = X-Op-Id` e
+`id_instalacion_ultima_modificacion = X-Instalacion-Id`, con
+`WHERE version_registro = :if_match_version ... RETURNING`. Ambos datos de
+procedencia salen de los headers técnicos ya validados en `EXECUTE`. Si son
 iguales, no se ejecuta `UPDATE`, no cambian versión, `updated_at` ni
-`op_id_ultima_modificacion`, y no se genera outbox.
+`op_id_ultima_modificacion`/`id_instalacion_ultima_modificacion`, y no se genera
+outbox.
+
+El command no asigna `version_registro`, `updated_at`, `uid_global`, `created_at`,
+`id_instalacion_origen` ni `op_id_alta`. El trigger #410 conserva la metadata
+inmutable de alta/origen y deriva únicamente el nuevo timestamp y la versión `+1`;
+`id_instalacion_origen` nunca se sobrescribe.
 
 El no-op exitoso devuelve `200` con el mismo schema ya congelado, proyectando valor,
 versión y `updated_at` persistidos sin agregar campos `changed` o `noop`. Ese response
@@ -1085,6 +1095,14 @@ mismo op ID vuelve a `EXECUTE`; un retry con `If-Match-Version` corregido cambia
 fingerprint pero no causa `PAYLOAD` conflict porque no existe receipt previo; y un
 fallo de outbox/DB antes de commit revierte CAS/outbox/receipt, tras lo cual el retry
 puede dejar exactamente una modificación, evento y receipt final.
+
+Los tests de procedencia parten de otra operación/instalación y verifican que un CAS
+material reemplace `op_id_ultima_modificacion` e
+`id_instalacion_ultima_modificacion` con los headers actuales, incremente versión y
+timestamp, pero preserve `id_instalacion_origen` y `op_id_alta`. No-op, replay y CAS
+mismatch preservan toda procedencia. Un fallo posterior al CAS revierte valor,
+versión, timestamp y ambas columnas de última modificación, además de outbox/receipt;
+el retry vuelve a `EXECUTE`.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 
