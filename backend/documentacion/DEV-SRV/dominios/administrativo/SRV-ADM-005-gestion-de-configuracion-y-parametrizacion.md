@@ -383,6 +383,13 @@ registra el UID concreto descubierto en `EXECUTE` sólo como `result_target_uid`
 referencial; el replay usa únicamente el snapshot durable y nunca consulta por
 `result_target_uid`.
 
+Antes del claim, `codigo_parametro` debe tener `1..100` caracteres —límite real de
+`parametro_sistema.codigo_parametro varchar(100)`, compatible con `target_key
+varchar(200)`— y contener al menos un carácter distinto de space, tab, LF, CR, form
+feed o vertical tab. All-whitespace se rechaza estructuralmente con 422 antes de
+lookup/claim/efectos. El valor válido nunca se trimmea: whitespace periférico se
+conserva exactamente en selector, fingerprint y `target_key`.
+
 `OperationCompletion.id_usuario` procede de `AuthenticatedPrincipal.id_usuario`;
 `X-Usuario-Id` se ignora. Claim, CAS, outbox y
 complete comparten una sola `Session` y transacción exterior. El runtime #470 y el
@@ -403,8 +410,9 @@ UID, versión y snapshot originales sin reclasificarlos por estado actual.
 datetime naive como ISO-8601 sin `Z` ni offset, sin asumir UTC ni aplicar
 `replace(tzinfo=...)` o conversión equivalente. En no-op conserva exactamente el
 timestamp persistido; en cambio material usa el valor producido por el trigger #410
-y retornado por el CAS. El snapshot guarda el string JSON ya serializado y replay lo
-devuelve sin reconstrucción o normalización. Una estrategia global UTC/`timestamptz`
+y retornado por el CAS. El snapshot JSONB conserva la estructura y el valor string;
+replay devuelve JSON semánticamente equivalente sin reconstrucción o normalización.
+JSONB no promete bytes HTTP, whitespace, formatting u orden original de keys. Una estrategia global UTC/`timestamptz`
 queda para un incremento transversal separado.
 
 Errores 400/404/409/412, fallos de outbox y errores técnicos no completan receipt
@@ -572,7 +580,13 @@ de última modificación y deja cero outbox/receipt durable; el retry vuelve a
 
 Los tests de timestamp verifican ISO naive sin sufijo/offset contra el valor real
 persistido/retornado por PostgreSQL, conservación exacta en no-op e igualdad textual
-entre response original, snapshot y replay, sin depender del timezone local.
+del campo `updated_at` entre response original, snapshot y replay, sin depender del
+timezone local. Los responses parseados se comparan estructuralmente; no se comparan
+bytes HTTP ni orden/formatting de keys.
+
+Los tests de `target_key` aceptan y preservan `"ABC"`, `" ABC "` y `" \tA \n"`;
+rechazan `"   "`, `"\t"` y `"\r\n"` antes del claim; prueban 100 caracteres como
+límite válido; y verifican cero lookup, claim/receipt, CAS y outbox para inválidos.
 
 Los tests adicionales congelan replay tras volver la definición no exponible/no
 editable o el valor no operable, siempre desde snapshot sin lookup/lock/efectos;

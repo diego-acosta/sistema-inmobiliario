@@ -901,6 +901,19 @@ editable administrativamente, `ENTERO` y `GLOBAL`. El target debe ser exactament
 un valor con contexto nulo, vigente, no eliminado y `version_registro >= 1`. Su
 ausencia es `409 conflicto_parametro`: nunca crea un valor.
 
+Antes de canonicalizar/construir el claim, el path debe ser estructuralmente
+compatible con `operacion_idempotente.target_key`: longitud `1..100` —la misma
+capacidad física de `parametro_sistema.codigo_parametro varchar(100)`, menor que
+`target_key varchar(200)`— y al menos un carácter distinto de space, tab, LF, CR,
+form feed o vertical tab. Un código compuesto sólo por ese whitespace devuelve el
+`422` estructural estándar de FastAPI/Pydantic, sin lookup funcional, claim, receipt,
+CAS ni outbox.
+
+Esta validación no normaliza el selector. `"ABC"` y `" ABC "` son válidos y sus
+`target_key` son exactamente esos strings; `"   "`, `"\t"` y `"\r\n"` son
+inválidos; `" \tA \n"` es válido y se conserva completo. La validación estable se
+repite también en retries, pero replay no consulta la definición.
+
 El body exacto es `{"valor_tipado": 15}`: schema `BaseModel` con `extra="forbid"`
 y `valor_tipado: StrictInt`. Rechaza boolean, string, float, null, ausencia y extras;
 persiste `str(valor_tipado)` como decimal ASCII, sin rango funcional adicional.
@@ -972,8 +985,9 @@ compatible se resuelve antes de revalidar versión o cambio material.
 
 En no-op se conserva exactamente el timestamp persistido. En cambio material, el
 CAS devuelve mediante `RETURNING` el `updated_at` producido por el trigger #410 y se
-serializa con la misma convención naive. El `response_snapshot` almacena el string
-JSON ya serializado; `REPLAY` devuelve exactamente ese texto, sin reconstruir un
+serializa con la misma convención naive. El `response_snapshot` JSONB almacena la
+estructura JSON y conserva exactamente el valor string de `updated_at`; `REPLAY`
+devuelve una estructura JSON semánticamente equivalente, sin reconstruir un
 datetime, reinterpretar timezone o agregar luego `Z`/offset.
 `REPLAY` y `CONFLICT` se resuelven antes de seleccionar el target `FOR UPDATE`; sólo
 `EXECUTE` toma el row lock. No se agrega advisory lock por target, tabla de locks,
@@ -1119,8 +1133,16 @@ el retry vuelve a `EXECUTE`.
 Los tests de timestamp comparan contra el valor persistido/retornado por PostgreSQL,
 sin depender del timezone local: cambio material devuelve ISO naive sin `Z` ni
 offset; no-op conserva exactamente el valor previo; y respuesta inicial,
-`response_snapshot["data"]["updated_at"]` y replay contienen byte/textualmente el
-mismo string, sin normalización UTC.
+`response_snapshot["data"]["updated_at"]` y replay contienen exactamente el mismo
+valor string, sin normalización UTC. Original y replay se parsean como JSON y se
+comparan por igualdad estructural —incluidos código, UID, valor, versión y timestamp—;
+no se exige igualdad de bytes HTTP, whitespace, formatting u orden de keys.
+
+Los tests del selector aceptan `"ABC"`, `" ABC "` y `" \tA \n"` preservando cada
+string exacto; rechazan `"   "`, `"\t"` y `"\r\n"` antes del claim; y aceptan el
+límite físico de 100 caracteres. Los inválidos dejan cero lookup, claim/receipt,
+CAS y outbox. No se agrega una regla de 200 porque la columna funcional ya limita el
+código a 100.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 
