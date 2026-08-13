@@ -385,11 +385,42 @@ revierte conjuntamente CAS, evento y receipt; sólo después del commit se emite
 Outbox **APLICA** porque `valor_parametro` es sincronizable por la política CORE-EF
 y EVT-ADM-060 ya tipifica su modificación. Se inserta en la misma transacción:
 `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro` y
-`aggregate_id = valor_parametro.id_valor_parametro`. El payload allowlisted exacto
-es `uid_global`, `codigo_parametro`, `valor_anterior`, `valor_nuevo`,
-`version_anterior`, `version_registro` y `op_id`. Los IDs numéricos locales de
-usuario, sucursal e instalación no forman parte del payload distribuido ni se
-inventan identidades globales inexistentes. Actor y contexto continúan disponibles
+`aggregate_id = valor_parametro.id_valor_parametro`, sólo como key interna del
+outbox; consumidores remotos usan `data.uid_global` como identidad portable. El
+`outbox_event.payload` contiene el envelope exacto:
+
+```json
+{
+  "metadata": {
+    "uid_instalacion_origen": "<instalacion.uid_global>",
+    "payload_hash": "<sha256 lowercase de RFC 8785(data)>"
+  },
+  "data": {
+    "uid_global": "<valor_parametro.uid_global>",
+    "codigo_parametro": "<codigo exacto>",
+    "valor_anterior": "<decimal ASCII>",
+    "valor_nuevo": "<decimal ASCII>",
+    "version_anterior": 3,
+    "version_registro": 4,
+    "op_id": "<UUID>"
+  }
+}
+```
+
+`uid_instalacion_origen` es el `uid_global` real de la instalación correspondiente
+al `X-Instalacion-Id` técnico ya parseado, existente y coherente con
+`X-Sucursal-Id`. Primero se construye `data`, se canonicaliza `data` con RFC 8785 y
+se calcula su SHA-256 hexadecimal lowercase; sólo después se arma `metadata`. El
+hash no incluye el envelope ni se reutiliza el fingerprint #470: éste representa el
+request/command, mientras `payload_hash` protege el contenido distribuido. Los
+valores anterior/nuevo son decimal ASCII string, incluso sobre `2^53`; las versiones
+permanecen enteros del modelo.
+
+No se requieren columnas SQL nuevas para el mínimo de #412: instalación global y
+hash viajan como metadata dentro de `payload`. `processing_metadata` no los aloja,
+porque describe procesamiento posterior y no identidad/integridad de origen. Los
+IDs numéricos locales de usuario, sucursal e instalación no forman parte del payload
+distribuido ni se inventan identidades globales inexistentes. Actor y contexto continúan disponibles
 como provenance local en `operacion_idempotente`, metadata técnica del command y,
 si el modelo ofrece columnas propias, en el registro local de outbox. La policy
 default-deny y el guard de
@@ -422,6 +453,13 @@ Los tests PostgreSQL concurrentes usan dos `Session` y `op_id` distintos sobre
 `16/v4`, con un único outbox. Si B bloquea y actualiza primero, A espera y al obtener
 el lock observa v4: responde `412`, sin receipt exitoso, snapshot v3, UPDATE ni
 outbox.
+
+Los tests del evento material verifican el envelope y los campos exactos de `data`;
+que `metadata.uid_instalacion_origen` provenga de `instalacion.uid_global` sin
+publicar `id_instalacion`; y que `payload_hash` tenga 64 hex lowercase, coincida con
+SHA-256(RFC 8785(`data`)), cambie ante cualquier cambio de `data` y sea independiente
+del orden de keys. También cubren valores sobre `2^53` como strings canonicalizables
+y rollback con cero evento persistido.
 
 La implementación deberá agregar un patch/seed versionado, transaccional e
 idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre

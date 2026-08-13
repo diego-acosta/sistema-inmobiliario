@@ -997,6 +997,16 @@ outbox y receipt. En la intercalación inversa, B actualiza primero a `16/v4`; A
 espera, adquiere luego el lock, observa versión 4 y devuelve `412` sin receipt
 exitoso, snapshot de v3, UPDATE ni outbox.
 
+Para el único outbox de un cambio material, `outbox_event.payload` usa el envelope
+`{"metadata": {...}, "data": {...}}`. `data` contiene la identidad portable
+`valor_parametro.uid_global`, código exacto, valores anterior/nuevo como decimal
+ASCII string, versiones y `op_id`; `metadata.uid_instalacion_origen` es
+`instalacion.uid_global` resuelto desde el contexto técnico validado, y
+`metadata.payload_hash` es SHA-256 lowercase de RFC 8785 aplicado sólo a `data`.
+No se hashea el envelope, no se reutiliza el fingerprint #470 y no se distribuyen
+PK numéricas locales. `aggregate_id` conserva el ID local únicamente como key
+interna del outbox, y `processing_metadata` no aloja metadata de origen.
+
 ## 12. Credenciales y autenticación — estado posterior a #448
 
 #448 no agrega ni modifica endpoints. No existe endpoint administrativo implementado para crear credenciales, setear passwords, login, logout, refresh, sesiones nuevas, recuperación, rotación ni validación de hashes. Por lo tanto, no se documenta request/response de credenciales como API vigente.
