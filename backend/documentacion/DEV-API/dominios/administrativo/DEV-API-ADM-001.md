@@ -916,10 +916,16 @@ La respuesta `200` exacta, también almacenada sin cambios como
     "uid_global": "00000000-0000-0000-0000-000000000000",
     "valor_tipado": 15,
     "version_registro": 4,
-    "updated_at": "2026-08-12T12:00:00Z"
+    "updated_at": "2026-08-12T12:00:00"
   }
 }
 ```
+
+`updated_at` refleja directamente la columna PostgreSQL `timestamp without time
+zone` y se serializa como ISO-8601 naive, sin sufijo `Z` ni offset. #412 no interpreta
+ni convierte timezone y no asume que el datetime naive sea UTC. Resolver UTC,
+`timestamptz` o datetimes timezone-aware requiere un incremento transversal
+separado.
 
 No incluye IDs internos, usuario, sucursal, instalación, `op_id`, metadata de
 seguridad ni `valor_raw`. `REPLAY` devuelve ese snapshot original sin SELECT
@@ -963,6 +969,12 @@ se guarda como `response_snapshot`, `complete_operation` persiste un receipt
 completado y el commit exterior es normal. Un retry compatible hace `REPLAY` del
 snapshot sin SELECT funcional de reconstrucción, UPDATE u outbox. Un replay
 compatible se resuelve antes de revalidar versión o cambio material.
+
+En no-op se conserva exactamente el timestamp persistido. En cambio material, el
+CAS devuelve mediante `RETURNING` el `updated_at` producido por el trigger #410 y se
+serializa con la misma convención naive. El `response_snapshot` almacena el string
+JSON ya serializado; `REPLAY` devuelve exactamente ese texto, sin reconstruir un
+datetime, reinterpretar timezone o agregar luego `Z`/offset.
 `REPLAY` y `CONFLICT` se resuelven antes de seleccionar el target `FOR UPDATE`; sólo
 `EXECUTE` toma el row lock. No se agrega advisory lock por target, tabla de locks,
 lease ni lock durable; el advisory por `op_id` continúa perteneciendo a #470.
@@ -1103,6 +1115,12 @@ timestamp, pero preserve `id_instalacion_origen` y `op_id_alta`. No-op, replay y
 mismatch preservan toda procedencia. Un fallo posterior al CAS revierte valor,
 versión, timestamp y ambas columnas de última modificación, además de outbox/receipt;
 el retry vuelve a `EXECUTE`.
+
+Los tests de timestamp comparan contra el valor persistido/retornado por PostgreSQL,
+sin depender del timezone local: cambio material devuelve ISO naive sin `Z` ni
+offset; no-op conserva exactamente el valor previo; y respuesta inicial,
+`response_snapshot["data"]["updated_at"]` y replay contienen byte/textualmente el
+mismo string, sin normalización UTC.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 

@@ -399,6 +399,14 @@ vigente sin incremento y el response 200 con timestamps persistidos. Son metadat
 del receipt, no campos HTTP públicos. Replay preserva exactamente código, status,
 UID, versión y snapshot originales sin reclasificarlos por estado actual.
 
+`valor_parametro.updated_at` es `timestamp without time zone`. #412 proyecta el
+datetime naive como ISO-8601 sin `Z` ni offset, sin asumir UTC ni aplicar
+`replace(tzinfo=...)` o conversión equivalente. En no-op conserva exactamente el
+timestamp persistido; en cambio material usa el valor producido por el trigger #410
+y retornado por el CAS. El snapshot guarda el string JSON ya serializado y replay lo
+devuelve sin reconstrucción o normalización. Una estrategia global UTC/`timestamptz`
+queda para un incremento transversal separado.
+
 Errores 400/404/409/412, fallos de outbox y errores técnicos no completan receipt
 exitoso. No se introducen estados `FAILED`, `EN_PROCESO` o receipt parcial fuera de
 #470.
@@ -561,6 +569,10 @@ refresca ninguna procedencia. CAS mismatch no cambia metadata. Si outbox/complet
 falla tras el CAS, rollback restaura valor, versión, timestamp, op ID e instalación
 de última modificación y deja cero outbox/receipt durable; el retry vuelve a
 `EXECUTE`.
+
+Los tests de timestamp verifican ISO naive sin sufijo/offset contra el valor real
+persistido/retornado por PostgreSQL, conservación exacta en no-op e igualdad textual
+entre response original, snapshot y replay, sin depender del timezone local.
 
 Los tests adicionales congelan replay tras volver la definición no exponible/no
 editable o el valor no operable, siempre desde snapshot sin lookup/lock/efectos;
