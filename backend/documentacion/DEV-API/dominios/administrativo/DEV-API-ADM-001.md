@@ -985,6 +985,25 @@ real descubierto únicamente durante `EXECUTE`, y `result_version` su versión d
 resultado. `ReplayResult` conserva esos datos almacenados, pero no los usa para
 consultar negocio ni reconstruir la respuesta.
 
+La completion exitosa queda congelada así:
+
+- cambio material: `result_code = "PARAMETRO_GLOBAL_MODIFICADO"`,
+  `result_http_status = 200`, `result_target_uid = valor_parametro.uid_global`,
+  `result_version` resultante del CAS y el response 200 como `response_snapshot`;
+- no-op: `result_code = "PARAMETRO_GLOBAL_SIN_CAMBIOS"`,
+  `result_http_status = 200`, el mismo `result_target_uid`, `result_version` vigente
+  sin incremento y el response 200 con versión/`updated_at` persistidos como
+  snapshot.
+
+Estos códigos son metadata durable del receipt y no se agregan al response público,
+que tampoco incorpora `changed` o `noop`. `REPLAY` preserva exactamente
+`result_code`, status, UID, versión y snapshot almacenados, aunque cambie luego el
+estado: no recalcula si el resultado original fue modificación o no-op.
+
+No se llama `complete_operation` exitosamente para errores 400/404/409/412, outbox o
+técnicos. #470 sólo conserva receipts completados exitosos; no se modelan receipts
+`FAILED`, `EN_PROCESO` ni parciales.
+
 El API continúa aceptando `StrictInt` sin imponer el límite safe-integer de RFC
 8785. Después de validar el tipo, la proyección idempotente convierte
 `valor_tipado` a su decimal ASCII mediante `str(valor_tipado)`: así todo entero
@@ -1059,6 +1078,13 @@ nuevo. Mismo `op_id` con otro `codigo_parametro` produce `TARGET` conflict sin
 resolver UID. Un `op_id` nuevo para código inexistente obtiene primero `EXECUTE` y
 luego 404 sin receipt exitoso/CAS/outbox. Un replay con contexto referencial que
 cambió posteriormente tampoco revalida sucursal/instalación en DB.
+
+Los tests de completion verifican ambos `result_code`, status 200, UID/versión y su
+replay exacto. Los tests post-error verifican que 400 y 412 no dejan receipt y el
+mismo op ID vuelve a `EXECUTE`; un retry con `If-Match-Version` corregido cambia el
+fingerprint pero no causa `PAYLOAD` conflict porque no existe receipt previo; y un
+fallo de outbox/DB antes de commit revierte CAS/outbox/receipt, tras lo cual el retry
+puede dejar exactamente una modificación, evento y receipt final.
 
 ## 12. Credenciales y autenticación — estado posterior a #448
 

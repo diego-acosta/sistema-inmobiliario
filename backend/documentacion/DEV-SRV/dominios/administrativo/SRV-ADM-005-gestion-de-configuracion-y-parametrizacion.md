@@ -390,6 +390,19 @@ repository funcional no hacen commit/rollback ni commits parciales. Cualquier fa
 revierte conjuntamente CAS, evento y receipt; sólo después del commit se emite el
 éxito.
 
+Para cambio material exitoso, `OperationCompletion` usa
+`result_code = "PARAMETRO_GLOBAL_MODIFICADO"`, `result_http_status = 200`,
+`result_target_uid = valor_parametro.uid_global`, `result_version` posterior al CAS
+y el response 200 como snapshot. Para no-op exitoso usa
+`result_code = "PARAMETRO_GLOBAL_SIN_CAMBIOS"`, status 200, el mismo UID, la versión
+vigente sin incremento y el response 200 con timestamps persistidos. Son metadata
+del receipt, no campos HTTP públicos. Replay preserva exactamente código, status,
+UID, versión y snapshot originales sin reclasificarlos por estado actual.
+
+Errores 400/404/409/412, fallos de outbox y errores técnicos no completan receipt
+exitoso. No se introducen estados `FAILED`, `EN_PROCESO` o receipt parcial fuera de
+#470.
+
 Outbox **APLICA** porque `valor_parametro` es sincronizable por la política CORE-EF
 y EVT-ADM-060 ya tipifica su modificación. Se inserta en la misma transacción:
 `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro` y
@@ -527,6 +540,20 @@ editable o el valor no operable, siempre desde snapshot sin lookup/lock/efectos;
 `TARGET` conflict por otro código sin resolver UID; nuevo op ID/código inexistente
 con `EXECUTE` previo al 404; contexto inválido validado sólo después de `EXECUTE`; y
 replay que no revalida una relación sucursal-instalación cambiada posteriormente.
+
+Retry post-error: si `claim_operation` devuelve `EXECUTE` y cualquier fallo ocurre
+antes de completion+commit, la transacción revierte negocio, outbox y receipt. No
+queda `operacion_idempotente` durable, por lo que el mismo `op_id` vuelve a
+`EXECUTE`. Esto aplica a contexto 400, versión 412 y fallos transitorios de outbox/DB.
+Un retry idéntico puede repetir el error; uno corregido —por ejemplo versión 4 tras
+fallar con versión 3— cambia el fingerprint pero no produce `PAYLOAD` conflict,
+porque los conflictos sólo comparan contra receipts existentes. El contexto técnico
+no forma parte del fingerprint, según el contrato ya congelado.
+
+Los tests validan códigos de completion material/no-op y replay exacto; 400/412 sin
+receipt con retry nuevamente `EXECUTE`; retry corregido sin `PAYLOAD` conflict; y
+fallo de outbox previo al commit con rollback total y un único negocio/evento/receipt
+al completar el retry.
 
 La implementación deberá agregar un patch/seed versionado, transaccional e
 idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre
