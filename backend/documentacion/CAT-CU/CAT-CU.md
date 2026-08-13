@@ -202,9 +202,48 @@ Dominio transversal de plantillas, generación, emisión, asociación, control y
 - CU-DOC-019 — Consulta de documentos
 - CU-DOC-020 — Consulta de historial documental
 
-### Operativo (CU-OPER)
+### Operativo vigente (CU-OPE)
 
-Dominio orientado a coordinación de trabajo, pendientes, asignaciones, seguimiento de ejecución y consultas operativas consolidadas.
+Los casos de uso vigentes del dominio `operativo` utilizan exclusivamente el prefijo `CU-OPE-*` y se encuentran en `CAT-CU/dominios/operativo/CU-OPE.md`. Ese catálogo funcional está subordinado a `DEV-ARCH-OPE-001` y al catálogo autoritativo `DEV-SRV/dominios/operativo/catalogos/CU-OPE.md`. Comprende sucursales, instalaciones, caja operativa, movimientos de caja, cierre y consultas operativas.
+
+- CU-OPE-001 — Alta de sucursal
+- CU-OPE-002 — Modificación de sucursal
+- CU-OPE-003 — Baja lógica de sucursal
+- CU-OPE-004 — Consulta de sucursal
+- CU-OPE-005 — Alta de instalación
+- CU-OPE-006 — Modificación de instalación
+- CU-OPE-007 — Baja lógica de instalación
+- CU-OPE-008 — Consulta de instalación
+- CU-OPE-009 — Apertura de caja
+- CU-OPE-010 — Cambio de estado de caja
+- CU-OPE-011 — Consulta de caja
+- CU-OPE-012 — Registro de movimiento
+- CU-OPE-013 — Anulación de movimiento
+- CU-OPE-014 — Consulta de movimientos
+- CU-OPE-015 — Ejecución de cierre
+- CU-OPE-016 — Consulta de cierre
+- CU-OPE-017 — Consulta operativa consolidada
+- CU-OPE-018 — Reportes operativos
+
+Los antiguos identificadores `CU-OPER-*` asociados a tareas y workflow se conservan únicamente en el bloque histórico siguiente y no son reutilizables.
+
+### Gestión Operativa histórica — legado no vigente
+
+> **Estado: HISTÓRICO / RETIRADO COMO CONTRATO VIGENTE**
+>
+> Este bloque proviene de una clasificación anterior que agrupaba tareas,
+> pendientes, asignaciones, seguimiento, incidencias y workflow bajo
+> `Operativo`. Esa clasificación quedó superada por la arquitectura vigente:
+> `operativo` conserva sucursales, instalaciones, caja, movimientos y cierres,
+> mientras que `gestion_operativa` queda reservado conceptualmente para tareas,
+> seguimiento interno, agenda, vencimientos, observaciones e incidencias.
+>
+> Los identificadores `CU-OPER-*` listados a continuación se conservan sólo
+> como referencia histórica. **NO son contratos vigentes, IDs reutilizables ni
+> fuente para DEV-SRV/DEV-API**, ya sea de `operativo` o de
+> `gestion_operativa`. La futura catalogación de casos de uso de
+> `gestion_operativa` deberá definirse en un artefacto específico posterior,
+> sin reutilizar ni convertir automáticamente estos IDs en `CU-GOP-*`.
 
 - CU-OPER-001 — Alta de tarea operativa
 - CU-OPER-002 — Modificación de tarea operativa
