@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-12
+**Actualizado:** 2026-08-13
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | Activo incremental. La lectura GLOBAL #411 está implementada y #412 tiene contrato final congelado, pero su write, permiso, seed y evento aún no están implementados. | #249, #263, #264 y #265 abiertos; #412 es el piloto inmediato. | PR #475 mergeado como dependencia transversal del contrato #412. | Implementar #412 sin ampliar el alcance congelado; #425 permanece separado. |
+| B — Administrativo | Activo incremental. La lectura GLOBAL #411 está implementada y los resets DEV/TEST incluyen el rol canónico `ADMINISTRADOR_SISTEMA`. #412 continúa OPEN: su write, permiso, asignación rol-permiso, parámetro y evento aún no están implementados. | #249, #263, #264 y #265 abiertos; #412 es el piloto inmediato, ya desbloqueado respecto del receptor de su permiso. | PR #475 mergeado como dependencia transversal del contrato #412. | Implementar #412 sin crear ni modificar el rol canónico y sin ampliar el alcance congelado; #425 permanece separado. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF | #469 implementó el ledger durable y #470 el runtime reusable claim/replay/complete con RFC 8785, advisory transaction lock y transacción exterior. | #402 continúa abierto como coordinador; #469 y #470 están completados; #412 no está implementado. | PR #475 mergeado. | #412 como piloto consumidor con contrato final congelado. |
 

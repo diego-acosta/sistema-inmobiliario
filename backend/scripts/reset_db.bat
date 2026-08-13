@@ -33,6 +33,7 @@ set PATCH_PARAMETRO_SISTEMA_EDITABILIDAD_ADMINISTRATIVA_FILE=%BACKEND_DIR%\datab
 set PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE=%BACKEND_DIR%\database\patch_credencial_usuario_core_ef_20260805.sql
 set PATCH_SESION_USUARIO_RUNTIME_FILE=%BACKEND_DIR%\database\patch_sesion_usuario_runtime_20260807.sql
 set PATCH_OPERACION_IDEMPOTENTE_FILE=%BACKEND_DIR%\database\patch_operacion_idempotente_20260810.sql
+set PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE=%BACKEND_DIR%\database\patch_rol_administrador_sistema_20260813.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -171,6 +172,12 @@ if not exist "%PATCH_CREDENCIAL_USUARIO_CORE_EF_FILE%" (
 
 if not exist "%PATCH_OPERACION_IDEMPOTENTE_FILE%" (
   echo ERROR: No existe el patch operacion_idempotente #469: %PATCH_OPERACION_IDEMPOTENTE_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%" (
+  echo ERROR: No existe el patch del rol administrador del sistema: %PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%
   pause
   exit /b 1
 )
@@ -362,6 +369,15 @@ echo Aplicando patch ledger idempotente transversal #469 en %DEV_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_OPERACION_IDEMPOTENTE_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch ledger idempotente transversal #469 en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando bootstrap rol administrador del sistema en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando bootstrap rol administrador del sistema en %DEV_DB%
   pause
   exit /b 1
 )
@@ -571,6 +587,15 @@ echo Aplicando patch ledger idempotente transversal #469 en %TEST_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_OPERACION_IDEMPOTENTE_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando patch ledger idempotente transversal #469 en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando bootstrap rol administrador del sistema en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando bootstrap rol administrador del sistema en %TEST_DB%
   pause
   exit /b 1
 )
