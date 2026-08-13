@@ -462,13 +462,26 @@ lock permanece hasta `complete_operation` y commit o rollback. `REPLAY` y
 `CONFLICT` se resuelven antes y no toman este lock.
 
 La precondición `If-Match-Version` se evalúa bajo el row lock antes de decidir si
-existe cambio material y sin hacer un `UPDATE` de prueba. Versión vieja siempre produce `412`, aun
-si el valor actual coincide. Con versión correcta, igualdad entre el decimal ASCII
-persistido y `str(valor_tipado)` es un no-op: cero UPDATE, cero incremento de versión,
+existe cambio material y sin hacer un `UPDATE` de prueba. Versión vieja siempre
+produce `412`, aun si el valor actual es semánticamente igual. Con versión correcta,
+el command aplica exactamente el parser `ENTERO` de #411: exige `valor_raw` de tipo
+`str`, regex `-?[0-9]+`, y obtiene `valor_actual_tipado = int(valor_raw)`. Si falla,
+devuelve inconsistencia técnica sin UPDATE, outbox ni receipt exitoso.
+
+El cambio material es `valor_actual_tipado != valor_tipado`; no se compara el texto
+raw con `str(valor_tipado)`. Igualdad tipada es un no-op: cero UPDATE, cero incremento de versión,
 cero cambio de `updated_at`/`op_id_ultima_modificacion` y cero outbox; se construye el response
 desde el estado actual, se completa el receipt #470 y se hace commit exterior. Si
-los valores difieren, se ejecutan CAS y exactamente un outbox. `REPLAY`, `CONFLICT`
+los enteros difieren, se ejecuta CAS, se persiste `str(valor_tipado)` y se genera
+exactamente un outbox. `REPLAY`, `CONFLICT`
 y CAS mismatch nunca generan outbox; el replay devuelve el snapshot durable.
+
+La igualdad semántica no sanea texto heredado: `"015"` + 15, `"-0"` + 0 y
+`"000"` + 0 permanecen físicamente iguales y son no-op. En un cambio real, los
+valores del evento son canónicos y tipados: `data.valor_anterior =
+str(valor_actual_tipado)` y `data.valor_nuevo = str(valor_tipado)`. Por ejemplo,
+`"015"` + 16 persiste `"16"` y distribuye `"15"` → `"16"`, nunca la variante
+textual local `"015"`.
 
 Un advisory/business logical lock adicional **NO APLICA**: no se agrega advisory por
 target, tabla, lease ni lock durable. El advisory transaccional por `op_id` pertenece
@@ -494,6 +507,12 @@ Los tests futuros de policy verifican: evento/aggregate
 `valor_parametro_modificado`/`valor_parametro` permitido; aggregate incorrecto y
 evento desconocido rechazados; payload sensible rechazado; envelope contractual
 `{metadata, data}` permitido; y ausencia de IDs locales positivos obligatorios.
+
+Los tests funcionales cubren las equivalencias `"015"`/15, `"-0"`/0 y
+`"000"`/0 como no-op durable sin canonicalización física; `"015"`/16 como cambio
+material con valor final `"16"` y evento `"15"` → `"16"`; los raw inválidos
+`"15.0"`, `"+15"`, `" 15 "` y `""` sin efectos ni receipt exitoso; y versión
+vieja con entero igual como `412` antes de comparar valores.
 
 La implementación deberá agregar un patch/seed versionado, transaccional e
 idempotente con: permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR` (nombre

@@ -933,9 +933,15 @@ commit o rollback. Así serializa commands con `op_id` distintos sobre el mismo
 
 Bajo el lock se verifica primero, sin `UPDATE` de prueba, que la versión vigente sea
 `If-Match-Version`. Una versión vieja devuelve `412 CONCURRENCY_ERROR` aunque el
-valor solicitado coincida con el actual. Con versión correcta se compara el decimal
-ASCII persistido con `str(valor_tipado)`. Si son distintos, el CAS se conserva como
-un único
+valor solicitado sea semánticamente igual. Con versión correcta se reutiliza la
+semántica `ENTERO` de #411: `valor_raw` debe ser `str`, cumplir exactamente
+`-?[0-9]+` y convertirse mediante `valor_actual_tipado = int(valor_raw)`. Un valor
+persistido inválido produce inconsistencia técnica, sin UPDATE, outbox ni receipt
+exitoso.
+
+El cambio material se decide exclusivamente con
+`valor_actual_tipado != valor_tipado`, nunca comparando `valor_raw` con
+`str(valor_tipado)`. Si los enteros tipados son distintos, el CAS se conserva como un único
 `UPDATE ... WHERE version_registro = :if_match_version ... RETURNING`; si son
 iguales, no se ejecuta `UPDATE`, no cambian versión, `updated_at` ni
 `op_id_ultima_modificacion`, y no se genera outbox.
@@ -949,6 +955,11 @@ compatible se resuelve antes de revalidar versión o cambio material.
 `REPLAY` y `CONFLICT` se resuelven antes de seleccionar el target `FOR UPDATE`; sólo
 `EXECUTE` toma el row lock. No se agrega advisory lock por target, tabla de locks,
 lease ni lock durable; el advisory por `op_id` continúa perteneciendo a #470.
+
+Representaciones válidas equivalentes como `"015"`/`15`, `"-0"`/`0` y
+`"000"`/`0` son no-op y no se canonicalizan físicamente. El response mantiene
+`valor_tipado` entero y no expone `valor_raw`. Sólo ante un cambio tipado real se
+persiste `str(valor_tipado)` como decimal ASCII canónico.
 
 La idempotencia consume el runtime de #470 con `command_code =
 ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE`, target exacto
@@ -996,6 +1007,14 @@ versión 3) espera; tras receipt/commit de A, B puede actualizar a `16/v4`, con 
 outbox y receipt. En la intercalación inversa, B actualiza primero a `16/v4`; A
 espera, adquiere luego el lock, observa versión 4 y devuelve `412` sin receipt
 exitoso, snapshot de v3, UPDATE ni outbox.
+
+También cubre: `"015"` + request 15, `"-0"` + request 0 y `"000"` + request 0
+como no-op `200`, sin mutar versión, timestamps, op ID de modificación u outbox y
+con receipt durable; `"015"` + request 16 como cambio que persiste `"16"`, aumenta
+versión y emite exactamente un evento con `valor_anterior = "15"` y
+`valor_nuevo = "16"`; y valores inválidos `"15.0"`, `"+15"`, `" 15 "` y `""`
+como inconsistencia sin UPDATE, outbox o receipt exitoso. Versión vieja se valida
+antes del parser/comparación tipada y conserva `412` aunque el entero sea igual.
 
 Para el único outbox de un cambio material, `outbox_event.payload` usa el envelope
 `{"metadata": {...}, "data": {...}}`. `data` contiene la identidad portable
