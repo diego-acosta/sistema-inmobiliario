@@ -202,6 +202,31 @@ Dominio transversal de plantillas, generación, emisión, asociación, control y
 - CU-DOC-019 — Consulta de documentos
 - CU-DOC-020 — Consulta de historial documental
 
+### Operativo vigente (CU-OPE)
+
+Los casos de uso vigentes del dominio `operativo` utilizan exclusivamente el prefijo `CU-OPE-*` y se encuentran en `CAT-CU/dominios/operativo/CU-OPE.md`. Ese catálogo funcional está subordinado a `DEV-ARCH-OPE-001` y al catálogo autoritativo `DEV-SRV/dominios/operativo/catalogos/CU-OPE.md`. Comprende sucursales, instalaciones, caja operativa, movimientos de caja, cierre y consultas operativas.
+
+- CU-OPE-001 — Alta de sucursal
+- CU-OPE-002 — Modificación de sucursal
+- CU-OPE-003 — Baja lógica de sucursal
+- CU-OPE-004 — Consulta de sucursal
+- CU-OPE-005 — Alta de instalación
+- CU-OPE-006 — Modificación de instalación
+- CU-OPE-007 — Baja lógica de instalación
+- CU-OPE-008 — Consulta de instalación
+- CU-OPE-009 — Apertura de caja
+- CU-OPE-010 — Cambio de estado de caja
+- CU-OPE-011 — Consulta de caja
+- CU-OPE-012 — Registro de movimiento
+- CU-OPE-013 — Anulación de movimiento
+- CU-OPE-014 — Consulta de movimientos
+- CU-OPE-015 — Ejecución de cierre
+- CU-OPE-016 — Consulta de cierre
+- CU-OPE-017 — Consulta operativa consolidada
+- CU-OPE-018 — Reportes operativos
+
+Los antiguos identificadores `CU-OPER-*` asociados a tareas y workflow se conservan únicamente en el bloque histórico siguiente y no son reutilizables.
+
 ### Gestión Operativa histórica — legado no vigente
 
 > **Estado: HISTÓRICO / RETIRADO COMO CONTRATO VIGENTE**
