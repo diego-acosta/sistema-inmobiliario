@@ -19,7 +19,7 @@ erDiagram
 
 `configuracion_general` queda fuera del grafo canónico como compatibilidad heredada: no recibe claves ni consumidores nuevos, tendrá migración incremental y su eliminación física es futura. `configuracion_local` tampoco integra este DER: pertenece a Operativo y no participa de #425.
 
-Desde #410, `valor_parametro` materializa metadata CORE-EF física, versionado por trigger, soft delete, procedencia/op IDs nullable y las garantías mínimas GLOBAL/vigencia/unicidad. Desde #438/#441, `parametro_sistema` materializa exposición administrativa, sensibilidad y editabilidad mediante `exponible_api_administrativa`, `es_sensible` y `editable_administrativamente`. Aún faltan autorización real, cifrado o secret manager, cualquier modelo adicional de visibilidad, restricción de no solapamiento temporal general y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
+Desde #410, `valor_parametro` materializa metadata CORE-EF física, versionado por trigger, soft delete, procedencia/op IDs nullable y las garantías mínimas GLOBAL/vigencia/unicidad. Desde #438/#441, `parametro_sistema` materializa exposición administrativa, sensibilidad y editabilidad mediante `exponible_api_administrativa`, `es_sensible` y `editable_administrativamente`. Aún faltan autorización completa para el GET #411, cifrado o secret manager, cualquier modelo adicional de visibilidad, restricción de no solapamiento temporal general y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
 
 Para #425, el subgrafo exclusivo es `parametro_sistema -> valor_parametro` con alcance `GLOBAL`, `id_sucursal IS NULL` e `id_instalacion IS NULL`; no intervienen `configuracion_general`, `configuracion_local` ni catálogos.
 
@@ -28,7 +28,7 @@ alcance `GLOBAL`, identificados por código y no editables por API. Este increme
 no agrega filas a `parametro_sistema` ni `valor_parametro`: únicamente elimina el
 bloqueo físico de tipo/alcance previo a #425 y no implementa sus claves o valores.
 
-Desde #410 esta vista refleja preparación SQL, no runtime: #411 (read), #412 (write) y #425 (claves, valores y calendario comercial) permanecen pendientes. No se resolvieron overrides, precedencia, fallback, outbox ni historial.
+Estado histórico al cierre de #410: esta vista reflejaba preparación SQL sin runtime. Estado vigente post-PR #478: #411 implementa la lectura GLOBAL marcada vigente y #412 el update-only con idempotencia, lock, CAS y EVT-ADM-060 mediante outbox transversal. #425 permanece separado; overrides, precedencia, fallback, resolución temporal general e historial especializado no están resueltos. El ledger idempotente y outbox son soporte transversal, no entidades núcleo de este DER.
 
 ## Incremento #438 — Metadata física en `parametro_sistema`
 

@@ -493,6 +493,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-053 — Configuración general creada
 - codigo: configuracion_general_creada
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se registró una nueva configuración general.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_parametro
@@ -502,6 +503,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-054 — Configuración general modificada
 - codigo: configuracion_general_modificada
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se actualizó una configuración general existente.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_parametro
@@ -511,6 +513,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-055 — Configuración general desactivada
 - codigo: configuracion_general_desactivada
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se desactivó una configuración general.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_parametro
@@ -520,6 +523,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-056 — Parámetro de sistema creado
 - codigo: parametro_sistema_creado
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se registró un nuevo parámetro del sistema.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_parametro
@@ -529,6 +533,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-057 — Parámetro de sistema modificado
 - codigo: parametro_sistema_modificado
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se actualizó un parámetro del sistema.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_parametro
@@ -538,6 +543,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-058 — Parámetro de sistema desactivado
 - codigo: parametro_sistema_desactivado
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se desactivó un parámetro del sistema.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_parametro
@@ -547,6 +553,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-059 — Valor de parámetro creado
 - codigo: valor_parametro_creado
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se registró un nuevo valor de parámetro.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_contexto
@@ -555,17 +562,19 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - genera_trazabilidad_administrativa: sí
 
 ### EVT-ADM-060 — Valor de parámetro modificado
+- estado_runtime: IMPLEMENTADO por #412 / PR #478.
 - codigo: valor_parametro_modificado
 - descripcion: se actualizó un valor de parámetro existente.
 - origen_principal: SRV-ADM-005
-- entidad_principal: configuracion_contexto
+- entidad_principal: valor_parametro
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
-- contrato #412: se emite exactamente una vez sólo cuando `EXECUTE` produce cambio material mediante CAS; el cambio se determina comparando los enteros tipados tras aplicar al `valor_raw` el parser `-?[0-9]+` + `int(...)` de #411, no comparando representaciones textuales. No se emite para igualdad tipada —incluidos `"015"`/15 y `"-0"`/0—, `REPLAY`, `CONFLICT` ni CAS mismatch. `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro`, `aggregate_id = valor_parametro.id_valor_parametro` sólo como key local interna. La implementación debe registrar `_p("valor_parametro_modificado", "valor_parametro")` en la `SYNC_EVENT_POLICIES` default-deny, sin campos positivos locales obligatorios. `outbox_event.payload` contiene `{metadata, data}`: `metadata` incluye `uid_instalacion_origen = instalacion.uid_global` y `payload_hash`; `data` incluye `uid_global`, `codigo_parametro`, `valor_anterior = str(valor_actual_tipado)` y `valor_nuevo = str(valor_tipado)`, `version_anterior`, `version_registro` y `op_id`. Ambos valores son decimales ASCII canónicos, no variantes raw locales. El hash es SHA-256 lowercase de RFC 8785 aplicado a `hash_input = {"metadata": {"uid_instalacion_origen": uid_instalacion_origen}, "data": data}`; cubre origen y datos, pero nunca el envelope final autorreferencial, y es distinto del fingerprint de request #470. `data.uid_global` es la identidad portable; ningún ID numérico local se distribuye. El envelope completo se persiste en la misma transacción que CAS y receipt; `processing_metadata` no se usa para identidad/integridad de origen. Inmediatamente antes de `add_event`, una sola captura `occurred_at_utc = datetime.now(UTC)` se normaliza a `occurred_at = occurred_at_utc.replace(tzinfo=None)`; la fuente es aware UTC y el storage es naive UTC independiente del timezone de sesión. No deriva de `valor_parametro.updated_at` ni integra payload/hash. El evento nace `PENDING`.
+- contrato #412: se emite exactamente una vez sólo cuando `EXECUTE` produce cambio material mediante CAS; el cambio se determina comparando los enteros tipados tras aplicar al `valor_raw` el parser `-?[0-9]+` + `int(...)` de #411, no comparando representaciones textuales. No se emite para igualdad tipada —incluidos `"015"`/15 y `"-0"`/0—, `REPLAY`, `CONFLICT` ni CAS mismatch. `event_type = valor_parametro_modificado`, `aggregate_type = valor_parametro`, `aggregate_id = valor_parametro.id_valor_parametro` sólo como key local interna. La implementación registra `_p("valor_parametro_modificado", "valor_parametro")` en la `SYNC_EVENT_POLICIES` default-deny, sin campos positivos locales obligatorios. `outbox_event.payload` contiene `{metadata, data}`: `metadata` incluye `uid_instalacion_origen = instalacion.uid_global` y `payload_hash`; `data` incluye `uid_global`, `codigo_parametro`, `valor_anterior = str(valor_actual_tipado)` y `valor_nuevo = str(valor_tipado)`, `version_anterior`, `version_registro` y `op_id`. Ambos valores son decimales ASCII canónicos, no variantes raw locales. El hash es SHA-256 lowercase de RFC 8785 aplicado a `hash_input = {"metadata": {"uid_instalacion_origen": uid_instalacion_origen}, "data": data}`; cubre origen y datos, pero nunca el envelope final autorreferencial, y es distinto del fingerprint de request #470. `data.uid_global` es la identidad portable; ningún ID numérico local se distribuye. El envelope completo se persiste en la misma transacción que CAS y receipt; `processing_metadata` no se usa para identidad/integridad de origen. Inmediatamente antes de `add_event`, una sola captura `occurred_at_utc = datetime.now(UTC)` se normaliza a `occurred_at = occurred_at_utc.replace(tzinfo=None)`; la fuente es aware UTC y el storage es naive UTC independiente del timezone de sesión. No deriva de `valor_parametro.updated_at` ni integra payload/hash. El evento nace `PENDING`.
 
 ### EVT-ADM-061 — Vigencia de valor de parámetro cerrada
 - codigo: valor_parametro_vigencia_cerrada
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se cerró la vigencia de un valor de parámetro.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_contexto
@@ -575,6 +584,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-062 — Valor de parámetro reemplazado
 - codigo: valor_parametro_reemplazado
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: un valor de parámetro fue reemplazado por otro en nueva vigencia.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_contexto
@@ -584,6 +594,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 
 ### EVT-ADM-063 — Historial de parámetro registrado
 - codigo: historial_parametro_registrado
+- estado_runtime: NO IMPLEMENTADO; no se verificó producer runtime.
 - descripcion: se registró un hito de historización sobre un parámetro o su valor.
 - origen_principal: SRV-ADM-005
 - entidad_principal: configuracion_contexto
