@@ -566,7 +566,7 @@ Este catálogo cubre eventos de usuarios y acceso, seguridad y autorización, au
 - codigo: valor_parametro_modificado
 - descripcion: se actualizó un valor de parámetro existente.
 - origen_principal: SRV-ADM-005
-- entidad_principal: configuracion_contexto
+- entidad_principal: valor_parametro
 - tipo_evento: negocio
 - sincronizable: sí
 - genera_trazabilidad_administrativa: sí
