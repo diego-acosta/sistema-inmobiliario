@@ -424,6 +424,7 @@ ASIGNADA
 DESASIGNADA
 REASIGNADA
 CAMBIO_ESTADO
+REABIERTA
 CAMBIO_PRIORIDAD
 CAMBIO_FECHA_OBJETIVO
 CAMBIO_TITULO
@@ -432,7 +433,30 @@ CAMBIO_DESCRIPCION
 
 Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor anterior/nuevo cuando corresponda. El actor humano local deberá poder resolverse mediante la estrategia canónica interinstalación pendiente si el historial resulta sincronizable; este freeze no presupone columnas concretas de UID.
 
+`REABIERTA` representa exclusivamente la operación funcional explícita
+`COMPLETADA → PENDIENTE` definida en la sección 9.1; no es un estado persistido ni
+se utiliza para transiciones ordinarias. Toda entrada `REABIERTA` debe conservar
+conceptualmente:
+
 ```text
+tarea
+actor
+instante
+estado_anterior = COMPLETADA
+estado_nuevo = PENDIENTE
+motivo obligatorio
+```
+
+El motivo es parte estructurada y obligatoria de esa entrada funcional: no puede
+quedar como texto libre opcional, inferirse desde un comentario ni sustituirse
+por éste. Los artefactos posteriores definirán su representación sin que este
+freeze establezca nombre de columna, tipo SQL, longitud, schema HTTP, DTO, tabla,
+JSON, evento, `command_code` ni payload de outbox. Si la Tarea resultara
+sincronizable, su estrategia todavía abierta deberá preservar también este dato;
+esta regla no decide sync, evento ni outbox.
+
+```text
+REABIERTA → historial_funcional
 historial_funcional
 != comentario
 != auditoria_administrativa
