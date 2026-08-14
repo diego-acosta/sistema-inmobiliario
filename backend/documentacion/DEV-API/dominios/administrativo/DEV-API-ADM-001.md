@@ -806,7 +806,7 @@ Para el futuro #411, un valor administrativo sólo podrá devolverse si la defin
 
 #441 es preparación SQL y contractual: agrega `editable_administrativamente boolean NOT NULL DEFAULT false` a `parametro_sistema` sin modificar rutas, schemas, repositories runtime, services, comandos, headers, errores runtime u outbox. El inventario #407 y el valor GLOBAL #411 no exponen la nueva metadata ni cambian su política de lectura.
 
-La editabilidad administrativa es independiente de `exponible_api_administrativa` y `es_sensible`; no se infiere por código, tipo, alcance, existencia de valor, exposición o sensibilidad. Ninguna definición queda editable automáticamente. Cualquier habilitación futura debe realizarse por migración versionada explícita y #412 continúa no implementado.
+La editabilidad administrativa es independiente de `exponible_api_administrativa` y `es_sensible`; no se infiere por código, tipo, alcance, existencia de valor, exposición o sensibilidad. Ninguna definición queda editable automáticamente. Cualquier habilitación debe realizarse por migración versionada explícita. Estado histórico de #441: #412 aún no estaba implementado; el estado vigente post-PR #478 consta en su sección y en el cierre #413.
 
 ## Incremento #411 — Valor GLOBAL marcado vigente de un parámetro
 
@@ -1293,3 +1293,13 @@ vacío y `Cache-Control: no-store`, sin código de permiso ni información inter
 401 `INVALID_SESSION` permanece a cargo de #447. Clasificación CORE-EF:
 `QUERY_READLIKE`; no aplican headers write, idempotencia, outbox, locks, versionado o
 sync. #461 (migración), #412 (primer command) y #435 (contexto) siguen pendientes.
+
+## Cierre documental #413 — estado vigente post-PR #478
+
+#407 y #411 son `QUERY_READLIKE` implementados. El inventario `GET /api/v1/administrativo/configuracion/parametros` devuelve definiciones, tipo y alcance en orden estable, sin valores ni metadata interna y sin headers write. El GET individual selecciona el código exacto/case-sensitive, aplica exposición/no sensibilidad, usa 404 indistinguible y 409 para no GLOBAL, devuelve `SIN_VALOR` o `CON_VALOR_MARCADO_VIGENTE` con `ENTERO` raw/tipado, UID, versión y timestamps, y envía `Cache-Control: no-store`; no resuelve tiempo, contexto, overrides ni fallback. Aunque es administrativo no público por intención, el router vigente de #411 no usa Bearer ni permiso; esa deuda pertenece a #461/follow-up.
+
+#412 está **IMPLEMENTADO** por PR #478 como `PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global`, `COMMAND_WRITE_NEGOCIO` y update-only. Requiere Bearer, permiso `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` e `If-Match-Version`. La identidad procede exclusivamente de `AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` no se requiere, parsea, compara ni usa. La idempotencia #470, replay durable, lock `FOR UPDATE`, versión bajo lock, no-op tipado, CAS por PK+versión, transacción/rollback únicos y EVT-ADM-060 material están implementados según el contrato detallado de esta sección. Replay y no-op no generan eventos nuevos; replay tampoco consulta estado mutable ni incrementa versión.
+
+El permiso activo se vincula al rol prerequisito `ADMINISTRADOR_SISTEMA`; #412 no crea ese rol, un rol `ADMIN` alternativo ni asignaciones de usuarios. El seed técnico `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` (`ENTERO`, `GLOBAL`, exponible, no sensible, editable, valor inicial `"15"`) es sólo soporte reproducible DEV/TEST, no configuración funcional.
+
+#425, #435, #461 y #265 permanecen fuera de este cierre. Tampoco se incorporan secretos, secret manager, CRUD genérico, alta/baja dinámica, UI, consumers remotos, reconciliación, resolución temporal general ni eliminación de `configuracion_general`.

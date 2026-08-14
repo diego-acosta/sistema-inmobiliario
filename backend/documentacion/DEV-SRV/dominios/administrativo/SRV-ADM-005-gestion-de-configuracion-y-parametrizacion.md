@@ -707,3 +707,19 @@ fuera CRUD genérico, UPSERT, creación, #425, #435, migración de #400, UI, con
 remotos, reconciliación, migración masiva heredada y cleanup global de
 `X-Usuario-Id`. #412 es el primer write administrativo autenticado sin ese header y
 un incremento de #461; cerrarlo no cerrará #461 ni #402.
+
+## Estado vigente post-PR #478 — cierre #413
+
+El estado operativo vigente de configuración es: #407–#412 **IMPLEMENTADOS** y #412 cerrado/completado mediante PR #478. Las referencias anteriores a un router, tests, permiso, seed, idempotencia u outbox “futuros” describen el diseño incremental previo al merge y no niegan este estado.
+
+#407 lista definiciones (`QUERY_READLIKE`) y #411 consulta exactamente/case-sensitive el valor GLOBAL marcado vigente (`QUERY_READLIKE`), con 404 indistinguible para inexistente/no exponible/sensible, 409 para definición no GLOBAL, estados `SIN_VALOR`/`CON_VALOR_MARCADO_VIGENTE`, tipado estricto `ENTERO` y `Cache-Control: no-store`. Ninguno muta ni requiere headers write. #411 es administrativo no público por intención, pero hoy no tiene dependency Bearer ni permiso; #461/follow-up deberá resolver esa deuda sin inventarla en este contrato.
+
+#412 es `COMMAND_WRITE_NEGOCIO` update-only, autenticado por Bearer y autorizado con rol `ADMINISTRADOR_SISTEMA` + permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`. La identidad humana deriva sólo de `AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` no se requiere, parsea, compara ni usa. El rol procede de un prerequisito independiente; no hay rol mágico `ADMIN` ni autoasignación.
+
+Exige `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id` e `If-Match-Version`. El pre-claim valida sólo estructura; contexto DB sólo se valida en `EXECUTE`, no durante replay. #470 está implementado y #412 es su primer consumidor productivo sin ledger administrativo paralelo: replay usa `response_snapshot` durable, y conflictos se distinguen en `COMMAND`, `TARGET` y `PAYLOAD`.
+
+En `EXECUTE`, el target se bloquea `FOR UPDATE` y la versión se valida bajo lock; mismatch devuelve 412 `CONCURRENCY_ERROR`. Igualdad tipada (`"015"`/15, `"-0"`/0, `"000"`/0) produce no-op 200 con receipt durable, sin UPDATE, bump, timestamp ni evento. El cambio material usa CAS por PK `id_valor_parametro` y `version_registro`. Claim, contexto, lock, no-op/CAS, EVT-ADM-060 material, completion y commit exterior comparten Session/transacción; rollback revierte negocio, procedencia, versión, timestamps, outbox y receipt, y retry sin receipt vuelve a `EXECUTE`.
+
+EVT-ADM-060 está implementado: `valor_parametro_modificado`/`valor_parametro`, aggregate_id local, `PENDING`, envelope metadata/data, `uid_instalacion_origen`, identidad portable `data.uid_global`, hash RFC 8785 + SHA-256 lowercase y UTC aware normalizado a storage naive UTC. Sólo el cambio material emite uno; no-op y replay emiten cero.
+
+`PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` es seed técnico controlado `ENTERO`/`GLOBAL`, exponible, no sensible, editable y con valor inicial `"15"`; soporta reproducibilidad DEV/TEST y no constituye configuración funcional ni #425. #425, #435, #461 y #265 permanecen separados, junto con secretos, CRUD genérico, UI, consumers remotos, reconciliación y resolución temporal general.

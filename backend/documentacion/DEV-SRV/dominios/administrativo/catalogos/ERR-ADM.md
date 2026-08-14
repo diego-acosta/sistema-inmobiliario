@@ -505,7 +505,7 @@ Este catálogo cubre errores de usuarios y acceso, seguridad y autorización, au
 
 Ambos incluyen `Cache-Control: no-store` y no revelan bearer, digest, SQL, driver ni causa interna.
 
-# Errores públicos congelados para #412 (implementación pendiente)
+# Errores públicos implementados por #412
 
 - `401 INVALID_SESSION`: principal Bearer no utilizable.
 - `403 autorizacion_insuficiente`: principal válido sin concesión.
@@ -532,5 +532,4 @@ Ambos incluyen `Cache-Control: no-store` y no revelan bearer, digest, SQL, drive
 - `500 TECHNICAL_INCONSISTENCY`: error SQL/driver inesperado sanitizado.
 
 Todos usan `ErrorResponse` y omiten SQL, constraints, driver, DSN, código de permiso,
-bearer y stacktrace. Los códigos nuevos de idempotencia de esta sección son contrato
-documental explícito para #412; no afirman runtime implementado.
+bearer y stacktrace. Los errores enumerados en esta sección que consume #412 forman parte de su contrato runtime implementado por PR #478. Los demás códigos del catálogo conservan su estado reservado o NO CONFIRMADO cuando no existe consumidor verificable; esta afirmación no generaliza implementación a todo ERR-ADM.

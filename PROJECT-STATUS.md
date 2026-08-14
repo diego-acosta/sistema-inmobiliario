@@ -26,9 +26,9 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | Activo incremental. La lectura GLOBAL #411 y el command mínimo de actualización GLOBAL #412 están implementados; los resets DEV/TEST incluyen el rol canónico `ADMINISTRADOR_SISTEMA`, su permiso contractual y el parámetro técnico controlado. | #249, #263, #264 y #265 abiertos; #412 es el piloto inmediato, ya desbloqueado respecto del receptor de su permiso. | PR #475 mergeado como dependencia transversal del contrato #412. | #412 queda listo para cerrar mediante este PR; #425 permanece como incremento separado. |
+| B — Administrativo | #407–#412 implementados. PR #478 materializó el command mínimo GLOBAL y cerró #412; #413 alinea ahora la documentación formal. | #263 continúa abierto hasta el merge y cierre de #413; #425, #435, #461 y #265 permanecen separados. | PR #478 mergeado (commit `3b6d58d`) como último cambio material de configuración. | Completar #413 sin cerrar anticipadamente #263. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
-| Transversal — CORE-EF | #469 implementó el ledger durable y #470 el runtime reusable claim/replay/complete con RFC 8785, advisory transaction lock y transacción exterior. | #402 continúa abierto como coordinador; #469 y #470 están completados; #412 consume productivamente el runtime. | PR #475 mergeado. | #470 cuenta con #412 como primer consumidor productivo; #402 y #461 permanecen abiertos. |
+| Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -68,10 +68,10 @@ durable y persistencia mediante la misma `Session`, sin commits ni rollbacks
 internos. La decisión de conflicto queda ordenada como `COMMAND → TARGET →
 PAYLOAD`, y `UNIQUE(op_id)` permanece como defensa técnica final.
 
-#402 continúa abierto como coordinador. El orden vigente es `#469 ✅ → #470 ✅
-→ #412 piloto`. #412 implementa el primer consumidor productivo: usa directamente `claim_operation` y
+#402 está cerrado/completado. El recorrido completado es `#469 ✅ → #470 ✅
+→ #412 ✅`. #412 implementa el primer consumidor productivo: usa directamente `claim_operation` y
 `complete_operation`, replay durable desde el ledger y una sola transacción para CAS,
-outbox y receipt. #402 y #461 permanecen abiertos.
+outbox y receipt. #461 permanece abierto como migración transversal separada.
 
 ## 5. Frente A — Comercial / Financiero
 
@@ -299,16 +299,12 @@ Sub-issues con estado verificable:
 - #261 `Administrativo: asignación de roles a usuarios` cerrado/completado.
 - #262 `Administrativo: alcance operativo por sucursal/instalación` cerrado/completado.
 - #263 `Administrativo: configuración general del sistema` abierto.
-- #407 implementa el primer incremento de #263: inventario read-only de
-  definiciones de parámetros. PR #414/commit `b8d4ccb` conserva ese GET. #408 congela documentalmente `parametro_sistema` como definición y `valor_parametro` como fuente de valores; no agrega endpoints. Los valores y writes siguen pendientes y #263 no se considera completado.
+- #407 implementó el inventario read-only y #408 congeló `parametro_sistema` como definición y `valor_parametro` como fuente canónica de valores. #409–#410 materializaron el soporte `ENTERO`/`GLOBAL` y CORE-EF físico; #411 implementó la consulta individual y #412 el command update-only. #413 es el cierre documental vigente; #263 continúa abierto hasta su review y merge.
 - #409 incorpora sólo el tipo estructural `ENTERO` y el alcance estructural
   `GLOBAL`, con descripciones contractuales, reset DEV/TEST y tests PostgreSQL.
   No crea claves ni valores funcionales de #425.
-- #410 prepara exclusivamente la infraestructura SQL CORE-EF de `valor_parametro`: metadata, versionado por trigger, contexto GLOBAL mínimo, vigencia estricta y unicidad parcial. #411, #412 y #425 siguen sin read, write, claves, valores ni runtime; no hay outbox o historial.
-- #469 y #470 completan el ledger y el runtime transversal de idempotencia durable.
-  El contrato final de #412 queda congelado y listo para implementación como primer
-  consumidor productivo; el endpoint, permiso, seed y evento todavía no están
-  implementados.
+- Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado vigente post-PR #478: #411 y #412 están implementados; #425 conserva separadas sus claves y valores funcionales.
+- #469 y #470 completaron el ledger y runtime transversal de idempotencia durable; #412 es su primer consumidor productivo. PR #478 implementó endpoint, permiso, vínculo, seed técnico controlado y EVT-ADM-060. #402 está cerrado/completado.
 - #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. #441 agrega `editable_administrativamente` como metadata física independiente, default-deny (`false`), no editable por API y habilitable sólo por migración versionada; ninguna definición quedó editable automáticamente. No implementa autenticación/autorización completa, writes #412, claves/valores de calendario #425 ni resolución contextual #435.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
@@ -366,9 +362,8 @@ Dentro de #264, el CRUD write de ítems quedó implementado por #399. En configu
 ### 6.5 Próximo foco recomendado
 
 El CRUD write de `item_catalogo` quedó implementado por #399. Para configuración,
-#409 deja disponibles `ENTERO` y `GLOBAL`, #410 prepara el CORE-EF físico de `valor_parametro`, #438 agrega metadata default-deny de exposición/sensibilidad y #411 expone el read individual GLOBAL marcado vigente. #469/#470 ya proveen idempotencia durable y #412 tiene contrato final congelado: es el próximo piloto listo para implementación, aunque continúa no implementado. #425 deberá implementar por separado sus claves, valores GLOBAL y runtime, sin mezclar `configuracion_general`,
-`configuracion_local` ni catálogos. #263 permanece abierto hasta implementar y
-validar valores y writes. #265 conserva su alcance independiente.
+#409 deja disponibles `ENTERO` y `GLOBAL`, #410 prepara el CORE-EF físico de `valor_parametro`, #438/#441 agregan metadata default-deny y #411 expone el read individual GLOBAL marcado vigente. #469/#470 proveen idempotencia durable y #412, implementado por PR #478, es su primer consumidor productivo. #413 cierra únicamente la alineación documental. #425 deberá implementar por separado sus claves, valores GLOBAL y runtime, sin mezclar `configuracion_general`,
+`configuracion_local` ni catálogos. #263 permanece abierto hasta revisar, mergear y cerrar #413; sus valores y write mínimos ya están validados. #265 conserva su alcance independiente.
 
 ### 6.6 Fuera de alcance
 
