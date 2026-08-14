@@ -322,9 +322,11 @@ otra representación.
 
 ### Impacto en artefactos posteriores
 
-DER y contratos posteriores deberán representar sólo fecha y prohibir inferir una
-hora implícita. La elección del tipo físico concreto se documentará en el DER sin
-alterar esta semántica funcional.
+DER y contratos posteriores deberán materializar `fecha_objetivo` como DATE,
+preservando su semántica de día calendario completo, sin hora ni offset. El DER
+no podrá reabrir la elección entre DATE y TIMESTAMP; permanecen pendientes sólo
+los demás detalles técnicos, sin definir aquí columna, índice, constraint,
+migración, schema HTTP ni serialización.
 
 ## 12. Vencimiento
 
@@ -392,7 +394,25 @@ después; este freeze no crea parámetros ni SQL.
 
 ## 13. Finalización
 
-Al completar una tarea debe conservarse conceptualmente `fecha_finalizacion`, generada por el servidor.
+`Tarea.fecha_finalizacion` representa únicamente la finalización vigente del
+ciclo actual:
+
+```text
+PENDIENTE / EN_CURSO → COMPLETADA
+→ fecha_finalizacion = instante de esa finalización generado por el servidor
+
+COMPLETADA → PENDIENTE mediante reapertura
+→ fecha_finalizacion corriente = NULL
+
+nueva transición PENDIENTE / EN_CURSO → COMPLETADA
+→ fecha_finalizacion = nuevo instante de la nueva finalización
+```
+
+Limpiar el valor corriente al reabrir no elimina la evidencia de la finalización
+anterior: el historial funcional conserva todas las finalizaciones y reaperturas
+previas. Los artefactos posteriores deberán preservar esa trazabilidad sin que
+este freeze defina tipo SQL de `fecha_finalizacion`, columnas o tabla de
+historial, payload, endpoint, DTO, evento ni outbox.
 
 ## 14. Scope funcional
 
@@ -448,6 +468,10 @@ estado_anterior = COMPLETADA
 estado_nuevo = PENDIENTE
 motivo obligatorio
 ```
+
+Esta entrada conserva además la evidencia histórica de la finalización anterior
+aunque la reapertura deje `Tarea.fecha_finalizacion` corriente en `NULL`; no se
+crea un segundo historial ni una entidad adicional.
 
 El motivo es parte estructurada y obligatoria de esa entrada funcional: no puede
 quedar como texto libre opcional, inferirse desde un comentario ni sustituirse
@@ -895,6 +919,6 @@ incidental:
 6. Estrategia de sync: `SINCRONIZABLE`, `LOCAL` o `MIXTO`.
 7. Si agregar comentario incrementa `version_registro` de la tarea.
 10. Identidad canónica interinstalación de usuario para toda referencia humana persistida que deba sincronizarse en `gestion_operativa` —como creador, responsable, autor de comentario y actor del historial funcional—: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
-11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, cambiar estado, cancelar y comentar.
+11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar, reabrir y comentar.
 
 Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
