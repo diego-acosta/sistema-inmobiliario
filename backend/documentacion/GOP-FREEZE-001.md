@@ -681,16 +681,16 @@ scope. Como no tienen creador humano, no obtienen visibilidad por autoría;
 
 Para el MVP se distinguen **ejecución del trabajo** y **gestión por scope**:
 
-| Acción | Responsable actual | Usuario con alcance sobre el scope |
-| --- | --- | --- |
-| Modificar título o descripción | No | Sí |
-| Asignar, reasignar o desasignar | No | Sí |
-| Cambiar prioridad o fecha objetivo | No | Sí |
-| Cambiar `PENDIENTE ↔ EN_CURSO` | Sí | Sí |
-| Completar | Sí | Sí, sólo si existe responsable |
-| Cancelar | No | Sí |
-| Reabrir `COMPLETADA → PENDIENTE` | No | Sí |
-| Comentar | Sí | Sí |
+| Acción | Creador humano | Responsable actual | Usuario con alcance sobre el scope |
+| --- | --- | --- | --- |
+| Modificar título o descripción | No | No | Sí |
+| Asignar, reasignar o desasignar | No | No | Sí |
+| Cambiar prioridad o fecha objetivo | No | No | Sí |
+| Cambiar `PENDIENTE ↔ EN_CURSO` | No | Sí | Sí |
+| Completar | No | Sí | Sí, sólo si existe responsable |
+| Cancelar | No | No | Sí |
+| Reabrir `COMPLETADA → PENDIENTE` | No | No | Sí |
+| Comentar | Sí | Sí | Sí |
 
 Para la columna de alcance, una tarea de sucursal exige alcance sobre esa
 sucursal y una tarea global exige alcance global. El responsable puede ejecutar
@@ -969,9 +969,16 @@ concurrencia optimista
 
 ## 26. Consultas mínimas
 
-El contrato debe prever: obtener tarea, listar tareas, mis tareas, pendientes, vencidas y sin asignar.
+El contrato debe prever: obtener tarea, listar tareas, **Mis tareas**, **Tareas
+creadas por mí**, pendientes, vencidas y sin asignar. **Mis tareas** conserva
+exclusivamente las tareas cuyo responsable actual es el usuario; **Tareas
+creadas por mí** recupera separadamente aquellas cuyo creador humano es el
+usuario, incluso cuando ya no sea responsable ni tenga alcance sobre su scope.
+Las tareas `origen = SISTEMA` no pertenecen a esta última consulta porque no
+tienen creador humano.
 
-Filtros mínimos: responsable, estado, prioridad, sucursal, vencida y fecha objetivo.
+Filtros mínimos funcionales, cuando corresponda conceptualmente: creador,
+responsable, estado, prioridad, sucursal, vencida y fecha objetivo.
 
 Sus resultados se limitan por la política funcional de la sección 20.1; los
 filtros nunca amplían visibilidad.

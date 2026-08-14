@@ -99,10 +99,11 @@ Decisiones cerradas:
 - Visibilidad: **Mis tareas** contiene sólo las asignadas; las creadas se
   consultan separadamente y siguen visibles al creador. También habilitan
   visibilidad el responsable y el alcance sobre la sucursal o global.
-- Mutación: el responsable ejecuta el trabajo y comenta; quien tiene alcance
-  funcional sobre el scope gestiona contenido, asignación, planificación,
-  estados y terminales. Crear no otorga mutación por sí solo; las tareas sin
-  responsable requieren asignación antes de iniciar o completar.
+- Mutación: el creador conserva la capacidad de comentar; el responsable ejecuta
+  el trabajo y comenta; quien tiene alcance funcional sobre el scope gestiona
+  contenido, asignación, planificación, estados y terminales. Crear no otorga
+  las demás mutaciones por sí solo; las tareas sin responsable requieren
+  asignación antes de iniciar o completar.
 
 Blockers todavía abiertos, con numeración original:
 
