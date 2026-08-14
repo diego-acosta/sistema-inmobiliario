@@ -224,7 +224,8 @@ de API.
   historial previo y agrega una entrada estructurada de reapertura con actor,
   instante y motivo. No borra la finalización histórica.
 - La reapertura no es una transición ordinaria ni decide quién puede ejecutarla;
-  esa autorización permanece en el blocker 11.
+  su relación funcional habilitante se define en la sección 20.2, mientras el
+  mecanismo técnico de autorización permanece pendiente.
 
 ### Evidencia
 
@@ -416,14 +417,55 @@ historial, payload, endpoint, DTO, evento ni outbox.
 
 ## 14. Scope funcional
 
-Como propuesta preliminar se considera `id_sucursal` opcional:
+### Decisión
+
+`id_sucursal` es **opcional** en el contrato funcional del MVP:
 
 ```text
-id_sucursal = NULL → tarea global
-id_sucursal = <id> → tarea asociada funcionalmente a una sucursal
+id_sucursal = NULL
+→ tarea global
+→ no pertenece funcionalmente a ninguna sucursal específica
+
+id_sucursal = <id>
+→ tarea de sucursal
+→ pertenece funcionalmente a esa única sucursal
 ```
 
-Su opcionalidad definitiva queda abierta antes del DER. No se usa `id_instalacion` como scope funcional. `id_instalacion_origen` representa exclusivamente procedencia técnica CORE-EF; por tanto, `id_instalacion_origen != scope_funcional_tarea`.
+Ambas clases son válidas. El valor no identifica al creador, al responsable, a
+la sucursal desde la que se consulta ni a la instalación que originó el cambio.
+En particular, `id_instalacion_origen` conserva exclusivamente procedencia
+técnica CORE-EF: una operación puede originarse en una instalación distinta de
+la sucursal funcional de la tarea, y una tarea global también puede tener
+procedencia técnica. `id_instalacion_origen != scope_funcional_tarea`.
+
+### Evidencia
+
+- **Repositorio:** `DEV-ARCH-OPE-001` asigna a `operativo` el ownership de
+  sucursal e instalación, excluye tareas y exige separación con
+  `gestion_operativa`; el freeze ya distingue procedencia técnica de scope.
+- **Repositorio:** no existen SQL, backend ni tests runtime de Tarea que impongan
+  pertenencia obligatoria a sucursal. El alcance admite tareas puramente internas
+  y futuras tareas de sistema, sin demostrar una sucursal funcional única.
+- **Inferencia:** el seguimiento administrativo de toda la organización y los
+  procesos transversales son casos legítimos que se perderían forzando una
+  sucursal; usar la instalación de origen produciría un scope accidental.
+- **Decisión de diseño nueva:** `NULL` se congela como scope global y un valor
+  como scope de exactamente una sucursal.
+
+### Alternativas descartadas y justificación
+
+Se descarta `id_sucursal NOT NULL` porque fuerza una pertenencia funcional no
+demostrada a tareas globales. Se descarta un discriminador o modelo de scope
+separado porque el MVP sólo necesita las dos alternativas inequívocas anteriores
+y no hay evidencia que justifique otra estructura. No se inventa una tabla ni
+una relación multi-sucursal.
+
+### Impacto en artefactos posteriores
+
+DEV-ARCH-GOP y los artefactos posteriores deberán preservar ambos scopes y su
+semántica, pero decidirán recién entonces FK, nulabilidad física, constraints,
+índices, filtros y contratos. Esta decisión no diseña SQL ni convierte a
+`operativo` en dueño de Tarea.
 
 ## 15. Comentarios
 
@@ -592,20 +634,110 @@ If-Match-Version                  → concurrencia optimista cuando corresponda
 
 Ninguno de esos headers técnicos autentica a una persona. En particular,
 `X-Sucursal-Id` no define automáticamente el scope funcional de `Tarea`; esa
-relación depende de las decisiones funcionales todavía abiertas.
+relación no sustituye la decisión funcional de la sección 14.
 
-Administrativo conserva ownership de usuarios, autenticación, autorización, roles y permisos, y provee sus mecanismos. `gestion_operativa` consume la identidad de usuario y debe definir qué acciones funcionales sobre Tareas requieren autorización y qué relación o scope habilita cada acción, sin redefinir el modelo administrativo.
+Administrativo conserva ownership de usuarios, autenticación, autorización,
+roles y permisos, y proveerá el mecanismo que materialice el alcance. La política
+siguiente es funcional: no crea roles, permisos, scopes HTTP ni una ACL GOP.
 
-La política funcional de autorización y visibilidad permanece **NO CONGELADA / BLOQUEANTE**. Antes del DER y DEV-API debe decidir, sin inventar todavía permisos, roles, códigos ni autorización contextual:
+### 20.1 Decisión de visibilidad y consultas
 
-- si un usuario puede consultar sólo tareas asignadas a él o también las creadas por él;
-- quién puede consultar tareas sin responsable o tareas de otros usuarios;
-- cómo incide `id_sucursal`, si finalmente se incorpora, y quién puede consultar tareas globales;
-- cómo se comporta **Mis tareas**;
-- quién puede modificar título/descripción, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar y comentar.
-- quién puede reabrir una tarea completada mediante la operación explícita de la sección 9.1.
+Se reconocen cuatro relaciones funcionales independientes: creador, responsable,
+alcance sobre la sucursal de la tarea y alcance global. Un usuario puede ver una
+tarea si cumple al menos una de estas condiciones:
 
-El ownership de autorización de Administrativo no elimina la necesidad de que `gestion_operativa` defina esta política funcional de acceso. Los códigos y mecanismos concretos se diseñarán posteriormente junto con Administrativo y DEV-API.
+1. es su creador humano;
+2. es su responsable actual;
+3. tiene alcance sobre la sucursal de una tarea de sucursal; o
+4. tiene alcance global para una tarea global.
+
+Por lo tanto:
+
+- **Mis tareas** significa exclusivamente tareas cuyo responsable actual es el
+  usuario. No incluye tareas sólo por haberlas creado.
+- **Tareas creadas por mí** es una consulta separada. El creador conserva
+  visibilidad después de una asignación, reasignación o desasignación, aunque no
+  sea responsable ni tenga actualmente alcance sobre el scope de la tarea.
+- Las tareas sin responsable son visibles para su creador humano y para usuarios
+  con alcance sobre su scope: alcance de esa sucursal si son de sucursal, o
+  alcance global si son globales.
+- Una tarea asignada a otra persona es visible para su creador y para usuarios con
+  alcance sobre el scope correspondiente. La mera condición de usuario no
+  responsable no otorga visibilidad.
+- Una tarea de sucursal entra en listados del usuario por scope sólo cuando éste
+  tiene alcance funcional sobre esa sucursal. Una tarea global entra por scope
+  sólo para quien tiene alcance global; no se replica conceptualmente como tarea
+  de cada sucursal.
+- La asignación individual siempre mantiene la tarea en **Mis tareas** y visible
+  para el responsable, incluida una tarea global o de otra sucursal. El mecanismo
+  administrativo que permitirá o impedirá producir esa asignación se definirá
+  después; no se inventa aquí.
+
+Las tareas `origen = SISTEMA` aplican las mismas reglas según responsable y
+scope. Como no tienen creador humano, no obtienen visibilidad por autoría;
+`generador_sistema` no es actor, usuario, rol ni alcance.
+
+### 20.2 Decisión de mutación
+
+Para el MVP se distinguen **ejecución del trabajo** y **gestión por scope**:
+
+| Acción | Responsable actual | Usuario con alcance sobre el scope |
+| --- | --- | --- |
+| Modificar título o descripción | No | Sí |
+| Asignar, reasignar o desasignar | No | Sí |
+| Cambiar prioridad o fecha objetivo | No | Sí |
+| Cambiar `PENDIENTE ↔ EN_CURSO` | Sí | Sí |
+| Completar | Sí | Sí, sólo si existe responsable |
+| Cancelar | No | Sí |
+| Reabrir `COMPLETADA → PENDIENTE` | No | Sí |
+| Comentar | Sí | Sí |
+
+Para la columna de alcance, una tarea de sucursal exige alcance sobre esa
+sucursal y una tarea global exige alcance global. El responsable puede ejecutar
+las acciones indicadas aun cuando no posea ese alcance, porque la asignación
+vigente le confía el trabajo. Toda acción sigue sujeta a estados e invariantes ya
+congelados; esta matriz no habilita editar campos inmutables en estados terminales
+ni reabrir `CANCELADA`.
+
+Ser creador, por sí solo, otorga trazabilidad, consulta y capacidad de comentar,
+pero **no** habilita las demás mutaciones. Si el creador también es responsable o
+tiene alcance sobre el scope, actúa por esa otra relación. Después de una
+reasignación, el anterior responsable pierde las capacidades derivadas de ser
+responsable, mientras el creador conserva visibilidad y comentario.
+
+Una tarea sin responsable continúa siendo válida. Puede ser editada, asignada,
+desasignada, repriorizada, reprogramada, cancelada, reabierta cuando corresponda
+y comentada por quien tiene alcance sobre su scope. No puede pasar a `EN_CURSO`
+ni `COMPLETADA` mientras siga sin responsable: primero debe asignarse. Su creador
+sin alcance puede verla y comentar, pero no asignarla ni editarla.
+
+### 20.3 Evidencia, alternativas e impacto
+
+- **Repositorio:** creador y responsable ya son distintos, el responsable es
+  `0..1`, una tarea sin responsable es válida y Administrativo conserva
+  autorización. No existe implementación GOP ni evidencia de ACL, equipos,
+  watchers o roles GOP.
+- **Repositorio:** el catálogo histórico distingue asignación, reasignación,
+  desasignación, estado y consultas, pero no es contrato vigente ni resuelve
+  actores.
+- **Inferencia:** el responsable necesita ejecutar el trabajo sin administrar su
+  definición; la gestión completa corresponde a la relación con el scope. La
+  autoría debe conservar consulta sin transformarse en propiedad mutable eterna.
+- **Decisión de diseño nueva:** se congelan las reglas de las secciones 20.1 y
+  20.2 como política funcional mínima del MVP.
+
+Se descartan **Mis tareas = asignadas + creadas** porque mezcla trabajo vigente
+con trazabilidad; mutación total por creador porque sobrevive indebidamente a una
+reasignación; mutación total por responsable porque confunde ejecutar con
+administrar; y acceso de cualquier usuario porque ignora el scope. También se
+descartan ACL por tarea, equipos, sectores, watchers y políticas configurables
+por falta de evidencia y por exceder el MVP.
+
+DEV-ARCH-GOP, DEV-SRV y DEV-API deberán materializar estas relaciones junto con
+Administrativo sin cambiar su ownership ni inventar equivalencias con roles o
+permisos técnicos. Permanecen pendientes los mecanismos de autorización,
+contratos HTTP, SQL y tests. Esta decisión no resuelve sync, identidad
+interinstalación ni el efecto de comentar sobre `version_registro`.
 
 ## 21. CORE-EF preliminar
 
@@ -841,7 +973,8 @@ El contrato debe prever: obtener tarea, listar tareas, mis tareas, pendientes, v
 
 Filtros mínimos: responsable, estado, prioridad, sucursal, vencida y fecha objetivo.
 
-La existencia funcional de estas consultas no implica acceso irrestricto a sus resultados: su visibilidad queda condicionada a la política funcional de autorización pendiente.
+Sus resultados se limitan por la política funcional de la sección 20.1; los
+filtros nunca amplían visibilidad.
 
 ## 27. MVP funcional
 
@@ -857,7 +990,8 @@ El alcance funcional comprende:
 - agregar comentario;
 - consultar historial.
 
-Los commands de modificación, asignación/reasignación/desasignación, cambios de prioridad, fecha objetivo o estado y comentarios quedan condicionados a la futura política funcional de autorización.
+Las mutaciones se rigen por la matriz funcional de la sección 20.2. El mecanismo
+técnico de autorización permanece pendiente.
 
 Debe implementarse en varios incrementos trazables, no como un único issue grande.
 
@@ -894,6 +1028,9 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 23. `fecha_objetivo` tiene granularidad funcional DATE y conserva validez durante todo su día calendario.
 24. La materialización inicial deberá prever `deleted_at` como baja lógica técnica, distinta de `CANCELADA`, sin que ello habilite una operación de eliminación en el MVP.
 25. El vencimiento usa una única fecha local capturada del reloj del servidor en `America/Argentina/Buenos_Aires` y la fórmula exacta de la sección 12.
+26. `id_sucursal` es opcional: `NULL` significa tarea global y un valor significa tarea de esa única sucursal; nunca representa procedencia técnica.
+27. **Mis tareas** contiene sólo las tareas asignadas al usuario; las creadas por él se consultan separadamente y continúan visibles por autoría.
+28. La visibilidad se obtiene por creador, responsable o alcance funcional correspondiente; las mutaciones se rigen por ejecución como responsable o gestión por scope según la matriz de la sección 20.2.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
@@ -907,18 +1044,19 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 - Ninguna de estas decisiones traslada tareas a `operativo`, materializa una
   entidad técnica ni resuelve sync, identidad portable, permisos o versionado de
   comentarios.
+- El scope de sucursal/global limita consultas y gestión por alcance sin usar
+  `id_instalacion_origen`; creador y responsable siguen siendo relaciones
+  distintas.
 
 ## 30. Decisiones todavía abiertas
 
-De la numeración original de blockers, este incremento cierra exclusivamente
-**#2, #3, #4, #5, #8 y #9** mediante las secciones 9, 9.1, 10, 11, 19 y 12,
-respectivamente. Permanecen abiertos, con su numeración original y sin resolución
-incidental:
+De la numeración original de blockers, los cierres acumulados comprenden **#1,
+#2, #3, #4, #5, #8, #9 y #11**. Este segundo incremento cierra exclusivamente
+**#1 y #11** mediante las secciones 14 y 20. Permanecen abiertos únicamente, con
+su numeración original y sin resolución incidental:
 
-1. Si `id_sucursal` es opcional o no.
 6. Estrategia de sync: `SINCRONIZABLE`, `LOCAL` o `MIXTO`.
 7. Si agregar comentario incrementa `version_registro` de la tarea.
 10. Identidad canónica interinstalación de usuario para toda referencia humana persistida que deba sincronizarse en `gestion_operativa` —como creador, responsable, autor de comentario y actor del historial funcional—: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
-11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar, reabrir y comentar.
 
 Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.

@@ -29,7 +29,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | B — Administrativo | #407–#412 implementados. PR #478 materializó el command mínimo GLOBAL y cerró #412; #413 alinea ahora la documentación formal. | #263 continúa abierto hasta el merge y cierre de #413; #425, #435, #461 y #265 permanecen separados. | PR #478 mergeado (commit `3b6d58d`) como último cambio material de configuración. | Completar #413 sin cerrar anticipadamente #263. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
-| Gestión Operativa — Tareas | Freeze funcional pre-DER: seis decisiones bloqueantes cerradas documentalmente; `Tarea` continúa como concepto funcional propuesto, no implementado. | Permanecen abiertos los blockers #1, #6, #7, #10 y #11 de `GOP-FREEZE-001`. | PR #481 documental, pendiente de revisión y merge. | Resolver los cinco blockers restantes antes de producir DER o SQL. |
+| Gestión Operativa — Tareas | Freeze funcional pre-DER: blockers #1 y #11 cerrados junto con los seis cierres anteriores; `Tarea` continúa como concepto funcional propuesto, no implementado. | Permanecen abiertos únicamente los blockers #6, #7 y #10 de `GOP-FREEZE-001`. | PR #481 mergeado; este incremento documental cierra scope y política funcional. | Resolver sync e identidad interinstalación, manteniendo abierto comentario/versionado, antes de producir DER o SQL. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -77,7 +77,7 @@ outbox y receipt. #461 permanece abierto como migración transversal separada.
 ## 4.2 Gestión Operativa — Tareas y seguimiento interno
 
 Estado documental verificable: `GOP-FREEZE-001` cierra los blockers funcionales
-#2, #3, #4, #5, #8 y #9. `Tarea` continúa como concepto funcional principal
+#1, #2, #3, #4, #5, #8, #9 y #11. `Tarea` continúa como concepto funcional principal
 propuesto de `gestion_operativa`; no se afirma entidad, SQL, API ni runtime
 implementado.
 
@@ -93,17 +93,26 @@ Decisiones cerradas:
   fecha_corte_local`, sólo para tareas activas y sin `deleted_at`.
 - `deleted_at`: previsto desde el primer diseño técnico y distinto del estado
   funcional `CANCELADA`.
+- Scope: `id_sucursal` es opcional; `NULL` significa tarea global y un valor
+  significa tarea de esa única sucursal. `id_instalacion_origen` es sólo
+  procedencia técnica y no scope funcional.
+- Visibilidad: **Mis tareas** contiene sólo las asignadas; las creadas se
+  consultan separadamente y siguen visibles al creador. También habilitan
+  visibilidad el responsable y el alcance sobre la sucursal o global.
+- Mutación: el responsable ejecuta el trabajo y comenta; quien tiene alcance
+  funcional sobre el scope gestiona contenido, asignación, planificación,
+  estados y terminales. Crear no otorga mutación por sí solo; las tareas sin
+  responsable requieren asignación antes de iniciar o completar.
 
 Blockers todavía abiertos, con numeración original:
 
-- #1 — opcionalidad de `id_sucursal`.
 - #6 — estrategia de sync.
 - #7 — comentario y `version_registro`.
 - #10 — identidad canónica interinstalación.
-- #11 — política funcional de visibilidad y mutación.
 
-Próximo paso: resolver estos cinco blockers en incrementos pre-DER. GOP todavía
-no está listo para DER ni SQL.
+Próximo paso: resolver estrategia de sync e identidad canónica
+interinstalación, preservando abierto el efecto de comentario sobre
+`version_registro`. GOP todavía no está listo para DER ni SQL.
 
 ## 5. Frente A — Comercial / Financiero
 
