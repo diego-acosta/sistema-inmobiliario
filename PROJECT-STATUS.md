@@ -104,9 +104,11 @@ Decisiones cerradas:
   responsable y el alcance sobre la sucursal o global.
 - Mutación: el creador conserva la capacidad de comentar; el responsable ejecuta
   el trabajo y comenta; quien tiene alcance funcional sobre el scope gestiona
-  contenido, asignación, planificación, estados y terminales. Crear no otorga
-  las demás mutaciones por sí solo; las tareas sin responsable requieren
-  asignación antes de iniciar o completar.
+  contenido, asignación, planificación y estados. El responsable destino debe ser
+  elegible para ese scope. Crear no otorga las demás mutaciones por sí solo; las
+  tareas sin responsable requieren asignación elegible antes de iniciar o
+  completar. `COMPLETADA` y `CANCELADA` congelan el snapshot corriente, admiten
+  comentarios y sólo `COMPLETADA` admite la reapertura ya definida.
 
 Blockers todavía abiertos, con numeración original:
 

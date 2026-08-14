@@ -701,14 +701,43 @@ Por lo tanto:
   tiene alcance funcional sobre esa sucursal. Una tarea global entra por scope
   sólo para quien tiene alcance global; no se replica conceptualmente como tarea
   de cada sucursal.
-- La asignación individual siempre mantiene la tarea en **Mis tareas** y visible
-  para el responsable, incluida una tarea global o de otra sucursal. El mecanismo
-  administrativo que permitirá o impedirá producir esa asignación se definirá
-  después; no se inventa aquí.
+- La asignación individual mantiene la tarea en **Mis tareas** y visible para el
+  responsable elegible según el scope, incluida una tarea global o de sucursal.
 
 Las tareas `origen = SISTEMA` aplican las mismas reglas según responsable y
 scope. Como no tienen creador humano, no obtienen visibilidad por autoría;
 `generador_sistema` no es actor, usuario, rol ni alcance.
+
+### 20.1.1 Elegibilidad del responsable
+
+El scope funcional de la tarea determina quién puede ser elegido como
+responsable:
+
+```text
+Tarea de sucursal
+→ sólo admite como responsable a un usuario con alcance funcional
+  sobre esa sucursal
+
+Tarea global
+→ sólo admite como responsable a un usuario con alcance funcional global
+```
+
+La misma regla se aplica a la primera asignación y a cada reasignación, incluidas
+las tareas `origen = SISTEMA`. La persona que asigna o reasigna continúa
+necesitando la relación de gestión por scope de la matriz; el usuario destino
+debe ser elegible para ese mismo scope. La asignación no permite eludirlo ni usa
+`id_instalacion_origen` para decidir elegibilidad.
+
+Una asignación vigente habilita las capacidades funcionales del responsable.
+Después de una reasignación, el nuevo responsable debe cumplir la elegibilidad y
+el anterior pierde las capacidades derivadas de esa relación; el creador conserva
+su visibilidad y comentario. Una tarea sin responsable sigue siendo válida, pero
+su primera asignación debe cumplir esta regla antes de que pueda pasar a
+`EN_CURSO` o `COMPLETADA`.
+
+Estas son reglas funcionales, no permisos, roles, claims, ACL ni scopes HTTP. La
+forma en que Administrativo materialice y verifique el alcance queda para los
+artefactos posteriores.
 
 ### 20.2 Decisión de mutación
 
@@ -726,11 +755,28 @@ Para el MVP se distinguen **ejecución del trabajo** y **gestión por scope**:
 | Comentar | Sí | Sí | Sí |
 
 Para la columna de alcance, una tarea de sucursal exige alcance sobre esa
-sucursal y una tarea global exige alcance global. El responsable puede ejecutar
-las acciones indicadas aun cuando no posea ese alcance, porque la asignación
-vigente le confía el trabajo. Toda acción sigue sujeta a estados e invariantes ya
-congelados; esta matriz no habilita editar campos inmutables en estados terminales
-ni reabrir `CANCELADA`.
+sucursal y una tarea global exige alcance global. La matriz sólo aplica cuando la
+operación es funcionalmente válida según el ciclo de vida; una relación marcada
+`Sí` no permite eludir la elegibilidad del responsable ni la terminalidad.
+
+Mientras `estado IN (COMPLETADA, CANCELADA)`, el snapshot funcional corriente es
+inmutable: no pueden modificarse título, descripción, responsable, prioridad ni
+`fecha_objetivo`; tampoco se permite asignar, reasignar, desasignar, ejecutar
+`PENDIENTE ↔ EN_CURSO`, completar nuevamente ni cancelar nuevamente.
+`id_sucursal` permanece además inmutable durante todo el MVP, con independencia
+del estado.
+
+Las únicas excepciones funcionales terminales son:
+
+- `COMPLETADA` y `CANCELADA` pueden recibir comentarios conforme a las relaciones
+  de la matriz. Esto no decide si comentar incrementa `version_registro`.
+- Sólo `COMPLETADA` puede reabrirse explícitamente a `PENDIENTE`, con motivo,
+  historial `REABIERTA` y `fecha_finalizacion` corriente en `NULL`, según las
+  reglas ya congeladas. `CANCELADA` no reabre.
+
+Después de la reapertura, la tarea vuelve a estar activa y las mutaciones
+ordinarias vuelven a aplicarse conforme a la misma matriz, la elegibilidad del
+responsable y los demás invariantes; no se crea una matriz adicional.
 
 Ser creador, por sí solo, otorga trazabilidad, consulta y capacidad de comentar,
 pero **no** habilita las demás mutaciones. Si el creador también es responsable o
@@ -1031,8 +1077,10 @@ El alcance funcional comprende:
 - agregar comentario;
 - consultar historial.
 
-Las mutaciones se rigen por la matriz funcional de la sección 20.2. El mecanismo
-técnico de autorización permanece pendiente.
+Las mutaciones se rigen por la matriz funcional de la sección 20.2 mientras el
+ciclo de vida las permita. La terminalidad congela el snapshot salvo comentarios
+y la reapertura explícita de `COMPLETADA`; el mecanismo técnico de autorización
+permanece pendiente.
 
 Debe implementarse en varios incrementos trazables, no como un único issue grande.
 
@@ -1073,6 +1121,8 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 27. **Mis tareas** contiene sólo las tareas asignadas al usuario; las creadas por él se consultan separadamente y continúan visibles por autoría.
 28. La visibilidad se obtiene por creador, responsable o alcance funcional correspondiente; las mutaciones se rigen por ejecución como responsable o gestión por scope según la matriz de la sección 20.2.
 29. La creación manual exige alcance funcional sobre la sucursal propuesta o alcance global para una tarea global; el scope queda inmutable después de crear la Tarea durante el MVP.
+30. El responsable elegido en una asignación o reasignación debe tener alcance funcional compatible con el scope de la tarea; la asignación vigente habilita sus capacidades sin eludir esa elegibilidad.
+31. `COMPLETADA` y `CANCELADA` congelan el snapshot funcional corriente; sólo admiten comentarios y, exclusivamente para `COMPLETADA`, la reapertura explícita ya definida.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
