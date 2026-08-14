@@ -332,15 +332,55 @@ Cada futuro `COMMAND_WRITE_NEGOCIO` deberá declarar expresamente
 `SINCRONIZABLE` o `LOCAL / NO SINCRONIZABLE`; la clasificación no puede quedar
 implícita.
 
-Si el command es sincronizable, el patrón objetivo, sujeto a su caso concreto, es:
+La presencia de `Authorization: Bearer` depende de que el command tenga un actor
+humano autenticado. Para commands manuales o ejecutados por una persona:
 
 ```text
 Authorization: Bearer
+→ get_authenticated_principal
+→ AuthenticatedPrincipal.id_usuario
+→ identidad humana efectiva
+```
+
+En esos commands se mantiene además:
+
+```text
+X-Usuario-Id
+→ NO REQUERIR
+→ NO PARSEAR
+→ NO COMPARAR
+→ NO USAR como identidad
+→ NO USAR como autorización
+```
+
+Si el command con actor humano es sincronizable, debe aplicar los headers
+técnicos CORE-EF que correspondan:
+
+```text
 X-Op-Id
 X-Sucursal-Id
 X-Instalacion-Id
 If-Match-Version cuando modifica un recurso existente/versionado
 ```
+
+Para commands automáticos con `origen = SISTEMA` no se exigen ni se asumen
+`Authorization: Bearer`, `AuthenticatedPrincipal`, un usuario ficticio ni un
+`id_usuario_creador` artificial. Se mantiene:
+
+```text
+id_usuario_creador = NULL
+generador_sistema = requerido
+```
+
+El mecanismo concreto mediante el cual un proceso técnico o sistema queda
+autorizado para ejecutar un command GOP permanece **NO CONGELADO** y deberá
+resolverse posteriormente en DEV-ARCH-GOP, DEV-SRV, DEV-API o la infraestructura
+transversal correspondiente, sin definirlo en este freeze.
+
+La clasificación `SINCRONIZABLE` o `LOCAL / NO SINCRONIZABLE` es independiente de
+la existencia de actor humano o de `origen = SISTEMA`: no se infiere que todo
+command sincronizable requiera Bearer ni que un command de sistema sea local/no
+sincronizable.
 
 Su DEV-SRV/DEV-API deberá resolver UID/identidad global cuando aplique,
 versionado, idempotencia, fingerprint, replay, outbox, allowlist de sync, misma
