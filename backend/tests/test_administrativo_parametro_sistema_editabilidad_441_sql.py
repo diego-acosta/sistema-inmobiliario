@@ -88,7 +88,7 @@ def test_estructura_exacta_default_deny_sin_indices_triggers_ni_endpoint(db_sess
           AND indexdef ILIKE '%editable_administrativamente%'
     """)).scalar_one() == 0
     assert db_session.execute(text("SELECT count(*) FROM pg_trigger WHERE tgrelid='parametro_sistema'::regclass AND NOT tgisinternal")).scalar_one() == 0
-    assert ROUTER.read_text(encoding="utf-8").count(ENDPOINT_PREFIX) == 2
+    assert ROUTER.read_text(encoding="utf-8").count(ENDPOINT_PREFIX) == 3
 
 
 @pytest.mark.parametrize("count", [0, 1, 3])
@@ -180,4 +180,4 @@ def test_reset_baseline_sin_definiciones_funcionales_425_ni_valores(db_session):
         SELECT count(*) FROM parametro_sistema
         WHERE codigo_parametro IN ('DIA_CIERRE_COMERCIAL', 'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
     """)).scalar_one() == 0
-    assert db_session.execute(text("SELECT count(*) FROM valor_parametro")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM valor_parametro v JOIN parametro_sistema p USING(id_parametro_sistema) WHERE p.codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0

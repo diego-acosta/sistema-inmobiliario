@@ -286,8 +286,8 @@ def test_concurrencia_global_se_serializa_en_definicion():
 
 
 def test_baseline_sin_datos_funcionales_425_ni_outbox(db_session):
-    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema")).scalar_one() == 0
-    assert db_session.execute(text("SELECT count(*) FROM valor_parametro")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema WHERE codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM valor_parametro v JOIN parametro_sistema p USING(id_parametro_sistema) WHERE p.codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0
     assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == 0
     assert db_session.execute(text("SELECT count(*) FROM tipo_dato_parametro WHERE codigo_tipo_dato='ENTERO'")).scalar_one() == 1
     assert db_session.execute(text("SELECT count(*) FROM alcance_parametro WHERE codigo_alcance='GLOBAL'")).scalar_one() == 1

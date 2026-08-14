@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Any
 
 from app.infrastructure.persistence.repositories.parametro_sistema_repository import (
     ParametroSistemaRepository,
 )
+from app.application.administrativo.parametro_entero import parse_parametro_entero
 
 
 class ParametroGlobalNotFoundError(Exception):
@@ -93,9 +93,10 @@ class ObtenerParametroGlobalQueryService:
 
         row = value_rows[0]
         valor_raw = row["valor_raw"]
-        if not isinstance(valor_raw, str) or not re.fullmatch(r"-?[0-9]+", valor_raw):
-            raise ParametroGlobalInconsistencyError()
-        valor_tipado = int(valor_raw)
+        try:
+            valor_tipado = parse_parametro_entero(valor_raw)
+        except ValueError as exc:
+            raise ParametroGlobalInconsistencyError() from exc
 
         return {
             "definicion": definicion,

@@ -868,7 +868,7 @@ Si la definición es exponible, no sensible y `GLOBAL`, pero no existe valor glo
 
 No expone `deleted_at`, contexto, op IDs, `exponible_api_administrativa`, `es_sensible`, `editable_administrativamente`, historial, outbox, SQL, constraints ni detalles de driver. No implementa autorización completa, writes #412, calendario #425 ni contexto #435.
 
-## Incremento #412 — contrato final del update GLOBAL (no implementado)
+## Incremento #412 — update GLOBAL implementado
 
 `PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global`
 queda congelado como `COMMAND_WRITE_NEGOCIO`, update-only de un único

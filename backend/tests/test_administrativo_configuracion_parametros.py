@@ -61,6 +61,7 @@ def _seed_parametro(
 
 
 def test_lista_vacia(client, db_session):
+    db_session.execute(text("DELETE FROM valor_parametro"))
     db_session.execute(text("DELETE FROM parametro_sistema"))
 
     response = client.get(ENDPOINT)

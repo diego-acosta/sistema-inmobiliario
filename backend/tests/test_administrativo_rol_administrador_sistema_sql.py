@@ -65,6 +65,7 @@ def test_patch_es_transaccional_comun_a_dev_y_test_y_anterior_a_consumidores():
 
 def test_primera_ejecucion_crea_una_fila_y_reejecucion_no_duplica(db_session):
     with db_session.begin_nested():
+        db_session.execute(text("DELETE FROM rol_seguridad_permiso WHERE id_rol_seguridad IN (SELECT id_rol_seguridad FROM rol_seguridad WHERE codigo_rol='ADMINISTRADOR_SISTEMA')"))
         db_session.execute(text("""
             DELETE FROM rol_seguridad
              WHERE codigo_rol = 'ADMINISTRADOR_SISTEMA'
@@ -107,8 +108,8 @@ def test_patch_no_crea_permiso_asignaciones_ni_parametro_412(db_session):
     assert db_session.execute(text("""
         SELECT count(*) FROM permiso
          WHERE codigo_permiso = 'ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR'
-    """)).scalar_one() == 0
+    """)).scalar_one() == 1
     assert db_session.execute(text("""
         SELECT count(*) FROM parametro_sistema
          WHERE codigo_parametro = 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'
-    """)).scalar_one() == 0
+    """)).scalar_one() == 1

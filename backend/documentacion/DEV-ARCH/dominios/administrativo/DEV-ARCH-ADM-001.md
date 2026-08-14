@@ -28,7 +28,7 @@ contrato exacto: `codigo_rol = 'ADMINISTRADOR_SISTEMA'`,
 no asigna el rol a usuarios ni crea permisos o relaciones rol-permiso.
 
 Este bootstrap pertenece al núcleo Administrativo y sólo establece el receptor
-canónico para permisos futuros. #412 continúa abierto y no implementado; su futuro
+canónico para permisos futuros. #412 queda implementado por su PR; su
 patch podrá resolver exactamente una fila activa por `codigo_rol` sin crearla ni
 modificarla. Endpoints, headers, idempotencia HTTP, outbox, locks y versionado
 runtime son **NO APLICA** para este incremento SQL; sí aplican transacción,
@@ -141,7 +141,7 @@ La exposición exige `exponible_api_administrativa = true` y `es_sensible = fals
 
 La consulta devuelve el valor global marcado vigente y no eliminado (`es_valor_vigente = true`, `deleted_at IS NULL`, `id_sucursal IS NULL`, `id_instalacion IS NULL`). No resuelve valor efectivo, fecha actual, precedencia, fallback, overrides ni contexto. `fecha_desde` y `fecha_hasta` son sólo metadata proyectada. Si no hay valor, responde `SIN_VALOR` con `valor_marcado_vigente = null`; si hay valor, responde `CON_VALOR_MARCADO_VIGENTE` e incluye `id_valor_parametro`, `uid_global` y `version_registro` del valor. En este incremento sólo se tipa `ENTERO` de forma estricta: representación decimal ASCII con signo negativo opcional (`-?[0-9]+`), sin `+`, espacios, decimales, notación científica ni dígitos Unicode. Los tipos no soportados son inconsistencia incluso cuando no existe valor; `SIN_VALOR` sólo aplica a definiciones `ENTERO` válidas.
 
-CORE-EF: headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial, lock lógico, optimistic locking, commits y mutaciones son `NO APLICA` porque la ruta es read-only. #412, #425 y #435 permanecen pendientes y no quedan implementados por esta lectura.
+CORE-EF: headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial, lock lógico, optimistic locking, commits y mutaciones son `NO APLICA` porque la ruta es read-only. #412 queda implementado separadamente por su command; #425 y #435 permanecen pendientes y no quedan implementados por esta lectura.
 
 ## 12. Incremento #448 — Contrato SQL inicial de `credencial_usuario`
 

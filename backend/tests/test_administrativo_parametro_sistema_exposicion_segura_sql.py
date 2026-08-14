@@ -94,8 +94,7 @@ def test_estructura_exacta_default_deny_sin_indices_ni_triggers(db_session):
 def test_reset_baseline_y_endpoint_407_no_expone_metadata(client, db_session):
     assert db_session.execute(text("SELECT count(*) FROM tipo_dato_parametro WHERE codigo_tipo_dato='ENTERO'")).scalar_one() == 1
     assert db_session.execute(text("SELECT count(*) FROM alcance_parametro WHERE codigo_alcance='GLOBAL'")).scalar_one() == 1
-    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema")).scalar_one() == 0
-    assert db_session.execute(text("SELECT count(*) FROM valor_parametro")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema WHERE codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0
 
     pid = _insert_param(db_session)
     response = client.get(ENDPOINT_PREFIX)
@@ -197,6 +196,6 @@ def test_no_endpoints_nuevos_no_outbox_no_historial_no_valores(db_session):
     after = {t: db_session.execute(text(f"SELECT count(*) FROM {t}")).scalar_one() for t in ("valor_parametro", "outbox_event", "historial_parametro")}
     assert after == before
     router = (BACKEND / "app/api/routers/administrativo_router.py").read_text(encoding="utf-8")
-    assert router.count(ENDPOINT_PREFIX) == 2
+    assert router.count(ENDPOINT_PREFIX) == 3
     inventario_pos = router.find(f'"{ENDPOINT_PREFIX}"')
     assert "valor_parametro" not in router[inventario_pos: inventario_pos + 1200]

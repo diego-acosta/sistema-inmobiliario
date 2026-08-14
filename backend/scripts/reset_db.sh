@@ -36,6 +36,7 @@ SQL_FILES=(
   "patch_sesion_usuario_runtime_20260807.sql"
   "patch_operacion_idempotente_20260810.sql"
   "patch_rol_administrador_sistema_20260813.sql"
+  "patch_admin_valor_global_412_20260813.sql"
 )
 
 DEV_SEEDS=(
@@ -156,6 +157,7 @@ apply_common_files() {
   run_sql "${db}" "patch sesión local revocable #446" "patch_sesion_usuario_runtime_20260807.sql"
   run_sql "${db}" "patch ledger idempotente transversal #469" "patch_operacion_idempotente_20260810.sql"
   run_sql "${db}" "bootstrap rol administrador del sistema #249/#260" "patch_rol_administrador_sistema_20260813.sql"
+  run_sql "${db}" "patch administrativo valor global #412" "patch_admin_valor_global_412_20260813.sql"
 }
 
 log "============================"

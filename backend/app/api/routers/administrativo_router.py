@@ -5,11 +5,15 @@ from app.api.core_ef_headers import (
     CoreEFHeaders,
     CoreEFHeaderValidationError,
     parse_core_ef_headers,
+    parse_authenticated_core_ef_headers,
 )
+from app.api.administrative_authorization import require_administrative_permission
 from app.api.dependencies import get_db
 from app.api.schemas.administrativo import (
     AuthenticatedPrincipalData,
     AuthenticatedPrincipalResponse,
+    ActualizarValorParametroGlobalRequest,
+    ActualizarValorParametroGlobalResponse,
     CatalogoMaestroBajaResponse,
     CatalogoMaestroCreateRequest,
     CatalogoMaestroCreateResponse,
@@ -81,6 +85,10 @@ from app.application.administrativo.services.obtener_parametro_global_query_serv
     ParametroGlobalInconsistencyError,
     ParametroGlobalNotFoundError,
 )
+from app.application.administrativo.services.actualizar_valor_parametro_global_service import (
+    ActualizarValorParametroGlobalService,
+    ParametroCommandError,
+)
 from app.config.settings import get_settings
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroConcurrencyError,
@@ -133,36 +141,40 @@ router = APIRouter(tags=["Administrativo"])
 )
 def obtener_principal_autenticado(
     response: Response,
-    principal: Annotated[
-        AuthenticatedPrincipal, Depends(get_authenticated_principal)
-    ],
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
 ) -> AuthenticatedPrincipalResponse:
     # CORE-EF: QUERY_READLIKE; Authorization autentica y no hay headers write.
     response.headers["Cache-Control"] = "no-store"
     return AuthenticatedPrincipalResponse(
-        data=AuthenticatedPrincipalData(**{
-            field: getattr(principal, field)
-            for field in AuthenticatedPrincipalData.model_fields
-        })
+        data=AuthenticatedPrincipalData(
+            **{
+                field: getattr(principal, field)
+                for field in AuthenticatedPrincipalData.model_fields
+            }
+        )
     )
 
 
 @router.post(
     "/api/v1/administrativo/seguridad/login",
     response_model=LoginResponse,
-    responses={401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    responses={
+        401: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
     openapi_extra={
         "requestBody": {
             "required": True,
             "content": {
-                "application/json": {
-                    "schema": LoginRequest.model_json_schema()
-                }
+                "application/json": {"schema": LoginRequest.model_json_schema()}
             },
         }
     },
 )
-async def login_administrativo(request: Request, response: Response, db: Session = Depends(get_db)) -> LoginResponse | JSONResponse:
+async def login_administrativo(
+    request: Request, response: Response, db: Session = Depends(get_db)
+) -> LoginResponse | JSONResponse:
     # CORE-EF: COMMAND_WRITE_TECNICO preautenticado, local y no sincronizable.
     try:
         payload = await request.json()
@@ -170,19 +182,37 @@ async def login_administrativo(request: Request, response: Response, db: Session
     except (ValueError, TypeError, ValidationError):
         # Este endpoint procesa su body de forma acotada para impedir que FastAPI
         # incluya login/password o el body recibido en detail[].input.
-        return _auth_error(422, "VALIDATION_ERROR", "La solicitud de login no es válida.")
+        return _auth_error(
+            422, "VALIDATION_ERROR", "La solicitud de login no es válida."
+        )
     try:
         result = AuthenticationService(db, get_settings()).login(
             credentials.login, credentials.password
         )
     except InvalidCredentials:
-        return _auth_error(401, "INVALID_CREDENTIALS", "Las credenciales no son válidas.")
+        return _auth_error(
+            401, "INVALID_CREDENTIALS", "Las credenciales no son válidas."
+        )
     except AuthenticationUnavailable:
-        return _auth_error(503, "AUTHENTICATION_UNAVAILABLE", "Autenticación temporalmente no disponible.")
+        return _auth_error(
+            503,
+            "AUTHENTICATION_UNAVAILABLE",
+            "Autenticación temporalmente no disponible.",
+        )
     except AuthenticationTechnicalError:
-        return _auth_error(500, "AUTHENTICATION_TECHNICAL_ERROR", "No fue posible completar la autenticación.")
+        return _auth_error(
+            500,
+            "AUTHENTICATION_TECHNICAL_ERROR",
+            "No fue posible completar la autenticación.",
+        )
     response.headers["Cache-Control"] = "no-store"
-    return LoginResponse(data=LoginData(access_token=result.access_token, expires_at=result.expires_at, session_id=str(result.session_id)))
+    return LoginResponse(
+        data=LoginData(
+            access_token=result.access_token,
+            expires_at=result.expires_at,
+            session_id=str(result.session_id),
+        )
+    )
 
 
 @router.post(
@@ -192,7 +222,11 @@ async def login_administrativo(request: Request, response: Response, db: Session
     response_class=Response,
     responses={401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
-def logout_administrativo(response: Response, authorization: str | None = Header(default=None, alias="Authorization"), db: Session = Depends(get_db)) -> Response | JSONResponse:
+def logout_administrativo(
+    response: Response,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),
+) -> Response | JSONResponse:
     # CORE-EF: COMMAND_WRITE_TECNICO local; Bearer es identidad e idempotency key natural.
     try:
         token = parse_bearer_header(authorization)
@@ -200,7 +234,9 @@ def logout_administrativo(response: Response, authorization: str | None = Header
     except InvalidSession:
         return _auth_error(401, "INVALID_SESSION", "La sesión no es válida.")
     except SessionTechnicalError:
-        return _auth_error(500, "SESSION_TECHNICAL_ERROR", "No fue posible cerrar la sesión.")
+        return _auth_error(
+            500, "SESSION_TECHNICAL_ERROR", "No fue posible cerrar la sesión."
+        )
     response.headers["Cache-Control"] = "no-store"
     response.status_code = 204
     return response
@@ -209,7 +245,9 @@ def logout_administrativo(response: Response, authorization: str | None = Header
 def _auth_error(status_code: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
-        content=ErrorResponse(error_code=code, error_message=message, details={}).model_dump(),
+        content=ErrorResponse(
+            error_code=code, error_message=message, details={}
+        ).model_dump(),
         headers={"Cache-Control": "no-store"},
     )
 
@@ -634,10 +672,105 @@ def _parametro_global_error(
     return _parametro_global_response(_error(status_code, code, message, details))
 
 
+ASCII_LEDGER_WHITESPACE = " \t\n\r\f\v"
+
+
+def _validate_command_codigo(codigo: str) -> None:
+    if not 1 <= len(codigo) <= 100 or not codigo.strip(ASCII_LEDGER_WHITESPACE):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "type": "value_error",
+                    "loc": ["path", "codigo_parametro"],
+                    "msg": "Value error, código de parámetro inválido",
+                }
+            ],
+        )
+
+
+@router.patch(
+    "/api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global",
+    response_model=ActualizarValorParametroGlobalResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        412: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def actualizar_parametro_global(
+    codigo_parametro: str,
+    request: ActualizarValorParametroGlobalRequest,
+    principal: Annotated[
+        AuthenticatedPrincipal,
+        Depends(
+            require_administrative_permission("ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR")
+        ),
+    ],
+    db: Session = Depends(get_db),
+    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
+    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
+    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
+    if_match_version: str | None = Header(default=None, alias="If-Match-Version"),
+) -> ActualizarValorParametroGlobalResponse | JSONResponse:
+    # CORE-EF: COMMAND_WRITE_NEGOCIO. La identidad humana es sólo el principal.
+    _validate_command_codigo(codigo_parametro)
+    try:
+        core = parse_authenticated_core_ef_headers(
+            x_op_id, x_sucursal_id, x_instalacion_id, if_match_version
+        )
+    except CoreEFHeaderValidationError as exc:
+        return _parametro_global_error(
+            400,
+            "VALIDATION_ERROR",
+            exc.message,
+            {"header": exc.header_name, "reason": exc.reason},
+        )
+    try:
+        snapshot = ActualizarValorParametroGlobalService(db).execute(
+            codigo_parametro=codigo_parametro,
+            valor_tipado=request.valor_tipado,
+            headers=core,
+            id_usuario=principal.id_usuario,
+        )
+        db.commit()
+    except ParametroCommandError as exc:
+        db.rollback()
+        messages = {
+            "inconsistencia_contexto_tecnico": "El contexto técnico declarado es inconsistente.",
+            "parametro_no_encontrado": "No existe un parámetro del sistema para el criterio indicado.",
+            "conflicto_parametro": "Existe un conflicto con el parámetro solicitado.",
+            "CONCURRENCY_ERROR": "La versión del recurso no coincide.",
+            "inconsistencia_parametro": "La definición o el valor del parámetro resulta inconsistente.",
+        }
+        return _parametro_global_error(
+            exc.status,
+            exc.code,
+            messages.get(exc.code, "No fue posible completar la operación."),
+            {},
+        )
+    except Exception:
+        db.rollback()
+        return _parametro_global_error(
+            500, "TECHNICAL_INCONSISTENCY", "No fue posible completar la operación.", {}
+        )
+    return _parametro_global_response(JSONResponse(content=snapshot))
+
+
 @router.get(
     "/api/v1/administrativo/configuracion/parametros/{codigo_parametro}/valor-global",
     response_model=ParametroGlobalValorResponse,
-    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
 )
 def get_parametro_global_marcado_vigente(
     codigo_parametro: str,
