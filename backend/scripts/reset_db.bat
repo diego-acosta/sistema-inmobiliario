@@ -390,10 +390,26 @@ if errorlevel 1 (
 echo.
 echo Aplicando bootstrap rol administrador del sistema en %DEV_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%"
-%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ADMIN_VALOR_GLOBAL_412_FILE%"
-%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_CALENDARIO_COMERCIAL_482_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando bootstrap rol administrador del sistema en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch administrativo valor global #412 en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ADMIN_VALOR_GLOBAL_412_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch administrativo valor global #412 en %DEV_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch calendario comercial #482 en %DEV_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_CALENDARIO_COMERCIAL_482_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch calendario comercial #482 en %DEV_DB%
   pause
   exit /b 1
 )
@@ -610,10 +626,26 @@ if errorlevel 1 (
 echo.
 echo Aplicando bootstrap rol administrador del sistema en %TEST_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%"
-%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ADMIN_VALOR_GLOBAL_412_FILE%"
-%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_CALENDARIO_COMERCIAL_482_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando bootstrap rol administrador del sistema en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch administrativo valor global #412 en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ADMIN_VALOR_GLOBAL_412_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch administrativo valor global #412 en %TEST_DB%
+  pause
+  exit /b 1
+)
+
+echo.
+echo Aplicando patch calendario comercial #482 en %TEST_DB%...
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_CALENDARIO_COMERCIAL_482_FILE%"
+if errorlevel 1 (
+  echo ERROR aplicando patch calendario comercial #482 en %TEST_DB%
   pause
   exit /b 1
 )

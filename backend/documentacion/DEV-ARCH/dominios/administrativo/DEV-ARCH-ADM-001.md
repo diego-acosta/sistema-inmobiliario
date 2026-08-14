@@ -82,6 +82,12 @@ La migración valida en reejecución la equivalencia física completa de la raí
 y triggers. Un objeto homónimo parcial o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
 
+Para las funciones contractuales compara el body completo almacenado en `pg_proc`
+tras eliminar sólo whitespace, y exige firma sin argumentos, retorno `trigger`,
+lenguaje `plpgsql`, configuración y seguridad contractuales. Los triggers se
+comparan contra su definición completa, sin admitir eventos, granularidad o
+condiciones `WHEN` adicionales.
+
 Aunque ambas definiciones son exponibles, no sensibles y editables
 administrativamente, quedan excluidas contractualmente del PATCH genérico #412.
 Su modificación funcional corresponderá exclusivamente al agregado #425 y su

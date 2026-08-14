@@ -176,13 +176,31 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-DO $$ DECLARE definition text; BEGIN
-  IF to_regprocedure('public.trg_configuracion_calendario_comercial_core_ef()') IS NOT NULL THEN
-    SELECT pg_get_functiondef('public.trg_configuracion_calendario_comercial_core_ef()'::regprocedure) INTO definition;
-    definition := regexp_replace(definition,'[[:space:]]','','g');
-    IF definition NOT LIKE '%IFTG_OP=''INSERT''THEN%'
-       OR definition NOT LIKE '%NEW.version_registro:=OLD.version_registro+1%'
-       OR definition NOT LIKE '%NEW.uid_global:=OLD.uid_global%'
+DO $$ DECLARE definition text; expected text := $expected$
+BEGIN
+  IF TG_OP='INSERT' THEN
+    IF NEW.version_registro <> 1 THEN RAISE EXCEPTION 'calendario comercial debe iniciar en versión 1'; END IF;
+    NEW.op_id_ultima_modificacion := COALESCE(NEW.op_id_ultima_modificacion,NEW.op_id_alta);
+    NEW.id_instalacion_ultima_modificacion := COALESCE(NEW.id_instalacion_ultima_modificacion,NEW.id_instalacion_origen);
+  ELSE
+    NEW.uid_global:=OLD.uid_global; NEW.created_at:=OLD.created_at;
+    NEW.id_instalacion_origen:=OLD.id_instalacion_origen; NEW.op_id_alta:=OLD.op_id_alta;
+    NEW.updated_at:=CURRENT_TIMESTAMP; NEW.version_registro:=OLD.version_registro+1;
+  END IF;
+  RETURN NEW;
+END $expected$; function_count bigint; BEGIN
+  SELECT count(*) INTO function_count FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname='trg_configuracion_calendario_comercial_core_ef';
+  IF function_count > 1 OR (function_count=1 AND to_regprocedure('public.trg_configuracion_calendario_comercial_core_ef()') IS NULL)
+  THEN RAISE EXCEPTION 'firma de función CORE-EF calendario comercial incompatible'; END IF;
+  IF function_count = 1 THEN
+    SELECT p.prosrc INTO definition FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+     JOIN pg_language l ON l.oid=p.prolang
+     WHERE n.nspname='public' AND p.proname='trg_configuracion_calendario_comercial_core_ef'
+       AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND l.lanname='plpgsql'
+       AND NOT p.prosecdef AND p.proconfig IS NULL;
+    IF definition IS NULL OR regexp_replace(definition,'[[:space:]]','','g') <>
+       regexp_replace(expected,'[[:space:]]','','g')
     THEN RAISE EXCEPTION 'función CORE-EF calendario comercial incompatible'; END IF;
   ELSE
     EXECUTE $ddl$CREATE FUNCTION public.trg_configuracion_calendario_comercial_core_ef() RETURNS trigger
@@ -202,7 +220,7 @@ END $body$;$ddl$;
   END IF;
 END $$;
 
-DO $$ DECLARE actual text; BEGIN
+DO $$ DECLARE actual text; expected text := 'CREATE TRIGGER trg_biu_configuracion_calendario_comercial_core_ef BEFORE INSERT OR UPDATE ON public.configuracion_calendario_comercial FOR EACH ROW EXECUTE FUNCTION trg_configuracion_calendario_comercial_core_ef()'; BEGIN
   SELECT pg_get_triggerdef(oid) INTO actual FROM pg_trigger
    WHERE tgrelid='public.configuracion_calendario_comercial'::regclass
      AND tgname='trg_biu_configuracion_calendario_comercial_core_ef' AND NOT tgisinternal;
@@ -210,19 +228,36 @@ DO $$ DECLARE actual text; BEGIN
     CREATE TRIGGER trg_biu_configuracion_calendario_comercial_core_ef BEFORE INSERT OR UPDATE
       ON public.configuracion_calendario_comercial FOR EACH ROW
       EXECUTE FUNCTION public.trg_configuracion_calendario_comercial_core_ef();
-  ELSIF actual NOT LIKE '%BEFORE INSERT OR UPDATE%'
-     OR actual NOT LIKE '%FOR EACH ROW%'
-     OR actual NOT LIKE '%trg_configuracion_calendario_comercial_core_ef()%'
+  ELSIF regexp_replace(actual,'[[:space:]]','','g') <> regexp_replace(expected,'[[:space:]]','','g')
   THEN RAISE EXCEPTION 'trigger CORE-EF calendario comercial incompatible'; END IF;
 END $$;
 
-DO $$ DECLARE definition text; BEGIN
-  IF to_regprocedure('public.trg_valor_parametro_calendario_comercial()') IS NOT NULL THEN
-    SELECT pg_get_functiondef('public.trg_valor_parametro_calendario_comercial()'::regprocedure) INTO definition;
-    definition := regexp_replace(definition,'[[:space:]]','','g');
-    IF definition NOT LIKE '%DIA_CIERRE_COMERCIAL%'
-       OR definition NOT LIKE '%DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS%'
-       OR definition NOT LIKE '%::numericBETWEEN1AND31%'
+DO $$ DECLARE definition text; expected text := $expected$
+DECLARE codigo text;
+BEGIN
+  SELECT codigo_parametro INTO codigo FROM public.parametro_sistema
+   WHERE id_parametro_sistema=NEW.id_parametro_sistema;
+  IF codigo IN ('DIA_CIERRE_COMERCIAL','DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+     AND (CASE
+       WHEN NEW.valor_parametro ~ '^-?[0-9]+$'
+         THEN NEW.valor_parametro::numeric BETWEEN 1 AND 31
+       ELSE false
+     END) IS NOT TRUE
+  THEN RAISE EXCEPTION 'valor de calendario comercial debe ser un entero entre 1 y 31'; END IF;
+  RETURN NEW;
+END $expected$; function_count bigint; BEGIN
+  SELECT count(*) INTO function_count FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname='trg_valor_parametro_calendario_comercial';
+  IF function_count > 1 OR (function_count=1 AND to_regprocedure('public.trg_valor_parametro_calendario_comercial()') IS NULL)
+  THEN RAISE EXCEPTION 'firma de función rango calendario comercial incompatible'; END IF;
+  IF function_count = 1 THEN
+    SELECT p.prosrc INTO definition FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+     JOIN pg_language l ON l.oid=p.prolang
+     WHERE n.nspname='public' AND p.proname='trg_valor_parametro_calendario_comercial'
+       AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND l.lanname='plpgsql'
+       AND NOT p.prosecdef AND p.proconfig IS NULL;
+    IF definition IS NULL OR regexp_replace(definition,'[[:space:]]','','g') <>
+       regexp_replace(expected,'[[:space:]]','','g')
     THEN RAISE EXCEPTION 'función rango calendario comercial incompatible'; END IF;
   ELSE
     EXECUTE $ddl$CREATE FUNCTION public.trg_valor_parametro_calendario_comercial() RETURNS trigger
@@ -243,15 +278,13 @@ END $body$;$ddl$;
   END IF;
 END $$;
 
-DO $$ DECLARE actual text; BEGIN
+DO $$ DECLARE actual text; expected text := 'CREATE TRIGGER trg_biu_valor_parametro_calendario_comercial BEFORE INSERT OR UPDATE ON public.valor_parametro FOR EACH ROW EXECUTE FUNCTION trg_valor_parametro_calendario_comercial()'; BEGIN
   SELECT pg_get_triggerdef(oid) INTO actual FROM pg_trigger WHERE tgrelid='public.valor_parametro'::regclass
    AND tgname='trg_biu_valor_parametro_calendario_comercial' AND NOT tgisinternal;
   IF actual IS NULL THEN
     CREATE TRIGGER trg_biu_valor_parametro_calendario_comercial BEFORE INSERT OR UPDATE
       ON public.valor_parametro FOR EACH ROW EXECUTE FUNCTION public.trg_valor_parametro_calendario_comercial();
-  ELSIF actual NOT LIKE '%BEFORE INSERT OR UPDATE%'
-     OR actual NOT LIKE '%FOR EACH ROW%'
-     OR actual NOT LIKE '%trg_valor_parametro_calendario_comercial()%'
+  ELSIF regexp_replace(actual,'[[:space:]]','','g') <> regexp_replace(expected,'[[:space:]]','','g')
   THEN RAISE EXCEPTION 'trigger rango calendario comercial incompatible'; END IF;
 END $$;
 

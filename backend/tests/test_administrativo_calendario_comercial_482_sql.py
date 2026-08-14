@@ -71,6 +71,31 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
     assert _definitions(db_session) == EXPECTED
 
 
+def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
+    bat = BAT.read_text(encoding="utf-8")
+    commands = [
+        line.strip()
+        for line in bat.splitlines()
+        if line.strip().startswith("%PGBIN%\\psql")
+    ]
+    for database in ("%DEV_DB%", "%TEST_DB%"):
+        sequence = [
+            next(command for command in commands if database in command and name in command)
+            for name in (
+                "PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE",
+                "PATCH_ADMIN_VALOR_GLOBAL_412_FILE",
+                "PATCH_CALENDARIO_COMERCIAL_482_FILE",
+            )
+        ]
+        positions = [bat.index(command) for command in sequence]
+        assert positions == sorted(positions)
+        for index, position in enumerate(positions):
+            boundary = positions[index + 1] if index + 1 < len(positions) else len(bat)
+            block = bat[position:boundary].lower()
+            assert "if errorlevel 1 (" in block
+            assert block.index("if errorlevel 1 (") > block.index("psql")
+
+
 @pytest.mark.parametrize(
     ("mutation", "evidence"),
     [
@@ -127,6 +152,85 @@ def test_funcion_homonima_incompatible_falla_sin_reemplazar(db_session, function
             text("SELECT pg_get_functiondef(to_regprocedure(:signature))"),
             {"signature": f"public.{function_name}()"},
         ).scalar_one()
+        assert marker in definition
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        """
+        BEGIN
+          IF TG_OP='INSERT' THEN NEW.version_registro:=2;
+          ELSE NEW.uid_global:=OLD.uid_global; NEW.version_registro:=OLD.version_registro+1; END IF;
+          RETURN NEW; /* PARCIAL_VERSION_482 */
+        END
+        """,
+        """
+        BEGIN
+          IF TG_OP='INSERT' THEN
+            IF NEW.version_registro<>1 THEN RAISE EXCEPTION 'version'; END IF;
+            NEW.op_id_ultima_modificacion:=COALESCE(NEW.op_id_ultima_modificacion,NEW.op_id_alta);
+            NEW.id_instalacion_ultima_modificacion:=COALESCE(NEW.id_instalacion_ultima_modificacion,NEW.id_instalacion_origen);
+          ELSE
+            NEW.uid_global:=OLD.uid_global; NEW.id_instalacion_origen:=OLD.id_instalacion_origen;
+            NEW.op_id_alta:=OLD.op_id_alta; NEW.updated_at:=CURRENT_TIMESTAMP;
+            NEW.version_registro:=OLD.version_registro+1;
+          END IF;
+          RETURN NEW; /* PARCIAL_CREATED_AT_482 */
+        END
+        """,
+        """
+        BEGIN
+          IF TG_OP='INSERT' THEN
+            IF NEW.version_registro<>1 THEN RAISE EXCEPTION 'version'; END IF;
+            NEW.op_id_ultima_modificacion:=COALESCE(NEW.op_id_ultima_modificacion,NEW.op_id_alta);
+            NEW.id_instalacion_ultima_modificacion:=COALESCE(NEW.id_instalacion_ultima_modificacion,NEW.id_instalacion_origen);
+          ELSE
+            NEW.uid_global:=OLD.uid_global; NEW.created_at:=OLD.created_at;
+            NEW.id_instalacion_origen:=OLD.id_instalacion_origen;
+            NEW.updated_at:=CURRENT_TIMESTAMP; NEW.version_registro:=OLD.version_registro+1;
+          END IF;
+          RETURN NEW; /* PARCIAL_OP_ID_482 */
+        END
+        """,
+    ],
+)
+def test_funcion_core_ef_parcialmente_compatible_aborta_sin_reemplazo(db_session, body):
+    marker = body.split("PARCIAL_", 1)[1].split(" ", 1)[0]
+    with db_session.begin_nested():
+        db_session.execute(text(f"""
+          CREATE OR REPLACE FUNCTION public.trg_configuracion_calendario_comercial_core_ef()
+          RETURNS trigger LANGUAGE plpgsql AS $function${body}$function$
+        """))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        definition = db_session.execute(text("""
+          SELECT pg_get_functiondef(
+            'public.trg_configuracion_calendario_comercial_core_ef()'::regprocedure
+          )
+        """)).scalar_one()
+        assert marker in definition
+
+
+def test_funcion_rango_parcialmente_compatible_aborta_sin_reemplazo(db_session):
+    marker = "PARCIAL_RANGO_482"
+    with db_session.begin_nested():
+        db_session.execute(text(f"""
+          CREATE OR REPLACE FUNCTION public.trg_valor_parametro_calendario_comercial()
+          RETURNS trigger LANGUAGE plpgsql AS $function$
+          BEGIN
+            IF 'DIA_CIERRE_COMERCIAL' <> 'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS'
+               AND NEW.valor_parametro::numeric BETWEEN 1 AND 31 THEN NULL; END IF;
+            RETURN NEW; /* {marker} */
+          END $function$
+        """))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        definition = db_session.execute(text("""
+          SELECT pg_get_functiondef(
+            'public.trg_valor_parametro_calendario_comercial()'::regprocedure
+          )
+        """)).scalar_one()
         assert marker in definition
 
 
