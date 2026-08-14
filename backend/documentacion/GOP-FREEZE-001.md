@@ -353,8 +353,9 @@ X-Usuario-Id
 → NO USAR como autorización
 ```
 
-Si el command con actor humano es sincronizable, debe aplicar los headers
-técnicos CORE-EF que correspondan:
+Todo `COMMAND_WRITE_NEGOCIO` clasificado como `SINCRONIZABLE` deberá aplicar los
+headers técnicos CORE-EF que correspondan, independientemente de que tenga actor
+humano o `origen = SISTEMA`:
 
 ```text
 X-Op-Id
@@ -362,6 +363,12 @@ X-Sucursal-Id
 X-Instalacion-Id
 If-Match-Version cuando modifica un recurso existente/versionado
 ```
+
+`X-Op-Id`, `X-Sucursal-Id` y `X-Instalacion-Id` aportan contexto técnico, no
+identidad humana. `If-Match-Version` depende de la naturaleza del recurso y del
+command, no del tipo de actor. `X-Sucursal-Id` no define el scope funcional de
+`Tarea`. Los detalles concretos de cada header deberán cerrarse en DEV-ARCH,
+DEV-SRV y DEV-API del command correspondiente.
 
 Para commands automáticos con `origen = SISTEMA` no se exigen ni se asumen
 `Authorization: Bearer`, `AuthenticatedPrincipal`, un usuario ficticio ni un
