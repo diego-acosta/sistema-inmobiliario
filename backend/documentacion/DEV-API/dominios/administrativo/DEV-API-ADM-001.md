@@ -800,7 +800,7 @@ referencie; las nuevas descripciones estructurales no se agregan a su response.
 
 Para el futuro #411, un valor administrativo sólo podrá devolverse si la definición cumple `exponible_api_administrativa = true AND es_sensible = false`. Si la definición no existe o no cumple esa condición, el contrato recomendado es `404 Not Found`, usando el error estándar de parámetro no encontrado si el catálogo real lo permite, para no revelar por enumeración la existencia de definiciones sensibles o no exponibles.
 
-#438/#441 no implementan autenticación ni autorización. Los headers CORE-EF de write no equivalen a autorización; el endpoint administrativo de #411 no debe tratarse como público y deberá incorporar una dependencia de autorización cuando exista infraestructura real. #441 agrega sólo metadata física `editable_administrativamente` default-deny, independiente de exposición y sensibilidad; no agrega endpoint write y #412 sigue pendiente por autorización, idempotencia/replay, outbox e historial. Futuros reads no deben registrar valores, secretos, op IDs, credenciales, payload SQL ni contenido sensible.
+#438/#441 no implementan autenticación ni autorización. Los headers CORE-EF de write no equivalen a autorización; el endpoint administrativo de #411 no debe tratarse como público y deberá incorporar una dependencia de autorización cuando exista infraestructura real. #441 agrega sólo metadata física `editable_administrativamente` default-deny, independiente de exposición y sensibilidad; no agrega endpoint write. Estado al cierre de #441: #412 seguía pendiente por autorización, idempotencia/replay, outbox e historial. Futuros reads no deben registrar valores, secretos, op IDs, credenciales, payload SQL ni contenido sensible.
 
 ## Incremento #441 — Sin endpoint write ni exposición de editabilidad
 
@@ -1292,7 +1292,7 @@ y "No fue posible resolver la autorización administrativa.". Ambos incluyen det
 vacío y `Cache-Control: no-store`, sin código de permiso ni información interna. El
 401 `INVALID_SESSION` permanece a cargo de #447. Clasificación CORE-EF:
 `QUERY_READLIKE`; no aplican headers write, idempotencia, outbox, locks, versionado o
-sync. #461 (migración), #412 (primer command) y #435 (contexto) siguen pendientes.
+sync. Estado al cierre de este incremento: #461 (migración), #412 (primer command) y #435 (contexto) seguían pendientes. El estado vigente de #412 se documenta a continuación.
 
 ## Cierre documental #413 — estado vigente post-PR #478
 
