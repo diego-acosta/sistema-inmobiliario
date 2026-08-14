@@ -1303,3 +1303,11 @@ sync. Estado al cierre de este incremento: #461 (migración), #412 (primer comma
 La autorización runtime exige el permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, concedido mediante cualquier rol activo aplicable. El permiso se vincula al rol canónico prerequisito `ADMINISTRADOR_SISTEMA`, pero ese código de rol no es una condición exclusiva; #412 no crea ese rol, un rol `ADMIN` alternativo ni asignaciones de usuarios. El seed técnico `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` (`ENTERO`, `GLOBAL`, exponible, no sensible, editable, valor inicial `"15"`) es sólo soporte reproducible DEV/TEST, no configuración funcional.
 
 #425, #435, #461 y #265 permanecen fuera de este cierre. Tampoco se incorporan secretos, secret manager, CRUD genérico, alta/baja dinámica, UI, consumers remotos, reconciliación, resolución temporal general ni eliminación de `configuracion_general`.
+
+## Estado estructural del calendario comercial (#482)
+
+#482 no agrega ni modifica endpoints, routers, schemas ni autorización runtime.
+Sólo prepara SQL y el permiso que consumirán incrementos posteriores de #425.
+Por ello la clasificación de endpoint, headers write, `If-Match-Version` e
+idempotencia HTTP son **NO APLICA**. Aún no existen GET de calendario,
+bootstrap, POST, PUT ni programación; #483 es el siguiente incremento.

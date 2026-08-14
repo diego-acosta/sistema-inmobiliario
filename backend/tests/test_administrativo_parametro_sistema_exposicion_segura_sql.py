@@ -94,7 +94,7 @@ def test_estructura_exacta_default_deny_sin_indices_ni_triggers(db_session):
 def test_reset_baseline_y_endpoint_407_no_expone_metadata(client, db_session):
     assert db_session.execute(text("SELECT count(*) FROM tipo_dato_parametro WHERE codigo_tipo_dato='ENTERO'")).scalar_one() == 1
     assert db_session.execute(text("SELECT count(*) FROM alcance_parametro WHERE codigo_alcance='GLOBAL'")).scalar_one() == 1
-    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema WHERE codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema WHERE codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 2
 
     pid = _insert_param(db_session)
     response = client.get(ENDPOINT_PREFIX)
@@ -176,7 +176,7 @@ def test_rechaza_constraint_homonima_incompatible_y_estado_contradictorio_preexi
 
 
 def test_no_infiere_ni_habilita_por_codigo_tipo_alcance_nombre_o_descripcion(db_session):
-    suspicious = "DIA_CIERRE_COMERCIAL"
+    suspicious = "DIA_CIERRE_COMERCIAL_SIMULADO"
     pid = _insert_param(db_session, suspicious)
     db_session.execute(text("""
         UPDATE parametro_sistema

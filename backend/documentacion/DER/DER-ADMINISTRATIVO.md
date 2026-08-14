@@ -23,6 +23,12 @@ Desde #410, `valor_parametro` materializa metadata CORE-EF física, versionado p
 
 Para #425, el subgrafo exclusivo es `parametro_sistema -> valor_parametro` con alcance `GLOBAL`, `id_sucursal IS NULL` e `id_instalacion IS NULL`; no intervienen `configuracion_general`, `configuracion_local` ni catálogos.
 
+Desde #482, `configuracion_calendario_comercial` es la raíz física mínima del
+agregado: sólo identidad, versión, timestamps, soft delete y procedencia CORE-EF.
+No contiene días ni vigencias y no existe aún una fila funcional. Su índice
+singleton permite 0 o 1 fila activa; `valor_parametro` continúa siendo la única
+persistencia de valores. La materialización raíz/valores queda para #484.
+
 Desde #409 existen como datos estructurales contractuales el tipo `ENTERO` y el
 alcance `GLOBAL`, identificados por código y no editables por API. Este incremento
 no agrega filas a `parametro_sistema` ni `valor_parametro`: únicamente elimina el

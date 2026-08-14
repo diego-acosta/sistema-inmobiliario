@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-13
+**Actualizado:** 2026-08-14
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | #407–#412 implementados. PR #478 materializó el command mínimo GLOBAL y cerró #412; #413 alinea ahora la documentación formal. | #263 continúa abierto hasta el merge y cierre de #413; #425, #435, #461 y #265 permanecen separados. | PR #478 mergeado (commit `3b6d58d`) como último cambio material de configuración. | Completar #413 sin cerrar anticipadamente #263. |
+| B — Administrativo | #407–#412 implementados. #482 completa la preparación estructural inicial del calendario comercial: definiciones, raíz física vacía, invariantes y permiso; sin runtime funcional. | #425 permanece coordinador abierto y dividido; #482 es el incremento estructural, #483 el siguiente. #426 continúa bloqueado. | PR de #482 pendiente de publicación. | #483; luego #484–#486 sin cerrar anticipadamente #425. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
 

@@ -35,6 +35,7 @@ set PATCH_SESION_USUARIO_RUNTIME_FILE=%BACKEND_DIR%\database\patch_sesion_usuari
 set PATCH_OPERACION_IDEMPOTENTE_FILE=%BACKEND_DIR%\database\patch_operacion_idempotente_20260810.sql
 set PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE=%BACKEND_DIR%\database\patch_rol_administrador_sistema_20260813.sql
 set PATCH_ADMIN_VALOR_GLOBAL_412_FILE=%BACKEND_DIR%\database\patch_admin_valor_global_412_20260813.sql
+set PATCH_CALENDARIO_COMERCIAL_482_FILE=%BACKEND_DIR%\database\patch_calendario_comercial_482_20260814.sql
 set SEED_INDICES_FINANCIEROS_DEMO_FILE=%BACKEND_DIR%\database\seed_indices_financieros_demo.sql
 
 echo ============================
@@ -185,6 +186,12 @@ if not exist "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%" (
 
 if not exist "%PATCH_ADMIN_VALOR_GLOBAL_412_FILE%" (
   echo ERROR: No existe el patch administrativo #412: %PATCH_ADMIN_VALOR_GLOBAL_412_FILE%
+  pause
+  exit /b 1
+)
+
+if not exist "%PATCH_CALENDARIO_COMERCIAL_482_FILE%" (
+  echo ERROR: No existe el patch calendario comercial #482: %PATCH_CALENDARIO_COMERCIAL_482_FILE%
   pause
   exit /b 1
 )
@@ -384,6 +391,7 @@ echo.
 echo Aplicando bootstrap rol administrador del sistema en %DEV_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%"
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_ADMIN_VALOR_GLOBAL_412_FILE%"
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %DEV_DB% -f "%PATCH_CALENDARIO_COMERCIAL_482_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando bootstrap rol administrador del sistema en %DEV_DB%
   pause
@@ -603,6 +611,7 @@ echo.
 echo Aplicando bootstrap rol administrador del sistema en %TEST_DB%...
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ROL_ADMINISTRADOR_SISTEMA_FILE%"
 %PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_ADMIN_VALOR_GLOBAL_412_FILE%"
+%PGBIN%\psql -v ON_ERROR_STOP=1 -d %TEST_DB% -f "%PATCH_CALENDARIO_COMERCIAL_482_FILE%"
 if errorlevel 1 (
   echo ERROR aplicando bootstrap rol administrador del sistema en %TEST_DB%
   pause

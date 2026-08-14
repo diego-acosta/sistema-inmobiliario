@@ -723,3 +723,17 @@ En `EXECUTE`, el target se bloquea `FOR UPDATE` y la versión se valida bajo loc
 EVT-ADM-060 está implementado: `valor_parametro_modificado`/`valor_parametro`, aggregate_id local, `PENDING`, envelope metadata/data, `uid_instalacion_origen`, identidad portable `data.uid_global`, hash RFC 8785 + SHA-256 lowercase y UTC aware normalizado a storage naive UTC. Sólo el cambio material emite uno; no-op y replay emiten cero.
 
 `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` es seed técnico controlado `ENTERO`/`GLOBAL`, exponible, no sensible, editable y con valor inicial `"15"`; soporta reproducibilidad DEV/TEST y no constituye configuración funcional ni #425. #425, #435, #461 y #265 permanecen separados, junto con secretos, CRUD genérico, UI, consumers remotos, reconciliación y resolución temporal general.
+
+## Incremento #482 — persistencia inicial del calendario comercial
+
+#482 prepara dos definiciones contractuales `ENTERO`/`GLOBAL`, exponibles, no
+sensibles y editables; una raíz física singleton activa (cardinalidad 0..1); la
+defensa localizada de enteros 1–31; y el permiso
+`ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR`. `ADMINISTRADOR_SISTEMA` es el
+receptor canónico sembrado; el runtime futuro será permission-based mediante
+cualquier rol activo aplicable.
+
+No hay valores funcionales ni fila raíz después del reset. Tampoco hay endpoint,
+GET de calendario, bootstrap, programación, ledger HTTP específico, evento
+agregado, sync o historial especializado. #483 sigue y #484 creará atómicamente
+la primera raíz y ambos valores; #425 permanece coordinador abierto.

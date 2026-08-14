@@ -67,6 +67,21 @@ Un valor sensible nunca puede exponerse en claro por API, historial, outbox ni l
 
 Permanecen pendientes para #425 y sus incrementos de implementación: patch SQL funcional específico; seeds de las dos claves; constraints de rango 1–31; read; write; versionado; idempotencia; outbox; historial; rollback; query service interno y tests PostgreSQL. Esta lista no declara nombres de endpoints ni comportamiento runtime existente.
 
+### Incremento estructural #482
+
+#425 queda dividido en incrementos. #482 materializa únicamente las definiciones
+`DIA_CIERRE_COMERCIAL` y `DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS` como
+`ENTERO`/`GLOBAL`, su rango SQL localizado 1–31, el permiso administrativo y la
+tabla raíz física `configuracion_calendario_comercial`. La tabla es núcleo
+administrativo de identidad, versión y procedencia técnica; `valor_parametro`
+conserva ownership exclusivo de los días y de su vigencia. La cardinalidad física
+admite cero o una raíz activa.
+
+#482 no crea valores ni fila raíz funcional. No agrega GET, bootstrap,
+programación, query service, idempotencia HTTP, outbox, sync o historial
+especializado. La primera raíz y los dos primeros valores pertenecen a #484 en
+una transacción; #483 es el siguiente incremento y #425 permanece abierto.
+
 Quedan **NO CONFIRMADOS** hasta contar con evidencia: códigos/nombres exactos de las claves, defaults, cifrado/secret manager, autorización, caché, inclusividad de `fecha_hasta`, reactivación o reutilización de claves y taxonomía final de eventos.
 
 ## 6. Estado CORE-EF físico de `valor_parametro`
