@@ -89,6 +89,7 @@ from app.application.administrativo.services.actualizar_valor_parametro_global_s
     ActualizarValorParametroGlobalService,
     ParametroCommandError,
 )
+from app.application.common.idempotency import IdempotencyRuntimeError
 from app.config.settings import get_settings
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
     CatalogoMaestroConcurrencyError,
@@ -753,6 +754,14 @@ def actualizar_parametro_global(
             exc.status,
             exc.code,
             messages.get(exc.code, "No fue posible completar la operación."),
+            {},
+        )
+    except IdempotencyRuntimeError:
+        db.rollback()
+        return _parametro_global_error(
+            500,
+            "IDEMPOTENCY_TECHNICAL_ERROR",
+            "No fue posible resolver la idempotencia de la operación.",
             {},
         )
     except Exception:
