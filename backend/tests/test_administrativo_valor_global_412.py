@@ -140,6 +140,44 @@ def _assert_header_error(response, header):
 
 
 @pytest.mark.parametrize(
+    "authorization_context",
+    ["permiso_generico", "permiso_generico_y_calendario", "administrador_sistema"],
+)
+@pytest.mark.parametrize(
+    "calendar_code",
+    ["DIA_CIERRE_COMERCIAL", "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS"],
+)
+def test_command_generico_excluye_agregado_calendario_para_toda_autorizacion(
+    client, db_session, authorization_context, calendar_code
+):
+    # Los tres contextos ya superaron la dependency permission-based. El
+    # boundary del service debe ser idéntico e independiente del grant origen.
+    del authorization_context
+    db_session.execute(text("""
+      INSERT INTO valor_parametro(id_parametro_sistema,valor_parametro,es_valor_vigente)
+      SELECT id_parametro_sistema,'15',true FROM parametro_sistema
+       WHERE codigo_parametro=:code
+    """), {"code": calendar_code})
+    before = dict(_row(db_session, calendar_code))
+    op_id = uuid4()
+    endpoint = ENDPOINT_TEMPLATE.format(calendar_code)
+    with patch(
+        "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
+    ) as claim, patch.object(db_session, "rollback"):
+        response = _request(
+            client,
+            16,
+            headers=_headers(op_id, before["version_registro"]),
+            endpoint=endpoint,
+        )
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "conflicto_parametro"
+    assert dict(_row(db_session, calendar_code)) == before
+    assert _effects(db_session, op_id) == (0, 0)
+    claim.assert_not_called()
+
+
+@pytest.mark.parametrize(
     ("value", "missing"),
     [(None, True), ("not-a-uuid", False)],
     ids=["missing", "invalid"],

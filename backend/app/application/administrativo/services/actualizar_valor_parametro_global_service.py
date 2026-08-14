@@ -27,6 +27,12 @@ from app.infrastructure.persistence.repositories.valor_parametro_global_command_
 
 COMMAND_CODE = "ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE"
 TARGET_TYPE = "VALOR_PARAMETRO"
+CALENDARIO_COMERCIAL_PARAMETER_CODES = frozenset(
+    {
+        "DIA_CIERRE_COMERCIAL",
+        "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS",
+    }
+)
 
 
 class ParametroCommandError(Exception):
@@ -48,6 +54,10 @@ class ActualizarValorParametroGlobalService:
         headers: AuthenticatedCoreEFHeaders,
         id_usuario: int,
     ) -> dict[str, Any]:
+        # Estas claves pertenecen al agregado #425. El command genérico #412 no
+        # puede mutarlas individualmente, independientemente del rol o permiso.
+        if codigo_parametro in CALENDARIO_COMERCIAL_PARAMETER_CODES:
+            raise ParametroCommandError(409, "conflicto_parametro")
         payload_hash = canonical_payload_hash(
             {
                 "codigo_parametro": codigo_parametro,

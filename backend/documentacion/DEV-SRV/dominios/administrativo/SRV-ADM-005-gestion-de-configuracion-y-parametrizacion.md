@@ -737,3 +737,10 @@ No hay valores funcionales ni fila raíz después del reset. Tampoco hay endpoin
 GET de calendario, bootstrap, programación, ledger HTTP específico, evento
 agregado, sync o historial especializado. #483 sigue y #484 creará atómicamente
 la primera raíz y ambos valores; #425 permanece coordinador abierto.
+
+Las dos claves conservan `editable_administrativamente = true`, pero el command
+individual genérico #412 responde `409 conflicto_parametro` antes del claim y de
+cualquier mutación, incluso si el actor también posee el permiso específico o es
+`ADMINISTRADOR_SISTEMA`. Sólo el futuro agregado #425 podrá modificarlas de forma
+atómica y temporal. La migración rechaza además todo valor preexistente de esas
+claves que no sea un `ENTERO` ASCII tipado dentro de 1–31, incluidos históricos.

@@ -311,6 +311,9 @@ Este catálogo cubre errores de usuarios y acceso, seguridad y autorización, au
 - aplica_a: configuracion_parametro, configuracion_contexto
 - origen: DEV-SRV
 - es_reintento_valido: no
+- uso #482: el command individual genérico #412 devuelve este error para las dos
+  claves del calendario comercial, porque sólo el agregado #425 podrá mutarlas;
+  no representa ausencia ni insuficiencia de permiso.
 
 ### ERR-ADM-038 — Inconsistencia de parámetro
 - codigo: inconsistencia_parametro

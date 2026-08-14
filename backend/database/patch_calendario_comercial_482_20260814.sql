@@ -155,6 +155,27 @@ BEGIN
   THEN RAISE EXCEPTION 'índice op_id_alta calendario comercial incompatible'; END IF;
 END $$;
 
+-- La invariant aplica también a valores históricos/futuros preexistentes. La
+-- sintaxis coincide con ENTERO #411/#412 (signo menos opcional y ceros iniciales)
+-- y el rango descarta cero y negativos. CASE evita casts de raw no numérico.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM public.valor_parametro v
+      JOIN public.parametro_sistema p USING(id_parametro_sistema)
+     WHERE p.codigo_parametro IN (
+       'DIA_CIERRE_COMERCIAL','DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS'
+     )
+       AND (CASE
+         WHEN v.valor_parametro ~ '^-?[0-9]+$'
+           THEN v.valor_parametro::numeric BETWEEN 1 AND 31
+         ELSE false
+       END) IS NOT TRUE
+  ) THEN
+    RAISE EXCEPTION 'existen valores preexistentes incompatibles con el rango del calendario comercial';
+  END IF;
+END $$;
+
 DO $$ DECLARE definition text; BEGIN
   IF to_regprocedure('public.trg_configuracion_calendario_comercial_core_ef()') IS NOT NULL THEN
     SELECT pg_get_functiondef('public.trg_configuracion_calendario_comercial_core_ef()'::regprocedure) INTO definition;
@@ -201,7 +222,7 @@ DO $$ DECLARE definition text; BEGIN
     definition := regexp_replace(definition,'[[:space:]]','','g');
     IF definition NOT LIKE '%DIA_CIERRE_COMERCIAL%'
        OR definition NOT LIKE '%DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS%'
-       OR definition NOT LIKE '%NOTBETWEEN1AND31%'
+       OR definition NOT LIKE '%::numericBETWEEN1AND31%'
     THEN RAISE EXCEPTION 'función rango calendario comercial incompatible'; END IF;
   ELSE
     EXECUTE $ddl$CREATE FUNCTION public.trg_valor_parametro_calendario_comercial() RETURNS trigger
@@ -211,8 +232,11 @@ BEGIN
   SELECT codigo_parametro INTO codigo FROM public.parametro_sistema
    WHERE id_parametro_sistema=NEW.id_parametro_sistema;
   IF codigo IN ('DIA_CIERRE_COMERCIAL','DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
-     AND (NEW.valor_parametro IS NULL OR NEW.valor_parametro !~ '^[0-9]+$'
-          OR length(NEW.valor_parametro)>2 OR NEW.valor_parametro::integer NOT BETWEEN 1 AND 31)
+     AND (CASE
+       WHEN NEW.valor_parametro ~ '^-?[0-9]+$'
+         THEN NEW.valor_parametro::numeric BETWEEN 1 AND 31
+       ELSE false
+     END) IS NOT TRUE
   THEN RAISE EXCEPTION 'valor de calendario comercial debe ser un entero entre 1 y 31'; END IF;
   RETURN NEW;
 END $body$;$ddl$;

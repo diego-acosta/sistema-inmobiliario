@@ -82,6 +82,13 @@ La migración valida en reejecución la equivalencia física completa de la raí
 y triggers. Un objeto homónimo parcial o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
 
+Aunque ambas definiciones son exponibles, no sensibles y editables
+administrativamente, quedan excluidas contractualmente del PATCH genérico #412.
+Su modificación funcional corresponderá exclusivamente al agregado #425 y su
+permiso dedicado, para preservar atomicidad y temporalidad; los endpoints del
+agregado todavía no existen. El patch también aborta si cualquier valor
+preexistente, vigente o histórico, no representa un `ENTERO` ASCII entre 1 y 31.
+
 #482 no crea valores ni fila raíz funcional. No agrega GET, bootstrap,
 programación, query service, idempotencia HTTP, outbox, sync o historial
 especializado. La primera raíz y los dos primeros valores pertenecen a #484 en

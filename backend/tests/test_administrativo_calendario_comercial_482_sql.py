@@ -182,7 +182,56 @@ def test_raiz_core_ef_permite_cero_o_una_activa_y_versiona(db_session):
         assert after.version_registro == 2
 
 
-@pytest.mark.parametrize("raw,accepted", [("1", True), ("31", True), ("0", False), ("32", False), ("abc", False)])
+@pytest.mark.parametrize(
+    "raw",
+    ["0", "32", "texto"],
+)
+def test_patch_rechaza_valor_preexistente_incompatible_sin_sanear(db_session, raw):
+    with db_session.begin_nested():
+        db_session.execute(text(
+            "ALTER TABLE valor_parametro DISABLE TRIGGER "
+            "trg_biu_valor_parametro_calendario_comercial"
+        ))
+        value_id = db_session.execute(text("""
+          INSERT INTO valor_parametro(id_parametro_sistema,valor_parametro,es_valor_vigente)
+          SELECT id_parametro_sistema,:raw,false FROM parametro_sistema
+           WHERE codigo_parametro=:code RETURNING id_valor_parametro
+        """), {"raw": raw, "code": CODES[0]}).scalar_one()
+        db_session.execute(text(
+            "ALTER TABLE valor_parametro ENABLE TRIGGER "
+            "trg_biu_valor_parametro_calendario_comercial"
+        ))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(
+            text("SELECT valor_parametro FROM valor_parametro WHERE id_valor_parametro=:id"),
+            {"id": value_id},
+        ).scalar_one() == raw
+
+
+@pytest.mark.parametrize("raw", ["1", "015", "31"])
+def test_patch_acepta_valor_preexistente_compatible_sin_mutarlo(db_session, raw):
+    with db_session.begin_nested():
+        value_id = db_session.execute(text("""
+          INSERT INTO valor_parametro(id_parametro_sistema,valor_parametro,es_valor_vigente)
+          SELECT id_parametro_sistema,:raw,false FROM parametro_sistema
+           WHERE codigo_parametro=:code RETURNING id_valor_parametro
+        """), {"raw": raw, "code": CODES[0]}).scalar_one()
+        db_session.execute(text(_sql()))
+        assert db_session.execute(
+            text("SELECT valor_parametro FROM valor_parametro WHERE id_valor_parametro=:id"),
+            {"id": value_id},
+        ).scalar_one() == raw
+
+
+@pytest.mark.parametrize(
+    ("raw", "accepted"),
+    [
+        ("1", True), ("015", True), ("31", True),
+        ("0", False), ("000", False), ("-0", False), ("32", False),
+        ("abc", False), ("+1", False), ("1.0", False), (" 1", False),
+    ],
+)
 def test_rango_exclusivo_calendario(db_session, raw, accepted):
     statement = text("""
       INSERT INTO valor_parametro(id_parametro_sistema,valor_parametro,es_valor_vigente)

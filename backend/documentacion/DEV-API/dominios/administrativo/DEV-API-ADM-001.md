@@ -1306,8 +1306,15 @@ La autorización runtime exige el permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.
 
 ## Estado estructural del calendario comercial (#482)
 
-#482 no agrega ni modifica endpoints, routers, schemas ni autorización runtime.
-Sólo prepara SQL y el permiso que consumirán incrementos posteriores de #425.
+#482 no agrega endpoints, routers, schemas ni autorización permission-based nueva.
+Prepara SQL y el permiso que consumirán incrementos posteriores de #425, y cierra
+en el service de #412 el boundary que impediría mutaciones individuales.
 Por ello la clasificación de endpoint, headers write, `If-Match-Version` e
 idempotencia HTTP son **NO APLICA**. Aún no existen GET de calendario,
 bootstrap, POST, PUT ni programación; #483 es el siguiente incremento.
+
+El PATCH individual de #412 no aplica a `DIA_CIERRE_COMERCIAL` ni a
+`DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS`: devuelve el error público existente
+`409 conflicto_parametro` antes de reclamar idempotencia o mutar, sin depender de
+qué rol originó el grant. Esta exclusión no implementa un endpoint de calendario;
+reserva las modificaciones para el futuro agregado #425.
