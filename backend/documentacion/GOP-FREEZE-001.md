@@ -267,10 +267,40 @@ Para operaciones manuales:
 
 ```text
 Authorization: Bearer
+→ get_authenticated_principal
 → AuthenticatedPrincipal.id_usuario
+→ identidad humana efectiva
 ```
 
-`X-Usuario-Id` no debe utilizarse como autoridad de identidad humana en endpoints nuevos; representa metadata/contexto CORE-EF cuando el contrato aplicable lo requiera, pero no autentica.
+Para todo endpoint nuevo de `gestion_operativa` autenticado mediante Bearer:
+
+```text
+X-Usuario-Id
+→ NO REQUERIR
+→ NO PARSEAR
+→ NO COMPARAR
+→ NO USAR como identidad
+→ NO USAR como autorización
+```
+
+GOP no tiene endpoints heredados y, por lo tanto, no debe nacer con el contrato
+histórico de `X-Usuario-Id`. Esa compatibilidad puede permanecer temporalmente en
+endpoints antiguos de otros dominios hasta su migración, pero no debe expandirse a
+`gestion_operativa`.
+
+Identidad humana y contexto técnico son responsabilidades distintas:
+
+```text
+Authorization / AuthenticatedPrincipal → identidad humana
+X-Op-Id                           → identidad técnica de operación
+X-Sucursal-Id                     → contexto según contrato del command
+X-Instalacion-Id                  → contexto técnico de instalación
+If-Match-Version                  → concurrencia optimista cuando corresponda
+```
+
+Ninguno de esos headers técnicos autentica a una persona. En particular,
+`X-Sucursal-Id` no define automáticamente el scope funcional de `Tarea`; esa
+relación depende de las decisiones funcionales todavía abiertas.
 
 Administrativo conserva ownership de usuarios, autenticación, autorización, roles y permisos, y provee sus mecanismos. `gestion_operativa` consume la identidad de usuario y debe definir qué acciones funcionales sobre Tareas requieren autorización y qué relación o scope habilita cada acción, sin redefinir el modelo administrativo.
 
@@ -298,9 +328,48 @@ Clasificación conceptual futura:
 | Agregar comentario | `COMMAND_WRITE_NEGOCIO` |
 | Consultas | `QUERY_READLIKE` |
 
-Los futuros DEV-API/DEV-SRV deben resolver y documentar, según la estrategia de sync, `X-Op-Id`, headers CORE-EF aplicables, `If-Match-Version`, versionado, idempotencia, instalación de procedencia, sucursal funcional, outbox, sync, locks y frontera de rollback/transacción. Este incremento no implementa endpoints ni afirma cumplimiento runtime.
+Cada futuro `COMMAND_WRITE_NEGOCIO` deberá declarar expresamente
+`SINCRONIZABLE` o `LOCAL / NO SINCRONIZABLE`; la clasificación no puede quedar
+implícita.
 
-Para las consultas `QUERY_READLIKE`, headers write, idempotencia command y `If-Match-Version` no aplican porque no mutan estado.
+Si el command es sincronizable, el patrón objetivo, sujeto a su caso concreto, es:
+
+```text
+Authorization: Bearer
+X-Op-Id
+X-Sucursal-Id
+X-Instalacion-Id
+If-Match-Version cuando modifica un recurso existente/versionado
+```
+
+Su DEV-SRV/DEV-API deberá resolver UID/identidad global cuando aplique,
+versionado, idempotencia, fingerprint, replay, outbox, allowlist de sync, misma
+transacción, rollback, conflictos, procedencia e historial funcional cuando
+corresponda. Si es local/no sincronizable, deberá declarar `sync = NO`, justificar
+qué componentes CORE-EF aplican y cuáles no, y no copiar automáticamente outbox,
+UID global, allowlist o sync.
+
+La implementación de #412 mediante PR #478 constituye el primer patrón
+productivo validado de un `COMMAND_WRITE_NEGOCIO` autenticado mediante Bearer y
+consumidor del runtime transversal de idempotencia. Debe utilizarse como
+referencia arquitectónica para futuros commands GOP, sin copiar mecánicamente
+requisitos propios de `valor_parametro`. Por ejemplo, crear tarea no debe asumir
+automáticamente `If-Match-Version`; modificar, reasignar, cambiar estado o cambiar
+fecha objetivo deberán evaluarlo si la futura `Tarea` resulta versionada.
+
+Para las consultas `QUERY_READLIKE`:
+
+```text
+headers write       → NO APLICA
+X-Op-Id             → NO APLICA
+If-Match-Version    → NO APLICA
+idempotencia command → NO APLICA
+outbox              → NO APLICA
+```
+
+Bearer y autorización podrán aplicar según la futura política funcional de
+acceso. Este incremento no implementa endpoints ni afirma cumplimiento runtime
+para GOP.
 
 ## 22. Versionado
 
@@ -316,11 +385,86 @@ Debe aplicarse al menos a crear manual, crear automática, asignar/reasignar, ca
 
 La generación automática además debe deduplicar reintentos y el mismo hecho fuente.
 
+#469/#470 ya proveen el ledger durable y el runtime transversal reusable, y la
+implementación productiva de #412 en PR #478 validó su consumo. Cuando un command
+GOP requiera idempotencia durable y replay compatible con el modelo transversal
+vigente, deberá evaluar y preferir el runtime común antes de diseñar un
+ledger/replay propio. Las referencias conceptuales vigentes son:
+
+```text
+canonical_payload_hash(...)
+claim_operation(...)
+complete_operation(...)
+```
+
+Este freeze no define para GOP `command_code`, `target_type`, `target_uid`,
+`target_key`, fingerprint concreto, snapshot concreto ni códigos de error
+propios. Cada DEV-SRV/DEV-API deberá resolverlos para su command.
+
+El runtime transversal no decide la semántica de negocio. Cada command GOP
+conserva responsabilidad sobre autorización funcional, `command_code`, target
+lógico, proyección idempotente, reglas de negocio, CAS/concurrencia, historial
+funcional, outbox funcional, response projection, errores de dominio,
+clasificación de sync y rollback/transacción.
+
+```text
+ledger idempotente
+!= outbox
+!= historial funcional
+!= auditoría
+```
+
+Para commands GOP que adopten el runtime transversal, el patrón objetivo a
+evaluar es:
+
+```text
+BEGIN
+→ autenticación/autorización
+→ parsing CORE-EF
+→ fingerprint / claim
+→ REPLAY | CONFLICT | EXECUTE
+→ si EXECUTE:
+     validaciones DB
+     lock/CAS si corresponde
+     cambio funcional
+     historial si aplica
+     outbox si aplica
+     complete_operation
+→ COMMIT exterior
+```
+
+Cualquier fallo antes del commit debe revertir negocio, historial transaccional,
+outbox y receipt idempotente. Este flujo no se impone a todos los commands GOP:
+cada contrato deberá justificar su aplicabilidad y frontera transaccional.
+
+```text
+REPLAY compatible
+→ devuelve el resultado lógico original
+→ no relee estado actual para reconstruir la respuesta
+→ no vuelve a ejecutar negocio
+→ no genera nuevo outbox
+```
+
+El snapshot concreto de `Tarea` permanece pendiente.
+
 ## 24. Sync
 
 **NO CONGELADO.** Las alternativas son `SINCRONIZABLE`, `LOCAL` o `MIXTO`. Se recomienda evaluar seriamente `SINCRONIZABLE` por la necesidad futura de consultar **Mis tareas** entre instalaciones.
 
+La alternativa `SINCRONIZABLE` obliga a resolver identidad global, procedencia,
+versionado, conflictos, outbox, allowlist y replay coherente. La alternativa
+`LOCAL` debe declarar `sync = NO` y justificar qué soporte transversal conserva,
+sin incorporar infraestructura de sync por defecto. La alternativa `MIXTO`
+exige clasificar cada command expresamente como sincronizable o local/no
+sincronizable y delimitar qué información puede viajar. Estas consecuencias no
+seleccionan una alternativa.
+
 La decisión debe tomarse antes del DER porque afecta `uid_global`, metadata CORE-EF, outbox, allowlist, conflictos, comentarios, historial, versiones e idempotencia. Este documento no crea eventos, productores, consumidores ni entradas de allowlist.
+
+```text
+AuthenticatedPrincipal.id_usuario
+→ identidad humana local efectiva
+```
 
 Si Tarea se define como `SINCRONIZABLE`, deberá existir además una estrategia canónica interinstalación para resolver toda referencia persistida a usuario dentro de `gestion_operativa`, como mínimo:
 
