@@ -21,6 +21,25 @@ Esta clasificación es semántica y funcional. No implica que `Tarea`, comentari
 
 Este freeze no confirma implementación existente. En particular, todavía no define SQL físico, endpoints definitivos, schemas, eventos concretos, frontend ni automatizaciones específicas. Todo ello queda pendiente de los artefactos técnicos posteriores y de su validación contra SQL, backend y tests reales.
 
+### 1.1 Trazabilidad de este cierre
+
+Para cerrar las seis decisiones se respetó la precedencia vigente: `AGENTS.md` y
+la arquitectura formal DEV-ARCH —en especial `DEV-ARCH-OPE-001`— prevalecen;
+después se contrastaron SQL real, implementación y tests reales, seguidos por
+issues y PR vigentes. Como fuentes operativas se consultaron
+`PROJECT-STATUS.md` y `CODEX-WORKFLOW.md`. Este freeze, `SYS-MAP-002`, los
+DEV-SRV relevantes y el CAT-CU vigente se leyeron subordinados a esas fuentes de
+verdad; su bloque histórico `CU-OPER-*` se utilizó sólo como evidencia histórica.
+Los patrones de fechas y baja lógica en SQL, backend y tests aportan evidencia
+transversal: no prueban una implementación GOP ni fuerzan su futuro diseño.
+
+También se revisó la historia integrada de PR #474, que originó este freeze, y
+PR #479, que lo alineó con CORE-EF. Se conserva su corrección: en futuros writes
+Bearer la identidad humana procede exclusivamente de
+`AuthenticatedPrincipal.id_usuario`; `X-Usuario-Id` no se adopta; identidad del
+actor y clasificación de sync son dimensiones independientes; y #412/PR #478 es
+sólo patrón transversal, no plantilla literal de Tareas.
+
 ## 2. Ownership y límites
 
 Queda congelada esta frontera, sin equivalencia ni solapamiento:
@@ -131,9 +150,23 @@ Una tarea sin responsable es válida. Múltiples responsables, equipos, sectores
 
 ## 9. Estados
 
-**CANDIDATOS / NO CONGELADOS:** `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y `CANCELADA`. Dentro de esta propuesta preliminar, `PENDIENTE` sería el estado inicial y `COMPLETADA` y `CANCELADA` serían terminales.
+### Decisión
 
-Las siguientes transiciones son únicamente una propuesta preliminar y no constituyen un contrato cerrado:
+Los **estados definitivos del MVP** son `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y
+`CANCELADA`:
+
+- `PENDIENTE`: trabajo válido todavía no iniciado o devuelto deliberadamente a
+  espera; es el único estado inicial.
+- `EN_CURSO`: existe una decisión humana o sistémica explícita de comenzar el
+  trabajo y éste continúa abierto. Aporta la distinción funcional entre cola y
+  ejecución; no implica porcentaje de avance ni SLA.
+- `COMPLETADA`: el trabajo esperado fue realizado. Es terminal para las
+  transiciones ordinarias, aunque admite la operación explícita de reapertura
+  definida en la sección 9.1.
+- `CANCELADA`: se decidió que el trabajo ya no debe realizarse. Es terminal y no
+  admite reapertura en el MVP.
+
+Las transiciones ordinarias congeladas son:
 
 ```text
 PENDIENTE
@@ -147,41 +180,239 @@ EN_CURSO
 └── CANCELADA
 ```
 
-La reapertura queda fuera del MVP salvo decisión expresa. No se incluyen inicialmente `VENCIDA`, `BLOQUEADA`, `PAUSADA`, `ARCHIVADA`, `PROGRAMADA` ni `DELEGADA`. Los estados definitivos permanecen bloqueantes antes del DER, según la sección 30.
+Invariantes: `VENCIDA` continúa siendo una condición derivada y nunca un estado;
+una tarea terminal no acepta transiciones ordinarias; completar expresa trabajo
+realizado y cancelar expresa abandono decidido, sin equivalencia entre ambos. No
+se incorporan `BLOQUEADA`, `PAUSADA`, `ARCHIVADA`, `PROGRAMADA` ni `DELEGADA`:
+no existe evidencia vigente que exija esos workflows y bloqueo/archivo no deben
+inventarse como estados para suplir filtros o baja técnica.
+
+### Evidencia
+
+- **Repositorio:** el freeze ya proponía los cuatro valores y el legado
+  `CU-OPER-*` distingue alta, cierre, cancelación, cambio de estado e inicio de
+  proceso. Ese legado prueba intención histórica, no un contrato vigente.
+- **Repositorio:** `SYS-MAP-002` reserva tareas y seguimiento para
+  `gestion_operativa`, mientras `DEV-ARCH-OPE-001` los excluye de `operativo`.
+- **Inferencia:** separar `PENDIENTE` de `EN_CURSO` permite representar cola
+  frente a ejecución sin introducir avance porcentual ni un workflow adicional.
+- **Decisión de diseño nueva:** se congela este conjunto y su semántica exacta.
+
+### Alternativas descartadas y justificación
+
+Se descarta eliminar `EN_CURSO` porque perdería una distinción funcional ya
+contemplada; se descarta agregar estados sin evidencia; y se descarta persistir
+`VENCIDA` porque depende del tiempo y puede derivarse. El conjunto mínimo conserva
+intención histórica sin convertir el catálogo legado en contrato nuevo.
+
+### Impacto en artefactos posteriores
+
+DEV-ARCH-GOP y los artefactos posteriores deberán preservar estas semánticas e
+invariantes. Este freeze no decide representación física, comandos ni contratos
+de API.
+
+## 9.1 Reapertura
+
+### Decisión
+
+- `COMPLETADA`: **reapertura permitida**, exclusivamente mediante una operación
+  funcional explícita y diferenciada, con destino `PENDIENTE`.
+- `CANCELADA`: **reapertura prohibida** en el MVP. Si vuelve a existir necesidad
+  de trabajo, corresponde una tarea nueva, trazable respecto de la anterior en
+  un diseño posterior si se demuestra esa necesidad.
+- Reabrir exige un motivo funcional obligatorio, conserva íntegramente el
+  historial previo y agrega una entrada estructurada de reapertura con actor,
+  instante y motivo. No borra la finalización histórica.
+- La reapertura no es una transición ordinaria ni decide quién puede ejecutarla;
+  esa autorización permanece en el blocker 11.
+
+### Evidencia
+
+- **Repositorio:** el bloque histórico incluye reapertura de pendiente
+  (`CU-OPER-008`) y consulta de histórico, pero no es contrato vigente ni define
+  reapertura de una cancelación.
+- **Repositorio:** el freeze ya exige historial funcional estructurado y separa
+  cancelación de eliminación técnica.
+- **Inferencia:** un cierre puede resultar prematuro y requerir retomar trabajo;
+  una cancelación expresa que el trabajo dejó de corresponder.
+- **Decisión de diseño nueva:** sólo `COMPLETADA` se reabre, a `PENDIENTE`, con
+  motivo e historial completos.
+
+### Alternativas descartadas y justificación
+
+Se descarta reabrir a `EN_CURSO` porque reabrir no prueba que la ejecución haya
+comenzado nuevamente; se descarta reabrir `CANCELADA` porque diluiría la decisión
+de abandono; y se descarta prohibir toda reapertura porque la evidencia histórica
+reconoce esa necesidad funcional.
+
+### Impacto en artefactos posteriores
+
+Los artefactos posteriores deberán modelar la reapertura como capacidad explícita
+y auditable, sin deducir permisos en este freeze ni reutilizar un ID histórico.
 
 ## 10. Prioridad
 
-**CANDIDATOS / NO CONGELADOS:** `BAJA`, `NORMAL`, `ALTA`, `URGENTE`, con `NORMAL` como default candidato. Tanto el catálogo como el default permanecen **NO CONGELADOS**; las prioridades definitivas siguen abiertas y son bloqueantes antes del DER.
+### Decisión
+
+Las **prioridades definitivas del MVP**, de menor a mayor, son `BAJA < NORMAL <
+ALTA < URGENTE`; `NORMAL` es el default.
+
+- `BAJA`: puede atenderse después del trabajo ordinario sin que la prioridad por
+  sí sola implique incumplimiento.
+- `NORMAL`: atención ordinaria esperada y ausencia de señal excepcional.
+- `ALTA`: requiere adelantarse respecto del trabajo ordinario.
+- `URGENTE`: requiere atención inmediata frente a las demás prioridades activas.
+
+La prioridad sólo afecta ordenación, filtros y señalización visual. No modifica
+estado, vencimiento, permisos, locks, SLA ni genera automatizaciones. Puede
+cambiarse mientras la tarea esté en `PENDIENTE` o `EN_CURSO`; queda inmutable en
+`COMPLETADA` y `CANCELADA`. Una tarea reabierta vuelve a estar activa y entonces
+puede cambiarse.
+
+### Evidencia
+
+- **Repositorio:** estos cuatro candidatos y `NORMAL` como default ya estaban en
+  el freeze; el historial contempla conceptualmente `CAMBIO_PRIORIDAD`.
+- **Repositorio:** no hay Tarea implementada ni SLA de GOP que otorgue efectos
+  adicionales a la prioridad.
+- **Inferencia:** `BAJA` permite despriorizar trabajo válido y `URGENTE` distingue
+  atención inmediata de mero adelantamiento.
+- **Decisión de diseño nueva:** se congelan valores, orden, default y alcance.
+
+### Alternativas descartadas y justificación
+
+Se descartan tres niveles porque fusionar `ALTA` y `URGENTE` pierde la señal de
+atención inmediata, y eliminar `BAJA` impide expresar postergación relativa. Se
+descartan SLA o reglas automáticas por carecer de evidencia.
+
+### Impacto en artefactos posteriores
+
+Los diseños posteriores deberán conservar orden y restricciones, pero decidirán
+recién entonces su representación técnica. No se define enum ni catálogo SQL.
 
 ## 11. Fecha objetivo
 
-`fecha_objetivo` es opcional y `fecha_objetivo != evento_agenda`. Asignarla no crea evento, recordatorio, alerta ni notificación.
+### Decisión
 
-La representación `DATE` versus `TIMESTAMP` es una decisión pendiente previa al DER. Se recomienda inicialmente `DATE` si sólo se requiere un día objetivo.
+`fecha_objetivo` es opcional y tiene semántica funcional **DATE**: representa un
+día calendario completo, sin hora ni offset. La tarea puede cumplirse durante
+todo el día objetivo y sólo pasa a vencida al comenzar el día calendario local
+siguiente. Entre tareas del mismo día no existe orden horario contractual.
+
+`fecha_objetivo != evento_agenda`: asignarla no crea evento, recordatorio, alerta
+ni notificación.
+
+### Evidencia
+
+- **Repositorio:** el alcance vigente habla de tareas internas, pendientes y
+  vencimientos, y no confirma agenda horaria, recordatorios ni orden por hora.
+- **Repositorio:** existen comparaciones de fechas de negocio en Financiero, pero
+  pertenecen a otro dominio y sólo evidencian que el sistema distingue fechas de
+  timestamps; no fuerzan el diseño GOP.
+- **Inferencia:** una hora agregaría ambigüedad de zona y precisión inexistente
+  para el MVP multiinstalación.
+- **Decisión de diseño nueva:** la granularidad funcional queda congelada como
+  fecha calendario.
+
+### Alternativas descartadas y justificación
+
+Se descarta TIMESTAMP porque no existe evidencia de hora límite ni agenda horaria
+y porque introduciría conversiones y casos de borde innecesarios. No se adopta
+otra representación.
+
+### Impacto en artefactos posteriores
+
+DER y contratos posteriores deberán materializar `fecha_objetivo` como DATE,
+preservando su semántica de día calendario completo, sin hora ni offset. El DER
+no podrá reabrir la elección entre DATE y TIMESTAMP; permanecen pendientes sólo
+los demás detalles técnicos, sin definir aquí columna, índice, constraint,
+migración, schema HTTP ni serialización.
 
 ## 12. Vencimiento
 
-`VENCIDA` no es un estado persistido. Es una condición derivada conceptualmente:
+### Decisión
+
+`VENCIDA` no es un estado persistido. `fecha_corte` es la fecha calendario local
+obtenida una sola vez por caso de uso desde el reloj confiable del servidor,
+proyectado en la zona IANA `America/Argentina/Buenos_Aires`. No proviene del
+cliente, de un query param, de la instalación ni de la sesión de PostgreSQL. API,
+servicio y tests deberán compartir esa misma fecha capturada; los tests usarán un
+reloj controlable equivalente.
+
+La fórmula exacta es:
 
 ```text
 vencida =
-  fecha_objetivo < fecha_corte
-  AND estado NOT IN (<estados terminales definitivos>)
+  deleted_at ausente
+  AND fecha_objetivo no nula
+  AND estado IN (PENDIENTE, EN_CURSO)
+  AND fecha_objetivo < fecha_corte_local
 ```
 
-La semántica exacta de `fecha_corte` permanece **NO CONGELADA**. Antes del DER debe definirse, conjuntamente con la decisión `DATE` versus `TIMESTAMP`:
+La comparación tiene granularidad DATE y operador estricto `<`. Por ello,
+`fecha_objetivo = fecha_corte_local` no está vencida durante ningún instante de
+ese día; `COMPLETADA` y `CANCELADA` nunca están vencidas; una tarea sin fecha no
+está vencida; y una tarea reabierta puede volver a estar vencida si su fecha
+objetivo es anterior al corte. La prioridad no interviene.
 
-- fuente temporal;
-- zona horaria;
-- granularidad;
-- regla de comparación;
-- comportamiento consistente entre instalaciones.
+Ejemplos de borde, para `fecha_corte_local = 2026-08-20`:
 
-No se asumen todavía UTC, reloj del cliente, reloj de instalación, hora local de sucursal ni zona del usuario.
+- `fecha_objetivo = 2026-08-20`, activa: no vencida durante todo el día 20.
+- `fecha_objetivo = 2026-08-19`, `PENDIENTE`: vencida.
+- misma fecha anterior, `COMPLETADA` o `CANCELADA`: no vencida.
+- `fecha_objetivo = NULL`: no vencida.
+- fecha anterior y reapertura de `COMPLETADA` a `PENDIENTE`: vencida nuevamente.
+- fecha anterior con baja técnica: fuera de consultas ordinarias, incluida la de
+  vencidas.
+
+### Evidencia
+
+- **Repositorio:** la fórmula candidata ya usa comparación estricta y excluye
+  terminales, pero dejaba sin cerrar fuente, zona y granularidad.
+- **Repositorio:** el backend usa UTC para instantes técnicos y una prueba
+  transversal usa `America/Argentina/Buenos_Aires`; esa evidencia no convierte
+  un día objetivo en instante UTC.
+- **Inferencia:** una fecha civil necesita un único calendario funcional para dar
+  el mismo resultado en todas las instalaciones.
+- **Decisión de diseño nueva:** reloj del servidor, zona indicada, captura única y
+  fórmula completa.
+
+### Alternativas descartadas y justificación
+
+Se descartan reloj del cliente, zona de usuario/instalación/sucursal y timezone de
+sesión porque producirían resultados distintos para la misma tarea. Se descarta
+UTC como calendario funcional porque puede cambiar de día respecto de Argentina,
+y PostgreSQL como autoridad obligatoria porque la regla requiere una fuente
+funcional única testeable, no acoplamiento a una tecnología. Se descarta `<=`
+porque haría vencer la tarea al comenzar su propio día objetivo.
+
+### Impacto en artefactos posteriores
+
+DEV-SRV, DEV-API y tests posteriores deberán usar literalmente esta captura y
+fórmula. El mecanismo de inyección del reloj y la consulta física se decidirán
+después; este freeze no crea parámetros ni SQL.
 
 ## 13. Finalización
 
-Al completar una tarea debe conservarse conceptualmente `fecha_finalizacion`, generada por el servidor.
+`Tarea.fecha_finalizacion` representa únicamente la finalización vigente del
+ciclo actual:
+
+```text
+PENDIENTE / EN_CURSO → COMPLETADA
+→ fecha_finalizacion = instante de esa finalización generado por el servidor
+
+COMPLETADA → PENDIENTE mediante reapertura
+→ fecha_finalizacion corriente = NULL
+
+nueva transición PENDIENTE / EN_CURSO → COMPLETADA
+→ fecha_finalizacion = nuevo instante de la nueva finalización
+```
+
+Limpiar el valor corriente al reabrir no elimina la evidencia de la finalización
+anterior: el historial funcional conserva todas las finalizaciones y reaperturas
+previas. Los artefactos posteriores deberán preservar esa trazabilidad sin que
+este freeze defina tipo SQL de `fecha_finalizacion`, columnas o tabla de
+historial, payload, endpoint, DTO, evento ni outbox.
 
 ## 14. Scope funcional
 
@@ -215,6 +446,7 @@ ASIGNADA
 DESASIGNADA
 REASIGNADA
 CAMBIO_ESTADO
+REABIERTA
 CAMBIO_PRIORIDAD
 CAMBIO_FECHA_OBJETIVO
 CAMBIO_TITULO
@@ -223,7 +455,34 @@ CAMBIO_DESCRIPCION
 
 Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor anterior/nuevo cuando corresponda. El actor humano local deberá poder resolverse mediante la estrategia canónica interinstalación pendiente si el historial resulta sincronizable; este freeze no presupone columnas concretas de UID.
 
+`REABIERTA` representa exclusivamente la operación funcional explícita
+`COMPLETADA → PENDIENTE` definida en la sección 9.1; no es un estado persistido ni
+se utiliza para transiciones ordinarias. Toda entrada `REABIERTA` debe conservar
+conceptualmente:
+
 ```text
+tarea
+actor
+instante
+estado_anterior = COMPLETADA
+estado_nuevo = PENDIENTE
+motivo obligatorio
+```
+
+Esta entrada conserva además la evidencia histórica de la finalización anterior
+aunque la reapertura deje `Tarea.fecha_finalizacion` corriente en `NULL`; no se
+crea un segundo historial ni una entidad adicional.
+
+El motivo es parte estructurada y obligatoria de esa entrada funcional: no puede
+quedar como texto libre opcional, inferirse desde un comentario ni sustituirse
+por éste. Los artefactos posteriores definirán su representación sin que este
+freeze establezca nombre de columna, tipo SQL, longitud, schema HTTP, DTO, tabla,
+JSON, evento, `command_code` ni payload de outbox. Si la Tarea resultara
+sincronizable, su estrategia todavía abierta deberá preservar también este dato;
+esta regla no decide sync, evento ni outbox.
+
+```text
+REABIERTA → historial_funcional
 historial_funcional
 != comentario
 != auditoria_administrativa
@@ -254,12 +513,45 @@ No se implementa ni se congela una FK genérica `tipo_entidad` + `id_entidad`.
 
 ## 19. Cancelación, baja y archivo
 
+### Decisión
+
 ```text
 CANCELADA → estado funcional
 deleted_at → eliminación técnica
 ```
 
-La eliminación no se expone como flujo normal del MVP. `ARCHIVADA` no integra los estados iniciales. La presencia física de `deleted_at` desde el inicio queda abierta antes del DER.
+La futura materialización técnica deberá **incluir `deleted_at` desde su primer
+diseño**, aunque el MVP no exponga una operación funcional de eliminación. Su
+ausencia significa registro vigente; su presencia significa baja lógica técnica.
+Una tarea cancelada sigue visible en consultas ordinarias según sus filtros y
+conserva seguimiento; una tarea con baja técnica queda excluida de consultas
+ordinarias, incluida la de vencidas. Comentarios e historial deben sobrevivir y
+seguir disponibles para trazabilidad técnica/administrativa autorizada futura;
+no se define purga ni eliminación en cascada.
+
+### Evidencia
+
+- **Repositorio:** entidades de negocio y repositorios de varios dominios aplican
+  de forma reiterada `deleted_at IS NULL`; esto evidencia un patrón transversal,
+  no la existencia de Tarea.
+- **Repositorio:** el freeze separa expresamente cancelación funcional de
+  eliminación técnica y exige conservar historial y comentarios.
+- **Inferencia:** reservar la baja lógica desde el primer diseño evita confundirla
+  después con un estado y protege trazabilidad.
+- **Decisión de diseño nueva:** se exige su presencia inicial sin habilitar delete.
+
+### Alternativas descartadas y justificación
+
+Se descarta omitirlo porque una incorporación tardía alteraría el contrato de
+vigencia y filtros; se descarta usar `CANCELADA` como borrado porque una tarea
+cancelada sigue siendo un hecho funcional consultable; y se descarta exponer una
+operación de eliminación o diseñar purga por estar fuera de alcance.
+
+### Impacto en artefactos posteriores
+
+El DER deberá prever baja lógica y las lecturas ordinarias deberán excluirla. Los
+artefactos posteriores decidirán mecanismos y acceso extraordinario sin crear en
+este freeze una operación DELETE ni una política de permisos.
 
 ## 20. Identidad y autorización
 
@@ -311,6 +603,7 @@ La política funcional de autorización y visibilidad permanece **NO CONGELADA /
 - cómo incide `id_sucursal`, si finalmente se incorpora, y quién puede consultar tareas globales;
 - cómo se comporta **Mis tareas**;
 - quién puede modificar título/descripción, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar y comentar.
+- quién puede reabrir una tarea completada mediante la operación explícita de la sección 9.1.
 
 El ownership de autorización de Administrativo no elimina la necesidad de que `gestion_operativa` defina esta política funcional de acceso. Los códigos y mecanismos concretos se diseñarán posteriormente junto con Administrativo y DEV-API.
 
@@ -325,6 +618,7 @@ Clasificación conceptual futura:
 | Modificar tarea | `COMMAND_WRITE_NEGOCIO` |
 | Asignar, reasignar o desasignar | `COMMAND_WRITE_NEGOCIO` |
 | Cambiar estado | `COMMAND_WRITE_NEGOCIO` |
+| Reabrir tarea completada | `COMMAND_WRITE_NEGOCIO` |
 | Agregar comentario | `COMMAND_WRITE_NEGOCIO` |
 | Consultas | `QUERY_READLIKE` |
 
@@ -401,8 +695,9 @@ productivo validado de un `COMMAND_WRITE_NEGOCIO` autenticado mediante Bearer y
 consumidor del runtime transversal de idempotencia. Debe utilizarse como
 referencia arquitectónica para futuros commands GOP, sin copiar mecánicamente
 requisitos propios de `valor_parametro`. Por ejemplo, crear tarea no debe asumir
-automáticamente `If-Match-Version`; modificar, reasignar, cambiar estado o cambiar
-fecha objetivo deberán evaluarlo si la futura `Tarea` resulta versionada.
+automáticamente `If-Match-Version`; modificar, reasignar, cambiar estado, reabrir
+o cambiar fecha objetivo deberán evaluarlo si la futura `Tarea` resulta
+versionada.
 
 Para las consultas `QUERY_READLIKE`:
 
@@ -428,7 +723,12 @@ Permanece abierta la decisión: **¿agregar comentario incrementa `version_regis
 
 ## 23. Idempotencia
 
-Debe aplicarse al menos a crear manual, crear automática, asignar/reasignar, cambiar estado y agregar comentario. Los contratos posteriores deberán definir criterio de payload, mismo `op_id` con mismo payload, mismo `op_id` con payload distinto y retry posterior a error.
+Debe aplicarse al menos a crear manual, crear automática, asignar/reasignar,
+cambiar estado, reabrir y agregar comentario. Los contratos posteriores deberán
+definir criterio de payload, mismo `op_id` con mismo payload, mismo `op_id` con
+payload distinto y retry posterior a error. La futura reapertura deberá evaluar
+el runtime transversal #469/#470 como los demás commands GOP, sin que este freeze
+defina `command_code`, target, fingerprint, snapshot ni proyección de respuesta.
 
 La generación automática además debe deduplicar reintentos y el mismo hecho fuente.
 
@@ -553,6 +853,7 @@ El alcance funcional comprende:
 - modificar título/descripción;
 - asignar, reasignar y desasignar;
 - cambiar prioridad, fecha objetivo y estado;
+- reabrir explícitamente una tarea completada según la sección 9.1;
 - agregar comentario;
 - consultar historial.
 
@@ -587,21 +888,37 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 17. Relaciones externas y múltiples responsables quedan fuera del MVP.
 18. La generación automática efectiva queda fuera del MVP, aunque el modelo debe admitirla.
 19. La concurrencia optimista es la estrategia objetivo para futuras modificaciones de `Tarea`; su materialización técnica y mecanismo de versión deberán definirse en `DEV-ARCH-GOP` y los artefactos posteriores, manteniendo compatibilidad con `If-Match-Version` cuando corresponda.
+20. Los estados definitivos del MVP son `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y `CANCELADA`; `PENDIENTE` es inicial, y los dos últimos son terminales para transiciones ordinarias.
+21. Sólo `COMPLETADA` admite reapertura explícita a `PENDIENTE`, con motivo e historial íntegro; `CANCELADA` no admite reapertura en el MVP.
+22. Las prioridades definitivas son `BAJA < NORMAL < ALTA < URGENTE`, con `NORMAL` como default y sin efecto automático sobre vencimiento o SLA.
+23. `fecha_objetivo` tiene granularidad funcional DATE y conserva validez durante todo su día calendario.
+24. La materialización inicial deberá prever `deleted_at` como baja lógica técnica, distinta de `CANCELADA`, sin que ello habilite una operación de eliminación en el MVP.
+25. El vencimiento usa una única fecha local capturada del reloj del servidor en `America/Argentina/Buenos_Aires` y la fórmula exacta de la sección 12.
+
+## 29.1 Coherencia conjunta del primer cierre
+
+- DATE y vencimiento usan la misma granularidad: el día objetivo completo sigue
+  vigente y sólo una fecha estrictamente anterior al corte local queda vencida.
+- `COMPLETADA` y `CANCELADA` quedan excluidas de vencimiento; la reapertura a
+  `PENDIENTE` vuelve a habilitar su derivación sin persistir `VENCIDA`.
+- Una baja técnica excluye la tarea de lecturas ordinarias, mientras una
+  cancelación permanece como hecho funcional visible.
+- La prioridad no altera vencimiento, estado, autorización ni SLA.
+- Ninguna de estas decisiones traslada tareas a `operativo`, materializa una
+  entidad técnica ni resuelve sync, identidad portable, permisos o versionado de
+  comentarios.
 
 ## 30. Decisiones todavía abiertas
 
-Son bloqueantes antes del DER y este freeze no las cierra:
+De la numeración original de blockers, este incremento cierra exclusivamente
+**#2, #3, #4, #5, #8 y #9** mediante las secciones 9, 9.1, 10, 11, 19 y 12,
+respectivamente. Permanecen abiertos, con su numeración original y sin resolución
+incidental:
 
 1. Si `id_sucursal` es opcional o no.
-2. Estados definitivos.
-3. Reapertura.
-4. Prioridades definitivas.
-5. `DATE` versus `TIMESTAMP` para `fecha_objetivo`.
 6. Estrategia de sync: `SINCRONIZABLE`, `LOCAL` o `MIXTO`.
 7. Si agregar comentario incrementa `version_registro` de la tarea.
-8. Presencia de `deleted_at` desde el inicio.
-9. Semántica de `fecha_corte` utilizada para determinar vencimiento: fuente temporal, zona horaria, granularidad y regla de comparación.
 10. Identidad canónica interinstalación de usuario para toda referencia humana persistida que deba sincronizarse en `gestion_operativa` —como creador, responsable, autor de comentario y actor del historial funcional—: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
-11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, cambiar estado, cancelar y comentar.
+11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar, reabrir y comentar.
 
 Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
