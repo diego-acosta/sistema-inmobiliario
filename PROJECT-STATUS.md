@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-13
+**Actualizado:** 2026-08-14
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -29,6 +29,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | B — Administrativo | #407–#412 implementados. PR #478 materializó el command mínimo GLOBAL y cerró #412; #413 alinea ahora la documentación formal. | #263 continúa abierto hasta el merge y cierre de #413; #425, #435, #461 y #265 permanecen separados. | PR #478 mergeado (commit `3b6d58d`) como último cambio material de configuración. | Completar #413 sin cerrar anticipadamente #263. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
+| Gestión Operativa — Tareas | Freeze funcional pre-DER: seis decisiones bloqueantes cerradas documentalmente; `Tarea` continúa como concepto funcional propuesto, no implementado. | Permanecen abiertos los blockers #1, #6, #7, #10 y #11 de `GOP-FREEZE-001`. | PR #481 documental, pendiente de revisión y merge. | Resolver los cinco blockers restantes antes de producir DER o SQL. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -72,6 +73,37 @@ PAYLOAD`, y `UNIQUE(op_id)` permanece como defensa técnica final.
 → #412 ✅`. #412 implementa el primer consumidor productivo: usa directamente `claim_operation` y
 `complete_operation`, replay durable desde el ledger y una sola transacción para CAS,
 outbox y receipt. #461 permanece abierto como migración transversal separada.
+
+## 4.2 Gestión Operativa — Tareas y seguimiento interno
+
+Estado documental verificable: `GOP-FREEZE-001` cierra los blockers funcionales
+#2, #3, #4, #5, #8 y #9. `Tarea` continúa como concepto funcional principal
+propuesto de `gestion_operativa`; no se afirma entidad, SQL, API ni runtime
+implementado.
+
+Decisiones cerradas:
+
+- Estados MVP: `PENDIENTE`, `EN_CURSO`, `COMPLETADA`, `CANCELADA`.
+- Reapertura: `COMPLETADA → PENDIENTE` mediante operación explícita, motivo
+  obligatorio e historial estructurado `REABIERTA`; `CANCELADA` no reabre.
+- Prioridades: `BAJA < NORMAL < ALTA < URGENTE`, default `NORMAL`.
+- `fecha_objetivo`: DATE con semántica de día calendario completo.
+- Vencimiento: condición derivada, no estado persistido; usa fecha local
+  `America/Argentina/Buenos_Aires`, comparación estricta `fecha_objetivo <
+  fecha_corte_local`, sólo para tareas activas y sin `deleted_at`.
+- `deleted_at`: previsto desde el primer diseño técnico y distinto del estado
+  funcional `CANCELADA`.
+
+Blockers todavía abiertos, con numeración original:
+
+- #1 — opcionalidad de `id_sucursal`.
+- #6 — estrategia de sync.
+- #7 — comentario y `version_registro`.
+- #10 — identidad canónica interinstalación.
+- #11 — política funcional de visibilidad y mutación.
+
+Próximo paso: resolver estos cinco blockers en incrementos pre-DER. GOP todavía
+no está listo para DER ni SQL.
 
 ## 5. Frente A — Comercial / Financiero
 

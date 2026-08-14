@@ -23,13 +23,15 @@ Este freeze no confirma implementación existente. En particular, todavía no de
 
 ### 1.1 Trazabilidad de este cierre
 
-Para cerrar las seis decisiones se auditaron, según la precedencia del
-repositorio: `PROJECT-STATUS.md`, `CODEX-WORKFLOW.md`, este freeze,
-`SYS-MAP-002`, los DEV-ARCH obligatorios y en especial `DEV-ARCH-OPE-001`, los
-DEV-SRV relevantes, el CAT-CU vigente y su bloque histórico `CU-OPER-*`, además
-de patrones reales de fechas y baja lógica en SQL, backend y tests. Estos últimos
-se usan sólo como evidencia transversal: no prueban una implementación GOP ni
-fuerzan su futuro diseño.
+Para cerrar las seis decisiones se respetó la precedencia vigente: `AGENTS.md` y
+la arquitectura formal DEV-ARCH —en especial `DEV-ARCH-OPE-001`— prevalecen;
+después se contrastaron SQL real, implementación y tests reales, seguidos por
+issues y PR vigentes. Como fuentes operativas se consultaron
+`PROJECT-STATUS.md` y `CODEX-WORKFLOW.md`. Este freeze, `SYS-MAP-002`, los
+DEV-SRV relevantes y el CAT-CU vigente se leyeron subordinados a esas fuentes de
+verdad; su bloque histórico `CU-OPER-*` se utilizó sólo como evidencia histórica.
+Los patrones de fechas y baja lógica en SQL, backend y tests aportan evidencia
+transversal: no prueban una implementación GOP ni fuerzan su futuro diseño.
 
 También se revisó la historia integrada de PR #474, que originó este freeze, y
 PR #479, que lo alineó con CORE-EF. Se conserva su corrección: en futuros writes
@@ -577,6 +579,7 @@ La política funcional de autorización y visibilidad permanece **NO CONGELADA /
 - cómo incide `id_sucursal`, si finalmente se incorpora, y quién puede consultar tareas globales;
 - cómo se comporta **Mis tareas**;
 - quién puede modificar título/descripción, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar y comentar.
+- quién puede reabrir una tarea completada mediante la operación explícita de la sección 9.1.
 
 El ownership de autorización de Administrativo no elimina la necesidad de que `gestion_operativa` defina esta política funcional de acceso. Los códigos y mecanismos concretos se diseñarán posteriormente junto con Administrativo y DEV-API.
 
@@ -591,6 +594,7 @@ Clasificación conceptual futura:
 | Modificar tarea | `COMMAND_WRITE_NEGOCIO` |
 | Asignar, reasignar o desasignar | `COMMAND_WRITE_NEGOCIO` |
 | Cambiar estado | `COMMAND_WRITE_NEGOCIO` |
+| Reabrir tarea completada | `COMMAND_WRITE_NEGOCIO` |
 | Agregar comentario | `COMMAND_WRITE_NEGOCIO` |
 | Consultas | `QUERY_READLIKE` |
 
@@ -667,8 +671,9 @@ productivo validado de un `COMMAND_WRITE_NEGOCIO` autenticado mediante Bearer y
 consumidor del runtime transversal de idempotencia. Debe utilizarse como
 referencia arquitectónica para futuros commands GOP, sin copiar mecánicamente
 requisitos propios de `valor_parametro`. Por ejemplo, crear tarea no debe asumir
-automáticamente `If-Match-Version`; modificar, reasignar, cambiar estado o cambiar
-fecha objetivo deberán evaluarlo si la futura `Tarea` resulta versionada.
+automáticamente `If-Match-Version`; modificar, reasignar, cambiar estado, reabrir
+o cambiar fecha objetivo deberán evaluarlo si la futura `Tarea` resulta
+versionada.
 
 Para las consultas `QUERY_READLIKE`:
 
@@ -694,7 +699,12 @@ Permanece abierta la decisión: **¿agregar comentario incrementa `version_regis
 
 ## 23. Idempotencia
 
-Debe aplicarse al menos a crear manual, crear automática, asignar/reasignar, cambiar estado y agregar comentario. Los contratos posteriores deberán definir criterio de payload, mismo `op_id` con mismo payload, mismo `op_id` con payload distinto y retry posterior a error.
+Debe aplicarse al menos a crear manual, crear automática, asignar/reasignar,
+cambiar estado, reabrir y agregar comentario. Los contratos posteriores deberán
+definir criterio de payload, mismo `op_id` con mismo payload, mismo `op_id` con
+payload distinto y retry posterior a error. La futura reapertura deberá evaluar
+el runtime transversal #469/#470 como los demás commands GOP, sin que este freeze
+defina `command_code`, target, fingerprint, snapshot ni proyección de respuesta.
 
 La generación automática además debe deduplicar reintentos y el mismo hecho fuente.
 
