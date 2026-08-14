@@ -438,6 +438,15 @@ técnica CORE-EF: una operación puede originarse en una instalación distinta d
 la sucursal funcional de la tarea, y una tarea global también puede tener
 procedencia técnica. `id_instalacion_origen != scope_funcional_tarea`.
 
+El scope funcional se define al crear la tarea y es **inmutable** durante todo
+el MVP. Por lo tanto, `id_sucursal` no puede cambiar después de la creación: no
+se admite convertir una tarea global en tarea de sucursal, convertir una tarea
+de sucursal en global ni trasladarla entre sucursales. Si el scope fue definido
+incorrectamente, la corrección no se realiza mutando `id_sucursal`; requiere una
+nueva Tarea en el scope correcto, con la trazabilidad que determine el diseño
+posterior. Este freeze no incorpora una operación de cambio de scope ni impone
+una acción automática sobre la tarea anterior.
+
 ### Evidencia
 
 - **Repositorio:** `DEV-ARCH-OPE-001` asigna a `operativo` el ownership de
@@ -639,6 +648,30 @@ relación no sustituye la decisión funcional de la sección 14.
 Administrativo conserva ownership de usuarios, autenticación, autorización,
 roles y permisos, y proveerá el mecanismo que materialice el alcance. La política
 siguiente es funcional: no crea roles, permisos, scopes HTTP ni una ACL GOP.
+
+### 20.0 Decisión de creación manual por scope
+
+Antes de que exista la Tarea, la creación manual depende del alcance funcional
+del actor humano sobre el scope propuesto:
+
+```text
+Crear tarea de sucursal
+→ requiere alcance funcional sobre esa sucursal
+
+Crear tarea global
+→ requiere alcance funcional global
+```
+
+El actor humano se identifica mediante `AuthenticatedPrincipal.id_usuario`.
+Estas condiciones son reglas funcionales de `gestion_operativa`, no nombres de
+permisos, roles, claims, scopes HTTP ni una ACL. Administrativo materializará el
+alcance mediante mecanismos que se definirán en artefactos posteriores.
+
+La regla anterior no autentica ni autoriza técnicamente tareas con `origen =
+SISTEMA`: para ellas se mantienen `id_usuario_creador = NULL` y
+`generador_sistema` requerido. La generación automática futura deberá producir
+el scope funcional correspondiente, pero su mecanismo técnico de autorización
+permanece pendiente y no se inventa un usuario de sistema.
 
 ### 20.1 Decisión de visibilidad y consultas
 
@@ -989,7 +1022,8 @@ El alcance funcional comprende:
 
 - crear tarea manual;
 - listar tareas y ver una tarea;
-- consultar mis tareas, pendientes, vencidas y sin asignar;
+- consultar **Mis tareas** y, separadamente, **Tareas creadas por mí**;
+- consultar pendientes, vencidas y sin asignar;
 - modificar título/descripción;
 - asignar, reasignar y desasignar;
 - cambiar prioridad, fecha objetivo y estado;
@@ -1038,6 +1072,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 26. `id_sucursal` es opcional: `NULL` significa tarea global y un valor significa tarea de esa única sucursal; nunca representa procedencia técnica.
 27. **Mis tareas** contiene sólo las tareas asignadas al usuario; las creadas por él se consultan separadamente y continúan visibles por autoría.
 28. La visibilidad se obtiene por creador, responsable o alcance funcional correspondiente; las mutaciones se rigen por ejecución como responsable o gestión por scope según la matriz de la sección 20.2.
+29. La creación manual exige alcance funcional sobre la sucursal propuesta o alcance global para una tarea global; el scope queda inmutable después de crear la Tarea durante el MVP.
 
 ## 29.1 Coherencia conjunta del primer cierre
 

@@ -95,10 +95,13 @@ Decisiones cerradas:
   funcional `CANCELADA`.
 - Scope: `id_sucursal` es opcional; `NULL` significa tarea global y un valor
   significa tarea de esa única sucursal. `id_instalacion_origen` es sólo
-  procedencia técnica y no scope funcional.
+  procedencia técnica y no scope funcional. La creación manual requiere alcance
+  sobre el scope propuesto y éste queda inmutable después de crear la tarea en
+  el MVP.
 - Visibilidad: **Mis tareas** contiene sólo las asignadas; las creadas se
-  consultan separadamente y siguen visibles al creador. También habilitan
-  visibilidad el responsable y el alcance sobre la sucursal o global.
+  consultan separadamente mediante **Tareas creadas por mí**, que forma parte del
+  alcance MVP, y siguen visibles al creador. También habilitan visibilidad el
+  responsable y el alcance sobre la sucursal o global.
 - Mutación: el creador conserva la capacidad de comentar; el responsable ejecuta
   el trabajo y comenta; quien tiene alcance funcional sobre el scope gestiona
   contenido, asignación, planificación, estados y terminales. Crear no otorga
