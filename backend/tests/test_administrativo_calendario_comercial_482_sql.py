@@ -69,6 +69,17 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
     db_session.execute(text(_sql()))
     assert before == (2, 1, 1)
     assert _definitions(db_session) == EXPECTED
+    states = db_session.execute(text("""
+      SELECT tgname,tgenabled FROM pg_trigger
+       WHERE tgname IN (
+         'trg_biu_configuracion_calendario_comercial_core_ef',
+         'trg_biu_valor_parametro_calendario_comercial'
+       ) ORDER BY tgname
+    """)).all()
+    assert states == [
+        ("trg_biu_configuracion_calendario_comercial_core_ef", "O"),
+        ("trg_biu_valor_parametro_calendario_comercial", "O"),
+    ]
 
 
 def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
@@ -232,6 +243,55 @@ def test_funcion_rango_parcialmente_compatible_aborta_sin_reemplazo(db_session):
           )
         """)).scalar_one()
         assert marker in definition
+
+
+@pytest.mark.parametrize(
+    ("table_name", "trigger_name", "mode", "expected_state"),
+    [
+        (
+            "configuracion_calendario_comercial",
+            "trg_biu_configuracion_calendario_comercial_core_ef",
+            "DISABLE",
+            "D",
+        ),
+        (
+            "valor_parametro",
+            "trg_biu_valor_parametro_calendario_comercial",
+            "DISABLE",
+            "D",
+        ),
+        (
+            "valor_parametro",
+            "trg_biu_valor_parametro_calendario_comercial",
+            "ENABLE REPLICA",
+            "R",
+        ),
+        (
+            "configuracion_calendario_comercial",
+            "trg_biu_configuracion_calendario_comercial_core_ef",
+            "ENABLE ALWAYS",
+            "A",
+        ),
+    ],
+)
+def test_trigger_contractual_no_normal_aborta_sin_reactivarlo(
+    db_session, table_name, trigger_name, mode, expected_state
+):
+    with db_session.begin_nested():
+        db_session.execute(text(
+            f"ALTER TABLE {table_name} {mode} TRIGGER {trigger_name}"
+        ))
+        state = db_session.execute(
+            text("SELECT tgenabled FROM pg_trigger WHERE tgname=:name"),
+            {"name": trigger_name},
+        ).scalar_one()
+        assert state == expected_state
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(
+            text("SELECT tgenabled FROM pg_trigger WHERE tgname=:name"),
+            {"name": trigger_name},
+        ).scalar_one() == expected_state
 
 
 @pytest.mark.parametrize("column,value", [

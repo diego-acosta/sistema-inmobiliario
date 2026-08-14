@@ -220,8 +220,8 @@ END $body$;$ddl$;
   END IF;
 END $$;
 
-DO $$ DECLARE actual text; expected text := 'CREATE TRIGGER trg_biu_configuracion_calendario_comercial_core_ef BEFORE INSERT OR UPDATE ON public.configuracion_calendario_comercial FOR EACH ROW EXECUTE FUNCTION trg_configuracion_calendario_comercial_core_ef()'; BEGIN
-  SELECT pg_get_triggerdef(oid) INTO actual FROM pg_trigger
+DO $$ DECLARE actual text; enabled_state "char"; expected text := 'CREATE TRIGGER trg_biu_configuracion_calendario_comercial_core_ef BEFORE INSERT OR UPDATE ON public.configuracion_calendario_comercial FOR EACH ROW EXECUTE FUNCTION trg_configuracion_calendario_comercial_core_ef()'; BEGIN
+  SELECT pg_get_triggerdef(oid), tgenabled INTO actual, enabled_state FROM pg_trigger
    WHERE tgrelid='public.configuracion_calendario_comercial'::regclass
      AND tgname='trg_biu_configuracion_calendario_comercial_core_ef' AND NOT tgisinternal;
   IF actual IS NULL THEN
@@ -229,6 +229,7 @@ DO $$ DECLARE actual text; expected text := 'CREATE TRIGGER trg_biu_configuracio
       ON public.configuracion_calendario_comercial FOR EACH ROW
       EXECUTE FUNCTION public.trg_configuracion_calendario_comercial_core_ef();
   ELSIF regexp_replace(actual,'[[:space:]]','','g') <> regexp_replace(expected,'[[:space:]]','','g')
+     OR enabled_state <> 'O'
   THEN RAISE EXCEPTION 'trigger CORE-EF calendario comercial incompatible'; END IF;
 END $$;
 
@@ -278,13 +279,14 @@ END $body$;$ddl$;
   END IF;
 END $$;
 
-DO $$ DECLARE actual text; expected text := 'CREATE TRIGGER trg_biu_valor_parametro_calendario_comercial BEFORE INSERT OR UPDATE ON public.valor_parametro FOR EACH ROW EXECUTE FUNCTION trg_valor_parametro_calendario_comercial()'; BEGIN
-  SELECT pg_get_triggerdef(oid) INTO actual FROM pg_trigger WHERE tgrelid='public.valor_parametro'::regclass
+DO $$ DECLARE actual text; enabled_state "char"; expected text := 'CREATE TRIGGER trg_biu_valor_parametro_calendario_comercial BEFORE INSERT OR UPDATE ON public.valor_parametro FOR EACH ROW EXECUTE FUNCTION trg_valor_parametro_calendario_comercial()'; BEGIN
+  SELECT pg_get_triggerdef(oid), tgenabled INTO actual, enabled_state FROM pg_trigger WHERE tgrelid='public.valor_parametro'::regclass
    AND tgname='trg_biu_valor_parametro_calendario_comercial' AND NOT tgisinternal;
   IF actual IS NULL THEN
     CREATE TRIGGER trg_biu_valor_parametro_calendario_comercial BEFORE INSERT OR UPDATE
       ON public.valor_parametro FOR EACH ROW EXECUTE FUNCTION public.trg_valor_parametro_calendario_comercial();
   ELSIF regexp_replace(actual,'[[:space:]]','','g') <> regexp_replace(expected,'[[:space:]]','','g')
+     OR enabled_state <> 'O'
   THEN RAISE EXCEPTION 'trigger rango calendario comercial incompatible'; END IF;
 END $$;
 
