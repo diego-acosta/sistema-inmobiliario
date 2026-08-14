@@ -77,6 +77,11 @@ administrativo de identidad, versión y procedencia técnica; `valor_parametro`
 conserva ownership exclusivo de los días y de su vigencia. La cardinalidad física
 admite cero o una raíz activa.
 
+La migración valida en reejecución la equivalencia física completa de la raíz
+(columnas, identity, defaults, PK, UNIQUE, CHECK, FK e índices) y de sus funciones
+y triggers. Un objeto homónimo parcial o incompatible aborta la transacción; no
+se reemplaza ni sanea silenciosamente.
+
 #482 no crea valores ni fila raíz funcional. No agrega GET, bootstrap,
 programación, query service, idempotencia HTTP, outbox, sync o historial
 especializado. La primera raíz y los dos primeros valores pertenecen a #484 en

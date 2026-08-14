@@ -71,6 +71,65 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
     assert _definitions(db_session) == EXPECTED
 
 
+@pytest.mark.parametrize(
+    ("mutation", "evidence"),
+    [
+        (
+            "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN version_registro SET DEFAULT 2",
+            "SELECT column_default='2' FROM information_schema.columns WHERE table_schema='public' AND table_name='configuracion_calendario_comercial' AND column_name='version_registro'",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial DROP CONSTRAINT uq_configuracion_calendario_comercial_uid",
+            "SELECT NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='configuracion_calendario_comercial'::regclass AND contype='u')",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial DROP CONSTRAINT chk_configuracion_calendario_comercial_version",
+            "SELECT NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='configuracion_calendario_comercial'::regclass AND conname='chk_configuracion_calendario_comercial_version')",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial DROP CONSTRAINT fk_configuracion_calendario_comercial_instalacion_origen",
+            "SELECT NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='configuracion_calendario_comercial'::regclass AND conname='fk_configuracion_calendario_comercial_instalacion_origen')",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN id_configuracion_calendario_comercial DROP IDENTITY",
+            "SELECT attidentity='' FROM pg_attribute WHERE attrelid='configuracion_calendario_comercial'::regclass AND attname='id_configuracion_calendario_comercial'",
+        ),
+    ],
+)
+def test_tabla_raiz_incompatible_falla_sin_sanear(db_session, mutation, evidence):
+    with db_session.begin_nested():
+        db_session.execute(text(mutation))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(text(evidence)).scalar_one() is True
+
+
+@pytest.mark.parametrize(
+    "function_name",
+    [
+        "trg_configuracion_calendario_comercial_core_ef",
+        "trg_valor_parametro_calendario_comercial",
+    ],
+)
+def test_funcion_homonima_incompatible_falla_sin_reemplazar(db_session, function_name):
+    marker = "BODY_INCOMPATIBLE_482"
+    with db_session.begin_nested():
+        db_session.execute(text(f"""
+          CREATE OR REPLACE FUNCTION public.{function_name}() RETURNS trigger
+          LANGUAGE plpgsql AS $function$
+          BEGIN
+            RAISE EXCEPTION '{marker}';
+          END $function$
+        """))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        definition = db_session.execute(
+            text("SELECT pg_get_functiondef(to_regprocedure(:signature))"),
+            {"signature": f"public.{function_name}()"},
+        ).scalar_one()
+        assert marker in definition
+
+
 @pytest.mark.parametrize("column,value", [
     ("id_tipo_dato_parametro", 999999), ("id_alcance_parametro", 999999),
     ("exponible_api_administrativa", False), ("es_sensible", True),
