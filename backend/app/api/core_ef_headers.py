@@ -13,6 +13,16 @@ class CoreEFHeaders:
     if_match_version: int | None = None
 
 
+@dataclass(frozen=True)
+class AuthenticatedCoreEFHeaders:
+    """Metadata técnica para commands cuya identidad humana proviene del Bearer."""
+
+    x_op_id: UUID
+    x_sucursal_id: int
+    x_instalacion_id: int
+    if_match_version: int
+
+
 class CoreEFHeaderValidationError(ValueError):
     def __init__(self, *, header_name: str, reason: str) -> None:
         self.header_name = header_name
@@ -25,7 +35,9 @@ class CoreEFHeaderValidationError(ValueError):
 
 
 def _missing_header_error(header_name: str) -> CoreEFHeaderValidationError:
-    return CoreEFHeaderValidationError(header_name=header_name, reason="requerido faltante")
+    return CoreEFHeaderValidationError(
+        header_name=header_name, reason="requerido faltante"
+    )
 
 
 def _invalid_header_error(header_name: str) -> CoreEFHeaderValidationError:
@@ -39,6 +51,13 @@ def _parse_required_int(header_name: str, header_value: str | None) -> int:
         return int(header_value)
     except ValueError as exc:
         raise _invalid_header_error(header_name) from exc
+
+
+def _parse_required_positive_int(header_name: str, header_value: str | None) -> int:
+    parsed = _parse_required_int(header_name, header_value)
+    if parsed < 1:
+        raise _invalid_header_error(header_name)
+    return parsed
 
 
 def _parse_if_match(if_match_version: str | None, required: bool) -> int | None:
@@ -90,4 +109,30 @@ def get_core_ef_headers_write(
         x_sucursal_id=x_sucursal_id,
         x_instalacion_id=x_instalacion_id,
         if_match_version=if_match_version,
+    )
+
+
+def parse_authenticated_core_ef_headers(
+    x_op_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+    if_match_version: str | None,
+) -> AuthenticatedCoreEFHeaders:
+    """Parsea sólo contexto técnico; deliberadamente desconoce X-Usuario-Id."""
+    if x_op_id is None:
+        raise _missing_header_error("X-Op-Id")
+    try:
+        parsed_op_id = UUID(x_op_id)
+    except ValueError as exc:
+        raise _invalid_header_error("X-Op-Id") from exc
+    version = _parse_if_match(if_match_version, True)
+    if version is None or version < 1:
+        raise _invalid_header_error("If-Match-Version")
+    return AuthenticatedCoreEFHeaders(
+        x_op_id=parsed_op_id,
+        x_sucursal_id=_parse_required_positive_int("X-Sucursal-Id", x_sucursal_id),
+        x_instalacion_id=_parse_required_positive_int(
+            "X-Instalacion-Id", x_instalacion_id
+        ),
+        if_match_version=version,
     )

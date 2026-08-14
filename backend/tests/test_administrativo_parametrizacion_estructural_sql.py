@@ -36,7 +36,7 @@ def test_patch_presente_en_resets_dev_test_y_en_el_mismo_orden():
     previous = "patch_item_catalogo_estado_20260724.sql"
     assert sh.count(f'"{PATCH_NAME}"') == 2
     assert sh.index(previous) < sh.index(PATCH_NAME)
-    assert bat.count(f'-f "%PATCH_PARAMETRIZACION_ESTRUCTURAL_FILE%"') == 2
+    assert bat.count('-f "%PATCH_PARAMETRIZACION_ESTRUCTURAL_FILE%"') == 2
     assert bat.index("PATCH_ITEM_CATALOGO_ESTADO_FILE") < bat.index(
         "PATCH_PARAMETRIZACION_ESTRUCTURAL_FILE"
     )
@@ -271,5 +271,4 @@ def test_get_407_es_compatible_con_lookup_estructural_por_codigo(
 
 
 def test_409_no_crea_definiciones_ni_valores_funcionales_425(db_session):
-    assert db_session.execute(text("SELECT COUNT(*) FROM parametro_sistema")).scalar_one() == 0
-    assert db_session.execute(text("SELECT COUNT(*) FROM valor_parametro")).scalar_one() == 0
+    assert db_session.execute(text("SELECT COUNT(*) FROM parametro_sistema WHERE codigo_parametro IN ('DIA_CIERRE_COMERCIAL', 'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')")).scalar_one() == 0

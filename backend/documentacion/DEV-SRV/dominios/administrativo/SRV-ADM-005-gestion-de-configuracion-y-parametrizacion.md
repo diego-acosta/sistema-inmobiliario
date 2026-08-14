@@ -351,7 +351,7 @@ El valor consultado es exclusivamente el marcado vigente global no eliminado (`e
 
 CORE-EF: clasificación `QUERY_READLIKE`; headers write, `If-Match-Version`, idempotencia HTTP, outbox, historial, lock lógico, optimistic locking, commits y mutaciones son `NO APLICA`. La ruta puede enviar `Cache-Control: no-store` de forma localizada. Autorización completa, writes #412, claves/calendario #425 y contexto/overrides #435 siguen pendientes.
 
-## Incremento #412 — contrato de servicio congelado (implementación pendiente)
+## Incremento #412 — command de servicio implementado
 
 La ruta conceptual PATCH conserva `{codigo_parametro}`, pero el router futuro debe
 declarar `.../parametros/{codigo_parametro:path}/valor-global`. El convertidor interno

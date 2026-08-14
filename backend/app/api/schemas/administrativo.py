@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -411,6 +411,7 @@ class UsuarioAlcanceOperativoResponse(BaseModel):
     ok: Literal[True] = True
     data: UsuarioAlcanceOperativoData
 
+
 class ParametroGlobalTipoData(BaseModel):
     id_tipo_dato_parametro: int
     codigo_tipo_dato: str
@@ -456,3 +457,21 @@ class ParametroGlobalValorResponseData(BaseModel):
 class ParametroGlobalValorResponse(BaseModel):
     ok: Literal[True] = True
     data: ParametroGlobalValorResponseData
+
+
+class ActualizarValorParametroGlobalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    valor_tipado: StrictInt
+
+
+class ValorParametroGlobalActualizadoData(BaseModel):
+    codigo_parametro: str
+    uid_global: UUID
+    valor_tipado: int
+    version_registro: int
+    updated_at: datetime
+
+
+class ActualizarValorParametroGlobalResponse(BaseModel):
+    ok: Literal[True] = True
+    data: ValorParametroGlobalActualizadoData

@@ -84,3 +84,37 @@ def test_error_de_publicacion_se_sanitiza() -> None:
     raw = RuntimeError("postgresql://usuario:password@host/db SELECT sentinel")
     assert sanitize_sync_error(raw) == "SYNC_PUBLISH_FAILED"
     assert "password" not in sanitize_sync_error(raw)
+
+
+def test_valor_parametro_modificado_policy_contract() -> None:
+    payload = {
+        "metadata": {
+            "uid_instalacion_origen": "00000000-0000-0000-0000-000000000001",
+            "payload_hash": "a" * 64,
+        },
+        "data": {
+            "uid_global": "00000000-0000-0000-0000-000000000002",
+            "codigo_parametro": "P",
+            "valor_anterior": "15",
+            "valor_nuevo": "16",
+            "version_anterior": 1,
+            "version_registro": 2,
+            "op_id": "00000000-0000-0000-0000-000000000003",
+        },
+    }
+    policy = validate_sync_event(
+        "valor_parametro_modificado", "valor_parametro", payload
+    )
+    assert policy.required_positive_int_fields == ()
+    with pytest.raises(InvalidSyncAggregate):
+        validate_sync_event("valor_parametro_modificado", "parametro_sistema", payload)
+    with pytest.raises(UnknownSyncEvent):
+        validate_sync_event(
+            "valor_parametro_modificado_desconocido", "valor_parametro", payload
+        )
+    with pytest.raises(SensitiveSyncPayload):
+        validate_sync_event(
+            "valor_parametro_modificado",
+            "valor_parametro",
+            {**payload, "token": "secret"},
+        )
