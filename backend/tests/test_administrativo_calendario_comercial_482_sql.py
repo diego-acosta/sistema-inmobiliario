@@ -115,6 +115,26 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
         ("f", "FOREIGNKEYid_instalacion_origenREFERENCESinstalacionid_instalacionONDELETERESTRICT"),
         ("f", "FOREIGNKEYid_instalacion_ultima_modificacionREFERENCESinstalacionid_instalacionONDELETERESTRICT"),
     ])
+    indexes = db_session.execute(text("""
+      SELECT indexname,regexp_replace(indexdef,'[[:space:]()]','','g')
+      FROM pg_indexes WHERE schemaname='public'
+        AND tablename='configuracion_calendario_comercial'
+      ORDER BY indexname
+    """)).all()
+    assert indexes == [
+        ("configuracion_calendario_comercial_pkey", "CREATEUNIQUEINDEXconfiguracion_calendario_comercial_pkeyONpublic.configuracion_calendario_comercialUSINGbtreeid_configuracion_calendario_comercial"),
+        ("uq_configuracion_calendario_comercial_uid", "CREATEUNIQUEINDEXuq_configuracion_calendario_comercial_uidONpublic.configuracion_calendario_comercialUSINGbtreeuid_global"),
+        ("ux_configuracion_calendario_comercial_activa", "CREATEUNIQUEINDEXux_configuracion_calendario_comercial_activaONpublic.configuracion_calendario_comercialUSINGbtreetrueWHEREdeleted_atISNULL"),
+        ("ux_configuracion_calendario_comercial_op_id_alta", "CREATEUNIQUEINDEXux_configuracion_calendario_comercial_op_id_altaONpublic.configuracion_calendario_comercialUSINGbtreeop_id_altaWHEREop_id_altaISNOTNULL"),
+    ]
+    root_triggers = db_session.execute(text("""
+      SELECT tgname,tgenabled FROM pg_trigger
+      WHERE tgrelid='configuracion_calendario_comercial'::regclass
+        AND NOT tgisinternal
+    """)).all()
+    assert root_triggers == [
+        ("trg_biu_configuracion_calendario_comercial_core_ef", "O")
+    ]
 
 
 def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
@@ -192,6 +212,14 @@ def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
         (
             "ALTER TABLE configuracion_calendario_comercial ADD CONSTRAINT chk_calendario_adversarial_inocua CHECK (version_registro >= 0)",
             "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='configuracion_calendario_comercial'::regclass AND conname='chk_calendario_adversarial_inocua')",
+        ),
+        (
+            "CREATE INDEX idx_calendario_adversarial_expr ON configuracion_calendario_comercial (((1 / (version_registro - 1))))",
+            "SELECT to_regclass('public.idx_calendario_adversarial_expr') IS NOT NULL",
+        ),
+        (
+            "CREATE INDEX idx_calendario_adversarial_version ON configuracion_calendario_comercial(version_registro)",
+            "SELECT to_regclass('public.idx_calendario_adversarial_version') IS NOT NULL",
         ),
     ],
 )
@@ -355,6 +383,35 @@ def test_trigger_contractual_no_normal_aborta_sin_reactivarlo(
             text("SELECT tgenabled FROM pg_trigger WHERE tgname=:name"),
             {"name": trigger_name},
         ).scalar_one() == expected_state
+
+
+@pytest.mark.parametrize(
+    ("timing", "events"),
+    [("BEFORE", "INSERT"), ("AFTER", "UPDATE")],
+)
+def test_trigger_extra_en_raiz_aborta_sin_eliminarlo(db_session, timing, events):
+    trigger_name = f"trg_calendario_adversarial_{timing.lower()}"
+    with db_session.begin_nested():
+        db_session.execute(text("""
+          CREATE FUNCTION public.trg_calendario_adversarial_fn() RETURNS trigger
+          LANGUAGE plpgsql AS $function$ BEGIN RETURN NEW; END $function$
+        """))
+        db_session.execute(text(f"""
+          CREATE TRIGGER {trigger_name} {timing} {events}
+          ON configuracion_calendario_comercial FOR EACH ROW
+          EXECUTE FUNCTION public.trg_calendario_adversarial_fn()
+        """))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        names = db_session.execute(text("""
+          SELECT tgname FROM pg_trigger
+          WHERE tgrelid='configuracion_calendario_comercial'::regclass
+            AND NOT tgisinternal ORDER BY tgname
+        """)).scalars().all()
+        assert names == sorted([
+            "trg_biu_configuracion_calendario_comercial_core_ef",
+            trigger_name,
+        ])
 
 
 @pytest.mark.parametrize("column,value", [

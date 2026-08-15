@@ -172,6 +172,11 @@ BEGIN
       ON public.configuracion_calendario_comercial(op_id_alta) WHERE op_id_alta IS NOT NULL;
   ELSIF regexp_replace(actual,'[[:space:]()]','','g') <> 'CREATEUNIQUEINDEXux_configuracion_calendario_comercial_op_id_altaONpublic.configuracion_calendario_comercialUSINGbtreeop_id_altaWHEREop_id_altaISNOTNULL'
   THEN RAISE EXCEPTION 'índice op_id_alta calendario comercial incompatible'; END IF;
+  SELECT count(*) INTO found_count FROM pg_index
+   WHERE indrelid='public.configuracion_calendario_comercial'::regclass;
+  IF found_count <> 4 THEN
+    RAISE EXCEPTION 'cantidad de índices de configuracion_calendario_comercial incompatible: %', found_count;
+  END IF;
 END $$;
 
 -- La invariant aplica también a valores históricos/futuros preexistentes. La
@@ -250,6 +255,10 @@ DO $$ DECLARE actual text; enabled_state "char"; expected text := 'CREATE TRIGGE
   ELSIF regexp_replace(actual,'[[:space:]]','','g') <> regexp_replace(expected,'[[:space:]]','','g')
      OR enabled_state <> 'O'
   THEN RAISE EXCEPTION 'trigger CORE-EF calendario comercial incompatible'; END IF;
+  IF (SELECT count(*) FROM pg_trigger
+       WHERE tgrelid='public.configuracion_calendario_comercial'::regclass
+         AND NOT tgisinternal) <> 1
+  THEN RAISE EXCEPTION 'cantidad de triggers de configuracion_calendario_comercial incompatible'; END IF;
 END $$;
 
 DO $$ DECLARE definition text; expected text := $expected$

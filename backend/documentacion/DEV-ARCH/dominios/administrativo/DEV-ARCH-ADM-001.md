@@ -90,8 +90,8 @@ conserva ownership exclusivo de los días y de su vigencia. La cardinalidad fís
 admite cero o una raíz activa.
 
 La migración valida en reejecución la equivalencia física completa de la raíz
-(columnas, identity, defaults, conjunto exacto de PK, UNIQUE, CHECK y FK, e índices) y de sus funciones
-y triggers. Un objeto homónimo parcial o incompatible aborta la transacción; no
+(columnas, identity, defaults y conjuntos exactos de PK, UNIQUE, CHECK, FK,
+índices y triggers) y de sus funciones. Un objeto homónimo parcial, adicional o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
 
 Para las funciones contractuales compara el body completo almacenado en `pg_proc`
