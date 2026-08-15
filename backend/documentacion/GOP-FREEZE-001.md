@@ -916,9 +916,10 @@ si también conserva la autorización efectiva correspondiente a esa relación.
 
 No hay desasignación automática, cambio automático de estado, job correctivo ni
 otro side effect silencioso desde Administrativo. Una persona con capacidad
-administrativa vigente sobre el scope y autorización efectiva debe reasignar a
-un destino elegible o desasignar explícitamente. En una tarea terminal, la
-pérdida de elegibilidad no habilita una mutación ordinaria del snapshot.
+administrativa aplicable según el estado del scope y autorización efectiva debe
+reasignar a un destino elegible o desasignar explícitamente. En una tarea
+terminal, la pérdida de elegibilidad no habilita una mutación ordinaria del
+snapshot.
 
 #### Fallback ante sucursal no vigente
 
@@ -965,7 +966,7 @@ técnica; Administrativo deberá definirla en artefactos posteriores.
 
 Para el MVP se distinguen **ejecución del trabajo** y **gestión por scope**:
 
-| Acción | Creador humano | Responsable vigente/elegible | Habilitación administrativa vigente sobre el scope |
+| Acción | Creador humano | Responsable vigente/elegible | Habilitación administrativa aplicable |
 | --- | --- | --- | --- |
 | Modificar título o descripción | No | No | Sí |
 | Asignar, reasignar o desasignar | No | No | Sí |
@@ -976,13 +977,25 @@ Para el MVP se distinguen **ejecución del trabajo** y **gestión por scope**:
 | Reabrir `COMPLETADA → PENDIENTE` | No | No | Sí |
 | Comentar | Sí | Sí | Sí |
 
-Para la columna de gestión, una tarea de sucursal exige `puede_administrar =
-true` vigente sobre esa sucursal y una tarea global exige alcance global
-administrativo. `puede_consultar` por sí solo nunca habilita estas acciones. La
-matriz sólo aplica cuando la operación es funcionalmente válida según el ciclo de
-vida; una relación marcada `Sí` no permite eludir la elegibilidad del responsable
-ni la terminalidad. Cada `Sí` expresa una habilitación funcional y toda operación
-humana protegida requiere además autorización efectiva de Administrativo.
+La columna administrativa se interpreta según el estado del scope:
+
+```text
+tarea global
+→ alcance global administrativo vigente
+
+tarea de sucursal con sucursal vigente
+→ puede_administrar = true vigente sobre esa sucursal
+
+tarea de sucursal con sucursal no vigente
+→ alcance global administrativo vigente (fallback)
+```
+
+En los tres casos se requiere además autorización efectiva de Administrativo; el
+fallback global no es un bypass. `puede_consultar` por sí solo nunca habilita
+estas acciones. La matriz sólo aplica cuando la operación es funcionalmente
+válida según el ciclo de vida; una relación marcada `Sí` no permite eludir la
+elegibilidad del responsable ni la terminalidad. No se crean permisos, roles,
+claims, scopes HTTP ni ACL GOP.
 
 Mientras `estado IN (COMPLETADA, CANCELADA)`, el snapshot funcional corriente es
 inmutable: no pueden modificarse título, descripción, responsable, prioridad ni
@@ -997,8 +1010,9 @@ Las únicas excepciones funcionales terminales son:
   de la matriz. Esto no decide si comentar incrementa `version_registro`.
 - Sólo `COMPLETADA` puede reabrirse explícitamente a `PENDIENTE`, con motivo,
   historial `REABIERTA` y `fecha_finalizacion` corriente en `NULL`, según las
-  reglas ya congeladas. Reabrir exige habilitación administrativa vigente sobre
-  el scope y autorización efectiva de Administrativo. `CANCELADA` no reabre.
+  reglas ya congeladas. Reabrir exige la habilitación administrativa aplicable
+  según el estado del scope y autorización efectiva de Administrativo.
+  `CANCELADA` no reabre.
 
 Toda reapertura debe producir atómicamente un postestado válido. Si el responsable
 registrado conserva elegibilidad, se mantiene. Si perdió elegibilidad, la misma
@@ -1170,9 +1184,35 @@ idempotencia command → NO APLICA
 outbox              → NO APLICA
 ```
 
-Bearer y autorización podrán aplicar según la futura política funcional de
-acceso. Este incremento no implementa endpoints ni afirma cumplimiento runtime
-para GOP.
+Toda consulta humana protegida de Tareas —como **Mis tareas**, **Tareas creadas
+por mí**, listado por scope, detalle y filtros que proyecten las tareas visibles
+al usuario— exige:
+
+```text
+Authorization: Bearer obligatorio
+→ get_authenticated_principal
+→ AuthenticatedPrincipal.id_usuario
+→ identidad humana efectiva
+→ evaluar relación funcional de visibilidad
+→ evaluar autorización efectiva de Administrativo
+```
+
+En esas consultas:
+
+```text
+X-Usuario-Id
+→ NO REQUERIR
+→ NO PARSEAR
+→ NO COMPARAR
+→ NO USAR como identidad
+→ NO USAR como autorización
+```
+
+Tampoco se toma identidad de query params, payload, `X-Sucursal-Id` ni
+`X-Instalacion-Id`. Esta regla se limita a consultas humanas protegidas de
+Tareas; una futura lectura técnica de sistema resolverá separadamente su
+autenticación y autorización, que continúan **NO CONGELADAS**. Este incremento no
+implementa endpoints ni afirma cumplimiento runtime para GOP.
 
 ## 22. Versionado
 
@@ -1381,6 +1421,8 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 36. Las fronteras futuras exigen offset y normalización UTC; un timestamp legacy naïve no adquiere UTC retroactivamente y debe resolverse explícitamente antes de ser frontera autoritativa GOP.
 37. `puede_administrar` vigente es una base independiente de visibilidad administrativa y no implica `puede_consultar`; para tareas globales aplica el alcance global administrativo equivalente.
 38. Si una sucursal deja de estar vigente, no produce side effects sobre sus tareas: el responsable pierde elegibilidad local y el alcance global administrativo vigente, más autorización efectiva, preserva un camino residual de visibilidad y gestión sin cambiar el scope.
+39. La habilitación administrativa aplicable es local para una sucursal vigente y global para una tarea global o una sucursal no vigente; todas requieren autorización efectiva y el fallback no es un bypass.
+40. Toda consulta humana protegida de Tareas requiere Bearer y deriva su identidad exclusivamente de `AuthenticatedPrincipal.id_usuario`, nunca de `X-Usuario-Id` ni de contexto técnico.
 
 ## 29.1 Coherencia conjunta del primer cierre
 

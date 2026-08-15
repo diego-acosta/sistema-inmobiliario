@@ -117,7 +117,9 @@ Decisiones cerradas:
   administrativa propia sin implicar `puede_consultar`. Si la sucursal deja de
   estar vigente no hay side effects: el responsable pierde elegibilidad local y
   el alcance global administrativo autorizado conserva visibilidad y gestión
-  residual sin cambiar el scope. La pérdida de elegibilidad bloquea
+  residual como alternativa explícita de la matriz, sin cambiar el scope ni
+  operar como bypass. Las consultas humanas protegidas exigen Bearer e identidad
+  desde `AuthenticatedPrincipal.id_usuario`. La pérdida de elegibilidad bloquea
   ejecución y exige gestión explícita, sin side effects automáticos. Al reabrir,
   `COMPLETADA` repara atómicamente un responsable inelegible para producir un
   postestado activo válido; `CANCELADA` mantiene el snapshot terminal.
