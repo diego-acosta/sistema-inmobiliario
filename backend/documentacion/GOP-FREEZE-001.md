@@ -649,6 +649,63 @@ Administrativo conserva ownership de usuarios, autenticación, autorización,
 roles y permisos, y proveerá el mecanismo que materialice el alcance. La política
 siguiente es funcional: no crea roles, permisos, scopes HTTP ni una ACL GOP.
 
+### 20.A Habilitación funcional y autorización efectiva
+
+Las capacidades de `usuario_sucursal` son habilitaciones funcionales necesarias,
+pero ninguna constituye por sí sola autorización suficiente:
+
+```text
+habilitación por sucursal != autorización efectiva
+
+operación humana protegida
+→ habilitación funcional requerida
+  AND autorización efectiva de Administrativo
+```
+
+Administrativo conserva ownership de la autorización efectiva y compone roles,
+permisos, contexto y denegaciones explícitas conforme a su contrato vigente.
+`gestion_operativa` sólo declara qué habilitación funcional consume para cada
+acción; no crea permisos, roles, ACL, claims, scopes HTTP ni un motor paralelo.
+
+Para una tarea de sucursal, `puede_consultar` vigente es necesario para consultar
+por scope, `puede_operar` vigente es necesario para ser responsable y
+`puede_administrar` vigente es necesario para crear o gestionar por scope. La
+capa administrativa puede denegar igualmente una operación humana protegida.
+Para tareas globales, las habilitaciones equivalentes de consulta, operación y
+administración también deben componerse con autorización efectiva; su
+representación técnica permanece pendiente en Administrativo.
+
+#### Vigencia de `usuario_sucursal`
+
+Un vínculo `usuario_sucursal` está vigente únicamente cuando, para un mismo
+`instante_corte`, se cumplen simultáneamente:
+
+```text
+usuario_sucursal.deleted_at IS NULL
+AND estado_vinculo = ACTIVO
+AND fecha_desde <= instante_corte
+AND (fecha_hasta IS NULL OR instante_corte < fecha_hasta)
+AND usuario vigente/activo
+AND sucursal vigente/activa
+```
+
+El intervalo es `[fecha_desde, fecha_hasta)`: inclusivo al inicio y exclusivo al
+final. `instante_corte` se captura una sola vez por caso de uso desde el reloj
+confiable del servidor en UTC; no procede del cliente, navegador, instalación ni
+sucursal. El mecanismo de inyección del reloj se decidirá después.
+
+Una capacidad está vigente sólo cuando el vínculo anterior está vigente y su
+flag correspondiente vale `true`:
+
+```text
+puede_consultar vigente   = vínculo vigente AND puede_consultar = true
+puede_operar vigente      = vínculo vigente AND puede_operar = true
+puede_administrar vigente = vínculo vigente AND puede_administrar = true
+```
+
+Esta semántica es el contrato funcional completo; no se reduce a una consulta
+runtime que pudiera omitir una parte del intervalo o de la vigencia relacionada.
+
 ### 20.0 Decisión de creación manual por scope
 
 Antes de que exista la Tarea, la creación manual depende del alcance funcional
@@ -658,9 +715,11 @@ del actor humano sobre el scope propuesto:
 Crear tarea de sucursal
 → requiere capacidad administrativa vigente sobre esa sucursal
 → equivalente funcional a puede_administrar = true
+→ requiere además autorización efectiva de Administrativo
 
 Crear tarea global
 → requiere alcance global administrativo
+→ requiere además autorización efectiva de Administrativo
 ```
 
 El actor humano se identifica mediante `AuthenticatedPrincipal.id_usuario`.
@@ -668,7 +727,7 @@ Estas condiciones son reglas funcionales de `gestion_operativa`, no nombres de
 permisos, roles, claims, scopes HTTP ni una ACL. `puede_administrar` es una
 capacidad existente de `usuario_sucursal`; la representación técnica de la
 capacidad global administrativa pertenece a Administrativo y queda para
-artefactos posteriores.
+artefactos posteriores. La habilitación no constituye el grant final.
 
 La regla anterior no autentica ni autoriza técnicamente tareas con `origen =
 SISTEMA`: para ellas se mantienen `id_usuario_creador = NULL` y
@@ -712,6 +771,9 @@ Las tareas `origen = SISTEMA` aplican las mismas reglas según responsable y
 scope. Como no tienen creador humano, no obtienen visibilidad por autoría;
 `generador_sistema` no es actor, usuario, rol ni alcance.
 
+Toda consulta humana protegida requiere además autorización efectiva de
+Administrativo; la capacidad de consulta es necesaria, no suficiente.
+
 ### 20.1.1 Elegibilidad del responsable
 
 La elegibilidad del responsable es una invariante continua determinada por el
@@ -744,8 +806,8 @@ su primera asignación debe cumplir esta regla antes de que pueda pasar a
 `EN_CURSO` o `COMPLETADA`.
 
 Estas son reglas funcionales, no permisos, roles, claims, ACL ni scopes HTTP. La
-forma en que Administrativo materialice y verifique el alcance queda para los
-artefactos posteriores.
+forma en que Administrativo materialice el alcance global y resuelva la
+autorización efectiva queda para los artefactos posteriores.
 
 Si el responsable registrado pierde luego `puede_operar` sobre la sucursal o el
 alcance global operativo, permanece registrado hasta una mutación explícita,
@@ -756,9 +818,9 @@ ser creador, `puede_consultar` vigente o alcance global de consulta.
 
 No hay desasignación automática, cambio automático de estado, job correctivo ni
 otro side effect silencioso desde Administrativo. Una persona con capacidad
-administrativa vigente sobre el scope debe reasignar a un destino elegible o
-desasignar explícitamente. En una tarea terminal, la pérdida de elegibilidad no
-habilita alterar el snapshot inmutable.
+administrativa vigente sobre el scope y autorización efectiva debe reasignar a
+un destino elegible o desasignar explícitamente. En una tarea terminal, la
+pérdida de elegibilidad no habilita una mutación ordinaria del snapshot.
 
 Para tareas de sucursal, las capacidades existentes se consumen sin fusionarlas:
 
@@ -777,7 +839,7 @@ técnica; Administrativo deberá definirla en artefactos posteriores.
 
 Para el MVP se distinguen **ejecución del trabajo** y **gestión por scope**:
 
-| Acción | Creador humano | Responsable vigente/elegible | Capacidad administrativa vigente sobre el scope |
+| Acción | Creador humano | Responsable vigente/elegible | Habilitación administrativa vigente sobre el scope |
 | --- | --- | --- | --- |
 | Modificar título o descripción | No | No | Sí |
 | Asignar, reasignar o desasignar | No | No | Sí |
@@ -793,7 +855,8 @@ true` vigente sobre esa sucursal y una tarea global exige alcance global
 administrativo. `puede_consultar` por sí solo nunca habilita estas acciones. La
 matriz sólo aplica cuando la operación es funcionalmente válida según el ciclo de
 vida; una relación marcada `Sí` no permite eludir la elegibilidad del responsable
-ni la terminalidad.
+ni la terminalidad. Cada `Sí` expresa una habilitación funcional y toda operación
+humana protegida requiere además autorización efectiva de Administrativo.
 
 Mientras `estado IN (COMPLETADA, CANCELADA)`, el snapshot funcional corriente es
 inmutable: no pueden modificarse título, descripción, responsable, prioridad ni
@@ -808,11 +871,35 @@ Las únicas excepciones funcionales terminales son:
   de la matriz. Esto no decide si comentar incrementa `version_registro`.
 - Sólo `COMPLETADA` puede reabrirse explícitamente a `PENDIENTE`, con motivo,
   historial `REABIERTA` y `fecha_finalizacion` corriente en `NULL`, según las
-  reglas ya congeladas. `CANCELADA` no reabre.
+  reglas ya congeladas. Reabrir exige habilitación administrativa vigente sobre
+  el scope y autorización efectiva de Administrativo. `CANCELADA` no reabre.
+
+Toda reapertura debe producir atómicamente un postestado válido. Si el responsable
+registrado conserva elegibilidad, se mantiene. Si perdió elegibilidad, la misma
+operación lógica debe dejar `responsable = NULL` o reemplazarlo por un nuevo
+responsable con elegibilidad vigente. Nunca puede resultar una tarea activa con
+responsable inelegible:
+
+```text
+COMPLETADA → PENDIENTE
+→ fecha_finalizacion = NULL
+→ responsable elegible conservado
+   OR responsable = NULL
+   OR nuevo responsable elegible
+→ historial REABIERTA con motivo obligatorio
+```
+
+La reparación es parte de la invariante funcional de la reapertura, no una
+mutación ordinaria previa del snapshot terminal. Si cambia el responsable, los
+artefactos posteriores preservarán trazabilidad coherente sin que este freeze
+decida si corresponde una o varias entradas de historial. No se diseñan endpoint,
+DTO, payload, `command_code`, SQL ni repository.
 
 Después de la reapertura, la tarea vuelve a estar activa y las mutaciones
 ordinarias vuelven a aplicarse conforme a la misma matriz, la elegibilidad del
 responsable y los demás invariantes; no se crea una matriz adicional.
+Si la reapertura deja la tarea sin responsable, `PENDIENTE` sigue siendo válido y
+no podrá pasar a `EN_CURSO` ni `COMPLETADA` hasta una asignación elegible.
 
 Ser creador, por sí solo, otorga trazabilidad, consulta y capacidad de comentar,
 pero **no** habilita las demás mutaciones. Si el creador también es responsable o
@@ -1161,6 +1248,9 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 29. La creación manual exige `puede_administrar` vigente sobre la sucursal propuesta o alcance global administrativo para una tarea global; el scope queda inmutable después de crear la Tarea durante el MVP.
 30. La elegibilidad del responsable es continua: exige `puede_operar` vigente sobre la sucursal o alcance global operativo; asignar o reasignar no permite eludirla y su pérdida requiere gestión explícita, sin side effects automáticos.
 31. `COMPLETADA` y `CANCELADA` congelan el snapshot funcional corriente; sólo admiten comentarios y, exclusivamente para `COMPLETADA`, la reapertura explícita ya definida.
+32. Las capacidades por sucursal son habilitaciones necesarias, no autorización suficiente; toda operación humana protegida requiere además autorización efectiva de Administrativo.
+33. La vigencia de `usuario_sucursal` usa el predicado completo y el intervalo `[fecha_desde, fecha_hasta)` de la sección 20.A, evaluados con un único `instante_corte` UTC del servidor.
+34. Reabrir `COMPLETADA` conserva al responsable elegible o repara atómicamente al inelegible dejándolo nulo o reemplazándolo por otro elegible; nunca produce una tarea activa con responsable inelegible.
 
 ## 29.1 Coherencia conjunta del primer cierre
 

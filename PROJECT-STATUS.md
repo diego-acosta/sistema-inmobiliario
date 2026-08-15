@@ -106,10 +106,13 @@ Decisiones cerradas:
   el trabajo y comenta mientras conserva elegibilidad continua. En sucursal,
   `puede_consultar` habilita lectura por scope, `puede_operar` elegibilidad como
   responsable y `puede_administrar` gestión por scope; las capacidades globales
-  equivalentes quedan documentales y pendientes de materialización. La pérdida
-  de elegibilidad bloquea ejecución por responsabilidad y exige reasignación o
-  desasignación explícita, sin side effects automáticos. `COMPLETADA` y
-  `CANCELADA` mantienen el snapshot terminal ya congelado.
+  equivalentes quedan documentales y pendientes de materialización. Habilitación
+  no equivale a autorización efectiva de Administrativo; la vigencia contempla
+  baja, estado, intervalo temporal `[fecha_desde, fecha_hasta)`, usuario y
+  sucursal activos, con corte UTC único. La pérdida de elegibilidad bloquea
+  ejecución y exige gestión explícita, sin side effects automáticos. Al reabrir,
+  `COMPLETADA` repara atómicamente un responsable inelegible para producir un
+  postestado activo válido; `CANCELADA` mantiene el snapshot terminal.
 
 Blockers todavía abiertos, con numeración original:
 
