@@ -376,6 +376,50 @@ def test_funcion_rango_parcialmente_compatible_aborta_sin_reemplazo(db_session):
 
 
 @pytest.mark.parametrize(
+    ("function_name", "contractual_literal", "adversarial_literal"),
+    [
+        (
+            "trg_valor_parametro_calendario_comercial",
+            "DIA_CIERRE_COMERCIAL",
+            "DIA_CIERRE_ COMERCIAL",
+        ),
+        (
+            "trg_valor_parametro_calendario_comercial",
+            "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS",
+            "DIA_VENCIMIENTO_PREDETERMINADO_ CUOTAS",
+        ),
+        (
+            "trg_configuracion_calendario_comercial_core_ef",
+            "calendario comercial debe iniciar en versión 1",
+            "calendario  comercial debe iniciar en versión 1",
+        ),
+    ],
+)
+def test_whitespace_dentro_de_literal_hace_funcion_incompatible_sin_reemplazo(
+    db_session, function_name, contractual_literal, adversarial_literal
+):
+    with db_session.begin_nested():
+        original = db_session.execute(
+            text("SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(:signature)"),
+            {"signature": f"public.{function_name}()"},
+        ).scalar_one()
+        assert contractual_literal in original
+        adversarial = original.replace(contractual_literal, adversarial_literal, 1)
+        db_session.execute(text(f"""
+          CREATE OR REPLACE FUNCTION public.{function_name}() RETURNS trigger
+          LANGUAGE plpgsql AS $adversarial${adversarial}$adversarial$
+        """))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        installed = db_session.execute(
+            text("SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(:signature)"),
+            {"signature": f"public.{function_name}()"},
+        ).scalar_one()
+        assert adversarial_literal in installed
+        assert contractual_literal not in installed
+
+
+@pytest.mark.parametrize(
     ("table_name", "trigger_name", "mode", "expected_state"),
     [
         (

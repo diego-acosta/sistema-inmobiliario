@@ -96,8 +96,9 @@ La migración valida en reejecución la equivalencia física completa de la raí
 `tgtype`, `tgqual` y `tgenabled`, independientemente de `search_path`. Un objeto homónimo parcial, adicional o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
 
-Para las funciones contractuales compara el body completo almacenado en `pg_proc`
-tras eliminar sólo whitespace, y exige firma sin argumentos, retorno `trigger`,
+Para las funciones contractuales compara el body completo almacenado en `pg_proc`,
+normalizando sólo CRLF a LF y whitespace exterior; preserva íntegramente literales,
+regex, mensajes y whitespace interno. Además exige firma sin argumentos, retorno `trigger`,
 lenguaje `plpgsql`, configuración y seguridad contractuales. Los triggers se
 comparan contra su definición completa, sin admitir eventos, granularidad o
 condiciones `WHEN` adicionales, y deben conservar `tgenabled = 'O'`. Un trigger

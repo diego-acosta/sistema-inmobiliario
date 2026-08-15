@@ -235,8 +235,8 @@ END $expected$; function_count bigint; BEGIN
      WHERE n.nspname='public' AND p.proname='trg_configuracion_calendario_comercial_core_ef'
        AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND l.lanname='plpgsql'
        AND NOT p.prosecdef AND p.proconfig IS NULL;
-    IF definition IS NULL OR regexp_replace(definition,'[[:space:]]','','g') <>
-       regexp_replace(expected,'[[:space:]]','','g')
+    IF definition IS NULL OR replace(btrim(definition), E'\r\n', E'\n') <>
+       replace(btrim(expected), E'\r\n', E'\n')
     THEN RAISE EXCEPTION 'función CORE-EF calendario comercial incompatible'; END IF;
   ELSE
     EXECUTE $ddl$CREATE FUNCTION public.trg_configuracion_calendario_comercial_core_ef() RETURNS trigger
@@ -298,8 +298,8 @@ END $expected$; function_count bigint; BEGIN
      WHERE n.nspname='public' AND p.proname='trg_valor_parametro_calendario_comercial'
        AND p.pronargs=0 AND p.prorettype='trigger'::regtype AND l.lanname='plpgsql'
        AND NOT p.prosecdef AND p.proconfig IS NULL;
-    IF definition IS NULL OR regexp_replace(definition,'[[:space:]]','','g') <>
-       regexp_replace(expected,'[[:space:]]','','g')
+    IF definition IS NULL OR replace(btrim(definition), E'\r\n', E'\n') <>
+       replace(btrim(expected), E'\r\n', E'\n')
     THEN RAISE EXCEPTION 'función rango calendario comercial incompatible'; END IF;
   ELSE
     EXECUTE $ddl$CREATE FUNCTION public.trg_valor_parametro_calendario_comercial() RETURNS trigger
