@@ -110,7 +110,10 @@ Decisiones cerradas:
   no equivale a autorización efectiva de Administrativo; la vigencia contempla
   usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, e
   intervalo `[fecha_desde, fecha_hasta)` con fronteras e `instante_corte`
-  normalizados a UTC. La pérdida de elegibilidad bloquea
+  futuros normalizados a UTC; timestamps legacy naïve requieren resolución
+  explícita y no se reinterpretan como UTC. Creador, responsable elegible y scope
+  de consulta son bases independientes; `puede_consultar` sólo aplica a esta
+  última. La pérdida de elegibilidad bloquea
   ejecución y exige gestión explícita, sin side effects automáticos. Al reabrir,
   `COMPLETADA` repara atómicamente un responsable inelegible para producir un
   postestado activo válido; `CANCELADA` mantiene el snapshot terminal.

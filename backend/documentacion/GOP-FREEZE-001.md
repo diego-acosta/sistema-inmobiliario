@@ -732,9 +732,26 @@ AND (
 )
 ```
 
-Si una persistencia física futura o heredada usa `timestamp without time zone`,
-el valor almacenado debe representar UTC normalizado, nunca una hora local
-implícita. El timezone de la sesión PostgreSQL no es autoridad semántica.
+Si una persistencia futura usa `timestamp without time zone`, el valor sólo puede
+considerarse UTC canónico cuando la escritura recibió un offset explícito,
+convirtió el instante a UTC y persistió esa representación normalizada. El
+timezone de la sesión PostgreSQL no es autoridad semántica.
+
+Los valores legacy naïve requieren tratamiento separado:
+
+```text
+timestamp legacy sin offset
+→ no permite determinar por sí solo la zona original
+→ no puede reinterpretarse silenciosamente como UTC
+```
+
+La normalización UTC del contrato futuro no es retroactiva. Antes de usar un
+registro legacy ambiguo como frontera temporal autoritativa para visibilidad,
+elegibilidad, asignación o mutación GOP, debe resolverse explícitamente su
+semántica mediante una migración/backfill explícito **o** una regla legacy
+documentada y validada. Este freeze no elige la estrategia, no supone un timezone
+histórico y no diseña SQL, script, heurística ni job correctivo.
+
 Cuando Administrativo materialice capacidades globales con vigencia temporal,
 deberá respetar los mismos instantes UTC canónicos e intervalos inequívocos, sin
 que este freeze diseñe su estructura.
@@ -793,6 +810,24 @@ condiciones:
    sucursal; o
 4. tiene alcance global de consulta para una tarea global.
 
+Estas bases son alternativas e independientes (`creador OR responsable elegible
+OR capacidad de consulta aplicable`); no se exige satisfacer más de una. Toda
+consulta humana protegida requiere autorización efectiva de Administrativo, pero
+la habilitación funcional adicional depende de la relación que funda la
+visibilidad:
+
+```text
+creador humano + autorización efectiva
+→ visibilidad por autoría
+→ no requiere puede_consultar, puede_operar ni puede_administrar
+
+responsable registrado + elegibilidad vigente + autorización efectiva
+→ visibilidad por responsabilidad
+
+capacidad de consulta vigente + autorización efectiva
+→ visibilidad por scope
+```
+
 Por lo tanto:
 
 - **Mis tareas** significa exclusivamente tareas cuyo responsable registrado es
@@ -815,9 +850,6 @@ Por lo tanto:
 Las tareas `origen = SISTEMA` aplican las mismas reglas según responsable y
 scope. Como no tienen creador humano, no obtienen visibilidad por autoría;
 `generador_sistema` no es actor, usuario, rol ni alcance.
-
-Toda consulta humana protegida requiere además autorización efectiva de
-Administrativo; la capacidad de consulta es necesaria, no suficiente.
 
 ### 20.1.1 Elegibilidad del responsable
 
@@ -1296,6 +1328,8 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 32. Las capacidades por sucursal son habilitaciones necesarias, no autorización suficiente; toda operación humana protegida requiere además autorización efectiva de Administrativo.
 33. La vigencia de `usuario_sucursal` exige usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, y usa el intervalo `[fecha_desde, fecha_hasta)` normalizado a UTC de la sección 20.A, evaluado con un único `instante_corte_utc` del servidor.
 34. Reabrir `COMPLETADA` conserva al responsable elegible o repara atómicamente al inelegible dejándolo nulo o reemplazándolo por otro elegible; nunca produce una tarea activa con responsable inelegible.
+35. Creador, responsable elegible y capacidad de consulta son bases alternativas de visibilidad sujetas a autorización efectiva; `puede_consultar` sólo se exige para visibilidad por scope.
+36. Las fronteras futuras exigen offset y normalización UTC; un timestamp legacy naïve no adquiere UTC retroactivamente y debe resolverse explícitamente antes de ser frontera autoritativa GOP.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
