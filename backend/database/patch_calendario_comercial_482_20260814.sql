@@ -155,6 +155,11 @@ BEGIN
            regexp_replace(item.esperado,'[[:space:]()]|::[a-z ]+','','g');
     IF found_count <> 1 THEN RAISE EXCEPTION 'constraint contractual ausente o incompatible: %', item.esperado; END IF;
   END LOOP;
+  SELECT count(*) INTO found_count FROM pg_constraint
+   WHERE conrelid='public.configuracion_calendario_comercial'::regclass;
+  IF found_count <> 6 THEN
+    RAISE EXCEPTION 'cantidad de constraints de configuracion_calendario_comercial incompatible: %', found_count;
+  END IF;
   SELECT indexdef INTO actual FROM pg_indexes WHERE schemaname='public' AND indexname='ux_configuracion_calendario_comercial_activa';
   IF actual IS NULL THEN
     CREATE UNIQUE INDEX ux_configuracion_calendario_comercial_activa

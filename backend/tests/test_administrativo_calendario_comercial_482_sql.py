@@ -98,6 +98,23 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
         ("op_id_alta", None),
         ("op_id_ultima_modificacion", None),
     ]
+    constraints = db_session.execute(text("""
+      SELECT contype,regexp_replace(
+        replace(pg_get_constraintdef(oid),'public.',''),
+        '[[:space:]()]|::[a-z ]+','','g'
+      )
+      FROM pg_constraint
+      WHERE conrelid='configuracion_calendario_comercial'::regclass
+      ORDER BY contype,2
+    """)).all()
+    assert constraints == sorted([
+        ("p", "PRIMARYKEYid_configuracion_calendario_comercial"),
+        ("u", "UNIQUEuid_global"),
+        ("c", "CHECKdeleted_atISNULLORdeleted_at>=created_at"),
+        ("c", "CHECKversion_registro>=1"),
+        ("f", "FOREIGNKEYid_instalacion_origenREFERENCESinstalacionid_instalacionONDELETERESTRICT"),
+        ("f", "FOREIGNKEYid_instalacion_ultima_modificacionREFERENCESinstalacionid_instalacionONDELETERESTRICT"),
+    ])
 
 
 def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
@@ -167,6 +184,14 @@ def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
         (
             "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN op_id_ultima_modificacion SET DEFAULT gen_random_uuid()",
             "SELECT pg_get_expr(d.adbin,d.adrelid) IS NOT NULL FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='configuracion_calendario_comercial'::regclass AND a.attname='op_id_ultima_modificacion'",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ADD CONSTRAINT chk_calendario_adversarial_false CHECK (false)",
+            "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='configuracion_calendario_comercial'::regclass AND conname='chk_calendario_adversarial_false')",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ADD CONSTRAINT chk_calendario_adversarial_inocua CHECK (version_registro >= 0)",
+            "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='configuracion_calendario_comercial'::regclass AND conname='chk_calendario_adversarial_inocua')",
         ),
     ],
 )

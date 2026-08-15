@@ -286,9 +286,18 @@ Este incremento es sólo documental y no agrega endpoints. Sustituye los nombres
 
 Las claves contractuales se crearán por migraciones versionadas, no por alta/baja dinámica en el primer runtime. Desde #438/#441, exposición administrativa, sensibilidad y editabilidad son metadata física explícita en `parametro_sistema` mediante `exponible_api_administrativa`, `es_sensible` y `editable_administrativamente`, con política restrictiva por defecto y sin inferencias por código, tipo, nombre, exposición, sensibilidad o valor. La editabilidad nace `false`, es independiente de exposición/sensibilidad, no es editable por API y sólo debe habilitarse por migración versionada; la autorización real, el cifrado o secret manager y cualquier modelo adicional de visibilidad siguen **NO CONFIRMADOS**. No se expondrán secretos en claro por API, historial, outbox ni logs. También están pendientes la prohibición física de vigencias solapadas, la idempotencia HTTP, el outbox runtime y el historial alineado al valor/contexto.
 
-Para #425 se usarán sólo definición `parametro_sistema` y valor GLOBAL vigente en `valor_parametro`, con `id_sucursal IS NULL` e `id_instalacion IS NULL`, sin `configuracion_general`, `configuracion_local` ni catálogos. Continúan pendientes patch SQL funcional específico, seeds de dos claves, constraints 1–31, read, write, versionado runtime, idempotencia HTTP, outbox, historial, rollback, query service y tests PostgreSQL.
+Freeze histórico previo a la recongelación de #425: se preveían sólo definición
+`parametro_sistema` y valor GLOBAL en `valor_parametro`. Estado vigente post-#482:
+esas tablas conservan respectivamente la definición y los valores/vigencias como
+fuentes canónicas, mientras `configuracion_calendario_comercial` aporta únicamente
+identidad, versión, locking, concurrencia y procedencia del agregado. La raíz no
+almacena días ni vigencias. Valores funcionales y runtime continúan pendientes.
 
-Son **NO CONFIRMADOS** los códigos/nombres exactos, defaults, cifrado o secret manager, autorización, caché, inclusividad de `fecha_hasta`, reactivación y reutilización de claves y taxonomía final de eventos.
+Estado vigente post-#482: los códigos, nombres, descripciones, tipo, alcance, rango
+y metadata de las dos claves calendario están confirmados; no existen defaults de
+valor funcional. Siguen **NO CONFIRMADOS** cifrado o secret manager, caché,
+inclusividad de `fecha_hasta`, reactivación/reutilización y taxonomía final de
+eventos. La autorización del agregado permanece para su incremento runtime.
 
 ### Decisión CORE-EF
 

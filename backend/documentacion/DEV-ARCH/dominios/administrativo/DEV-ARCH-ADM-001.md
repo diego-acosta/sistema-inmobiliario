@@ -56,7 +56,8 @@ Un valor sensible nunca puede exponerse en claro por API, historial, outbox ni l
 
 ## 5. Freeze específico para #425
 
-#425 se implementará exclusivamente sobre:
+**Freeze histórico previo a la recongelación vigente de #425:** el modelo funcional
+se describía sólo mediante:
 
 - `parametro_sistema`, como definición;
 - `valor_parametro`, como valor `GLOBAL` vigente;
@@ -64,6 +65,13 @@ Un valor sensible nunca puede exponerse en claro por API, historial, outbox ni l
 - sin `configuracion_general`;
 - sin `configuracion_local`;
 - sin catálogos.
+
+Estado vigente recongelado: `parametro_sistema` sigue siendo la fuente canónica de
+la definición y `valor_parametro` la fuente canónica de valores y vigencias. La
+raíz `configuracion_calendario_comercial` es soporte estructural obligatorio del
+agregado para identidad portable, `uid_global`, versión, locking, optimistic
+concurrency y procedencia CORE-EF. No almacena ni duplica días, `fecha_desde` o
+`fecha_hasta`; esos datos permanecen exclusivamente en `valor_parametro`.
 
 **Freeze histórico previo a #482:** permanecían pendientes el patch SQL funcional,
 las dos definiciones, el rango 1–31, read, write, versionado, idempotencia, outbox,
@@ -82,7 +90,7 @@ conserva ownership exclusivo de los días y de su vigencia. La cardinalidad fís
 admite cero o una raíz activa.
 
 La migración valida en reejecución la equivalencia física completa de la raíz
-(columnas, identity, defaults, PK, UNIQUE, CHECK, FK e índices) y de sus funciones
+(columnas, identity, defaults, conjunto exacto de PK, UNIQUE, CHECK y FK, e índices) y de sus funciones
 y triggers. Un objeto homónimo parcial o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
 
