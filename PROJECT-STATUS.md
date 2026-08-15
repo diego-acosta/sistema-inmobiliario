@@ -108,8 +108,9 @@ Decisiones cerradas:
   responsable y `puede_administrar` gestión por scope; las capacidades globales
   equivalentes quedan documentales y pendientes de materialización. Habilitación
   no equivale a autorización efectiva de Administrativo; la vigencia contempla
-  baja, estado, intervalo temporal `[fecha_desde, fecha_hasta)`, usuario y
-  sucursal activos, con corte UTC único. La pérdida de elegibilidad bloquea
+  usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, e
+  intervalo `[fecha_desde, fecha_hasta)` con fronteras e `instante_corte`
+  normalizados a UTC. La pérdida de elegibilidad bloquea
   ejecución y exige gestión explícita, sin side effects automáticos. Al reabrir,
   `COMPLETADA` repara atómicamente un responsable inelegible para producir un
   postestado activo válido; `CANCELADA` mantiene el snapshot terminal.

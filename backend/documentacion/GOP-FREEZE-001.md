@@ -677,22 +677,67 @@ representación técnica permanece pendiente en Administrativo.
 
 #### Vigencia de `usuario_sucursal`
 
+Los registros relacionados se consideran vigentes únicamente bajo estos
+predicados completos:
+
+```text
+usuario vigente
+= estado_usuario = ACTIVO
+  AND usuario.deleted_at IS NULL
+  AND usuario.fecha_baja IS NULL
+
+sucursal vigente
+= estado_sucursal = ACTIVA
+  AND sucursal.deleted_at IS NULL
+  AND sucursal.fecha_baja IS NULL
+```
+
 Un vínculo `usuario_sucursal` está vigente únicamente cuando, para un mismo
-`instante_corte`, se cumplen simultáneamente:
+`instante_corte_utc`, se cumplen simultáneamente:
 
 ```text
 usuario_sucursal.deleted_at IS NULL
 AND estado_vinculo = ACTIVO
-AND fecha_desde <= instante_corte
-AND (fecha_hasta IS NULL OR instante_corte < fecha_hasta)
-AND usuario vigente/activo
-AND sucursal vigente/activa
+AND fecha_desde_utc <= instante_corte_utc
+AND (fecha_hasta_utc IS NULL OR instante_corte_utc < fecha_hasta_utc)
+AND usuario vigente
+AND sucursal vigente
 ```
 
 El intervalo es `[fecha_desde, fecha_hasta)`: inclusivo al inicio y exclusivo al
-final. `instante_corte` se captura una sola vez por caso de uso desde el reloj
+final. `instante_corte_utc` se captura una sola vez por caso de uso desde el reloj
 confiable del servidor en UTC; no procede del cliente, navegador, instalación ni
 sucursal. El mecanismo de inyección del reloj se decidirá después.
+
+`fecha_desde` y `fecha_hasta` representan instantes absolutos cuyo canon temporal
+es UTC. Todo contrato futuro que materialice estas fronteras debe exigir un
+timestamp con offset explícito; son ejemplos válidos `2026-08-15T13:00:00Z` y
+`2026-08-15T10:00:00-03:00`, mientras `2026-08-15T10:00:00` sin offset es
+inválido. Esta decisión no modifica ahora schemas administrativos existentes.
+
+La conversión y comparación canónicas son:
+
+```text
+input con offset
+→ convertir a UTC
+→ comparar como instante UTC
+
+2026-08-15T10:00:00-03:00
+→ 2026-08-15T13:00:00Z
+
+fecha_desde_utc <= instante_corte_utc
+AND (
+  fecha_hasta_utc IS NULL
+  OR instante_corte_utc < fecha_hasta_utc
+)
+```
+
+Si una persistencia física futura o heredada usa `timestamp without time zone`,
+el valor almacenado debe representar UTC normalizado, nunca una hora local
+implícita. El timezone de la sesión PostgreSQL no es autoridad semántica.
+Cuando Administrativo materialice capacidades globales con vigencia temporal,
+deberá respetar los mismos instantes UTC canónicos e intervalos inequívocos, sin
+que este freeze diseñe su estructura.
 
 Una capacidad está vigente sólo cuando el vínculo anterior está vigente y su
 flag correspondiente vale `true`:
@@ -1249,7 +1294,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 30. La elegibilidad del responsable es continua: exige `puede_operar` vigente sobre la sucursal o alcance global operativo; asignar o reasignar no permite eludirla y su pérdida requiere gestión explícita, sin side effects automáticos.
 31. `COMPLETADA` y `CANCELADA` congelan el snapshot funcional corriente; sólo admiten comentarios y, exclusivamente para `COMPLETADA`, la reapertura explícita ya definida.
 32. Las capacidades por sucursal son habilitaciones necesarias, no autorización suficiente; toda operación humana protegida requiere además autorización efectiva de Administrativo.
-33. La vigencia de `usuario_sucursal` usa el predicado completo y el intervalo `[fecha_desde, fecha_hasta)` de la sección 20.A, evaluados con un único `instante_corte` UTC del servidor.
+33. La vigencia de `usuario_sucursal` exige usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, y usa el intervalo `[fecha_desde, fecha_hasta)` normalizado a UTC de la sección 20.A, evaluado con un único `instante_corte_utc` del servidor.
 34. Reabrir `COMPLETADA` conserva al responsable elegible o repara atómicamente al inelegible dejándolo nulo o reemplazándolo por otro elegible; nunca produce una tarea activa con responsable inelegible.
 
 ## 29.1 Coherencia conjunta del primer cierre
