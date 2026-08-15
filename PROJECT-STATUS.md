@@ -112,8 +112,11 @@ Decisiones cerradas:
   intervalo `[fecha_desde, fecha_hasta)` con fronteras e `instante_corte`
   futuros normalizados a UTC; timestamps legacy naïve requieren resolución
   explícita y no se reinterpretan como UTC. Creador, responsable elegible y scope
-  de consulta son bases independientes; `puede_consultar` sólo aplica a esta
-  última. La pérdida de elegibilidad bloquea
+  de consulta son bases independientes; `puede_administrar` agrega visibilidad
+  administrativa propia sin implicar `puede_consultar`. Si la sucursal deja de
+  estar vigente no hay side effects: el responsable pierde elegibilidad local y
+  el alcance global administrativo autorizado conserva visibilidad y gestión
+  residual sin cambiar el scope. La pérdida de elegibilidad bloquea
   ejecución y exige gestión explícita, sin side effects automáticos. Al reabrir,
   `COMPLETADA` repara atómicamente un responsable inelegible para producir un
   postestado activo válido; `CANCELADA` mantiene el snapshot terminal.

@@ -799,22 +799,25 @@ permanece pendiente y no se inventa un usuario de sistema.
 
 ### 20.1 Decisión de visibilidad y consultas
 
-Se reconocen cuatro relaciones funcionales independientes: creador, responsable
-vigente/elegible, capacidad de consulta sobre la sucursal y alcance global de
-consulta. Un usuario puede ver una tarea si cumple al menos una de estas
-condiciones:
+Se reconocen bases funcionales independientes de visibilidad por autoría,
+responsabilidad elegible, consulta por scope y administración por scope. Un
+usuario puede ver una tarea si cumple al menos una de estas condiciones:
 
 1. es su creador humano;
 2. es su responsable actual y conserva elegibilidad vigente;
 3. tiene `puede_consultar = true` vigente sobre la sucursal de una tarea de
-   sucursal; o
-4. tiene alcance global de consulta para una tarea global.
+   sucursal;
+4. tiene `puede_administrar = true` vigente sobre esa sucursal;
+5. para una tarea global, tiene alcance global de consulta o alcance global
+   administrativo vigente; o
+6. para una tarea de sucursal cuyo scope dejó de estar vigente, tiene alcance
+   global administrativo vigente.
 
 Estas bases son alternativas e independientes (`creador OR responsable elegible
-OR capacidad de consulta aplicable`); no se exige satisfacer más de una. Toda
-consulta humana protegida requiere autorización efectiva de Administrativo, pero
-la habilitación funcional adicional depende de la relación que funda la
-visibilidad:
+OR consulta por scope OR administración por scope`); no se exige satisfacer más
+de una. Toda consulta humana protegida requiere autorización efectiva de
+Administrativo, pero la habilitación funcional adicional depende de la relación
+que funda la visibilidad:
 
 ```text
 creador humano + autorización efectiva
@@ -825,8 +828,16 @@ responsable registrado + elegibilidad vigente + autorización efectiva
 → visibilidad por responsabilidad
 
 capacidad de consulta vigente + autorización efectiva
-→ visibilidad por scope
+→ visibilidad ordinaria por scope
+
+capacidad administrativa vigente + autorización efectiva
+→ visibilidad administrativa por scope
 ```
+
+`puede_administrar` es una base propia de visibilidad porque el actor debe acceder
+al objeto que administra; **no implica ni deriva `puede_consultar = true`**. Para
+tareas globales se aplica el equivalente funcional con alcance global
+administrativo, sin inventar su representación técnica.
 
 Por lo tanto:
 
@@ -837,13 +848,15 @@ Por lo tanto:
   visibilidad después de una asignación, reasignación o desasignación, aunque no
   sea responsable ni tenga actualmente alcance sobre el scope de la tarea.
 - Las tareas sin responsable son visibles para su creador humano y por capacidad
-  de consulta del scope: `puede_consultar` vigente para su sucursal o alcance
-  global de consulta para una tarea global.
+  de consulta o administración del scope: los flags vigentes correspondientes
+  para su sucursal o los alcances globales equivalentes para una tarea global.
 - Una tarea asignada a otra persona es visible para su creador y por la capacidad
-  de consulta correspondiente. `puede_consultar` no habilita gestión por scope.
+  de consulta o administración correspondiente. `puede_consultar` no habilita
+  gestión por scope.
 - Una tarea de sucursal entra en listados por scope sólo con `puede_consultar =
-  true` vigente sobre esa sucursal. Una tarea global entra por scope sólo con
-  alcance global de consulta; no se replica como tarea de cada sucursal.
+  true` vigente para visibilidad ordinaria o `puede_administrar = true` vigente
+  para visibilidad administrativa. Una tarea global entra por alcance global de
+  consulta o administrativo; no se replica como tarea de cada sucursal.
 - La asignación individual mantiene la tarea en **Mis tareas** y visible para el
   responsable elegible según el scope, incluida una tarea global o de sucursal.
 
@@ -899,12 +912,40 @@ administrativa vigente sobre el scope y autorización efectiva debe reasignar a
 un destino elegible o desasignar explícitamente. En una tarea terminal, la
 pérdida de elegibilidad no habilita una mutación ordinaria del snapshot.
 
+#### Fallback ante sucursal no vigente
+
+Si la sucursal del scope deja de cumplir su predicado de vigencia, todas las
+capacidades locales derivadas de `usuario_sucursal` dejan de estar vigentes. La
+tarea conserva sin cambios su scope, estado, responsable registrado y demás
+datos: no se cancela, reasigna, desasigna, elimina ni convierte automáticamente en
+global, y `id_sucursal` continúa inmutable.
+
+El responsable registrado pierde elegibilidad, visibilidad y ejecución por la
+relación de responsable, pero permanece referenciado para trazabilidad. Puede
+conservar acceso únicamente por otra base independiente, como autoría, o por el
+fallback siguiente:
+
+```text
+tarea de sucursal cuyo scope dejó de estar vigente
+→ alcance global administrativo vigente
+  AND autorización efectiva de Administrativo
+→ visibilidad administrativa y gestión residual
+```
+
+Este actor global puede ejecutar las mismas operaciones administrativas de la
+matriz cuando el ciclo de vida y las demás invariantes lo permitan: modificar
+título/descripción, asignar, reasignar, desasignar, cambiar prioridad o
+`fecha_objetivo`, cambiar estado o completar por gestión, cancelar, reabrir
+`COMPLETADA` y comentar por relación administrativa. No obtiene operaciones
+nuevas, no puede cambiar `id_sucursal`, trasladar la tarea ni convertirla en
+global. Toda asignación o reasignación sigue exigiendo un destino elegible.
+
 Para tareas de sucursal, las capacidades existentes se consumen sin fusionarlas:
 
 ```text
 puede_consultar vigente   → visibilidad por scope
 puede_operar vigente      → elegibilidad continua como responsable
-puede_administrar vigente → creación y gestión por scope
+puede_administrar vigente → visibilidad administrativa, creación y gestión por scope
 ```
 
 Para tareas globales se requieren, respectivamente, alcance global de consulta,
@@ -1321,15 +1362,17 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 25. El vencimiento usa una única fecha local capturada del reloj del servidor en `America/Argentina/Buenos_Aires` y la fórmula exacta de la sección 12.
 26. `id_sucursal` es opcional: `NULL` significa tarea global y un valor significa tarea de esa única sucursal; nunca representa procedencia técnica.
 27. **Mis tareas** contiene sólo las tareas asignadas al usuario mientras su elegibilidad como responsable permanezca vigente; las creadas por él se consultan separadamente y continúan visibles por autoría.
-28. La visibilidad se obtiene por creador, responsable vigente/elegible o capacidad de consulta correspondiente; las mutaciones se rigen por ejecución como responsable elegible o capacidad administrativa del scope según la matriz de la sección 20.2.
+28. La visibilidad se obtiene por creador, responsable vigente/elegible, capacidad de consulta o capacidad administrativa correspondiente; las mutaciones se rigen por ejecución como responsable elegible o capacidad administrativa del scope según la matriz de la sección 20.2.
 29. La creación manual exige `puede_administrar` vigente sobre la sucursal propuesta o alcance global administrativo para una tarea global; el scope queda inmutable después de crear la Tarea durante el MVP.
 30. La elegibilidad del responsable es continua: exige `puede_operar` vigente sobre la sucursal o alcance global operativo; asignar o reasignar no permite eludirla y su pérdida requiere gestión explícita, sin side effects automáticos.
 31. `COMPLETADA` y `CANCELADA` congelan el snapshot funcional corriente; sólo admiten comentarios y, exclusivamente para `COMPLETADA`, la reapertura explícita ya definida.
 32. Las capacidades por sucursal son habilitaciones necesarias, no autorización suficiente; toda operación humana protegida requiere además autorización efectiva de Administrativo.
 33. La vigencia de `usuario_sucursal` exige usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, y usa el intervalo `[fecha_desde, fecha_hasta)` normalizado a UTC de la sección 20.A, evaluado con un único `instante_corte_utc` del servidor.
 34. Reabrir `COMPLETADA` conserva al responsable elegible o repara atómicamente al inelegible dejándolo nulo o reemplazándolo por otro elegible; nunca produce una tarea activa con responsable inelegible.
-35. Creador, responsable elegible y capacidad de consulta son bases alternativas de visibilidad sujetas a autorización efectiva; `puede_consultar` sólo se exige para visibilidad por scope.
+35. Creador, responsable elegible, capacidad de consulta y capacidad administrativa son bases alternativas de visibilidad sujetas a autorización efectiva; `puede_consultar` sólo se exige para visibilidad ordinaria por scope.
 36. Las fronteras futuras exigen offset y normalización UTC; un timestamp legacy naïve no adquiere UTC retroactivamente y debe resolverse explícitamente antes de ser frontera autoritativa GOP.
+37. `puede_administrar` vigente es una base independiente de visibilidad administrativa y no implica `puede_consultar`; para tareas globales aplica el alcance global administrativo equivalente.
+38. Si una sucursal deja de estar vigente, no produce side effects sobre sus tareas: el responsable pierde elegibilidad local y el alcance global administrativo vigente, más autorización efectiva, preserva un camino residual de visibilidad y gestión sin cambiar el scope.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
