@@ -116,16 +116,20 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
         ("f", "FOREIGNKEYid_instalacion_ultima_modificacionREFERENCESinstalacionid_instalacionONDELETERESTRICT"),
     ])
     indexes = db_session.execute(text("""
-      SELECT indexname,regexp_replace(indexdef,'[[:space:]()]','','g')
-      FROM pg_indexes WHERE schemaname='public'
-        AND tablename='configuracion_calendario_comercial'
-      ORDER BY indexname
+      SELECT pi.indexname,regexp_replace(pi.indexdef,'[[:space:]()]','','g'),
+             i.indisvalid,i.indisready
+      FROM pg_indexes pi JOIN pg_class ci ON ci.relname=pi.indexname
+      JOIN pg_namespace n ON n.oid=ci.relnamespace AND n.nspname=pi.schemaname
+      JOIN pg_index i ON i.indexrelid=ci.oid
+      WHERE pi.schemaname='public'
+        AND pi.tablename='configuracion_calendario_comercial'
+      ORDER BY pi.indexname
     """)).all()
     assert indexes == [
-        ("configuracion_calendario_comercial_pkey", "CREATEUNIQUEINDEXconfiguracion_calendario_comercial_pkeyONpublic.configuracion_calendario_comercialUSINGbtreeid_configuracion_calendario_comercial"),
-        ("uq_configuracion_calendario_comercial_uid", "CREATEUNIQUEINDEXuq_configuracion_calendario_comercial_uidONpublic.configuracion_calendario_comercialUSINGbtreeuid_global"),
-        ("ux_configuracion_calendario_comercial_activa", "CREATEUNIQUEINDEXux_configuracion_calendario_comercial_activaONpublic.configuracion_calendario_comercialUSINGbtreetrueWHEREdeleted_atISNULL"),
-        ("ux_configuracion_calendario_comercial_op_id_alta", "CREATEUNIQUEINDEXux_configuracion_calendario_comercial_op_id_altaONpublic.configuracion_calendario_comercialUSINGbtreeop_id_altaWHEREop_id_altaISNOTNULL"),
+        ("configuracion_calendario_comercial_pkey", "CREATEUNIQUEINDEXconfiguracion_calendario_comercial_pkeyONpublic.configuracion_calendario_comercialUSINGbtreeid_configuracion_calendario_comercial", True, True),
+        ("uq_configuracion_calendario_comercial_uid", "CREATEUNIQUEINDEXuq_configuracion_calendario_comercial_uidONpublic.configuracion_calendario_comercialUSINGbtreeuid_global", True, True),
+        ("ux_configuracion_calendario_comercial_activa", "CREATEUNIQUEINDEXux_configuracion_calendario_comercial_activaONpublic.configuracion_calendario_comercialUSINGbtreetrueWHEREdeleted_atISNULL", True, True),
+        ("ux_configuracion_calendario_comercial_op_id_alta", "CREATEUNIQUEINDEXux_configuracion_calendario_comercial_op_id_altaONpublic.configuracion_calendario_comercialUSINGbtreeop_id_altaWHEREop_id_altaISNOTNULL", True, True),
     ]
     root_triggers = db_session.execute(text("""
       SELECT tgname,tgenabled FROM pg_trigger
@@ -160,6 +164,41 @@ def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
             block = bat[position:boundary].lower()
             assert "if errorlevel 1 (" in block
             assert block.index("if errorlevel 1 (") > block.index("psql")
+
+
+def test_reejecucion_es_independiente_de_search_path_sin_public(db_session):
+    with db_session.begin_nested():
+        db_session.execute(text("SET LOCAL search_path TO pg_catalog"))
+        db_session.execute(text(_sql()))
+        triggers = db_session.execute(text("""
+          SELECT tgname,tgenabled FROM pg_trigger
+          WHERE tgname IN (
+            'trg_biu_configuracion_calendario_comercial_core_ef',
+            'trg_biu_valor_parametro_calendario_comercial'
+          ) ORDER BY tgname
+        """)).all()
+        assert triggers == [
+            ("trg_biu_configuracion_calendario_comercial_core_ef", "O"),
+            ("trg_biu_valor_parametro_calendario_comercial", "O"),
+        ]
+
+
+@pytest.mark.parametrize("health_column", ["indisvalid", "indisready"])
+def test_indice_contractual_no_utilizable_aborta_sin_repararlo(
+    db_session, health_column
+):
+    index_name = "ux_configuracion_calendario_comercial_op_id_alta"
+    with db_session.begin_nested():
+        db_session.execute(text(f"""
+          UPDATE pg_index SET {health_column}=false
+          WHERE indexrelid=CAST(:index_name AS regclass)
+        """), {"index_name": f"public.{index_name}"})
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(text(f"""
+          SELECT NOT {health_column} FROM pg_index
+          WHERE indexrelid=CAST(:index_name AS regclass)
+        """), {"index_name": f"public.{index_name}"}).scalar_one() is True
 
 
 @pytest.mark.parametrize(

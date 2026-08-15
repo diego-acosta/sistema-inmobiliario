@@ -177,6 +177,18 @@ BEGIN
   IF found_count <> 4 THEN
     RAISE EXCEPTION 'cantidad de índices de configuracion_calendario_comercial incompatible: %', found_count;
   END IF;
+  SELECT count(*) INTO found_count
+    FROM pg_index i JOIN pg_class ci ON ci.oid=i.indexrelid
+   WHERE i.indrelid='public.configuracion_calendario_comercial'::regclass
+     AND ci.relname IN (
+       'configuracion_calendario_comercial_pkey',
+       'uq_configuracion_calendario_comercial_uid',
+       'ux_configuracion_calendario_comercial_activa',
+       'ux_configuracion_calendario_comercial_op_id_alta'
+     ) AND i.indisvalid AND i.indisready;
+  IF found_count <> 4 THEN
+    RAISE EXCEPTION 'índices contractuales de configuracion_calendario_comercial inválidos o no listos';
+  END IF;
 END $$;
 
 -- La invariant aplica también a valores históricos/futuros preexistentes. La
@@ -244,16 +256,17 @@ END $body$;$ddl$;
   END IF;
 END $$;
 
-DO $$ DECLARE actual text; enabled_state "char"; expected text := 'CREATE TRIGGER trg_biu_configuracion_calendario_comercial_core_ef BEFORE INSERT OR UPDATE ON public.configuracion_calendario_comercial FOR EACH ROW EXECUTE FUNCTION trg_configuracion_calendario_comercial_core_ef()'; BEGIN
-  SELECT pg_get_triggerdef(oid), tgenabled INTO actual, enabled_state FROM pg_trigger
+DO $$ DECLARE enabled_state "char"; trigger_type smallint; function_oid oid; trigger_when text; BEGIN
+  SELECT tgenabled,tgtype,tgfoid,tgqual::text INTO enabled_state,trigger_type,function_oid,trigger_when FROM pg_trigger
    WHERE tgrelid='public.configuracion_calendario_comercial'::regclass
      AND tgname='trg_biu_configuracion_calendario_comercial_core_ef' AND NOT tgisinternal;
-  IF actual IS NULL THEN
+  IF NOT FOUND THEN
     CREATE TRIGGER trg_biu_configuracion_calendario_comercial_core_ef BEFORE INSERT OR UPDATE
       ON public.configuracion_calendario_comercial FOR EACH ROW
       EXECUTE FUNCTION public.trg_configuracion_calendario_comercial_core_ef();
-  ELSIF regexp_replace(actual,'[[:space:]]','','g') <> regexp_replace(expected,'[[:space:]]','','g')
-     OR enabled_state <> 'O'
+  ELSIF trigger_type <> (1 | 2 | 4 | 16) -- ROW | BEFORE | INSERT | UPDATE
+     OR function_oid <> 'public.trg_configuracion_calendario_comercial_core_ef()'::regprocedure
+     OR trigger_when IS NOT NULL OR enabled_state <> 'O'
   THEN RAISE EXCEPTION 'trigger CORE-EF calendario comercial incompatible'; END IF;
   IF (SELECT count(*) FROM pg_trigger
        WHERE tgrelid='public.configuracion_calendario_comercial'::regclass
@@ -307,14 +320,15 @@ END $body$;$ddl$;
   END IF;
 END $$;
 
-DO $$ DECLARE actual text; enabled_state "char"; expected text := 'CREATE TRIGGER trg_biu_valor_parametro_calendario_comercial BEFORE INSERT OR UPDATE ON public.valor_parametro FOR EACH ROW EXECUTE FUNCTION trg_valor_parametro_calendario_comercial()'; BEGIN
-  SELECT pg_get_triggerdef(oid), tgenabled INTO actual, enabled_state FROM pg_trigger WHERE tgrelid='public.valor_parametro'::regclass
+DO $$ DECLARE enabled_state "char"; trigger_type smallint; function_oid oid; trigger_when text; BEGIN
+  SELECT tgenabled,tgtype,tgfoid,tgqual::text INTO enabled_state,trigger_type,function_oid,trigger_when FROM pg_trigger WHERE tgrelid='public.valor_parametro'::regclass
    AND tgname='trg_biu_valor_parametro_calendario_comercial' AND NOT tgisinternal;
-  IF actual IS NULL THEN
+  IF NOT FOUND THEN
     CREATE TRIGGER trg_biu_valor_parametro_calendario_comercial BEFORE INSERT OR UPDATE
       ON public.valor_parametro FOR EACH ROW EXECUTE FUNCTION public.trg_valor_parametro_calendario_comercial();
-  ELSIF regexp_replace(actual,'[[:space:]]','','g') <> regexp_replace(expected,'[[:space:]]','','g')
-     OR enabled_state <> 'O'
+  ELSIF trigger_type <> (1 | 2 | 4 | 16) -- ROW | BEFORE | INSERT | UPDATE
+     OR function_oid <> 'public.trg_valor_parametro_calendario_comercial()'::regprocedure
+     OR trigger_when IS NOT NULL OR enabled_state <> 'O'
   THEN RAISE EXCEPTION 'trigger rango calendario comercial incompatible'; END IF;
 END $$;
 

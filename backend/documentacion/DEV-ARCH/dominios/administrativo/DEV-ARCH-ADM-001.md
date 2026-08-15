@@ -91,7 +91,9 @@ admite cero o una raíz activa.
 
 La migración valida en reejecución la equivalencia física completa de la raíz
 (columnas, identity, defaults y conjuntos exactos de PK, UNIQUE, CHECK, FK,
-índices y triggers) y de sus funciones. Un objeto homónimo parcial, adicional o incompatible aborta la transacción; no
+índices y triggers) y de sus funciones. Los cuatro índices deben estar
+`indisvalid`/`indisready`; los triggers se validan por `tgrelid`, `tgfoid`, bits
+`tgtype`, `tgqual` y `tgenabled`, independientemente de `search_path`. Un objeto homónimo parcial, adicional o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
 
 Para las funciones contractuales compara el body completo almacenado en `pg_proc`

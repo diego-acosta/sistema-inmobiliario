@@ -1306,15 +1306,19 @@ La autorización runtime exige el permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.
 
 ## Estado estructural del calendario comercial (#482)
 
-#482 no agrega endpoints, routers, schemas ni autorización permission-based nueva.
-Prepara SQL y el permiso que consumirán incrementos posteriores de #425, y cierra
-en el service de #412 el boundary que impediría mutaciones individuales.
-Por ello la clasificación de endpoint, headers write, `If-Match-Version` e
-idempotencia HTTP son **NO APLICA**. Aún no existen GET de calendario,
-bootstrap, POST, PUT ni programación; #483 es el siguiente incremento.
+#482 no crea endpoints propios del agregado: aún no existen GET calendario, POST
+bootstrap ni PUT de programación; sus contratos pertenecen a #483–#485. Sí
+modifica el PATCH existente de #412, que conserva clasificación
+`COMMAND_WRITE_NEGOCIO`, Bearer, `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`,
+`If-Match-Version`, identidad exclusiva desde `AuthenticatedPrincipal.id_usuario`
+y autorización `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`; no usa
+`X-Usuario-Id`. Mantiene idempotencia #470 en `operacion_idempotente`, lock/CAS y
+EVT-ADM-060 para updates materiales genéricos permitidos.
 
 El PATCH individual de #412 no aplica a `DIA_CIERRE_COMERCIAL` ni a
 `DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS`: devuelve el error público existente
 `409 conflicto_parametro` antes de reclamar idempotencia o mutar, sin depender de
-qué rol originó el grant. Esta exclusión no implementa un endpoint de calendario;
-reserva las modificaciones para el futuro agregado #425.
+qué rol originó el grant. El rechazo ocurre antes de payload hash, claim, lookup
+mutable, lock, CAS y outbox: no crea receipt, no muta ni incrementa versión. Esta
+exclusión no implementa un endpoint de calendario; reserva las modificaciones para
+el futuro agregado #425 y no vuelve `NO APLICA` el CORE-EF general de #412.
