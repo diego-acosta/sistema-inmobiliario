@@ -95,20 +95,21 @@ Decisiones cerradas:
   funcional `CANCELADA`.
 - Scope: `id_sucursal` es opcional; `NULL` significa tarea global y un valor
   significa tarea de esa única sucursal. `id_instalacion_origen` es sólo
-  procedencia técnica y no scope funcional. La creación manual requiere alcance
-  sobre el scope propuesto y éste queda inmutable después de crear la tarea en
-  el MVP.
+  procedencia técnica y no scope funcional. La creación manual requiere capacidad
+  administrativa sobre el scope propuesto y éste queda inmutable después de
+  crear la tarea en el MVP.
 - Visibilidad: **Mis tareas** contiene sólo las asignadas; las creadas se
   consultan separadamente mediante **Tareas creadas por mí**, que forma parte del
   alcance MVP, y siguen visibles al creador. También habilitan visibilidad el
-  responsable y el alcance sobre la sucursal o global.
+  responsable elegible y la capacidad de consulta de sucursal o global.
 - Mutación: el creador conserva la capacidad de comentar; el responsable ejecuta
-  el trabajo y comenta; quien tiene alcance funcional sobre el scope gestiona
-  contenido, asignación, planificación y estados. El responsable destino debe ser
-  elegible para ese scope. Crear no otorga las demás mutaciones por sí solo; las
-  tareas sin responsable requieren asignación elegible antes de iniciar o
-  completar. `COMPLETADA` y `CANCELADA` congelan el snapshot corriente, admiten
-  comentarios y sólo `COMPLETADA` admite la reapertura ya definida.
+  el trabajo y comenta mientras conserva elegibilidad continua. En sucursal,
+  `puede_consultar` habilita lectura por scope, `puede_operar` elegibilidad como
+  responsable y `puede_administrar` gestión por scope; las capacidades globales
+  equivalentes quedan documentales y pendientes de materialización. La pérdida
+  de elegibilidad bloquea ejecución por responsabilidad y exige reasignación o
+  desasignación explícita, sin side effects automáticos. `COMPLETADA` y
+  `CANCELADA` mantienen el snapshot terminal ya congelado.
 
 Blockers todavía abiertos, con numeración original:
 
