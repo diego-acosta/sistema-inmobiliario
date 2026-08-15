@@ -80,6 +80,24 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
         ("trg_biu_configuracion_calendario_comercial_core_ef", "O"),
         ("trg_biu_valor_parametro_calendario_comercial", "O"),
     ]
+    nullable_defaults = db_session.execute(text("""
+      SELECT a.attname,pg_get_expr(d.adbin,d.adrelid)
+        FROM pg_attribute a LEFT JOIN pg_attrdef d
+          ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+       WHERE a.attrelid='configuracion_calendario_comercial'::regclass
+         AND a.attname IN (
+           'deleted_at','id_instalacion_origen',
+           'id_instalacion_ultima_modificacion','op_id_alta',
+           'op_id_ultima_modificacion'
+         ) ORDER BY a.attname
+    """)).all()
+    assert nullable_defaults == [
+        ("deleted_at", None),
+        ("id_instalacion_origen", None),
+        ("id_instalacion_ultima_modificacion", None),
+        ("op_id_alta", None),
+        ("op_id_ultima_modificacion", None),
+    ]
 
 
 def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
@@ -129,6 +147,26 @@ def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
         (
             "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN id_configuracion_calendario_comercial DROP IDENTITY",
             "SELECT attidentity='' FROM pg_attribute WHERE attrelid='configuracion_calendario_comercial'::regclass AND attname='id_configuracion_calendario_comercial'",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN deleted_at SET DEFAULT CURRENT_TIMESTAMP",
+            "SELECT pg_get_expr(d.adbin,d.adrelid) IS NOT NULL FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='configuracion_calendario_comercial'::regclass AND a.attname='deleted_at'",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN id_instalacion_origen SET DEFAULT 1",
+            "SELECT pg_get_expr(d.adbin,d.adrelid) IS NOT NULL FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='configuracion_calendario_comercial'::regclass AND a.attname='id_instalacion_origen'",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN id_instalacion_ultima_modificacion SET DEFAULT 1",
+            "SELECT pg_get_expr(d.adbin,d.adrelid) IS NOT NULL FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='configuracion_calendario_comercial'::regclass AND a.attname='id_instalacion_ultima_modificacion'",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN op_id_alta SET DEFAULT gen_random_uuid()",
+            "SELECT pg_get_expr(d.adbin,d.adrelid) IS NOT NULL FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='configuracion_calendario_comercial'::regclass AND a.attname='op_id_alta'",
+        ),
+        (
+            "ALTER TABLE configuracion_calendario_comercial ALTER COLUMN op_id_ultima_modificacion SET DEFAULT gen_random_uuid()",
+            "SELECT pg_get_expr(d.adbin,d.adrelid) IS NOT NULL FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='configuracion_calendario_comercial'::regclass AND a.attname='op_id_ultima_modificacion'",
         ),
     ],
 )

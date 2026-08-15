@@ -126,6 +126,20 @@ BEGIN
     THEN RAISE EXCEPTION 'default de %.% incompatible: %', 'configuracion_calendario_comercial', item.columna, actual; END IF;
   END LOOP;
 
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute a
+      JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+     WHERE a.attrelid='public.configuracion_calendario_comercial'::regclass
+       AND a.attname IN (
+         'deleted_at','id_instalacion_origen',
+         'id_instalacion_ultima_modificacion','op_id_alta',
+         'op_id_ultima_modificacion'
+       )
+  ) THEN
+    RAISE EXCEPTION 'columnas nullable de configuracion_calendario_comercial con default incompatible';
+  END IF;
+
   FOR item IN SELECT * FROM (VALUES
     ('p','PRIMARYKEY(id_configuracion_calendario_comercial)'),
     ('u','UNIQUE(uid_global)'),
