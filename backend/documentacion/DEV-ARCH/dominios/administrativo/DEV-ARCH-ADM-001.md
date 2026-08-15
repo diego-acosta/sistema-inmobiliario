@@ -90,11 +90,16 @@ conserva ownership exclusivo de los días y de su vigencia. La cardinalidad fís
 admite cero o una raíz activa.
 
 La migración valida en reejecución la equivalencia física completa de la raíz
-(columnas, identity, defaults y conjuntos exactos de PK, UNIQUE, CHECK, FK,
+(columnas, identity, defaults y exactamente las seis constraints contractuales
+PK/UNIQUE/CHECK/FK, sin constraints funcionales adicionales,
 índices y triggers) y de sus funciones. Los cuatro índices deben estar
 `indisvalid`/`indisready`; los triggers se validan por `tgrelid`, `tgfoid`, bits
 `tgtype`, `tgqual` y `tgenabled`, independientemente de `search_path`. Un objeto homónimo parcial, adicional o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
+
+La nullability de las diez columnas se valida por su contrato de columnas. Las filas
+`contype = 'n'` con las que PostgreSQL 18 puede representar `NOT NULL` no integran ni
+contaminan el conteo de las seis constraints contractuales `p/u/c/f`.
 
 El contrato cerrado también exige cero reglas en `pg_rewrite`. La secuencia de la
 identity se resuelve mediante su dependencia interna con la columna raíz y se validan

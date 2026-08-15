@@ -204,7 +204,8 @@ BEGIN
     IF found_count <> 1 THEN RAISE EXCEPTION 'constraint contractual ausente o incompatible: %', item.esperado; END IF;
   END LOOP;
   SELECT count(*) INTO found_count FROM pg_constraint
-   WHERE conrelid='public.configuracion_calendario_comercial'::regclass;
+   WHERE conrelid='public.configuracion_calendario_comercial'::regclass
+     AND contype IN ('p','u','c','f');
   IF found_count <> 6 THEN
     RAISE EXCEPTION 'cantidad de constraints de configuracion_calendario_comercial incompatible: %', found_count;
   END IF;

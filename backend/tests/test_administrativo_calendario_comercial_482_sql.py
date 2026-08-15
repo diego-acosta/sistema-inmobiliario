@@ -119,6 +119,7 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
       )
       FROM pg_constraint
       WHERE conrelid='configuracion_calendario_comercial'::regclass
+        AND contype IN ('p','u','c','f')
       ORDER BY contype,2
     """)).all()
     assert constraints == sorted([
@@ -129,6 +130,37 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
         ("f", "FOREIGNKEYid_instalacion_origenREFERENCESinstalacionid_instalacionONDELETERESTRICT"),
         ("f", "FOREIGNKEYid_instalacion_ultima_modificacionREFERENCESinstalacionid_instalacionONDELETERESTRICT"),
     ])
+    server_version, contractual_count, not_null_constraint_count = (
+        db_session.execute(text("""
+          SELECT current_setting('server_version_num')::integer,
+                 count(*) FILTER (WHERE contype IN ('p','u','c','f')),
+                 count(*) FILTER (WHERE contype='n')
+          FROM pg_constraint
+          WHERE conrelid='configuracion_calendario_comercial'::regclass
+        """)).one()
+    )
+    assert contractual_count == 6
+    if server_version >= 180000 and not_null_constraint_count:
+        assert not_null_constraint_count == 5
+    nullability = db_session.execute(text("""
+      SELECT column_name,is_nullable
+      FROM information_schema.columns
+      WHERE table_schema='public'
+        AND table_name='configuracion_calendario_comercial'
+      ORDER BY ordinal_position
+    """)).all()
+    assert nullability == [
+        ("id_configuracion_calendario_comercial", "NO"),
+        ("uid_global", "NO"),
+        ("version_registro", "NO"),
+        ("created_at", "NO"),
+        ("updated_at", "NO"),
+        ("deleted_at", "YES"),
+        ("id_instalacion_origen", "YES"),
+        ("id_instalacion_ultima_modificacion", "YES"),
+        ("op_id_alta", "YES"),
+        ("op_id_ultima_modificacion", "YES"),
+    ]
     indexes = db_session.execute(text("""
       SELECT pi.indexname,regexp_replace(pi.indexdef,'[[:space:]()]','','g'),
              i.indisvalid,i.indisready
