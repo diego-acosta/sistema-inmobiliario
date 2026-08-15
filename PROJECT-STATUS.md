@@ -103,7 +103,8 @@ Decisiones cerradas:
   alcance MVP, y siguen visibles al creador. También habilitan visibilidad el
   responsable elegible y la capacidad de consulta de sucursal o global.
 - Mutación: el creador conserva la capacidad de comentar; el responsable ejecuta
-  el trabajo y comenta mientras conserva elegibilidad continua. En sucursal,
+  el trabajo y comenta mientras conserva elegibilidad continua compuesta por
+  habilitación operativa y autorización efectiva vigente suficiente. En sucursal,
   `puede_consultar` habilita lectura por scope, `puede_operar` elegibilidad como
   responsable y `puede_administrar` gestión por scope; las capacidades globales
   equivalentes quedan documentales y pendientes de materialización. Habilitación

@@ -866,29 +866,36 @@ scope. Como no tienen creador humano, no obtienen visibilidad por autoría;
 
 ### 20.1.1 Elegibilidad del responsable
 
-La elegibilidad del responsable es una invariante continua determinada por el
-scope funcional de la tarea:
+La elegibilidad del responsable es una invariante continua y compuesta: requiere
+simultáneamente habilitación operativa vigente para el scope y autorización
+efectiva vigente de Administrativo suficiente para ejercer las capacidades
+funcionales del responsable:
 
 ```text
 Tarea de sucursal
-→ sólo admite como responsable a un usuario con puede_operar = true vigente
-  sobre esa sucursal
-→ el responsable actual debe conservar esa capacidad
+→ puede_operar = true vigente sobre esa sucursal
+  AND autorización efectiva vigente suficiente
 
 Tarea global
-→ sólo admite como responsable a un usuario con alcance global operativo vigente
-→ el responsable actual debe conservar esa capacidad
+→ alcance global operativo vigente
+  AND autorización efectiva vigente suficiente
 ```
 
-La misma regla se aplica a la primera asignación y a cada reasignación, incluidas
-las tareas `origen = SISTEMA`. La persona que asigna o reasigna continúa
-necesitando la relación de gestión por scope de la matriz; el usuario destino
-debe ser elegible para ese mismo scope. `puede_administrar` habilita la gestión,
-pero no sustituye el `puede_operar` requerido al destino. La asignación no
-permite eludirlo ni usa `id_instalacion_origen` para decidir elegibilidad.
+`puede_operar` y el alcance global operativo son habilitaciones funcionales
+necesarias, no autorización. Este freeze no crea un permiso GOP, código, rol,
+claim, scope HTTP ni ACL para expresar la suficiencia; su materialización concreta
+pertenece a Administrativo y a los artefactos posteriores.
 
-Una asignación con elegibilidad vigente habilita las capacidades funcionales del
-responsable.
+La misma regla compuesta se aplica al usuario destino en la primera asignación y
+en cada reasignación, incluidas las tareas `origen = SISTEMA`: no basta con
+`puede_operar = true` ni con alcance global operativo. Separadamente, la persona
+que asigna o reasigna necesita la habilitación administrativa de la matriz y su
+propia autorización efectiva. La autorización del actor no sustituye la del
+destino, ni viceversa. La asignación no permite eludir el scope y no usa
+`id_instalacion_origen` para decidir elegibilidad.
+
+Una asignación con elegibilidad compuesta vigente habilita las capacidades
+funcionales del responsable.
 Después de una reasignación, el nuevo responsable debe cumplir la elegibilidad y
 el anterior pierde las capacidades derivadas de esa relación; el creador conserva
 su visibilidad y comentario. Una tarea sin responsable sigue siendo válida, pero
@@ -899,12 +906,13 @@ Estas son reglas funcionales, no permisos, roles, claims, ACL ni scopes HTTP. La
 forma en que Administrativo materialice el alcance global y resuelva la
 autorización efectiva queda para los artefactos posteriores.
 
-Si el responsable registrado pierde luego `puede_operar` sobre la sucursal o el
-alcance global operativo, permanece registrado hasta una mutación explícita,
-pero deja de estar habilitado por la relación de responsable para
-`PENDIENTE ↔ EN_CURSO`, completar o comentar. Tampoco obtiene visibilidad por la
-mera referencia persistida: sólo la conserva si otra relación la habilita, como
-ser creador, `puede_consultar` vigente o alcance global de consulta.
+Si el responsable registrado pierde luego la habilitación operativa **o** la
+autorización efectiva suficiente, permanece registrado hasta una mutación
+explícita, pero pasa a ser responsable inelegible. Deja de estar habilitado por
+esa relación para **Mis tareas**, `PENDIENTE ↔ EN_CURSO`, completar o comentar, y
+la mera referencia persistida no conserva visibilidad. Sólo puede mantener acceso
+por otra relación independiente —creador, consulta o administración por scope—
+si también conserva la autorización efectiva correspondiente a esa relación.
 
 No hay desasignación automática, cambio automático de estado, job correctivo ni
 otro side effect silencioso desde Administrativo. Una persona con capacidad
@@ -1364,7 +1372,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 27. **Mis tareas** contiene sólo las tareas asignadas al usuario mientras su elegibilidad como responsable permanezca vigente; las creadas por él se consultan separadamente y continúan visibles por autoría.
 28. La visibilidad se obtiene por creador, responsable vigente/elegible, capacidad de consulta o capacidad administrativa correspondiente; las mutaciones se rigen por ejecución como responsable elegible o capacidad administrativa del scope según la matriz de la sección 20.2.
 29. La creación manual exige `puede_administrar` vigente sobre la sucursal propuesta o alcance global administrativo para una tarea global; el scope queda inmutable después de crear la Tarea durante el MVP.
-30. La elegibilidad del responsable es continua: exige `puede_operar` vigente sobre la sucursal o alcance global operativo; asignar o reasignar no permite eludirla y su pérdida requiere gestión explícita, sin side effects automáticos.
+30. La elegibilidad del responsable es continua y compuesta: exige `puede_operar` vigente sobre la sucursal o alcance global operativo, más autorización efectiva vigente suficiente; asignar o reasignar valida ambas dimensiones y perder cualquiera requiere gestión explícita, sin side effects automáticos.
 31. `COMPLETADA` y `CANCELADA` congelan el snapshot funcional corriente; sólo admiten comentarios y, exclusivamente para `COMPLETADA`, la reapertura explícita ya definida.
 32. Las capacidades por sucursal son habilitaciones necesarias, no autorización suficiente; toda operación humana protegida requiere además autorización efectiva de Administrativo.
 33. La vigencia de `usuario_sucursal` exige usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, y usa el intervalo `[fecha_desde, fecha_hasta)` normalizado a UTC de la sección 20.A, evaluado con un único `instante_corte_utc` del servidor.
