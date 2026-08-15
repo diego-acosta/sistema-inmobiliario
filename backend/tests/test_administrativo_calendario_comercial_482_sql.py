@@ -45,6 +45,20 @@ def _definitions(db):
     """)).all()
 
 
+def _identity_sequence(db) -> str:
+    return db.execute(text("""
+      SELECT format('%I.%I',ns.nspname,seq.relname)
+      FROM pg_depend d
+      JOIN pg_class seq ON seq.oid=d.objid AND seq.relkind='S'
+      JOIN pg_namespace ns ON ns.oid=seq.relnamespace
+      JOIN pg_attribute a ON a.attrelid=d.refobjid AND a.attnum=d.refobjsubid
+      WHERE d.classid='pg_class'::regclass AND d.refclassid='pg_class'::regclass
+        AND d.refobjid='public.configuracion_calendario_comercial'::regclass
+        AND a.attname='id_configuracion_calendario_comercial'
+        AND d.deptype='i'
+    """)).scalar_one()
+
+
 def test_reset_deja_definiciones_sin_valores_ni_raiz(db_session):
     assert _definitions(db_session) == EXPECTED
     assert db_session.execute(text("""
@@ -139,6 +153,33 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
     assert root_triggers == [
         ("trg_biu_configuracion_calendario_comercial_core_ef", "O")
     ]
+    assert db_session.execute(text("""
+      SELECT count(*) FROM pg_rewrite
+      WHERE ev_class='public.configuracion_calendario_comercial'::regclass
+    """)).scalar_one() == 0
+    identity = db_session.execute(text("""
+      SELECT a.attidentity,s.seqtypid::regtype::text,s.seqstart,s.seqincrement,
+             s.seqmin,s.seqmax,s.seqcache,s.seqcycle,d.deptype
+      FROM pg_attribute a
+      JOIN pg_depend d ON d.refobjid=a.attrelid AND d.refobjsubid=a.attnum
+        AND d.classid='pg_class'::regclass AND d.refclassid='pg_class'::regclass
+      JOIN pg_class seq ON seq.oid=d.objid AND seq.relkind='S'
+      JOIN pg_sequence s ON s.seqrelid=seq.oid
+      WHERE a.attrelid='public.configuracion_calendario_comercial'::regclass
+        AND a.attname='id_configuracion_calendario_comercial'
+    """)).one()
+    assert identity == (
+        "d", "bigint", 1, 1, 1, 9223372036854775807, 1, False, "i"
+    )
+    sequence_name = _identity_sequence(db_session)
+    last_value, is_called = db_session.execute(text(
+        f"SELECT last_value,is_called FROM {sequence_name}"
+    )).one()
+    next_value = last_value + 1 if is_called else 1
+    assert 1 <= next_value <= 9223372036854775807
+    patch_source = PATCH.read_text(encoding="utf-8").lower()
+    assert "nextval(" not in patch_source
+    assert "setval(" not in patch_source
 
 
 def test_reset_bat_verifica_cada_patch_antes_del_siguiente_psql():
@@ -199,6 +240,93 @@ def test_indice_contractual_no_utilizable_aborta_sin_repararlo(
           SELECT NOT {health_column} FROM pg_index
           WHERE indexrelid=CAST(:index_name AS regclass)
         """), {"index_name": f"public.{index_name}"}).scalar_one() is True
+
+
+@pytest.mark.parametrize("event", ["INSERT", "UPDATE"])
+def test_rewrite_rule_extra_aborta_sin_eliminarla(db_session, event):
+    rule_name = f"calendario_adversarial_{event.lower()}"
+    with db_session.begin_nested():
+        db_session.execute(text(f"""
+          CREATE RULE {rule_name} AS
+          ON {event} TO public.configuracion_calendario_comercial
+          DO INSTEAD NOTHING
+        """))
+        assert db_session.execute(text("""
+          SELECT count(*) FROM pg_rewrite
+          WHERE ev_class='public.configuracion_calendario_comercial'::regclass
+            AND rulename=:rule_name
+        """), {"rule_name": rule_name}).scalar_one() == 1
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(text("""
+          SELECT count(*) FROM pg_rewrite
+          WHERE ev_class='public.configuracion_calendario_comercial'::regclass
+            AND rulename=:rule_name
+        """), {"rule_name": rule_name}).scalar_one() == 1
+
+
+@pytest.mark.parametrize(
+    ("alter_options", "evidence"),
+    [
+        (
+            "MINVALUE 0 MAXVALUE 10",
+            "SELECT seqmin=0 AND seqmax=10 FROM pg_sequence WHERE seqrelid=CAST(:sequence_name AS regclass)",
+        ),
+        (
+            "INCREMENT BY 2",
+            "SELECT seqincrement=2 FROM pg_sequence WHERE seqrelid=CAST(:sequence_name AS regclass)",
+        ),
+        (
+            "CACHE 5",
+            "SELECT seqcache=5 FROM pg_sequence WHERE seqrelid=CAST(:sequence_name AS regclass)",
+        ),
+        (
+            "CYCLE",
+            "SELECT seqcycle FROM pg_sequence WHERE seqrelid=CAST(:sequence_name AS regclass)",
+        ),
+    ],
+)
+def test_identity_sequence_incompatible_aborta_sin_repararla(
+    db_session, alter_options, evidence
+):
+    sequence_name = _identity_sequence(db_session)
+    with db_session.begin_nested():
+        db_session.execute(text(
+            f"ALTER SEQUENCE {sequence_name} {alter_options}"
+        ))
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(
+            text(evidence), {"sequence_name": sequence_name}
+        ).scalar_one() is True
+
+
+def test_identity_sequence_agotada_aborta_sin_consumir_ni_reparar(db_session):
+    sequence_name = _identity_sequence(db_session)
+    original_last, original_called = db_session.execute(text(
+        f"SELECT last_value,is_called FROM {sequence_name}"
+    )).one()
+    sequence_max = db_session.execute(text("""
+      SELECT seqmax FROM pg_sequence
+      WHERE seqrelid=CAST(:sequence_name AS regclass)
+    """), {"sequence_name": sequence_name}).scalar_one()
+    try:
+        db_session.execute(text(
+            "SELECT setval(CAST(:sequence_name AS regclass),:value,true)"
+        ), {"sequence_name": sequence_name, "value": sequence_max})
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(text(
+            f"SELECT last_value,is_called FROM {sequence_name}"
+        )).one() == (sequence_max, True)
+    finally:
+        db_session.execute(text(
+            "SELECT setval(CAST(:sequence_name AS regclass),:value,:is_called)"
+        ), {
+            "sequence_name": sequence_name,
+            "value": original_last,
+            "is_called": original_called,
+        })
 
 
 @pytest.mark.parametrize(

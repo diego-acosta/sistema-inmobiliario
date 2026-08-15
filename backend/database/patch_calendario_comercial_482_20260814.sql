@@ -94,7 +94,13 @@ DO $$ BEGIN
 END $$;
 
 DO $$
-DECLARE cols bigint; actual text; item record; found_count bigint;
+DECLARE
+  cols bigint; actual text; item record; found_count bigint;
+  identity_attnum smallint; identity_sequence_oid oid; identity_sequence text;
+  sequence_type regtype; sequence_start bigint; sequence_increment bigint;
+  sequence_min bigint; sequence_max bigint; sequence_cache bigint;
+  sequence_cycle boolean; sequence_last bigint; sequence_called boolean;
+  sequence_next numeric;
 BEGIN
   SELECT count(*) INTO cols FROM information_schema.columns WHERE table_schema='public'
     AND table_name='configuracion_calendario_comercial'
@@ -111,6 +117,48 @@ BEGIN
     SELECT 1 FROM pg_attribute WHERE attrelid='public.configuracion_calendario_comercial'::regclass
       AND attname='id_configuracion_calendario_comercial' AND attidentity='d'
   ) THEN RAISE EXCEPTION 'identity de configuracion_calendario_comercial incompatible'; END IF;
+
+  SELECT attnum INTO identity_attnum
+    FROM pg_attribute
+   WHERE attrelid='public.configuracion_calendario_comercial'::regclass
+     AND attname='id_configuracion_calendario_comercial' AND NOT attisdropped;
+  SELECT count(*), min(seq.oid::bigint)::oid INTO found_count, identity_sequence_oid
+    FROM pg_depend d
+    JOIN pg_class seq ON seq.oid=d.objid AND seq.relkind='S'
+   WHERE d.classid='pg_class'::regclass AND d.refclassid='pg_class'::regclass
+     AND d.refobjid='public.configuracion_calendario_comercial'::regclass
+     AND d.refobjsubid=identity_attnum AND d.deptype='i';
+  IF found_count <> 1 THEN
+    RAISE EXCEPTION 'dependencia de secuencia identity de configuracion_calendario_comercial incompatible';
+  END IF;
+  SELECT format('%I.%I',ns.nspname,seq.relname), s.seqtypid::regtype,
+         s.seqstart,s.seqincrement,s.seqmin,s.seqmax,s.seqcache,s.seqcycle
+    INTO identity_sequence,sequence_type,sequence_start,sequence_increment,
+         sequence_min,sequence_max,sequence_cache,sequence_cycle
+    FROM pg_class seq
+    JOIN pg_namespace ns ON ns.oid=seq.relnamespace
+    JOIN pg_sequence s ON s.seqrelid=seq.oid
+   WHERE seq.oid=identity_sequence_oid;
+  IF identity_sequence IS NULL OR sequence_type <> 'bigint'::regtype
+     OR sequence_start <> 1 OR sequence_increment <> 1 OR sequence_min <> 1
+     OR sequence_max <> 9223372036854775807 OR sequence_cache <> 1
+     OR sequence_cycle
+  THEN RAISE EXCEPTION 'configuración de secuencia identity de configuracion_calendario_comercial incompatible'; END IF;
+  EXECUTE format('SELECT last_value,is_called FROM %s',identity_sequence)
+    INTO sequence_last,sequence_called;
+  sequence_next := CASE WHEN sequence_called
+    THEN sequence_last::numeric + sequence_increment
+    ELSE sequence_start::numeric END;
+  IF sequence_next NOT BETWEEN sequence_min::numeric AND sequence_max::numeric THEN
+    RAISE EXCEPTION 'secuencia identity de configuracion_calendario_comercial sin siguiente valor utilizable';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_rewrite
+     WHERE ev_class='public.configuracion_calendario_comercial'::regclass
+  ) THEN
+    RAISE EXCEPTION 'reglas rewrite de configuracion_calendario_comercial incompatibles';
+  END IF;
 
   FOR item IN SELECT * FROM (VALUES
     ('uid_global','gen_random_uuid()'), ('version_registro','1'),

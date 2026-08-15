@@ -96,6 +96,13 @@ La migración valida en reejecución la equivalencia física completa de la raí
 `tgtype`, `tgqual` y `tgenabled`, independientemente de `search_path`. Un objeto homónimo parcial, adicional o incompatible aborta la transacción; no
 se reemplaza ni sanea silenciosamente.
 
+El contrato cerrado también exige cero reglas en `pg_rewrite`. La secuencia de la
+identity se resuelve mediante su dependencia interna con la columna raíz y se validan
+tipo `bigint`, `START 1`, `INCREMENT 1`, `MINVALUE 1`, `MAXVALUE 9223372036854775807`,
+`CACHE 1`, `NO CYCLE` y la existencia de un siguiente valor dentro de esos límites.
+La comprobación del estado es de sólo lectura: no invoca `nextval` ni repara la
+secuencia.
+
 Para las funciones contractuales compara el body completo almacenado en `pg_proc`,
 normalizando sólo CRLF a LF y whitespace exterior; preserva íntegramente literales,
 regex, mensajes y whitespace interno. Además exige firma sin argumentos, retorno `trigger`,
