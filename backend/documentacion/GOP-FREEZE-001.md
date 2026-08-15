@@ -224,7 +224,8 @@ de API.
   historial previo y agrega una entrada estructurada de reapertura con actor,
   instante y motivo. No borra la finalización histórica.
 - La reapertura no es una transición ordinaria ni decide quién puede ejecutarla;
-  esa autorización permanece en el blocker 11.
+  su relación funcional habilitante se define en la sección 20.2, mientras el
+  mecanismo técnico de autorización permanece pendiente.
 
 ### Evidencia
 
@@ -416,14 +417,64 @@ historial, payload, endpoint, DTO, evento ni outbox.
 
 ## 14. Scope funcional
 
-Como propuesta preliminar se considera `id_sucursal` opcional:
+### Decisión
+
+`id_sucursal` es **opcional** en el contrato funcional del MVP:
 
 ```text
-id_sucursal = NULL → tarea global
-id_sucursal = <id> → tarea asociada funcionalmente a una sucursal
+id_sucursal = NULL
+→ tarea global
+→ no pertenece funcionalmente a ninguna sucursal específica
+
+id_sucursal = <id>
+→ tarea de sucursal
+→ pertenece funcionalmente a esa única sucursal
 ```
 
-Su opcionalidad definitiva queda abierta antes del DER. No se usa `id_instalacion` como scope funcional. `id_instalacion_origen` representa exclusivamente procedencia técnica CORE-EF; por tanto, `id_instalacion_origen != scope_funcional_tarea`.
+Ambas clases son válidas. El valor no identifica al creador, al responsable, a
+la sucursal desde la que se consulta ni a la instalación que originó el cambio.
+En particular, `id_instalacion_origen` conserva exclusivamente procedencia
+técnica CORE-EF: una operación puede originarse en una instalación distinta de
+la sucursal funcional de la tarea, y una tarea global también puede tener
+procedencia técnica. `id_instalacion_origen != scope_funcional_tarea`.
+
+El scope funcional se define al crear la tarea y es **inmutable** durante todo
+el MVP. Por lo tanto, `id_sucursal` no puede cambiar después de la creación: no
+se admite convertir una tarea global en tarea de sucursal, convertir una tarea
+de sucursal en global ni trasladarla entre sucursales. Si el scope fue definido
+incorrectamente, la corrección no se realiza mutando `id_sucursal`; requiere una
+nueva Tarea en el scope correcto, con la trazabilidad que determine el diseño
+posterior. Este freeze no incorpora una operación de cambio de scope ni impone
+una acción automática sobre la tarea anterior.
+
+### Evidencia
+
+- **Repositorio:** `DEV-ARCH-OPE-001` asigna a `operativo` el ownership de
+  sucursal e instalación, excluye tareas y exige separación con
+  `gestion_operativa`; el freeze ya distingue procedencia técnica de scope.
+- **Repositorio:** no existen SQL, backend ni tests runtime de Tarea que impongan
+  pertenencia obligatoria a sucursal. El alcance admite tareas puramente internas
+  y futuras tareas de sistema, sin demostrar una sucursal funcional única.
+- **Inferencia:** el seguimiento administrativo de toda la organización y los
+  procesos transversales son casos legítimos que se perderían forzando una
+  sucursal; usar la instalación de origen produciría un scope accidental.
+- **Decisión de diseño nueva:** `NULL` se congela como scope global y un valor
+  como scope de exactamente una sucursal.
+
+### Alternativas descartadas y justificación
+
+Se descarta `id_sucursal NOT NULL` porque fuerza una pertenencia funcional no
+demostrada a tareas globales. Se descarta un discriminador o modelo de scope
+separado porque el MVP sólo necesita las dos alternativas inequívocas anteriores
+y no hay evidencia que justifique otra estructura. No se inventa una tabla ni
+una relación multi-sucursal.
+
+### Impacto en artefactos posteriores
+
+DEV-ARCH-GOP y los artefactos posteriores deberán preservar ambos scopes y su
+semántica, pero decidirán recién entonces FK, nulabilidad física, constraints,
+índices, filtros y contratos. Esta decisión no diseña SQL ni convierte a
+`operativo` en dueño de Tarea.
 
 ## 15. Comentarios
 
@@ -592,20 +643,444 @@ If-Match-Version                  → concurrencia optimista cuando corresponda
 
 Ninguno de esos headers técnicos autentica a una persona. En particular,
 `X-Sucursal-Id` no define automáticamente el scope funcional de `Tarea`; esa
-relación depende de las decisiones funcionales todavía abiertas.
+relación no sustituye la decisión funcional de la sección 14.
 
-Administrativo conserva ownership de usuarios, autenticación, autorización, roles y permisos, y provee sus mecanismos. `gestion_operativa` consume la identidad de usuario y debe definir qué acciones funcionales sobre Tareas requieren autorización y qué relación o scope habilita cada acción, sin redefinir el modelo administrativo.
+Administrativo conserva ownership de usuarios, autenticación, autorización,
+roles y permisos, y proveerá el mecanismo que materialice el alcance. La política
+siguiente es funcional: no crea roles, permisos, scopes HTTP ni una ACL GOP.
 
-La política funcional de autorización y visibilidad permanece **NO CONGELADA / BLOQUEANTE**. Antes del DER y DEV-API debe decidir, sin inventar todavía permisos, roles, códigos ni autorización contextual:
+### 20.A Habilitación funcional y autorización efectiva
 
-- si un usuario puede consultar sólo tareas asignadas a él o también las creadas por él;
-- quién puede consultar tareas sin responsable o tareas de otros usuarios;
-- cómo incide `id_sucursal`, si finalmente se incorpora, y quién puede consultar tareas globales;
-- cómo se comporta **Mis tareas**;
-- quién puede modificar título/descripción, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar y comentar.
-- quién puede reabrir una tarea completada mediante la operación explícita de la sección 9.1.
+Las capacidades de `usuario_sucursal` son habilitaciones funcionales necesarias,
+pero ninguna constituye por sí sola autorización suficiente:
 
-El ownership de autorización de Administrativo no elimina la necesidad de que `gestion_operativa` defina esta política funcional de acceso. Los códigos y mecanismos concretos se diseñarán posteriormente junto con Administrativo y DEV-API.
+```text
+habilitación por sucursal != autorización efectiva
+
+operación humana protegida
+→ habilitación funcional requerida
+  AND autorización efectiva de Administrativo
+```
+
+Administrativo conserva ownership de la autorización efectiva y compone roles,
+permisos, contexto y denegaciones explícitas conforme a su contrato vigente.
+`gestion_operativa` sólo declara qué habilitación funcional consume para cada
+acción; no crea permisos, roles, ACL, claims, scopes HTTP ni un motor paralelo.
+
+Para una tarea de sucursal, `puede_consultar` vigente es necesario para consultar
+por scope, `puede_operar` vigente es necesario para ser responsable y
+`puede_administrar` vigente es necesario para crear o gestionar por scope. La
+capa administrativa puede denegar igualmente una operación humana protegida.
+Para tareas globales, las habilitaciones equivalentes de consulta, operación y
+administración también deben componerse con autorización efectiva; su
+representación técnica permanece pendiente en Administrativo.
+
+#### Vigencia de `usuario_sucursal`
+
+Los registros relacionados se consideran vigentes únicamente bajo estos
+predicados completos:
+
+```text
+usuario vigente
+= estado_usuario = ACTIVO
+  AND usuario.deleted_at IS NULL
+  AND usuario.fecha_baja IS NULL
+
+sucursal vigente
+= estado_sucursal = ACTIVA
+  AND sucursal.deleted_at IS NULL
+  AND sucursal.fecha_baja IS NULL
+```
+
+Un vínculo `usuario_sucursal` está vigente únicamente cuando, para un mismo
+`instante_corte_utc`, se cumplen simultáneamente:
+
+```text
+usuario_sucursal.deleted_at IS NULL
+AND estado_vinculo = ACTIVO
+AND fecha_desde_utc <= instante_corte_utc
+AND (fecha_hasta_utc IS NULL OR instante_corte_utc < fecha_hasta_utc)
+AND usuario vigente
+AND sucursal vigente
+```
+
+El intervalo es `[fecha_desde, fecha_hasta)`: inclusivo al inicio y exclusivo al
+final. `instante_corte_utc` se captura una sola vez por caso de uso desde el reloj
+confiable del servidor en UTC; no procede del cliente, navegador, instalación ni
+sucursal. El mecanismo de inyección del reloj se decidirá después.
+
+`fecha_desde` y `fecha_hasta` representan instantes absolutos cuyo canon temporal
+es UTC. Todo contrato futuro que materialice estas fronteras debe exigir un
+timestamp con offset explícito; son ejemplos válidos `2026-08-15T13:00:00Z` y
+`2026-08-15T10:00:00-03:00`, mientras `2026-08-15T10:00:00` sin offset es
+inválido. Esta decisión no modifica ahora schemas administrativos existentes.
+
+La conversión y comparación canónicas son:
+
+```text
+input con offset
+→ convertir a UTC
+→ comparar como instante UTC
+
+2026-08-15T10:00:00-03:00
+→ 2026-08-15T13:00:00Z
+
+fecha_desde_utc <= instante_corte_utc
+AND (
+  fecha_hasta_utc IS NULL
+  OR instante_corte_utc < fecha_hasta_utc
+)
+```
+
+Si una persistencia futura usa `timestamp without time zone`, el valor sólo puede
+considerarse UTC canónico cuando la escritura recibió un offset explícito,
+convirtió el instante a UTC y persistió esa representación normalizada. El
+timezone de la sesión PostgreSQL no es autoridad semántica.
+
+Los valores legacy naïve requieren tratamiento separado:
+
+```text
+timestamp legacy sin offset
+→ no permite determinar por sí solo la zona original
+→ no puede reinterpretarse silenciosamente como UTC
+```
+
+La normalización UTC del contrato futuro no es retroactiva. Antes de usar un
+registro legacy ambiguo como frontera temporal autoritativa para visibilidad,
+elegibilidad, asignación o mutación GOP, debe resolverse explícitamente su
+semántica mediante una migración/backfill explícito **o** una regla legacy
+documentada y validada. Este freeze no elige la estrategia, no supone un timezone
+histórico y no diseña SQL, script, heurística ni job correctivo.
+
+Cuando Administrativo materialice capacidades globales con vigencia temporal,
+deberá respetar los mismos instantes UTC canónicos e intervalos inequívocos, sin
+que este freeze diseñe su estructura.
+
+Una capacidad está vigente sólo cuando el vínculo anterior está vigente y su
+flag correspondiente vale `true`:
+
+```text
+puede_consultar vigente   = vínculo vigente AND puede_consultar = true
+puede_operar vigente      = vínculo vigente AND puede_operar = true
+puede_administrar vigente = vínculo vigente AND puede_administrar = true
+```
+
+Esta semántica es el contrato funcional completo; no se reduce a una consulta
+runtime que pudiera omitir una parte del intervalo o de la vigencia relacionada.
+
+### 20.0 Decisión de creación manual por scope
+
+Antes de que exista la Tarea, la creación manual depende del alcance funcional
+del actor humano sobre el scope propuesto:
+
+```text
+Crear tarea de sucursal
+→ requiere capacidad administrativa vigente sobre esa sucursal
+→ equivalente funcional a puede_administrar = true
+→ requiere además autorización efectiva de Administrativo
+
+Crear tarea global
+→ requiere alcance global administrativo
+→ requiere además autorización efectiva de Administrativo
+```
+
+El actor humano se identifica mediante `AuthenticatedPrincipal.id_usuario`.
+Estas condiciones son reglas funcionales de `gestion_operativa`, no nombres de
+permisos, roles, claims, scopes HTTP ni una ACL. `puede_administrar` es una
+capacidad existente de `usuario_sucursal`; la representación técnica de la
+capacidad global administrativa pertenece a Administrativo y queda para
+artefactos posteriores. La habilitación no constituye el grant final.
+
+La regla anterior no autentica ni autoriza técnicamente tareas con `origen =
+SISTEMA`: para ellas se mantienen `id_usuario_creador = NULL` y
+`generador_sistema` requerido. La generación automática futura deberá producir
+el scope funcional correspondiente, pero su mecanismo técnico de autorización
+permanece pendiente y no se inventa un usuario de sistema.
+
+### 20.1 Decisión de visibilidad y consultas
+
+Se reconocen bases funcionales independientes de visibilidad por autoría,
+responsabilidad elegible, consulta por scope y administración por scope. Un
+usuario puede ver una tarea si cumple al menos una de estas condiciones:
+
+1. es su creador humano;
+2. es su responsable actual y conserva elegibilidad vigente;
+3. tiene `puede_consultar = true` vigente sobre la sucursal de una tarea de
+   sucursal;
+4. tiene `puede_administrar = true` vigente sobre esa sucursal;
+5. para una tarea global, tiene alcance global de consulta o alcance global
+   administrativo vigente; o
+6. para una tarea de sucursal cuyo scope dejó de estar vigente, tiene alcance
+   global administrativo vigente.
+
+Estas bases son alternativas e independientes (`creador OR responsable elegible
+OR consulta por scope OR administración por scope`); no se exige satisfacer más
+de una. Toda consulta humana protegida requiere autorización efectiva de
+Administrativo, pero la habilitación funcional adicional depende de la relación
+que funda la visibilidad:
+
+```text
+creador humano + autorización efectiva
+→ visibilidad por autoría
+→ no requiere puede_consultar, puede_operar ni puede_administrar
+
+responsable registrado + elegibilidad vigente + autorización efectiva
+→ visibilidad por responsabilidad
+
+capacidad de consulta vigente + autorización efectiva
+→ visibilidad ordinaria por scope
+
+capacidad administrativa vigente + autorización efectiva
+→ visibilidad administrativa por scope
+```
+
+`puede_administrar` es una base propia de visibilidad porque el actor debe acceder
+al objeto que administra; **no implica ni deriva `puede_consultar = true`**. Para
+tareas globales se aplica el equivalente funcional con alcance global
+administrativo, sin inventar su representación técnica.
+
+Por lo tanto:
+
+- **Mis tareas** significa exclusivamente tareas cuyo responsable registrado es
+  el usuario y cuya elegibilidad continúa vigente. No incluye tareas sólo por
+  haberlas creado ni conserva una tarea por una asignación devenida inelegible.
+- **Tareas creadas por mí** es una consulta separada. El creador conserva
+  visibilidad después de una asignación, reasignación o desasignación, aunque no
+  sea responsable ni tenga actualmente alcance sobre el scope de la tarea.
+- Las tareas sin responsable son visibles para su creador humano y por capacidad
+  de consulta o administración del scope: los flags vigentes correspondientes
+  para su sucursal o los alcances globales equivalentes para una tarea global.
+- Una tarea asignada a otra persona es visible para su creador y por la capacidad
+  de consulta o administración correspondiente. `puede_consultar` no habilita
+  gestión por scope.
+- Una tarea de sucursal entra en listados por scope sólo con `puede_consultar =
+  true` vigente para visibilidad ordinaria o `puede_administrar = true` vigente
+  para visibilidad administrativa. Una tarea global entra por alcance global de
+  consulta o administrativo; no se replica como tarea de cada sucursal.
+- La asignación individual mantiene la tarea en **Mis tareas** y visible para el
+  responsable elegible según el scope, incluida una tarea global o de sucursal.
+
+Las tareas `origen = SISTEMA` aplican las mismas reglas según responsable y
+scope. Como no tienen creador humano, no obtienen visibilidad por autoría;
+`generador_sistema` no es actor, usuario, rol ni alcance.
+
+### 20.1.1 Elegibilidad del responsable
+
+La elegibilidad del responsable es una invariante continua y compuesta: requiere
+simultáneamente habilitación operativa vigente para el scope y autorización
+efectiva vigente de Administrativo suficiente para ejercer las capacidades
+funcionales del responsable:
+
+```text
+Tarea de sucursal
+→ puede_operar = true vigente sobre esa sucursal
+  AND autorización efectiva vigente suficiente
+
+Tarea global
+→ alcance global operativo vigente
+  AND autorización efectiva vigente suficiente
+```
+
+`puede_operar` y el alcance global operativo son habilitaciones funcionales
+necesarias, no autorización. Este freeze no crea un permiso GOP, código, rol,
+claim, scope HTTP ni ACL para expresar la suficiencia; su materialización concreta
+pertenece a Administrativo y a los artefactos posteriores.
+
+La misma regla compuesta se aplica al usuario destino en la primera asignación y
+en cada reasignación, incluidas las tareas `origen = SISTEMA`: no basta con
+`puede_operar = true` ni con alcance global operativo. Separadamente, la persona
+que asigna o reasigna necesita la habilitación administrativa de la matriz y su
+propia autorización efectiva. La autorización del actor no sustituye la del
+destino, ni viceversa. La asignación no permite eludir el scope y no usa
+`id_instalacion_origen` para decidir elegibilidad.
+
+Una asignación con elegibilidad compuesta vigente habilita las capacidades
+funcionales del responsable.
+Después de una reasignación, el nuevo responsable debe cumplir la elegibilidad y
+el anterior pierde las capacidades derivadas de esa relación; el creador conserva
+su visibilidad y comentario. Una tarea sin responsable sigue siendo válida, pero
+su primera asignación debe cumplir esta regla antes de que pueda pasar a
+`EN_CURSO` o `COMPLETADA`.
+
+Estas son reglas funcionales, no permisos, roles, claims, ACL ni scopes HTTP. La
+forma en que Administrativo materialice el alcance global y resuelva la
+autorización efectiva queda para los artefactos posteriores.
+
+Si el responsable registrado pierde luego la habilitación operativa **o** la
+autorización efectiva suficiente, permanece registrado hasta una mutación
+explícita, pero pasa a ser responsable inelegible. Deja de estar habilitado por
+esa relación para **Mis tareas**, `PENDIENTE ↔ EN_CURSO`, completar o comentar, y
+la mera referencia persistida no conserva visibilidad. Sólo puede mantener acceso
+por otra relación independiente —creador, consulta o administración por scope—
+si también conserva la autorización efectiva correspondiente a esa relación.
+
+No hay desasignación automática, cambio automático de estado, job correctivo ni
+otro side effect silencioso desde Administrativo. Una persona con capacidad
+administrativa aplicable según el estado del scope y autorización efectiva debe
+reasignar a un destino elegible o desasignar explícitamente. En una tarea
+terminal, la pérdida de elegibilidad no habilita una mutación ordinaria del
+snapshot.
+
+#### Fallback ante sucursal no vigente
+
+Si la sucursal del scope deja de cumplir su predicado de vigencia, todas las
+capacidades locales derivadas de `usuario_sucursal` dejan de estar vigentes. La
+tarea conserva sin cambios su scope, estado, responsable registrado y demás
+datos: no se cancela, reasigna, desasigna, elimina ni convierte automáticamente en
+global, y `id_sucursal` continúa inmutable.
+
+El responsable registrado pierde elegibilidad, visibilidad y ejecución por la
+relación de responsable, pero permanece referenciado para trazabilidad. Puede
+conservar acceso únicamente por otra base independiente, como autoría, o por el
+fallback siguiente:
+
+```text
+tarea de sucursal cuyo scope dejó de estar vigente
+→ alcance global administrativo vigente
+  AND autorización efectiva de Administrativo
+→ visibilidad administrativa y gestión residual
+```
+
+Este actor global puede ejecutar las mismas operaciones administrativas de la
+matriz cuando el ciclo de vida y las demás invariantes lo permitan: modificar
+título/descripción, asignar, reasignar, desasignar, cambiar prioridad o
+`fecha_objetivo`, cambiar estado o completar por gestión, cancelar, reabrir
+`COMPLETADA` y comentar por relación administrativa. No obtiene operaciones
+nuevas, no puede cambiar `id_sucursal`, trasladar la tarea ni convertirla en
+global. Toda asignación o reasignación sigue exigiendo un destino elegible.
+
+Para tareas de sucursal, las capacidades existentes se consumen sin fusionarlas:
+
+```text
+puede_consultar vigente   → visibilidad por scope
+puede_operar vigente      → elegibilidad continua como responsable
+puede_administrar vigente → visibilidad administrativa, creación y gestión por scope
+```
+
+Para tareas globales se requieren, respectivamente, alcance global de consulta,
+alcance global operativo y alcance global administrativo. Este freeze no asigna
+esa semántica global a flags de `usuario_sucursal` ni inventa su representación
+técnica; Administrativo deberá definirla en artefactos posteriores.
+
+### 20.2 Decisión de mutación
+
+Para el MVP se distinguen **ejecución del trabajo** y **gestión por scope**:
+
+| Acción | Creador humano | Responsable vigente/elegible | Habilitación administrativa aplicable |
+| --- | --- | --- | --- |
+| Modificar título o descripción | No | No | Sí |
+| Asignar, reasignar o desasignar | No | No | Sí |
+| Cambiar prioridad o fecha objetivo | No | No | Sí |
+| Cambiar `PENDIENTE ↔ EN_CURSO` | No | Sí | Sí |
+| Completar | No | Sí | Sí, sólo si existe responsable |
+| Cancelar | No | No | Sí |
+| Reabrir `COMPLETADA → PENDIENTE` | No | No | Sí |
+| Comentar | Sí | Sí | Sí |
+
+La columna administrativa se interpreta según el estado del scope:
+
+```text
+tarea global
+→ alcance global administrativo vigente
+
+tarea de sucursal con sucursal vigente
+→ puede_administrar = true vigente sobre esa sucursal
+
+tarea de sucursal con sucursal no vigente
+→ alcance global administrativo vigente (fallback)
+```
+
+En los tres casos se requiere además autorización efectiva de Administrativo; el
+fallback global no es un bypass. `puede_consultar` por sí solo nunca habilita
+estas acciones. La matriz sólo aplica cuando la operación es funcionalmente
+válida según el ciclo de vida; una relación marcada `Sí` no permite eludir la
+elegibilidad del responsable ni la terminalidad. No se crean permisos, roles,
+claims, scopes HTTP ni ACL GOP.
+
+Mientras `estado IN (COMPLETADA, CANCELADA)`, el snapshot funcional corriente es
+inmutable: no pueden modificarse título, descripción, responsable, prioridad ni
+`fecha_objetivo`; tampoco se permite asignar, reasignar, desasignar, ejecutar
+`PENDIENTE ↔ EN_CURSO`, completar nuevamente ni cancelar nuevamente.
+`id_sucursal` permanece además inmutable durante todo el MVP, con independencia
+del estado.
+
+Las únicas excepciones funcionales terminales son:
+
+- `COMPLETADA` y `CANCELADA` pueden recibir comentarios conforme a las relaciones
+  de la matriz. Esto no decide si comentar incrementa `version_registro`.
+- Sólo `COMPLETADA` puede reabrirse explícitamente a `PENDIENTE`, con motivo,
+  historial `REABIERTA` y `fecha_finalizacion` corriente en `NULL`, según las
+  reglas ya congeladas. Reabrir exige la habilitación administrativa aplicable
+  según el estado del scope y autorización efectiva de Administrativo.
+  `CANCELADA` no reabre.
+
+Toda reapertura debe producir atómicamente un postestado válido. Si el responsable
+registrado conserva elegibilidad, se mantiene. Si perdió elegibilidad, la misma
+operación lógica debe dejar `responsable = NULL` o reemplazarlo por un nuevo
+responsable con elegibilidad vigente. Nunca puede resultar una tarea activa con
+responsable inelegible:
+
+```text
+COMPLETADA → PENDIENTE
+→ fecha_finalizacion = NULL
+→ responsable elegible conservado
+   OR responsable = NULL
+   OR nuevo responsable elegible
+→ historial REABIERTA con motivo obligatorio
+```
+
+La reparación es parte de la invariante funcional de la reapertura, no una
+mutación ordinaria previa del snapshot terminal. Si cambia el responsable, los
+artefactos posteriores preservarán trazabilidad coherente sin que este freeze
+decida si corresponde una o varias entradas de historial. No se diseñan endpoint,
+DTO, payload, `command_code`, SQL ni repository.
+
+Después de la reapertura, la tarea vuelve a estar activa y las mutaciones
+ordinarias vuelven a aplicarse conforme a la misma matriz, la elegibilidad del
+responsable y los demás invariantes; no se crea una matriz adicional.
+Si la reapertura deja la tarea sin responsable, `PENDIENTE` sigue siendo válido y
+no podrá pasar a `EN_CURSO` ni `COMPLETADA` hasta una asignación elegible.
+
+Ser creador, por sí solo, otorga trazabilidad, consulta y capacidad de comentar,
+pero **no** habilita las demás mutaciones. Si el creador también es responsable o
+tiene alcance sobre el scope, actúa por esa otra relación. Después de una
+reasignación, el anterior responsable pierde las capacidades derivadas de ser
+responsable, mientras el creador conserva visibilidad y comentario.
+
+Una tarea sin responsable continúa siendo válida. Puede ser editada, asignada,
+desasignada, repriorizada, reprogramada, cancelada, reabierta cuando corresponda
+y comentada por quien tiene capacidad administrativa sobre su scope. No puede
+pasar a `EN_CURSO` ni `COMPLETADA` mientras siga sin responsable: primero debe
+asignarse. Su creador sin esa capacidad puede verla y comentar, pero no asignarla
+ni editarla.
+
+### 20.3 Evidencia, alternativas e impacto
+
+- **Repositorio:** creador y responsable ya son distintos, el responsable es
+  `0..1`, una tarea sin responsable es válida y Administrativo conserva
+  autorización. No existe implementación GOP ni evidencia de ACL, equipos,
+  watchers o roles GOP.
+- **Repositorio:** el catálogo histórico distingue asignación, reasignación,
+  desasignación, estado y consultas, pero no es contrato vigente ni resuelve
+  actores.
+- **Inferencia:** el responsable necesita ejecutar el trabajo sin administrar su
+  definición; la gestión completa corresponde a la relación con el scope. La
+  autoría debe conservar consulta sin transformarse en propiedad mutable eterna.
+- **Decisión de diseño nueva:** se congelan las reglas de las secciones 20.1 y
+  20.2 como política funcional mínima del MVP.
+
+Se descartan **Mis tareas = asignadas + creadas** porque mezcla trabajo vigente
+con trazabilidad; mutación total por creador porque sobrevive indebidamente a una
+reasignación; mutación total por responsable porque confunde ejecutar con
+administrar; y acceso de cualquier usuario porque ignora el scope. También se
+descartan ACL por tarea, equipos, sectores, watchers y políticas configurables
+por falta de evidencia y por exceder el MVP.
+
+DEV-ARCH-GOP, DEV-SRV y DEV-API deberán materializar estas relaciones junto con
+Administrativo sin cambiar su ownership ni inventar equivalencias con roles o
+permisos técnicos. Permanecen pendientes los mecanismos de autorización,
+contratos HTTP, SQL y tests. Esta decisión no resuelve sync, identidad
+interinstalación ni el efecto de comentar sobre `version_registro`.
 
 ## 21. CORE-EF preliminar
 
@@ -709,9 +1184,35 @@ idempotencia command → NO APLICA
 outbox              → NO APLICA
 ```
 
-Bearer y autorización podrán aplicar según la futura política funcional de
-acceso. Este incremento no implementa endpoints ni afirma cumplimiento runtime
-para GOP.
+Toda consulta humana protegida de Tareas —como **Mis tareas**, **Tareas creadas
+por mí**, listado por scope, detalle y filtros que proyecten las tareas visibles
+al usuario— exige:
+
+```text
+Authorization: Bearer obligatorio
+→ get_authenticated_principal
+→ AuthenticatedPrincipal.id_usuario
+→ identidad humana efectiva
+→ evaluar relación funcional de visibilidad
+→ evaluar autorización efectiva de Administrativo
+```
+
+En esas consultas:
+
+```text
+X-Usuario-Id
+→ NO REQUERIR
+→ NO PARSEAR
+→ NO COMPARAR
+→ NO USAR como identidad
+→ NO USAR como autorización
+```
+
+Tampoco se toma identidad de query params, payload, `X-Sucursal-Id` ni
+`X-Instalacion-Id`. Esta regla se limita a consultas humanas protegidas de
+Tareas; una futura lectura técnica de sistema resolverá separadamente su
+autenticación y autorización, que continúan **NO CONGELADAS**. Este incremento no
+implementa endpoints ni afirma cumplimiento runtime para GOP.
 
 ## 22. Versionado
 
@@ -837,11 +1338,20 @@ concurrencia optimista
 
 ## 26. Consultas mínimas
 
-El contrato debe prever: obtener tarea, listar tareas, mis tareas, pendientes, vencidas y sin asignar.
+El contrato debe prever: obtener tarea, listar tareas, **Mis tareas**, **Tareas
+creadas por mí**, pendientes, vencidas y sin asignar. **Mis tareas** conserva
+exclusivamente las tareas cuyo responsable registrado es el usuario y mantiene
+elegibilidad vigente; **Tareas
+creadas por mí** recupera separadamente aquellas cuyo creador humano es el
+usuario, incluso cuando ya no sea responsable ni tenga alcance sobre su scope.
+Las tareas `origen = SISTEMA` no pertenecen a esta última consulta porque no
+tienen creador humano.
 
-Filtros mínimos: responsable, estado, prioridad, sucursal, vencida y fecha objetivo.
+Filtros mínimos funcionales, cuando corresponda conceptualmente: creador,
+responsable, estado, prioridad, sucursal, vencida y fecha objetivo.
 
-La existencia funcional de estas consultas no implica acceso irrestricto a sus resultados: su visibilidad queda condicionada a la política funcional de autorización pendiente.
+Sus resultados se limitan por la política funcional de la sección 20.1; los
+filtros nunca amplían visibilidad.
 
 ## 27. MVP funcional
 
@@ -849,7 +1359,8 @@ El alcance funcional comprende:
 
 - crear tarea manual;
 - listar tareas y ver una tarea;
-- consultar mis tareas, pendientes, vencidas y sin asignar;
+- consultar **Mis tareas** y, separadamente, **Tareas creadas por mí**;
+- consultar pendientes, vencidas y sin asignar;
 - modificar título/descripción;
 - asignar, reasignar y desasignar;
 - cambiar prioridad, fecha objetivo y estado;
@@ -857,7 +1368,10 @@ El alcance funcional comprende:
 - agregar comentario;
 - consultar historial.
 
-Los commands de modificación, asignación/reasignación/desasignación, cambios de prioridad, fecha objetivo o estado y comentarios quedan condicionados a la futura política funcional de autorización.
+Las mutaciones se rigen por la matriz funcional de la sección 20.2 mientras el
+ciclo de vida las permita. La terminalidad congela el snapshot salvo comentarios
+y la reapertura explícita de `COMPLETADA`; el mecanismo técnico de autorización
+permanece pendiente.
 
 Debe implementarse en varios incrementos trazables, no como un único issue grande.
 
@@ -894,6 +1408,21 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 23. `fecha_objetivo` tiene granularidad funcional DATE y conserva validez durante todo su día calendario.
 24. La materialización inicial deberá prever `deleted_at` como baja lógica técnica, distinta de `CANCELADA`, sin que ello habilite una operación de eliminación en el MVP.
 25. El vencimiento usa una única fecha local capturada del reloj del servidor en `America/Argentina/Buenos_Aires` y la fórmula exacta de la sección 12.
+26. `id_sucursal` es opcional: `NULL` significa tarea global y un valor significa tarea de esa única sucursal; nunca representa procedencia técnica.
+27. **Mis tareas** contiene sólo las tareas asignadas al usuario mientras su elegibilidad como responsable permanezca vigente; las creadas por él se consultan separadamente y continúan visibles por autoría.
+28. La visibilidad se obtiene por creador, responsable vigente/elegible, capacidad de consulta o capacidad administrativa correspondiente; las mutaciones se rigen por ejecución como responsable elegible o capacidad administrativa del scope según la matriz de la sección 20.2.
+29. La creación manual exige `puede_administrar` vigente sobre la sucursal propuesta o alcance global administrativo para una tarea global; el scope queda inmutable después de crear la Tarea durante el MVP.
+30. La elegibilidad del responsable es continua y compuesta: exige `puede_operar` vigente sobre la sucursal o alcance global operativo, más autorización efectiva vigente suficiente; asignar o reasignar valida ambas dimensiones y perder cualquiera requiere gestión explícita, sin side effects automáticos.
+31. `COMPLETADA` y `CANCELADA` congelan el snapshot funcional corriente; sólo admiten comentarios y, exclusivamente para `COMPLETADA`, la reapertura explícita ya definida.
+32. Las capacidades por sucursal son habilitaciones necesarias, no autorización suficiente; toda operación humana protegida requiere además autorización efectiva de Administrativo.
+33. La vigencia de `usuario_sucursal` exige usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, y usa el intervalo `[fecha_desde, fecha_hasta)` normalizado a UTC de la sección 20.A, evaluado con un único `instante_corte_utc` del servidor.
+34. Reabrir `COMPLETADA` conserva al responsable elegible o repara atómicamente al inelegible dejándolo nulo o reemplazándolo por otro elegible; nunca produce una tarea activa con responsable inelegible.
+35. Creador, responsable elegible, capacidad de consulta y capacidad administrativa son bases alternativas de visibilidad sujetas a autorización efectiva; `puede_consultar` sólo se exige para visibilidad ordinaria por scope.
+36. Las fronteras futuras exigen offset y normalización UTC; un timestamp legacy naïve no adquiere UTC retroactivamente y debe resolverse explícitamente antes de ser frontera autoritativa GOP.
+37. `puede_administrar` vigente es una base independiente de visibilidad administrativa y no implica `puede_consultar`; para tareas globales aplica el alcance global administrativo equivalente.
+38. Si una sucursal deja de estar vigente, no produce side effects sobre sus tareas: el responsable pierde elegibilidad local y el alcance global administrativo vigente, más autorización efectiva, preserva un camino residual de visibilidad y gestión sin cambiar el scope.
+39. La habilitación administrativa aplicable es local para una sucursal vigente y global para una tarea global o una sucursal no vigente; todas requieren autorización efectiva y el fallback no es un bypass.
+40. Toda consulta humana protegida de Tareas requiere Bearer y deriva su identidad exclusivamente de `AuthenticatedPrincipal.id_usuario`, nunca de `X-Usuario-Id` ni de contexto técnico.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
@@ -907,18 +1436,19 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 - Ninguna de estas decisiones traslada tareas a `operativo`, materializa una
   entidad técnica ni resuelve sync, identidad portable, permisos o versionado de
   comentarios.
+- El scope de sucursal/global limita consultas y gestión por alcance sin usar
+  `id_instalacion_origen`; creador y responsable siguen siendo relaciones
+  distintas.
 
 ## 30. Decisiones todavía abiertas
 
-De la numeración original de blockers, este incremento cierra exclusivamente
-**#2, #3, #4, #5, #8 y #9** mediante las secciones 9, 9.1, 10, 11, 19 y 12,
-respectivamente. Permanecen abiertos, con su numeración original y sin resolución
-incidental:
+De la numeración original de blockers, los cierres acumulados comprenden **#1,
+#2, #3, #4, #5, #8, #9 y #11**. Este segundo incremento cierra exclusivamente
+**#1 y #11** mediante las secciones 14 y 20. Permanecen abiertos únicamente, con
+su numeración original y sin resolución incidental:
 
-1. Si `id_sucursal` es opcional o no.
 6. Estrategia de sync: `SINCRONIZABLE`, `LOCAL` o `MIXTO`.
 7. Si agregar comentario incrementa `version_registro` de la tarea.
 10. Identidad canónica interinstalación de usuario para toda referencia humana persistida que deba sincronizarse en `gestion_operativa` —como creador, responsable, autor de comentario y actor del historial funcional—: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
-11. Política funcional de visibilidad y mutación de Tareas: alcance de Mis tareas, tareas creadas, tareas sin asignar, tareas de otros usuarios, scope de sucursal/global y reglas para editar, asignar, reasignar, desasignar, cambiar prioridad, cambiar fecha objetivo, cambiar estado, completar, cancelar, reabrir y comentar.
 
 Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
