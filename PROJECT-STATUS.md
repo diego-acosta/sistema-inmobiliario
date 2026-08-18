@@ -29,7 +29,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | B — Administrativo | #407–#412 implementados. PR #478 materializó el command mínimo GLOBAL y cerró #412; #413 alinea ahora la documentación formal. | #263 continúa abierto hasta el merge y cierre de #413; #425, #435, #461 y #265 permanecen separados. | PR #478 mergeado (commit `3b6d58d`) como último cambio material de configuración. | Completar #413 sin cerrar anticipadamente #263. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
-| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; #492 congela conceptualmente la identidad interinstalación, sin implementar `Tarea`. | Épica #489 abierta; #492 es el incremento documental actual; #493 (comentario/versionado) sigue pendiente y separado. | Baseline verificado: merge de PR #494 (`141414f`), cierre documental de #491. | Revisar #492 sin cerrarlo anticipadamente; luego resolver #493 y las dependencias de materialización antes de DER/SQL/API. |
+| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; #492 congela mayormente la identidad interinstalación, pero mantiene pendiente la política técnica retryable para referencias no resolubles. | Épica #489 abierta; #492 continúa abierto y no está listo para cierre; #493 (comentario/versionado) sigue pendiente y separado. | Baseline verificado: merge de PR #494 (`141414f`), cierre documental de #491. | Definir la retención/reproceso técnico pendiente de #492 sin convertir `REJECTED` en retryable; luego resolver #493 y las dependencias de materialización antes de DER/SQL/API. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -134,9 +134,14 @@ las segundas expresan procedencia técnica, sin confundir `Tarea.id_sucursal` co
 La recepción identifica Tarea y referencias sólo por identidades portables y las
 resuelve a PK locales antes de persistir. Una referencia requerida no resoluble
 no genera placeholders ni copia PK remota: la operación y su motivo se preservan
-en inbox y se clasifican/reprocesan por el contrato Técnico trazable. #492 no
-diseña DTO, evento, DER, SQL, API ni runtime. Sólo congela identidad portable del
-autor de comentario; #493 sigue abierto para granularidad, `version_registro`,
+con trazabilidad técnica y la Tarea no se aplica parcialmente. El runtime actual
+marca `REJECTED` como terminal/no retryable y `claim` no reabre el mismo
+`(event_id, consumer)`; la mera ausencia temporal tampoco se fuerza a
+`CONFLICTO`. La política técnica retryable de retención/reproceso queda **NO
+CONGELADA / PENDIENTE DE DISEÑO TÉCNICO**, sin inventar estados ni scheduler.
+Por ese único subpendiente #492 todavía no está listo para cierre. #492 no diseña
+DTO, evento, DER, SQL, API ni runtime. Sólo congela identidad portable del autor
+de comentario; #493 sigue abierto para granularidad, `version_registro`,
 `If-Match` y frontera transaccional. GOP todavía no está listo para DER/SQL/API.
 No se cierran #489, #492 ni #493 mediante esta actualización.
 

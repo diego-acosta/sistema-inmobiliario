@@ -1349,7 +1349,7 @@ Para un `op_id` distinto y el mismo `uid_global`, rige como mínimo esta matriz:
 
 | Caso | Tratamiento congelado |
 | --- | --- |
-| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia irresoluble se rechaza o registra como inconsistencia, no se fuerza. |
+| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia requerida no resoluble impide aplicar; su retención/reproceso técnico queda pendiente de diseño y no se fuerza a rechazo o conflicto. |
 | Misma versión y payload material igual | Operación distinta pero materialmente convergente; no se clasifica automáticamente como duplicado ni replay y se conserva la trazabilidad de ambas operaciones. |
 | Misma versión y payload material distinto | Inconsistencia/conflicto material persistido; no sobrescribir. |
 | Versión entrante menor que la local | Cambio atrasado u obsoleto; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
@@ -1651,31 +1651,47 @@ del emisor como si fuera propia ni crear tablas de mapeo manual ad hoc en GOP.
 ### 30.6 Referencias todavía no resolubles y dependencias de sync
 
 CORE-EF/SRV-TEC exigen registrar todo cambio recibido mediante inbox, conservar
-los rechazados, persistir los conflictos y evitar efectos duplicados, pero el
-runtime actual no materializa una política genérica única de espera por
-dependencias maestras para Tarea. Por ello se congela la mínima regla segura:
+los rechazados, persistir los conflictos y evitar efectos duplicados, pero no
+congelan una política completa de retención/reproceso para una dependencia aún
+no resoluble. Por ello se congela únicamente la regla mínima segura:
 
 ```text
 referencia requerida no resoluble localmente
 -> no aplicar ni materializar una relación inválida
--> no crear placeholder, usuario/sucursal ficticia ni copiar PK remota
--> preservar operación, payload, motivo y trazabilidad en inbox
--> clasificar RECHAZADO o CONFLICTO según el contrato Técnico vigente y
-   la naturaleza de la entrada; reprocesar sólo mediante flujo técnico trazable
+-> no aplicar parcialmente la Tarea
+-> no copiar PK remota
+-> no crear placeholder ni usuario/sucursal/instalación ficticia
+-> preservar evento, payload, motivo y trazabilidad técnica
+
+política técnica de retención/reproceso para esa dependencia
+-> NO CONGELADA / PENDIENTE DE DISEÑO TÉCNICO
 ```
 
 Una referencia opcional explícitamente ausente no es una referencia
 irresoluble. En cambio, si creador humano, sucursal funcional presente,
 instalación técnica requerida o responsable presente no se resuelven, el
 snapshot no se aplica parcialmente. La decisión protege integridad sin inventar
-filas placeholder ni afirmar que existe hoy un estado `PENDIENTE_REFERENCIA`.
+filas placeholder ni afirmar que existe hoy un estado `PENDIENTE_REFERENCIA`,
+`WAITING_DEPENDENCY`, `RETRYABLE`, `DEFERRED` o equivalente.
+
+El runtime vigente de `InboxRepository` no ofrece un camino estándar retryable
+para este caso: `mark_as_rejected(...)` lleva a `REJECTED`, documentado por la
+implementación como error de negocio que no debe reintentarse, y `claim(...)`
+usa `ON CONFLICT (event_id, consumer) DO NOTHING`, por lo que no vuelve a
+reclamar normalmente el mismo par. En consecuencia, **REJECTED es terminal/no
+retryable en el runtime actual** y este freeze no lo presenta como mecanismo de
+espera. Tampoco fuerza `CONFLICTO`: la ausencia temporal de una dependencia con
+identidad válida no prueba por sí sola divergencia material ni colisión
+semántica. `SRV-TEC-002` no congela una transición completa para retener y
+reprocesar este caso; #492 deja esa mecánica expresamente pendiente en vez de
+inventar estado, enum, tabla, transición o scheduler.
 
 Tarea depende de que las referencias requeridas existan localmente antes de su
 aplicación. Usuario requiere primero la futura materialización y sincronización
 administrativa de identidad; sucursal e instalación ya tienen UID físico, pero
 su distribución/resolución runtime aplicable debe existir. No se congela un
-orden global de paquetes porque no hay evidencia de un scheduler de dependencias
-maestras; inbox y reproceso trazable son la frontera técnica, no un mapping GOP.
+orden global de paquetes ni una política retryable porque no hay evidencia de un
+scheduler o transición de dependencias maestras; tampoco se crea un mapping GOP.
 
 ### 30.7 Origen SISTEMA y conflictos de identidad
 
@@ -1704,23 +1720,28 @@ Tarea con ese UID, se reasigna el UID ni se adopta la PK local del emisor.
   no en `usuario`; outbox real ya demuestra el patrón portable con
   `uid_instalacion_origen` y datos por `uid_global`. El worker/inbox actual es
   acotado a eventos allowlisted y no implementa Tarea ni una espera genérica de
-  referencias. #469/#470 resuelven ledger local de operación, no identidad de
-  entidades o usuarios.
+  referencias. `InboxRepository.mark_as_rejected` marca `REJECTED` no retryable
+  y `claim` no reabre el mismo `(event_id, consumer)`. #469/#470 resuelven ledger
+  local de operación, no identidad de entidades o usuarios.
 - **Inferencia:** toda FK funcional incluida en un estado replicado debe
   resolverse por identidad portable antes de persistirse; de otro modo una PK
   válida en el emisor podría apuntar a otra entidad en destino.
 - **Decisión nueva #492:** Tarea viaja por su `uid_global`; sucursal e instalación
   por sus UID físicos; referencias humanas por un contrato global Administrativo
   requerido y aún no materializado; las dependencias irresolubles no se aplican
-  silenciosamente y quedan trazadas.
+  silenciosa ni parcialmente y quedan trazadas. Su política retryable permanece
+  **NO CONGELADA / PENDIENTE DE DISEÑO TÉCNICO**.
 - **Alternativas descartadas:** PK remota, `login`, email, código de usuario,
   `codigo_sucursal`, `codigo_instalacion`, headers CORE-EF, placeholders y mappings
   GOP se descartan como identidad autoritativa. También se descarta resolver
   identidad como si concediera autorización.
 - **Impacto posterior:** antes de DER/SQL/API GOP, Administrativo debe cerrar la
   identidad global de usuario y Técnico/Operativo deben exponer resolución
-  verificable de referencias; DEV-ARCH/DER/DEV-SRV/DEV-API GOP definirán física,
-  DTO y transacción sin alterar este contrato. No se crean esos artefactos aquí.
+  verificable de referencias. Técnico debe congelar además una política de
+  retención/reproceso para dependencias no resolubles sin reutilizar `REJECTED`
+  como retryable ni forzar `CONFLICTO` sin divergencia. DEV-ARCH/DER/DEV-SRV/
+  DEV-API GOP definirán física, DTO y transacción sin alterar este contrato. No
+  se crean esos artefactos aquí.
 
 ## 31. Estado de blockers y criterio de #492
 
@@ -1744,12 +1765,15 @@ Criterio documental de #492:
 - [x] Referencias interinstalación relevantes definidas.
 - [x] PK local y `uid_global` diferenciados.
 - [x] Procedencia técnica y scope funcional diferenciados.
-- [x] Interacción con sync y referencias desconocidas definida.
+- [x] Interacción general con sync definida.
+- [ ] Política retryable para referencias no resolubles definida.
 - [x] GOP-FREEZE-001 y PROJECT-STATUS alineados.
 - [x] Sin DER, SQL, API, runtime ni tests GOP prematuros.
 
-Por lo tanto, **#492 queda documentalmente listo para revisión y eventual cierre
-después del merge**; este documento no cierra #492, #493 ni la épica #489.
+Por lo tanto, #492 tiene congeladas la identidad canónica y las referencias
+portables, pero **todavía no está listo para cierre**: queda pendiente únicamente
+la política técnica retryable de retención/reproceso para referencias requeridas
+aún no resolubles. Este documento no cierra #492, #493 ni la épica #489.
 
 ## 32. Matriz final por operación
 
