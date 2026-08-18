@@ -748,8 +748,11 @@ agregado, sync o historial especializado. #483 sigue y #484 creará atómicament
 la primera raíz y ambos valores; #425 permanece coordinador abierto.
 
 Las dos claves conservan `editable_administrativamente = true`, pero el command
-individual genérico #412 responde `409 conflicto_parametro` antes del claim y de
-cualquier mutación, incluso si el actor también posee el permiso específico o es
-`ADMINISTRADOR_SISTEMA`. Sólo el futuro agregado #425 podrá modificarlas de forma
-atómica y temporal. La migración rechaza además todo valor preexistente de esas
-claves que no sea un `ENTERO` ASCII tipado dentro de 1–31, incluidos históricos.
+individual genérico #412 consulta primero el ledger durable #470: replayea un receipt
+compatible y conserva el conflicto idempotente ante un uso incompatible. Sólo para una
+decisión `EXECUTE` responde `409 conflicto_parametro`, antes de contexto, lookup, lock,
+CAS, outbox, completion o cualquier mutación, sin crear un receipt nuevo; esto aplica
+incluso si el actor también posee el permiso específico o es `ADMINISTRADOR_SISTEMA`.
+Sólo el futuro agregado #425 podrá modificarlas de forma atómica y temporal. La migración
+rechaza además todo valor preexistente de esas claves que no sea un `ENTERO` ASCII tipado
+dentro de 1–31, incluidos históricos.

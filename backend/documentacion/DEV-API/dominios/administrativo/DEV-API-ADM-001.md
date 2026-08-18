@@ -1317,8 +1317,10 @@ EVT-ADM-060 para updates materiales genéricos permitidos.
 
 El PATCH individual de #412 no aplica a `DIA_CIERRE_COMERCIAL` ni a
 `DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS`: devuelve el error público existente
-`409 conflicto_parametro` antes de reclamar idempotencia o mutar, sin depender de
-qué rol originó el grant. El rechazo ocurre antes de payload hash, claim, lookup
-mutable, lock, CAS y outbox: no crea receipt, no muta ni incrementa versión. Esta
-exclusión no implementa un endpoint de calendario; reserva las modificaciones para
-el futuro agregado #425 y no vuelve `NO APLICA` el CORE-EF general de #412.
+`409 conflicto_parametro` para una operación nueva, sin depender de qué rol originó
+el grant. Antes del boundary consulta el ledger durable #470: un receipt compatible
+se replayea y un uso incompatible conserva el conflicto idempotente. Sólo una decisión
+`EXECUTE` se rechaza, antes de contexto, lookup mutable, lock, CAS, outbox, completion
+o cualquier mutación; no crea receipt ni incrementa versión. Esta exclusión no
+implementa un endpoint de calendario; reserva las modificaciones para el futuro
+agregado #425 y no vuelve `NO APLICA` el CORE-EF general de #412.

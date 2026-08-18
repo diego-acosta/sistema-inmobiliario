@@ -180,11 +180,14 @@ desde `AuthenticatedPrincipal.id_usuario`. Exige `X-Op-Id`, `X-Sucursal-Id`,
 `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, consume la idempotencia durable #470 y mantiene
 lock/CAS y `EVT-ADM-060` para cambios materiales de parámetros genéricos permitidos.
 
-#482 agrega un rechazo previo para `DIA_CIERRE_COMERCIAL` y
-`DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS`: responde `409 conflicto_parametro` antes de
-payload hash, claim #470, lookup/lock, CAS, outbox o receipt. El command genérico no es
-aplicable a esas claves, incluso si el actor posee ambos permisos, porque su modificación
-pertenece al futuro agregado atómico y temporal #425.
+#482 excluye `DIA_CIERRE_COMERCIAL` y
+`DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS` del flujo nuevo del command genérico. #412 calcula
+el payload hash y consulta primero el ledger durable #470: un receipt compatible conserva
+`REPLAY` y uno incompatible conserva la precedencia de conflicto idempotente. Sólo una
+decisión `EXECUTE` responde `409 conflicto_parametro`, antes de contexto, lookup/lock,
+CAS, outbox, completion o cualquier mutación, por lo que no crea un receipt nuevo. El
+command genérico no es aplicable a esas claves, incluso si el actor posee ambos permisos,
+porque su modificación pertenece al futuro agregado atómico y temporal #425.
 
 #482 no agrega rutas propias del calendario. GET agregado, bootstrap, programación,
 query service temporal, idempotencia y outbox del agregado, sync e historial especializado

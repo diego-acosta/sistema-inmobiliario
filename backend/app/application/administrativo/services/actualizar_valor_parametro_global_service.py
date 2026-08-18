@@ -54,10 +54,6 @@ class ActualizarValorParametroGlobalService:
         headers: AuthenticatedCoreEFHeaders,
         id_usuario: int,
     ) -> dict[str, Any]:
-        # Estas claves pertenecen al agregado #425. El command genérico #412 no
-        # puede mutarlas individualmente, independientemente del rol o permiso.
-        if codigo_parametro in CALENDARIO_COMERCIAL_PARAMETER_CODES:
-            raise ParametroCommandError(409, "conflicto_parametro")
         payload_hash = canonical_payload_hash(
             {
                 "codigo_parametro": codigo_parametro,
@@ -87,6 +83,11 @@ class ActualizarValorParametroGlobalService:
                 ConflictKind.PAYLOAD: "IDEMPOTENCY_PAYLOAD_CONFLICT",
             }
             raise ParametroCommandError(409, codes[decision.conflict])
+
+        # Un receipt durable previo conserva REPLAY/CONFLICT. Sólo una operación
+        # nueva (EXECUTE) se bloquea antes de consultar o mutar negocio.
+        if codigo_parametro in CALENDARIO_COMERCIAL_PARAMETER_CODES:
+            raise ParametroCommandError(409, "conflicto_parametro")
 
         repository = ValorParametroGlobalCommandRepository(self.session)
         context = repository.validate_context(

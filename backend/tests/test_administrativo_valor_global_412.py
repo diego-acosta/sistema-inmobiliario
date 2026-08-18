@@ -139,6 +139,38 @@ def _assert_header_error(response, header):
     assert body["details"]["header"] == header
 
 
+def _complete_legacy_calendar_receipt(
+    db_session, *, op_id, code, value, version, snapshot
+):
+    complete_operation(
+        db_session,
+        OperationCompletion(
+            op_id=op_id,
+            command_code="ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE",
+            target_type="VALOR_PARAMETRO",
+            target_uid=None,
+            target_key=code,
+            payload_hash=canonical_payload_hash(
+                {
+                    "codigo_parametro": code,
+                    "valor_tipado": str(value),
+                    "if_match_version": version,
+                }
+            ),
+            canonicalization_version=1,
+            result_code="PARAMETRO_GLOBAL_MODIFICADO",
+            result_http_status=200,
+            result_target_uid=None,
+            result_version=version + 1,
+            response_snapshot=snapshot,
+            id_usuario=1,
+            id_sucursal=1,
+            id_instalacion=1,
+        ),
+    )
+    db_session.commit()
+
+
 @pytest.mark.parametrize(
     "authorization_context",
     ["permiso_generico", "permiso_generico_y_calendario", "administrador_sistema"],
@@ -161,9 +193,16 @@ def test_command_generico_excluye_agregado_calendario_para_toda_autorizacion(
     before = dict(_row(db_session, calendar_code))
     op_id = uuid4()
     endpoint = ENDPOINT_TEMPLATE.format(calendar_code)
-    with patch(
-        "app.application.administrativo.services.actualizar_valor_parametro_global_service.claim_operation"
-    ) as claim, patch.object(db_session, "rollback"):
+    with (
+        patch.object(ValorParametroGlobalCommandRepository, "validate_context") as context,
+        patch.object(ValorParametroGlobalCommandRepository, "find_target") as find_target,
+        patch.object(ValorParametroGlobalCommandRepository, "lock_target") as lock_target,
+        patch.object(ValorParametroGlobalCommandRepository, "cas_update") as cas_update,
+        patch.object(db_session, "rollback"),
+        patch(
+            "app.application.administrativo.services.actualizar_valor_parametro_global_service.complete_operation"
+        ) as complete,
+    ):
         response = _request(
             client,
             16,
@@ -174,7 +213,82 @@ def test_command_generico_excluye_agregado_calendario_para_toda_autorizacion(
     assert response.json()["error_code"] == "conflicto_parametro"
     assert dict(_row(db_session, calendar_code)) == before
     assert _effects(db_session, op_id) == (0, 0)
-    claim.assert_not_called()
+    context.assert_not_called()
+    find_target.assert_not_called()
+    lock_target.assert_not_called()
+    cas_update.assert_not_called()
+    complete.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "calendar_code",
+    ["DIA_CIERRE_COMERCIAL", "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS"],
+)
+def test_replay_legacy_calendario_precede_boundary_sin_consultar_negocio(
+    client, db_session, calendar_code
+):
+    op_id = uuid4()
+    snapshot = {
+        "ok": True,
+        "data": {
+            "codigo_parametro": calendar_code,
+            "uid_global": str(uuid4()),
+            "valor_tipado": 16,
+            "version_registro": 2,
+            "updated_at": "2026-08-14T12:00:00",
+        },
+    }
+    _complete_legacy_calendar_receipt(
+        db_session,
+        op_id=op_id,
+        code=calendar_code,
+        value=16,
+        version=1,
+        snapshot=snapshot,
+    )
+    with (
+        patch.object(ValorParametroGlobalCommandRepository, "validate_context") as context,
+        patch(
+            "app.application.administrativo.services.actualizar_valor_parametro_global_service.complete_operation"
+        ) as complete,
+    ):
+        response = _request(
+            client,
+            16,
+            headers=_headers(op_id, 1),
+            endpoint=ENDPOINT_TEMPLATE.format(calendar_code),
+        )
+    assert response.status_code == 200
+    assert response.json() == snapshot
+    assert _effects(db_session, op_id) == (0, 1)
+    context.assert_not_called()
+    complete.assert_not_called()
+
+
+def test_conflicto_payload_legacy_calendario_precede_boundary(client, db_session):
+    code = "DIA_CIERRE_COMERCIAL"
+    op_id = uuid4()
+    _complete_legacy_calendar_receipt(
+        db_session,
+        op_id=op_id,
+        code=code,
+        value=15,
+        version=1,
+        snapshot={"ok": True},
+    )
+    with patch.object(
+        ValorParametroGlobalCommandRepository, "validate_context"
+    ) as context:
+        response = _request(
+            client,
+            16,
+            headers=_headers(op_id, 1),
+            endpoint=ENDPOINT_TEMPLATE.format(code),
+        )
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert _effects(db_session, op_id) == (0, 1)
+    context.assert_not_called()
 
 
 @pytest.mark.parametrize(
