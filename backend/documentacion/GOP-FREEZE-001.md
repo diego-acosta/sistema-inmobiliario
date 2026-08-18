@@ -1305,13 +1305,16 @@ columnas ausentes.
 
 Un `op_id` ya aplicado con envelope compatible es duplicado seguro o replay
 equivalente y no vuelve a producir efectos. El mismo `op_id` con envelope
-incompatible no es duplicado ni replay: se rechaza o registra como conflicto
-según el contrato transversal aplicable, conserva trazabilidad y nunca se
-descarta silenciosamente. Sólo para un `op_id` distinto se validan `uid_global`,
-`version_registro` y payload material para decidir aplicación controlada,
-convergencia, obsolescencia o conflicto. Nunca se inventa actor humano ni se usa
-Bearer humano como contrato de réplica. Este freeze no crea un nuevo enum
-técnico, endpoint GOP de sync ni formato ZIP/JSON alternativo.
+incompatible no es duplicado ni replay: siempre se clasifica y persiste como
+conflicto, no genera efecto de negocio, conserva trazabilidad obligatoria y queda
+sujeto al workflow transversal de resolución. `RECHAZADO` permanece disponible
+para otras entradas inválidas o errores técnicos cuando lo disponga el contrato
+transversal, pero no para reutilizar incompatiblemente un `op_id` ya aplicado.
+Sólo para un `op_id` distinto se validan `uid_global`, `version_registro` y
+payload material para decidir aplicación controlada, convergencia, obsolescencia
+o conflicto. Nunca se inventa actor humano ni se usa Bearer humano como contrato
+de réplica. Este freeze no crea un nuevo enum técnico, endpoint GOP de sync ni
+formato ZIP/JSON alternativo.
 
 ## 24. Conflictos interinstalación
 
@@ -1336,8 +1339,9 @@ envelope durable:
 
 1. Si el `op_id` ya fue aplicado, se compara el envelope/fingerprint durable:
    compatible significa `DUPLICADO` seguro o `REPLAY` equivalente, sin nuevo
-   efecto; incompatible significa `RECHAZADO` o `CONFLICTO` trazado según el
-   contrato transversal, nunca duplicado ni replay.
+   efecto; incompatible significa siempre `CONFLICTO` persistido y trazado, sin
+   efecto de negocio y sujeto al workflow transversal de resolución, nunca
+   duplicado, replay ni rechazado.
 2. Sólo si el `op_id` es distinto se evalúan `uid_global`, `version_registro` y
    payload material. La operación distinta conserva su propia trazabilidad y no
    se convierte en replay aunque su resultado sea materialmente convergente.
@@ -1471,7 +1475,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 41. Tarea es un concepto funcional sincronizable: toda mutación funcional compartida de la matriz es `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`, con independencia de actor humano u `origen = SISTEMA`; las consultas son `QUERY_READLIKE`.
 42. Todo command sincronizable reutiliza `X-Op-Id`, contexto `X-Sucursal-Id`/`X-Instalacion-Id`, ledger durable transversal y outbox atómico; `If-Match-Version` aplica a mutaciones de Tarea existente salvo la decisión específica de comentarios reservada a #493.
 43. La aplicación remota usa inbox, `uid_global`, `version_registro` y `op_id`, persiste divergencias materiales y no adopta LWW por timestamps.
-44. Un `op_id` ya aplicado sólo es duplicado seguro o replay si su envelope/fingerprint es materialmente compatible; una reutilización incompatible se rechaza o persiste como conflicto trazado según el contrato transversal.
+44. Un `op_id` ya aplicado sólo es duplicado seguro o replay si su envelope/fingerprint es materialmente compatible; una reutilización incompatible siempre es conflicto persistido y trazado, no genera efecto de negocio y queda sujeta al workflow transversal de resolución.
 45. La generación automática combina obligatoriamente idempotencia técnica por `op_id` e idempotencia funcional por el mismo hecho fuente, cuya clave y materialización concretas permanecen pendientes.
 46. `Tarea` tiene criticidad de sincronización MEDIA: sus conflictos se rigen por reglas explícitas, sin auto-merge genérico, y toda divergencia material no resoluble de forma segura se persiste como conflicto.
 
