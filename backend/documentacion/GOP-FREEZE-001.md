@@ -80,8 +80,16 @@ Una tarea puede ser manual o generada por sistema, estar asignada o no tener res
 ## 4. Identidad
 
 - `id_tarea`: identificador interno conceptual.
-- `uid_global`: condicionado por la decisión de sincronización; no se congela su incorporación hasta resolverla.
+- `uid_global`: identidad distribuida conceptual, inmutable y obligatoria para la
+  futura Tarea sincronizable; coexistirá con el ID local técnico, que no podrá
+  usarse como identidad entre instalaciones.
 - Código visible de tarea: fuera del MVP, salvo necesidad funcional posterior expresamente aprobada.
+
+La materialización física de ambos identificadores queda para DEV-ARCH-GOP, DER
+y SQL. #492 permanece abierto para las PK/FK concretas, la representación
+portable de referencias a creador, responsable y sucursal, las referencias aún
+no conocidas localmente y el DTO/payload físico definitivo; no reabre la
+sincronizabilidad de Tarea congelada por #491.
 
 ## 5. Origen y autoría
 
@@ -504,7 +512,11 @@ CAMBIO_TITULO
 CAMBIO_DESCRIPCION
 ```
 
-Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor anterior/nuevo cuando corresponda. El actor humano local deberá poder resolverse mediante la estrategia canónica interinstalación pendiente si el historial resulta sincronizable; este freeze no presupone columnas concretas de UID.
+Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor
+anterior/nuevo cuando corresponda. Tarea es sincronizable por #491; la
+representación portable del actor y de las demás referencias del historial se
+resolverá en #492. Este freeze no presupone columnas concretas de UID, PK/FK ni
+payload físico.
 
 `REABIERTA` representa exclusivamente la operación funcional explícita
 `COMPLETADA → PENDIENTE` definida en la sección 9.1; no es un estado persistido ni
@@ -528,9 +540,12 @@ El motivo es parte estructurada y obligatoria de esa entrada funcional: no puede
 quedar como texto libre opcional, inferirse desde un comentario ni sustituirse
 por éste. Los artefactos posteriores definirán su representación sin que este
 freeze establezca nombre de columna, tipo SQL, longitud, schema HTTP, DTO, tabla,
-JSON, evento, `command_code` ni payload de outbox. Si la Tarea resultara
-sincronizable, su estrategia todavía abierta deberá preservar también este dato;
-esta regla no decide sync, evento ni outbox.
+JSON, evento, `command_code` ni payload de outbox. La estrategia sincronizable
+ya congelada para Tarea deberá preservar también este dato cuando corresponda a
+la operación distribuible; esta regla no convierte el historial funcional en
+outbox o inbox ni define el evento o payload físico. Las referencias portables
+siguen pendientes de #492 y la granularidad de comentario/versionado, de #493
+cuando corresponda.
 
 ```text
 REABIERTA → historial_funcional
@@ -539,6 +554,7 @@ historial_funcional
 != auditoria_administrativa
 != log_tecnico
 != outbox
+!= inbox
 ```
 
 ## 17. Generación automática
@@ -1079,8 +1095,9 @@ por falta de evidencia y por exceder el MVP.
 DEV-ARCH-GOP, DEV-SRV y DEV-API deberán materializar estas relaciones junto con
 Administrativo sin cambiar su ownership ni inventar equivalencias con roles o
 permisos técnicos. Permanecen pendientes los mecanismos de autorización,
-contratos HTTP, SQL y tests. Esta decisión no resuelve sync, identidad
-interinstalación ni el efecto de comentar sobre `version_registro`.
+contratos HTTP, SQL y tests. Esta decisión funcional no modifica la estrategia
+sync ya congelada por #491; siguen pendientes la identidad interinstalación de
+#492 y el efecto de comentar sobre `version_registro` de #493.
 
 ## 21. Decisión CORE-EF y estrategia de sincronización (#491)
 
@@ -1261,25 +1278,38 @@ responsabilidades distintas; no se presume que todo el historial viaje como una
 única estructura.
 
 La recepción remota pertenece al soporte Técnico y no es un command humano. Debe
-registrar/deduplicar por `op_id` mediante inbox o equivalente, validar el
-`uid_global`, comparar `version_registro`, aplicar idempotentemente, propagar la
-baja lógica y dejar trazados rechazos o conflictos. Nunca inventa actor humano,
+registrar y consultar `op_id` mediante inbox o equivalente antes de comparar el
+estado material. Un `op_id` ya aplicado se clasifica como duplicado seguro y no
+vuelve a producir efectos de negocio. Sólo para un `op_id` distinto se validan
+`uid_global`, `version_registro` y payload material para decidir la aplicación
+controlada, convergencia, obsolescencia o conflicto. Nunca inventa actor humano,
 no usa Bearer humano como contrato de réplica y no sobrescribe silenciosamente.
-Este freeze no crea endpoint GOP de sync ni formato ZIP/JSON alternativo.
+Este freeze no crea un nuevo enum técnico, endpoint GOP de sync ni formato
+ZIP/JSON alternativo.
 
 ## 24. Conflictos interinstalación
 
-Para el mismo `uid_global`, la aplicación entrante debe seguir como mínimo esta
-clasificación conceptual:
+La aplicación entrante sigue este orden conceptual. La clave primaria de
+idempotencia es `op_id`, no la versión, el payload ni un timestamp:
+
+1. Si el `op_id` ya fue aplicado, es `DUPLICADO` seguro: se conserva la
+   trazabilidad y no se genera un nuevo efecto de negocio.
+2. Si el `op_id` es distinto, se evalúan `uid_global`, `version_registro` y
+   payload material. La operación distinta conserva su propia trazabilidad y no
+   se convierte en replay aunque su resultado sea materialmente convergente.
+
+Para un `op_id` distinto y el mismo `uid_global`, rige como mínimo esta matriz:
 
 | Caso | Tratamiento congelado |
 | --- | --- |
 | Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia irresoluble se rechaza o registra como inconsistencia, no se fuerza. |
-| Misma versión y payload material igual | Duplicado/idempotente; no produce efecto nuevo. |
+| Misma versión y payload material igual | Operación distinta pero materialmente convergente; no se clasifica automáticamente como duplicado ni replay y se conserva la trazabilidad de ambas operaciones. |
 | Misma versión y payload material distinto | Inconsistencia/conflicto material persistido; no sobrescribir. |
-| Versión entrante menor que la local | Cambio obsoleto/duplicado según `op_id`; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
+| Versión entrante menor que la local | Cambio atrasado u obsoleto; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
 
-`uid_global`, `version_registro` y `op_id` son los criterios primarios exigidos.
+`op_id` gobierna exclusivamente la clasificación idempotente de duplicado y
+replay. Para operaciones distintas, `uid_global` y `version_registro` gobiernan
+la comparación del estado junto con el payload material.
 `updated_at` y la instalación de origen sólo pueden ser criterios secundarios o
 auxiliares: no se adopta LWW por timestamp. CORE-EF exige persistir la divergencia
 no resoluble, pero no aporta una regla GOP segura de auto-merge; por ello no se
@@ -1406,9 +1436,10 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 - Una baja técnica excluye la tarea de lecturas ordinarias, mientras una
   cancelación permanece como hecho funcional visible.
 - La prioridad no altera vencimiento, estado, autorización ni SLA.
-- Ninguna de estas decisiones traslada tareas a `operativo`, materializa una
-  entidad técnica ni resuelve sync, identidad portable, permisos o versionado de
-  comentarios.
+- Ninguna de estas decisiones traslada tareas a `operativo` ni materializa una
+  entidad técnica. La sincronización general está resuelta documentalmente por
+  #491; siguen pendientes la identidad portable de #492, los permisos y el
+  versionado de comentarios de #493.
 - El scope de sucursal/global limita consultas y gestión por alcance sin usar
   `id_instalacion_origen`; creador y responsable siguen siendo relaciones
   distintas.
