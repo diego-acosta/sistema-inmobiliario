@@ -1701,10 +1701,18 @@ portable definido por el contrato futuro del generador; no se inventa aquí un
 catálogo físico. No es identidad humana, `op_id`, identidad del hecho fuente ni
 identidad de la Tarea. No se crea usuario global `SYSTEM`.
 
-El mismo `uid_global` más entidad y payload compatibles conserva una sola
-identidad distribuida. El mismo UID con versión/payload incompatibles sigue la
-matriz de la sección 24 y se persiste como conflicto; nunca se crea una segunda
-Tarea con ese UID, se reasigna el UID ni se adopta la PK local del emisor.
+El mismo `uid_global` conserva una única identidad distribuida de Tarea. Su
+evolución remota se evalúa exclusivamente conforme a la matriz de la sección 24:
+una versión entrante mayor es candidata a aplicación controlada, previa
+validación de continuidad, payload y referencias portables; la misma versión con
+payload material igual es una operación distinta materialmente convergente, no
+conflicto, replay ni duplicado automático; la misma versión con payload material
+distinto constituye conflicto material persistido y no se sobrescribe; y una
+versión menor es atrasada u obsoleta, no retrocede ni sobrescribe el snapshot
+local y conserva trazabilidad. Una falla de continuidad sólo deriva en conflicto
+cuando además existe divergencia material que las reglas explícitas no pueden
+resolver de forma segura. Nunca se crea una segunda Tarea con el mismo
+`uid_global`, se reasigna el UID ni se adopta la PK local del emisor.
 
 ### 30.8 Evidencia, inferencia, decisión y efecto posterior
 
