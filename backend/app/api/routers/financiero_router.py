@@ -3384,7 +3384,13 @@ def aplicar_indexacion_cuotas_v2(
         )
     return AplicarIndexacionCuotasV2Response(data=result.data)
 
-@router.post("/api/v1/financiero/inbox", status_code=204)
+@router.post(
+    "/api/v1/financiero/inbox",
+    status_code=204,
+    responses={
+        400: {"model": ErrorResponse},
+    },
+)
 def financiero_inbox(
     request: InboxEventRequest,
     db: Session = Depends(get_db),

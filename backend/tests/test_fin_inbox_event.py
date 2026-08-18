@@ -11,6 +11,19 @@ from tests.test_escrituraciones_create import _confirmar_venta_publica
 URL = "/api/v1/financiero/inbox"
 
 
+def test_inbox_openapi_declara_error_response_400(client) -> None:
+    schema = client.get("/openapi.json").json()
+    operation = schema["paths"][URL]["post"]
+    response_400 = operation["responses"]["400"]
+    error_schema_ref = response_400["content"]["application/json"]["schema"]["$ref"]
+    error_schema_name = error_schema_ref.rsplit("/", 1)[-1]
+
+    assert error_schema_name.endswith("__ErrorResponse")
+    assert {"error_code", "error_message"} <= set(
+        schema["components"]["schemas"][error_schema_name]["properties"]
+    )
+
+
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
 
