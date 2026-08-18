@@ -188,6 +188,16 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - aplica_a: consultas tecnicas
 - origen_principal: CORE-EF
 
+### RN-TEC-034 — Dependencia portable pendiente
+- descripcion: una operación remota válida cuya referencia portable requerida no está disponible localmente debe conservarse en espera retryable, sin efecto parcial, placeholder, cambio de identidad ni clasificación automática como rechazo o conflicto.
+- aplica_a: inbox, operacion_distribuida, sincronizacion
+- origen_principal: SRV-TEC-002
+
+### RN-TEC-035 — Claim único y retry controlado
+- descripcion: el reproceso de una dependencia pendiente debe reclamar atómicamente el registro original, preservar idempotencia y trazabilidad, aplicar backoff controlado y evitar ejecución concurrente o infinita.
+- aplica_a: inbox, operacion_distribuida, sincronizacion
+- origen_principal: SRV-TEC-002
+
 ## Notas
 - Este catálogo deriva del DEV-SRV del dominio Técnico.
 - No reemplaza al CAT-CU maestro.

@@ -28,8 +28,8 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
 | B — Administrativo | #407–#412 implementados. #482 completa la preparación estructural inicial del calendario comercial: definiciones, raíz física vacía, invariantes y permiso; sin runtime funcional. | #425 permanece coordinador abierto y dividido; #482 es el incremento estructural, #483 el siguiente. #426 continúa bloqueado. | PR #487 de #482 en revisión. | #483; luego #484–#486 sin cerrar anticipadamente #425. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
-| Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
-| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; #492 congela mayormente la identidad interinstalación, pero mantiene pendiente la política técnica retryable para referencias no resolubles. | Épica #489 abierta; #492 continúa abierto y no está listo para cierre; #493 (comentario/versionado) sigue pendiente y separado. | Baseline verificado: merge de PR #494 (`141414f`), cierre documental de #491. | Definir la retención/reproceso técnico pendiente de #492 sin convertir `REJECTED` en retryable; luego resolver #493 y las dependencias de materialización antes de DER/SQL/API. |
+| Transversal — CORE-EF / Técnico | #469 y #470 están completados; #412 es el primer consumidor productivo validado. `PENDIENTE_DEPENDENCIA` queda congelado como política retryable transversal, todavía no implementada. | #402 está cerrado/completado; #461 permanece abierto y separado. La materialización SQL/repository/worker/tests de retry de inbox requiere incremento Técnico posterior. | PR #478 mergeado; política documental de #492 sobre baseline `1e994ba`. | Materializar incrementalmente el estado y claim/reclaim Técnico sin cambiar `REJECTED` terminal ni romper consumidores existentes. |
+| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; identidad portable y retención/reproceso de #492 quedan documentalmente definidos. | Épica #489 abierta; #492 sigue abierto pero queda listo para cierre después del merge; #493 (comentario/versionado) sigue pendiente y separado. | Baseline verificado: merge de PR #495 (`1e994ba`), cierre documental del blocker interno #10. | Resolver #493 y las dependencias de materialización administrativa/técnica antes de DER/SQL/API; no implementar Tarea desde este incremento. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -119,9 +119,9 @@ Blockers internos de `GOP-FREEZE-001`:
 
 - #6 — estrategia de sync: resuelto documentalmente por #491 / PR #494.
 - #7 — comentario / `version_registro`: abierto y coordinado con #493.
-- #10 — identidad canónica interinstalación: abierto/parcialmente resuelto por el
-  incremento actual #492; queda pendiente la política técnica retryable y #492
-  no está listo para cierre.
+- #10 — identidad canónica interinstalación: documentalmente resuelto por #492;
+  la política retryable transversal está congelada y su runtime Técnico queda
+  pendiente. #492 sigue abierto y queda listo para cierre después del merge.
 
 #492 congela `uid_global` de Tarea como identidad distribuida y reserva el futuro
 ID local sólo para joins/FKs. Creador, responsable y actores de
@@ -133,15 +133,15 @@ las segundas expresan procedencia técnica, sin confundir `Tarea.id_sucursal` co
 `X-Sucursal-Id` ni convertir instalación en scope.
 
 La recepción identifica Tarea y referencias sólo por identidades portables y las
-resuelve a PK locales antes de persistir. Una referencia requerida no resoluble
-no genera placeholders ni copia PK remota: la operación y su motivo se preservan
-con trazabilidad técnica y la Tarea no se aplica parcialmente. El runtime actual
-marca `REJECTED` como terminal/no retryable y `claim` no reabre el mismo
-`(event_id, consumer)`; la mera ausencia temporal tampoco se fuerza a
-`CONFLICTO`. La política técnica retryable de retención/reproceso queda **NO
-CONGELADA / PENDIENTE DE DISEÑO TÉCNICO**, sin inventar estados ni scheduler.
-Por ese único subpendiente #492 todavía no está listo para cierre. #492 no diseña
-DTO, evento, DER, SQL, API ni runtime. Sólo congela identidad portable del autor
+resuelve a PK locales antes de persistir. Una referencia requerida temporalmente
+no resoluble no genera placeholders ni copia PK remota: Técnico congela
+`PENDIENTE_DEPENDENCIA` como espera retryable del mismo registro, con claim
+atómico, backoff controlado y trazabilidad, sin aplicación parcial. `REJECTED`
+permanece terminal y la mera ausencia temporal no es `CONFLICTO`. El runtime
+actual todavía no implementa esa política: `claim` no reabre el mismo
+`(event_id, consumer)` ni existen lease, payload retenido o scheduler. #492 queda
+documentalmente listo para cierre después del merge, sin diseñar DTO, evento,
+DER, SQL, API ni runtime GOP. Sólo congela identidad portable del autor
 de comentario; #493 sigue abierto para granularidad, `version_registro`,
 `If-Match` y frontera transaccional. GOP todavía no está listo para DER/SQL/API.
 No se cierran #489, #492 ni #493 mediante esta actualización.

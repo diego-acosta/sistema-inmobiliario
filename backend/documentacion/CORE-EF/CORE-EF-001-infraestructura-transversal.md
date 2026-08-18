@@ -403,10 +403,34 @@ El inbox DEBE soportar estados equivalentes a:
 
 - RECIBIDO
 - EN_PROCESO
+- PENDIENTE_DEPENDENCIA
 - APLICADO
 - DUPLICADO
 - RECHAZADO
 - CONFLICTO
+
+`PENDIENTE_DEPENDENCIA` es un estado técnico no terminal y retryable para una
+operación válida cuya referencia portable requerida todavía no puede resolverse
+localmente. No equivale a ejecución activa, rechazo ni conflicto. La transición
+debe conservar sin cambios `op_id`, identidad del evento y consumidor, identidad
+portable de entidad, versión, payload y su huella; no puede aplicar parcialmente,
+copiar una PK remota ni crear placeholders.
+
+El reproceso de ese estado debe realizar un claim atómico del mismo registro de
+inbox. Sólo son elegibles los registros cuyo próximo intento ya venció o que un
+operador técnico habilitó explícitamente después de verificar la dependencia.
+Un único worker pasa el registro a `EN_PROCESO`; los claims concurrentes o
+duplicados no generan efectos. Cada espera registra motivo sanitizado, cantidad
+de intentos y próximo instante elegible. El backoff acotado y creciente evita un
+loop inmediato; una política operativa puede pausar el retry automático, pero no
+descartar el registro ni alterar su identidad. No se congela un cron concreto.
+
+La aparición de la dependencia permite volver a resolver todas las referencias y
+aplicar atómicamente. Payload inválido o imposibilidad permanente termina en
+`RECHAZADO`; una divergencia material termina en `CONFLICTO`; la mera ausencia
+temporal no pertenece a ninguno de esos resultados. Un límite operativo de
+intentos agota sólo el retry automático y deja la operación pendiente para
+revisión/reproceso técnico manual: no la convierte por sí mismo en rechazo.
 
 **REQ-SYNC-070**  
 Un cambio con `op_id` ya aplicado NO DEBE volver a producir efectos de negocio.
