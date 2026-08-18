@@ -86,10 +86,9 @@ Una tarea puede ser manual o generada por sistema, estar asignada o no tener res
 - Código visible de tarea: fuera del MVP, salvo necesidad funcional posterior expresamente aprobada.
 
 La materialización física de ambos identificadores queda para DEV-ARCH-GOP, DER
-y SQL. #492 permanece abierto para las PK/FK concretas, la representación
-portable de referencias a creador, responsable y sucursal, las referencias aún
-no conocidas localmente y el DTO/payload físico definitivo; no reabre la
-sincronizabilidad de Tarea congelada por #491.
+y SQL. #492 congela en la sección 30 la identidad conceptual portable de Tarea
+y sus referencias, sin decidir PK/FK concretas ni un DTO/payload físico; no
+reabre la sincronizabilidad congelada por #491.
 
 ## 5. Origen y autoría
 
@@ -491,7 +490,7 @@ Tarea
 └── Comentarios 0..N
 ```
 
-Cada comentario conserva tarea, autor, texto e instante. Para autor humano se usa `AuthenticatedPrincipal.id_usuario`, que identifica al actor local en la instalación donde ocurre la operación. Si esa referencia debe viajar mediante sync, será necesaria la identidad canónica interinstalación pendiente; este freeze no diseña su mecanismo concreto ni presupone columnas de UID.
+Cada comentario conserva tarea, autor, texto e instante. Para autor humano se usa `AuthenticatedPrincipal.id_usuario`, que identifica al actor local en la instalación donde ocurre la operación. Si esa referencia viaja mediante sync, usa el contrato conceptual de identidad administrativa portable congelado en la sección 30; su materialización sigue pendiente y este freeze no presupone columnas de UID.
 
 Se congela la propuesta de comentario **append-only** para el MVP: no se edita, no se borra físicamente y se corrige mediante un nuevo comentario. Agregarlo no cambia automáticamente el estado.
 
@@ -515,8 +514,8 @@ CAMBIO_DESCRIPCION
 Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor
 anterior/nuevo cuando corresponda. Tarea es sincronizable por #491; la
 representación portable del actor y de las demás referencias del historial se
-resolverá en #492. Este freeze no presupone columnas concretas de UID, PK/FK ni
-payload físico.
+resuelve conceptualmente en #492. Este freeze no presupone columnas concretas de
+UID, PK/FK ni payload físico.
 
 `REABIERTA` representa exclusivamente la operación funcional explícita
 `COMPLETADA → PENDIENTE` definida en la sección 9.1; no es un estado persistido ni
@@ -544,7 +543,8 @@ JSON, evento, `command_code` ni payload de outbox. La estrategia sincronizable
 ya congelada para Tarea deberá preservar también este dato cuando corresponda a
 la operación distribuible; esta regla no convierte el historial funcional en
 outbox o inbox ni define el evento o payload físico. Las referencias portables
-siguen pendientes de #492 y la granularidad de comentario/versionado, de #493
+siguen sujetas a la materialización posterior del contrato #492 y la granularidad
+de comentario/versionado, a #493.
 cuando corresponda.
 
 ```text
@@ -1109,8 +1109,8 @@ DEV-ARCH-GOP, DEV-SRV y DEV-API deberán materializar estas relaciones junto con
 Administrativo sin cambiar su ownership ni inventar equivalencias con roles o
 permisos técnicos. Permanecen pendientes los mecanismos de autorización,
 contratos HTTP, SQL y tests. Esta decisión funcional no modifica la estrategia
-sync ya congelada por #491; siguen pendientes la identidad interinstalación de
-#492 y el efecto de comentar sobre `version_registro` de #493.
+sync ya congelada por #491; #492 congela la identidad interinstalación y sigue
+pendiente el efecto de comentar sobre `version_registro` de #493.
 
 ## 21. Decisión CORE-EF y estrategia de sincronización (#491)
 
@@ -1181,8 +1181,8 @@ matriz; las consultas no pertenecen a esa categoría, sino a `QUERY_READLIKE`.
   sincronizabilidad. Tampoco se copia mecánicamente otro dominio ni se declara
   local una creación `SISTEMA`.
 - **Impacto posterior:** DEV-ARCH/DER/SQL/DEV-SRV/DEV-API GOP deberán materializar
-  esta clasificación, pero dependen de #492 para referencias portables y de
-  #493 para granularidad de comentario/versionado. Este freeze no define nombres
+  esta clasificación, pero dependen de materializar el contrato portable #492 y
+  de #493 para granularidad de comentario/versionado. Este freeze no define nombres
   de endpoint, payload físico, evento concreto ni allowlist concreta.
 
 ### 21.3 Headers técnicos y actor
@@ -1231,13 +1231,12 @@ como identidad distribuida. Las altas nacen en versión 1 y las mutaciones
 ordinarias del snapshot y la baja lógica incrementan una vez la versión. El
 optimistic locking local y la comparación distribuida son problemas distintos.
 
-#492 permanece abierto para definir la representación definitiva de las
-referencias remotas de creador, responsable y sucursal, el tratamiento de
-referencias aún desconocidas localmente y el DTO/payload portable. GOP consumirá
-la identidad canónica que definan Administrativo/Técnico; no agrega UID a
-`usuario`, no crea mapping propio y no usa IDs locales como identidad remota.
-La estrategia de #491 requiere resolver esas referencias antes de un contrato
-físico completo, pero no selecciona aquí su representación.
+#492 congela en la sección 30 la representación **conceptual** de las referencias
+remotas de creador, responsable, sucursal e instalación y el tratamiento de
+referencias aún desconocidas localmente. El DTO/payload físico permanece
+pendiente. GOP consumirá la identidad canónica que materialicen
+Administrativo/Técnico; no agrega UID a `usuario`, no crea mapping propio y no
+usa IDs locales como identidad remota.
 
 #493 permanece abierto para decidir si agregar comentario incrementa
 `Tarea.version_registro`, si el comentario posee identidad/versionado propio y
@@ -1350,7 +1349,7 @@ Para un `op_id` distinto y el mismo `uid_global`, rige como mínimo esta matriz:
 
 | Caso | Tratamiento congelado |
 | --- | --- |
-| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia irresoluble se rechaza o registra como inconsistencia, no se fuerza. |
+| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia requerida no resoluble impide aplicar; su retención/reproceso técnico queda pendiente de diseño y no se fuerza a rechazo o conflicto. |
 | Misma versión y payload material igual | Operación distinta pero materialmente convergente; no se clasifica automáticamente como duplicado ni replay y se conserva la trazabilidad de ambas operaciones. |
 | Misma versión y payload material distinto | Inconsistencia/conflicto material persistido; no sobrescribir. |
 | Versión entrante menor que la local | Cambio atrasado u obsoleto; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
@@ -1364,8 +1363,8 @@ auxiliares: no se adopta LWW por timestamp. CORE-EF exige persistir la divergenc
 no resoluble, pero no aporta una regla GOP segura de auto-merge; por ello no se
 inventa resolución automática. Una resolución con impacto en datos requiere
 trazabilidad y nuevo `op_id`. La validación concreta de referencias portables y
-del payload queda condicionada por #492; la granularidad de comentarios, por
-#493.
+del payload deberá materializar el contrato de #492; la granularidad de
+comentarios queda condicionada por #493.
 
 ## 25. Baja lógica y locks
 
@@ -1490,42 +1489,306 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 - La prioridad no altera vencimiento, estado, autorización ni SLA.
 - Ninguna de estas decisiones traslada tareas a `operativo` ni materializa una
   entidad técnica. La sincronización general está resuelta documentalmente por
-  #491; siguen pendientes la identidad portable de #492, los permisos y el
-  versionado de comentarios de #493.
+  #491; la identidad portable queda congelada conceptualmente por #492 y siguen
+  pendientes su materialización técnica, los permisos y el versionado de
+  comentarios de #493.
 - El scope de sucursal/global limita consultas y gestión por alcance sin usar
   `id_instalacion_origen`; creador y responsable siguen siendo relaciones
   distintas.
 
-## 30. Estado de blockers y criterio de #491
+## 30. Identidad canónica interinstalación y referencias portables (#492)
+
+### 30.1 Alcance, clasificación y regla canónica
+
+Este incremento avanza parcialmente el blocker interno **#10**, que permanece
+abierto por la política retryable pendiente. `Tarea` sigue siendo núcleo de
+`gestion_operativa`; las identidades de usuario provistas
+por Administrativo y la resolución distribuida provista por Técnico son soporte
+transversal. `sucursal` e `instalacion` siguen bajo ownership de `operativo`:
+referenciarlas no transfiere su semántica a GOP.
+
+La regla canónica queda congelada sin diseñar almacenamiento ni transporte:
+
+```text
+id_tarea local
+-> identidad técnica de la materialización local, joins y FKs
+
+uid_global de Tarea
+-> identidad canónica distribuida, global, única, inmutable y no reutilizable
+-> identidad del payload sync, comparación remota y conflictos
+```
+
+Dos materializaciones compatibles con el mismo `uid_global` representan la
+misma Tarea distribuida aunque sus IDs locales difieran. Dos Tareas distintas no
+pueden compartirlo. Igual `uid_global` con contenido incompatible se trata según
+las reglas de idempotencia, versión y conflicto de las secciones 23 y 24; nunca
+autoriza sobrescritura silenciosa. El formato SQL de `uid_global` y la elección
+UUID v4/v7 continúan pendientes de CORE-EF.
+
+Se mantienen cinco dimensiones irreemplazables:
+
+```text
+uid_global de Tarea              -> identidad distribuida de la entidad
+op_id                            -> identidad global de la operación
+identidad portable de usuario    -> actor o referente humano
+identidad portable de sucursal   -> scope funcional referenciado
+identidad portable de instalación-> procedencia/contexto técnico
+```
+
+`AuthenticatedPrincipal.id_usuario` es identidad humana local, no identidad de
+réplica. `id_instalacion_origen` es procedencia técnica, no scope. Ninguna de
+estas dimensiones sustituye ni se deriva de otra.
+
+### 30.2 Matriz conceptual de identidades
+
+| Concepto | Identidad local al materializar | Identidad portable/remota | Uso | Prohibición |
+| --- | --- | --- | --- | --- |
+| Tarea | futuro `id_tarea` técnico | `uid_global` de Tarea | identidad distribuida y comparación remota | no transportar ni comparar la PK local como autoridad |
+| Creador humano | `id_usuario_creador`, derivado localmente de `AuthenticatedPrincipal.id_usuario` | identidad global administrativa de usuario — **CONTRATO REQUERIDO / PENDIENTE DE MATERIALIZACIÓN** | autoría humana de `origen = USUARIO` | no transportar `id_usuario` local ni inventar UID/usuario técnico |
+| Responsable | `id_usuario_responsable` local, opcional | identidad global administrativa de usuario — **CONTRATO REQUERIDO / PENDIENTE DE MATERIALIZACIÓN** | asignación portable | no transportar PK local ni confundir resolución con elegibilidad/autorización |
+| Sucursal funcional | `id_sucursal` local, opcional e inmutable en MVP | `sucursal.uid_global`, existente en SQL real | scope global o de una sucursal | no transportar `id_sucursal` local; no confundir con `X-Sucursal-Id` |
+| Instalación de origen | `id_instalacion_origen` local | `instalacion.uid_global`, existente en SQL real | procedencia técnica del alta | no usar PK remota, código de deployment ni instalación como scope |
+| Instalación de última modificación | `id_instalacion_ultima_modificacion` local | `instalacion.uid_global`, existente en SQL real | procedencia técnica del último cambio | no reemplaza `op_id`, versión ni scope |
+| Actor humano de historial | futuro ID local de usuario, si el diseño lo materializa | misma identidad global administrativa requerida para usuario | atribución funcional portable | historial no es outbox ni inbox; no diseñar columna aquí |
+| Autor humano de comentario | futuro ID local de usuario, si el diseño lo materializa | misma identidad global administrativa requerida para usuario | autoría portable, únicamente | no decidir versión, target ni transacción de comentario (#493) |
+| Generador de sistema | sin usuario creador; código funcional estable | el mismo código funcional estable que defina el futuro catálogo/contrato — **PENDIENTE DE MATERIALIZACIÓN** | identificar el proceso funcional generador | no es usuario, `op_id`, hecho fuente ni UID de Tarea |
+
+La evidencia física distingue los casos: `sucursal` e `instalacion` ya poseen
+`uid_global` con unicidad en el SQL real y CORE-EF las declara sincronizables.
+En cambio, la tabla real `usuario` posee PK local y metadata de versión,
+procedencia y operaciones, pero **no posee `uid_global`**. Aunque la matriz
+normativa general de CORE-EF clasifica `usuario` como sincronizable con UID, esa
+identidad todavía no está materializada ni expuesta por el runtime auditado.
+Por ello GOP requiere que Administrativo formalice y materialice una identidad
+global canónica de usuario antes del DER/SQL/API de Tarea; este freeze no inventa
+una columna, un alias por `login`/email/código ni un mapping GOP.
+
+Para instalación, la identidad distribuida es `instalacion.uid_global`. El
+`LOCAL_INSTALLATION_CODE` y `codigo_instalacion` sirven para resolver de forma
+default-deny la instalación local en su contexto documentado; no sustituyen el
+UID dentro de información distribuida. Para sucursal, la referencia portable es
+`sucursal.uid_global`; `codigo_sucursal` tampoco se eleva aquí a identidad de
+réplica.
+
+### 30.3 Creador, responsable, historial y comentarios
+
+En una creación humana, Bearer se resuelve localmente a
+`AuthenticatedPrincipal.id_usuario` y ese ID se persiste como referencia local.
+Al distribuir la Tarea, el creador se expresa con la identidad global
+administrativa requerida y el destino la resuelve a su propio `id_usuario`. El
+mismo principio aplica al responsable inicial y a toda asignación o reasignación:
+el cambio identifica al nuevo referente de forma portable; una desasignación
+expresa ausencia, no un ID mágico. Las reglas de elegibilidad congeladas siguen
+vigentes y no se reinterpretan en #492.
+
+El actor humano de historial y el autor humano de comentario, si esos hechos
+viajan, usan conceptualmente la misma identidad portable administrativa. Esto
+sólo congela autoría portable. `historial != outbox`, `historial != inbox` y
+ninguno reemplaza el snapshot. #493 permanece abierto para decidir si comentar
+incrementa `Tarea.version_registro`, cuál es el target de `If-Match`, si existe
+versionado propio y cuál es su frontera transaccional física.
+
+Resolver una identidad portable **no autoriza** al usuario. En destino, la
+autorización efectiva y la vigencia de sus habilitaciones siguen perteneciendo
+a Administrativo y a las reglas funcionales ya congeladas. La recepción técnica
+no inventa permisos GOP ni reejecuta un command humano como si el receptor fuera
+el actor original.
+
+### 30.4 Sucursal funcional e instalaciones técnicas
+
+`Tarea.id_sucursal` sigue representando exclusivamente scope funcional: `NULL`
+para tarea global o una FK local para una única sucursal. En sync, ese referente
+viaja por `sucursal.uid_global` y el destino resuelve su propia PK. El header
+`X-Sucursal-Id` continúa siendo contexto técnico/contractual del command local;
+no se copia al campo, no prueba el scope y no es la identidad remota de sucursal.
+
+`id_instalacion_origen` e `id_instalacion_ultima_modificacion` son FKs técnicas
+locales al materializarse. La procedencia distribuida correspondiente usa
+`instalacion.uid_global` y se resuelve localmente en destino. Ni
+`X-Instalacion-Id`, ni una instalación origen, ni una instalación de última
+modificación convierten una Tarea en local o de sucursal:
+
+```text
+id_instalacion_origen != scope_funcional_tarea
+id_instalacion_ultima_modificacion != scope_funcional_tarea
+```
+
+### 30.5 Payload conceptual y resolución en destino
+
+Sin congelar JSON, DTO, evento ni nombres de campos físicos, la operación
+distribuida debe contener las identidades portables necesarias:
+
+```text
+payload remoto
+-> identifica Tarea por uid_global
+-> identifica creador/responsable/actor por identidad administrativa portable
+-> identifica sucursal e instalaciones por sus uid_global
+-> destino resuelve cada referencia a su ID local
+-> sólo entonces persiste relaciones locales válidas
+```
+
+Pueden viajar como autoridad conceptual: `uid_global` de Tarea,
+`sucursal.uid_global`, `instalacion.uid_global`, la futura identidad global
+administrativa de usuario, `op_id`, `version_registro` y el código funcional
+estable de `generador_sistema` cuando su contrato posterior lo catalogue. El
+hecho fuente de una generación automática conserva su propia identidad
+funcional para deduplicación y no reemplaza el `uid_global` de Tarea.
+
+No son autoridad remota y no deben usarse para resolver referencias:
+
+```text
+id_tarea
+id_usuario / id_usuario_creador / id_usuario_responsable
+id_sucursal
+id_instalacion / id_instalacion_origen / id_instalacion_ultima_modificacion
+cualquier otra PK local
+X-Sucursal-Id / X-Instalacion-Id
+```
+
+Una implementación puede conservar IDs locales dentro de su base, ledger o
+proyección después de una resolución válida; no puede persistir la PK recibida
+del emisor como si fuera propia ni crear tablas de mapeo manual ad hoc en GOP.
+
+### 30.6 Referencias todavía no resolubles y dependencias de sync
+
+CORE-EF/SRV-TEC exigen registrar todo cambio recibido mediante inbox, conservar
+los rechazados, persistir los conflictos y evitar efectos duplicados, pero no
+congelan una política completa de retención/reproceso para una dependencia aún
+no resoluble. Por ello se congela únicamente la regla mínima segura:
+
+```text
+referencia requerida no resoluble localmente
+-> no aplicar ni materializar una relación inválida
+-> no aplicar parcialmente la Tarea
+-> no copiar PK remota
+-> no crear placeholder ni usuario/sucursal/instalación ficticia
+-> preservar evento, payload, motivo y trazabilidad técnica
+
+política técnica de retención/reproceso para esa dependencia
+-> NO CONGELADA / PENDIENTE DE DISEÑO TÉCNICO
+```
+
+Una referencia opcional explícitamente ausente no es una referencia
+irresoluble. En cambio, si creador humano, sucursal funcional presente,
+instalación técnica requerida o responsable presente no se resuelven, el
+snapshot no se aplica parcialmente. La decisión protege integridad sin inventar
+filas placeholder ni afirmar que existe hoy un estado `PENDIENTE_REFERENCIA`,
+`WAITING_DEPENDENCY`, `RETRYABLE`, `DEFERRED` o equivalente.
+
+El runtime vigente de `InboxRepository` no ofrece un camino estándar retryable
+para este caso: `mark_as_rejected(...)` lleva a `REJECTED`, documentado por la
+implementación como error de negocio que no debe reintentarse, y `claim(...)`
+usa `ON CONFLICT (event_id, consumer) DO NOTHING`, por lo que no vuelve a
+reclamar normalmente el mismo par. En consecuencia, **REJECTED es terminal/no
+retryable en el runtime actual** y este freeze no lo presenta como mecanismo de
+espera. Tampoco fuerza `CONFLICTO`: la ausencia temporal de una dependencia con
+identidad válida no prueba por sí sola divergencia material ni colisión
+semántica. `SRV-TEC-002` no congela una transición completa para retener y
+reprocesar este caso; #492 deja esa mecánica expresamente pendiente en vez de
+inventar estado, enum, tabla, transición o scheduler.
+
+Tarea depende de que las referencias requeridas existan localmente antes de su
+aplicación. Usuario requiere primero la futura materialización y sincronización
+administrativa de identidad; sucursal e instalación ya tienen UID físico, pero
+su distribución/resolución runtime aplicable debe existir. No se congela un
+orden global de paquetes ni una política retryable porque no hay evidencia de un
+scheduler o transición de dependencias maestras; tampoco se crea un mapping GOP.
+
+### 30.7 Origen SISTEMA y conflictos de identidad
+
+Para `origen = SISTEMA`, `id_usuario_creador = NULL` en toda instalación y
+`generador_sistema` es obligatorio. Debe ser un código funcional estable y
+portable definido por el contrato futuro del generador; no se inventa aquí un
+catálogo físico. No es identidad humana, `op_id`, identidad del hecho fuente ni
+identidad de la Tarea. No se crea usuario global `SYSTEM`.
+
+El mismo `uid_global` conserva una única identidad distribuida de Tarea. Su
+evolución remota se evalúa exclusivamente conforme a la matriz de la sección 24:
+una versión entrante mayor es candidata a aplicación controlada, previa
+validación de continuidad, payload y referencias portables; la misma versión con
+payload material igual es una operación distinta materialmente convergente, no
+conflicto, replay ni duplicado automático; la misma versión con payload material
+distinto constituye conflicto material persistido y no se sobrescribe; y una
+versión menor es atrasada u obsoleta, no retrocede ni sobrescribe el snapshot
+local y conserva trazabilidad. Una falla de continuidad sólo deriva en conflicto
+cuando además existe divergencia material que las reglas explícitas no pueden
+resolver de forma segura. Nunca se crea una segunda Tarea con el mismo
+`uid_global`, se reasigna el UID ni se adopta la PK local del emisor.
+
+### 30.8 Evidencia, inferencia, decisión y efecto posterior
+
+- **Repositorio / arquitectura:** DEV-ARCH General preserva ownership aunque un
+  dominio referencie a otro; DEV-ARCH Administrativo mantiene `usuario` y
+  autorización; DEV-ARCH Operativo mantiene `sucursal` e `instalacion`.
+- **Especificación formal:** CORE-EF REQ-SYNC-002/003/004/007/008/009 exige ID
+  local para joins y `uid_global` inmutable/no reutilizable para toda comparación
+  distribuida; REQ-SYNC-067/071/072 exige trazabilidad de recepción, rechazo y
+  conflicto. SRV-TEC mantiene inbox, aplicación idempotente y conflicto como
+  soporte técnico separado del negocio.
+- **Implementación real:** SQL confirma UID en `sucursal` e `instalacion`, pero
+  no en `usuario`; outbox real ya demuestra el patrón portable con
+  `uid_instalacion_origen` y datos por `uid_global`. El worker/inbox actual es
+  acotado a eventos allowlisted y no implementa Tarea ni una espera genérica de
+  referencias. `InboxRepository.mark_as_rejected` marca `REJECTED` no retryable
+  y `claim` no reabre el mismo `(event_id, consumer)`. #469/#470 resuelven ledger
+  local de operación, no identidad de entidades o usuarios.
+- **Inferencia:** toda FK funcional incluida en un estado replicado debe
+  resolverse por identidad portable antes de persistirse; de otro modo una PK
+  válida en el emisor podría apuntar a otra entidad en destino.
+- **Decisión nueva #492:** Tarea viaja por su `uid_global`; sucursal e instalación
+  por sus UID físicos; referencias humanas por un contrato global Administrativo
+  requerido y aún no materializado; las dependencias irresolubles no se aplican
+  silenciosa ni parcialmente y quedan trazadas. Su política retryable permanece
+  **NO CONGELADA / PENDIENTE DE DISEÑO TÉCNICO**.
+- **Alternativas descartadas:** PK remota, `login`, email, código de usuario,
+  `codigo_sucursal`, `codigo_instalacion`, headers CORE-EF, placeholders y mappings
+  GOP se descartan como identidad autoritativa. También se descarta resolver
+  identidad como si concediera autorización.
+- **Impacto posterior:** antes de DER/SQL/API GOP, Administrativo debe cerrar la
+  identidad global de usuario y Técnico/Operativo deben exponer resolución
+  verificable de referencias. Técnico debe congelar además una política de
+  retención/reproceso para dependencias no resolubles sin reutilizar `REJECTED`
+  como retryable ni forzar `CONFLICTO` sin divergencia. DEV-ARCH/DER/DEV-SRV/
+  DEV-API GOP definirán física, DTO y transacción sin alterar este contrato. No
+  se crean esos artefactos aquí.
+
+## 31. Estado de blockers y criterio de #492
 
 De la numeración original, están cerrados documentalmente **#1, #2, #3, #4,
-#5, #6, #8, #9 y #11**. Este incremento resuelve exclusivamente el blocker
-interno **#6 — estrategia de sync**, correspondiente al issue #491. Permanecen
+#5, #6, #8, #9 y #11**. #491 ya resolvió la estrategia de sync. Permanecen
 abiertos, sin resolución incidental:
 
-7. comentario / efecto sobre `Tarea.version_registro` → issue #493;
-10. identidad canónica interinstalación y referencias portables → issue #492.
+7. comentario / efecto sobre `Tarea.version_registro` → issue #493.
+10. identidad canónica interinstalación → issue #492, **ABIERTO / PARCIALMENTE
+    RESUELTO**: están congeladas la identidad canónica de Tarea, las referencias
+    portables, la separación PK local / `uid_global`, la separación procedencia
+    técnica / scope y la interacción general con sync; queda pendiente la
+    política técnica retryable para referencias requeridas no resolubles.
 
-La dependencia de #492 impide producir el payload/DTO físico definitivo y la de
-#493 impide cerrar el target/versionado exacto del comentario, pero ninguna
-impide congelar su clasificación sincronizable. La autenticación técnica para
-commands `origen = SISTEMA` también sigue **NO CONGELADA** y deberá resolverse
+La dependencia de #493 impide cerrar el target/versionado exacto del comentario.
+La materialización administrativa de identidad humana y los resolvers técnicos
+de referencias también son prerequisitos del diseño físico GOP. La autenticación
+técnica para commands `origen = SISTEMA` también sigue **NO CONGELADA** y deberá resolverse
 antes de exponer runtime automático.
 
-Criterio documental de #491:
+Criterio documental de #492:
 
-- [x] Clasificación sync congelada por operación.
-- [x] Headers CORE-EF aplicables definidos funcionalmente.
-- [x] Idempotencia y replay definidos mediante soporte transversal reusable.
-- [x] Estrategia conceptual de outbox, inbox y conflictos definida.
-- [x] Dependencia con identidad interinstalación explicitada sin cerrar #492.
+- [x] Identidad canónica de Tarea congelada.
+- [x] Referencias interinstalación relevantes definidas.
+- [x] PK local y `uid_global` diferenciados.
+- [x] Procedencia técnica y scope funcional diferenciados.
+- [x] Interacción general con sync definida.
+- [ ] Política retryable para referencias no resolubles definida.
 - [x] GOP-FREEZE-001 y PROJECT-STATUS alineados.
 - [x] Sin DER, SQL, API, runtime ni tests GOP prematuros.
 
-Por lo tanto, **#491 queda documentalmente listo para revisión y eventual cierre
-después del merge**; este documento no cierra el issue ni la épica #489.
+Por lo tanto, el blocker #10 / #492 tiene congeladas la identidad canónica y las
+referencias portables, pero **permanece abierto y todavía no está listo para
+cierre**: queda pendiente únicamente la política técnica retryable de
+retención/reproceso para referencias requeridas aún no resolubles. Este documento
+no cierra #492, #493 ni la épica #489.
 
-## 31. Matriz final por operación
+## 32. Matriz final por operación
 
 Los headers abreviados como **CORE-EF sync** significan `X-Op-Id +
 X-Sucursal-Id + X-Instalacion-Id`; son contexto técnico y nunca identidad humana
@@ -1533,20 +1796,20 @@ ni scope funcional. No se definen nombres de endpoint.
 
 | Operación | CORE-EF | Sync | Headers técnicos conceptuales | If-Match | Dependencia |
 | --- | --- | --- | --- | --- | --- |
-| Crear tarea manual | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync; Bearer separado para actor humano | No: no existe versión previa | #492 para referencias portables |
-| Crear tarea automática / `origen = SISTEMA` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync; no se presume Bearer humano | No: no existe versión previa | #492; auth técnica no congelada |
-| Modificar título | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para payload portable |
-| Modificar descripción | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para payload portable |
-| Asignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para responsable portable |
-| Reasignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para responsable portable |
-| Desasignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para representación portable |
+| Crear tarea manual | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync; Bearer separado para actor humano | No: no existe versión previa | Materializar contrato #492 |
+| Crear tarea automática / `origen = SISTEMA` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync; no se presume Bearer humano | No: no existe versión previa | Materializar #492; auth técnica no congelada |
+| Modificar título | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar payload portable #492 |
+| Modificar descripción | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar payload portable #492 |
+| Asignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar identidad administrativa requerida |
+| Reasignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar identidad administrativa requerida |
+| Desasignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar contrato portable #492 |
 | Cambiar prioridad | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
 | Cambiar `fecha_objetivo` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
 | `PENDIENTE -> EN_CURSO` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
 | `EN_CURSO -> PENDIENTE` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
-| Completar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para referencias del snapshot/historial |
-| Cancelar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para referencias del snapshot/historial |
-| Reabrir `COMPLETADA -> PENDIENTE` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para reparación portable de responsable |
-| Agregar comentario | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Pendiente de #493 para target/versión | #492 para autor portable; #493 para granularidad/versionado |
-| Eventual baja lógica técnica | `COMMAND_WRITE_TECNICO` | `SINCRONIZABLE` | CORE-EF sync | Sí, sobre Tarea existente | No crea operación; #492 para payload portable |
+| Completar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar referencias #492 |
+| Cancelar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar referencias #492 |
+| Reabrir `COMPLETADA -> PENDIENTE` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar responsable portable #492 |
+| Agregar comentario | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Pendiente de #493 para target/versión | Autor portable congelado en #492; #493 para granularidad/versionado |
+| Eventual baja lógica técnica | `COMMAND_WRITE_TECNICO` | `SINCRONIZABLE` | CORE-EF sync | Sí, sobre Tarea existente | No crea operación; materializar payload #492 |
 | Consultas humanas de Tarea | `QUERY_READLIKE` | `NO APLICA` | Headers write: `NO APLICA`; Bearer humano separado | No | Auth técnica de una eventual lectura sync queda separada |
