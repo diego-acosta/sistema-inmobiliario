@@ -202,6 +202,11 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
       SELECT relkind,relpersistence FROM pg_class
       WHERE oid='public.configuracion_calendario_comercial'::regclass
     """)).one() == ("r", "p")
+    assert db_session.execute(text("""
+      SELECT count(*) FROM pg_inherits
+      WHERE inhparent='public.configuracion_calendario_comercial'::regclass
+         OR inhrelid='public.configuracion_calendario_comercial'::regclass
+    """)).scalar_one() == 0
     fk_triggers = db_session.execute(text("""
       SELECT con.conname,count(*),bool_and(t.tgisinternal),bool_and(t.tgenabled='O')
       FROM pg_constraint con
@@ -397,6 +402,31 @@ def test_raiz_unlogged_aborta_sin_convertirla_en_permanente(db_session):
         assert db_session.execute(persistence).scalar_one() == "u"
 
 
+@pytest.mark.parametrize("root_role", ["parent", "child"])
+def test_herencia_de_raiz_aborta_sin_eliminarla(db_session, root_role):
+    with db_session.begin_nested():
+        if root_role == "parent":
+            db_session.execute(text("""
+              CREATE TABLE public.calendario_hija_adversarial ()
+              INHERITS (public.configuracion_calendario_comercial)
+            """))
+            predicate = "inhparent='public.configuracion_calendario_comercial'::regclass"
+        else:
+            db_session.execute(text(
+                "CREATE TABLE public.calendario_parent_adversarial ()"
+            ))
+            db_session.execute(text("""
+              ALTER TABLE public.configuracion_calendario_comercial
+              INHERIT public.calendario_parent_adversarial
+            """))
+            predicate = "inhrelid='public.configuracion_calendario_comercial'::regclass"
+        inheritance = text(f"SELECT count(*) FROM pg_inherits WHERE {predicate}")
+        assert db_session.execute(inheritance).scalar_one() == 1
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(inheritance).scalar_one() == 1
+
+
 @pytest.mark.parametrize(
     "fk_name",
     [
@@ -501,6 +531,7 @@ def test_identity_sequence_agotada_aborta_sin_consumir_ni_reparar(db_session):
         ([1], 1, False, True),
         ([1, 3], 1, True, True),
         ([1], 1, True, False),
+        ([1], 5, False, False),
     ],
 )
 def test_identity_sequence_se_alinea_con_todos_los_ids_sin_reparar(

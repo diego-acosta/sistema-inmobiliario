@@ -109,6 +109,13 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'persistencia de configuracion_calendario_comercial incompatible';
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_inherits
+     WHERE inhparent='public.configuracion_calendario_comercial'::regclass
+        OR inhrelid='public.configuracion_calendario_comercial'::regclass
+  ) THEN
+    RAISE EXCEPTION 'herencia de configuracion_calendario_comercial incompatible';
+  END IF;
 
   SELECT count(*) INTO cols FROM information_schema.columns WHERE table_schema='public'
     AND table_name='configuracion_calendario_comercial'
@@ -156,7 +163,7 @@ BEGIN
     INTO sequence_last,sequence_called;
   sequence_next := CASE WHEN sequence_called
     THEN sequence_last::numeric + sequence_increment
-    ELSE sequence_start::numeric END;
+    ELSE sequence_last::numeric END;
   IF sequence_next NOT BETWEEN sequence_min::numeric AND sequence_max::numeric THEN
     RAISE EXCEPTION 'secuencia identity de configuracion_calendario_comercial sin siguiente valor utilizable';
   END IF;
