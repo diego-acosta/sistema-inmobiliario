@@ -29,7 +29,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | B — Administrativo | #407–#412 implementados. PR #478 materializó el command mínimo GLOBAL y cerró #412; #413 alinea ahora la documentación formal. | #263 continúa abierto hasta el merge y cierre de #413; #425, #435, #461 y #265 permanecen separados. | PR #478 mergeado (commit `3b6d58d`) como último cambio material de configuración. | Completar #413 sin cerrar anticipadamente #263. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
-| Gestión Operativa — Tareas | Freeze funcional pre-DER: blockers #1 y #11 cerrados junto con los seis cierres anteriores; `Tarea` continúa como concepto funcional propuesto, no implementado. | Permanecen abiertos únicamente los blockers #6, #7 y #10 de `GOP-FREEZE-001`. | PR #481 mergeado; este incremento documental cierra scope y política funcional. | Resolver sync e identidad interinstalación, manteniendo abierto comentario/versionado, antes de producir DER o SQL. |
+| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 está cerrado; #491 congela documentalmente la estrategia sync, sin implementar `Tarea`. | Épica #489 abierta; #491 es el incremento actual; #492 (identidad portable) y #493 (comentario/versionado) siguen pendientes coordinados. | Baseline local verificado: merge de PR #488 (`2b2d80b`); #491 queda pendiente de review/merge/cierre real. | Revisar y mergear #491 sin cerrarlo anticipadamente; luego resolver #492 y #493 antes de DER/SQL/API. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -76,63 +76,58 @@ outbox y receipt. #461 permanece abierto como migración transversal separada.
 
 ## 4.2 Gestión Operativa — Tareas y seguimiento interno
 
-Estado documental verificable: `GOP-FREEZE-001` cierra los blockers funcionales
-#1, #2, #3, #4, #5, #8, #9 y #11. `Tarea` continúa como concepto funcional principal
-propuesto de `gestion_operativa`; no se afirma entidad, SQL, API ni runtime
-implementado.
+Estado documental verificable: la épica #489 sigue abierta y `Tarea` continúa
+como concepto funcional principal propuesto del dominio `gestion_operativa`,
+separado de `operativo`. #490 está cerrado. No existen todavía DEV-ARCH-GOP,
+DER, SQL, migrations, API, router, schema, service, repository, frontend ni
+tests runtime de Tarea.
 
-Decisiones cerradas:
+#491 es el incremento documental actual. `GOP-FREEZE-001` congela que toda
+mutación funcional compartida de Tarea es `COMMAND_WRITE_NEGOCIO +
+SINCRONIZABLE`, incluida la creación manual o `origen = SISTEMA`, cambios de
+contenido, asignación, prioridad, fecha objetivo, estados, completar, cancelar,
+reabrir y agregar comentario. Una eventual baja lógica futura se clasifica
+`COMMAND_WRITE_TECNICO + SINCRONIZABLE`, sin crear la operación. No se identificó
+un command funcional `LOCAL / NO SINCRONIZABLE`; las consultas son
+`QUERY_READLIKE` y leer no genera outbox.
 
-- Estados MVP: `PENDIENTE`, `EN_CURSO`, `COMPLETADA`, `CANCELADA`.
-- Reapertura: `COMPLETADA → PENDIENTE` mediante operación explícita, motivo
-  obligatorio e historial estructurado `REABIERTA`; `CANCELADA` no reabre.
-- Prioridades: `BAJA < NORMAL < ALTA < URGENTE`, default `NORMAL`.
-- `fecha_objetivo`: DATE con semántica de día calendario completo.
-- Vencimiento: condición derivada, no estado persistido; usa fecha local
-  `America/Argentina/Buenos_Aires`, comparación estricta `fecha_objetivo <
-  fecha_corte_local`, sólo para tareas activas y sin `deleted_at`.
-- `deleted_at`: previsto desde el primer diseño técnico y distinto del estado
-  funcional `CANCELADA`.
-- Scope: `id_sucursal` es opcional; `NULL` significa tarea global y un valor
-  significa tarea de esa única sucursal. `id_instalacion_origen` es sólo
-  procedencia técnica y no scope funcional. La creación manual requiere capacidad
-  administrativa sobre el scope propuesto y éste queda inmutable después de
-  crear la tarea en el MVP.
-- Visibilidad: **Mis tareas** contiene sólo las asignadas; las creadas se
-  consultan separadamente mediante **Tareas creadas por mí**, que forma parte del
-  alcance MVP, y siguen visibles al creador. También habilitan visibilidad el
-  responsable elegible y la capacidad de consulta de sucursal o global.
-- Mutación: el creador conserva la capacidad de comentar; el responsable ejecuta
-  el trabajo y comenta mientras conserva elegibilidad continua compuesta por
-  habilitación operativa y autorización efectiva vigente suficiente. En sucursal,
-  `puede_consultar` habilita lectura por scope, `puede_operar` elegibilidad como
-  responsable y `puede_administrar` gestión por scope; las capacidades globales
-  equivalentes quedan documentales y pendientes de materialización. Habilitación
-  no equivale a autorización efectiva de Administrativo; la vigencia contempla
-  usuario `ACTIVO` y sucursal `ACTIVA`, ambos sin `deleted_at` ni `fecha_baja`, e
-  intervalo `[fecha_desde, fecha_hasta)` con fronteras e `instante_corte`
-  futuros normalizados a UTC; timestamps legacy naïve requieren resolución
-  explícita y no se reinterpretan como UTC. Creador, responsable elegible y scope
-  de consulta son bases independientes; `puede_administrar` agrega visibilidad
-  administrativa propia sin implicar `puede_consultar`. Si la sucursal deja de
-  estar vigente no hay side effects: el responsable pierde elegibilidad local y
-  el alcance global administrativo autorizado conserva visibilidad y gestión
-  residual como alternativa explícita de la matriz, sin cambiar el scope ni
-  operar como bypass. Las consultas humanas protegidas exigen Bearer e identidad
-  desde `AuthenticatedPrincipal.id_usuario`. La pérdida de elegibilidad bloquea
-  ejecución y exige gestión explícita, sin side effects automáticos. Al reabrir,
-  `COMPLETADA` repara atómicamente un responsable inelegible para producir un
-  postestado activo válido; `CANCELADA` mantiene el snapshot terminal.
+La estrategia congelada exige los headers técnicos comunes `X-Op-Id`,
+`X-Sucursal-Id` y `X-Instalacion-Id` para los futuros commands sincronizables.
+Los dos últimos expresan contexto/procedencia y no definen `Tarea.id_sucursal`;
+ninguno autentica personas. Los commands humanos derivan identidad únicamente de
+Bearer → `get_authenticated_principal` → `AuthenticatedPrincipal.id_usuario` y
+no usan `X-Usuario-Id`. La autenticación/autorización técnica de procesos
+`origen = SISTEMA` permanece no congelada y no se inventa en #491.
 
-Blockers todavía abiertos, con numeración original:
+Las creaciones no usan `If-Match-Version`; toda mutación ordinaria de Tarea
+existente/versionada sí debe exigirlo. Comentarios quedan condicionados por #493
+para no decidir incidentalmente su target ni el efecto sobre
+`Tarea.version_registro`. Idempotencia durable reutiliza #469/#470 y el patrón
+productivo validado por #412/PR #478: mismo `op_id` compatible hace replay del
+snapshot durable, diferencias materiales producen conflicto y un error previo al
+commit permite reejecución. GOP no crea ledger paralelo.
 
-- #6 — estrategia de sync.
-- #7 — comentario y `version_registro`.
-- #10 — identidad canónica interinstalación.
+Mutación funcional, historial transaccional aplicable, outbox y receipt durable
+comparten una transacción local. La recepción remota usa inbox o equivalente,
+deduplica por `op_id`, valida `uid_global`, compara `version_registro`, aplica la
+baja lógica y persiste rechazos/conflictos sin sobrescritura silenciosa. No se
+adopta LWW por timestamps. `deleted_at` sigue siendo distinto de `CANCELADA` y
+una eventual baja debe propagarse, sin endpoint DELETE ni purga. Snapshot,
+historial, outbox, inbox y ledger continúan separados.
 
-Próximo paso: resolver estrategia de sync e identidad canónica
-interinstalación, preservando abierto el efecto de comentario sobre
-`version_registro`. GOP todavía no está listo para DER ni SQL.
+Blockers internos de `GOP-FREEZE-001`:
+
+- #6 — estrategia de sync: resuelto documentalmente por #491, pendiente de
+  review, merge y cierre real del issue.
+- #7 — comentario / `version_registro`: abierto y coordinado con #493.
+- #10 — identidad canónica interinstalación: abierto y coordinado con #492.
+
+#492 debe resolver representación portable de creador, responsable, sucursal y
+referencias no conocidas localmente, sin usar IDs locales como identidad
+remota. #493 debe resolver granularidad y versionado de comentarios. Esas
+dependencias no impiden que #491 quede documentalmente listo para revisión, pero
+GOP todavía no está listo para DER/SQL/API hasta resolver ambas. No se cierran
+#489, #491, #492 ni #493 mediante esta actualización.
 
 ## 5. Frente A — Comercial / Financiero
 
