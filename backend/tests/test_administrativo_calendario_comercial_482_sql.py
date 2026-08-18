@@ -189,6 +189,15 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
       SELECT count(*) FROM pg_rewrite
       WHERE ev_class='public.configuracion_calendario_comercial'::regclass
     """)).scalar_one() == 0
+    assert db_session.execute(text("""
+      SELECT relrowsecurity,relforcerowsecurity
+      FROM pg_class
+      WHERE oid='public.configuracion_calendario_comercial'::regclass
+    """)).one() == (False, False)
+    assert db_session.execute(text("""
+      SELECT count(*) FROM pg_policy
+      WHERE polrelid='public.configuracion_calendario_comercial'::regclass
+    """)).scalar_one() == 0
     identity = db_session.execute(text("""
       SELECT a.attidentity,s.seqtypid::regtype::text,s.seqstart,s.seqincrement,
              s.seqmin,s.seqmax,s.seqcache,s.seqcycle,d.deptype
@@ -295,6 +304,60 @@ def test_rewrite_rule_extra_aborta_sin_eliminarla(db_session, event):
           WHERE ev_class='public.configuracion_calendario_comercial'::regclass
             AND rulename=:rule_name
         """), {"rule_name": rule_name}).scalar_one() == 1
+
+
+@pytest.mark.parametrize(
+    ("statements", "expected"),
+    [
+        (
+            ["ALTER TABLE public.configuracion_calendario_comercial ENABLE ROW LEVEL SECURITY"],
+            (True, False),
+        ),
+        (
+            [
+                "ALTER TABLE public.configuracion_calendario_comercial ENABLE ROW LEVEL SECURITY",
+                "ALTER TABLE public.configuracion_calendario_comercial FORCE ROW LEVEL SECURITY",
+            ],
+            (True, True),
+        ),
+    ],
+)
+def test_rls_incompatible_aborta_sin_desactivarlo(db_session, statements, expected):
+    with db_session.begin_nested():
+        for statement in statements:
+            db_session.execute(text(statement))
+        state_query = text("""
+          SELECT relrowsecurity,relforcerowsecurity FROM pg_class
+          WHERE oid='public.configuracion_calendario_comercial'::regclass
+        """)
+        assert db_session.execute(state_query).one() == expected
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(state_query).one() == expected
+
+
+@pytest.mark.parametrize("predicate", ["false", "true"])
+def test_policy_incompatible_aborta_sin_eliminarla(db_session, predicate):
+    policy_name = f"calendario_adversarial_{predicate}"
+    with db_session.begin_nested():
+        db_session.execute(text(f"""
+          CREATE POLICY {policy_name}
+          ON public.configuracion_calendario_comercial
+          FOR ALL USING ({predicate}) WITH CHECK ({predicate})
+        """))
+        policy_count = text("""
+          SELECT count(*) FROM pg_policy
+          WHERE polrelid='public.configuracion_calendario_comercial'::regclass
+            AND polname=:policy_name
+        """)
+        assert db_session.execute(
+            policy_count, {"policy_name": policy_name}
+        ).scalar_one() == 1
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(
+            policy_count, {"policy_name": policy_name}
+        ).scalar_one() == 1
 
 
 @pytest.mark.parametrize(

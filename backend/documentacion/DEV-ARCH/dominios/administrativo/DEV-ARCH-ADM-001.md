@@ -108,6 +108,11 @@ tipo `bigint`, `START 1`, `INCREMENT 1`, `MINVALUE 1`, `MAXVALUE 922337203685477
 La comprobación del estado es de sólo lectura: no invoca `nextval` ni repara la
 secuencia.
 
+La raíz exige además `relrowsecurity = false`, `relforcerowsecurity = false` y cero
+filas en `pg_policy`. Una configuración RLS o una policy preexistente es incompatible
+y aborta sin ser deshabilitada, eliminada ni reparada; esto no sustituye la futura
+autorización permission-based del agregado.
+
 Para las funciones contractuales compara el body completo almacenado en `pg_proc`,
 normalizando sólo CRLF a LF y whitespace exterior; preserva íntegramente literales,
 regex, mensajes y whitespace interno. Además exige firma sin argumentos, retorno `trigger`,

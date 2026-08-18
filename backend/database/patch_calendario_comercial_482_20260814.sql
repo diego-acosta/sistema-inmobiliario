@@ -160,6 +160,20 @@ BEGIN
     RAISE EXCEPTION 'reglas rewrite de configuracion_calendario_comercial incompatibles';
   END IF;
 
+  IF EXISTS (
+    SELECT 1 FROM pg_class
+     WHERE oid='public.configuracion_calendario_comercial'::regclass
+       AND (relrowsecurity OR relforcerowsecurity)
+  ) THEN
+    RAISE EXCEPTION 'RLS de configuracion_calendario_comercial incompatible';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_policy
+     WHERE polrelid='public.configuracion_calendario_comercial'::regclass
+  ) THEN
+    RAISE EXCEPTION 'policies de configuracion_calendario_comercial incompatibles';
+  END IF;
+
   FOR item IN SELECT * FROM (VALUES
     ('uid_global','gen_random_uuid()'), ('version_registro','1'),
     ('created_at','CURRENT_TIMESTAMP'), ('updated_at','CURRENT_TIMESTAMP')
