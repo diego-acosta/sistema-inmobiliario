@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-14
+**Actualizado:** 2026-08-18
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -26,7 +26,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | Frente | Estado verificable | Issue/epic principal | Último PR relevante verificado | Próximo foco |
 | --- | --- | --- | --- | --- |
 | A — Comercial / Financiero | Activo. PR #432 está mergeado y #424 cerrado como completado: `INT-FIN-005` es la fuente contractual vigente para la indexación PPV2 mensual; la implementación runtime permanece pendiente. PR #422 conserva la materialización como fuente de `EMITIDA`/`PROYECTADA`. Baseline anterior verificable: `1763 passed`; no hubo nueva ejecución de la suite backend por el PR documental #432. | #425–#431 y #423 conforman el roadmap de implementación; #423 sigue bloqueado por los incrementos de soporte. #345 y #365 conservan alcance relacionado. | #432 mergeado (cierra #424); #422 permanece como fuente vigente para `EMITIDA`/`PROYECTADA`. | #425; luego #426 → #427 → #428/#429 → #423 → #430/#431. |
-| B — Administrativo | #407–#412 implementados. #482 completa la preparación estructural inicial del calendario comercial: definiciones, raíz física vacía, invariantes y permiso; sin runtime funcional. | #425 permanece coordinador abierto y dividido; #482 es el incremento estructural, #483 el siguiente. #426 continúa bloqueado. | PR #487 de #482 en revisión. | #483; luego #484–#486 sin cerrar anticipadamente #425. |
+| B — Administrativo | #407–#412 implementados. #482 completa la preparación estructural inicial del calendario comercial: definiciones, raíz física vacía, invariantes y permiso; sin runtime funcional. El aislamiento de concurrencia de #412 queda corregido en #496, pendiente de review/merge/cierre; wildcard administrativa local: `366 passed, 1 warning`, repetida dos veces desde resets independientes. | #425 permanece coordinador abierto y dividido; #482 es el incremento estructural, #483 el siguiente. #426 continúa bloqueado. | PR #487 de #482 mergeado; implementación de #496 pendiente de review. | #483; luego #484–#486 sin cerrar anticipadamente #425. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF | #469 y #470 están completados; #412 es el primer consumidor productivo validado del ledger y runtime reusable. | #402 está cerrado/completado; #461 permanece abierto y separado. | PR #478 mergeado. | La migración adicional de commands es opcional e incremental. |
 | Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 está cerrado; #491 congela documentalmente la estrategia sync, sin implementar `Tarea`. | Épica #489 abierta; #491 es el incremento actual; #492 (identidad portable) y #493 (comentario/versionado) siguen pendientes coordinados. | Baseline local verificado: merge de PR #488 (`2b2d80b`); #491 queda pendiente de review/merge/cierre real. | Revisar y mergear #491 sin cerrarlo anticipadamente; luego resolver #492 y #493 antes de DER/SQL/API. |
@@ -361,6 +361,13 @@ Sub-issues con estado verificable:
   No crea claves ni valores funcionales de #425.
 - Estado histórico al cierre de #410: quedó preparada exclusivamente la infraestructura SQL CORE-EF. Estado posterior a PR #478 y previo a #482: #411 y #412 estaban implementados y #425 conservaba pendientes sus claves y valores funcionales. Estado vigente post-#482: las dos definiciones calendario y la raíz física ya están materializadas; permanecen pendientes los valores funcionales y el runtime agregado/temporal.
 - #469 y #470 completaron el ledger y runtime transversal de idempotencia durable; #412 es su primer consumidor productivo. PR #478 implementó endpoint, permiso, vínculo, seed técnico controlado y EVT-ADM-060. #402 está cerrado/completado.
+- #496 corrige exclusivamente el aislamiento de los tests PostgreSQL de concurrencia
+  de #412, sin modificar runtime: los dos workers conservan conexiones y locks
+  reales, mientras un guard restaura el snapshot CORE-EF completo y elimina sólo
+  receipts/outbox identificados por los `op_id` del test. La wildcard
+  administrativa local quedó en `366 passed, 1 warning` en dos ejecuciones desde
+  resets independientes; el issue no se considera completado antes de review,
+  merge y cierre.
 - #438 agrega a `parametro_sistema` la metadata física `exponible_api_administrativa` y `es_sensible`, con política default-deny (`false`/`true`) y constraint que impide exposición en claro de definiciones sensibles. #411 implementa únicamente el GET individual del valor GLOBAL marcado vigente para definiciones exponibles y no sensibles, con 404 indistinguible para inexistente/no exponible/sensible, 409 para no GLOBAL, estado `SIN_VALOR` y tipado estricto `ENTERO`. #441 agrega `editable_administrativamente` como metadata física independiente, default-deny (`false`), no editable por API y habilitable sólo por migración versionada. Estado vigente: #412 está implementado y #482 habilita explícitamente la metadata de sus dos definiciones calendario; sus valores funcionales, resolución agregada y runtime temporal continúan pendientes junto con #435 donde corresponda.
 - #264 `Administrativo: catálogos maestros e ítems configurables` abierto.
 - #265 `Administrativo: auditoría administrativa básica` abierto.
