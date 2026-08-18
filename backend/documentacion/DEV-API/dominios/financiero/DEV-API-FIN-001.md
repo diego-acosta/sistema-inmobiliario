@@ -1392,12 +1392,23 @@ Eventos soportados:
 - `contrato_alquiler_activado`
   - payload: `{"id_contrato_alquiler": int}`
 
+Headers técnicos obligatorios:
+
+- `X-Op-Id`: UUID de la operación.
+- `X-Sucursal-Id`: entero positivo de procedencia.
+- `X-Instalacion-Id`: entero positivo de procedencia.
+
+El endpoint no exige `X-Usuario-Id`, autenticación Bearer ni
+`If-Match-Version`: es un command técnico sin identidad humana y no direcciona
+una entidad existente/versionada para aplicar CAS.
+
 Response:
 
 - `204 No Content`
 
 Errores controlados:
 
+- `400 VALIDATION_ERROR`: falta o es inválido un header técnico obligatorio.
 - `400 SYNC_EVENT_NOT_ALLOWED`: el `event_type` no pertenece a la allowlist
   transversal; el evento se rechaza sin efectos persistentes.
 - `400 SYNC_DISPATCH_FAILED`: el evento está permitido por la política

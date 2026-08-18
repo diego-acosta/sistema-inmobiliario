@@ -37,12 +37,20 @@ class InboxEventDispatcher:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def dispatch(self, event_type: str, payload: dict[str, Any]) -> None:
+    def dispatch(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+        context: CommandContext | None = None,
+    ) -> None:
         policy = SYNC_EVENT_POLICIES.get(event_type)
         validate_sync_event(event_type, policy.aggregate_type if policy else "", payload)
         if event_type not in INBOX_DISPATCHABLE_EVENT_TYPES:
             raise SyncDispatchError(SyncDispatchError.code)
         event = {"event_type": event_type, "payload": payload}
+        if context is not None:
+            event["op_id"] = context.metadata.get("x_op_id")
+            event["request_id"] = str(context.request_id)
 
         if event_type == "venta_confirmada":
             repository = FinancieroRepository(self._db)
@@ -57,7 +65,7 @@ class InboxEventDispatcher:
             result = HandleContratoAlquilerActivadoEventService(
                 locativo_repository=locativo_repository,
                 financiero_repository=financiero_repository,
-            ).execute(payload["id_contrato_alquiler"], CommandContext())
+            ).execute(payload["id_contrato_alquiler"], context or CommandContext())
             if not result.success:
                 raise ValueError(";".join(result.errors))
             return

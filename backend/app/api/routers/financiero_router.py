@@ -134,6 +134,8 @@ from app.application.common.commands import CommandContext
 from app.api.core_ef_headers import (
     CoreEFHeaderValidationError,
     CoreEFHeaders,
+    TechnicalCoreEFHeaders,
+    get_core_ef_headers_technical_write,
     parse_core_ef_headers,
 )
 from app.application.financiero.commands.create_relacion_generadora import (
@@ -318,6 +320,18 @@ from app.infrastructure.persistence.repositories.locativo_repository import (
 
 
 router = APIRouter(tags=["Financiero"])
+
+_TECHNICAL_CORE_EF_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": name,
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id")
+    ]
+}
 
 
 @dataclass(slots=True)
@@ -3390,15 +3404,32 @@ def aplicar_indexacion_cuotas_v2(
     responses={
         400: {"model": ErrorResponse},
     },
+    openapi_extra=_TECHNICAL_CORE_EF_HEADERS_OPENAPI,
 )
 def financiero_inbox(
     request: InboxEventRequest,
     db: Session = Depends(get_db),
+    technical_headers: TechnicalCoreEFHeaders | CoreEFHeaderValidationError = Depends(
+        get_core_ef_headers_technical_write
+    ),
 ):
+    if isinstance(technical_headers, CoreEFHeaderValidationError):
+        return _core_ef_error_response(technical_headers)
+    context = FinancieroCommandContext(
+        id_instalacion=technical_headers.x_instalacion_id,
+        op_id=technical_headers.x_op_id,
+        request_id=technical_headers.x_op_id,
+        metadata={
+            "x_op_id": str(technical_headers.x_op_id),
+            "x_sucursal_id": str(technical_headers.x_sucursal_id),
+            "x_instalacion_id": str(technical_headers.x_instalacion_id),
+        },
+    )
     try:
         InboxEventDispatcher(db).dispatch(
             event_type=request.event_type,
             payload=request.payload,
+            context=context,
         )
     except (UnknownSyncEvent, SyncDispatchError) as exc:
         return JSONResponse(

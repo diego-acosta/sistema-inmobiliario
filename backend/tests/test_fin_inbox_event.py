@@ -2,13 +2,18 @@
 Tests de integración para POST /api/v1/financiero/inbox.
 Cubre: evento válido, evento desconocido e idempotencia.
 """
+import pytest
 from sqlalchemy import text
 
-from tests.test_disponibilidades_create import HEADERS
 from tests.test_escrituraciones_create import _confirmar_venta_publica
 
 
 URL = "/api/v1/financiero/inbox"
+INBOX_HEADERS = {
+    "X-Op-Id": "550e8400-e29b-41d4-a716-446655440000",
+    "X-Sucursal-Id": "1",
+    "X-Instalacion-Id": "1",
+}
 
 
 def test_inbox_openapi_declara_error_response_400(client) -> None:
@@ -22,6 +27,60 @@ def test_inbox_openapi_declara_error_response_400(client) -> None:
     assert {"error_code", "error_message"} <= set(
         schema["components"]["schemas"][error_schema_name]["properties"]
     )
+    header_parameters = {
+        parameter["name"]: parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header"
+    }
+    assert set(header_parameters) == {
+        "X-Op-Id",
+        "X-Sucursal-Id",
+        "X-Instalacion-Id",
+    }
+    assert all(parameter["required"] for parameter in header_parameters.values())
+
+
+@pytest.mark.parametrize("missing_header", INBOX_HEADERS)
+def test_inbox_rechaza_header_tecnico_faltante_antes_del_evento(
+    client, missing_header
+) -> None:
+    headers = {key: value for key, value in INBOX_HEADERS.items() if key != missing_header}
+
+    response = client.post(
+        URL,
+        headers=headers,
+        json={"event_type": "evento_inexistente_xyz", "payload": {}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": missing_header}
+
+
+@pytest.mark.parametrize(
+    ("header", "invalid_value"),
+    (
+        ("X-Op-Id", "no-es-uuid"),
+        ("X-Sucursal-Id", "0"),
+        ("X-Sucursal-Id", "-1"),
+        ("X-Sucursal-Id", "no-es-entero"),
+        ("X-Instalacion-Id", "0"),
+        ("X-Instalacion-Id", "-1"),
+        ("X-Instalacion-Id", "no-es-entero"),
+    ),
+)
+def test_inbox_rechaza_header_tecnico_invalido_antes_del_evento(
+    client, header, invalid_value
+) -> None:
+    response = client.post(
+        URL,
+        headers={**INBOX_HEADERS, header: invalid_value},
+        json={"event_type": "evento_inexistente_xyz", "payload": {}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"] == {"header": header}
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -60,7 +119,8 @@ def _get_relacion_venta(db_session, *, id_venta: int) -> dict:
     return db_session.execute(
         text(
             """
-            SELECT id_relacion_generadora, tipo_origen, id_origen, estado_relacion_generadora
+            SELECT id_relacion_generadora, tipo_origen, id_origen,
+                   estado_relacion_generadora, op_id_alta
             FROM relacion_generadora
             WHERE tipo_origen = 'venta'
               AND id_origen = :id_venta
@@ -82,7 +142,7 @@ def test_inbox_venta_confirmada_crea_relacion_generadora_y_obligacion(
 
     response = client.post(
         URL,
-        headers=HEADERS,
+        headers=INBOX_HEADERS,
         json={
             "event_type": "venta_confirmada",
             "payload": {"id_venta": id_venta},
@@ -97,6 +157,7 @@ def test_inbox_venta_confirmada_crea_relacion_generadora_y_obligacion(
     relacion = _get_relacion_venta(db_session, id_venta=id_venta)
     assert relacion["tipo_origen"] == "venta"
     assert relacion["id_origen"] == id_venta
+    assert str(relacion["op_id_alta"]) == INBOX_HEADERS["X-Op-Id"]
 
     assert (
         _count_obligaciones_relacion(
@@ -115,7 +176,7 @@ def test_inbox_evento_desconocido_no_rompe_y_no_crea_datos(
 ) -> None:
     response = client.post(
         URL,
-        headers=HEADERS,
+        headers=INBOX_HEADERS,
         json={
             "event_type": "evento_inexistente_xyz",
             "payload": {"foo": "bar"},
@@ -146,7 +207,7 @@ def test_inbox_evento_allowlisted_sin_handler_devuelve_error_controlado(
 ) -> None:
     response = client.post(
         URL,
-        headers=HEADERS,
+        headers=INBOX_HEADERS,
         json={"event_type": "sucursal_creada", "payload": {}},
     )
 
@@ -172,8 +233,8 @@ def test_inbox_venta_confirmada_idempotente_no_duplica(
         "payload": {"id_venta": id_venta},
     }
 
-    response1 = client.post(URL, headers=HEADERS, json=body)
-    response2 = client.post(URL, headers=HEADERS, json=body)
+    response1 = client.post(URL, headers=INBOX_HEADERS, json=body)
+    response2 = client.post(URL, headers=INBOX_HEADERS, json=body)
 
     assert response1.status_code == 204
     assert response2.status_code == 204
