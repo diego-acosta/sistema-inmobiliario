@@ -100,8 +100,16 @@ DECLARE
   sequence_type regtype; sequence_start bigint; sequence_increment bigint;
   sequence_min bigint; sequence_max bigint; sequence_cache bigint;
   sequence_cycle boolean; sequence_last bigint; sequence_called boolean;
-  sequence_next numeric;
+  sequence_next numeric; max_existing_id bigint; fk_oid oid;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class
+     WHERE oid='public.configuracion_calendario_comercial'::regclass
+       AND relkind='r' AND relpersistence='p'
+  ) THEN
+    RAISE EXCEPTION 'persistencia de configuracion_calendario_comercial incompatible';
+  END IF;
+
   SELECT count(*) INTO cols FROM information_schema.columns WHERE table_schema='public'
     AND table_name='configuracion_calendario_comercial'
     AND (column_name,data_type,is_nullable) IN (
@@ -151,6 +159,11 @@ BEGIN
     ELSE sequence_start::numeric END;
   IF sequence_next NOT BETWEEN sequence_min::numeric AND sequence_max::numeric THEN
     RAISE EXCEPTION 'secuencia identity de configuracion_calendario_comercial sin siguiente valor utilizable';
+  END IF;
+  SELECT max(id_configuracion_calendario_comercial) INTO max_existing_id
+    FROM public.configuracion_calendario_comercial;
+  IF max_existing_id IS NOT NULL AND sequence_next <= max_existing_id::numeric THEN
+    RAISE EXCEPTION 'secuencia identity de configuracion_calendario_comercial desalineada con ids existentes';
   END IF;
 
   IF EXISTS (
@@ -223,6 +236,43 @@ BEGIN
   IF found_count <> 6 THEN
     RAISE EXCEPTION 'cantidad de constraints de configuracion_calendario_comercial incompatible: %', found_count;
   END IF;
+
+  FOR item IN SELECT unnest(ARRAY[
+    'fk_configuracion_calendario_comercial_instalacion_origen',
+    'fk_configuracion_calendario_comercial_instalacion_modificacion'
+  ]) AS nombre
+  LOOP
+    SELECT oid INTO fk_oid FROM pg_constraint
+     WHERE conrelid='public.configuracion_calendario_comercial'::regclass
+       AND contype='f' AND conname=item.nombre;
+    IF fk_oid IS NULL OR (SELECT count(*) FROM pg_trigger WHERE tgconstraint=fk_oid) <> 4
+       OR EXISTS (
+         SELECT 1 FROM pg_trigger
+          WHERE tgconstraint=fk_oid AND (NOT tgisinternal OR tgenabled <> 'O')
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_trigger WHERE tgconstraint=fk_oid
+           AND tgrelid='public.configuracion_calendario_comercial'::regclass
+           AND tgtype=5 AND tgfoid='pg_catalog."RI_FKey_check_ins"()'::regprocedure
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_trigger WHERE tgconstraint=fk_oid
+           AND tgrelid='public.configuracion_calendario_comercial'::regclass
+           AND tgtype=17 AND tgfoid='pg_catalog."RI_FKey_check_upd"()'::regprocedure
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_trigger WHERE tgconstraint=fk_oid
+           AND tgrelid='public.instalacion'::regclass
+           AND tgtype=9 AND tgfoid='pg_catalog."RI_FKey_restrict_del"()'::regprocedure
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_trigger WHERE tgconstraint=fk_oid
+           AND tgrelid='public.instalacion'::regclass
+           AND tgtype=17 AND tgfoid='pg_catalog."RI_FKey_noaction_upd"()'::regprocedure
+       )
+    THEN RAISE EXCEPTION 'triggers internos de FK % incompatibles', item.nombre; END IF;
+  END LOOP;
+
   SELECT indexdef INTO actual FROM pg_indexes WHERE schemaname='public' AND indexname='ux_configuracion_calendario_comercial_activa';
   IF actual IS NULL THEN
     CREATE UNIQUE INDEX ux_configuracion_calendario_comercial_activa

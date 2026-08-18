@@ -198,6 +198,28 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
       SELECT count(*) FROM pg_policy
       WHERE polrelid='public.configuracion_calendario_comercial'::regclass
     """)).scalar_one() == 0
+    assert db_session.execute(text("""
+      SELECT relkind,relpersistence FROM pg_class
+      WHERE oid='public.configuracion_calendario_comercial'::regclass
+    """)).one() == ("r", "p")
+    fk_triggers = db_session.execute(text("""
+      SELECT con.conname,count(*),bool_and(t.tgisinternal),bool_and(t.tgenabled='O')
+      FROM pg_constraint con
+      JOIN pg_trigger t ON t.tgconstraint=con.oid
+      WHERE con.conrelid='public.configuracion_calendario_comercial'::regclass
+        AND con.contype='f'
+      GROUP BY con.conname ORDER BY con.conname
+    """)).all()
+    assert fk_triggers == [
+        (
+            "fk_configuracion_calendario_comercial_instalacion_modificacion",
+            4, True, True,
+        ),
+        (
+            "fk_configuracion_calendario_comercial_instalacion_origen",
+            4, True, True,
+        ),
+    ]
     identity = db_session.execute(text("""
       SELECT a.attidentity,s.seqtypid::regtype::text,s.seqstart,s.seqincrement,
              s.seqmin,s.seqmax,s.seqcache,s.seqcycle,d.deptype
@@ -360,6 +382,55 @@ def test_policy_incompatible_aborta_sin_eliminarla(db_session, predicate):
         ).scalar_one() == 1
 
 
+def test_raiz_unlogged_aborta_sin_convertirla_en_permanente(db_session):
+    with db_session.begin_nested():
+        db_session.execute(text(
+            "ALTER TABLE public.configuracion_calendario_comercial SET UNLOGGED"
+        ))
+        persistence = text("""
+          SELECT relpersistence FROM pg_class
+          WHERE oid='public.configuracion_calendario_comercial'::regclass
+        """)
+        assert db_session.execute(persistence).scalar_one() == "u"
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(persistence).scalar_one() == "u"
+
+
+@pytest.mark.parametrize(
+    "fk_name",
+    [
+        "fk_configuracion_calendario_comercial_instalacion_origen",
+        "fk_configuracion_calendario_comercial_instalacion_modificacion",
+    ],
+)
+def test_trigger_interno_fk_deshabilitado_aborta_sin_habilitarlo(db_session, fk_name):
+    with db_session.begin_nested():
+        table_name, trigger_name = db_session.execute(text("""
+          SELECT format('%I.%I',n.nspname,r.relname),t.tgname
+          FROM pg_constraint con
+          JOIN pg_trigger t ON t.tgconstraint=con.oid
+          JOIN pg_class r ON r.oid=t.tgrelid
+          JOIN pg_namespace n ON n.oid=r.relnamespace
+          WHERE con.conrelid='public.configuracion_calendario_comercial'::regclass
+            AND con.contype='f' AND con.conname=:fk_name
+            AND t.tgisinternal
+          ORDER BY t.tgrelid,t.tgname LIMIT 1
+        """), {"fk_name": fk_name}).one()
+        db_session.execute(text(
+            f'ALTER TABLE {table_name} DISABLE TRIGGER "{trigger_name}"'
+        ))
+        state = text("SELECT tgenabled FROM pg_trigger WHERE tgname=:trigger_name")
+        assert db_session.execute(
+            state, {"trigger_name": trigger_name}
+        ).scalar_one() == "D"
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(
+            state, {"trigger_name": trigger_name}
+        ).scalar_one() == "D"
+
+
 @pytest.mark.parametrize(
     ("alter_options", "evidence"),
     [
@@ -414,6 +485,59 @@ def test_identity_sequence_agotada_aborta_sin_consumir_ni_reparar(db_session):
         assert db_session.execute(text(
             f"SELECT last_value,is_called FROM {sequence_name}"
         )).one() == (sequence_max, True)
+    finally:
+        db_session.execute(text(
+            "SELECT setval(CAST(:sequence_name AS regclass),:value,:is_called)"
+        ), {
+            "sequence_name": sequence_name,
+            "value": original_last,
+            "is_called": original_called,
+        })
+
+
+@pytest.mark.parametrize(
+    ("existing_ids", "sequence_value", "sequence_called", "must_fail"),
+    [
+        ([1], 1, False, True),
+        ([1, 3], 1, True, True),
+        ([1], 1, True, False),
+    ],
+)
+def test_identity_sequence_se_alinea_con_todos_los_ids_sin_reparar(
+    db_session, existing_ids, sequence_value, sequence_called, must_fail
+):
+    sequence_name = _identity_sequence(db_session)
+    original_last, original_called = db_session.execute(text(
+        f"SELECT last_value,is_called FROM {sequence_name}"
+    )).one()
+    try:
+        with db_session.begin_nested():
+            for existing_id in existing_ids:
+                db_session.execute(text("""
+                  INSERT INTO public.configuracion_calendario_comercial(
+                    id_configuracion_calendario_comercial
+                  ) VALUES (:existing_id)
+                """), {"existing_id": existing_id})
+                db_session.execute(text("""
+                  UPDATE public.configuracion_calendario_comercial
+                  SET deleted_at=CURRENT_TIMESTAMP
+                  WHERE id_configuracion_calendario_comercial=:existing_id
+                """), {"existing_id": existing_id})
+            db_session.execute(text(
+                "SELECT setval(CAST(:sequence_name AS regclass),:value,:is_called)"
+            ), {
+                "sequence_name": sequence_name,
+                "value": sequence_value,
+                "is_called": sequence_called,
+            })
+            if must_fail:
+                with pytest.raises(DBAPIError), db_session.begin_nested():
+                    db_session.execute(text(_sql()))
+            else:
+                db_session.execute(text(_sql()))
+            assert db_session.execute(text(
+                f"SELECT last_value,is_called FROM {sequence_name}"
+            )).one() == (sequence_value, sequence_called)
     finally:
         db_session.execute(text(
             "SELECT setval(CAST(:sequence_name AS regclass),:value,:is_called)"

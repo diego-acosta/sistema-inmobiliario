@@ -106,7 +106,13 @@ identity se resuelve mediante su dependencia interna con la columna raíz y se v
 tipo `bigint`, `START 1`, `INCREMENT 1`, `MINVALUE 1`, `MAXVALUE 9223372036854775807`,
 `CACHE 1`, `NO CYCLE` y la existencia de un siguiente valor dentro de esos límites.
 La comprobación del estado es de sólo lectura: no invoca `nextval` ni repara la
-secuencia.
+secuencia. Además exige que el siguiente valor sea mayor que todos los IDs persistidos,
+incluidos los de raíces con baja lógica.
+
+La relación raíz debe ser una tabla ordinaria permanente (`relkind = 'r'`,
+`relpersistence = 'p'`). Cada una de las dos FKs conserva sus cuatro triggers internos
+vinculados mediante `tgconstraint`, todos `tgisinternal` y habilitados normalmente con
+`tgenabled = 'O'`; estos controles son adicionales al único trigger no interno CORE-EF.
 
 La raíz exige además `relrowsecurity = false`, `relforcerowsecurity = false` y cero
 filas en `pg_policy`. Una configuración RLS o una policy preexistente es incompatible
