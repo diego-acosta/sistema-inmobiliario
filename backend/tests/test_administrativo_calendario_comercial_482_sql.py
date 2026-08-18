@@ -240,10 +240,14 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
         "d", "bigint", 1, 1, 1, 9223372036854775807, 1, False, "i"
     )
     sequence_name = _identity_sequence(db_session)
+    assert db_session.execute(text("""
+      SELECT relkind,relpersistence FROM pg_class
+      WHERE oid=CAST(:sequence_name AS regclass)
+    """), {"sequence_name": sequence_name}).one() == ("S", "p")
     last_value, is_called = db_session.execute(text(
         f"SELECT last_value,is_called FROM {sequence_name}"
     )).one()
-    next_value = last_value + 1 if is_called else 1
+    next_value = last_value + 1 if is_called else last_value
     assert 1 <= next_value <= 9223372036854775807
     patch_source = PATCH.read_text(encoding="utf-8").lower()
     assert "nextval(" not in patch_source
@@ -400,6 +404,28 @@ def test_raiz_unlogged_aborta_sin_convertirla_en_permanente(db_session):
         with pytest.raises(DBAPIError), db_session.begin_nested():
             db_session.execute(text(_sql()))
         assert db_session.execute(persistence).scalar_one() == "u"
+
+
+def test_identity_sequence_unlogged_aborta_sin_repararla(db_session):
+    sequence_name = _identity_sequence(db_session)
+    with db_session.begin_nested():
+        db_session.execute(text(f"ALTER SEQUENCE {sequence_name} SET UNLOGGED"))
+        sequence_persistence = text("""
+          SELECT relkind,relpersistence FROM pg_class
+          WHERE oid=CAST(:sequence_name AS regclass)
+        """)
+        assert db_session.execute(
+            sequence_persistence, {"sequence_name": sequence_name}
+        ).one() == ("S", "u")
+        assert db_session.execute(text("""
+          SELECT relpersistence FROM pg_class
+          WHERE oid='public.configuracion_calendario_comercial'::regclass
+        """)).scalar_one() == "p"
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(
+            sequence_persistence, {"sequence_name": sequence_name}
+        ).one() == ("S", "u")
 
 
 @pytest.mark.parametrize("root_role", ["parent", "child"])

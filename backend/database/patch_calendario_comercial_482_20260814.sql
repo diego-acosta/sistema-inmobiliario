@@ -139,7 +139,8 @@ BEGIN
      AND attname='id_configuracion_calendario_comercial' AND NOT attisdropped;
   SELECT count(*), min(seq.oid::bigint)::oid INTO found_count, identity_sequence_oid
     FROM pg_depend d
-    JOIN pg_class seq ON seq.oid=d.objid AND seq.relkind='S'
+    JOIN pg_class seq ON seq.oid=d.objid
+      AND seq.relkind='S' AND seq.relpersistence='p'
    WHERE d.classid='pg_class'::regclass AND d.refclassid='pg_class'::regclass
      AND d.refobjid='public.configuracion_calendario_comercial'::regclass
      AND d.refobjsubid=identity_attnum AND d.deptype='i';

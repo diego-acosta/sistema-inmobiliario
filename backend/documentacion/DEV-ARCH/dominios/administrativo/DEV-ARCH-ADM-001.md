@@ -111,7 +111,9 @@ secuencia. Con `is_called = false` el pendiente es `last_value`; con
 incluidos los de raíces con baja lógica.
 
 La relación raíz debe ser una tabla ordinaria permanente (`relkind = 'r'`,
-`relpersistence = 'p'`) y no puede participar como parent ni child en `pg_inherits`.
+`relpersistence = 'p'`) y su identity sequence también debe ser permanente
+(`relkind = 'S'`, `relpersistence = 'p'`); ambas se rechazan si son `UNLOGGED`.
+La raíz no puede participar como parent ni child en `pg_inherits`.
 Cada una de las dos FKs conserva sus cuatro triggers internos
 vinculados mediante `tgconstraint`, todos `tgisinternal` y habilitados normalmente con
 `tgenabled = 'O'`; estos controles son adicionales al único trigger no interno CORE-EF.
