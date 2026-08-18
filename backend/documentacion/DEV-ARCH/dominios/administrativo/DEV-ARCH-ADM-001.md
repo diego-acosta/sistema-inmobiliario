@@ -46,17 +46,18 @@ Las vigencias de un mismo parámetro y contexto no pueden solaparse. El SQL actu
 
 Las claves contractuales del sistema no tendrán alta ni baja dinámica en el primer incremento runtime: se administrarán mediante migraciones versionadas. La exposición administrativa, la sensibilidad y la editabilidad administrativa ya son metadata física explícita de la definición mediante `exponible_api_administrativa`, `es_sensible` y `editable_administrativamente`, con política restrictiva por defecto. No deben inferirse del código, tipo, nombre, exposición, sensibilidad o valor.
 
-La editabilidad administrativa es independiente de exposición y sensibilidad, nace `false` para toda definición existente o futura y sólo puede habilitarse por migración versionada explícita; no existe endpoint write que la modifique. La autorización real, el cifrado o secret manager y cualquier modelo adicional de visibilidad siguen **NO CONFIRMADOS**.
+La editabilidad administrativa es independiente de exposición y sensibilidad, nace `false` para toda definición existente o futura y sólo puede habilitarse por migración versionada explícita; no existe endpoint write que la modifique. La autorización permission-based ya existe para #412; la autorización del futuro agregado calendario, el cifrado o secret manager y cualquier modelo adicional de visibilidad siguen pendientes o **NO CONFIRMADOS** según su incremento.
 
 ## 4. Consumo interdominio y secretos
 
 Otros dominios consumirán parámetros mediante un query service interno del dominio Administrativo; no consultarán directamente las tablas. Ese servicio no está implementado todavía.
 
-Un valor sensible nunca puede exponerse en claro por API, historial, outbox ni logs. El mecanismo de cifrado o secret manager, la autorización y la caché están **NO CONFIRMADOS**. Este freeze fija la prohibición de exposición, no afirma que exista hoy una solución runtime para secretos.
+Un valor sensible nunca puede exponerse en claro por API, historial, outbox ni logs. El mecanismo de cifrado o secret manager y la caché están **NO CONFIRMADOS**; la autorización existente no resuelve por sí sola secretos ni el futuro agregado calendario. Este freeze fija la prohibición de exposición, no afirma que exista hoy una solución runtime para secretos.
 
 ## 5. Freeze específico para #425
 
-#425 se implementará exclusivamente sobre:
+**Freeze histórico previo a la recongelación vigente de #425:** el modelo funcional
+se describía sólo mediante:
 
 - `parametro_sistema`, como definición;
 - `valor_parametro`, como valor `GLOBAL` vigente;
@@ -65,22 +66,132 @@ Un valor sensible nunca puede exponerse en claro por API, historial, outbox ni l
 - sin `configuracion_local`;
 - sin catálogos.
 
-Permanecen pendientes para #425 y sus incrementos de implementación: patch SQL funcional específico; seeds de las dos claves; constraints de rango 1–31; read; write; versionado; idempotencia; outbox; historial; rollback; query service interno y tests PostgreSQL. Esta lista no declara nombres de endpoints ni comportamiento runtime existente.
+Estado vigente recongelado: `parametro_sistema` sigue siendo la fuente canónica de
+la definición y `valor_parametro` la fuente canónica de valores y vigencias. La
+raíz `configuracion_calendario_comercial` es soporte estructural obligatorio del
+agregado para identidad portable, `uid_global`, versión, locking, optimistic
+concurrency y procedencia CORE-EF. No almacena ni duplica días, `fecha_desde` o
+`fecha_hasta`; esos datos permanecen exclusivamente en `valor_parametro`.
 
-Quedan **NO CONFIRMADOS** hasta contar con evidencia: códigos/nombres exactos de las claves, defaults, cifrado/secret manager, autorización, caché, inclusividad de `fecha_hasta`, reactivación o reutilización de claves y taxonomía final de eventos.
+**Freeze histórico previo a #482:** permanecían pendientes el patch SQL funcional,
+las dos definiciones, el rango 1–31, read, write, versionado, idempotencia, outbox,
+historial, rollback, query service y tests PostgreSQL. #482 supera únicamente los
+pendientes estructurales que la sección siguiente declara materializados; los
+restantes continúan distribuidos entre #483–#486.
+
+### Incremento estructural #482
+
+#425 queda dividido en incrementos. #482 materializa únicamente las definiciones
+`DIA_CIERRE_COMERCIAL` y `DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS` como
+`ENTERO`/`GLOBAL`, su rango SQL localizado 1–31, el permiso administrativo y la
+tabla raíz física `configuracion_calendario_comercial`. La tabla es núcleo
+administrativo de identidad, versión y procedencia técnica; `valor_parametro`
+conserva ownership exclusivo de los días y de su vigencia. La cardinalidad física
+admite cero o una raíz activa.
+
+La migración valida en reejecución la equivalencia física completa de la raíz
+(columnas, identity, defaults y exactamente las seis constraints contractuales
+PK/UNIQUE/CHECK/FK, sin constraints funcionales adicionales,
+índices y triggers) y de sus funciones. Los cuatro índices deben estar
+`indisvalid`/`indisready`; los triggers se validan por `tgrelid`, `tgfoid`, bits
+`tgtype`, `tgqual` y `tgenabled`, independientemente de `search_path`. Un objeto homónimo parcial, adicional o incompatible aborta la transacción; no
+se reemplaza ni sanea silenciosamente.
+
+La nullability de las diez columnas se valida por su contrato de columnas. Las filas
+`contype = 'n'` con las que PostgreSQL 18 puede representar `NOT NULL` no integran ni
+contaminan el conteo de las seis constraints contractuales `p/u/c/f`.
+
+El contrato cerrado también exige cero reglas en `pg_rewrite`. La secuencia de la
+identity se resuelve mediante su dependencia interna con la columna raíz y se validan
+tipo `bigint`, `START 1`, `INCREMENT 1`, `MINVALUE 1`, `MAXVALUE 9223372036854775807`,
+`CACHE 1`, `NO CYCLE` y la existencia de un siguiente valor dentro de esos límites.
+La comprobación del estado es de sólo lectura: no invoca `nextval` ni repara la
+secuencia. Con `is_called = false` el pendiente es `last_value`; con
+`is_called = true` es `last_value + increment`. Además exige que el siguiente valor sea mayor que todos los IDs persistidos,
+incluidos los de raíces con baja lógica.
+
+La relación raíz debe ser una tabla ordinaria permanente (`relkind = 'r'`,
+`relpersistence = 'p'`) y su identity sequence también debe ser permanente
+(`relkind = 'S'`, `relpersistence = 'p'`); ambas se rechazan si son `UNLOGGED`.
+Las diez columnas son ordinarias (`attgenerated = ''`); la PK conserva separadamente
+su `IDENTITY BY DEFAULT` mediante `attidentity = 'd'`.
+La raíz no puede participar como parent ni child en `pg_inherits`.
+Cada una de las dos FKs conserva sus cuatro triggers internos
+vinculados mediante `tgconstraint`, todos `tgisinternal` y habilitados normalmente con
+`tgenabled = 'O'`; estos controles son adicionales al único trigger no interno CORE-EF.
+
+La raíz exige además `relrowsecurity = false`, `relforcerowsecurity = false` y cero
+filas en `pg_policy`. Una configuración RLS o una policy preexistente es incompatible
+y aborta sin ser deshabilitada, eliminada ni reparada; esto no sustituye la futura
+autorización permission-based del agregado.
+
+Para las funciones contractuales compara el body completo almacenado en `pg_proc`,
+normalizando sólo CRLF a LF y whitespace exterior; preserva íntegramente literales,
+regex, mensajes y whitespace interno. Además exige firma sin argumentos, retorno `trigger`,
+lenguaje `plpgsql`, configuración y seguridad contractuales. Los triggers se
+comparan contra su definición completa, sin admitir eventos, granularidad o
+condiciones `WHEN` adicionales, y deben conservar `tgenabled = 'O'`. Un trigger
+deshabilitado, `REPLICA` o `ALWAYS` es incompatible y aborta; la migración no lo
+reactiva silenciosamente.
+
+Aunque ambas definiciones son exponibles, no sensibles y editables
+administrativamente, quedan excluidas contractualmente del PATCH genérico #412.
+Su modificación funcional corresponderá exclusivamente al agregado #425 y su
+permiso dedicado, para preservar atomicidad y temporalidad; los endpoints del
+agregado todavía no existen. El patch también aborta si cualquier valor
+preexistente, vigente o histórico, no representa un `ENTERO` ASCII entre 1 y 31.
+
+#482 no crea valores ni fila raíz funcional. No agrega GET, bootstrap,
+programación, query service, idempotencia HTTP, outbox, sync o historial
+especializado. La primera raíz y los dos primeros valores pertenecen a #484 en
+una transacción; #483 es el siguiente incremento y #425 permanece abierto.
+
+Estado vigente: los códigos, nombres, descripciones, tipo `ENTERO`, alcance
+`GLOBAL`, rango 1–31 y metadata de ambas claves están **CONFIRMADOS Y
+MATERIALIZADOS por #482**: `exponible_api_administrativa = true`,
+`es_sensible = false` y `editable_administrativamente = true`. También están
+materializados el permiso
+`ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR` y la raíz física. Continúan **NO
+CONFIRMADOS** el cifrado/secret manager, caché, inclusividad de `fecha_hasta`,
+reactivación o reutilización, y la taxonomía final de eventos; #482 no anticipa
+esas decisiones.
 
 ## 6. Estado CORE-EF físico de `valor_parametro`
 
 #410 implementó preparación física CORE-EF en `valor_parametro`: `uid_global`, `version_registro`, `created_at`, `updated_at`, `deleted_at`, `id_instalacion_origen`, `id_instalacion_ultima_modificacion`, `op_id_alta` y `op_id_ultima_modificacion`. También implementó triggers de insert/update, versionado físico, integridad para definiciones cuyo alcance se resuelve por código `GLOBAL`, garantía concurrente de un único valor global vigente no eliminado, constraints físicas mínimas de vigencia, migración transaccional e integración en resets DEV/TEST.
 
-Siguen pendientes, sin declararlos implementados: idempotencia HTTP, replay, `If-Match-Version` runtime, compare-and-swap en repository, outbox runtime, historial alineado al valor/contexto, autorización, cifrado o secret manager, no solapamiento temporal general, resolución contextual, overrides, precedencia, fallback y la frontera transaccional de commands de #412 y #425.
+Para el agregado calendario siguen pendientes, sin declararlos implementados:
+idempotencia HTTP, replay, `If-Match-Version` runtime, compare-and-swap en
+repository, outbox runtime, historial alineado al valor/contexto, no solapamiento
+temporal, resolución, locks y frontera transaccional de los futuros commands. La
+autorización de #412 ya existe, pero no sustituye el runtime pendiente de #425.
 
-## 7. Decisión CORE-EF del freeze
+## 7. Decisión CORE-EF vigente de #482 y del PATCH #412
 
-- Endpoints: **NO APLICA**; no se agregan ni modifican rutas.
-- Clasificación de command/read-like: **NO APLICA**; el incremento es documental.
-- Headers, `If-Match-Version`, idempotencia, outbox, lock, versionado, transacción y rollback ejecutables: **NO APLICA** en este incremento.
-- Tests CORE-EF y reset PostgreSQL: **NO APLICA**; no se modifica SQL ni runtime.
+El freeze histórico previo a #482 trataba este frente como documental y declaraba
+endpoints, clasificación, headers, idempotencia y tests PostgreSQL **NO APLICA**.
+Ese estado quedó superado por el incremento material #482: modifica SQL, resets
+DEV/TEST, tests PostgreSQL, documentación y la frontera runtime de un command existente.
+
+El `PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global`
+de #412 conserva clasificación `COMMAND_WRITE_NEGOCIO`, autenticación Bearer e identidad
+desde `AuthenticatedPrincipal.id_usuario`. Exige `X-Op-Id`, `X-Sucursal-Id`,
+`X-Instalacion-Id` e `If-Match-Version`; autoriza mediante
+`ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, consume la idempotencia durable #470 y mantiene
+lock/CAS y `EVT-ADM-060` para cambios materiales de parámetros genéricos permitidos.
+
+#482 excluye `DIA_CIERRE_COMERCIAL` y
+`DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS` del flujo nuevo del command genérico. #412 calcula
+el payload hash y consulta primero el ledger durable #470: un receipt compatible conserva
+`REPLAY` y uno incompatible conserva la precedencia de conflicto idempotente. Sólo una
+decisión `EXECUTE` responde `409 conflicto_parametro`, antes de contexto, lookup/lock,
+CAS, outbox, completion o cualquier mutación, por lo que no crea un receipt nuevo. El
+command genérico no es aplicable a esas claves, incluso si el actor posee ambos permisos,
+porque su modificación pertenece al futuro agregado atómico y temporal #425.
+
+#482 no agrega rutas propias del calendario. GET agregado, bootstrap, programación,
+query service temporal, idempotencia y outbox del agregado, sync e historial especializado
+permanecen distribuidos entre #483–#486.
 
 El `GET /api/v1/administrativo/configuracion/parametros` de #407/PR #414 se preserva como `QUERY_READLIKE`: lista definiciones, pero no lee valores ni ejecuta resolución contextual. #408 documenta este freeze y no agrega endpoints.
 
@@ -111,7 +222,10 @@ no implementa ninguna clave, valor, endpoint ni runtime de #425.
 
 La integridad incorporada se limita a: contexto nulo para definiciones cuyo alcance se resuelve por código `GLOBAL`; fechas estrictamente ordenadas cuando ambas existen; y como máximo un valor global vigente no eliminado por definición. No se impone semántica a alcances no globales ni se resuelven overrides, precedencia, fallback, vigencias futuras o solapamientos temporales.
 
-Es preparación SQL transaccional e idempotente. No existe todavía read de valores (#411), write (#412), runtime ni datos funcionales de #425. No se implementan API, outbox, historial, replay HTTP, CAS ni `If-Match-Version`.
+**Estado histórico al cierre de #410:** era preparación SQL transaccional e
+idempotente; todavía no existían #411, #412 ni datos funcionales de #425. Estado
+vigente: #411/#412 están implementados y #482 materializa las definiciones, rango
+y raíz física del calendario, pero no sus valores ni runtime agregado.
 
 ## 10. Incremento #438 — Exposición segura de definiciones administrativas
 
@@ -123,7 +237,7 @@ La constraint `chk_parametro_sistema_exposicion_no_sensible` impide `exponible_a
 
 #438 no implementa el endpoint de #411, no modifica el inventario #407, no agrega commands, no genera outbox, no escribe historial runtime y no toca `valor_parametro`. El futuro #411 sólo podrá devolver un valor cuando `exponible_api_administrativa = true AND es_sensible = false`; para definiciones inexistentes o no exponibles se recomienda responder `404 Not Found` con el error estándar de parámetro no encontrado si el catálogo real lo permite, para no revelar existencia por enumeración. Futuros reads no deben registrar `valor_parametro`, secretos, op IDs, credenciales, payload SQL ni contenido sensible; pueden registrar identificador técnico, código cuando esté permitido, clasificación de error, correlación y stack trace interno.
 
-#441 agrega la metadata física `editable_administrativamente boolean NOT NULL DEFAULT false`, independiente de `exponible_api_administrativa` y `es_sensible`. Ninguna definición queda editable automáticamente y la habilitación futura requiere migración funcional versionada. Estado al cierre de #441: #412 conservaba pendiente la implementación del endpoint write, pero su contrato final ya congela autorización Bearer, helper CORE-EF sin `X-Usuario-Id`, `If-Match-Version`, claim derivado sólo de request con `target_uid = None`, replay/conflict antes de lookup mutable, runtime idempotente #470, row lock `FOR UPDATE` sólo en `EXECUTE`, CAS, outbox y transacción única; historial especializado queda fuera de su alcance. #425 conserva pendientes sus definiciones funcionales, valores, rangos y runtime, y deberá declarar explícitamente su exposición, sensibilidad y editabilidad en su propia migración. #435 no queda resuelto: overrides, precedencia, fallback, contexto, granularidad y vigencia temporal siguen pendientes.
+#441 agrega la metadata física `editable_administrativamente boolean NOT NULL DEFAULT false`, independiente de `exponible_api_administrativa` y `es_sensible`. Ninguna definición queda editable automáticamente y la habilitación futura requiere migración funcional versionada. **Estado histórico al cierre de #441, superado en parte por #482:** #412 conservaba pendiente la implementación del endpoint write y #425 sus definiciones, rangos y runtime. Estado vigente: #412 está implementado; #482 habilita explícitamente la editabilidad de las dos definiciones y materializa su rango, mientras valores funcionales y runtime agregado siguen pendientes. #435 no queda resuelto: overrides, precedencia, fallback, contexto, granularidad y vigencia temporal siguen pendientes.
 
 ## 10.1 Incremento #441 — Editabilidad administrativa default-deny
 
@@ -228,4 +342,9 @@ Una única Session/transacción ejecuta claim → contexto → lock → no-op/CA
 
 El seed `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` es técnico controlado: `ENTERO`, `GLOBAL`, exponible, no sensible, editable y valor inicial técnico `"15"` para reproducibilidad DEV/TEST y soporte del primer command. No es configuración funcional, default de sistema, parámetro comercial, #425 ni valor de negocio.
 
-Fuera de #413 permanecen #425 (parámetros funcionales), #435 (resolución contextual/precedencia/fallback), #461 (migración HTTP global) y #265 (auditoría), además de secretos/secret manager, CRUD genérico, alta/baja dinámica, UI, consumers remotos, reconciliación, resolución temporal general y eliminación física de `configuracion_general`. #402 y #412 están cerrados/completados; #263 permanece abierto hasta el merge y cierre de #413.
+**Estado histórico al cierre de #413:** fuera de ese incremento permanecían #425,
+#435, #461 y #265. Estado vigente post-#482: #425 continúa abierto, pero sus dos
+definiciones, rango, permiso y raíz física ya están materializados; valores y fila
+raíz funcionales, runtime agregado, eventos, sync e historial especializado siguen
+fuera de #482. #435, #461, #265, secretos, CRUD genérico, UI, consumers remotos,
+reconciliación y eliminación física de `configuracion_general` no cambian aquí.

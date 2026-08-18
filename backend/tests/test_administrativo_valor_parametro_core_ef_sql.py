@@ -88,7 +88,7 @@ def test_estructura_core_ef_exacta(db_session):
 
 def test_triggers_presentes_y_sin_outbox(db_session):
     triggers = dict(db_session.execute(text("SELECT tgname,pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid='valor_parametro'::regclass AND NOT tgisinternal")).all())
-    assert set(triggers) == {"trg_bi_valor_parametro_core_ef","trg_bu_valor_parametro_core_ef","trg_biu_valor_parametro_validar_alcance"}
+    assert set(triggers) == {"trg_bi_valor_parametro_core_ef","trg_bu_valor_parametro_core_ef","trg_biu_valor_parametro_validar_alcance","trg_biu_valor_parametro_calendario_comercial"}
     assert all("outbox" not in definition.lower() for definition in triggers.values())
 
 
@@ -176,7 +176,7 @@ def test_reejecucion_preserva_metadata_con_version_mayor_a_uno(db_session):
     assert _snapshot(db_session, [row["id_valor_parametro"]]) == before
     assert before[0]["version_registro"] == 3
     assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == outbox_before
-    assert db_session.execute(text("SELECT count(*) FROM pg_trigger WHERE tgrelid='valor_parametro'::regclass AND NOT tgisinternal")).scalar_one() == 3
+    assert db_session.execute(text("SELECT count(*) FROM pg_trigger WHERE tgrelid='valor_parametro'::regclass AND NOT tgisinternal")).scalar_one() == 4
 
 
 def test_reejecucion_acepta_soft_delete_y_reemplazo_sin_mutarlos(db_session):
@@ -286,7 +286,7 @@ def test_concurrencia_global_se_serializa_en_definicion():
 
 
 def test_baseline_sin_datos_funcionales_425_ni_outbox(db_session):
-    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema WHERE codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM parametro_sistema WHERE codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 2
     assert db_session.execute(text("SELECT count(*) FROM valor_parametro v JOIN parametro_sistema p USING(id_parametro_sistema) WHERE p.codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0
     assert db_session.execute(text("SELECT count(*) FROM outbox_event")).scalar_one() == 0
     assert db_session.execute(text("SELECT count(*) FROM tipo_dato_parametro WHERE codigo_tipo_dato='ENTERO'")).scalar_one() == 1

@@ -1303,3 +1303,24 @@ sync. Estado al cierre de este incremento: #461 (migración), #412 (primer comma
 La autorización runtime exige el permiso activo `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, concedido mediante cualquier rol activo aplicable. El permiso se vincula al rol canónico prerequisito `ADMINISTRADOR_SISTEMA`, pero ese código de rol no es una condición exclusiva; #412 no crea ese rol, un rol `ADMIN` alternativo ni asignaciones de usuarios. El seed técnico `PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO` (`ENTERO`, `GLOBAL`, exponible, no sensible, editable, valor inicial `"15"`) es sólo soporte reproducible DEV/TEST, no configuración funcional.
 
 #425, #435, #461 y #265 permanecen fuera de este cierre. Tampoco se incorporan secretos, secret manager, CRUD genérico, alta/baja dinámica, UI, consumers remotos, reconciliación, resolución temporal general ni eliminación de `configuracion_general`.
+
+## Estado estructural del calendario comercial (#482)
+
+#482 no crea endpoints propios del agregado: aún no existen GET calendario, POST
+bootstrap ni PUT de programación; sus contratos pertenecen a #483–#485. Sí
+modifica el PATCH existente de #412, que conserva clasificación
+`COMMAND_WRITE_NEGOCIO`, Bearer, `X-Op-Id`, `X-Sucursal-Id`, `X-Instalacion-Id`,
+`If-Match-Version`, identidad exclusiva desde `AuthenticatedPrincipal.id_usuario`
+y autorización `ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`; no usa
+`X-Usuario-Id`. Mantiene idempotencia #470 en `operacion_idempotente`, lock/CAS y
+EVT-ADM-060 para updates materiales genéricos permitidos.
+
+El PATCH individual de #412 no aplica a `DIA_CIERRE_COMERCIAL` ni a
+`DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS`: devuelve el error público existente
+`409 conflicto_parametro` para una operación nueva, sin depender de qué rol originó
+el grant. Antes del boundary consulta el ledger durable #470: un receipt compatible
+se replayea y un uso incompatible conserva el conflicto idempotente. Sólo una decisión
+`EXECUTE` se rechaza, antes de contexto, lookup mutable, lock, CAS, outbox, completion
+o cualquier mutación; no crea receipt ni incrementa versión. Esta exclusión no
+implementa un endpoint de calendario; reserva las modificaciones para el futuro
+agregado #425 y no vuelve `NO APLICA` el CORE-EF general de #412.

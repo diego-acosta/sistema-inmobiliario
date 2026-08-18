@@ -27,6 +27,12 @@ from app.infrastructure.persistence.repositories.valor_parametro_global_command_
 
 COMMAND_CODE = "ADMIN.CONFIG.PARAMETRO.VALOR_GLOBAL.UPDATE"
 TARGET_TYPE = "VALOR_PARAMETRO"
+CALENDARIO_COMERCIAL_PARAMETER_CODES = frozenset(
+    {
+        "DIA_CIERRE_COMERCIAL",
+        "DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS",
+    }
+)
 
 
 class ParametroCommandError(Exception):
@@ -77,6 +83,11 @@ class ActualizarValorParametroGlobalService:
                 ConflictKind.PAYLOAD: "IDEMPOTENCY_PAYLOAD_CONFLICT",
             }
             raise ParametroCommandError(409, codes[decision.conflict])
+
+        # Un receipt durable previo conserva REPLAY/CONFLICT. Sólo una operación
+        # nueva (EXECUTE) se bloquea antes de consultar o mutar negocio.
+        if codigo_parametro in CALENDARIO_COMERCIAL_PARAMETER_CODES:
+            raise ParametroCommandError(409, "conflicto_parametro")
 
         repository = ValorParametroGlobalCommandRepository(self.session)
         context = repository.validate_context(

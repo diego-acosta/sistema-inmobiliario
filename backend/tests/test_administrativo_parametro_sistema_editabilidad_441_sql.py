@@ -141,7 +141,7 @@ def test_rechaza_filas_nulas_sin_saneamiento_silencioso(db_session):
 
 
 def test_no_infiere_por_codigo_tipo_alcance_exposicion_sensibilidad_nombre_descripcion_o_valor(db_session):
-    pid = _insert_param(db_session, code="DIA_CIERRE_COMERCIAL", exposed=True, sensitive=False)
+    pid = _insert_param(db_session, code="DIA_CIERRE_COMERCIAL_SIMULADO", exposed=True, sensitive=False)
     db_session.execute(text("""
         INSERT INTO valor_parametro (id_parametro_sistema, valor_parametro, fecha_desde)
         VALUES (:pid, '10', CURRENT_DATE)
@@ -179,5 +179,5 @@ def test_reset_baseline_sin_definiciones_funcionales_425_ni_valores(db_session):
     assert db_session.execute(text("""
         SELECT count(*) FROM parametro_sistema
         WHERE codigo_parametro IN ('DIA_CIERRE_COMERCIAL', 'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
-    """)).scalar_one() == 0
+    """)).scalar_one() == 2
     assert db_session.execute(text("SELECT count(*) FROM valor_parametro v JOIN parametro_sistema p USING(id_parametro_sistema) WHERE p.codigo_parametro <> 'PRUEBA_ADMIN_VALOR_GLOBAL_ENTERO'")).scalar_one() == 0

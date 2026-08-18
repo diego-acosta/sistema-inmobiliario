@@ -21,7 +21,17 @@ erDiagram
 
 Desde #410, `valor_parametro` materializa metadata CORE-EF física, versionado por trigger, soft delete, procedencia/op IDs nullable y las garantías mínimas GLOBAL/vigencia/unicidad. Desde #438/#441, `parametro_sistema` materializa exposición administrativa, sensibilidad y editabilidad mediante `exponible_api_administrativa`, `es_sensible` y `editable_administrativamente`. Aún faltan autorización completa para el GET #411, cifrado o secret manager, cualquier modelo adicional de visibilidad, restricción de no solapamiento temporal general y query service interno. `historial_parametro` actual referencia al parámetro y no demuestra por sí solo historial por valor y contexto. Todo ello permanece pendiente.
 
-Para #425, el subgrafo exclusivo es `parametro_sistema -> valor_parametro` con alcance `GLOBAL`, `id_sucursal IS NULL` e `id_instalacion IS NULL`; no intervienen `configuracion_general`, `configuracion_local` ni catálogos.
+Para #425, el subgrafo funcional canónico es `parametro_sistema -> valor_parametro`
+con alcance `GLOBAL`, `id_sucursal IS NULL` e `id_instalacion IS NULL`. La raíz
+`configuracion_calendario_comercial` participa sólo como soporte de identidad,
+versión, locking, concurrencia y procedencia; no es fuente de valores o vigencias.
+No intervienen `configuracion_general`, `configuracion_local` ni catálogos.
+
+Desde #482, `configuracion_calendario_comercial` es la raíz física mínima del
+agregado: sólo identidad, versión, timestamps, soft delete y procedencia CORE-EF.
+No contiene días ni vigencias y no existe aún una fila funcional. Su índice
+singleton permite 0 o 1 fila activa; `valor_parametro` continúa siendo la única
+persistencia de valores. La materialización raíz/valores queda para #484.
 
 Desde #409 existen como datos estructurales contractuales el tipo `ENTERO` y el
 alcance `GLOBAL`, identificados por código y no editables por API. Este incremento

@@ -270,5 +270,5 @@ def test_get_407_es_compatible_con_lookup_estructural_por_codigo(
     assert item["alcance"]["codigo_alcance"] == "GLOBAL"
 
 
-def test_409_no_crea_definiciones_ni_valores_funcionales_425(db_session):
-    assert db_session.execute(text("SELECT COUNT(*) FROM parametro_sistema WHERE codigo_parametro IN ('DIA_CIERRE_COMERCIAL', 'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')")).scalar_one() == 0
+def test_409_no_crea_valores_funcionales_425(db_session):
+    assert db_session.execute(text("SELECT COUNT(*) FROM parametro_sistema WHERE codigo_parametro IN ('DIA_CIERRE_COMERCIAL', 'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')")).scalar_one() == 2
