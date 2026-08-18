@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-**Actualizado:** 2026-08-14
+Actualizado: 2026-08-18
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
