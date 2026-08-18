@@ -80,8 +80,16 @@ Una tarea puede ser manual o generada por sistema, estar asignada o no tener res
 ## 4. Identidad
 
 - `id_tarea`: identificador interno conceptual.
-- `uid_global`: condicionado por la decisión de sincronización; no se congela su incorporación hasta resolverla.
+- `uid_global`: identidad distribuida conceptual, inmutable y obligatoria para la
+  futura Tarea sincronizable; coexistirá con el ID local técnico, que no podrá
+  usarse como identidad entre instalaciones.
 - Código visible de tarea: fuera del MVP, salvo necesidad funcional posterior expresamente aprobada.
+
+La materialización física de ambos identificadores queda para DEV-ARCH-GOP, DER
+y SQL. #492 permanece abierto para las PK/FK concretas, la representación
+portable de referencias a creador, responsable y sucursal, las referencias aún
+no conocidas localmente y el DTO/payload físico definitivo; no reabre la
+sincronizabilidad de Tarea congelada por #491.
 
 ## 5. Origen y autoría
 
@@ -504,7 +512,11 @@ CAMBIO_TITULO
 CAMBIO_DESCRIPCION
 ```
 
-Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor anterior/nuevo cuando corresponda. El actor humano local deberá poder resolverse mediante la estrategia canónica interinstalación pendiente si el historial resulta sincronizable; este freeze no presupone columnas concretas de UID.
+Cada entrada conserva como mínimo tipo, instante, tarea, actor si existe y valor
+anterior/nuevo cuando corresponda. Tarea es sincronizable por #491; la
+representación portable del actor y de las demás referencias del historial se
+resolverá en #492. Este freeze no presupone columnas concretas de UID, PK/FK ni
+payload físico.
 
 `REABIERTA` representa exclusivamente la operación funcional explícita
 `COMPLETADA → PENDIENTE` definida en la sección 9.1; no es un estado persistido ni
@@ -528,9 +540,12 @@ El motivo es parte estructurada y obligatoria de esa entrada funcional: no puede
 quedar como texto libre opcional, inferirse desde un comentario ni sustituirse
 por éste. Los artefactos posteriores definirán su representación sin que este
 freeze establezca nombre de columna, tipo SQL, longitud, schema HTTP, DTO, tabla,
-JSON, evento, `command_code` ni payload de outbox. Si la Tarea resultara
-sincronizable, su estrategia todavía abierta deberá preservar también este dato;
-esta regla no decide sync, evento ni outbox.
+JSON, evento, `command_code` ni payload de outbox. La estrategia sincronizable
+ya congelada para Tarea deberá preservar también este dato cuando corresponda a
+la operación distribuible; esta regla no convierte el historial funcional en
+outbox o inbox ni define el evento o payload físico. Las referencias portables
+siguen pendientes de #492 y la granularidad de comentario/versionado, de #493
+cuando corresponda.
 
 ```text
 REABIERTA → historial_funcional
@@ -539,6 +554,7 @@ historial_funcional
 != auditoria_administrativa
 != log_tecnico
 != outbox
+!= inbox
 ```
 
 ## 17. Generación automática
@@ -554,7 +570,20 @@ Financiero
 
 La regla para determinar mora pertenece a Financiero; la tarea resultante pertenece a `gestion_operativa`. Financiero no administra directamente estado, prioridad, comentarios, historial ni asignación de esa tarea.
 
-La futura generación debe ser idempotente frente a reintentos y al mismo hecho fuente para impedir duplicados.
+La futura generación debe ser idempotente frente a reintentos y al mismo hecho
+fuente para impedir duplicados. Esto exige dos garantías complementarias:
+
+```text
+op_id         -> idempotencia técnica de una operación distribuida concreta
+hecho fuente  -> idempotencia funcional de la generación automática
+```
+
+Un mismo hecho fuente procesado después con un `op_id` nuevo no debe crear una
+segunda Tarea funcional equivalente. Quedan pendientes para los artefactos
+técnicos la clave funcional exacta, columnas, constraint, índice, tabla, hash,
+natural key, combinación de identificadores, algoritmo, eventual ventana
+temporal y repository/command. Este freeze no inventa esa clave ni diseña SQL o
+API.
 
 ## 18. Relaciones con objetos externos
 
@@ -1079,262 +1108,282 @@ por falta de evidencia y por exceder el MVP.
 DEV-ARCH-GOP, DEV-SRV y DEV-API deberán materializar estas relaciones junto con
 Administrativo sin cambiar su ownership ni inventar equivalencias con roles o
 permisos técnicos. Permanecen pendientes los mecanismos de autorización,
-contratos HTTP, SQL y tests. Esta decisión no resuelve sync, identidad
-interinstalación ni el efecto de comentar sobre `version_registro`.
+contratos HTTP, SQL y tests. Esta decisión funcional no modifica la estrategia
+sync ya congelada por #491; siguen pendientes la identidad interinstalación de
+#492 y el efecto de comentar sobre `version_registro` de #493.
 
-## 21. CORE-EF preliminar
+## 21. Decisión CORE-EF y estrategia de sincronización (#491)
 
-Clasificación conceptual futura:
+### 21.1 Alcance y clasificación
 
-| Operación | Clasificación |
-| --- | --- |
-| Crear tarea manual | `COMMAND_WRITE_NEGOCIO` |
-| Crear tarea automática | `COMMAND_WRITE_NEGOCIO` |
-| Modificar tarea | `COMMAND_WRITE_NEGOCIO` |
-| Asignar, reasignar o desasignar | `COMMAND_WRITE_NEGOCIO` |
-| Cambiar estado | `COMMAND_WRITE_NEGOCIO` |
-| Reabrir tarea completada | `COMMAND_WRITE_NEGOCIO` |
-| Agregar comentario | `COMMAND_WRITE_NEGOCIO` |
-| Consultas | `QUERY_READLIKE` |
+Este incremento resuelve el blocker interno **#6 — estrategia de sync**, trazado
+por el issue #491, sin crear endpoints ni artefactos físicos. La decisión es:
 
-Cada futuro `COMMAND_WRITE_NEGOCIO` deberá declarar expresamente
-`SINCRONIZABLE` o `LOCAL / NO SINCRONIZABLE`; la clasificación no puede quedar
-implícita.
+```text
+Tarea = concepto funcional sincronizable de gestion_operativa
+mutación funcional compartida de Tarea = COMMAND_WRITE_NEGOCIO + SINCRONIZABLE
+consulta humana = QUERY_READLIKE
+recepción/aplicación remota = responsabilidad técnica, no command humano
+```
 
-La presencia de `Authorization: Bearer` depende de que el command tenga un actor
-humano autenticado. Para commands manuales o ejecutados por una persona:
+Todas las operaciones funcionales del MVP que crean o alteran el snapshot
+compartido deben converger entre instalaciones. Omitir cualquiera —contenido,
+asignación, prioridad, fecha objetivo o estado— permitiría dos snapshots
+funcionalmente distintos para el mismo trabajo. El origen y el actor no cambian
+esa conclusión:
+
+```text
+actor humano != clasificación SINCRONIZABLE
+origen = SISTEMA != LOCAL / NO SINCRONIZABLE
+```
+
+Crear una tarea automática también es sincronizable cuando crea ese estado
+compartido. No exige Bearer humano, no materializa un usuario técnico y conserva
+`id_usuario_creador = NULL` y `generador_sistema` requerido. Su mecanismo de
+autenticación/autorización técnica sigue **NO CONGELADO**: no se inventan API
+key, service account, technical bearer, M2M auth, rol ni permiso nuevo.
+
+Agregar comentario es `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`: el comentario es
+seguimiento funcional compartido y omitirlo divergiría la información de Tarea.
+Esto no decide si el comentario integra el mismo aggregate/versionado del
+snapshot ni si incrementa `Tarea.version_registro`; esa granularidad permanece
+reservada a #493.
+
+Una eventual baja lógica es `COMMAND_WRITE_TECNICO + SINCRONIZABLE` porque cambia
+la disponibilidad distribuida del concepto, pero **no implementa ni habilita**
+una operación funcional, endpoint `DELETE` o purga. No se identificó un command
+de Tarea puramente local, técnico o efímero dentro del alcance funcional
+estudiado. `LOCAL / NO SINCRONIZABLE` queda, por tanto, sin operaciones en esta
+matriz; las consultas no pertenecen a esa categoría, sino a `QUERY_READLIKE`.
+
+### 21.2 Evidencia, inferencia y alternativas
+
+- **Repositorio:** `DEV-ARCH-OPE-001` excluye tareas de `operativo`; por ello
+  `gestion_operativa != operativo` y la sincronización transversal no traslada
+  ownership. `Tarea`, comentario e historial continúan como núcleo funcional;
+  outbox, inbox, ledger, conflictos, locks, IDs y metadata de sync son soporte
+  transversal. No se adopta compatibilidad heredada como núcleo.
+- **Especificación formal:** CORE-EF exige identidad local más `uid_global`
+  inmutable, `version_registro`, `op_id`, outbox transaccional, inbox idempotente,
+  baja lógica distribuible y persistencia de divergencias materiales. SRV-TEC-002
+  separa recepción/aplicación técnica de los commands de negocio.
+- **Implementación real:** #469/#470 materializan `operacion_idempotente` y el
+  runtime reusable `claim_operation → EXECUTE | REPLAY | CONFLICT →
+  complete_operation`; #412/PR #478 es el primer consumidor productivo validado
+  con receipt, CAS y outbox en una sola transacción. El repositorio no contiene
+  SQL, router, schema, service, repository ni tests runtime GOP/Tarea.
+- **Inferencia:** contenido, asignación, prioridad, objetivo, estados,
+  reapertura, comentarios y eventual baja deben converger porque todos alteran
+  información funcional visible en más de una instalación. La inferencia se
+  congela como **decisión de diseño nueva** de #491; no afirma runtime existente.
+- **Alternativa descartada:** `LOCAL` haría imposible garantizar un snapshot
+  compartido consistente; `MIXTO` por tipo de actor confundiría autoría con
+  sincronizabilidad. Tampoco se copia mecánicamente otro dominio ni se declara
+  local una creación `SISTEMA`.
+- **Impacto posterior:** DEV-ARCH/DER/SQL/DEV-SRV/DEV-API GOP deberán materializar
+  esta clasificación, pero dependen de #492 para referencias portables y de
+  #493 para granularidad de comentario/versionado. Este freeze no define nombres
+  de endpoint, payload físico, evento concreto ni allowlist concreta.
+
+### 21.3 Headers técnicos y actor
+
+Todo futuro command `SINCRONIZABLE` exige el helper común CORE-EF y, de forma
+conceptual:
+
+```text
+X-Op-Id          -> identidad técnica global de la operación
+X-Sucursal-Id    -> contexto técnico/contractual del command
+X-Instalacion-Id -> contexto y procedencia técnica
+```
+
+Los tres son obligatorios para el futuro contrato write sincronizable. Ninguno
+autentica a una persona. `X-Sucursal-Id` **no** copia, infiere ni redefine
+`Tarea.id_sucursal`; el scope funcional se recibe/valida según el caso de uso y
+permanece inmutable. `X-Instalacion-Id` **no** es scope; identifica procedencia
+técnica. `X-Usuario-Id` no se requiere, parsea, compara ni usa.
+
+Un command humano protegido usa, por separado:
 
 ```text
 Authorization: Bearer
-→ get_authenticated_principal
-→ AuthenticatedPrincipal.id_usuario
-→ identidad humana efectiva
+-> get_authenticated_principal
+-> AuthenticatedPrincipal.id_usuario
 ```
 
-En esos commands se mantiene además:
+Un command de sistema conserva la misma infraestructura técnica de sync cuando
+modifica estado compartido, pero su autenticación/autorización técnica continúa
+pendiente y no se reemplaza por headers CORE-EF.
+
+`If-Match-Version` no aplica a creaciones porque todavía no existe una versión
+previa. Es obligatorio en toda mutación ordinaria de una Tarea existente y
+versionada: título, descripción, asignación/reasignación/desasignación,
+prioridad, fecha objetivo, cambios de estado, completar, cancelar, reabrir y una
+eventual baja lógica. Debe expresar la versión esperada y un mismatch real debe
+fallar explícitamente sin sobrescritura silenciosa. Para agregar comentario, la
+obligatoriedad y el target exacto quedan **pendientes de #493**, porque decidirlos
+resolvería incidentalmente si el append modifica la versión de Tarea.
+
+### 21.4 Versionado e identidad distribuida
+
+Al ser sincronizable, la futura Tarea debe materializar simultáneamente ID local
+técnico, `uid_global` inmutable y `version_registro`; el ID local no puede viajar
+como identidad distribuida. Las altas nacen en versión 1 y las mutaciones
+ordinarias del snapshot y la baja lógica incrementan una vez la versión. El
+optimistic locking local y la comparación distribuida son problemas distintos.
+
+#492 permanece abierto para definir la representación definitiva de las
+referencias remotas de creador, responsable y sucursal, el tratamiento de
+referencias aún desconocidas localmente y el DTO/payload portable. GOP consumirá
+la identidad canónica que definan Administrativo/Técnico; no agrega UID a
+`usuario`, no crea mapping propio y no usa IDs locales como identidad remota.
+La estrategia de #491 requiere resolver esas referencias antes de un contrato
+físico completo, pero no selecciona aquí su representación.
+
+#493 permanece abierto para decidir si agregar comentario incrementa
+`Tarea.version_registro`, si el comentario posee identidad/versionado propio y
+qué versión controla su append. #491 sólo congela que el comentario debe
+converger y usar idempotencia; no afirma «siempre incrementa» ni «nunca
+incrementa» la versión de Tarea.
+
+## 22. Idempotencia durable, replay y transacción
+
+Todos los commands sincronizables de la matriz usan `X-Op-Id` y deben reutilizar
+la infraestructura transversal #469/#470; queda prohibido crear tabla, ledger o
+implementación `claim/replay/complete` paralela en GOP. Cada contrato posterior
+definirá `command_code`, target y payload material normalizado:
+
+- mismo `op_id` + mismo command/target/payload: `REPLAY` del snapshot durable
+  original, sin releer estado mutable, repetir negocio, incrementar versión ni
+  emitir outbox;
+- mismo `op_id` + command, target o payload material distinto: `CONFLICT` según
+  el orden transversal vigente `COMMAND → TARGET → PAYLOAD`, sin efecto;
+- error antes del commit: no queda receipt completado; el retry puede volver a
+  `EXECUTE`;
+- `complete_operation` sólo ocurre junto al resultado lógico exitoso dentro de
+  la transacción exterior del caso de uso.
+
+La generación automática debe combinar la idempotencia técnica por `op_id` con
+la idempotencia funcional por el mismo hecho fuente. Son garantías obligatorias
+y complementarias: un retry o job posterior puede usar otro `op_id`, pero no por
+ello crear una segunda Tarea funcional equivalente para el mismo hecho. La
+materialización concreta de la identidad del hecho fuente continúa pendiente
+según la sección 17; no autoriza un ledger GOP paralelo. La frontera mínima es
+atómica:
 
 ```text
-X-Usuario-Id
-→ NO REQUERIR
-→ NO PARSEAR
-→ NO COMPARAR
-→ NO USAR como identidad
-→ NO USAR como autorización
+mutación de negocio + historial funcional que corresponda
++ outbox distribuible + receipt durable
+-> una Session / una transacción local / un commit exterior
 ```
 
-Todo `COMMAND_WRITE_NEGOCIO` clasificado como `SINCRONIZABLE` deberá aplicar los
-headers técnicos CORE-EF que correspondan, independientemente de que tenga actor
-humano o `origen = SISTEMA`:
+Un fallo revierte todos esos efectos. El ledger es local, inmutable y no
+sincronizable; no es historial, outbox, inbox ni auditoría.
 
-```text
-X-Op-Id
-X-Sucursal-Id
-X-Instalacion-Id
-If-Match-Version cuando modifica un recurso existente/versionado
-```
+## 23. Outbox, inbox y aplicación remota
 
-`X-Op-Id`, `X-Sucursal-Id` y `X-Instalacion-Id` aportan contexto técnico, no
-identidad humana. `If-Match-Version` depende de la naturaleza del recurso y del
-command, no del tipo de actor. `X-Sucursal-Id` no define el scope funcional de
-`Tarea`. Los detalles concretos de cada header deberán cerrarse en DEV-ARCH,
-DEV-SRV y DEV-API del command correspondiente.
+Cada creación o modificación sincronizable del snapshot —contenido, asignación,
+prioridad, fecha objetivo, estado, completar, cancelar y reabrir— debe registrar
+su cambio distribuible en outbox en la misma transacción local. También debe
+hacerlo la creación automática, el comentario según la granularidad que cierre
+#493 y una eventual baja lógica. No se congela schema ni payload de evento.
 
-Para commands automáticos con `origen = SISTEMA` no se exigen ni se asumen
-`Authorization: Bearer`, `AuthenticatedPrincipal`, un usuario ficticio ni un
-`id_usuario_creador` artificial. Se mantiene:
+`REABIERTA` sigue siendo una marca del historial funcional conceptual, no un
+estado y no un evento/outbox por sí misma. La reapertura cambia el snapshot a
+`PENDIENTE` y ese cambio sí requiere propagación. Snapshot corriente, historial
+funcional, outbox, inbox y ledger de idempotencia son estructuras y
+responsabilidades distintas; no se presume que todo el historial viaje como una
+única estructura.
 
-```text
-id_usuario_creador = NULL
-generador_sistema = requerido
-```
+La recepción remota pertenece al soporte Técnico y no es un command humano. Debe
+registrar y consultar `op_id` mediante inbox o equivalente antes de comparar el
+estado material. Encontrar el `op_id` no basta para aceptar un duplicado: primero
+se compara el envelope o fingerprint entrante con la evidencia durable
+disponible. La equivalencia comprende la semántica existente de identidad de
+entidad/target, tipo de entidad/command, tipo de evento y versión cuando
+correspondan, más payload material y su hash/fingerprint; no exige inventar
+columnas ausentes.
 
-El mecanismo concreto mediante el cual un proceso técnico o sistema queda
-autorizado para ejecutar un command GOP permanece **NO CONGELADO** y deberá
-resolverse posteriormente en DEV-ARCH-GOP, DEV-SRV, DEV-API o la infraestructura
-transversal correspondiente, sin definirlo en este freeze.
+Un `op_id` ya aplicado con envelope compatible es duplicado seguro o replay
+equivalente y no vuelve a producir efectos. El mismo `op_id` con envelope
+incompatible no es duplicado ni replay: siempre se clasifica y persiste como
+conflicto, no genera efecto de negocio, conserva trazabilidad obligatoria y queda
+sujeto al workflow transversal de resolución. `RECHAZADO` permanece disponible
+para otras entradas inválidas o errores técnicos cuando lo disponga el contrato
+transversal, pero no para reutilizar incompatiblemente un `op_id` ya aplicado.
+Sólo para un `op_id` distinto se validan `uid_global`, `version_registro` y
+payload material para decidir aplicación controlada, convergencia, obsolescencia
+o conflicto. Nunca se inventa actor humano ni se usa Bearer humano como contrato
+de réplica. Este freeze no crea un nuevo enum técnico, endpoint GOP de sync ni
+formato ZIP/JSON alternativo.
 
-La clasificación `SINCRONIZABLE` o `LOCAL / NO SINCRONIZABLE` es independiente de
-la existencia de actor humano o de `origen = SISTEMA`: no se infiere que todo
-command sincronizable requiera Bearer ni que un command de sistema sea local/no
-sincronizable.
+## 24. Conflictos interinstalación
 
-Su DEV-SRV/DEV-API deberá resolver UID/identidad global cuando aplique,
-versionado, idempotencia, fingerprint, replay, outbox, allowlist de sync, misma
-transacción, rollback, conflictos, procedencia e historial funcional cuando
-corresponda. Si es local/no sincronizable, deberá declarar `sync = NO`, justificar
-qué componentes CORE-EF aplican y cuáles no, y no copiar automáticamente outbox,
-UID global, allowlist o sync.
+`Tarea` se clasifica con criticidad de sincronización **MEDIA**. Modifica trabajo
+humano operativo/administrativo y conserva responsable, asignación, estado,
+prioridad, fecha objetivo, completar/cancelar/reabrir, historial y posible origen
+automático; una resolución genérica incorrecta puede perder o alterar trabajo
+pendiente. No es criticidad BAJA porque una auto-resolución genérica destruiría
+semántica funcional relevante. Tampoco es ALTA: Tarea no es por sí misma un
+movimiento financiero, cobro, comprobante, tesorería, aplicación financiera ni
+efecto económico irreversible.
 
-La implementación de #412 mediante PR #478 constituye el primer patrón
-productivo validado de un `COMMAND_WRITE_NEGOCIO` autenticado mediante Bearer y
-consumidor del runtime transversal de idempotencia. Debe utilizarse como
-referencia arquitectónica para futuros commands GOP, sin copiar mecánicamente
-requisitos propios de `valor_parametro`. Por ejemplo, crear tarea no debe asumir
-automáticamente `If-Match-Version`; modificar, reasignar, cambiar estado, reabrir
-o cambiar fecha objetivo deberán evaluarlo si la futura `Tarea` resulta
-versionada.
+Por CORE-EF, la criticidad MEDIA exige reglas explícitas. No existe auto-merge
+genérico ni resolución automática campo por campo para Tarea. Toda divergencia
+material que esas reglas no puedan resolver de forma segura debe persistirse
+como conflicto y nunca sobrescribirse silenciosamente. Esta criticidad no cambia
+la decisión de locks para ABM simples ni habilita LWW por timestamp.
 
-Para las consultas `QUERY_READLIKE`:
+La aplicación entrante sigue este orden conceptual. La clave primaria de
+idempotencia es `op_id`, pero nunca funciona como bypass de la validación del
+envelope durable:
 
-```text
-headers write       → NO APLICA
-X-Op-Id             → NO APLICA
-If-Match-Version    → NO APLICA
-idempotencia command → NO APLICA
-outbox              → NO APLICA
-```
+1. Si el `op_id` ya fue aplicado, se compara el envelope/fingerprint durable:
+   compatible significa `DUPLICADO` seguro o `REPLAY` equivalente, sin nuevo
+   efecto; incompatible significa siempre `CONFLICTO` persistido y trazado, sin
+   efecto de negocio y sujeto al workflow transversal de resolución, nunca
+   duplicado, replay ni rechazado.
+2. Sólo si el `op_id` es distinto se evalúan `uid_global`, `version_registro` y
+   payload material. La operación distinta conserva su propia trazabilidad y no
+   se convierte en replay aunque su resultado sea materialmente convergente.
 
-Toda consulta humana protegida de Tareas —como **Mis tareas**, **Tareas creadas
-por mí**, listado por scope, detalle y filtros que proyecten las tareas visibles
-al usuario— exige:
+Para un `op_id` distinto y el mismo `uid_global`, rige como mínimo esta matriz:
 
-```text
-Authorization: Bearer obligatorio
-→ get_authenticated_principal
-→ AuthenticatedPrincipal.id_usuario
-→ identidad humana efectiva
-→ evaluar relación funcional de visibilidad
-→ evaluar autorización efectiva de Administrativo
-```
+| Caso | Tratamiento congelado |
+| --- | --- |
+| Versión entrante mayor que la local | Candidata a aplicación controlada; validar continuidad, payload y referencias portables antes de persistir. Un salto o referencia irresoluble se rechaza o registra como inconsistencia, no se fuerza. |
+| Misma versión y payload material igual | Operación distinta pero materialmente convergente; no se clasifica automáticamente como duplicado ni replay y se conserva la trazabilidad de ambas operaciones. |
+| Misma versión y payload material distinto | Inconsistencia/conflicto material persistido; no sobrescribir. |
+| Versión entrante menor que la local | Cambio atrasado u obsoleto; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
 
-En esas consultas:
+`op_id` identifica la operación cuya compatibilidad debe comprobarse; sólo un
+envelope durable compatible permite clasificar duplicado/replay. Para operaciones
+distintas, `uid_global` y `version_registro` gobiernan la comparación del estado
+junto con el payload material.
+`updated_at` y la instalación de origen sólo pueden ser criterios secundarios o
+auxiliares: no se adopta LWW por timestamp. CORE-EF exige persistir la divergencia
+no resoluble, pero no aporta una regla GOP segura de auto-merge; por ello no se
+inventa resolución automática. Una resolución con impacto en datos requiere
+trazabilidad y nuevo `op_id`. La validación concreta de referencias portables y
+del payload queda condicionada por #492; la granularidad de comentarios, por
+#493.
 
-```text
-X-Usuario-Id
-→ NO REQUERIR
-→ NO PARSEAR
-→ NO COMPARAR
-→ NO USAR como identidad
-→ NO USAR como autorización
-```
+## 25. Baja lógica y locks
 
-Tampoco se toma identidad de query params, payload, `X-Sucursal-Id` ni
-`X-Instalacion-Id`. Esta regla se limita a consultas humanas protegidas de
-Tareas; una futura lectura técnica de sistema resolverá separadamente su
-autenticación y autorización, que continúan **NO CONGELADAS**. Este incremento no
-implementa endpoints ni afirma cumplimiento runtime para GOP.
+`deleted_at != CANCELADA`. `CANCELADA` es un estado funcional terminal visible;
+`deleted_at` representa una baja técnica. Si la futura operación técnica existe,
+debe incrementar `version_registro`, registrar `op_id`, emitir baja lógica por
+outbox en la misma transacción y aplicarse idempotentemente vía inbox. Este
+incremento sólo congela su propagación eventual: no crea endpoint `DELETE`,
+purga física, reactivación ni operación funcional MVP.
 
-## 22. Versionado
+No hay evidencia para imponer en el MVP un lock lógico prolongado a los ABM
+simples de Tarea. Se congela `lock lógico: NO APLICA por ahora`, porque optimistic
+locking y transacción alcanzan para las mutaciones estudiadas; esto no usa
+`version_registro` como sustituto universal de locks. Si un artefacto posterior
+introduce edición prolongada, proceso crítico u operaciones incompatibles que
+CORE-EF no pueda proteger con CAS, deberá justificar y diseñar lock persistido,
+independiente del versionado y de la transacción SQL.
 
-Se adopta como estrategia objetivo la concurrencia optimista para las futuras modificaciones de `Tarea`. Los contratos técnicos posteriores deberán definir el mecanismo de versión compatible con CORE-EF y `If-Match-Version` cuando corresponda.
-
-La materialización concreta —incluido si corresponde un campo `version_registro` en una futura entidad persistente— permanece pendiente de `DEV-ARCH-GOP`, DER y SQL.
-
-Permanece abierta la decisión: **¿agregar comentario incrementa `version_registro` de tarea?** La recomendación preliminar es **NO** si el comentario es append-only y no modifica el estado funcional de `Tarea`.
-
-## 23. Idempotencia
-
-Debe aplicarse al menos a crear manual, crear automática, asignar/reasignar,
-cambiar estado, reabrir y agregar comentario. Los contratos posteriores deberán
-definir criterio de payload, mismo `op_id` con mismo payload, mismo `op_id` con
-payload distinto y retry posterior a error. La futura reapertura deberá evaluar
-el runtime transversal #469/#470 como los demás commands GOP, sin que este freeze
-defina `command_code`, target, fingerprint, snapshot ni proyección de respuesta.
-
-La generación automática además debe deduplicar reintentos y el mismo hecho fuente.
-
-#469/#470 ya proveen el ledger durable y el runtime transversal reusable, y la
-implementación productiva de #412 en PR #478 validó su consumo. Cuando un command
-GOP requiera idempotencia durable y replay compatible con el modelo transversal
-vigente, deberá evaluar y preferir el runtime común antes de diseñar un
-ledger/replay propio. Las referencias conceptuales vigentes son:
-
-```text
-canonical_payload_hash(...)
-claim_operation(...)
-complete_operation(...)
-```
-
-Este freeze no define para GOP `command_code`, `target_type`, `target_uid`,
-`target_key`, fingerprint concreto, snapshot concreto ni códigos de error
-propios. Cada DEV-SRV/DEV-API deberá resolverlos para su command.
-
-El runtime transversal no decide la semántica de negocio. Cada command GOP
-conserva responsabilidad sobre autorización funcional, `command_code`, target
-lógico, proyección idempotente, reglas de negocio, CAS/concurrencia, historial
-funcional, outbox funcional, response projection, errores de dominio,
-clasificación de sync y rollback/transacción.
-
-```text
-ledger idempotente
-!= outbox
-!= historial funcional
-!= auditoría
-```
-
-Para commands GOP que adopten el runtime transversal, el patrón objetivo a
-evaluar es:
-
-```text
-BEGIN
-→ autenticación/autorización
-→ parsing CORE-EF
-→ fingerprint / claim
-→ REPLAY | CONFLICT | EXECUTE
-→ si EXECUTE:
-     validaciones DB
-     lock/CAS si corresponde
-     cambio funcional
-     historial si aplica
-     outbox si aplica
-     complete_operation
-→ COMMIT exterior
-```
-
-Cualquier fallo antes del commit debe revertir negocio, historial transaccional,
-outbox y receipt idempotente. Este flujo no se impone a todos los commands GOP:
-cada contrato deberá justificar su aplicabilidad y frontera transaccional.
-
-```text
-REPLAY compatible
-→ devuelve el resultado lógico original
-→ no relee estado actual para reconstruir la respuesta
-→ no vuelve a ejecutar negocio
-→ no genera nuevo outbox
-```
-
-El snapshot concreto de `Tarea` permanece pendiente.
-
-## 24. Sync
-
-**NO CONGELADO.** Las alternativas son `SINCRONIZABLE`, `LOCAL` o `MIXTO`. Se recomienda evaluar seriamente `SINCRONIZABLE` por la necesidad futura de consultar **Mis tareas** entre instalaciones.
-
-La alternativa `SINCRONIZABLE` obliga a resolver identidad global, procedencia,
-versionado, conflictos, outbox, allowlist y replay coherente. La alternativa
-`LOCAL` debe declarar `sync = NO` y justificar qué soporte transversal conserva,
-sin incorporar infraestructura de sync por defecto. La alternativa `MIXTO`
-exige clasificar cada command expresamente como sincronizable o local/no
-sincronizable y delimitar qué información puede viajar. Estas consecuencias no
-seleccionan una alternativa.
-
-La decisión debe tomarse antes del DER porque afecta `uid_global`, metadata CORE-EF, outbox, allowlist, conflictos, comentarios, historial, versiones e idempotencia. Este documento no crea eventos, productores, consumidores ni entradas de allowlist.
-
-```text
-AuthenticatedPrincipal.id_usuario
-→ identidad humana local efectiva
-```
-
-Si Tarea se define como `SINCRONIZABLE`, deberá existir además una estrategia canónica interinstalación para resolver toda referencia persistida a usuario dentro de `gestion_operativa`, como mínimo:
-
-- usuario creador;
-- usuario responsable;
-- autor de comentario;
-- actor del historial funcional;
-- cualquier futura referencia humana persistida que participe de información sincronizable del módulo.
-
-No debe asumirse que el `id_usuario` local es suficiente como identidad sincronizable.
-
-La estrategia concreta —UID global de usuario, mapping u otro mecanismo autorizado— pertenece a Administrativo/Técnico y permanece **NO CONGELADA** en este documento. `gestion_operativa` consume esa identidad, no redefine el modelo administrativo de usuario, no inventa un UID, no crea aquí una tabla de mapping y no debe agregar por sí mismo metadata global a `usuario`. **Mis tareas** entre instalaciones no puede habilitarse de manera segura hasta resolver esta dependencia.
-
-## 25. Locks
-
-Para el MVP se propone no requerir lock lógico inicialmente. La estrategia objetivo es la concurrencia optimista; el mecanismo de versión y su materialización técnica quedan pendientes de `DEV-ARCH-GOP`, DER y SQL, manteniendo compatibilidad con `If-Match-Version` cuando corresponda.
-
-```text
-concurrencia optimista
-→ mecanismo de versión pendiente
-→ If-Match-Version cuando corresponda
-```
 
 ## 26. Consultas mínimas
 
@@ -1423,6 +1472,12 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 38. Si una sucursal deja de estar vigente, no produce side effects sobre sus tareas: el responsable pierde elegibilidad local y el alcance global administrativo vigente, más autorización efectiva, preserva un camino residual de visibilidad y gestión sin cambiar el scope.
 39. La habilitación administrativa aplicable es local para una sucursal vigente y global para una tarea global o una sucursal no vigente; todas requieren autorización efectiva y el fallback no es un bypass.
 40. Toda consulta humana protegida de Tareas requiere Bearer y deriva su identidad exclusivamente de `AuthenticatedPrincipal.id_usuario`, nunca de `X-Usuario-Id` ni de contexto técnico.
+41. Tarea es un concepto funcional sincronizable: toda mutación funcional compartida de la matriz es `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`, con independencia de actor humano u `origen = SISTEMA`; las consultas son `QUERY_READLIKE`.
+42. Todo command sincronizable reutiliza `X-Op-Id`, contexto `X-Sucursal-Id`/`X-Instalacion-Id`, ledger durable transversal y outbox atómico; `If-Match-Version` aplica a mutaciones de Tarea existente salvo la decisión específica de comentarios reservada a #493.
+43. La aplicación remota usa inbox, `uid_global`, `version_registro` y `op_id`, persiste divergencias materiales y no adopta LWW por timestamps.
+44. Un `op_id` ya aplicado sólo es duplicado seguro o replay si su envelope/fingerprint es materialmente compatible; una reutilización incompatible siempre es conflicto persistido y trazado, no genera efecto de negocio y queda sujeta al workflow transversal de resolución.
+45. La generación automática combina obligatoriamente idempotencia técnica por `op_id` e idempotencia funcional por el mismo hecho fuente, cuya clave y materialización concretas permanecen pendientes.
+46. `Tarea` tiene criticidad de sincronización MEDIA: sus conflictos se rigen por reglas explícitas, sin auto-merge genérico, y toda divergencia material no resoluble de forma segura se persiste como conflicto.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
@@ -1433,22 +1488,65 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 - Una baja técnica excluye la tarea de lecturas ordinarias, mientras una
   cancelación permanece como hecho funcional visible.
 - La prioridad no altera vencimiento, estado, autorización ni SLA.
-- Ninguna de estas decisiones traslada tareas a `operativo`, materializa una
-  entidad técnica ni resuelve sync, identidad portable, permisos o versionado de
-  comentarios.
+- Ninguna de estas decisiones traslada tareas a `operativo` ni materializa una
+  entidad técnica. La sincronización general está resuelta documentalmente por
+  #491; siguen pendientes la identidad portable de #492, los permisos y el
+  versionado de comentarios de #493.
 - El scope de sucursal/global limita consultas y gestión por alcance sin usar
   `id_instalacion_origen`; creador y responsable siguen siendo relaciones
   distintas.
 
-## 30. Decisiones todavía abiertas
+## 30. Estado de blockers y criterio de #491
 
-De la numeración original de blockers, los cierres acumulados comprenden **#1,
-#2, #3, #4, #5, #8, #9 y #11**. Este segundo incremento cierra exclusivamente
-**#1 y #11** mediante las secciones 14 y 20. Permanecen abiertos únicamente, con
-su numeración original y sin resolución incidental:
+De la numeración original, están cerrados documentalmente **#1, #2, #3, #4,
+#5, #6, #8, #9 y #11**. Este incremento resuelve exclusivamente el blocker
+interno **#6 — estrategia de sync**, correspondiente al issue #491. Permanecen
+abiertos, sin resolución incidental:
 
-6. Estrategia de sync: `SINCRONIZABLE`, `LOCAL` o `MIXTO`.
-7. Si agregar comentario incrementa `version_registro` de la tarea.
-10. Identidad canónica interinstalación de usuario para toda referencia humana persistida que deba sincronizarse en `gestion_operativa` —como creador, responsable, autor de comentario y actor del historial funcional—: mecanismo de resolución o mapping y dependencia con Administrativo/Técnico.
+7. comentario / efecto sobre `Tarea.version_registro` → issue #493;
+10. identidad canónica interinstalación y referencias portables → issue #492.
 
-Estas decisiones deberán resolverse y validarse contra arquitectura, CORE-EF, autorización, sincronización, SQL, implementación y tests antes de afirmar un contrato técnico completo.
+La dependencia de #492 impide producir el payload/DTO físico definitivo y la de
+#493 impide cerrar el target/versionado exacto del comentario, pero ninguna
+impide congelar su clasificación sincronizable. La autenticación técnica para
+commands `origen = SISTEMA` también sigue **NO CONGELADA** y deberá resolverse
+antes de exponer runtime automático.
+
+Criterio documental de #491:
+
+- [x] Clasificación sync congelada por operación.
+- [x] Headers CORE-EF aplicables definidos funcionalmente.
+- [x] Idempotencia y replay definidos mediante soporte transversal reusable.
+- [x] Estrategia conceptual de outbox, inbox y conflictos definida.
+- [x] Dependencia con identidad interinstalación explicitada sin cerrar #492.
+- [x] GOP-FREEZE-001 y PROJECT-STATUS alineados.
+- [x] Sin DER, SQL, API, runtime ni tests GOP prematuros.
+
+Por lo tanto, **#491 queda documentalmente listo para revisión y eventual cierre
+después del merge**; este documento no cierra el issue ni la épica #489.
+
+## 31. Matriz final por operación
+
+Los headers abreviados como **CORE-EF sync** significan `X-Op-Id +
+X-Sucursal-Id + X-Instalacion-Id`; son contexto técnico y nunca identidad humana
+ni scope funcional. No se definen nombres de endpoint.
+
+| Operación | CORE-EF | Sync | Headers técnicos conceptuales | If-Match | Dependencia |
+| --- | --- | --- | --- | --- | --- |
+| Crear tarea manual | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync; Bearer separado para actor humano | No: no existe versión previa | #492 para referencias portables |
+| Crear tarea automática / `origen = SISTEMA` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync; no se presume Bearer humano | No: no existe versión previa | #492; auth técnica no congelada |
+| Modificar título | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para payload portable |
+| Modificar descripción | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para payload portable |
+| Asignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para responsable portable |
+| Reasignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para responsable portable |
+| Desasignar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para representación portable |
+| Cambiar prioridad | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
+| Cambiar `fecha_objetivo` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
+| `PENDIENTE -> EN_CURSO` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
+| `EN_CURSO -> PENDIENTE` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Sin dependencia funcional adicional |
+| Completar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para referencias del snapshot/historial |
+| Cancelar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para referencias del snapshot/historial |
+| Reabrir `COMPLETADA -> PENDIENTE` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | #492 para reparación portable de responsable |
+| Agregar comentario | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Pendiente de #493 para target/versión | #492 para autor portable; #493 para granularidad/versionado |
+| Eventual baja lógica técnica | `COMMAND_WRITE_TECNICO` | `SINCRONIZABLE` | CORE-EF sync | Sí, sobre Tarea existente | No crea operación; #492 para payload portable |
+| Consultas humanas de Tarea | `QUERY_READLIKE` | `NO APLICA` | Headers write: `NO APLICA`; Bearer humano separado | No | Auth técnica de una eventual lectura sync queda separada |
