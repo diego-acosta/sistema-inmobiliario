@@ -570,7 +570,20 @@ Financiero
 
 La regla para determinar mora pertenece a Financiero; la tarea resultante pertenece a `gestion_operativa`. Financiero no administra directamente estado, prioridad, comentarios, historial ni asignación de esa tarea.
 
-La futura generación debe ser idempotente frente a reintentos y al mismo hecho fuente para impedir duplicados.
+La futura generación debe ser idempotente frente a reintentos y al mismo hecho
+fuente para impedir duplicados. Esto exige dos garantías complementarias:
+
+```text
+op_id         -> idempotencia técnica de una operación distribuida concreta
+hecho fuente  -> idempotencia funcional de la generación automática
+```
+
+Un mismo hecho fuente procesado después con un `op_id` nuevo no debe crear una
+segunda Tarea funcional equivalente. Quedan pendientes para los artefactos
+técnicos la clave funcional exacta, columnas, constraint, índice, tabla, hash,
+natural key, combinación de identificadores, algoritmo, eventual ventana
+temporal y repository/command. Este freeze no inventa esa clave ni diseña SQL o
+API.
 
 ## 18. Relaciones con objetos externos
 
@@ -1249,9 +1262,13 @@ definirá `command_code`, target y payload material normalizado:
 - `complete_operation` sólo ocurre junto al resultado lógico exitoso dentro de
   la transacción exterior del caso de uso.
 
-La deduplicación adicional de un mismo hecho fuente de generación automática
-puede ser una regla funcional futura, pero no sustituye `op_id` ni autoriza un
-ledger GOP. La frontera mínima es atómica:
+La generación automática debe combinar la idempotencia técnica por `op_id` con
+la idempotencia funcional por el mismo hecho fuente. Son garantías obligatorias
+y complementarias: un retry o job posterior puede usar otro `op_id`, pero no por
+ello crear una segunda Tarea funcional equivalente para el mismo hecho. La
+materialización concreta de la identidad del hecho fuente continúa pendiente
+según la sección 17; no autoriza un ledger GOP paralelo. La frontera mínima es
+atómica:
 
 ```text
 mutación de negocio + historial funcional que corresponda
@@ -1279,22 +1296,49 @@ responsabilidades distintas; no se presume que todo el historial viaje como una
 
 La recepción remota pertenece al soporte Técnico y no es un command humano. Debe
 registrar y consultar `op_id` mediante inbox o equivalente antes de comparar el
-estado material. Un `op_id` ya aplicado se clasifica como duplicado seguro y no
-vuelve a producir efectos de negocio. Sólo para un `op_id` distinto se validan
-`uid_global`, `version_registro` y payload material para decidir la aplicación
-controlada, convergencia, obsolescencia o conflicto. Nunca inventa actor humano,
-no usa Bearer humano como contrato de réplica y no sobrescribe silenciosamente.
-Este freeze no crea un nuevo enum técnico, endpoint GOP de sync ni formato
-ZIP/JSON alternativo.
+estado material. Encontrar el `op_id` no basta para aceptar un duplicado: primero
+se compara el envelope o fingerprint entrante con la evidencia durable
+disponible. La equivalencia comprende la semántica existente de identidad de
+entidad/target, tipo de entidad/command, tipo de evento y versión cuando
+correspondan, más payload material y su hash/fingerprint; no exige inventar
+columnas ausentes.
+
+Un `op_id` ya aplicado con envelope compatible es duplicado seguro o replay
+equivalente y no vuelve a producir efectos. El mismo `op_id` con envelope
+incompatible no es duplicado ni replay: se rechaza o registra como conflicto
+según el contrato transversal aplicable, conserva trazabilidad y nunca se
+descarta silenciosamente. Sólo para un `op_id` distinto se validan `uid_global`,
+`version_registro` y payload material para decidir aplicación controlada,
+convergencia, obsolescencia o conflicto. Nunca se inventa actor humano ni se usa
+Bearer humano como contrato de réplica. Este freeze no crea un nuevo enum
+técnico, endpoint GOP de sync ni formato ZIP/JSON alternativo.
 
 ## 24. Conflictos interinstalación
 
-La aplicación entrante sigue este orden conceptual. La clave primaria de
-idempotencia es `op_id`, no la versión, el payload ni un timestamp:
+`Tarea` se clasifica con criticidad de sincronización **MEDIA**. Modifica trabajo
+humano operativo/administrativo y conserva responsable, asignación, estado,
+prioridad, fecha objetivo, completar/cancelar/reabrir, historial y posible origen
+automático; una resolución genérica incorrecta puede perder o alterar trabajo
+pendiente. No es criticidad BAJA porque una auto-resolución genérica destruiría
+semántica funcional relevante. Tampoco es ALTA: Tarea no es por sí misma un
+movimiento financiero, cobro, comprobante, tesorería, aplicación financiera ni
+efecto económico irreversible.
 
-1. Si el `op_id` ya fue aplicado, es `DUPLICADO` seguro: se conserva la
-   trazabilidad y no se genera un nuevo efecto de negocio.
-2. Si el `op_id` es distinto, se evalúan `uid_global`, `version_registro` y
+Por CORE-EF, la criticidad MEDIA exige reglas explícitas. No existe auto-merge
+genérico ni resolución automática campo por campo para Tarea. Toda divergencia
+material que esas reglas no puedan resolver de forma segura debe persistirse
+como conflicto y nunca sobrescribirse silenciosamente. Esta criticidad no cambia
+la decisión de locks para ABM simples ni habilita LWW por timestamp.
+
+La aplicación entrante sigue este orden conceptual. La clave primaria de
+idempotencia es `op_id`, pero nunca funciona como bypass de la validación del
+envelope durable:
+
+1. Si el `op_id` ya fue aplicado, se compara el envelope/fingerprint durable:
+   compatible significa `DUPLICADO` seguro o `REPLAY` equivalente, sin nuevo
+   efecto; incompatible significa `RECHAZADO` o `CONFLICTO` trazado según el
+   contrato transversal, nunca duplicado ni replay.
+2. Sólo si el `op_id` es distinto se evalúan `uid_global`, `version_registro` y
    payload material. La operación distinta conserva su propia trazabilidad y no
    se convierte en replay aunque su resultado sea materialmente convergente.
 
@@ -1307,9 +1351,10 @@ Para un `op_id` distinto y el mismo `uid_global`, rige como mínimo esta matriz:
 | Misma versión y payload material distinto | Inconsistencia/conflicto material persistido; no sobrescribir. |
 | Versión entrante menor que la local | Cambio atrasado u obsoleto; no retroceder ni sobrescribir el snapshot local y conservar trazabilidad. |
 
-`op_id` gobierna exclusivamente la clasificación idempotente de duplicado y
-replay. Para operaciones distintas, `uid_global` y `version_registro` gobiernan
-la comparación del estado junto con el payload material.
+`op_id` identifica la operación cuya compatibilidad debe comprobarse; sólo un
+envelope durable compatible permite clasificar duplicado/replay. Para operaciones
+distintas, `uid_global` y `version_registro` gobiernan la comparación del estado
+junto con el payload material.
 `updated_at` y la instalación de origen sólo pueden ser criterios secundarios o
 auxiliares: no se adopta LWW por timestamp. CORE-EF exige persistir la divergencia
 no resoluble, pero no aporta una regla GOP segura de auto-merge; por ello no se
@@ -1426,6 +1471,9 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 41. Tarea es un concepto funcional sincronizable: toda mutación funcional compartida de la matriz es `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`, con independencia de actor humano u `origen = SISTEMA`; las consultas son `QUERY_READLIKE`.
 42. Todo command sincronizable reutiliza `X-Op-Id`, contexto `X-Sucursal-Id`/`X-Instalacion-Id`, ledger durable transversal y outbox atómico; `If-Match-Version` aplica a mutaciones de Tarea existente salvo la decisión específica de comentarios reservada a #493.
 43. La aplicación remota usa inbox, `uid_global`, `version_registro` y `op_id`, persiste divergencias materiales y no adopta LWW por timestamps.
+44. Un `op_id` ya aplicado sólo es duplicado seguro o replay si su envelope/fingerprint es materialmente compatible; una reutilización incompatible se rechaza o persiste como conflicto trazado según el contrato transversal.
+45. La generación automática combina obligatoriamente idempotencia técnica por `op_id` e idempotencia funcional por el mismo hecho fuente, cuya clave y materialización concretas permanecen pendientes.
+46. `Tarea` tiene criticidad de sincronización MEDIA: sus conflictos se rigen por reglas explícitas, sin auto-merge genérico, y toda divergencia material no resoluble de forma segura se persiste como conflicto.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
