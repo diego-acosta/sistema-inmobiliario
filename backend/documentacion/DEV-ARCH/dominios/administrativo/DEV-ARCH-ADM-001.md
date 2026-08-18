@@ -166,12 +166,29 @@ repository, outbox runtime, historial alineado al valor/contexto, no solapamient
 temporal, resolución, locks y frontera transaccional de los futuros commands. La
 autorización de #412 ya existe, pero no sustituye el runtime pendiente de #425.
 
-## 7. Decisión CORE-EF del freeze
+## 7. Decisión CORE-EF vigente de #482 y del PATCH #412
 
-- Endpoints: **NO APLICA**; no se agregan ni modifican rutas.
-- Clasificación de command/read-like: **NO APLICA**; el incremento es documental.
-- Headers, `If-Match-Version`, idempotencia, outbox, lock, versionado, transacción y rollback ejecutables: **NO APLICA** en este incremento.
-- Tests CORE-EF y reset PostgreSQL: **NO APLICA**; no se modifica SQL ni runtime.
+El freeze histórico previo a #482 trataba este frente como documental y declaraba
+endpoints, clasificación, headers, idempotencia y tests PostgreSQL **NO APLICA**.
+Ese estado quedó superado por el incremento material #482: modifica SQL, resets
+DEV/TEST, tests PostgreSQL, documentación y la frontera runtime de un command existente.
+
+El `PATCH /api/v1/administrativo/configuracion/parametros/{codigo_parametro:path}/valor-global`
+de #412 conserva clasificación `COMMAND_WRITE_NEGOCIO`, autenticación Bearer e identidad
+desde `AuthenticatedPrincipal.id_usuario`. Exige `X-Op-Id`, `X-Sucursal-Id`,
+`X-Instalacion-Id` e `If-Match-Version`; autoriza mediante
+`ADMIN.CONFIG.PARAMETRO_GLOBAL.MODIFICAR`, consume la idempotencia durable #470 y mantiene
+lock/CAS y `EVT-ADM-060` para cambios materiales de parámetros genéricos permitidos.
+
+#482 agrega un rechazo previo para `DIA_CIERRE_COMERCIAL` y
+`DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS`: responde `409 conflicto_parametro` antes de
+payload hash, claim #470, lookup/lock, CAS, outbox o receipt. El command genérico no es
+aplicable a esas claves, incluso si el actor posee ambos permisos, porque su modificación
+pertenece al futuro agregado atómico y temporal #425.
+
+#482 no agrega rutas propias del calendario. GET agregado, bootstrap, programación,
+query service temporal, idempotencia y outbox del agregado, sync e historial especializado
+permanecen distribuidos entre #483–#486.
 
 El `GET /api/v1/administrativo/configuracion/parametros` de #407/PR #414 se preserva como `QUERY_READLIKE`: lista definiciones, pero no lee valores ni ejecuta resolución contextual. #408 documenta este freeze y no agrega endpoints.
 
