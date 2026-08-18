@@ -113,6 +113,8 @@ incluidos los de raíces con baja lógica.
 La relación raíz debe ser una tabla ordinaria permanente (`relkind = 'r'`,
 `relpersistence = 'p'`) y su identity sequence también debe ser permanente
 (`relkind = 'S'`, `relpersistence = 'p'`); ambas se rechazan si son `UNLOGGED`.
+Las diez columnas son ordinarias (`attgenerated = ''`); la PK conserva separadamente
+su `IDENTITY BY DEFAULT` mediante `attidentity = 'd'`.
 La raíz no puede participar como parent ni child en `pg_inherits`.
 Cada una de las dos FKs conserva sus cuatro triggers internos
 vinculados mediante `tgconstraint`, todos `tgisinternal` y habilitados normalmente con

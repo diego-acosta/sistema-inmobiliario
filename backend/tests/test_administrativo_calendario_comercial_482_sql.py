@@ -161,6 +161,15 @@ def test_patch_transaccional_simetrico_idempotente_y_sin_duplicados(db_session):
         ("op_id_alta", "YES"),
         ("op_id_ultima_modificacion", "YES"),
     ]
+    generated = db_session.execute(text("""
+      SELECT attname,attgenerated
+      FROM pg_attribute
+      WHERE attrelid='public.configuracion_calendario_comercial'::regclass
+        AND attnum > 0 AND NOT attisdropped
+      ORDER BY attnum
+    """)).all()
+    assert len(generated) == 10
+    assert all(attgenerated == "" for _, attgenerated in generated)
     indexes = db_session.execute(text("""
       SELECT pi.indexname,regexp_replace(pi.indexdef,'[[:space:]()]','','g'),
              i.indisvalid,i.indisready
@@ -426,6 +435,44 @@ def test_identity_sequence_unlogged_aborta_sin_repararla(db_session):
         assert db_session.execute(
             sequence_persistence, {"sequence_name": sequence_name}
         ).one() == ("S", "u")
+
+
+def test_version_generated_aborta_con_tipo_y_nullability_compatibles(db_session):
+    with db_session.begin_nested():
+        db_session.execute(text("""
+          ALTER TABLE public.configuracion_calendario_comercial
+          DROP COLUMN version_registro CASCADE
+        """))
+        db_session.execute(text("""
+          ALTER TABLE public.configuracion_calendario_comercial
+          ADD COLUMN version_registro integer
+          GENERATED ALWAYS AS (1) STORED NOT NULL
+        """))
+        db_session.execute(text("""
+          ALTER TABLE public.configuracion_calendario_comercial
+          ADD CONSTRAINT chk_configuracion_calendario_comercial_version
+          CHECK (version_registro >= 1)
+        """))
+        column_contract = db_session.execute(text("""
+          SELECT data_type,is_nullable
+          FROM information_schema.columns
+          WHERE table_schema='public'
+            AND table_name='configuracion_calendario_comercial'
+            AND column_name='version_registro'
+        """)).one()
+        assert column_contract == ("integer", "NO")
+        assert db_session.execute(text("""
+          SELECT attgenerated FROM pg_attribute
+          WHERE attrelid='public.configuracion_calendario_comercial'::regclass
+            AND attname='version_registro' AND NOT attisdropped
+        """)).scalar_one() == "s"
+        with pytest.raises(DBAPIError), db_session.begin_nested():
+            db_session.execute(text(_sql()))
+        assert db_session.execute(text("""
+          SELECT attgenerated FROM pg_attribute
+          WHERE attrelid='public.configuracion_calendario_comercial'::regclass
+            AND attname='version_registro' AND NOT attisdropped
+        """)).scalar_one() == "s"
 
 
 @pytest.mark.parametrize("root_role", ["parent", "child"])

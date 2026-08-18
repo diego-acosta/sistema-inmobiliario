@@ -127,6 +127,10 @@ BEGIN
       ('op_id_alta','uuid','YES'),('op_id_ultima_modificacion','uuid','YES'));
   IF cols <> 10 OR (SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='configuracion_calendario_comercial') <> 10
   THEN RAISE EXCEPTION 'tabla configuracion_calendario_comercial incompatible'; END IF;
+  IF (SELECT count(*) FROM pg_attribute
+       WHERE attrelid='public.configuracion_calendario_comercial'::regclass
+         AND attnum > 0 AND NOT attisdropped AND attgenerated='') <> 10
+  THEN RAISE EXCEPTION 'columnas generated de configuracion_calendario_comercial incompatibles'; END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute WHERE attrelid='public.configuracion_calendario_comercial'::regclass
