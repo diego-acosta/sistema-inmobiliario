@@ -119,8 +119,9 @@ Blockers internos de `GOP-FREEZE-001`:
 
 - #6 — estrategia de sync: resuelto documentalmente por #491 / PR #494.
 - #7 — comentario / `version_registro`: abierto y coordinado con #493.
-- #10 — identidad canónica interinstalación: resuelto documentalmente en el
-  incremento actual #492, que permanece abierto hasta revisión/merge/cierre real.
+- #10 — identidad canónica interinstalación: abierto/parcialmente resuelto por el
+  incremento actual #492; queda pendiente la política técnica retryable y #492
+  no está listo para cierre.
 
 #492 congela `uid_global` de Tarea como identidad distribuida y reserva el futuro
 ID local sólo para joins/FKs. Creador, responsable y actores de

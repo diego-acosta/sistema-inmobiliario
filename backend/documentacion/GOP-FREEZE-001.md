@@ -1500,8 +1500,9 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 
 ### 30.1 Alcance, clasificación y regla canónica
 
-Este incremento resuelve documentalmente el blocker interno **#10**. `Tarea`
-sigue siendo núcleo de `gestion_operativa`; las identidades de usuario provistas
+Este incremento avanza parcialmente el blocker interno **#10**, que permanece
+abierto por la política retryable pendiente. `Tarea` sigue siendo núcleo de
+`gestion_operativa`; las identidades de usuario provistas
 por Administrativo y la resolución distribuida provista por Técnico son soporte
 transversal. `sucursal` e `instalacion` siguen bajo ownership de `operativo`:
 referenciarlas no transfiere su semántica a GOP.
@@ -1754,12 +1755,15 @@ resolver de forma segura. Nunca se crea una segunda Tarea con el mismo
 ## 31. Estado de blockers y criterio de #492
 
 De la numeración original, están cerrados documentalmente **#1, #2, #3, #4,
-#5, #6, #8, #9, #10 y #11**. #491 ya resolvió la estrategia de sync y este
-incremento resuelve exclusivamente el blocker interno **#10 — identidad
-canónica interinstalación**, correspondiente al issue #492. Permanece abierto,
-sin resolución incidental:
+#5, #6, #8, #9 y #11**. #491 ya resolvió la estrategia de sync. Permanecen
+abiertos, sin resolución incidental:
 
 7. comentario / efecto sobre `Tarea.version_registro` → issue #493.
+10. identidad canónica interinstalación → issue #492, **ABIERTO / PARCIALMENTE
+    RESUELTO**: están congeladas la identidad canónica de Tarea, las referencias
+    portables, la separación PK local / `uid_global`, la separación procedencia
+    técnica / scope y la interacción general con sync; queda pendiente la
+    política técnica retryable para referencias requeridas no resolubles.
 
 La dependencia de #493 impide cerrar el target/versionado exacto del comentario.
 La materialización administrativa de identidad humana y los resolvers técnicos
@@ -1778,10 +1782,11 @@ Criterio documental de #492:
 - [x] GOP-FREEZE-001 y PROJECT-STATUS alineados.
 - [x] Sin DER, SQL, API, runtime ni tests GOP prematuros.
 
-Por lo tanto, #492 tiene congeladas la identidad canónica y las referencias
-portables, pero **todavía no está listo para cierre**: queda pendiente únicamente
-la política técnica retryable de retención/reproceso para referencias requeridas
-aún no resolubles. Este documento no cierra #492, #493 ni la épica #489.
+Por lo tanto, el blocker #10 / #492 tiene congeladas la identidad canónica y las
+referencias portables, pero **permanece abierto y todavía no está listo para
+cierre**: queda pendiente únicamente la política técnica retryable de
+retención/reproceso para referencias requeridas aún no resolubles. Este documento
+no cierra #492, #493 ni la épica #489.
 
 ## 32. Matriz final por operación
 
