@@ -109,7 +109,13 @@ def test_inbox_evento_desconocido_no_rompe_y_no_crea_datos(
         },
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error_code": "SYNC_EVENT_NOT_ALLOWED",
+        "error_message": "SYNC_EVENT_NOT_ALLOWED",
+        "details": None,
+    }
 
     total_relaciones = db_session.execute(
         text("SELECT COUNT(*) AS total FROM relacion_generadora WHERE deleted_at IS NULL")
@@ -120,6 +126,24 @@ def test_inbox_evento_desconocido_no_rompe_y_no_crea_datos(
         text("SELECT COUNT(*) AS total FROM obligacion_financiera WHERE deleted_at IS NULL")
     ).mappings().one()["total"]
     assert total_obligaciones == 0
+
+
+def test_inbox_evento_allowlisted_sin_handler_devuelve_error_controlado(
+    client,
+) -> None:
+    response = client.post(
+        URL,
+        headers=HEADERS,
+        json={"event_type": "sucursal_creada", "payload": {}},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error_code": "SYNC_DISPATCH_FAILED",
+        "error_message": "SYNC_DISPATCH_FAILED",
+        "details": None,
+    }
 
 
 # ─── caso 3: idempotencia ─────────────────────────────────────────────────────

@@ -32,11 +32,9 @@ from app.api.schemas.financiero import (
     ComprobanteImpuestoData,
     ComprobanteImpuestoListResponse,
     ComprobanteImpuestoResponse,
-    ComposicionCreateItem,
     ConceptoFinancieroData,
     ConceptoFinancieroListData,
     ConceptoFinancieroListResponse,
-    DeudaComposicionItem,
     DeudaConsolidadoData,
     DeudaConsolidadoRelacionItem,
     DeudaConsolidadoResumen,
@@ -222,6 +220,10 @@ from app.application.financiero.services.list_deuda_consolidada_service import (
 )
 from app.application.financiero.services.inbox_event_dispatcher import (
     InboxEventDispatcher,
+)
+from app.application.common.synchronization_policy import (
+    SyncDispatchError,
+    UnknownSyncEvent,
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
@@ -3386,11 +3388,20 @@ def aplicar_indexacion_cuotas_v2(
 def financiero_inbox(
     request: InboxEventRequest,
     db: Session = Depends(get_db),
-) -> None:
-    InboxEventDispatcher(db).dispatch(
-        event_type=request.event_type,
-        payload=request.payload,
-    )
+):
+    try:
+        InboxEventDispatcher(db).dispatch(
+            event_type=request.event_type,
+            payload=request.payload,
+        )
+    except (UnknownSyncEvent, SyncDispatchError) as exc:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=exc.code,
+                error_message=exc.code,
+            ).model_dump(),
+        )
 
 
 @router.post(

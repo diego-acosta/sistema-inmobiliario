@@ -1396,6 +1396,14 @@ Response:
 
 - `204 No Content`
 
+Errores controlados:
+
+- `400 SYNC_EVENT_NOT_ALLOWED`: el `event_type` no pertenece a la allowlist
+  transversal; el evento se rechaza sin efectos persistentes.
+- `400 SYNC_DISPATCH_FAILED`: el evento está permitido por la política
+  transversal pero este inbox financiero no posee un handler para procesarlo;
+  se rechaza sin efectos persistentes.
+
 Notas:
 
 - procesamiento sincronico

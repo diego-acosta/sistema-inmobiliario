@@ -1,6 +1,7 @@
 @echo off
 setlocal
 
+set PGCLIENTENCODING=UTF8
 set PGUSER=postgres
 set PGPASSWORD=gc001
 set PGBIN="C:\Program Files\PostgreSQL\18\bin"
