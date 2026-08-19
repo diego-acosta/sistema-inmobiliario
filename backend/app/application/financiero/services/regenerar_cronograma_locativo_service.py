@@ -41,7 +41,10 @@ class FinancieroRepository(Protocol):
     def marcar_obligaciones_reemplazadas(self, ids: list[int]) -> int: ...
 
     def create_cronograma_obligaciones(
-        self, periodos: list[PeriodoCronogramaPayload]
+        self,
+        periodos: list[PeriodoCronogramaPayload],
+        *,
+        commit: bool = True,
     ) -> int: ...
 
     def get_obligaciones_activas_desde(
@@ -175,7 +178,10 @@ class RegenerarCronogramaLocativoService:
             in segmentos_todos
         ]
 
-        generadas = self.financiero_repo.create_cronograma_obligaciones(payloads)
+        generadas = self.financiero_repo.create_cronograma_obligaciones(
+            payloads,
+            commit=True,
+        )
         self._vincular_reemplazos_1_a_1(id_rg, fecha_corte, reemplazables)
         return AppResult.ok({
             "reemplazadas": reemplazadas,

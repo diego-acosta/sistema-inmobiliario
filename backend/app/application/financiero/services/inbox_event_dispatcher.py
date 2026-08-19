@@ -151,7 +151,11 @@ class InboxEventDispatcher:
             result = HandleContratoAlquilerActivadoEventService(
                 locativo_repository=locativo_repository,
                 financiero_repository=financiero_repository,
-            ).execute(payload["id_contrato_alquiler"], context or CommandContext())
+            ).execute(
+                payload["id_contrato_alquiler"],
+                context or CommandContext(),
+                commit=False,
+            )
             if not result.success:
                 raise ValueError(";".join(result.errors))
             return

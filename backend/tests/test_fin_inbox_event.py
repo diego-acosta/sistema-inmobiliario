@@ -7,7 +7,13 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+import app.application.financiero.services.inbox_event_dispatcher as inbox_dispatcher_module
 from app.application.financiero.services.inbox_event_dispatcher import InboxEventDispatcher
+from tests.test_fin_event_contrato_alquiler import (
+    _crear_condicion,
+    _crear_contrato_borrador,
+    _crear_locatario_principal,
+)
 from tests.test_escrituraciones_create import _confirmar_venta_publica
 
 
@@ -510,3 +516,92 @@ def test_inbox_error_post_claim_hace_rollback_y_permite_retry(
     retry = client.post(URL, headers=INBOX_HEADERS, json=body)
     assert retry.status_code == 204
     assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1
+
+
+def test_inbox_locativo_completion_fallida_revierte_cronograma_y_permite_retry(
+    client, db_session, monkeypatch
+) -> None:
+    contrato = _crear_contrato_borrador(
+        client,
+        codigo="INBOX-LOC-ROLLBACK-001",
+        fecha_inicio="2026-05-01",
+        fecha_fin="2026-07-31",
+    )
+    _crear_condicion(
+        client,
+        contrato["id_contrato_alquiler"],
+        50000.0,
+        "2026-05-01",
+    )
+    _crear_locatario_principal(
+        client,
+        db_session,
+        contrato["id_contrato_alquiler"],
+    )
+    db_session.commit()
+    headers = {
+        **INBOX_HEADERS,
+        "X-Op-Id": "950e8400-e29b-41d4-a716-446655440004",
+    }
+    body = {
+        "event_type": "contrato_alquiler_activado",
+        "payload": {"id_contrato_alquiler": contrato["id_contrato_alquiler"]},
+    }
+    original_complete = inbox_dispatcher_module.complete_operation
+
+    def fail_completion(*args, **kwargs):
+        raise RuntimeError("fallo controlado de completion locativa")
+
+    monkeypatch.setattr(inbox_dispatcher_module, "complete_operation", fail_completion)
+    with pytest.raises(RuntimeError, match="fallo controlado de completion locativa"):
+        client.post(URL, headers=headers, json=body)
+
+    assert _count_receipts(db_session, headers["X-Op-Id"]) == 0
+    assert db_session.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM relacion_generadora
+            WHERE tipo_origen = 'contrato_alquiler'
+              AND id_origen = :id_contrato
+            """
+        ),
+        {"id_contrato": contrato["id_contrato_alquiler"]},
+    ).scalar_one() == 0
+    assert db_session.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM obligacion_financiera ofi
+            JOIN relacion_generadora rg
+              ON rg.id_relacion_generadora = ofi.id_relacion_generadora
+            WHERE rg.tipo_origen = 'contrato_alquiler'
+              AND rg.id_origen = :id_contrato
+            """
+        ),
+        {"id_contrato": contrato["id_contrato_alquiler"]},
+    ).scalar_one() == 0
+
+    monkeypatch.setattr(
+        inbox_dispatcher_module,
+        "complete_operation",
+        original_complete,
+    )
+    retry = client.post(URL, headers=headers, json=body)
+    assert retry.status_code == 204
+    assert _count_receipts(db_session, headers["X-Op-Id"]) == 1
+    id_relacion = db_session.execute(
+        text(
+            """
+            SELECT id_relacion_generadora
+            FROM relacion_generadora
+            WHERE tipo_origen = 'contrato_alquiler'
+              AND id_origen = :id_contrato
+            """
+        ),
+        {"id_contrato": contrato["id_contrato_alquiler"]},
+    ).scalar_one()
+    assert _count_obligaciones_relacion(
+        db_session,
+        id_relacion_generadora=id_relacion,
+    ) == 3

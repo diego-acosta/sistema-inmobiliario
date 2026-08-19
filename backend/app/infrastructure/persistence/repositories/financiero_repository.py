@@ -497,7 +497,9 @@ class FinancieroRepository:
         )
         return [dict(row) for row in rows]
 
-    def create_cronograma_obligaciones(self, periodos: list[Any]) -> int:
+    def create_cronograma_obligaciones(
+        self, periodos: list[Any], *, commit: bool = True
+    ) -> int:
         ob_stmt = text("""
             INSERT INTO obligacion_financiera (
                 uid_global, version_registro, created_at, updated_at,
@@ -630,10 +632,12 @@ class FinancieroRepository:
                 )
                 count += 1
 
-            self.db.commit()
+            if commit:
+                self.db.commit()
             return count
         except Exception:
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
             raise
 
     def get_concepto_financiero_by_codigo(self, codigo: str) -> dict[str, Any] | None:

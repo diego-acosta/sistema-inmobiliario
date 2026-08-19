@@ -1476,7 +1476,10 @@ altas financieras existentes.
 La validación de contexto ocurre antes del claim. Claim, negocio y completion
 comparten la misma `Session`; el router realiza el commit exterior sólo después
 de completion y hace rollback ante conflicto o error. Si no hubo completion no
-queda receipt durable y el mismo `op_id` puede reintentarse.
+queda receipt durable y el mismo `op_id` puede reintentarse. En particular, la
+creación del cronograma de `contrato_alquiler_activado` usa el repository sin
+commit ni rollback internos; la regeneración histórica conserva explícitamente
+el ownership transaccional previo del método.
 
 Notas:
 

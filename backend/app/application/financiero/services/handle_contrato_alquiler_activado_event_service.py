@@ -45,7 +45,10 @@ class FinancieroRepository(Protocol):
     ) -> dict[str, Any] | None: ...
 
     def create_cronograma_obligaciones(
-        self, periodos: list[PeriodoCronogramaPayload]
+        self,
+        periodos: list[PeriodoCronogramaPayload],
+        *,
+        commit: bool = True,
     ) -> int: ...
 
 
@@ -66,6 +69,8 @@ class HandleContratoAlquilerActivadoEventService:
         self,
         id_contrato_alquiler: int,
         context: Any,
+        *,
+        commit: bool = True,
     ) -> AppResult[dict[str, Any]]:
         contrato = self.locativo_repo.get_contrato_alquiler(id_contrato_alquiler)
         if contrato is None or contrato.get("deleted_at") is not None:
@@ -172,5 +177,8 @@ class HandleContratoAlquilerActivadoEventService:
             in segmentos_todos
         ]
 
-        generadas = self.financiero_repo.create_cronograma_obligaciones(payloads)
+        generadas = self.financiero_repo.create_cronograma_obligaciones(
+            payloads,
+            commit=commit,
+        )
         return AppResult.ok({"generadas": generadas, "omitidas": omitidas})
