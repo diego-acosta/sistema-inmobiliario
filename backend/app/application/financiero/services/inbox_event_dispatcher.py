@@ -9,6 +9,7 @@ from app.application.common.idempotency import (
     CANONICALIZATION_VERSION,
     ClaimDecision,
     ConflictKind,
+    NonCanonicalizablePayload,
     OperationClaim,
     OperationCompletion,
     canonical_payload_hash,
@@ -56,6 +57,10 @@ class InboxIdempotencyConflict(RuntimeError):
         super().__init__(self.code)
 
 
+class InboxPayloadValidationError(RuntimeError):
+    code = "IDEMPOTENCY_PAYLOAD_INVALID"
+
+
 class InboxEventDispatcher:
     def __init__(self, db: Session) -> None:
         self._db = db
@@ -78,9 +83,14 @@ class InboxEventDispatcher:
         """Ejecuta claim, negocio y completion en la Session del caller."""
         self.validate_dispatchable(event_type, payload)
         op_id = context.request_id
-        payload_hash = canonical_payload_hash(
-            {"event_type": event_type, "payload": payload}
-        )
+        try:
+            payload_hash = canonical_payload_hash(
+                {"event_type": event_type, "payload": payload}
+            )
+        except NonCanonicalizablePayload as exc:
+            raise InboxPayloadValidationError(
+                InboxPayloadValidationError.code
+            ) from exc
         claim = OperationClaim(
             op_id=op_id,
             command_code=INBOX_COMMAND_CODE,

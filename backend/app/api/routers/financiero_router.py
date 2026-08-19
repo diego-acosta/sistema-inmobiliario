@@ -223,6 +223,7 @@ from app.application.financiero.services.list_deuda_consolidada_service import (
 from app.application.financiero.services.inbox_event_dispatcher import (
     InboxIdempotencyConflict,
     InboxEventDispatcher,
+    InboxPayloadValidationError,
 )
 from app.application.common.synchronization_policy import (
     SyncDispatchError,
@@ -3455,6 +3456,15 @@ def financiero_inbox(
         db.rollback()
         return JSONResponse(
             status_code=409,
+            content=ErrorResponse(
+                error_code=exc.code,
+                error_message=exc.code,
+            ).model_dump(),
+        )
+    except InboxPayloadValidationError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=400,
             content=ErrorResponse(
                 error_code=exc.code,
                 error_message=exc.code,

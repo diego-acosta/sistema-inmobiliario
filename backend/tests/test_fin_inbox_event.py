@@ -262,6 +262,108 @@ def test_inbox_rechaza_instalacion_de_otra_sucursal_sin_receipt_ni_writes(
     _assert_context_validation_without_effects(response, db_session, headers["X-Op-Id"])
 
 
+@pytest.mark.parametrize(
+    ("metadata", "op_id"),
+    (
+        (1.5, "a50e8400-e29b-41d4-a716-446655440005"),
+        ([1, 2.5], "b50e8400-e29b-41d4-a716-446655440006"),
+    ),
+)
+def test_inbox_rechaza_payload_no_canonicalizable_antes_de_claim_y_handler(
+    client, db_session, monkeypatch, metadata, op_id
+) -> None:
+    venta = _confirmar_venta_publica(client, db_session)
+    headers = {**INBOX_HEADERS, "X-Op-Id": op_id}
+
+    def unexpected_handler(*args, **kwargs):
+        raise AssertionError("el handler no debe ejecutarse")
+
+    monkeypatch.setattr(
+        inbox_dispatcher_module.HandleVentaConfirmadaEventService,
+        "execute",
+        unexpected_handler,
+    )
+
+    response = client.post(
+        URL,
+        headers=headers,
+        json={
+            "event_type": "venta_confirmada",
+            "payload": {"id_venta": venta["id_venta"], "metadata": metadata},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error_code": "IDEMPOTENCY_PAYLOAD_INVALID",
+        "error_message": "IDEMPOTENCY_PAYLOAD_INVALID",
+        "details": None,
+    }
+    assert _count_receipts(db_session, op_id) == 0
+    assert _count_relaciones_venta(db_session, id_venta=venta["id_venta"]) == 0
+    assert db_session.execute(
+        text("SELECT count(*) FROM obligacion_financiera")
+    ).scalar_one() == 0
+
+
+def test_inbox_acepta_extras_canonicalizables(client, db_session) -> None:
+    venta = _confirmar_venta_publica(client, db_session)
+    op_id = "c50e8400-e29b-41d4-a716-446655440007"
+
+    response = client.post(
+        URL,
+        headers={**INBOX_HEADERS, "X-Op-Id": op_id},
+        json={
+            "event_type": "venta_confirmada",
+            "payload": {
+                "id_venta": venta["id_venta"],
+                "metadata": {
+                    "source": "sync",
+                    "attempt": 2,
+                    "flags": [True, False, None],
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 204
+    assert _count_receipts(db_session, op_id) == 1
+    assert _count_relaciones_venta(db_session, id_venta=venta["id_venta"]) == 1
+
+
+def test_inbox_evento_desconocido_precede_payload_no_canonicalizable(
+    client, db_session
+) -> None:
+    op_id = "d50e8400-e29b-41d4-a716-446655440008"
+    response = client.post(
+        URL,
+        headers={**INBOX_HEADERS, "X-Op-Id": op_id},
+        json={"event_type": "evento_inexistente_xyz", "payload": {"value": 1.5}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "SYNC_EVENT_NOT_ALLOWED"
+    assert _count_receipts(db_session, op_id) == 0
+
+
+def test_inbox_contexto_invalido_precede_payload_no_canonicalizable(
+    client, db_session
+) -> None:
+    headers = {
+        **INBOX_HEADERS,
+        "X-Op-Id": "e50e8400-e29b-41d4-a716-446655440009",
+        "X-Instalacion-Id": "999999999",
+    }
+    response = client.post(
+        URL,
+        headers=headers,
+        json={"event_type": "venta_confirmada", "payload": {"id_venta": 1, "value": 1.5}},
+    )
+
+    _assert_context_validation_without_effects(response, db_session, headers["X-Op-Id"])
+
+
 # ─── caso 1: evento válido ────────────────────────────────────────────────────
 
 

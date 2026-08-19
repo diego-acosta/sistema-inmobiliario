@@ -1414,6 +1414,9 @@ Errores controlados:
 - `400 SYNC_DISPATCH_FAILED`: el evento está permitido por la política
   transversal pero este inbox financiero no posee un handler para procesarlo;
   se rechaza sin efectos persistentes.
+- `400 IDEMPOTENCY_PAYLOAD_INVALID`: el payload pasó la estructura HTTP pero
+  contiene un valor no canonicalizable por el runtime #470 v1; se rechaza antes
+  del claim, sin receipt ni writes de negocio.
 - `409 IDEMPOTENCY_TARGET_CONFLICT`: el mismo `X-Op-Id` fue completado para otro
   `event_type`.
 - `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: el mismo `X-Op-Id` y `event_type` fue
@@ -1448,6 +1451,9 @@ contractual de #469/#470 sólo congela pertenencia por PK.
 - usa el runtime durable #470 con `command_code = FINANCIERO_INBOX_EVENT`;
 - el target estable es el `event_type` y el hash RFC 8785 incluye
   `{event_type, payload}`;
+- el payload debe pertenecer al subconjunto JSON canonicalizable del runtime v1
+  (`string`, entero, booleano, `null`, listas y objetos con claves string); un
+  valor no soportado devuelve `400 IDEMPOTENCY_PAYLOAD_INVALID` antes del claim;
 - mismo `X-Op-Id`, target y payload retorna replay `204` sin ejecutar nuevamente
   el handler ni crear nuevos rows;
 - claim, writes financieros y completion comparten la misma transacción;
