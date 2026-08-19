@@ -252,6 +252,9 @@ from app.infrastructure.persistence.repositories.aplicar_indexacion_cuotas_v2_re
 from app.infrastructure.persistence.repositories.preparar_corridas_indexacion_cuotas_v2_repository import (
     PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository,
 )
+from app.infrastructure.persistence.repositories.technical_context_repository import (
+    TechnicalContextRepository,
+)
 from app.application.financiero.services.materializar_factura_servicio_service import (
     MaterializarFacturaServicioService,
 )
@@ -3417,6 +3420,20 @@ def financiero_inbox(
 ):
     if isinstance(technical_headers, CoreEFHeaderValidationError):
         return _core_ef_error_response(technical_headers)
+    if not TechnicalContextRepository(db).installation_belongs_to_branch(
+        id_sucursal=technical_headers.x_sucursal_id,
+        id_instalacion=technical_headers.x_instalacion_id,
+    ):
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message="El contexto técnico sucursal/instalación es inválido.",
+                details={
+                    "headers": ["X-Sucursal-Id", "X-Instalacion-Id"],
+                },
+            ).model_dump(),
+        )
     context = FinancieroCommandContext(
         id_instalacion=technical_headers.x_instalacion_id,
         op_id=technical_headers.x_op_id,

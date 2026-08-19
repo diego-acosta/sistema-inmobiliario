@@ -2,6 +2,8 @@
 Tests de integración para POST /api/v1/financiero/inbox.
 Cubre: evento válido, evento desconocido e idempotencia.
 """
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import text
 
@@ -175,6 +177,83 @@ def _count_receipts(db_session, op_id: str) -> int:
         text("SELECT count(*) FROM operacion_idempotente WHERE op_id = CAST(:op_id AS uuid)"),
         {"op_id": op_id},
     ).scalar_one()
+
+
+def _assert_context_validation_without_effects(response, db_session, op_id: str) -> None:
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error_code": "VALIDATION_ERROR",
+        "error_message": "El contexto técnico sucursal/instalación es inválido.",
+        "details": {"headers": ["X-Sucursal-Id", "X-Instalacion-Id"]},
+    }
+    assert _count_receipts(db_session, op_id) == 0
+    assert db_session.execute(text("SELECT count(*) FROM relacion_generadora")).scalar_one() == 0
+    assert db_session.execute(text("SELECT count(*) FROM obligacion_financiera")).scalar_one() == 0
+
+
+def test_inbox_rechaza_instalacion_inexistente_antes_de_sync_y_claim(
+    client, db_session
+) -> None:
+    headers = {
+        **INBOX_HEADERS,
+        "X-Op-Id": "750e8400-e29b-41d4-a716-446655440002",
+        "X-Instalacion-Id": "999999999",
+    }
+
+    response = client.post(
+        URL,
+        headers=headers,
+        json={"event_type": "evento_inexistente_xyz", "payload": {}},
+    )
+
+    _assert_context_validation_without_effects(response, db_session, headers["X-Op-Id"])
+
+
+def test_inbox_rechaza_instalacion_de_otra_sucursal_sin_receipt_ni_writes(
+    client, db_session
+) -> None:
+    other_branch = db_session.execute(
+        text(
+            """
+            INSERT INTO sucursal (codigo_sucursal, nombre_sucursal, estado_sucursal)
+            VALUES (:code, 'Sucursal ajena inbox', 'ACTIVA')
+            RETURNING id_sucursal
+            """
+        ),
+        {"code": f"SUC_INBOX_{uuid4().hex[:10]}"},
+    ).scalar_one()
+    other_installation = db_session.execute(
+        text(
+            """
+            INSERT INTO instalacion (
+                uid_global, id_sucursal, codigo_instalacion, nombre_instalacion,
+                estado_instalacion, es_principal, permite_sincronizacion
+            ) VALUES (
+                :uid_global, :id_sucursal, :code, 'Instalación ajena inbox',
+                'ACTIVA', false, true
+            ) RETURNING id_instalacion
+            """
+        ),
+        {
+            "uid_global": uuid4(),
+            "id_sucursal": other_branch,
+            "code": f"INST_INBOX_{uuid4().hex[:10]}",
+        },
+    ).scalar_one()
+    headers = {
+        **INBOX_HEADERS,
+        "X-Op-Id": "850e8400-e29b-41d4-a716-446655440003",
+        "X-Instalacion-Id": str(other_installation),
+    }
+
+    response = client.post(
+        URL,
+        headers=headers,
+        json={"event_type": "venta_confirmada", "payload": {"id_venta": 999999999}},
+    )
+
+    _assert_context_validation_without_effects(response, db_session, headers["X-Op-Id"])
 
 
 # ─── caso 1: evento válido ────────────────────────────────────────────────────

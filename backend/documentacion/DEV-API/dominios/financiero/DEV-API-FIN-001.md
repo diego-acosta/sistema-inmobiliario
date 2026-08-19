@@ -1419,7 +1419,31 @@ Errores controlados:
 - `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: el mismo `X-Op-Id` y `event_type` fue
   completado con otro payload.
 
-Idempotencia CORE-EF:
+### Decisión CORE-EF
+
+#### Naturaleza
+
+`COMMAND_WRITE_TECNICO / sincronizable`.
+
+#### Headers
+
+- `X-Op-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`: obligatorios.
+- `X-Usuario-Id`: **NO APLICA**; el command no representa identidad humana.
+- `If-Match-Version`: **NO APLICA**; no existe un target previo versionado al
+  que se aplique CAS.
+
+#### Contexto técnico
+
+Después del parseo sintáctico y antes de validar el evento o reclamar el
+`op_id`, se consulta la instalación por PK y se exige que pertenezca a la
+sucursal informada. Instalación inexistente o pareja incompatible devuelve
+`400 VALIDATION_ERROR`, sin handler, receipt ni writes de negocio. No se exige
+estado, baja lógica ni habilitación de sincronización porque el helper SQL
+contractual de #469/#470 sólo congela pertenencia por PK.
+
+#### Idempotencia
+
+**APLICA**, mediante el runtime durable #470:
 
 - usa el runtime durable #470 con `command_code = FINANCIERO_INBOX_EVENT`;
 - el target estable es el `event_type` y el hash RFC 8785 incluye
@@ -1430,6 +1454,29 @@ Idempotencia CORE-EF:
 - un error previo a completion revierte negocio y receipt, permitiendo retry;
 - `X-Instalacion-Id` y `X-Op-Id` se materializan como procedencia CORE-EF en las
   altas creadas por los handlers.
+
+#### Outbox
+
+**NO APLICA** al endpoint inbox como productor de un nuevo evento. Este PR no
+agrega ni modifica outbox; los handlers conservan su comportamiento existente.
+
+#### Lock lógico
+
+**NO APLICA** un lock funcional adicional sobre venta o contrato. El lock
+técnico que sí aplica es el advisory lock transaccional por `op_id` provisto por
+`claim_operation()`.
+
+#### Versionado
+
+Sin cambios y sin CAS. El procesamiento conserva el versionado propio de las
+altas financieras existentes.
+
+#### Rollback/transacción
+
+La validación de contexto ocurre antes del claim. Claim, negocio y completion
+comparten la misma `Session`; el router realiza el commit exterior sólo después
+de completion y hace rollback ante conflicto o error. Si no hubo completion no
+queda receipt durable y el mismo `op_id` puede reintentarse.
 
 Notas:
 
