@@ -364,6 +364,85 @@ def test_inbox_contexto_invalido_precede_payload_no_canonicalizable(
     _assert_context_validation_without_effects(response, db_session, headers["X-Op-Id"])
 
 
+@pytest.mark.parametrize(
+    ("payload", "op_id"),
+    (
+        ({}, "f50e8400-e29b-41d4-a716-446655440010"),
+        ({"id_venta": 0}, "150e8400-e29b-41d4-a716-446655440011"),
+    ),
+)
+def test_inbox_rechaza_identificador_sync_invalido_sin_claim_ni_handler(
+    client, db_session, monkeypatch, payload, op_id
+) -> None:
+    def unexpected_handler(*args, **kwargs):
+        raise AssertionError("el handler no debe ejecutarse")
+
+    monkeypatch.setattr(
+        inbox_dispatcher_module.HandleVentaConfirmadaEventService,
+        "execute",
+        unexpected_handler,
+    )
+    response = client.post(
+        URL,
+        headers={**INBOX_HEADERS, "X-Op-Id": op_id},
+        json={"event_type": "venta_confirmada", "payload": payload},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error_code": "SYNC_SENSITIVE_PAYLOAD",
+        "error_message": "SYNC_SENSITIVE_PAYLOAD",
+        "details": None,
+    }
+    assert _count_receipts(db_session, op_id) == 0
+    assert db_session.execute(
+        text("SELECT count(*) FROM relacion_generadora")
+    ).scalar_one() == 0
+    assert db_session.execute(
+        text("SELECT count(*) FROM obligacion_financiera")
+    ).scalar_one() == 0
+
+
+def test_inbox_rechaza_clave_sensible_sin_filtrar_contenido(
+    client, db_session, monkeypatch
+) -> None:
+    op_id = "250e8400-e29b-41d4-a716-446655440012"
+    sensitive_value = "NO_ASSERT_VALUE"
+
+    def unexpected_handler(*args, **kwargs):
+        raise AssertionError("el handler no debe ejecutarse")
+
+    monkeypatch.setattr(
+        inbox_dispatcher_module.HandleVentaConfirmadaEventService,
+        "execute",
+        unexpected_handler,
+    )
+    response = client.post(
+        URL,
+        headers={**INBOX_HEADERS, "X-Op-Id": op_id},
+        json={
+            "event_type": "venta_confirmada",
+            "payload": {
+                "id_venta": 1,
+                "metadata": {"token": sensitive_value},
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "SYNC_SENSITIVE_PAYLOAD"
+    assert "token" not in response.text.casefold()
+    assert sensitive_value not in response.text
+    assert _count_receipts(db_session, op_id) == 0
+    assert db_session.execute(
+        text("SELECT count(*) FROM relacion_generadora")
+    ).scalar_one() == 0
+    assert db_session.execute(
+        text("SELECT count(*) FROM obligacion_financiera")
+    ).scalar_one() == 0
+
+
 # ─── caso 1: evento válido ────────────────────────────────────────────────────
 
 

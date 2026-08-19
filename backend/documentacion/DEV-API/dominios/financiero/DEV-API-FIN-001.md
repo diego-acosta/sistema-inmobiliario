@@ -1411,6 +1411,12 @@ Errores controlados:
 - `400 VALIDATION_ERROR`: falta o es inválido un header técnico obligatorio.
 - `400 SYNC_EVENT_NOT_ALLOWED`: el `event_type` no pertenece a la allowlist
   transversal; el evento se rechaza sin efectos persistentes.
+- `400 SYNC_SENSITIVE_PAYLOAD`: el payload contiene una clave sensible o no
+  satisface el contrato mínimo del evento, incluido un identificador obligatorio
+  ausente, no entero positivo o booleano. La respuesta nunca refleja claves ni
+  valores sensibles.
+- `400 SYNC_AGGREGATE_NOT_ALLOWED`: rechazo sanitizado de aggregate por la
+  política transversal, cuando sea alcanzable desde el flujo interno.
 - `400 SYNC_DISPATCH_FAILED`: el evento está permitido por la política
   transversal pero este inbox financiero no posee un handler para procesarlo;
   se rechaza sin efectos persistentes.
@@ -1443,6 +1449,9 @@ sucursal informada. Instalación inexistente o pareja incompatible devuelve
 `400 VALIDATION_ERROR`, sin handler, receipt ni writes de negocio. No se exige
 estado, baja lógica ni habilitación de sincronización porque el helper SQL
 contractual de #469/#470 sólo congela pertenencia por PK.
+
+Todo `SynchronizationPolicyError` se sanitiza y devuelve como HTTP 400 antes de
+canonicalizar o reclamar el `op_id`; por ello no crea receipt ni ejecuta negocio.
 
 #### Idempotencia
 

@@ -227,7 +227,8 @@ from app.application.financiero.services.inbox_event_dispatcher import (
 )
 from app.application.common.synchronization_policy import (
     SyncDispatchError,
-    UnknownSyncEvent,
+    SynchronizationPolicyError,
+    sanitize_sync_error,
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
@@ -3470,7 +3471,17 @@ def financiero_inbox(
                 error_message=exc.code,
             ).model_dump(),
         )
-    except (UnknownSyncEvent, SyncDispatchError) as exc:
+    except SynchronizationPolicyError as exc:
+        db.rollback()
+        code = sanitize_sync_error(exc)
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=code,
+                error_message=code,
+            ).model_dump(),
+        )
+    except SyncDispatchError as exc:
         db.rollback()
         return JSONResponse(
             status_code=400,
