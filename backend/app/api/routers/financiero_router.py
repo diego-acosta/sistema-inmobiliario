@@ -221,6 +221,7 @@ from app.application.financiero.services.list_deuda_consolidada_service import (
     ListDeudaConsolidadaService,
 )
 from app.application.financiero.services.inbox_event_dispatcher import (
+    InboxIdempotencyConflict,
     InboxEventDispatcher,
 )
 from app.application.common.synchronization_policy import (
@@ -3403,6 +3404,7 @@ def aplicar_indexacion_cuotas_v2(
     status_code=204,
     responses={
         400: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
     },
     openapi_extra=_TECHNICAL_CORE_EF_HEADERS_OPENAPI,
 )
@@ -3426,12 +3428,23 @@ def financiero_inbox(
         },
     )
     try:
-        InboxEventDispatcher(db).dispatch(
+        InboxEventDispatcher(db).dispatch_idempotent(
             event_type=request.event_type,
             payload=request.payload,
             context=context,
         )
+        db.commit()
+    except InboxIdempotencyConflict as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=409,
+            content=ErrorResponse(
+                error_code=exc.code,
+                error_message=exc.code,
+            ).model_dump(),
+        )
     except (UnknownSyncEvent, SyncDispatchError) as exc:
+        db.rollback()
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(
@@ -3439,6 +3452,9 @@ def financiero_inbox(
                 error_message=exc.code,
             ).model_dump(),
         )
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post(

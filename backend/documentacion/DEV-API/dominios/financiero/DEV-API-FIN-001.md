@@ -1414,6 +1414,22 @@ Errores controlados:
 - `400 SYNC_DISPATCH_FAILED`: el evento está permitido por la política
   transversal pero este inbox financiero no posee un handler para procesarlo;
   se rechaza sin efectos persistentes.
+- `409 IDEMPOTENCY_TARGET_CONFLICT`: el mismo `X-Op-Id` fue completado para otro
+  `event_type`.
+- `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: el mismo `X-Op-Id` y `event_type` fue
+  completado con otro payload.
+
+Idempotencia CORE-EF:
+
+- usa el runtime durable #470 con `command_code = FINANCIERO_INBOX_EVENT`;
+- el target estable es el `event_type` y el hash RFC 8785 incluye
+  `{event_type, payload}`;
+- mismo `X-Op-Id`, target y payload retorna replay `204` sin ejecutar nuevamente
+  el handler ni crear nuevos rows;
+- claim, writes financieros y completion comparten la misma transacción;
+- un error previo a completion revierte negocio y receipt, permitiendo retry;
+- `X-Instalacion-Id` y `X-Op-Id` se materializan como procedencia CORE-EF en las
+  altas creadas por los handlers.
 
 Notas:
 

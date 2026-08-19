@@ -5,6 +5,7 @@ Cubre: evento válido, evento desconocido e idempotencia.
 import pytest
 from sqlalchemy import text
 
+from app.application.financiero.services.inbox_event_dispatcher import InboxEventDispatcher
 from tests.test_escrituraciones_create import _confirmar_venta_publica
 
 
@@ -20,6 +21,7 @@ def test_inbox_openapi_declara_error_response_400(client) -> None:
     schema = client.get("/openapi.json").json()
     operation = schema["paths"][URL]["post"]
     response_400 = operation["responses"]["400"]
+    assert "409" in operation["responses"]
     error_schema_ref = response_400["content"]["application/json"]["schema"]["$ref"]
     error_schema_name = error_schema_ref.rsplit("/", 1)[-1]
 
@@ -131,6 +133,50 @@ def _get_relacion_venta(db_session, *, id_venta: int) -> dict:
     ).mappings().one()
 
 
+def _get_metadata_grafo_venta(db_session, *, id_venta: int) -> list[dict]:
+    return list(
+        db_session.execute(
+            text(
+                """
+                SELECT
+                    rg.id_instalacion_origen AS rg_origen,
+                    rg.id_instalacion_ultima_modificacion AS rg_ultima,
+                    rg.op_id_alta AS rg_op_alta,
+                    rg.op_id_ultima_modificacion AS rg_op_ultima,
+                    ofi.id_instalacion_origen AS of_origen,
+                    ofi.id_instalacion_ultima_modificacion AS of_ultima,
+                    ofi.op_id_alta AS of_op_alta,
+                    ofi.op_id_ultima_modificacion AS of_op_ultima,
+                    co.id_instalacion_origen AS co_origen,
+                    co.id_instalacion_ultima_modificacion AS co_ultima,
+                    co.op_id_alta AS co_op_alta,
+                    co.op_id_ultima_modificacion AS co_op_ultima,
+                    oo.id_instalacion_origen AS oo_origen,
+                    oo.id_instalacion_ultima_modificacion AS oo_ultima,
+                    oo.op_id_alta AS oo_op_alta,
+                    oo.op_id_ultima_modificacion AS oo_op_ultima
+                FROM relacion_generadora rg
+                JOIN obligacion_financiera ofi
+                  ON ofi.id_relacion_generadora = rg.id_relacion_generadora
+                JOIN composicion_obligacion co
+                  ON co.id_obligacion_financiera = ofi.id_obligacion_financiera
+                JOIN obligacion_obligado oo
+                  ON oo.id_obligacion_financiera = ofi.id_obligacion_financiera
+                WHERE rg.tipo_origen = 'venta' AND rg.id_origen = :id_venta
+                """
+            ),
+            {"id_venta": id_venta},
+        ).mappings()
+    )
+
+
+def _count_receipts(db_session, op_id: str) -> int:
+    return db_session.execute(
+        text("SELECT count(*) FROM operacion_idempotente WHERE op_id = CAST(:op_id AS uuid)"),
+        {"op_id": op_id},
+    ).scalar_one()
+
+
 # ─── caso 1: evento válido ────────────────────────────────────────────────────
 
 
@@ -158,6 +204,20 @@ def test_inbox_venta_confirmada_crea_relacion_generadora_y_obligacion(
     assert relacion["tipo_origen"] == "venta"
     assert relacion["id_origen"] == id_venta
     assert str(relacion["op_id_alta"]) == INBOX_HEADERS["X-Op-Id"]
+    metadata_rows = _get_metadata_grafo_venta(db_session, id_venta=id_venta)
+    assert metadata_rows
+    for row in metadata_rows:
+        assert all(
+            row[key] == 1
+            for key in row
+            if "_op_" not in key and key.endswith(("origen", "ultima"))
+        )
+        assert all(
+            str(row[key]) == INBOX_HEADERS["X-Op-Id"]
+            for key in row
+            if "_op_" in key
+        )
+    assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1
 
     assert (
         _count_obligaciones_relacion(
@@ -234,10 +294,30 @@ def test_inbox_venta_confirmada_idempotente_no_duplica(
     }
 
     response1 = client.post(URL, headers=INBOX_HEADERS, json=body)
+    materialized_after_first = tuple(
+        db_session.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+        for table in (
+            "relacion_generadora",
+            "obligacion_financiera",
+            "composicion_obligacion",
+            "obligacion_obligado",
+        )
+    )
     response2 = client.post(URL, headers=INBOX_HEADERS, json=body)
+    materialized_after_replay = tuple(
+        db_session.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+        for table in (
+            "relacion_generadora",
+            "obligacion_financiera",
+            "composicion_obligacion",
+            "obligacion_obligado",
+        )
+    )
 
     assert response1.status_code == 204
     assert response2.status_code == 204
+    assert materialized_after_replay == materialized_after_first
+    assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1
 
     assert _count_relaciones_venta(db_session, id_venta=id_venta) == 1
 
@@ -249,3 +329,105 @@ def test_inbox_venta_confirmada_idempotente_no_duplica(
         )
         == 1
     )
+
+
+def test_inbox_mismo_op_id_payload_distinto_devuelve_conflicto_sin_writes(
+    client, db_session
+) -> None:
+    venta = _confirmar_venta_publica(client, db_session)
+    id_venta = venta["id_venta"]
+    first = client.post(
+        URL,
+        headers=INBOX_HEADERS,
+        json={"event_type": "venta_confirmada", "payload": {"id_venta": id_venta}},
+    )
+    before = db_session.execute(
+        text("SELECT count(*) FROM relacion_generadora")
+    ).scalar_one()
+
+    second = client.post(
+        URL,
+        headers=INBOX_HEADERS,
+        json={
+            "event_type": "venta_confirmada",
+            "payload": {"id_venta": id_venta + 999_999},
+        },
+    )
+
+    assert first.status_code == 204
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    assert db_session.execute(text("SELECT count(*) FROM relacion_generadora")).scalar_one() == before
+    assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1
+
+
+def test_inbox_mismo_op_id_event_type_distinto_devuelve_conflicto(
+    client, db_session
+) -> None:
+    venta = _confirmar_venta_publica(client, db_session)
+    first = client.post(
+        URL,
+        headers=INBOX_HEADERS,
+        json={
+            "event_type": "venta_confirmada",
+            "payload": {"id_venta": venta["id_venta"]},
+        },
+    )
+    second = client.post(
+        URL,
+        headers=INBOX_HEADERS,
+        json={
+            "event_type": "contrato_alquiler_activado",
+            "payload": {"id_contrato_alquiler": 999_999},
+        },
+    )
+
+    assert first.status_code == 204
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "IDEMPOTENCY_TARGET_CONFLICT"
+    assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1
+
+
+def test_inbox_op_id_distinto_preserva_convergencia_funcional(
+    client, db_session
+) -> None:
+    venta = _confirmar_venta_publica(client, db_session)
+    body = {
+        "event_type": "venta_confirmada",
+        "payload": {"id_venta": venta["id_venta"]},
+    }
+    other_headers = {
+        **INBOX_HEADERS,
+        "X-Op-Id": "650e8400-e29b-41d4-a716-446655440001",
+    }
+
+    assert client.post(URL, headers=INBOX_HEADERS, json=body).status_code == 204
+    assert client.post(URL, headers=other_headers, json=body).status_code == 204
+    assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1
+    assert _count_receipts(db_session, other_headers["X-Op-Id"]) == 1
+    assert _count_relaciones_venta(db_session, id_venta=venta["id_venta"]) == 1
+
+
+def test_inbox_error_post_claim_hace_rollback_y_permite_retry(
+    client, db_session, monkeypatch
+) -> None:
+    venta = _confirmar_venta_publica(client, db_session)
+    body = {
+        "event_type": "venta_confirmada",
+        "payload": {"id_venta": venta["id_venta"]},
+    }
+    original = InboxEventDispatcher._dispatch_validated
+
+    def fail_after_claim(*args, **kwargs):
+        raise RuntimeError("fallo controlado post-claim")
+
+    monkeypatch.setattr(InboxEventDispatcher, "_dispatch_validated", fail_after_claim)
+    with pytest.raises(RuntimeError, match="fallo controlado post-claim"):
+        client.post(URL, headers=INBOX_HEADERS, json=body)
+    assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 0
+    assert _count_relaciones_venta(db_session, id_venta=venta["id_venta"]) == 0
+
+    monkeypatch.setattr(InboxEventDispatcher, "_dispatch_validated", original)
+    retry = client.post(URL, headers=INBOX_HEADERS, json=body)
+    assert retry.status_code == 204
+    assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1

@@ -271,8 +271,8 @@ class HandleVentaConfirmadaEventService:
                     version_registro=1,
                     created_at=now,
                     updated_at=now,
-                    id_instalacion_origen=None,
-                    id_instalacion_ultima_modificacion=None,
+                    id_instalacion_origen=self._parse_installation_id(event),
+                    id_instalacion_ultima_modificacion=self._parse_installation_id(event),
                     op_id_alta=self._parse_op_id(event),
                     op_id_ultima_modificacion=self._parse_op_id(event),
                     moneda=moneda,
@@ -287,8 +287,8 @@ class HandleVentaConfirmadaEventService:
                         version_registro=1,
                         created_at=now,
                         updated_at=now,
-                        id_instalacion_origen=None,
-                        id_instalacion_ultima_modificacion=None,
+                        id_instalacion_origen=self._parse_installation_id(event),
+                        id_instalacion_ultima_modificacion=self._parse_installation_id(event),
                         op_id_alta=self._parse_op_id(event),
                         op_id_ultima_modificacion=self._parse_op_id(event),
                         moneda_componente=moneda,
@@ -451,8 +451,8 @@ class HandleVentaConfirmadaEventService:
                 version_registro=1,
                 created_at=now,
                 updated_at=now,
-                id_instalacion_origen=None,
-                id_instalacion_ultima_modificacion=None,
+                id_instalacion_origen=self._parse_installation_id(event),
+                id_instalacion_ultima_modificacion=self._parse_installation_id(event),
                 op_id_alta=self._parse_op_id(event),
                 op_id_ultima_modificacion=self._parse_op_id(event),
             )
@@ -471,8 +471,8 @@ class HandleVentaConfirmadaEventService:
                 version_registro=1,
                 created_at=now,
                 updated_at=now,
-                id_instalacion_origen=None,
-                id_instalacion_ultima_modificacion=None,
+                id_instalacion_origen=self._parse_installation_id(event),
+                id_instalacion_ultima_modificacion=self._parse_installation_id(event),
                 op_id_alta=self._parse_op_id(event),
                 op_id_ultima_modificacion=self._parse_op_id(event),
             )
@@ -492,3 +492,10 @@ class HandleVentaConfirmadaEventService:
             return UUID(value)
         except ValueError:
             return None
+
+    @staticmethod
+    def _parse_installation_id(event: dict[str, Any]) -> int | None:
+        value = event.get("id_instalacion")
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+        return None
