@@ -403,13 +403,13 @@ El inbox DEBE soportar estados equivalentes a:
 
 - RECIBIDO
 - EN_PROCESO
-- PENDIENTE_DEPENDENCIA
+- PENDING_DEPENDENCY
 - APLICADO
 - DUPLICADO
 - RECHAZADO
 - CONFLICTO
 
-`PENDIENTE_DEPENDENCIA` es un estado técnico no terminal y retryable para una
+`PENDING_DEPENDENCY` es un estado técnico no terminal y retryable para una
 operación válida cuya referencia portable requerida todavía no puede resolverse
 localmente. No equivale a ejecución activa, rechazo ni conflicto. La transición
 debe conservar sin cambios `op_id`, identidad del evento y consumidor, identidad

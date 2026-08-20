@@ -320,7 +320,7 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - estado_final: no
 
 ### EST-TEC-038 — Pendiente de dependencia
-- codigo: pendiente_dependencia
+- codigo: pending_dependency
 - tipo: entidad
 - aplica_a: inbox
 - descripcion: la operación remota es válida pero espera que una referencia portable requerida pueda resolverse localmente; conserva identidad, payload y trazabilidad para reproceso controlado.

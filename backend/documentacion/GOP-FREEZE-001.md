@@ -1657,19 +1657,19 @@ GOP sólo declara la necesidad funcional: si una referencia portable válida y
 requerida todavía no se resuelve localmente, no se aplica la Tarea parcial ni se
 crean placeholders o mappings. Técnico/sync es dueño de retención, estado, retry
 y reproceso. `SRV-TEC-002` congela transversalmente el estado lógico
-`PENDIENTE_DEPENDENCIA`, no terminal y retryable:
+`PENDING_DEPENDENCY`, no terminal y retryable:
 
 ```text
 referencia requerida temporalmente no resoluble
 -> rollback de todo efecto funcional
--> mismo registro/evento queda PENDIENTE_DEPENDENCIA
+-> mismo registro/evento queda PENDING_DEPENDENCY
 -> conserva op_id, event_id, consumer, uid_global, version_registro,
    payload/huella, procedencia, motivo e historial de intentos
 -> worker/job técnico lo reclama atómicamente al vencer su elegibilidad
    o por habilitación manual
 -> PROCESSING
    -> PROCESSED si todas las referencias se resuelven y aplica atómicamente
-   -> PENDIENTE_DEPENDENCIA si la ausencia continúa
+   -> PENDING_DEPENDENCY si la ausencia continúa
    -> REJECTED sólo ante invalidez o imposibilidad permanente
    -> CONFLICTO sólo ante divergencia material
 ```
@@ -1746,7 +1746,7 @@ resolver de forma segura. Nunca se crea una segunda Tarea con el mismo
   por sus UID físicos; referencias humanas por un contrato global Administrativo
   requerido y aún no materializado; las dependencias irresolubles no se aplican
   silenciosa ni parcialmente y quedan trazadas mediante la política transversal
-  `PENDIENTE_DEPENDENCIA` congelada por Técnico.
+  `PENDING_DEPENDENCY` congelada por Técnico.
 - **Alternativas descartadas:** PK remota, `login`, email, código de usuario,
   `codigo_sucursal`, `codigo_instalacion`, headers CORE-EF, placeholders y mappings
   GOP se descartan como identidad autoritativa. También se descarta resolver
@@ -1769,7 +1769,7 @@ interinstalación. Permanece abierto, sin resolución incidental:
 
 La dependencia de #493 impide cerrar el target/versionado exacto del comentario.
 La materialización administrativa de identidad humana, los resolvers de
-referencias y el runtime de `PENDIENTE_DEPENDENCIA` siguen como prerequisitos
+referencias y el runtime de `PENDING_DEPENDENCY` siguen como prerequisitos
 técnicos del diseño físico GOP; no reabren el blocker documental #10. La
 autenticación técnica para commands `origen = SISTEMA` continúa **NO CONGELADA**
 y deberá resolverse antes de exponer runtime automático.

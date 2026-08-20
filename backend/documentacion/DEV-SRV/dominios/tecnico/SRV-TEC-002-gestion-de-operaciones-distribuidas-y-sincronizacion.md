@@ -43,7 +43,7 @@ Permite visualizar estado de operaciones distribuidas y su trazabilidad.
 
 ### Decisión y estado contractual
 
-Se congela `PENDIENTE_DEPENDENCIA` como nombre lógico del estado retryable de
+Se congela `PENDING_DEPENDENCY` como nombre lógico del estado retryable de
 inbox para una operación remota estructuralmente válida que todavía no puede
 aplicarse porque al menos una referencia portable requerida no se resuelve en la
 instalación receptora. El nombre distingue espera de ejecución (`PROCESSING` en
@@ -64,7 +64,7 @@ cambiar la conducta de consumidores existentes.
 
 ### Entrada, retención e idempotencia
 
-El consumidor clasifica como `PENDIENTE_DEPENDENCIA` únicamente la ausencia
+El consumidor clasifica como `PENDING_DEPENDENCY` únicamente la ausencia
 temporal de una referencia portable válida y requerida. La aplicación funcional
 y el cambio de estado técnico deben compartir una frontera transaccional: si no
 se resuelven **todas** las referencias, se revierte cualquier efecto funcional y
@@ -85,13 +85,13 @@ como retry.
 
 ```text
 recepción válida + referencia requerida ausente
-  -> PENDIENTE_DEPENDENCIA (no terminal)
+  -> PENDING_DEPENDENCY (no terminal)
 
-PENDIENTE_DEPENDENCIA elegible
+PENDING_DEPENDENCY elegible
   -> claim atómico por un único worker técnico
   -> EN_PROCESO / PROCESSING
      -> referencias completas + aplicación atómica -> APLICADO / PROCESSED
-     -> dependencia aún ausente -> PENDIENTE_DEPENDENCIA
+     -> dependencia aún ausente -> PENDING_DEPENDENCY
      -> payload inválido o imposibilidad permanente -> RECHAZADO / REJECTED
      -> divergencia material demostrada -> CONFLICTO
 ```
@@ -118,7 +118,7 @@ la operación.
   permanente según el contrato dueño de esa referencia.
 - `CONFLICTO` requiere divergencia material, colisión incompatible de identidad,
   versión o `op_id`; una dependencia temporal, por sí sola, no lo genera.
-- `PENDIENTE_DEPENDENCIA` es espera temporal no terminal y conserva la
+- `PENDING_DEPENDENCY` es espera temporal no terminal y conserva la
   trazabilidad completa hasta aplicación o clasificación terminal.
 - `PROCESSED`/`APLICADO` sólo se alcanza después del efecto funcional atómico.
 
@@ -262,7 +262,7 @@ la operación.
 - definición exacta de estados técnicos de operación distribuida
 - criterio final de segmentación por destino o alcance
 - relación formal entre paquete técnico y operación individual
-- materialización SQL/runtime/tests de `PENDIENTE_DEPENDENCIA`, claim/reclaim y
+- materialización SQL/runtime/tests de `PENDING_DEPENDENCY`, claim/reclaim y
   reprocesamiento conforme a la política contractual congelada
 - política de reintentos de emisión de outbox (separada del reproceso de inbox)
 - estrategia exacta de payload técnico portable
