@@ -74,9 +74,8 @@ async def request_validation_handler(
 ) -> JSONResponse:
     # #483 exige un query param requerido en OpenAPI sin exponer el `detail`
     # nativo. El resto de las rutas conserva el comportamiento vigente.
-    if request.url.path == (
-        "/api/v1/administrativo/configuracion/calendario-comercial"
-    ):
+    calendario_path = "/api/v1/administrativo/configuracion/calendario-comercial"
+    if request.method == "GET" and request.url.path == calendario_path:
         return JSONResponse(
             status_code=422,
             content=ErrorResponse(
@@ -86,6 +85,24 @@ async def request_validation_handler(
                     "YYYY-MM-DD."
                 ),
                 details={"field": "fecha_efectiva"},
+            ).model_dump(),
+            headers={"Cache-Control": "no-store"},
+        )
+    if request.method == "POST" and request.url.path == calendario_path:
+        errors = exc.errors()
+        fields = []
+        for error in errors:
+            location = error.get("loc", ())
+            if len(location) >= 2 and location[0] in {"body", "header"}:
+                field = str(location[-1])
+                if field not in fields:
+                    fields.append(field)
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message="La solicitud de bootstrap contiene datos inválidos.",
+                details={"fields": fields},
             ).model_dump(),
             headers={"Cache-Control": "no-store"},
         )
