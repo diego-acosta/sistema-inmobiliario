@@ -62,6 +62,18 @@ def _root(db_session, version: int = 1, fixture_id: int = 483_000_001) -> None:
     )
 
 
+def _historical_root(db_session, fixture_id: int) -> None:
+    _root(db_session, fixture_id=fixture_id)
+    db_session.execute(
+        text("""
+            UPDATE configuracion_calendario_comercial
+               SET deleted_at = CURRENT_TIMESTAMP
+             WHERE id_configuracion_calendario_comercial = :fixture_id
+        """),
+        {"fixture_id": fixture_id},
+    )
+
+
 def _value(
     db_session,
     code: str,
@@ -130,6 +142,43 @@ def test_fixture_raiz_no_consume_identity_sequence(db_session):
         text(f"SELECT last_value, is_called FROM {sequence_name}")
     ).one()
     assert after == before
+
+
+@pytest.mark.parametrize("historical_ids", [(483_000_010,), (483_000_010, 483_000_011)])
+def test_query_service_usa_unica_raiz_activa_con_historicas(
+    db_session, historical_ids
+):
+    for fixture_id in historical_ids:
+        _historical_root(db_session, fixture_id)
+    _root(db_session, fixture_id=483_000_012)
+    _period(db_session, "2026-01-01", None)
+
+    snapshot = _service(db_session).obtener(date(2026, 2, 1))
+
+    # Las históricas quedaron en versión 2 al aplicar su baja; la activa es v1.
+    assert snapshot.version_agregada == 1
+
+
+def test_query_service_rechaza_si_solo_hay_raiz_historica(db_session):
+    _historical_root(db_session, 483_000_020)
+    _period(db_session, "2026-01-01", None)
+
+    with pytest.raises(ConfiguracionCalendarioComercialInconsistente):
+        _service(db_session).obtener(date(2026, 2, 1))
+
+
+def test_query_service_rechaza_multiples_raices_activas_corruptas(db_session):
+    # La corrupción se limita a la transacción descartable del test; el índice
+    # contractual permanece intacto fuera del rollback del fixture PostgreSQL.
+    db_session.execute(
+        text("DROP INDEX ux_configuracion_calendario_comercial_activa")
+    )
+    _root(db_session, fixture_id=483_000_030)
+    _root(db_session, fixture_id=483_000_031)
+    _period(db_session, "2026-01-01", None)
+
+    with pytest.raises(ConfiguracionCalendarioComercialInconsistente):
+        _service(db_session).obtener(date(2026, 2, 1))
 
 
 def test_query_service_sin_bootstrap_es_incompleto_y_no_escribe(db_session):

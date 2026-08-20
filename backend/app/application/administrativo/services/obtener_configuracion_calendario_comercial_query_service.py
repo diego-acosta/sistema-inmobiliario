@@ -71,7 +71,7 @@ class ObtenerConfiguracionCalendarioComercialQueryService:
         raices_activas = [row for row in raices if row["deleted_at"] is None]
         if not valores and not raices:
             raise ConfiguracionCalendarioComercialIncompleta()
-        if len(raices) != 1 or len(raices_activas) != 1:
+        if len(raices_activas) != 1:
             raise ConfiguracionCalendarioComercialInconsistente()
         if not valores_activos:
             raise ConfiguracionCalendarioComercialInconsistente()
