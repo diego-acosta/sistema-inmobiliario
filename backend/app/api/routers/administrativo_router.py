@@ -705,14 +705,14 @@ def obtener_calendario_comercial(
             )
         ),
     ],
-    fecha_efectiva: str | None = Query(default=None),
+    fecha_efectiva: str = Query(...),
     db: Session = Depends(get_db),
 ) -> CalendarioComercialResponse | JSONResponse:
     # CORE-EF: QUERY_READLIKE. Bearer + permiso son obligatorios; no hay headers
     # write, reloj implícito, locks, commit, outbox ni efectos persistentes.
     del principal
     try:
-        if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", fecha_efectiva or "") is None:
+        if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", fecha_efectiva) is None:
             raise ValueError
         fecha_consulta = date.fromisoformat(fecha_efectiva)
     except ValueError:

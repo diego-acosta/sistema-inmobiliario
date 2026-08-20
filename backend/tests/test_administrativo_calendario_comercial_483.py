@@ -232,6 +232,18 @@ def test_endpoint_deniega_sin_permiso(client):
     assert response.json()["error_code"] == "autorizacion_insuficiente"
 
 
+def test_openapi_declara_fecha_efectiva_requerida_y_no_nullable(client):
+    operation = client.get("/openapi.json").json()["paths"][ENDPOINT]["get"]
+    parameter = next(
+        item for item in operation["parameters"] if item["name"] == "fecha_efectiva"
+    )
+    assert parameter["in"] == "query"
+    assert parameter["required"] is True
+    assert parameter["schema"]["type"] == "string"
+    assert "nullable" not in parameter["schema"]
+    assert "anyOf" not in parameter["schema"]
+
+
 @pytest.mark.parametrize(
     "params",
     [
