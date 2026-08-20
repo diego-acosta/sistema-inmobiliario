@@ -80,21 +80,36 @@ def test_resuelve_codigo_exclusivamente_numerico_sin_fallback(db_session):
 
 
 @pytest.mark.parametrize(
-    ("suffix", "changes", "error"),
+    ("suffix", "changes_factory", "error"),
     [
-        ("INACTIVA", {"estado": "INACTIVA"}, LocalInstallationNotEligible),
-        ("BAJA", {"estado": "DADA_DE_BAJA"}, LocalInstallationNotEligible),
-        ("FECHA", {"fecha_baja": datetime.now()}, LocalInstallationStateConflict),
+        ("INACTIVA", lambda: {"estado": "INACTIVA"}, LocalInstallationNotEligible),
         (
-            "DELETED",
-            {"deleted_at": datetime.now() + timedelta(seconds=5)},
+            "BAJA",
+            lambda: {"estado": "DADA_DE_BAJA"},
             LocalInstallationNotEligible,
         ),
-        ("UNKNOWN", {"estado": "ESTADO_DESCONOCIDO"}, LocalInstallationStateConflict),
+        (
+            "FECHA",
+            lambda: {"fecha_baja": datetime.now()},
+            LocalInstallationStateConflict,
+        ),
+        (
+            "DELETED",
+            lambda: {"deleted_at": datetime.now() + timedelta(seconds=5)},
+            LocalInstallationNotEligible,
+        ),
+        (
+            "UNKNOWN",
+            lambda: {"estado": "ESTADO_DESCONOCIDO"},
+            LocalInstallationStateConflict,
+        ),
     ],
 )
-def test_estados_no_elegibles_y_conflictos(db_session, suffix, changes, error):
+def test_estados_no_elegibles_y_conflictos(
+    db_session, suffix, changes_factory, error
+):
     code = f"INST-LOCAL-{suffix}"
+    changes = changes_factory()
     create_installation(db_session, code, **changes)
     with pytest.raises(error):
         resolve_local_installation(db_session, settings(code))
