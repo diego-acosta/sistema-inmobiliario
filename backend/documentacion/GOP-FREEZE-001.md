@@ -1679,8 +1679,15 @@ creador humano, sucursal presente, instalación requerida o responsable presente
 la identidad portable debe resolverse antes de persistir. El retry reutiliza el
 mismo registro y no genera otro `op_id`; `(event_id, consumer)` deduplica la
 recepción y `op_id` más huella preservan identidad/contenido. Claim atómico,
-lease/reclaim de ejecución vencida y una única transacción evitan efectos dobles
-ante worker caído, retries concurrentes o entregas duplicadas.
+lease/reclaim de ejecución vencida y una única transacción controlan cada fila.
+Antes del efecto, el aplicador debe además serializar atómicamente por `op_id` en
+su scope técnico: `event_id` sólo identifica la entrega y dos entregas con
+distinto `event_id` pueden representar la misma operación. Con envelope
+compatible, sólo una aplica y las demás reutilizan el resultado durable; con
+envelope incompatible, se persiste `CONFLICTO` sin segunda aplicación. Esta
+garantía reutiliza #469/#470 o un mecanismo transversal equivalente, nunca un
+ledger GOP paralelo. Lease de fila e idempotencia de operación son controles
+complementarios.
 
 La agenda puede ser automática y manual. Backoff creciente acotado y contador de
 intentos evitan loops; agotar el límite operativo pausa sólo el retry automático

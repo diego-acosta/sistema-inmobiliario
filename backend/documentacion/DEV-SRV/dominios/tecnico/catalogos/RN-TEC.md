@@ -194,9 +194,14 @@ Incluye operaciones distribuidas, sincronización, inbox y outbox, idempotencia,
 - origen_principal: SRV-TEC-002
 
 ### RN-TEC-035 — Claim único y retry controlado
-- descripcion: el reproceso de una dependencia pendiente debe reclamar atómicamente el registro original, preservar idempotencia y trazabilidad, aplicar backoff controlado y evitar ejecución concurrente o infinita.
+- descripcion: el reproceso de una dependencia pendiente debe reclamar atómicamente el registro original, preservar trazabilidad, aplicar backoff controlado y evitar ejecución concurrente o infinita; ese claim de entrega no sustituye la exclusión idempotente por op_id previa al efecto.
 - aplica_a: inbox, operacion_distribuida, sincronizacion
 - origen_principal: SRV-TEC-002
+
+### RN-TEC-036 — Serialización de aplicación por op_id
+- descripcion: dentro del scope del consumidor o aplicador que puede producir el mismo efecto, toda aplicación distribuida debe obtener exclusión idempotente atómica por op_id antes del efecto; event_id sólo identifica y deduplica la entrega, por lo que entregas compatibles con distinto event_id reutilizan un único resultado y las incompatibles terminan en conflicto sin segunda aplicación.
+- aplica_a: inbox, op_id, operacion_distribuida, sincronizacion
+- origen_principal: CORE-EF
 
 ## Notas
 - Este catálogo deriva del DEV-SRV del dominio Técnico.
