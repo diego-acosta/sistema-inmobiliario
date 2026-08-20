@@ -1342,3 +1342,14 @@ ausencia o formato inválido devuelve `422 VALIDATION_ERROR`. Inconsistencias de
 agregado devuelven `500 CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE` sin
 detalles internos. Todas las respuestas de la ruta usan `Cache-Control:
 no-store`.
+### POST bootstrap inicial (#484)
+
+`POST /api/v1/administrativo/configuracion/calendario-comercial` responde `201`
+con el envelope estándar y el agregado `COMPLETA` (UID raíz, ambos días,
+`version_agregada = 1`, `fecha_desde` y `fecha_hasta = null`). Exige Bearer,
+permiso `ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR`, `X-Op-Id`,
+`X-Sucursal-Id` y `X-Instalacion-Id`. No usa `X-Usuario-Id` ni
+`If-Match-Version`. Los días son enteros estrictos 1–31 y `vigente_desde` es una
+fecha explícita. Aplica idempotencia #470 con target
+`CALENDARIO_COMERCIAL/GLOBAL`; un replay compatible conserva el `201` y snapshot
+original. No aplica outbox/sync definitivo en #484.

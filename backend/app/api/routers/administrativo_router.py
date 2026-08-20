@@ -8,6 +8,7 @@ from app.api.core_ef_headers import (
     CoreEFHeaderValidationError,
     parse_core_ef_headers,
     parse_authenticated_core_ef_headers,
+    parse_technical_core_ef_headers,
 )
 from app.api.administrative_authorization import require_administrative_permission
 from app.api.dependencies import get_db
@@ -29,6 +30,8 @@ from app.api.schemas.administrativo import (
     CalendarioComercialCompletoData,
     CalendarioComercialIncompletoData,
     CalendarioComercialResponse,
+    BootstrapCalendarioComercialRequest,
+    BootstrapCalendarioComercialResponse,
     ErrorResponse,
     ItemCatalogoBajaResponse,
     ItemCatalogoCreateRequest,
@@ -98,6 +101,10 @@ from app.application.administrativo.services.obtener_configuracion_calendario_co
 from app.application.administrativo.services.actualizar_valor_parametro_global_service import (
     ActualizarValorParametroGlobalService,
     ParametroCommandError,
+)
+from app.application.administrativo.services.bootstrap_calendario_comercial_service import (
+    BootstrapCalendarioComercialError,
+    BootstrapCalendarioComercialService,
 )
 from app.application.common.idempotency import IdempotencyRuntimeError
 from app.config.settings import get_settings
@@ -760,6 +767,62 @@ def obtener_calendario_comercial(
     return _parametro_global_response(
         JSONResponse(content=response.model_dump(mode="json"))
     )
+
+
+@router.post(
+    "/api/v1/administrativo/configuracion/calendario-comercial",
+    response_model=BootstrapCalendarioComercialResponse,
+    status_code=201,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse},
+               403: {"model": ErrorResponse}, 409: {"model": ErrorResponse},
+               422: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def bootstrap_calendario_comercial(
+    request: BootstrapCalendarioComercialRequest,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission(
+            "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"))],
+    db: Session = Depends(get_db),
+    x_op_id: str = Header(alias="X-Op-Id"),
+    x_sucursal_id: str = Header(alias="X-Sucursal-Id"),
+    x_instalacion_id: str = Header(alias="X-Instalacion-Id"),
+) -> BootstrapCalendarioComercialResponse | JSONResponse:
+    # COMMAND_WRITE_NEGOCIO: creación sin If-Match; identidad sólo desde Bearer.
+    try:
+        headers = parse_technical_core_ef_headers(
+            x_op_id, x_sucursal_id, x_instalacion_id)
+    except CoreEFHeaderValidationError as exc:
+        return _parametro_global_error(400, "VALIDATION_ERROR", exc.message,
+                                       {"header": exc.header_name,
+                                        "reason": exc.reason})
+    try:
+        snapshot = BootstrapCalendarioComercialService(db).execute(
+            dia_cierre_comercial=request.dia_cierre_comercial,
+            dia_vencimiento_predeterminado_cuotas=(
+                request.dia_vencimiento_predeterminado_cuotas),
+            vigente_desde=request.vigente_desde, headers=headers,
+            id_usuario=principal.id_usuario)
+        db.commit()
+    except BootstrapCalendarioComercialError as exc:
+        db.rollback()
+        messages = {
+            "inconsistencia_contexto_tecnico": "El contexto técnico declarado es inconsistente.",
+            "CONFIGURACION_CALENDARIO_COMERCIAL_CONFLICTO": (
+                "El calendario comercial no se encuentra vacío y consistente."),
+        }
+        return _parametro_global_error(
+            exc.status, exc.code,
+            messages.get(exc.code, "No fue posible completar la operación."), {})
+    except IdempotencyRuntimeError:
+        db.rollback()
+        return _parametro_global_error(500, "IDEMPOTENCY_TECHNICAL_ERROR",
+                                       "No fue posible resolver la idempotencia de la operación.", {})
+    except Exception:
+        db.rollback()
+        return _parametro_global_error(500, "TECHNICAL_INCONSISTENCY",
+                                       "No fue posible completar la operación.", {})
+    return _parametro_global_response(JSONResponse(
+        status_code=201, content=snapshot))
 
 
 ASCII_LEDGER_WHITESPACE = " \t\n\r\f\v"

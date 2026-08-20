@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -475,6 +475,22 @@ class CalendarioComercialIncompletoData(BaseModel):
 class CalendarioComercialResponse(BaseModel):
     ok: Literal[True] = True
     data: CalendarioComercialCompletoData | CalendarioComercialIncompletoData
+
+
+class BootstrapCalendarioComercialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    dia_cierre_comercial: StrictInt = Field(ge=1, le=31)
+    dia_vencimiento_predeterminado_cuotas: StrictInt = Field(ge=1, le=31)
+    vigente_desde: date
+
+
+class BootstrapCalendarioComercialData(CalendarioComercialCompletoData):
+    uid_global: UUID
+
+
+class BootstrapCalendarioComercialResponse(BaseModel):
+    ok: Literal[True] = True
+    data: BootstrapCalendarioComercialData
 
 
 class ActualizarValorParametroGlobalRequest(BaseModel):

@@ -364,3 +364,13 @@ parejas parciales o ambiguas, intervalos divergentes y valores no enteros fuera
 de 1..31 son inconsistencias técnicas; nunca se degradan a `INCOMPLETA`. El
 servicio es read-only y reusable por futuros consumidores, incluido #426, sin
 incorporar la lógica Comercial de ese issue.
+## Incremento #484 — bootstrap inicial atómico
+
+El POST del agregado calendario materializa por única vez la raíz GLOBAL y los
+dos valores funcionales con una vigencia explícita común. Es un
+`COMMAND_WRITE_NEGOCIO`, usa Bearer y el permiso dedicado, idempotencia durable
+#470, lock advisory transaccional estable y una única transacción exterior. Un
+replay compatible devuelve exclusivamente el snapshot del receipt, sin releer
+negocio ni contexto. Cualquier raíz o valor previo, incluso histórico o parcial,
+es conflicto y no se repara. #484 no produce outbox, eventos ni sync; esas piezas
+permanecen pendientes en #486, y la programación posterior sigue en #485.
