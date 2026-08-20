@@ -232,12 +232,36 @@ def test_endpoint_deniega_sin_permiso(client):
     assert response.json()["error_code"] == "autorizacion_insuficiente"
 
 
-@pytest.mark.parametrize("params", [{}, {"fecha_efectiva": "no-es-fecha"}])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"fecha_efectiva": "20260101"},
+        {"fecha_efectiva": "2026-W01-1"},
+        {"fecha_efectiva": "01-01-2026"},
+        {"fecha_efectiva": "2026/01/01"},
+        {"fecha_efectiva": "2026-1-1"},
+        {"fecha_efectiva": "2026-01-1"},
+        {"fecha_efectiva": "2026-1-01"},
+        {"fecha_efectiva": "no-es-fecha"},
+        {"fecha_efectiva": ""},
+        {"fecha_efectiva": "2026-02-30"},
+        {"fecha_efectiva": "2026-13-01"},
+    ],
+)
 def test_endpoint_valida_fecha_efectiva_explicita(client, params):
     with _grant(client):
         response = client.get(ENDPOINT, params=params)
     assert response.status_code == 422
     assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.parametrize("fecha_efectiva", ["2026-01-01", "2026-12-31"])
+def test_endpoint_acepta_formato_fecha_efectiva_contractual(client, fecha_efectiva):
+    with _grant(client):
+        response = client.get(ENDPOINT, params={"fecha_efectiva": fecha_efectiva})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "data": {"estado": "INCOMPLETA"}}
 
 
 def test_endpoint_permission_based_sin_headers_write_y_x_usuario_no_participa(

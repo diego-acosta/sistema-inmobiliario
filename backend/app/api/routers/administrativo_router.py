@@ -1,4 +1,5 @@
 from datetime import date
+import re
 from typing import Annotated
 
 from app.api.authentication import get_authenticated_principal
@@ -711,7 +712,9 @@ def obtener_calendario_comercial(
     # write, reloj implícito, locks, commit, outbox ni efectos persistentes.
     del principal
     try:
-        fecha_consulta = date.fromisoformat(fecha_efectiva or "")
+        if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", fecha_efectiva or "") is None:
+            raise ValueError
+        fecha_consulta = date.fromisoformat(fecha_efectiva)
     except ValueError:
         return _parametro_global_error(
             422,
