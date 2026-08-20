@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import Header
+from fastapi import Header, Request
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,15 @@ class AuthenticatedCoreEFHeaders:
     x_sucursal_id: int
     x_instalacion_id: int
     if_match_version: int
+
+
+@dataclass(frozen=True)
+class TechnicalCoreEFHeaders:
+    """Metadata técnica para writes sin identidad humana ni target versionado."""
+
+    x_op_id: UUID
+    x_sucursal_id: int
+    x_instalacion_id: int
 
 
 class CoreEFHeaderValidationError(ValueError):
@@ -136,3 +145,38 @@ def parse_authenticated_core_ef_headers(
         ),
         if_match_version=version,
     )
+
+
+def parse_technical_core_ef_headers(
+    x_op_id: str | None,
+    x_sucursal_id: str | None,
+    x_instalacion_id: str | None,
+) -> TechnicalCoreEFHeaders:
+    """Parsea metadata técnica obligatoria sin identidad humana ni versión CAS."""
+    if x_op_id is None:
+        raise _missing_header_error("X-Op-Id")
+    try:
+        parsed_op_id = UUID(x_op_id)
+    except ValueError as exc:
+        raise _invalid_header_error("X-Op-Id") from exc
+    return TechnicalCoreEFHeaders(
+        x_op_id=parsed_op_id,
+        x_sucursal_id=_parse_required_positive_int("X-Sucursal-Id", x_sucursal_id),
+        x_instalacion_id=_parse_required_positive_int(
+            "X-Instalacion-Id", x_instalacion_id
+        ),
+    )
+
+
+def get_core_ef_headers_technical_write(
+    request: Request,
+) -> TechnicalCoreEFHeaders | CoreEFHeaderValidationError:
+    """Dependency técnica que permite al router conservar su ErrorResponse."""
+    try:
+        return parse_technical_core_ef_headers(
+            x_op_id=request.headers.get("X-Op-Id"),
+            x_sucursal_id=request.headers.get("X-Sucursal-Id"),
+            x_instalacion_id=request.headers.get("X-Instalacion-Id"),
+        )
+    except CoreEFHeaderValidationError as exc:
+        return exc

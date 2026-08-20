@@ -1392,9 +1392,114 @@ Eventos soportados:
 - `contrato_alquiler_activado`
   - payload: `{"id_contrato_alquiler": int}`
 
+Headers técnicos obligatorios:
+
+- `X-Op-Id`: UUID de la operación.
+- `X-Sucursal-Id`: entero positivo de procedencia.
+- `X-Instalacion-Id`: entero positivo de procedencia.
+
+El endpoint no exige `X-Usuario-Id`, autenticación Bearer ni
+`If-Match-Version`: es un command técnico sin identidad humana y no direcciona
+una entidad existente/versionada para aplicar CAS.
+
 Response:
 
 - `204 No Content`
+
+Errores controlados:
+
+- `400 VALIDATION_ERROR`: falta o es inválido un header técnico obligatorio.
+- `400 SYNC_EVENT_NOT_ALLOWED`: el `event_type` no pertenece a la allowlist
+  transversal; el evento se rechaza sin efectos persistentes.
+- `400 SYNC_SENSITIVE_PAYLOAD`: el payload contiene una clave sensible o no
+  satisface el contrato mínimo del evento, incluido un identificador obligatorio
+  ausente, no entero positivo o booleano. La respuesta nunca refleja claves ni
+  valores sensibles.
+- `400 SYNC_AGGREGATE_NOT_ALLOWED`: rechazo sanitizado de aggregate por la
+  política transversal, cuando sea alcanzable desde el flujo interno.
+- `400 SYNC_DISPATCH_FAILED`: el evento está permitido por la política
+  transversal pero este inbox financiero no posee un handler para procesarlo;
+  se rechaza sin efectos persistentes.
+- `400 IDEMPOTENCY_PAYLOAD_INVALID`: el payload pasó la estructura HTTP pero
+  contiene un valor no canonicalizable por el runtime #470 v1; se rechaza antes
+  del claim, sin receipt ni writes de negocio.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`: el mismo `X-Op-Id` ya fue completado por
+  otro `command_code` del ledger transversal global.
+- `409 IDEMPOTENCY_TARGET_CONFLICT`: el mismo `X-Op-Id` fue completado para otro
+  `event_type`.
+- `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: el mismo `X-Op-Id` y `event_type` fue
+  completado con otro payload.
+
+### Decisión CORE-EF
+
+#### Naturaleza
+
+`COMMAND_WRITE_TECNICO / sincronizable`.
+
+#### Headers
+
+- `X-Op-Id`, `X-Sucursal-Id` y `X-Instalacion-Id`: obligatorios.
+- `X-Usuario-Id`: **NO APLICA**; el command no representa identidad humana.
+- `If-Match-Version`: **NO APLICA**; no existe un target previo versionado al
+  que se aplique CAS.
+
+#### Contexto técnico
+
+Después del parseo sintáctico y antes de validar el evento o reclamar el
+`op_id`, se consulta la instalación por PK y se exige que pertenezca a la
+sucursal informada. Instalación inexistente o pareja incompatible devuelve
+`400 VALIDATION_ERROR`, sin handler, receipt ni writes de negocio. No se exige
+estado, baja lógica ni habilitación de sincronización porque el helper SQL
+contractual de #469/#470 sólo congela pertenencia por PK.
+
+Todo `SynchronizationPolicyError` se sanitiza y devuelve como HTTP 400 antes de
+canonicalizar o reclamar el `op_id`; por ello no crea receipt ni ejecuta negocio.
+
+#### Idempotencia
+
+**APLICA**, mediante el runtime durable #470:
+
+- usa el runtime durable #470 con `command_code = FINANCIERO_INBOX_EVENT`;
+- `X-Op-Id` es global al ledger transversal y no está namespaceado por endpoint
+  ni dominio; un uso previo por otro command produce
+  `409 IDEMPOTENCY_COMMAND_CONFLICT`;
+- el target estable es el `event_type` y el hash RFC 8785 incluye
+  `{event_type, payload}`;
+- el payload debe pertenecer al subconjunto JSON canonicalizable del runtime v1
+  (`string`, entero, booleano, `null`, listas y objetos con claves string); un
+  valor no soportado devuelve `400 IDEMPOTENCY_PAYLOAD_INVALID` antes del claim;
+- mismo `X-Op-Id`, target y payload retorna replay `204` sin ejecutar nuevamente
+  el handler ni crear nuevos rows;
+- claim, writes financieros y completion comparten la misma transacción;
+- un error previo a completion revierte negocio y receipt, permitiendo retry;
+- `X-Instalacion-Id` y `X-Op-Id` se materializan como procedencia CORE-EF en las
+  altas creadas por los handlers.
+
+#### Outbox
+
+**NO APLICA** al endpoint inbox como productor de un nuevo evento. Este PR no
+agrega ni modifica outbox; los handlers conservan su comportamiento existente.
+
+#### Lock lógico
+
+**NO APLICA** un lock funcional adicional sobre venta o contrato. El lock
+técnico que sí aplica es el advisory lock transaccional por `op_id` provisto por
+`claim_operation()`.
+
+#### Versionado
+
+Sin cambios y sin CAS. El procesamiento conserva el versionado propio de las
+altas financieras existentes.
+
+#### Rollback/transacción
+
+La validación de contexto ocurre antes del claim. Claim, negocio y completion
+comparten la misma `Session`; el router realiza el commit exterior sólo después
+de completion y hace rollback ante conflicto o error. Si no hubo completion no
+queda receipt durable y el mismo `op_id` puede reintentarse. En particular, la
+creación del cronograma de `contrato_alquiler_activado` usa el repository sin
+commit ni rollback internos; la regeneración histórica conserva explícitamente
+el ownership transaccional previo del método.
 
 Notas:
 

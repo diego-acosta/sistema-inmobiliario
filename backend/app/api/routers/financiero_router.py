@@ -32,11 +32,9 @@ from app.api.schemas.financiero import (
     ComprobanteImpuestoData,
     ComprobanteImpuestoListResponse,
     ComprobanteImpuestoResponse,
-    ComposicionCreateItem,
     ConceptoFinancieroData,
     ConceptoFinancieroListData,
     ConceptoFinancieroListResponse,
-    DeudaComposicionItem,
     DeudaConsolidadoData,
     DeudaConsolidadoRelacionItem,
     DeudaConsolidadoResumen,
@@ -136,6 +134,8 @@ from app.application.common.commands import CommandContext
 from app.api.core_ef_headers import (
     CoreEFHeaderValidationError,
     CoreEFHeaders,
+    TechnicalCoreEFHeaders,
+    get_core_ef_headers_technical_write,
     parse_core_ef_headers,
 )
 from app.application.financiero.commands.create_relacion_generadora import (
@@ -221,7 +221,14 @@ from app.application.financiero.services.list_deuda_consolidada_service import (
     ListDeudaConsolidadaService,
 )
 from app.application.financiero.services.inbox_event_dispatcher import (
+    InboxIdempotencyConflict,
     InboxEventDispatcher,
+    InboxPayloadValidationError,
+)
+from app.application.common.synchronization_policy import (
+    SyncDispatchError,
+    SynchronizationPolicyError,
+    sanitize_sync_error,
 )
 from app.application.financiero.services.list_relaciones_generadoras_service import (
     ListRelacionesGeneradorasService,
@@ -246,6 +253,9 @@ from app.infrastructure.persistence.repositories.aplicar_indexacion_cuotas_v2_re
 )
 from app.infrastructure.persistence.repositories.preparar_corridas_indexacion_cuotas_v2_repository import (
     PrepararCorridasIndexacionCuotasV2SqlAlchemyRepository,
+)
+from app.infrastructure.persistence.repositories.technical_context_repository import (
+    TechnicalContextRepository,
 )
 from app.application.financiero.services.materializar_factura_servicio_service import (
     MaterializarFacturaServicioService,
@@ -316,6 +326,18 @@ from app.infrastructure.persistence.repositories.locativo_repository import (
 
 
 router = APIRouter(tags=["Financiero"])
+
+_TECHNICAL_CORE_EF_HEADERS_OPENAPI = {
+    "parameters": [
+        {
+            "name": name,
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id")
+    ]
+}
 
 
 @dataclass(slots=True)
@@ -3382,15 +3404,95 @@ def aplicar_indexacion_cuotas_v2(
         )
     return AplicarIndexacionCuotasV2Response(data=result.data)
 
-@router.post("/api/v1/financiero/inbox", status_code=204)
+@router.post(
+    "/api/v1/financiero/inbox",
+    status_code=204,
+    responses={
+        400: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+    },
+    openapi_extra=_TECHNICAL_CORE_EF_HEADERS_OPENAPI,
+)
 def financiero_inbox(
     request: InboxEventRequest,
     db: Session = Depends(get_db),
-) -> None:
-    InboxEventDispatcher(db).dispatch(
-        event_type=request.event_type,
-        payload=request.payload,
+    technical_headers: TechnicalCoreEFHeaders | CoreEFHeaderValidationError = Depends(
+        get_core_ef_headers_technical_write
+    ),
+):
+    if isinstance(technical_headers, CoreEFHeaderValidationError):
+        return _core_ef_error_response(technical_headers)
+    if not TechnicalContextRepository(db).installation_belongs_to_branch(
+        id_sucursal=technical_headers.x_sucursal_id,
+        id_instalacion=technical_headers.x_instalacion_id,
+    ):
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message="El contexto técnico sucursal/instalación es inválido.",
+                details={
+                    "headers": ["X-Sucursal-Id", "X-Instalacion-Id"],
+                },
+            ).model_dump(),
+        )
+    context = FinancieroCommandContext(
+        id_instalacion=technical_headers.x_instalacion_id,
+        op_id=technical_headers.x_op_id,
+        request_id=technical_headers.x_op_id,
+        metadata={
+            "x_op_id": str(technical_headers.x_op_id),
+            "x_sucursal_id": str(technical_headers.x_sucursal_id),
+            "x_instalacion_id": str(technical_headers.x_instalacion_id),
+        },
     )
+    try:
+        InboxEventDispatcher(db).dispatch_idempotent(
+            event_type=request.event_type,
+            payload=request.payload,
+            context=context,
+        )
+        db.commit()
+    except InboxIdempotencyConflict as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=409,
+            content=ErrorResponse(
+                error_code=exc.code,
+                error_message=exc.code,
+            ).model_dump(),
+        )
+    except InboxPayloadValidationError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=exc.code,
+                error_message=exc.code,
+            ).model_dump(),
+        )
+    except SynchronizationPolicyError as exc:
+        db.rollback()
+        code = sanitize_sync_error(exc)
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=code,
+                error_message=code,
+            ).model_dump(),
+        )
+    except SyncDispatchError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error_code=exc.code,
+                error_message=exc.code,
+            ).model_dump(),
+        )
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post(
