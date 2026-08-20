@@ -459,6 +459,24 @@ class ParametroGlobalValorResponse(BaseModel):
     data: ParametroGlobalValorResponseData
 
 
+class CalendarioComercialCompletoData(BaseModel):
+    estado: Literal["COMPLETA"] = "COMPLETA"
+    dia_cierre_comercial: int
+    dia_vencimiento_predeterminado_cuotas: int
+    version_agregada: int
+    fecha_desde: datetime
+    fecha_hasta: datetime | None
+
+
+class CalendarioComercialIncompletoData(BaseModel):
+    estado: Literal["INCOMPLETA"] = "INCOMPLETA"
+
+
+class CalendarioComercialResponse(BaseModel):
+    ok: Literal[True] = True
+    data: CalendarioComercialCompletoData | CalendarioComercialIncompletoData
+
+
 class ActualizarValorParametroGlobalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     valor_tipado: StrictInt

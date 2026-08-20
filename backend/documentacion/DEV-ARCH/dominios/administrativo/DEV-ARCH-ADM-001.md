@@ -348,3 +348,19 @@ definiciones, rango, permiso y raíz física ya están materializados; valores y
 raíz funcionales, runtime agregado, eventos, sync e historial especializado siguen
 fuera de #482. #435, #461, #265, secretos, CRUD genérico, UI, consumers remotos,
 reconciliación y eliminación física de `configuracion_general` no cambian aquí.
+
+## Incremento #483 — lectura agregada temporal
+
+#483 materializa una consulta `QUERY_READLIKE` del núcleo Administrativo. El
+query service interno recibe obligatoriamente una fecha explícita y resuelve los
+dos valores con semántica `[fecha_desde, fecha_hasta)`, usando en un único
+snapshot `parametro_sistema`, `valor_parametro` y la versión de
+`configuracion_calendario_comercial`. No consulta `configuracion_general`,
+`configuracion_local` ni catálogos, y no depende del reloj del host.
+
+La ausencia de bootstrap y una fecha anterior a la primera vigencia son estados
+funcionales `INCOMPLETA`. Definiciones incompatibles, raíz inconsistente,
+parejas parciales o ambiguas, intervalos divergentes y valores no enteros fuera
+de 1..31 son inconsistencias técnicas; nunca se degradan a `INCOMPLETA`. El
+servicio es read-only y reusable por futuros consumidores, incluido #426, sin
+incorporar la lógica Comercial de ese issue.

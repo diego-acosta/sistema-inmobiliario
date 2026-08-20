@@ -20,6 +20,8 @@ from app.application.administrativo.authorization import (
 )
 from app.config.settings import get_settings
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 settings = get_settings()
@@ -64,6 +66,30 @@ app = FastAPI(
     version=settings.app_version,
     openapi_tags=OPENAPI_TAGS,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    # #483 exige un query param requerido en OpenAPI sin exponer el `detail`
+    # nativo. El resto de las rutas conserva el comportamiento vigente.
+    if request.url.path == (
+        "/api/v1/administrativo/configuracion/calendario-comercial"
+    ):
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(
+                error_code="VALIDATION_ERROR",
+                error_message=(
+                    "fecha_efectiva es obligatoria y debe usar el formato "
+                    "YYYY-MM-DD."
+                ),
+                details={"field": "fecha_efectiva"},
+            ).model_dump(),
+            headers={"Cache-Control": "no-store"},
+        )
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.exception_handler(InvalidSession)

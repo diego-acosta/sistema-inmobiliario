@@ -756,3 +756,19 @@ incluso si el actor también posee el permiso específico o es `ADMINISTRADOR_SI
 Sólo el futuro agregado #425 podrá modificarlas de forma atómica y temporal. La migración
 rechaza además todo valor preexistente de esas claves que no sea un `ENTERO` ASCII tipado
 dentro de 1–31, incluidos históricos.
+
+## Incremento #483 — Query service de calendario comercial
+
+`ObtenerConfiguracionCalendarioComercialQueryService.obtener(fecha_efectiva)`
+implementa la lectura temporal reusable e independiente de HTTP. La fecha es un
+input obligatorio, el límite inferior es inclusivo y el superior exclusivo. El
+repository ejecuta una sola sentencia read-only para obtener definiciones,
+historia de valores y raíz/version agregada desde un snapshot coherente; no usa
+`FOR UPDATE`, commit, rollback, outbox, ledger idempotente ni reloj implícito.
+
+El resultado completo contiene ambos días, `version_agregada`, `fecha_desde` y
+`fecha_hasta`. La ausencia legítima se comunica mediante
+`CONFIGURACION_CALENDARIO_COMERCIAL_INCOMPLETA`; toda cardinalidad, definición,
+raíz, pareja, intervalo o valor incompatible usa un error técnico diferenciado.
+#483 no crea valores ni raíz y no implementa bootstrap, programación, outbox,
+sync, fecha operativa o cálculo de vencimientos.
