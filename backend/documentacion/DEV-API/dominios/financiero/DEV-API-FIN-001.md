@@ -1423,6 +1423,8 @@ Errores controlados:
 - `400 IDEMPOTENCY_PAYLOAD_INVALID`: el payload pasó la estructura HTTP pero
   contiene un valor no canonicalizable por el runtime #470 v1; se rechaza antes
   del claim, sin receipt ni writes de negocio.
+- `409 IDEMPOTENCY_COMMAND_CONFLICT`: el mismo `X-Op-Id` ya fue completado por
+  otro `command_code` del ledger transversal global.
 - `409 IDEMPOTENCY_TARGET_CONFLICT`: el mismo `X-Op-Id` fue completado para otro
   `event_type`.
 - `409 IDEMPOTENCY_PAYLOAD_CONFLICT`: el mismo `X-Op-Id` y `event_type` fue
@@ -1458,6 +1460,9 @@ canonicalizar o reclamar el `op_id`; por ello no crea receipt ni ejecuta negocio
 **APLICA**, mediante el runtime durable #470:
 
 - usa el runtime durable #470 con `command_code = FINANCIERO_INBOX_EVENT`;
+- `X-Op-Id` es global al ledger transversal y no está namespaceado por endpoint
+  ni dominio; un uso previo por otro command produce
+  `409 IDEMPOTENCY_COMMAND_CONFLICT`;
 - el target estable es el `event_type` y el hash RFC 8785 incluye
   `{event_type, payload}`;
 - el payload debe pertenecer al subconjunto JSON canonicalizable del runtime v1

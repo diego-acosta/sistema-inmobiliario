@@ -8,6 +8,19 @@ import pytest
 from sqlalchemy import text
 
 import app.application.financiero.services.inbox_event_dispatcher as inbox_dispatcher_module
+from app.application.administrativo.services.actualizar_valor_parametro_global_service import (
+    COMMAND_CODE as ADMIN_VALOR_GLOBAL_COMMAND_CODE,
+    TARGET_TYPE as ADMIN_VALOR_GLOBAL_TARGET_TYPE,
+)
+from app.application.common.idempotency import (
+    CANONICALIZATION_VERSION,
+    ClaimDecision,
+    OperationClaim,
+    OperationCompletion,
+    canonical_payload_hash,
+    claim_operation,
+    complete_operation,
+)
 from app.application.financiero.services.inbox_event_dispatcher import InboxEventDispatcher
 from tests.test_fin_event_contrato_alquiler import (
     _crear_condicion,
@@ -652,6 +665,92 @@ def test_inbox_mismo_op_id_event_type_distinto_devuelve_conflicto(
     assert second.status_code == 409
     assert second.json()["error_code"] == "IDEMPOTENCY_TARGET_CONFLICT"
     assert _count_receipts(db_session, INBOX_HEADERS["X-Op-Id"]) == 1
+
+
+def test_inbox_op_id_global_usado_por_otro_command_devuelve_command_conflict(
+    client, db_session, monkeypatch
+) -> None:
+    op_id = uuid4()
+    payload_hash = canonical_payload_hash(
+        {
+            "codigo_parametro": "PARAMETRO_TEST",
+            "valor_tipado": "1",
+            "if_match_version": 1,
+        }
+    )
+    claim = OperationClaim(
+        op_id=op_id,
+        command_code=ADMIN_VALOR_GLOBAL_COMMAND_CODE,
+        target_type=ADMIN_VALOR_GLOBAL_TARGET_TYPE,
+        target_uid=None,
+        target_key="PARAMETRO_TEST",
+        payload_hash=payload_hash,
+        canonicalization_version=CANONICALIZATION_VERSION,
+    )
+    assert claim_operation(db_session, claim).decision is ClaimDecision.EXECUTE
+    complete_operation(
+        db_session,
+        OperationCompletion(
+            op_id=claim.op_id,
+            command_code=claim.command_code,
+            target_type=claim.target_type,
+            target_uid=claim.target_uid,
+            target_key=claim.target_key,
+            payload_hash=claim.payload_hash,
+            canonicalization_version=claim.canonicalization_version,
+            result_code="PARAMETRO_GLOBAL_MODIFICADO",
+            result_http_status=200,
+            result_target_uid=None,
+            result_version=1,
+            response_snapshot={"ok": True},
+            id_usuario=None,
+            id_sucursal=1,
+            id_instalacion=1,
+        ),
+    )
+    db_session.commit()
+
+    def unexpected_handler(*args, **kwargs):
+        raise AssertionError("el handler financiero no debe ejecutarse")
+
+    monkeypatch.setattr(
+        inbox_dispatcher_module.HandleVentaConfirmadaEventService,
+        "execute",
+        unexpected_handler,
+    )
+    response = client.post(
+        URL,
+        headers={**INBOX_HEADERS, "X-Op-Id": str(op_id)},
+        json={"event_type": "venta_confirmada", "payload": {"id_venta": 999999}},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "ok": False,
+        "error_code": "IDEMPOTENCY_COMMAND_CONFLICT",
+        "error_message": "IDEMPOTENCY_COMMAND_CONFLICT",
+        "details": None,
+    }
+    receipt = db_session.execute(
+        text(
+            """
+            SELECT command_code, count(*) OVER () AS total
+            FROM operacion_idempotente
+            WHERE op_id = :op_id
+            """
+        ),
+        {"op_id": op_id},
+    ).mappings().one()
+    assert receipt == {
+        "command_code": ADMIN_VALOR_GLOBAL_COMMAND_CODE,
+        "total": 1,
+    }
+    assert db_session.execute(
+        text("SELECT count(*) FROM relacion_generadora")
+    ).scalar_one() == 0
+    assert db_session.execute(
+        text("SELECT count(*) FROM obligacion_financiera")
+    ).scalar_one() == 0
 
 
 def test_inbox_op_id_distinto_preserva_convergencia_funcional(
