@@ -100,6 +100,14 @@ class ObtenerConfiguracionCalendarioComercialQueryService:
         if any(set(pareja) != CODIGOS_CALENDARIO for pareja in por_intervalo.values()):
             raise ConfiguracionCalendarioComercialInconsistente()
 
+        intervalos_ordenados = sorted(por_intervalo, key=lambda intervalo: intervalo[0])
+        for anterior, actual in zip(
+            intervalos_ordenados, intervalos_ordenados[1:], strict=False
+        ):
+            fecha_hasta_anterior = anterior[1]
+            if fecha_hasta_anterior is None or actual[0] < fecha_hasta_anterior:
+                raise ConfiguracionCalendarioComercialInconsistente()
+
         instante = datetime.combine(fecha_efectiva, datetime.min.time())
         aplicables = [
             (intervalo, pareja)

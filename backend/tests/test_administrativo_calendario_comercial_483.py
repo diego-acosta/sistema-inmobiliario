@@ -163,6 +163,39 @@ def test_query_service_antes_de_primera_vigencia_es_incompleto(db_session):
         _service(db_session).obtener(date(2026, 1, 31))
 
 
+@pytest.mark.parametrize("fecha_efectiva", [date(2026, 2, 1), date(2026, 11, 1)])
+def test_query_service_rechaza_historia_con_overlap_global(
+    db_session, fecha_efectiva
+):
+    _root(db_session)
+    _period(db_session, "2026-01-01", "2026-06-01", 8, 18)
+    _period(db_session, "2026-05-01", "2026-12-01", 12, 22)
+
+    with pytest.raises(ConfiguracionCalendarioComercialInconsistente):
+        _service(db_session).obtener(fecha_efectiva)
+
+
+def test_query_service_acepta_intervalos_adyacentes(db_session):
+    _root(db_session)
+    _period(db_session, "2026-01-01", "2026-03-01", 8, 18)
+    _period(db_session, "2026-03-01", None, 12, 22)
+
+    snapshot = _service(db_session).obtener(date(2026, 3, 1))
+
+    assert snapshot.dia_cierre_comercial == 12
+    assert snapshot.fecha_desde == datetime(2026, 3, 1)
+    assert snapshot.fecha_hasta is None
+
+
+def test_query_service_rechaza_intervalo_abierto_no_final(db_session):
+    _root(db_session)
+    _period(db_session, "2026-01-01", None, 8, 18)
+    _period(db_session, "2026-03-01", None, 12, 22)
+
+    with pytest.raises(ConfiguracionCalendarioComercialInconsistente):
+        _service(db_session).obtener(date(2026, 2, 1))
+
+
 @pytest.mark.parametrize(
     "corrupt",
     [
