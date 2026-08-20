@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 
 from app.api.authentication import get_authenticated_principal
@@ -24,6 +25,9 @@ from app.api.schemas.administrativo import (
     CatalogoMaestroUpdateRequest,
     CatalogoMaestroUpdateResponse,
     CatalogoMaestroWriteData,
+    CalendarioComercialCompletoData,
+    CalendarioComercialIncompletoData,
+    CalendarioComercialResponse,
     ErrorResponse,
     ItemCatalogoBajaResponse,
     ItemCatalogoCreateRequest,
@@ -85,6 +89,11 @@ from app.application.administrativo.services.obtener_parametro_global_query_serv
     ParametroGlobalInconsistencyError,
     ParametroGlobalNotFoundError,
 )
+from app.application.administrativo.services.obtener_configuracion_calendario_comercial_query_service import (
+    ConfiguracionCalendarioComercialIncompleta,
+    ConfiguracionCalendarioComercialInconsistente,
+    ObtenerConfiguracionCalendarioComercialQueryService,
+)
 from app.application.administrativo.services.actualizar_valor_parametro_global_service import (
     ActualizarValorParametroGlobalService,
     ParametroCommandError,
@@ -106,6 +115,9 @@ from app.infrastructure.persistence.repositories.item_catalogo_repository import
 )
 from app.infrastructure.persistence.repositories.parametro_sistema_repository import (
     ParametroSistemaRepository,
+)
+from app.infrastructure.persistence.repositories.calendario_comercial_query_repository import (
+    CalendarioComercialQueryRepository,
 )
 from app.infrastructure.persistence.repositories.rol_seguridad_repository import (
     RolSeguridadRepository,
@@ -671,6 +683,80 @@ def _parametro_global_error(
     status_code: int, code: str, message: str, details: dict | None = None
 ) -> JSONResponse:
     return _parametro_global_response(_error(status_code, code, message, details))
+
+
+@router.get(
+    "/api/v1/administrativo/configuracion/calendario-comercial",
+    response_model=CalendarioComercialResponse,
+    responses={
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def obtener_calendario_comercial(
+    principal: Annotated[
+        AuthenticatedPrincipal,
+        Depends(
+            require_administrative_permission(
+                "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"
+            )
+        ),
+    ],
+    fecha_efectiva: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> CalendarioComercialResponse | JSONResponse:
+    # CORE-EF: QUERY_READLIKE. Bearer + permiso son obligatorios; no hay headers
+    # write, reloj implícito, locks, commit, outbox ni efectos persistentes.
+    del principal
+    try:
+        fecha_consulta = date.fromisoformat(fecha_efectiva or "")
+    except ValueError:
+        return _parametro_global_error(
+            422,
+            "VALIDATION_ERROR",
+            "fecha_efectiva es obligatoria y debe usar el formato YYYY-MM-DD.",
+            {"field": "fecha_efectiva"},
+        )
+    service = ObtenerConfiguracionCalendarioComercialQueryService(
+        CalendarioComercialQueryRepository(db)
+    )
+    try:
+        snapshot = service.obtener(fecha_consulta)
+    except ConfiguracionCalendarioComercialIncompleta:
+        response = CalendarioComercialResponse(
+            data=CalendarioComercialIncompletoData()
+        )
+    except ConfiguracionCalendarioComercialInconsistente:
+        return _parametro_global_error(
+            500,
+            "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE",
+            "No fue posible resolver la configuración del calendario comercial.",
+            {},
+        )
+    except Exception:
+        return _parametro_global_error(
+            500,
+            "TECHNICAL_INCONSISTENCY",
+            "No fue posible consultar la configuración del calendario comercial.",
+            {},
+        )
+    else:
+        response = CalendarioComercialResponse(
+            data=CalendarioComercialCompletoData(
+                dia_cierre_comercial=snapshot.dia_cierre_comercial,
+                dia_vencimiento_predeterminado_cuotas=(
+                    snapshot.dia_vencimiento_predeterminado_cuotas
+                ),
+                version_agregada=snapshot.version_agregada,
+                fecha_desde=snapshot.fecha_desde,
+                fecha_hasta=snapshot.fecha_hasta,
+            )
+        )
+    return _parametro_global_response(
+        JSONResponse(content=response.model_dump(mode="json"))
+    )
 
 
 ASCII_LEDGER_WHITESPACE = " \t\n\r\f\v"

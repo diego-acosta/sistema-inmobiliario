@@ -1324,3 +1324,21 @@ se replayea y un uso incompatible conserva el conflicto idempotente. Sólo una d
 o cualquier mutación; no crea receipt ni incrementa versión. Esta exclusión no
 implementa un endpoint de calendario; reserva las modificaciones para el futuro
 agregado #425 y no vuelve `NO APLICA` el CORE-EF general de #412.
+
+## Lectura de calendario comercial #483
+
+`GET /api/v1/administrativo/configuracion/calendario-comercial?fecha_efectiva=YYYY-MM-DD`
+es `QUERY_READLIKE`. Requiere Bearer y el permiso efectivo
+`ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR` mediante cualquier rol activo
+que lo otorgue. No declara ni requiere `X-Usuario-Id`, headers CORE-EF write o
+`If-Match-Version`.
+
+La respuesta conserva `{ "ok": true, "data": ... }`. `data.estado` es
+`COMPLETA` y expone `dia_cierre_comercial`,
+`dia_vencimiento_predeterminado_cuotas`, `version_agregada`, `fecha_desde` y
+`fecha_hasta`, o es exclusivamente `{ "estado": "INCOMPLETA" }` cuando no hubo
+bootstrap o la fecha precede la primera vigencia. La fecha es obligatoria; su
+ausencia o formato inválido devuelve `422 VALIDATION_ERROR`. Inconsistencias del
+agregado devuelven `500 CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE` sin
+detalles internos. Todas las respuestas de la ruta usan `Cache-Control:
+no-store`.
