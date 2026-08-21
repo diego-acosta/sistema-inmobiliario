@@ -508,6 +508,14 @@ class BootstrapCalendarioComercialResponse(BaseModel):
     data: BootstrapCalendarioComercialData
 
 
+class ProgramarCalendarioComercialRequest(BootstrapCalendarioComercialRequest):
+    """La programación reutiliza el contrato estricto de días y fecha."""
+
+
+class ProgramarCalendarioComercialResponse(BootstrapCalendarioComercialResponse):
+    pass
+
+
 class ActualizarValorParametroGlobalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     valor_tipado: StrictInt

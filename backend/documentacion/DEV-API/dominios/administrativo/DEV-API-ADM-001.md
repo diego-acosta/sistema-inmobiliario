@@ -1359,3 +1359,16 @@ payload sólo distribuye UIDs/versiones, intervalo, días, `op_id` y UID de
 instalación origen, con hash RFC 8785/SHA-256. Consumer, inbox, aplicación y sync
 remoto no aplican en #484 y permanecen pendientes en #486. #485 deberá producir
 `calendario_comercial_programado` transaccionalmente.
+
+### PUT programación de nueva vigencia (#485)
+
+`PUT /api/v1/administrativo/configuracion/calendario-comercial` es
+`COMMAND_WRITE_NEGOCIO`. Requiere Bearer, permiso
+`ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR`, `X-Op-Id`, `X-Sucursal-Id`,
+`X-Instalacion-Id` e `If-Match-Version`; no usa `X-Usuario-Id`. El body completo
+reutiliza los dos enteros estrictos 1–31 y la fecha ASCII `YYYY-MM-DD` del POST.
+Programa append-only una fecha posterior a la última vigencia, devuelve 200 con
+snapshot `COMPLETA` y nueva versión, y responde 412 `CONCURRENCY_ERROR` ante CAS
+real bajo lock. Idempotencia usa el target singleton GLOBAL y replay durable sin
+requery. El producer EVT-ADM-079 comparte la transacción; consumo remoto sigue
+fuera de alcance hasta #486.

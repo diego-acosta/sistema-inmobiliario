@@ -4,10 +4,12 @@ from typing import Annotated
 
 from app.api.authentication import get_authenticated_principal
 from app.api.core_ef_headers import (
+    AuthenticatedCoreEFHeaders,
     CoreEFHeaders,
     CoreEFHeaderValidationError,
     TechnicalCoreEFHeaders,
     get_core_ef_headers_technical_write,
+    get_authenticated_core_ef_headers_write,
     parse_core_ef_headers,
     parse_authenticated_core_ef_headers,
 )
@@ -33,6 +35,8 @@ from app.api.schemas.administrativo import (
     CalendarioComercialResponse,
     BootstrapCalendarioComercialRequest,
     BootstrapCalendarioComercialResponse,
+    ProgramarCalendarioComercialRequest,
+    ProgramarCalendarioComercialResponse,
     ErrorResponse,
     ItemCatalogoBajaResponse,
     ItemCatalogoCreateRequest,
@@ -107,6 +111,10 @@ from app.application.administrativo.services.bootstrap_calendario_comercial_serv
     BootstrapCalendarioComercialError,
     BootstrapCalendarioComercialService,
 )
+from app.application.administrativo.services.programar_calendario_comercial_service import (
+    ProgramarCalendarioComercialError,
+    ProgramarCalendarioComercialService,
+)
 from app.application.common.idempotency import IdempotencyRuntimeError
 from app.config.settings import get_settings
 from app.infrastructure.persistence.repositories.catalogo_maestro_repository import (
@@ -164,6 +172,15 @@ _CALENDARIO_BOOTSTRAP_HEADERS_OPENAPI = {
             "schema": {"type": "string"},
         }
         for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id")
+    ]
+}
+
+_CALENDARIO_PROGRAMAR_HEADERS_OPENAPI = {
+    "parameters": [
+        {"name": name, "in": "header", "required": True,
+         "schema": {"type": "string"}}
+        for name in ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id",
+                     "If-Match-Version")
     ]
 }
 
@@ -838,6 +855,65 @@ def bootstrap_calendario_comercial(
                                        "No fue posible completar la operación.", {})
     return _parametro_global_response(JSONResponse(
         status_code=201, content=snapshot))
+
+
+@router.put(
+    "/api/v1/administrativo/configuracion/calendario-comercial",
+    response_model=ProgramarCalendarioComercialResponse,
+    openapi_extra=_CALENDARIO_PROGRAMAR_HEADERS_OPENAPI,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse},
+               403: {"model": ErrorResponse}, 409: {"model": ErrorResponse},
+               412: {"model": ErrorResponse}, 422: {"model": ErrorResponse},
+               500: {"model": ErrorResponse}},
+)
+def programar_calendario_comercial(
+    request: ProgramarCalendarioComercialRequest,
+    principal: Annotated[AuthenticatedPrincipal, Depends(
+        require_administrative_permission(
+            "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"))],
+    core_ef: Annotated[
+        AuthenticatedCoreEFHeaders | CoreEFHeaderValidationError,
+        Depends(get_authenticated_core_ef_headers_write),
+    ],
+    db: Session = Depends(get_db),
+) -> ProgramarCalendarioComercialResponse | JSONResponse:
+    # COMMAND_WRITE_NEGOCIO: Bearer identifica al humano; metadata técnica + CAS.
+    if isinstance(core_ef, CoreEFHeaderValidationError):
+        return _parametro_global_error(
+            400, "VALIDATION_ERROR", core_ef.message,
+            {"header": core_ef.header_name, "reason": core_ef.reason})
+    try:
+        snapshot = ProgramarCalendarioComercialService(db).execute(
+            dia_cierre_comercial=request.dia_cierre_comercial,
+            dia_vencimiento_predeterminado_cuotas=(
+                request.dia_vencimiento_predeterminado_cuotas),
+            vigente_desde=request.vigente_desde, headers=core_ef,
+            id_usuario=principal.id_usuario)
+        db.commit()
+    except ProgramarCalendarioComercialError as exc:
+        db.rollback()
+        messages = {
+            "inconsistencia_contexto_tecnico": "El contexto técnico declarado es inconsistente.",
+            "CONCURRENCY_ERROR": "La versión del calendario comercial no coincide.",
+            "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE": (
+                "El calendario comercial es estructuralmente inconsistente."),
+            "CALENDARIO_COMERCIAL_VIGENCIA_NO_APPEND_ONLY": (
+                "La nueva vigencia debe ser posterior a la última vigencia."),
+        }
+        return _parametro_global_error(
+            exc.status, exc.code,
+            messages.get(exc.code, "No fue posible completar la operación."), {})
+    except IdempotencyRuntimeError:
+        db.rollback()
+        return _parametro_global_error(
+            500, "IDEMPOTENCY_TECHNICAL_ERROR",
+            "No fue posible resolver la idempotencia de la operación.", {})
+    except Exception:
+        db.rollback()
+        return _parametro_global_error(
+            500, "TECHNICAL_INCONSISTENCY",
+            "No fue posible completar la operación.", {})
+    return _parametro_global_response(JSONResponse(content=snapshot))
 
 
 ASCII_LEDGER_WHITESPACE = " \t\n\r\f\v"

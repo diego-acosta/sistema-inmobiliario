@@ -378,3 +378,12 @@ default-deny. Raíz, pareja, outbox y receipt #470 comparten la transacción. Re
 no reemite. Consumer, inbox, reentrega, aplicación y sync remoto permanecen en
 #486. #485 deberá producir `calendario_comercial_programado` dentro de su propio
 write transaccional.
+
+## Incremento #485 — programación append-only del calendario
+
+Administrativo conserva ownership exclusivo del agregado. El command autenticado
+bloquea la raíz y la historia GLOBAL, aplica CAS sobre `version_registro`, cierra
+la pareja abierta y crea otra pareja con fecha explícita posterior. Claim #470,
+mutaciones, incremento único de raíz, EVT-ADM-079 y completion comparten una
+transacción; replay usa el snapshot durable sin releer estado. #486 conserva el
+consumer remoto y #426 el cálculo Comercial; #425 permanece abierto.
