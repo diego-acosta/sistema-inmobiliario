@@ -6,9 +6,10 @@ from app.api.authentication import get_authenticated_principal
 from app.api.core_ef_headers import (
     CoreEFHeaders,
     CoreEFHeaderValidationError,
+    TechnicalCoreEFHeaders,
+    get_core_ef_headers_technical_write,
     parse_core_ef_headers,
     parse_authenticated_core_ef_headers,
-    parse_technical_core_ef_headers,
 )
 from app.api.administrative_authorization import require_administrative_permission
 from app.api.dependencies import get_db
@@ -795,25 +796,26 @@ def bootstrap_calendario_comercial(
     principal: Annotated[AuthenticatedPrincipal, Depends(
         require_administrative_permission(
             "ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR"))],
+    core_ef: Annotated[
+        TechnicalCoreEFHeaders | CoreEFHeaderValidationError,
+        Depends(get_core_ef_headers_technical_write),
+    ],
     db: Session = Depends(get_db),
-    x_op_id: str | None = Header(default=None, alias="X-Op-Id"),
-    x_sucursal_id: str | None = Header(default=None, alias="X-Sucursal-Id"),
-    x_instalacion_id: str | None = Header(default=None, alias="X-Instalacion-Id"),
 ) -> BootstrapCalendarioComercialResponse | JSONResponse:
     # COMMAND_WRITE_NEGOCIO: creación sin If-Match; identidad sólo desde Bearer.
-    try:
-        headers = parse_technical_core_ef_headers(
-            x_op_id, x_sucursal_id, x_instalacion_id)
-    except CoreEFHeaderValidationError as exc:
-        return _parametro_global_error(400, "VALIDATION_ERROR", exc.message,
-                                       {"header": exc.header_name,
-                                        "reason": exc.reason})
+    if isinstance(core_ef, CoreEFHeaderValidationError):
+        return _parametro_global_error(
+            400,
+            "VALIDATION_ERROR",
+            core_ef.message,
+            {"header": core_ef.header_name, "reason": core_ef.reason},
+        )
     try:
         snapshot = BootstrapCalendarioComercialService(db).execute(
             dia_cierre_comercial=request.dia_cierre_comercial,
             dia_vencimiento_predeterminado_cuotas=(
                 request.dia_vencimiento_predeterminado_cuotas),
-            vigente_desde=request.vigente_desde, headers=headers,
+            vigente_desde=request.vigente_desde, headers=core_ef,
             id_usuario=principal.id_usuario)
         db.commit()
     except BootstrapCalendarioComercialError as exc:

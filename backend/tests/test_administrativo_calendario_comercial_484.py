@@ -261,11 +261,21 @@ def test_headers_y_openapi(client):
     response = _post(client)
     _assert_header_error(response, "X-Op-Id", "requerido faltante")
     operation = client.get("/openapi.json").json()["paths"][ENDPOINT]["post"]
-    parameters = {item["name"]: item for item in operation["parameters"]}
-    assert all(parameters[name]["required"] for name in
-               ("X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id"))
-    assert "X-Usuario-Id" not in parameters
-    assert "If-Match-Version" not in parameters
+    parameters = operation["parameters"]
+    pairs = [(parameter["name"], parameter["in"]) for parameter in parameters]
+    assert len(pairs) == len(set(pairs))
+    calendar_headers = [item for item in parameters if item["in"] == "header"]
+    assert len(calendar_headers) == 3
+    expected = {
+        ("X-Op-Id", "header"),
+        ("X-Sucursal-Id", "header"),
+        ("X-Instalacion-Id", "header"),
+    }
+    assert {(item["name"], item["in"]) for item in calendar_headers} == expected
+    assert all(item["required"] is True for item in calendar_headers)
+    assert all(pairs.count(pair) == 1 for pair in expected)
+    assert ("X-Usuario-Id", "header") not in pairs
+    assert ("If-Match-Version", "header") not in pairs
 
 
 @pytest.mark.parametrize("missing", ["X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id"])
