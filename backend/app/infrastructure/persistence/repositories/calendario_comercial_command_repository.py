@@ -20,16 +20,16 @@ class CalendarioComercialCommandRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def validate_context(self, id_sucursal: int, id_instalacion: int) -> bool:
+    def validate_context(self, id_sucursal: int, id_instalacion: int) -> UUID | None:
         return self.session.execute(
             text("""
-                SELECT EXISTS(
-                    SELECT 1 FROM sucursal s JOIN instalacion i
-                      ON i.id_sucursal=s.id_sucursal
-                    WHERE s.id_sucursal=:s AND i.id_instalacion=:i)
+                SELECT i.uid_global
+                  FROM sucursal s JOIN instalacion i
+                    ON i.id_sucursal=s.id_sucursal
+                 WHERE s.id_sucursal=:s AND i.id_instalacion=:i
             """),
             {"s": id_sucursal, "i": id_instalacion},
-        ).scalar_one()
+        ).scalar_one_or_none()
 
     def lock_global(self) -> None:
         # Dos mitades constantes del SHA-256 de CALENDARIO_COMERCIAL/GLOBAL.
@@ -83,21 +83,25 @@ class CalendarioComercialCommandRepository:
                     id_instalacion_origen,id_instalacion_ultima_modificacion,
                     op_id_alta,op_id_ultima_modificacion)
                 VALUES (:inst,:inst,:op,:op)
-                RETURNING uid_global,version_registro
+                RETURNING id_configuracion_calendario_comercial,
+                          uid_global,version_registro
             """), {"inst": id_instalacion, "op": op_id}
         ).mappings().one()
+        created_values: dict[str, dict[str, Any]] = {}
         for code, parameter_id in definitions.items():
             # valor_parametro exige op_id_alta único por fila; se derivan IDs
             # determinísticos del command, sin perder su procedencia.
             child_op_id = uuid5(op_id, code)
-            self.session.execute(text("""
+            row = self.session.execute(text("""
                 INSERT INTO valor_parametro(
                     id_parametro_sistema,valor_parametro,es_valor_vigente,
                     fecha_desde,fecha_hasta,id_instalacion_origen,
                     id_instalacion_ultima_modificacion,op_id_alta,
                     op_id_ultima_modificacion)
                 VALUES (:pid,:value,true,:start,NULL,:inst,:inst,:op,:op)
+                RETURNING uid_global, version_registro, fecha_desde, fecha_hasta
             """), {"pid": parameter_id, "value": str(values[code]),
                      "start": vigente_desde, "inst": id_instalacion,
-                     "op": child_op_id})
-        return dict(root)
+                     "op": child_op_id}).mappings().one()
+            created_values[code] = {"codigo_parametro": code, **dict(row)}
+        return {"root": dict(root), "values": created_values}

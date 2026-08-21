@@ -84,6 +84,14 @@ def _counts(db_session):
     """)).one()
 
 
+def _outbox_count(db_session):
+    return db_session.execute(text("""
+        SELECT count(*) FROM outbox_event
+         WHERE event_type='calendario_comercial_creado'
+           AND aggregate_type='calendario_comercial'
+    """)).scalar_one()
+
+
 def _payload_hash(payload=PAYLOAD):
     return canonical_payload_hash({
         "dia_cierre_comercial": payload["dia_cierre_comercial"],
@@ -130,6 +138,7 @@ def test_bootstrap_y_replay_durable_sin_efectos_adicionales(client, db_session):
     assert first.status_code == 201
     assert first.json()["data"]["estado"] == "COMPLETA"
     assert _counts(db_session) == (1, 2)
+    assert _outbox_count(db_session) == 1
     child_ops = dict(db_session.execute(text("""
         SELECT p.codigo_parametro, v.op_id_alta
           FROM valor_parametro v JOIN parametro_sistema p
@@ -143,6 +152,39 @@ def test_bootstrap_y_replay_durable_sin_efectos_adicionales(client, db_session):
     assert replay.status_code == 201
     assert replay.json() == first.json()
     assert _counts(db_session) == (1, 2)
+    assert _outbox_count(db_session) == 1
+
+
+def test_outbox_agregado_portable_y_hash_determinista(client, db_session):
+    op_id = uuid4()
+    assert _post(client, headers=_headers(op_id)).status_code == 201
+    event = db_session.execute(text("""
+        SELECT event_type, aggregate_type, aggregate_id, status, payload
+          FROM outbox_event WHERE event_type='calendario_comercial_creado'
+    """)).mappings().one()
+    assert (event["event_type"], event["aggregate_type"], event["status"]) == (
+        "calendario_comercial_creado", "calendario_comercial", "PENDING")
+    payload = event["payload"]
+    data = payload["data"]
+    metadata = payload["metadata"]
+    assert data["op_id"] == str(op_id)
+    assert data["version_agregada"] == 1
+    assert data["vigente_desde"] == "2026-09-01"
+    assert data["fecha_hasta"] is None
+    assert data["dia_cierre_comercial"] == 20
+    assert data["dia_vencimiento_predeterminado_cuotas"] == 10
+    assert data["valor_dia_cierre_comercial"]["version_registro"] == 1
+    assert data["valor_dia_vencimiento_predeterminado_cuotas"][
+        "version_registro"
+    ] == 1
+    assert "id_configuracion_calendario_comercial" not in str(payload)
+    assert "id_valor_parametro" not in str(payload)
+    expected = canonical_payload_hash({
+        "metadata": {"uid_instalacion_origen": metadata["uid_instalacion_origen"]},
+        "data": data,
+    })
+    assert metadata["payload_hash"] == expected
+    assert len(expected) == 64 and expected == expected.lower()
 
 
 def test_bootstrap_payload_conflict(client, db_session):
@@ -153,6 +195,7 @@ def test_bootstrap_payload_conflict(client, db_session):
     assert response.status_code == 409
     assert response.json()["error_code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
     assert _counts(db_session) == (1, 2)
+    assert _outbox_count(db_session) == 1
 
 
 @pytest.mark.parametrize(
@@ -172,6 +215,7 @@ def test_precedencia_conflicto_command_target_payload(client, db_session,
     assert response.status_code == 409
     assert response.json()["error_code"] == expected
     assert _counts(db_session) == (0, 0)
+    assert _outbox_count(db_session) == 0
 
 
 def test_estado_parcial_no_se_repara(client, db_session):
@@ -181,6 +225,7 @@ def test_estado_parcial_no_se_repara(client, db_session):
     assert response.status_code == 409
     assert response.json()["error_code"] == "CONFIGURACION_CALENDARIO_COMERCIAL_CONFLICTO"
     assert _counts(db_session) == (1, 0)
+    assert _outbox_count(db_session) == 0
 
 
 @pytest.mark.parametrize("state", [
@@ -202,6 +247,7 @@ def test_estados_previos_no_se_reparan(client, db_session, state):
     response = _post(client, headers=_headers())
     assert response.status_code == 409
     assert _counts(db_session) == before
+    assert _outbox_count(db_session) == 0
 
 
 def test_headers_y_openapi(client):
@@ -254,15 +300,20 @@ def test_rollback_integral_y_retry_mismo_op_id(client, db_session):
         failed = _post(client, headers=_headers(op_id))
     assert failed.status_code == 500
     assert _counts(db_session) == (0, 0)
+    assert _outbox_count(db_session) == 0
     assert db_session.execute(text(
         "SELECT count(*) FROM operacion_idempotente WHERE op_id=:op"),
         {"op": op_id}).scalar_one() == 0
     assert _post(client, headers=_headers(op_id)).status_code == 201
     assert _counts(db_session) == (1, 2)
+    assert _outbox_count(db_session) == 1
 
 
 def _cleanup_concurrent(op_ids):
     with engine.begin() as connection:
+        connection.execute(text(
+            "DELETE FROM outbox_event WHERE event_type='calendario_comercial_creado'"
+        ))
         connection.execute(text("""
             DELETE FROM valor_parametro v USING parametro_sistema p
              WHERE v.id_parametro_sistema=p.id_parametro_sistema
@@ -320,7 +371,9 @@ def _concurrent_bootstrap(*, same_op):
                        (SELECT count(*) FROM valor_parametro v JOIN parametro_sistema p
                         USING(id_parametro_sistema) WHERE p.codigo_parametro IN
                         ('DIA_CIERRE_COMERCIAL','DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')),
-                       (SELECT count(*) FROM operacion_idempotente WHERE op_id=ANY(:ops))
+                       (SELECT count(*) FROM operacion_idempotente WHERE op_id=ANY(:ops)),
+                       (SELECT count(*) FROM outbox_event
+                         WHERE event_type='calendario_comercial_creado')
             """), {"ops": list(set(op_ids))}).one()
         return outcomes, counts, op_ids
     finally:
@@ -331,11 +384,11 @@ def test_concurrencia_postgres_distintos_op_id_materializa_una_vez():
     outcomes, counts, _ = _concurrent_bootstrap(same_op=False)
     assert sorted(outcome[0] for outcome in outcomes) == [
         "CONFIGURACION_CALENDARIO_COMERCIAL_CONFLICTO", "OK"]
-    assert counts == (1, 2, 1)
+    assert counts == (1, 2, 1, 1)
 
 
 def test_concurrencia_postgres_mismo_op_id_replay_snapshot():
     outcomes, counts, _ = _concurrent_bootstrap(same_op=True)
     assert [outcome[0] for outcome in outcomes] == ["OK", "OK"]
     assert outcomes[0][1] == outcomes[1][1]
-    assert counts == (1, 2, 1)
+    assert counts == (1, 2, 1, 1)

@@ -372,5 +372,9 @@ dos valores funcionales con una vigencia explícita común. Es un
 #470, lock advisory transaccional estable y una única transacción exterior. Un
 replay compatible devuelve exclusivamente el snapshot del receipt, sin releer
 negocio ni contexto. Cualquier raíz o valor previo, incluso histórico o parcial,
-es conflicto y no se repara. #484 no produce outbox, eventos ni sync; esas piezas
-permanecen pendientes en #486, y la programación posterior sigue en #485.
+es conflicto y no se repara. #484 produce exactamente un
+`calendario_comercial_creado` agregado y registra su policy mínima, específica y
+default-deny. Raíz, pareja, outbox y receipt #470 comparten la transacción. Replay
+no reemite. Consumer, inbox, reentrega, aplicación y sync remoto permanecen en
+#486. #485 deberá producir `calendario_comercial_programado` dentro de su propio
+write transaccional.

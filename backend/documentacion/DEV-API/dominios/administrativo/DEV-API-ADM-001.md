@@ -1352,4 +1352,10 @@ permiso `ADMIN.CONFIG.CALENDARIO_COMERCIAL.ADMINISTRAR`, `X-Op-Id`,
 `If-Match-Version`. Los días son enteros estrictos 1–31 y `vigente_desde` es una
 fecha explícita. Aplica idempotencia #470 con target
 `CALENDARIO_COMERCIAL/GLOBAL`; un replay compatible conserva el `201` y snapshot
-original. No aplica outbox/sync definitivo en #484.
+original. La ejecución material captura exactamente un outbox agregado
+`calendario_comercial_creado`/`calendario_comercial`, `PENDING`, en la misma
+transacción que raíz, pareja y receipt #470; replay y conflictos no emiten. Su
+payload sólo distribuye UIDs/versiones, intervalo, días, `op_id` y UID de
+instalación origen, con hash RFC 8785/SHA-256. Consumer, inbox, aplicación y sync
+remoto no aplican en #484 y permanecen pendientes en #486. #485 deberá producir
+`calendario_comercial_programado` transaccionalmente.

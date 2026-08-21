@@ -118,3 +118,34 @@ def test_valor_parametro_modificado_policy_contract() -> None:
             "valor_parametro",
             {**payload, "token": "secret"},
         )
+
+
+def test_calendario_comercial_creado_policy_contract() -> None:
+    payload = {
+        "metadata": {
+            "uid_instalacion_origen": "00000000-0000-0000-0000-000000000001",
+            "payload_hash": "a" * 64,
+        },
+        "data": {
+            "uid_global": "00000000-0000-0000-0000-000000000002",
+            "version_agregada": 1,
+        },
+    }
+    policy = validate_sync_event(
+        "calendario_comercial_creado", "calendario_comercial", payload
+    )
+    assert policy.required_positive_int_fields == ()
+    with pytest.raises(InvalidSyncAggregate):
+        validate_sync_event(
+            "calendario_comercial_creado", "valor_parametro", payload
+        )
+    with pytest.raises(SensitiveSyncPayload):
+        validate_sync_event(
+            "calendario_comercial_creado",
+            "calendario_comercial",
+            {**payload, "token": "secret"},
+        )
+    with pytest.raises(UnknownSyncEvent):
+        validate_sync_event(
+            "calendario_comercial_programado", "calendario_comercial", payload
+        )

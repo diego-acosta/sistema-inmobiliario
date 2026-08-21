@@ -775,9 +775,12 @@ sync, fecha operativa o cálculo de vencimientos.
 ## Incremento #484 — BootstrapCalendarioComercialService
 
 `BootstrapCalendarioComercialService` orquesta `claim → contexto técnico → lock
-GLOBAL → precondición vacía → raíz → pareja de valores → complete`. No realiza
+GLOBAL → precondición vacía → raíz → pareja de valores →
+calendario_comercial_creado → complete`. No realiza
 commits internos. `CalendarioComercialCommandRepository` concentra el SQL y usa
 un advisory lock transaccional específico del agregado. Sólo `EXECUTE` valida
 sucursal/instalación y consulta persistencia; `REPLAY` retorna inmediatamente el
-snapshot durable. Todo error previo al commit exterior revierte negocio y receipt.
-No hay outbox ni sync en este incremento (#486 pendiente).
+snapshot durable. Todo error previo al commit exterior revierte negocio, outbox y
+receipt. La policy del producer es mínima y específica. #485 deberá emitir
+`calendario_comercial_programado` en su propia transacción. Consumer, inbox,
+reentrega, aplicación remota y sync continúan pendientes en #486.
