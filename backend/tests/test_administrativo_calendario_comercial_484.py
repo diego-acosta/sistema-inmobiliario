@@ -276,6 +276,15 @@ def test_headers_y_openapi(client):
     assert all(pairs.count(pair) == 1 for pair in expected)
     assert ("X-Usuario-Id", "header") not in pairs
     assert ("If-Match-Version", "header") not in pairs
+    request_schema = client.get("/openapi.json").json()["components"]["schemas"][
+        "BootstrapCalendarioComercialRequest"
+    ]
+    assert "vigente_desde" in request_schema["required"]
+    assert request_schema["properties"]["vigente_desde"] == {
+        "type": "string",
+        "format": "date",
+        "title": "Vigente Desde",
+    }
 
 
 @pytest.mark.parametrize("missing", ["X-Op-Id", "X-Sucursal-Id", "X-Instalacion-Id"])
@@ -313,6 +322,48 @@ def test_dias_son_enteros_estrictos_y_fecha_explicita(client):
         {**PAYLOAD, "vigente_desde": "fecha-invalida"},
     ):
         _assert_not_fecha_efectiva(_post(client, payload, _headers()))
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        0,
+        1,
+        0.0,
+        True,
+        False,
+        None,
+        [],
+        {},
+        "20260901",
+        "2026-9-1",
+        "2026-09-1",
+        "2026-9-01",
+        "2026/09/01",
+        "01-09-2026",
+        "2026-09-01T00:00:00",
+        "2026-09-01T12:30:00",
+        "2026-09-01Z",
+        "2026-W36-2",
+        "2026-244",
+        "2026-02-30",
+    ],
+)
+def test_vigente_desde_rechaza_coerciones_sin_efectos(
+    client, db_session, invalid
+):
+    op_id = uuid4()
+    response = _post(
+        client, {**PAYLOAD, "vigente_desde": invalid}, _headers(op_id)
+    )
+    assert response.status_code == 422
+    _assert_not_fecha_efectiva(response)
+    assert _counts(db_session) == (0, 0)
+    assert _outbox_count(db_session) == 0
+    assert db_session.execute(
+        text("SELECT count(*) FROM operacion_idempotente WHERE op_id=:op"),
+        {"op": op_id},
+    ).scalar_one() == 0
 
 
 def test_get_sin_fecha_preserva_error_contractual_483(client):

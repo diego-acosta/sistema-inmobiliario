@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import re
 from typing import Any, Literal
 from uuid import UUID
 
@@ -482,6 +483,20 @@ class BootstrapCalendarioComercialRequest(BaseModel):
     dia_cierre_comercial: StrictInt = Field(ge=1, le=31)
     dia_vencimiento_predeterminado_cuotas: StrictInt = Field(ge=1, le=31)
     vigente_desde: date
+
+    @field_validator("vigente_desde", mode="before")
+    @classmethod
+    def _vigente_desde_fecha_ascii_estricta(cls, value: object) -> date:
+        if not isinstance(value, str) or re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value
+        ) is None:
+            raise ValueError("vigente_desde debe usar el formato YYYY-MM-DD")
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(
+                "vigente_desde debe representar una fecha válida"
+            ) from exc
 
 
 class BootstrapCalendarioComercialData(CalendarioComercialCompletoData):
