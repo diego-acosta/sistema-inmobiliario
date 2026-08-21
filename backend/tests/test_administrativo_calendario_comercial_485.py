@@ -207,6 +207,138 @@ def test_rollback_integral_y_retry(client, db_session):
     assert _request(client, "PUT", PROGRAM, _headers(op_id, 1)).status_code == 200
 
 
+def _calendar_effects(db_session, op_id):
+    return db_session.execute(
+        text("""
+            SELECT
+              (SELECT version_registro
+                 FROM configuracion_calendario_comercial
+                WHERE deleted_at IS NULL),
+              (SELECT count(*) FROM valor_parametro v
+                 JOIN parametro_sistema p USING(id_parametro_sistema)
+                WHERE p.codigo_parametro IN
+                  ('DIA_CIERRE_COMERCIAL',
+                   'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')),
+              (SELECT count(*) FROM outbox_event
+                WHERE event_type='calendario_comercial_programado'),
+              (SELECT count(*) FROM operacion_idempotente WHERE op_id=:op)
+        """),
+        {"op": op_id},
+    ).one()
+
+
+def _assert_structural_rejection_without_effects(
+    client, db_session, *, version, payload, before
+):
+    op_id = uuid4()
+    response = _request(client, "PUT", payload, _headers(op_id, version))
+    assert response.status_code == 409
+    assert (
+        response.json()["error_code"]
+        == "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
+    )
+    after = _calendar_effects(db_session, op_id)
+    assert after[:3] == before[:3]
+    assert after[3] == 0
+
+
+def test_rechaza_ultima_pareja_abierta_marcada_no_vigente(client, db_session):
+    _bootstrap(client)
+    db_session.execute(
+        text("""
+            UPDATE valor_parametro v SET es_valor_vigente=false
+              FROM parametro_sistema p
+             WHERE v.id_parametro_sistema=p.id_parametro_sistema
+               AND p.codigo_parametro IN
+                 ('DIA_CIERRE_COMERCIAL',
+                  'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+               AND v.fecha_hasta IS NULL
+        """)
+    )
+    db_session.commit()
+    op_id = uuid4()
+    before = _calendar_effects(db_session, op_id)
+    _assert_structural_rejection_without_effects(
+        client, db_session, version=1, payload=PROGRAM, before=before
+    )
+
+
+def test_rechaza_pareja_historica_cerrada_marcada_vigente(client, db_session):
+    _bootstrap(client)
+    assert _request(client, "PUT", PROGRAM, _headers(version=1)).status_code == 200
+    db_session.execute(
+        text("""
+            UPDATE valor_parametro v SET es_valor_vigente=false
+              FROM parametro_sistema p
+             WHERE v.id_parametro_sistema=p.id_parametro_sistema
+               AND p.codigo_parametro IN
+                 ('DIA_CIERRE_COMERCIAL',
+                  'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+               AND v.fecha_hasta IS NULL
+        """)
+    )
+    db_session.execute(
+        text("""
+            UPDATE valor_parametro v SET es_valor_vigente=true
+              FROM parametro_sistema p
+             WHERE v.id_parametro_sistema=p.id_parametro_sistema
+               AND p.codigo_parametro IN
+                 ('DIA_CIERRE_COMERCIAL',
+                  'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS')
+               AND v.fecha_hasta IS NOT NULL
+        """)
+    )
+    db_session.commit()
+    op_id = uuid4()
+    before = _calendar_effects(db_session, op_id)
+    _assert_structural_rejection_without_effects(
+        client,
+        db_session,
+        version=2,
+        payload={**PROGRAM, "vigente_desde": "2026-11-01"},
+        before=before,
+    )
+
+
+def test_rechaza_flags_divergentes_dentro_de_pareja(client, db_session):
+    _bootstrap(client)
+    db_session.execute(
+        text("""
+            UPDATE valor_parametro v SET es_valor_vigente=false
+              FROM parametro_sistema p
+             WHERE v.id_parametro_sistema=p.id_parametro_sistema
+               AND p.codigo_parametro='DIA_CIERRE_COMERCIAL'
+               AND v.fecha_hasta IS NULL
+        """)
+    )
+    db_session.commit()
+    op_id = uuid4()
+    before = _calendar_effects(db_session, op_id)
+    _assert_structural_rejection_without_effects(
+        client, db_session, version=1, payload=PROGRAM, before=before
+    )
+
+
+def test_rechaza_dos_filas_abiertas_si_alguna_no_esta_vigente(client, db_session):
+    _bootstrap(client)
+    db_session.execute(
+        text("""
+            UPDATE valor_parametro v SET es_valor_vigente=false
+              FROM parametro_sistema p
+             WHERE v.id_parametro_sistema=p.id_parametro_sistema
+               AND p.codigo_parametro=
+                   'DIA_VENCIMIENTO_PREDETERMINADO_CUOTAS'
+               AND v.fecha_hasta IS NULL
+        """)
+    )
+    db_session.commit()
+    op_id = uuid4()
+    before = _calendar_effects(db_session, op_id)
+    _assert_structural_rejection_without_effects(
+        client, db_session, version=1, payload=PROGRAM, before=before
+    )
+
+
 def _concurrent_program(*, same_op: bool):
     bootstrap_op = uuid4()
     op_ids = [uuid4(), uuid4()]

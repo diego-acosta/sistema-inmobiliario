@@ -186,6 +186,7 @@ class CalendarioComercialCommandRepository:
                 text("""
             SELECT v.id_valor_parametro, v.uid_global, v.version_registro,
                    v.valor_parametro, v.fecha_desde, v.fecha_hasta,
+                   v.es_valor_vigente,
                    p.codigo_parametro
               FROM valor_parametro v JOIN parametro_sistema p
                 USING(id_parametro_sistema)

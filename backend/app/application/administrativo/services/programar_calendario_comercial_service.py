@@ -184,6 +184,10 @@ class ProgramarCalendarioComercialService:
                 raise ProgramarCalendarioComercialError(
                     409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
                 )
+            if row["es_valor_vigente"] is not (end is None):
+                raise ProgramarCalendarioComercialError(
+                    409, "CONFIGURACION_CALENDARIO_COMERCIAL_INCONSISTENTE"
+                )
             pair = intervals.setdefault((start, end), {})
             if row["codigo_parametro"] in pair:
                 raise ProgramarCalendarioComercialError(
