@@ -1,6 +1,6 @@
 # PROJECT-STATUS — Estado operativo del proyecto
 
-Actualizado: 2026-08-20
+Actualizado: 2026-08-21
 **Repositorio:** `diego-acosta/sistema-inmobiliario`
 
 ## 1. Propósito
@@ -29,7 +29,7 @@ Todo dato no verificado debe marcarse como `NO CONFIRMADO`.
 | B — Administrativo | #407–#412, #482 y #483 implementados. #484 implementa el bootstrap inicial atómico del calendario, en revisión. | #425 permanece coordinador abierto y dividido; #426 continúa bloqueado. | PR #503 mergeado (#483); #484 en este incremento. | #485 siguiente incremento; #486 pendiente, sin cerrar anticipadamente #425. |
 | Operativo | #456 incorpora la identidad canónica local read-only para futuros commands técnicos, sin consumidor productivo ni cambios SQL. | #248 abierto; #454 permanece fuera de alcance. | #456 implementado en este incremento, pendiente de merge. | `LOCAL_INSTALLATION_CODE` es soporte transversal default-deny; Operativo conserva ownership de `instalacion`. |
 | Transversal — CORE-EF / Técnico | #469 y #470 están completados; #412 es el primer consumidor productivo validado. `PENDING_DEPENDENCY` queda congelado como política retryable transversal, todavía no implementada. | #402 está cerrado/completado; #461 permanece abierto y separado. La materialización SQL/repository/worker/tests de retry de inbox requiere incremento Técnico posterior. | PR #478 mergeado; política documental de #492 sobre baseline `1e994ba`. | Materializar incrementalmente el estado y claim/reclaim Técnico sin cambiar `REJECTED` terminal ni romper consumidores existentes. |
-| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; identidad portable y retención/reproceso de #492 quedan documentalmente definidos. | Épica #489 abierta; #492 sigue abierto pero queda listo para cierre después del merge; #493 (comentario/versionado) sigue pendiente y separado. | Baseline verificado: merge de PR #495 (`1e994ba`), cierre documental del blocker interno #10. | Resolver #493 y las dependencias de materialización administrativa/técnica antes de DER/SQL/API; no implementar Tarea desde este incremento. |
+| Gestión Operativa — Tareas | Freeze funcional pre-DER: #490 y #491 están completados; #492 y #493 quedan documentalmente resueltos. | Épica #489 abierta; #492 conserva su estado previo y #493 queda listo para cierre después del merge. | Baseline verificado: merge de PR #495 (`1e994ba`), cierre documental del blocker interno #10. | Evaluar la siguiente etapa de #489 tras merge/cierre de #493 y resolver dependencias administrativas/técnicas antes de DER/SQL/API; no implementar Tarea desde este incremento. |
 
 ## 4. Reglas para trabajo paralelo
 
@@ -99,10 +99,11 @@ Bearer → `get_authenticated_principal` → `AuthenticatedPrincipal.id_usuario`
 no usan `X-Usuario-Id`. La autenticación/autorización técnica de procesos
 `origen = SISTEMA` permanece no congelada y no se inventa en #491 ni #492.
 
-Las creaciones no usan `If-Match-Version`; toda mutación ordinaria de Tarea
-existente/versionada sí debe exigirlo. Comentarios quedan condicionados por #493
-para no decidir incidentalmente su target ni el efecto sobre
-`Tarea.version_registro`. Idempotencia durable reutiliza #469/#470 y el patrón
+Las creaciones no usan `If-Match-Version`; toda mutación ordinaria del snapshot
+de Tarea existente/versionada sí debe exigirlo. #493 congela la excepción
+específica: agregar comentario es un append independiente, no requiere
+`If-Match-Version` de Tarea y no incrementa `Tarea.version_registro`.
+Idempotencia durable reutiliza #469/#470 y el patrón
 productivo validado por #412/PR #478: mismo `op_id` compatible hace replay del
 snapshot durable, diferencias materiales producen conflicto y un error previo al
 commit permite reejecución. GOP no crea ledger paralelo.
@@ -118,7 +119,7 @@ historial, outbox, inbox y ledger continúan separados.
 Blockers internos de `GOP-FREEZE-001`:
 
 - #6 — estrategia de sync: resuelto documentalmente por #491 / PR #494.
-- #7 — comentario / `version_registro`: abierto y coordinado con #493.
+- #7 — comentario / `version_registro`: documentalmente resuelto por #493; listo para cierre después del merge.
 - #10 — identidad canónica interinstalación: documentalmente resuelto por #492;
   la política retryable transversal está congelada y su runtime Técnico queda
   pendiente. #492 sigue abierto y queda listo para cierre después del merge.
@@ -141,10 +142,21 @@ permanece terminal y la mera ausencia temporal no es `CONFLICTO`. El runtime
 actual todavía no implementa esa política: `claim` no reabre el mismo
 `(event_id, consumer)` ni existen lease, payload retenido o scheduler. #492 queda
 documentalmente listo para cierre después del merge, sin diseñar DTO, evento,
-DER, SQL, API ni runtime GOP. Sólo congela identidad portable del autor
-de comentario; #493 sigue abierto para granularidad, `version_registro`,
-`If-Match` y frontera transaccional. GOP todavía no está listo para DER/SQL/API.
-No se cierran #489, #492 ni #493 mediante esta actualización.
+DER, SQL, API ni runtime GOP. La autoría portable sigue el contrato #492. #493
+congela `Comentario.uid_global` propio, único, inmutable y no reutilizable, y su
+`version_registro` CORE-EF, que nace en 1 y normalmente permanece en 1 durante el
+MVP append-only. La autorización funcional se resuelve en origen; el receptor no
+la reevalúa contra relaciones mutables posteriores y preserva contexto causal
+suficiente para RN-TEC-012. Un comentario confirmado antes de una baja lógica
+converge aunque la baja llegue primero al receptor, sin restaurar la Tarea ni
+limpiar `deleted_at`; un intento posterior a la baja no queda habilitado por esa
+regla. Si comentario y baja son concurrentes sin relación causal, ambos efectos
+convergen a Tarea dada de baja más comentario presente, sin LWW ni conflicto
+automático. Agregarlo no incrementa `Tarea.version_registro` ni requiere
+`If-Match-Version` de Tarea; la atomicidad futura abarca comentario/outbox/receipt.
+GOP todavía no está listo para DER/SQL/API. #493
+permanece abierto durante el PR y listo para cierre después del merge; no se
+cierra #489 desde esta actualización.
 
 ## 5. Frente A — Comercial / Financiero
 
