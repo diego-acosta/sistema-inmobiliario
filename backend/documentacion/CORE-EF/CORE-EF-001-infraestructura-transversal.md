@@ -453,7 +453,11 @@ intentos agota sólo el retry automático y deja la operación pendiente para
 revisión/reproceso técnico manual: no la convierte por sí mismo en rechazo.
 
 **REQ-SYNC-070**  
-Un cambio con `op_id` ya aplicado NO DEBE volver a producir efectos de negocio.
+Dentro del mismo scope idempotente de aplicación, un cambio con `op_id` ya
+aplicado NO DEBE volver a producir el mismo efecto de negocio. En un flujo con
+único aplicador, el scope coincide con la operación global por `op_id`; en un
+flujo multi-consumer, cada consumer con efecto independiente conserva su propio
+scope idempotente para ese `op_id`.
 
 **REQ-SYNC-071**  
 Un cambio rechazado DEBE quedar trazado.
@@ -468,8 +472,18 @@ La sincronización DEBE ser segura ante duplicados, reintentos, reprocesamientos
 **REQ-SYNC-074**  
 La clave primaria de idempotencia DEBE ser `op_id`.
 
+`op_id` conserva la identidad primaria de la operación distribuida. El scope de
+aplicación determina qué efecto se protege contra duplicación cuando existen
+múltiples consumers independientes; no reemplaza `op_id` por `event_id` ni
+convierte al segundo consumer en duplicado o conflicto por compartir la operación.
+
 **REQ-SYNC-075**  
-Si un `op_id` ya fue aplicado, el reprocesamiento DEBE clasificarse como duplicado seguro o equivalente, sin generar nuevo efecto de negocio.
+Si un `op_id` ya fue aplicado dentro del mismo scope idempotente, el
+reprocesamiento en ese scope DEBE clasificarse como duplicado seguro, replay o
+equivalente, sin generar nuevamente ese efecto de negocio. Un envelope
+incompatible dentro del mismo scope permanece `CONFLICTO`; un consumer distinto
+con un efecto contractualmente independiente no colisiona sólo por compartir
+`op_id`.
 
 **REQ-SYNC-076**  
 El sistema DEBE distinguir entre:
