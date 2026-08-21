@@ -150,7 +150,9 @@ la reevalúa contra relaciones mutables posteriores y preserva contexto causal
 suficiente para RN-TEC-012. Un comentario confirmado antes de una baja lógica
 converge aunque la baja llegue primero al receptor, sin restaurar la Tarea ni
 limpiar `deleted_at`; un intento posterior a la baja no queda habilitado por esa
-regla. Agregarlo no incrementa `Tarea.version_registro` ni requiere
+regla. Si comentario y baja son concurrentes sin relación causal, ambos efectos
+convergen a Tarea dada de baja más comentario presente, sin LWW ni conflicto
+automático. Agregarlo no incrementa `Tarea.version_registro` ni requiere
 `If-Match-Version` de Tarea; la atomicidad futura abarca comentario/outbox/receipt.
 GOP todavía no está listo para DER/SQL/API. #493
 permanece abierto durante el PR y listo para cierre después del merge; no se

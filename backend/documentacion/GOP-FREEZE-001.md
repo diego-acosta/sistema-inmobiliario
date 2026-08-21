@@ -1882,6 +1882,13 @@ payload ni exposición física del comentario.
   clasificación terminal específica para ese caso; queda para el contrato
   transversal posterior, sin inventar `PENDIENTE`, `PENDING_DEPENDENCY`,
   `CONFLICTO` ni `REJECTED` en #493.
+- **Comentario/baja realmente concurrentes:** si ambas operaciones fueron
+  válidas en sus respectivos orígenes, tienen `op_id` distintos y ninguna
+  observa causalmente a la otra, se conservan ambos hechos. El resultado
+  convergente es `Tarea.deleted_at != NULL` más el comentario presente y asociado
+  a la misma Tarea. El comentario no restaura ni muta el snapshot de Tarea; la
+  baja tampoco elimina el comentario ni modifica
+  `Comentario.version_registro`.
 
 ### 32.3 Sync, idempotencia, autoría y transacción
 
@@ -1944,7 +1951,14 @@ conservar contexto causal suficiente para que Técnico respete RN-TEC-012:
 ordenar, diferir o aplicar correctamente mensajes dependientes y evitar rechazos
 debidos sólo a entrega fuera de orden. Como mínimo debe permitir distinguir un
 comentario confirmado antes de la baja lógica de un intento originado después de
-que la baja ya era efectiva.
+que la baja ya era efectiva, y diferenciar ambos casos de operaciones realmente
+concurrentes sin relación causal.
+
+| Relación comentario / baja | Tratamiento |
+| --- | --- |
+| Comentario causalmente anterior a baja | Conservar comentario y aplicar baja; resultado: `Tarea.deleted_at != NULL` + comentario presente. |
+| Baja causalmente anterior a comentario | El intento posterior no es una mutación GOP ordinaria válida; la clasificación terminal exacta queda fuera de #493 sin inventarla. |
+| Comentario y baja concurrentes | Conservar ambos efectos; resultado: `Tarea.deleted_at != NULL` + comentario presente. |
 
 Para el primer caso, el receptor valida `Comentario.uid_global`,
 `Comentario.version_registro`, `Tarea.uid_global`, integridad del payload,
@@ -1952,6 +1966,15 @@ Para el primer caso, el receptor valida `Comentario.uid_global`,
 reales, pero no rechaza el hecho sólo porque encuentra `Tarea.deleted_at !=
 NULL`. La baja lógica no invalida retroactivamente un comentario confirmado con
 anterioridad ni convierte otra operación en duplicado.
+
+Para el caso concurrente, un receptor que recibe `comentario -> baja` y otro que
+recibe `baja -> comentario` deben alcanzar el mismo resultado. No se impone orden
+total por timestamp, `updated_at`, `event_id`, instalación, UUID o llegada a
+inbox; no se adopta LWW ni “gana” una operación. Tampoco se clasifica
+automáticamente como `CONFLICTO` o `PENDING_DEPENDENCY`: son dos operaciones
+compatibles con `op_id` distintos y trazabilidad propia. Esta preservación de
+ambos efectos es una regla explícita para esta combinación, no auto-merge
+genérico ni cambio de la criticidad MEDIA de Tarea.
 
 Esta garantía no es CAS de `Tarea.version_registro` ni vuelve a exigir
 `If-Match-Version` de Tarea. Tampoco congela una columna o marcador físico como
@@ -1987,6 +2010,8 @@ Criterio documental de #493:
 - [x] Causalidad y orden lógico alineados con RN-TEC-012 sin marcador físico.
 - [x] Comentario anterior a baja lógica converge sin restaurar Tarea; caso
   posterior diferenciado sin inventar clasificación técnica.
+- [x] Comentario y baja concurrentes conservan ambos efectos sin LWW, conflicto
+  automático ni orden total artificial.
 - [x] Sync e idempotencia identificados sin confundir `op_id` y `event_id`.
 - [x] Comportamiento en estados terminales preservado.
 - [x] `deleted_at` no confundido con `CANCELADA` ni habilitado incidentalmente.
