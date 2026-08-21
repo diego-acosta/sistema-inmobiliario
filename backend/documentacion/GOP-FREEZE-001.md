@@ -1237,10 +1237,13 @@ Administrativo/Técnico; no agrega UID a `usuario`, no crea mapping propio y no
 usa IDs locales como identidad remota.
 
 #493 congela que agregar comentario no incrementa `Tarea.version_registro`, no
-requiere versión esperada de Tarea y no posee `version_registro` propio en el MVP
-append-only. El comentario necesita identidad portable propia para que una pieza
-replicada pueda reconocerse sin usar la PK local, `op_id`, `event_id` ni el
-`uid_global` de Tarea; su forma física queda pendiente.
+requiere versión esperada de Tarea y, como pieza sincronizable independiente,
+debe conservar su propio `version_registro` conforme a CORE-EF
+REQ-SYNC-011/012/013. Su alta nace conceptualmente en versión 1 y, al no existir
+edición ni borrado funcional en el MVP append-only, normalmente permanece en 1.
+El comentario necesita además identidad portable propia para que pueda
+reconocerse sin usar la PK local, `op_id`, `event_id` ni el `uid_global` de
+Tarea; su forma física queda pendiente.
 
 ## 22. Idempotencia durable, replay y transacción
 
@@ -1477,7 +1480,7 @@ Quedan fuera: agenda completa, recordatorios, alertas, notificaciones, recurrenc
 44. Un `op_id` ya aplicado sólo es duplicado seguro o replay si su envelope/fingerprint es materialmente compatible; una reutilización incompatible siempre es conflicto persistido y trazado, no genera efecto de negocio y queda sujeta al workflow transversal de resolución.
 45. La generación automática combina obligatoriamente idempotencia técnica por `op_id` e idempotencia funcional por el mismo hecho fuente, cuya clave y materialización concretas permanecen pendientes.
 46. `Tarea` tiene criticidad de sincronización MEDIA: sus conflictos se rigen por reglas explícitas, sin auto-merge genérico, y toda divergencia material no resoluble de forma segura se persiste como conflicto.
-47. Agregar comentario es un append sincronizable independiente: no altera el snapshot ni `Tarea.version_registro`, no requiere `If-Match-Version` de Tarea, admite concurrencia entre comentarios y conserva terminalidad; usa `op_id`, outbox atómico, identidad propia y autoría portables conceptuales.
+47. Agregar comentario es un append sincronizable independiente: no altera el snapshot ni `Tarea.version_registro`, no requiere `If-Match-Version` de Tarea, admite concurrencia entre comentarios y conserva terminalidad; usa `op_id`, outbox atómico, identidad portable propia, `version_registro` propio desde 1 y autoría portable conceptual.
 
 ## 29.1 Coherencia conjunta del primer cierre
 
@@ -1821,26 +1824,44 @@ cuando ésta exista. No versiona la colección append-only de comentarios. Agreg
 un comentario tampoco cambia por sí mismo `estado`, responsable, prioridad,
 `fecha_objetivo`, `fecha_finalizacion`, scope ni `deleted_at`.
 
-El comentario no recibe un `version_registro` propio: en el MVP no se edita ni se
-borra funcionalmente, y una corrección se expresa con otro append. Como pieza
-append-only replicada sí requiere **identidad portable propia conceptual** para
-reconocer el mismo comentario entre instalaciones. Esa identidad no es la PK
-local, el `uid_global` de Tarea, `op_id` ni `event_id`; nombre, tipo, generación,
-columna, constraint y exposición quedan pendientes del diseño físico.
+Como pieza sincronizable independiente, el comentario debe conservar su propio
+`version_registro` conforme a CORE-EF REQ-SYNC-011/012/013. Su alta nace
+conceptualmente con `version_registro = 1`; como en el MVP no se edita ni se
+borra funcionalmente y una corrección se expresa con otro append, normalmente
+permanece en 1. Esto no es una excepción al versionado CORE-EF ni crea una
+operación posterior sobre el comentario.
+
+El comentario requiere además **identidad portable propia conceptual** para
+reconocer la misma pieza entre instalaciones. Las dimensiones quedan separadas:
+
+```text
+uid_global de Tarea                 -> identidad distribuida de la Tarea padre
+Tarea.version_registro              -> versión de su snapshot funcional mutable
+identidad portable del comentario   -> identidad distribuida del comentario
+comentario.version_registro         -> versión CORE-EF del comentario
+op_id                               -> identidad de la operación distribuida
+event_id                            -> identidad/correlación de entrega
+```
+
+Ninguna sustituye a otra. No se congela PK, columna, UUID v4/v7, FK, tabla,
+payload ni exposición física del comentario.
 
 ### 32.2 Concurrencia y estados
 
 - **Comentario/comentario:** dos comentarios concurrentes válidos pueden
   coexistir y no se rechazan sólo por simultaneidad. No compiten por
-  `Tarea.version_registro`. El orden físico o total definitivo no se congela.
+  `Tarea.version_registro`. Por ejemplo, ambos pueden nacer con versión propia 1
+  mientras `Tarea.version_registro = 8`, sin producir `Tarea 8 -> 9 -> 10`. El
+  orden físico o total definitivo no se congela.
 - **Comentario/mutación del snapshot:** la edición conserva su CAS y debe usar la
   versión esperada de Tarea. El comentario es otra operación; un cambio
   concurrente de `Tarea.version_registro` no lo vuelve conflicto optimista. Al
   aplicarlo se validan autorización, vigencia y reglas funcionales actuales.
 - **Comentario/transición terminal:** `PENDIENTE`, `EN_CURSO`, `COMPLETADA` y
   `CANCELADA` admiten comentarios con autorización válida. En `COMPLETADA` el
-  comentario no reabre, no cambia estado ni `fecha_finalizacion`. En `CANCELADA`
-  no reabre ni cambia estado. Sólo la operación explícita ya congelada puede
+  comentario nace con su versión propia, no reabre, no cambia estado ni
+  `fecha_finalizacion`. En `CANCELADA` también nace con su versión propia, no
+  reabre ni cambia estado. Sólo la operación explícita ya congelada puede
   reabrir `COMPLETADA`; `CANCELADA` continúa sin reapertura.
 - **Baja lógica:** `CANCELADA != deleted_at`. Esta decisión no habilita comentar
   una Tarea con `deleted_at != NULL`: al no existir contrato de mutación de bajas
@@ -1850,19 +1871,31 @@ columna, constraint y exposición quedan pendientes del diseño físico.
 
 Agregar comentario permanece `COMMAND_WRITE_NEGOCIO + SINCRONIZABLE`. Exige el
 helper y los headers CORE-EF sync, incluido `X-Op-Id`, pero no
-`If-Match-Version`. La futura persistencia del comentario, su outbox distribuible
-y el receipt durable comparten una única transacción local y commit exterior.
+`If-Match-Version` de Tarea. La futura persistencia del comentario, su outbox
+distribuible y el receipt durable comparten una única transacción local y commit exterior.
 Un error previo al commit revierte todos esos efectos y permite retry según el
 contrato transversal.
 
 La idempotencia se aplica a la operación independiente, nunca a la versión de
-Tarea:
+Tarea ni a la versión propia del comentario:
 
 - mismo `op_id` + envelope materialmente compatible: replay/duplicado seguro,
   sin crear un segundo comentario ni un segundo outbox;
 - mismo `op_id` + envelope incompatible: `CONFLICTO`, sin segundo comentario;
 - `event_id` identifica la entrega y no sustituye `op_id`, que identifica la
   operación distribuida.
+
+La aplicación remota combina identidad portable y `version_registro` propios del
+comentario, `op_id` y referencia portable a la Tarea padre para aplicar,
+comparar, reproducir o registrar conflicto conforme a CORE-EF y #491/#492. No se
+congela el payload ni la estructura de evento. `comentario.version_registro`
+sirve al contrato de entidad sincronizable y comparación remota; no sustituye
+`op_id` para la idempotencia del alta.
+
+No se inventa un `If-Match-Version` propio del comentario: no existe una
+modificación lógica posterior en el MVP append-only. Si en el futuro se habilita
+edición o borrado lógico, su concurrencia propia deberá evaluarse conforme a
+CORE-EF, fuera de #493.
 
 El autor humano procede de Bearer → `AuthenticatedPrincipal` y viaja mediante el
 contrato portable Administrativo requerido por #492. No se usa login, email,
@@ -1885,6 +1918,7 @@ No se inventan aquí SQL, IDs de CU, API ni runtime.
 Criterio documental de #493:
 
 - [x] Efecto sobre `Tarea.version_registro` congelado.
+- [x] `version_registro` propio del comentario alineado con CORE-EF y alta en 1.
 - [x] No requerimiento de `If-Match-Version` de Tarea definido.
 - [x] Concurrencia comentario/comentario y comentario/mutación definida.
 - [x] Sync e idempotencia identificados sin confundir `op_id` y `event_id`.
@@ -1921,6 +1955,6 @@ ni scope funcional. No se definen nombres de endpoint.
 | Completar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar referencias #492 |
 | Cancelar | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar referencias #492 |
 | Reabrir `COMPLETADA -> PENDIENTE` | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | Sí | Materializar responsable portable #492 |
-| Agregar comentario | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | No: append independiente del snapshot | Identidad/autor portable conceptual; física pendiente |
+| Agregar comentario | `COMMAND_WRITE_NEGOCIO` | `SINCRONIZABLE` | CORE-EF sync | No: append independiente del snapshot | Identidad/autor portable y versión propia desde 1; física pendiente |
 | Eventual baja lógica técnica | `COMMAND_WRITE_TECNICO` | `SINCRONIZABLE` | CORE-EF sync | Sí, sobre Tarea existente | No crea operación; materializar payload #492 |
 | Consultas humanas de Tarea | `QUERY_READLIKE` | `NO APLICA` | Headers write: `NO APLICA`; Bearer humano separado | No | Auth técnica de una eventual lectura sync queda separada |
